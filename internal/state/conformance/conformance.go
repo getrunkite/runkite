@@ -732,6 +732,44 @@ func runRegistryTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
+	t.Run("REG-005b_delete_then_republish_gets_clean_history", func(t *testing.T) {
+		// Regression for a real bug found via live testing: DeleteRegistryEntry
+		// used to remove only the current row, leaving its version-history
+		// rows orphaned. A republish of the SAME name then hit the version
+		// snapshot table's "ON CONFLICT (tenant_id, name, version) DO NOTHING"
+		// against those orphans -- the new publish's own v1 snapshot was
+		// silently discarded, and ListRegistryEntryVersions kept showing
+		// stale, pre-delete content even though GetRegistryEntry correctly
+		// showed the new one.
+		s := factory(t)
+		ctx := context.Background()
+
+		s.PublishRegistryEntry(ctx, &models.RegistryEntry{
+			Name: "e4", DisplayName: "original", SourceType: "url", SourceRef: "x",
+			Tags: []string{}, Metadata: map[string]interface{}{},
+		})
+		if err := s.DeleteRegistryEntry(ctx, "e4"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		if err := s.PublishRegistryEntry(ctx, &models.RegistryEntry{
+			Name: "e4", DisplayName: "brand new after delete", SourceType: "url", SourceRef: "y",
+			Tags: []string{}, Metadata: map[string]interface{}{},
+		}); err != nil {
+			t.Fatalf("republish: %v", err)
+		}
+
+		versions, err := s.ListRegistryEntryVersions(ctx, "e4")
+		if err != nil {
+			t.Fatalf("ListRegistryEntryVersions: %v", err)
+		}
+		if len(versions) != 1 {
+			t.Fatalf("expected exactly 1 version after delete+republish (clean history), got %d: %+v", len(versions), versions)
+		}
+		if versions[0].DisplayName != "brand new after delete" {
+			t.Errorf("expected fresh version history reflecting the republish, got stale content: %+v", versions[0])
+		}
+	})
+
 	t.Run("REG-006_get_nonexistent", func(t *testing.T) {
 		s := factory(t)
 		_, err := s.GetRegistryEntry(context.Background(), "does-not-exist")

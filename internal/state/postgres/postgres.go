@@ -597,12 +597,26 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 	return entries, rows.Err()
 }
 
+// DeleteRegistryEntry also removes the entry's own version history, not
+// just its current row -- real bug found via live testing: without
+// this, a delete-then-republish of the same name hits the version
+// snapshot table's "ON CONFLICT (tenant_id, name, version) DO NOTHING"
+// against ORPHANED rows left over from before the delete, so the new
+// publish's own v1 snapshot is silently discarded and
+// ListRegistryEntryVersions keeps showing pre-delete content. Deleting
+// history alongside the entry means a republish always starts from a
+// genuinely clean version 1, matching what "deleted" should mean for a
+// scoped-to-tenant, no-op cascading resource with no other backend to
+// preserve the audit trail for once its own parent row is gone (unlike
+// agent versioning, which never deletes an agent at all today).
 func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
+	tenantID := tenant.FromContext(ctx)
+
 	query := `DELETE FROM registry_entries WHERE name = $1`
 	args := []interface{}{name}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = $2`
-		args = append(args, tenant.FromContext(ctx))
+		args = append(args, tenantID)
 	}
 	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {
@@ -611,7 +625,15 @@ func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
 	if tag.RowsAffected() == 0 {
 		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
 	}
-	return nil
+
+	versionsQuery := `DELETE FROM registry_entry_versions WHERE name = $1`
+	versionsArgs := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		versionsQuery += ` AND tenant_id = $2`
+		versionsArgs = append(versionsArgs, tenantID)
+	}
+	_, err = s.pool.Exec(ctx, versionsQuery, versionsArgs...)
+	return err
 }
 
 func (s *Store) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {

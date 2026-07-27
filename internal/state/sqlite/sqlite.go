@@ -608,12 +608,18 @@ func (s *SQLiteStore) SearchRegistryEntries(ctx context.Context, req *models.Reg
 	return entries, rows.Err()
 }
 
+// DeleteRegistryEntry also removes the entry's own version history --
+// see the Postgres backend's identical fix for the full rationale
+// (delete-then-republish otherwise resurrects stale pre-delete version
+// snapshots via ON CONFLICT DO NOTHING against orphaned rows).
 func (s *SQLiteStore) DeleteRegistryEntry(ctx context.Context, name string) error {
+	tenantID := tenant.FromContext(ctx)
+
 	query := `DELETE FROM registry_entries WHERE name = ?`
 	args := []interface{}{name}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
-		args = append(args, tenant.FromContext(ctx))
+		args = append(args, tenantID)
 	}
 	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -626,7 +632,15 @@ func (s *SQLiteStore) DeleteRegistryEntry(ctx context.Context, name string) erro
 	if n == 0 {
 		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
 	}
-	return nil
+
+	versionsQuery := `DELETE FROM registry_entry_versions WHERE name = ?`
+	versionsArgs := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		versionsQuery += ` AND tenant_id = ?`
+		versionsArgs = append(versionsArgs, tenantID)
+	}
+	_, err = s.db.ExecContext(ctx, versionsQuery, versionsArgs...)
+	return err
 }
 
 func (s *SQLiteStore) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {

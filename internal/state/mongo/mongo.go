@@ -546,6 +546,14 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 	return entries, cur.Err()
 }
 
+// DeleteRegistryEntry also removes the entry's own version history --
+// see the Postgres backend's identical fix for the full rationale
+// (delete-then-republish otherwise resurrects stale pre-delete version
+// snapshots: the unique index on registry_entry_versions would reject
+// the new v1's InsertOne as a duplicate of an orphaned pre-delete row,
+// and the duplicate-key handling above treats that as a benign no-op --
+// correct for a genuine same-content race, wrong here since it's
+// actually stale, unrelated content from before the delete).
 func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
 	res, err := s.col("registry_entries").DeleteOne(ctx, tenantFilter(ctx, bson.M{"name": name}))
 	if err != nil {
@@ -554,7 +562,8 @@ func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
 	if res.DeletedCount == 0 {
 		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
 	}
-	return nil
+	_, err = s.col("registry_entry_versions").DeleteMany(ctx, tenantFilter(ctx, bson.M{"name": name}))
+	return err
 }
 
 type registryEntryVersionDoc struct {
