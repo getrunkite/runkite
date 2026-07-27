@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/state"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // Store implements state.Store with a PostgreSQL database.

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 type inflightEntry struct {

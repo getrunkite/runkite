@@ -9,7 +9,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/runkite/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/models"
 )
 
 // writeVectorStoreDisabled responds 501 (not 404) when no vector_store is

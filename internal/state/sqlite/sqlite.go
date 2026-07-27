@@ -12,9 +12,9 @@ import (
 
 	_ "modernc.org/sqlite" // Pure-Go SQLite driver (no CGo)
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/state"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // SQLiteStore implements state.Store with an embedded SQLite database.

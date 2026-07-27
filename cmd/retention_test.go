@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/models"
-	sqlitestore "github.com/runkite/runkite/internal/state/sqlite"
+	"github.com/sharanharsoor/runkite/internal/models"
+	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
 )
 
 func writeLangGraphJSON(t *testing.T, dir string, content string) string {

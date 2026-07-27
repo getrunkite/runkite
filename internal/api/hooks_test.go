@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/hooks"
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/hooks"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 type testSink struct {

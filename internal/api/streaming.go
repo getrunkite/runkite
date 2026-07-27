@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/runkite/runkite/internal/metrics"
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 // POST /threads/{threadID}/stream -- Open SSE event stream

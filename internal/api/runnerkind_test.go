@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/models"
 )
 
 // TestCreateRun_RoutesToAgentsDeclaredRunnerKind proves a run is assigned

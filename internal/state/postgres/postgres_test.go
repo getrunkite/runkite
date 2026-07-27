@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/runkite/runkite/internal/state"
-	"github.com/runkite/runkite/internal/state/conformance"
-	"github.com/runkite/runkite/internal/state/postgres"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/state/conformance"
+	"github.com/sharanharsoor/runkite/internal/state/postgres"
 )
 
 func TestPostgresStore(t *testing.T) {

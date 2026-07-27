@@ -11,8 +11,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/runkite/runkite/internal/auth"
-	"github.com/runkite/runkite/internal/connector"
+	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/sharanharsoor/runkite/internal/connector"
 )
 
 // LangGraphConfig represents a parsed langgraph.json file.

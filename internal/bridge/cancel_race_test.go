@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/runkite/runkite/internal/bridge/runnerpb"
-	"github.com/runkite/runkite/internal/transport"
-	"github.com/runkite/runkite/internal/transport/inprocess"
+	pb "github.com/sharanharsoor/runkite/internal/bridge/runnerpb"
+	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
 )
 
 // TestGetJob_CancelImmediatelyAfterDispatch guards against a regression where

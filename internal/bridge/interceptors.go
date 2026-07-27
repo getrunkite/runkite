@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/runkite/runkite/internal/auth"
+	"github.com/sharanharsoor/runkite/internal/auth"
 )
 
 // Runner auth is carried via gRPC metadata (not proto fields) so it applies

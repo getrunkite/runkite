@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/tenant"
-	"github.com/runkite/runkite/internal/vectorstore/pgvector"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
 )
 
 const testDimensions = 3

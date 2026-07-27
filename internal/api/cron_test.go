@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/models"
 )
 
 // TestDispatchScheduledRun_UsesFixedThreadPerSchedule proves a

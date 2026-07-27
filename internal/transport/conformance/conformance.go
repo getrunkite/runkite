@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 // Factory functions that tests use to create fresh instances.

@@ -11,7 +11,7 @@ package vectorstore
 import (
 	"context"
 
-	"github.com/runkite/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/models"
 )
 
 // VectorStore is the persistence + similarity-search interface every

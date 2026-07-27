@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/runkite/runkite/internal/config"
-	"github.com/runkite/runkite/internal/state"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/config"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // retentionConfig is the resolved, ready-to-use form of config.RetentionEntry

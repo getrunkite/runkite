@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/transport"
-	redistransport "github.com/runkite/runkite/internal/transport/redis"
+	"github.com/sharanharsoor/runkite/internal/transport"
+	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 )
 
 // These mirror internal/transport/inprocess/reclaim_test.go so both queue

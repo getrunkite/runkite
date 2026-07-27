@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package runkite.runner.v0;
 
-option go_package = "github.com/runkite/runkite/internal/bridge/runnerpb";
+option go_package = "github.com/sharanharsoor/runkite/internal/bridge/runnerpb";
 
 // RunnerService is the gRPC service that runners implement.
 // The control plane connects to runners (long-poll style) or runners

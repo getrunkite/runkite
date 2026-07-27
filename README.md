@@ -49,7 +49,7 @@ Runners own: graph execution. Your LangGraph agents run unchanged.
 ### 1. Build
 
 ```bash
-git clone https://github.com/runkite/runkite && cd runkite
+git clone https://github.com/sharanharsoor/runkite && cd runkite
 make build
 ```
 

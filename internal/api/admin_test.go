@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // TestAdminOverview_AggregatesAcrossTenants proves /admin-api/overview counts

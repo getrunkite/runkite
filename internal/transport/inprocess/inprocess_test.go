@@ -3,9 +3,9 @@ package inprocess_test
 import (
 	"testing"
 
-	"github.com/runkite/runkite/internal/transport"
-	"github.com/runkite/runkite/internal/transport/conformance"
-	"github.com/runkite/runkite/internal/transport/inprocess"
+	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport/conformance"
+	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
 )
 
 func TestInMemoryJobQueue(t *testing.T) {

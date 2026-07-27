@@ -14,7 +14,7 @@ End-to-end walkthrough: build the control plane, run an agent, stream results vi
 ## 1. Clone and Build
 
 ```bash
-git clone https://github.com/runkite/runkite
+git clone https://github.com/sharanharsoor/runkite
 cd runkite
 make build
 ```

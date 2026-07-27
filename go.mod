@@ -1,4 +1,4 @@
-module github.com/runkite/runkite
+module github.com/sharanharsoor/runkite
 
 go 1.25.0
 

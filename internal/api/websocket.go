@@ -9,9 +9,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/runkite/runkite/internal/metrics"
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 // GET /threads/{threadID}/websocket -- bidirectional streaming (master plan:

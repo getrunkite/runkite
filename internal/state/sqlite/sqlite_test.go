@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/runkite/runkite/internal/state"
-	"github.com/runkite/runkite/internal/state/conformance"
-	"github.com/runkite/runkite/internal/state/sqlite"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/state/conformance"
+	"github.com/sharanharsoor/runkite/internal/state/sqlite"
 )
 
 func TestSQLiteStore(t *testing.T) {

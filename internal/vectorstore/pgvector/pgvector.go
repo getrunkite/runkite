@@ -18,8 +18,8 @@ import (
 	pgvec "github.com/pgvector/pgvector-go"
 	pgxvector "github.com/pgvector/pgvector-go/pgx"
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // Store implements vectorstore.VectorStore with PostgreSQL + pgvector.

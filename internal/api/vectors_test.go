@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/runkite/runkite/internal/vectorstore/pgvector"
+	"github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
 )
 
 // newTestEnvWithVectorStore attaches a real pgvector-backed store (needs

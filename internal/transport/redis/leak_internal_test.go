@@ -8,7 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/runkite/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
 // Internal test (same package, not redistransport_test) so it can inspect

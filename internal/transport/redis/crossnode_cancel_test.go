@@ -8,7 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	redistransport "github.com/runkite/runkite/internal/transport/redis"
+	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 )
 
 // Verifies CancelBus's cross-node claim the same way TestCrossNodeDelivery

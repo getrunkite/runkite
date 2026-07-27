@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/runkite/runkite/internal/auth"
-	"github.com/runkite/runkite/internal/tenant"
+	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // Rule configures one token bucket: RPS is the sustained rate, Burst is the

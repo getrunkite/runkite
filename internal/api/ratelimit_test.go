@@ -3,7 +3,7 @@ package api_test
 import (
 	"testing"
 
-	"github.com/runkite/runkite/internal/ratelimit"
+	"github.com/sharanharsoor/runkite/internal/ratelimit"
 )
 
 // TestCreateRun_PerAgentRateLimit proves createRun (the single choke point

@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runkite/runkite/internal/api"
-	"github.com/runkite/runkite/internal/auth"
-	"github.com/runkite/runkite/internal/connector"
-	"github.com/runkite/runkite/internal/metrics"
-	"github.com/runkite/runkite/internal/models"
-	sqlitestore "github.com/runkite/runkite/internal/state/sqlite"
-	"github.com/runkite/runkite/internal/transport"
-	"github.com/runkite/runkite/internal/transport/inprocess"
+	"github.com/sharanharsoor/runkite/internal/api"
+	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/sharanharsoor/runkite/internal/connector"
+	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/sharanharsoor/runkite/internal/models"
+	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
+	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
 )
 
 // testEnv bundles a running httptest.Server with all its deps.

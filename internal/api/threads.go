@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/runkite/runkite/internal/models"
-	"github.com/runkite/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
 )
 
 // POST /threads
