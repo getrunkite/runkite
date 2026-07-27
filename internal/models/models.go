@@ -165,6 +165,20 @@ type Run struct {
 	Config      json.RawMessage        `json:"config,omitempty"`
 	Output      json.RawMessage        `json:"output,omitempty"`
 	Error       string                 `json:"error,omitempty"`
+	// ParentRunID, RootRunID, Depth support Agent-to-Agent (A2A)
+	// delegation (master plan: "agent calls agent via the same Agent
+	// Protocol API"). ParentRunID is nil for a normal, top-level run --
+	// set only when this run was created via POST /internal/a2a/runs on
+	// behalf of another run. RootRunID is the top of the chain (a run's
+	// own RunID if it has no parent, otherwise copied from the parent),
+	// letting a caller find every run in a delegation tree with one
+	// query (WHERE root_run_id = ?) instead of walking parent pointers.
+	// Depth is 0 for a top-level run, parent.Depth+1 for a delegated
+	// one -- enforced against a2a.max_depth at creation time to prevent
+	// runaway/cyclic delegation chains.
+	ParentRunID *string `json:"parent_run_id,omitempty"`
+	RootRunID   *string `json:"root_run_id,omitempty"`
+	Depth       int     `json:"depth,omitempty"`
 }
 
 // RunCreate is the body for POST /runs and POST /threads/{id}/runs.
@@ -183,6 +197,11 @@ type RunCreate struct {
 	CheckpointRef *string         `json:"checkpoint_ref,omitempty"`
 	ResumeCommand json.RawMessage `json:"resume_command,omitempty"`
 	Command       json.RawMessage `json:"command,omitempty"` // SDK compat: {"resume": ...}
+	// ParentRunID is set only by the internal A2A endpoint
+	// (POST /internal/a2a/runs) -- never accepted from a client-facing
+	// request, so a normal caller can't forge a delegation chain or
+	// bypass the depth limit by claiming an arbitrary parent.
+	ParentRunID *string `json:"-"`
 }
 
 // RunSearchRequest is the body for POST /runs/search.

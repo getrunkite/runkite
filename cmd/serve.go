@@ -177,6 +177,14 @@ func startServer(opts serverOpts) {
 		slog.Info("rate limiting: enabled")
 	}
 
+	// Agent-to-Agent (A2A) delegation depth limit (master plan:
+	// "Agent-to-agent (A2A)... recursion limits"). Always available at
+	// POST /internal/a2a/runs; this only tunes how deep a chain may go.
+	if maxDepth := initA2AMaxDepth(opts.configPath); maxDepth > 0 {
+		apiServer.SetA2AMaxDepth(maxDepth)
+		slog.Info("a2a: max_depth configured", "max_depth", maxDepth)
+	}
+
 	// Event hooks + webhook delivery (master plan: on_run_start,
 	// on_run_complete, on_tool_call, on_error, on_interrupt).
 	hookDispatcher := initHooks(opts.configPath, store)
@@ -705,6 +713,22 @@ func initAdminAuthProvider(configPath string) auth.Provider {
 	}
 	slog.Info("admin auth: static keys", "count", len(keys))
 	return auth.NewAPIKeyProvider(keys)
+}
+
+// initA2AMaxDepth reads the "a2a.max_depth" section from the first
+// discovered langgraph.json, same control-plane-wide/first-file
+// convention as initAuthProvider/initRateLimiter. Returns 0 (meaning
+// "use api.Server's own default") if unconfigured or invalid.
+func initA2AMaxDepth(configPath string) int {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return 0
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.A2A == nil {
+		return 0
+	}
+	return cfg.A2A.MaxDepth
 }
 
 // initRateLimiter reads the "rate_limit" section from the first discovered

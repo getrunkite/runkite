@@ -216,6 +216,21 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 	if err := addColumnIfMissing(ctx, s.db, "store_items", "expires_at", "TEXT"); err != nil {
 		return err
 	}
+	// Agent-to-Agent (A2A) delegation bookkeeping -- see models.Run's doc
+	// comment. parent_run_id/root_run_id are nullable (a normal
+	// top-level run has neither); depth defaults to 0.
+	if err := addColumnIfMissing(ctx, s.db, "runs", "parent_run_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(ctx, s.db, "runs", "root_run_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(ctx, s.db, "runs", "depth", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_runs_root ON runs(root_run_id)"); err != nil {
+		return err
+	}
 	// These indexes reference tenant_id, so (unlike the CREATE INDEX
 	// statements in the schema string above, which only reference columns
 	// that are part of that same CREATE TABLE) they must run AFTER the
@@ -272,6 +287,26 @@ func addColumnIfMissing(ctx context.Context, db *sql.DB, table, column, ddl stri
 		return err
 	}
 	return nil
+}
+
+// nullableString converts a *string model field (nil means "no value",
+// e.g. models.Run.ParentRunID for a top-level run) to a driver value
+// that binds to a NULL column, rather than storing the literal string
+// "<nil>" or failing the scan.
+func nullableString(s *string) interface{} {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
+// nullStringToPtr is nullableString's inverse, for scanning a nullable
+// TEXT column back into a *string model field.
+func nullStringToPtr(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
 }
 
 // Close closes the database connection.
@@ -761,16 +796,17 @@ func nilOrNow(t *string) string {
 func (s *SQLiteStore) CreateRun(ctx context.Context, run *models.Run) error {
 	meta, _ := json.Marshal(run.Metadata)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at, parent_run_id, root_run_id, depth)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, string(meta),
 		string(run.Input), string(run.Config),
-		run.CreatedAt.Format(time.RFC3339), run.UpdatedAt.Format(time.RFC3339))
+		run.CreatedAt.Format(time.RFC3339), run.UpdatedAt.Format(time.RFC3339),
+		nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
 	return err
 }
 
 func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, error) {
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs WHERE run_id = ?`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE run_id = ?`
 	args := []interface{}{runID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -779,14 +815,16 @@ func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, er
 	row := s.db.QueryRowContext(ctx, query, args...)
 
 	var r models.Run
-	var metaStr, inputStr, configStr, outputStr sql.NullString
+	var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 	var createdStr, updatedStr string
-	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr); err != nil {
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
 		}
 		return nil, err
 	}
+	r.ParentRunID = nullStringToPtr(parentRunIDStr)
+	r.RootRunID = nullStringToPtr(rootRunIDStr)
 	if metaStr.Valid {
 		json.Unmarshal([]byte(metaStr.String), &r.Metadata)
 	}
@@ -921,7 +959,7 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
 	var args []interface{}
 	var where []string
 
@@ -966,11 +1004,13 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 	runs := []*models.Run{}
 	for rows.Next() {
 		var r models.Run
-		var metaStr, inputStr, configStr, outputStr sql.NullString
+		var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 		var createdStr, updatedStr string
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
 			return nil, err
 		}
+		r.ParentRunID = nullStringToPtr(parentRunIDStr)
+		r.RootRunID = nullStringToPtr(rootRunIDStr)
 		if metaStr.Valid {
 			json.Unmarshal([]byte(metaStr.String), &r.Metadata)
 		}

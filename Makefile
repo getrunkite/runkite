@@ -98,7 +98,8 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_langchain_adapter.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_cancel_race.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_concurrency.py && \
-		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py; \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_a2a.py; \
 	else \
 		PYTHONPATH=python python3 python/tests/test_store_dual_mode.py && \
 		PYTHONPATH=python python3 python/tests/test_store_pool.py && \
@@ -109,7 +110,8 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_langchain_adapter.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_cancel_race.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_concurrency.py && \
-		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py; \
+		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py && \
+		PYTHONPATH=python python3 python/tests/test_a2a.py; \
 	fi
 
 # CrewAI/LlamaIndex adapters each need their own isolated venv (heavy,

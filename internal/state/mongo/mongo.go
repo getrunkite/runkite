@@ -693,23 +693,44 @@ type runDoc struct {
 	ErrorMsg  string      `bson:"error_msg"`
 	CreatedAt time.Time   `bson:"created_at"`
 	UpdatedAt time.Time   `bson:"updated_at"`
+	// Agent-to-Agent (A2A) delegation bookkeeping -- see models.Run's
+	// doc comment. ParentRunID/RootRunID use `omitempty` so a
+	// top-level run's document simply has no such field, matching the
+	// SQL backends' NULL rather than storing an empty string.
+	ParentRunID string `bson:"parent_run_id,omitempty"`
+	RootRunID   string `bson:"root_run_id,omitempty"`
+	Depth       int    `bson:"depth"`
 }
 
 func toRun(doc runDoc) *models.Run {
-	return &models.Run{
+	r := &models.Run{
 		TenantID: doc.TenantID, RunID: doc.RunID, ThreadID: doc.ThreadID, AgentID: doc.AgentID,
 		AssistantID: doc.AgentID, Status: models.RunStatus(doc.Status), Metadata: bsonToMap(doc.Metadata),
 		Input: bsonToJSON(doc.Input), Config: bsonToJSON(doc.Config), Output: bsonToJSON(doc.Output),
-		Error: doc.ErrorMsg, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt,
+		Error: doc.ErrorMsg, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt, Depth: doc.Depth,
 	}
+	if doc.ParentRunID != "" {
+		r.ParentRunID = &doc.ParentRunID
+	}
+	if doc.RootRunID != "" {
+		r.RootRunID = &doc.RootRunID
+	}
+	return r
 }
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
-	_, err := s.col("runs").InsertOne(ctx, runDoc{
+	doc := runDoc{
 		TenantID: tenant.FromContext(ctx), RunID: run.RunID, ThreadID: run.ThreadID, AgentID: run.AgentID,
 		Status: string(run.Status), Metadata: run.Metadata, Input: jsonToBSON(run.Input), Config: jsonToBSON(run.Config),
-		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
-	})
+		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt, Depth: run.Depth,
+	}
+	if run.ParentRunID != nil {
+		doc.ParentRunID = *run.ParentRunID
+	}
+	if run.RootRunID != nil {
+		doc.RootRunID = *run.RootRunID
+	}
+	_, err := s.col("runs").InsertOne(ctx, doc)
 	return err
 }
 

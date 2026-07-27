@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "coordinator_agent": "./graph.py:coordinator_agent",
+    "worker_agent": "./graph.py:worker_agent"
+  },
+  "dependencies": ["."]
+}

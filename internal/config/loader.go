@@ -81,6 +81,28 @@ type LangGraphConfig struct {
 	// unbounded storage growth with no way to bound it short of manual
 	// deletion). Opt-in, same convention as everything else here.
 	Retention *RetentionEntry `json:"retention,omitempty"`
+	// A2A is control-plane-wide, same first-file convention as
+	// Auth/RateLimit/Webhooks (see initA2AConfig in cmd/serve.go).
+	// Absent means the default max depth (see A2AEntry.MaxDepth)
+	// applies -- A2A delegation itself (POST /internal/a2a/runs) is
+	// always available, this section only tunes the depth limit.
+	A2A *A2AEntry `json:"a2a,omitempty"`
+}
+
+// A2AEntry is the "a2a" section of langgraph.json (master plan:
+// "Agent-to-agent (A2A): agent calls agent via the same Agent Protocol
+// API"). Currently just the one knob every deployment needs to
+// consider: how deep a delegation chain is allowed to go before the
+// control plane refuses to create another sub-run, the guard against a
+// runaway or cyclic A->B->A delegation loop.
+type A2AEntry struct {
+	// MaxDepth caps how many delegation hops a chain may have (a
+	// top-level run is depth 0; each POST /internal/a2a/runs call
+	// increments it by one from its parent). Defaults to 10 when unset
+	// or <= 0 -- generous enough for real multi-agent workflows,
+	// small enough that a cyclic delegation bug fails fast instead of
+	// silently consuming resources.
+	MaxDepth int `json:"max_depth,omitempty"`
 }
 
 // RetentionEntry is the "retention" section of langgraph.json.

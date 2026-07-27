@@ -392,6 +392,36 @@ User-defined HTTP endpoints mounted at `/custom/*` alongside the Agent Protocol 
 
 `custom_app.module` uses the same `path:symbol` convention as `graphs`. Works with FastAPI, Starlette, or any ASGI-callable -- `uvicorn` is the only SDK dependency, not a specific framework. WSGI frameworks (e.g. Flask) need an ASGI adapter (e.g. `a2wsgi.WSGIMiddleware`) first, since `uvicorn` only serves ASGI. Because it shares the runner's own process and event loop, a slow custom-route handler can, in principle, delay the runner's own async work -- use sidecar mode instead if a route needs isolation or independent scaling. See `examples/custom_routes_agent/` for a working FastAPI example.
 
+## Agent-to-Agent (A2A)
+
+An agent calls another agent as a sub-task, mid-execution (master plan: "Agent-to-agent (A2A): agent calls agent via the same Agent Protocol API -- native sub-agent delegation"). The mechanism is deliberately **not** a new protocol surface -- it's the exact same `POST /threads/{id}/runs` + wait-for-result path any client already uses, just reachable from inside a runner's own process via one new internal route (`POST /internal/a2a/runs`) instead of a public one.
+
+**Python SDK**: `call_agent` (`python/runkite_runner/a2a.py`) is what a node calls, using the exact `config` LangGraph already passes it -- everything needed (the calling run's own `run_id`, the authenticated user to forward) is already there:
+
+```python
+from runkite_runner.a2a import call_agent
+
+async def coordinator_node(state, config: RunnableConfig) -> dict:
+    result = await call_agent(config, "worker_agent", {"messages": [...]}, wait=True)
+    ...
+```
+
+See `examples/a2a_agent/` for a complete working example (`coordinator_agent` delegates to `worker_agent`).
+
+Three things this adds on top of the shared run-creation/wait path:
+
+- **Auth context propagation**: the sub-agent executes with the ORIGINAL caller's identity/permissions -- never more access than the original caller had. Tenant is derived from the PARENT run's own `tenant_id` (looked up server-side), never trusted from the request body, so a buggy or compromised runner can't escalate into a different tenant by forging its claims.
+- **Recursion limits**: every sub-run's `depth` is enforced against `a2a.max_depth` (default 10) at creation time -- an accidental cycle or runaway delegation chain fails fast with `400`, not a resource leak. Configurable:
+  ```json
+  { "a2a": { "max_depth": 10 } }
+  ```
+- **Cost attribution**: every run in a delegation tree carries `parent_run_id` and `root_run_id` (the top of the chain) -- `GET /runs/search` with a `root_run_id` filter... (there isn't one exposed via search yet, see limitations below) finds every run one original request ultimately caused, without walking parent pointers.
+
+**Known limitations, stated plainly**:
+- **Concurrency deadlock risk, real and easy to hit**: if the SAME runner process executes both the calling agent and the agent it delegates to (the common single-runner-process case), a `wait=True` call blocks that runner's one in-flight job slot waiting for a sub-run that the very same runner needs to dequeue to make progress -- with the default `--concurrency 1`, this deadlocks. **Run with `--concurrency 2` or higher** (see [Runners](#runners)) whenever an agent might call another agent with `wait=True`, so at least one slot is always free to pick up the delegated job. Horizontally-scaled runner replicas of the same `runner_kind` avoid this entirely (any replica can pick up the sub-run), but a single low-concurrency runner process will hang.
+- **`root_run_id` isn't a `RunSearchRequest` filter yet.** The field is persisted and returned on every run, but finding "every run in this delegation tree" today means fetching runs and filtering client-side, not a server-side query parameter.
+- **No cost/token aggregation built on top of the tree yet.** `root_run_id` makes the tree queryable; summing tokens/cost across it is left to the caller for now, not a built-in rollup.
+
 ## Architecture
 
 **Control plane** (Go, single static binary):
@@ -726,6 +756,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 | `examples/echo_agent_ts/` | Echo, slow (cancel), and approval (HITL) agents, in TypeScript/LangGraph.js -- proves the Runner Protocol is language-agnostic |
 | `examples/vector_agent/` | Retrieval-augmented demo using `RunkiteVectorStore` (Vector Store Dual Mode) -- fake, deterministic embeddings, no API key needed |
 | `examples/factory_agent/` | Per-request Factory Graph -- proves fresh-instance-per-run isolation and `runtime.user` identity passthrough |
+| `examples/a2a_agent/` | `coordinator_agent` delegates to `worker_agent` mid-execution via `call_agent` -- proves Agent-to-Agent delegation end to end (see [Agent-to-Agent (A2A)](#agent-to-agent-a2a)) |
 
 ## Known Limitations
 

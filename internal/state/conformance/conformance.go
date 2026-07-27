@@ -705,6 +705,65 @@ func runRunTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
+	t.Run("SS-006a_a2a_parent_root_depth_persist", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-a2a", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "a2a-root", ThreadID: "t-a2a", Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now})
+
+		parentID := "a2a-root"
+		rootID := "a2a-root"
+		child := &models.Run{
+			RunID: "a2a-child", ThreadID: "t-a2a", Status: models.RunStatusPending,
+			CreatedAt: now, UpdatedAt: now,
+			ParentRunID: &parentID, RootRunID: &rootID, Depth: 1,
+		}
+		if err := s.CreateRun(ctx, child); err != nil {
+			t.Fatalf("CreateRun (delegated): %v", err)
+		}
+
+		// Round-trip via GetRun
+		got, err := s.GetRun(ctx, "a2a-child")
+		if err != nil {
+			t.Fatalf("GetRun: %v", err)
+		}
+		if got.ParentRunID == nil || *got.ParentRunID != "a2a-root" {
+			t.Errorf("GetRun: ParentRunID = %+v, want a2a-root", got.ParentRunID)
+		}
+		if got.RootRunID == nil || *got.RootRunID != "a2a-root" {
+			t.Errorf("GetRun: RootRunID = %+v, want a2a-root", got.RootRunID)
+		}
+		if got.Depth != 1 {
+			t.Errorf("GetRun: Depth = %d, want 1", got.Depth)
+		}
+
+		// Round-trip via SearchRuns too -- a real gap found before: some
+		// backends' list-query column sets have drifted from their
+		// single-row-get counterparts (see master plan's "SearchRuns's
+		// SELECT once omitted tenant_id" regression note).
+		results, err := s.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: "t-a2a", Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRuns: %v", err)
+		}
+		var foundChild bool
+		for _, r := range results {
+			if r.RunID == "a2a-child" {
+				foundChild = true
+				if r.ParentRunID == nil || *r.ParentRunID != "a2a-root" || r.Depth != 1 {
+					t.Errorf("SearchRuns: parent/depth not persisted, got parent=%+v depth=%d", r.ParentRunID, r.Depth)
+				}
+			}
+			if r.RunID == "a2a-root" && (r.ParentRunID != nil || r.Depth != 0) {
+				t.Errorf("SearchRuns: top-level run should have nil parent and depth 0, got parent=%+v depth=%d", r.ParentRunID, r.Depth)
+			}
+		}
+		if !foundChild {
+			t.Fatal("SearchRuns: delegated run not found in results")
+		}
+	})
+
 	t.Run("SS-007_update_status", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()

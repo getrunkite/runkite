@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -41,6 +42,7 @@ type Server struct {
 	hooks       *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
 	customProxy http.Handler            // nil if no custom_routes configured; mounted at /custom/
 	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
+	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until StatusCallback closes it out. ponytail: if the control plane
@@ -76,6 +78,24 @@ func (s *Server) SetConnectorRegistry(r *connector.Registry) {
 // in cmd/serve.go).
 func (s *Server) SetRateLimiter(l *ratelimit.Limiter) {
 	s.rateLimit = l
+}
+
+// defaultA2AMaxDepth applies when a2a.max_depth is unset or <= 0 --
+// see A2AEntry's doc comment in internal/config/loader.go.
+const defaultA2AMaxDepth = 10
+
+// SetA2AMaxDepth configures the maximum Agent-to-Agent delegation chain
+// depth. Called after NewServer when an "a2a" config section is present;
+// never called (or called with <= 0) means defaultA2AMaxDepth applies.
+func (s *Server) SetA2AMaxDepth(depth int) {
+	s.a2aMaxDepth = depth
+}
+
+func (s *Server) a2aMaxDepthOrDefault() int {
+	if s.a2aMaxDepth <= 0 {
+		return defaultA2AMaxDepth
+	}
+	return s.a2aMaxDepth
 }
 
 // SetHookDispatcher attaches an event-hook dispatcher to the server.
@@ -221,6 +241,10 @@ func (s *Server) Handler() http.Handler {
 	// internal/hooks.WebhookSink) instead of only logged and lost; this is
 	// how an operator finds out about it.
 	mux.HandleFunc("GET /internal/webhooks/dead-letters", s.handleListWebhookDeadLetters)
+
+	// Agent-to-Agent (A2A) delegation -- see a2a.go's package doc
+	// comment for the full design.
+	mux.HandleFunc("POST /internal/a2a/runs", s.handleA2ACreateRun)
 
 	// Admin API (master plan: "Admin API + UI"). Gated on "admin"
 	// permission specifically, enforced in auth.Middleware for the whole
@@ -680,10 +704,24 @@ func readJSON(r *http.Request, v interface{}) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
+// ErrA2ADepthExceeded means creating this run would exceed the
+// configured Agent-to-Agent delegation chain limit (see A2AEntry.MaxDepth
+// in internal/config/loader.go) -- a client-actionable 400, not a server
+// error: the caller's delegation chain is too deep, nothing is broken.
+type ErrA2ADepthExceeded struct {
+	Depth    int
+	MaxDepth int
+}
+
+func (e *ErrA2ADepthExceeded) Error() string {
+	return fmt.Sprintf("a2a delegation depth %d exceeds max_depth %d", e.Depth, e.MaxDepth)
+}
+
 func handleStoreError(w http.ResponseWriter, err error) {
 	var notFound *state.ErrNotFound
 	var conflict *state.ErrConflict
 	var rateLimited *ratelimit.ErrRateLimited
+	var depthExceeded *ErrA2ADepthExceeded
 	switch {
 	case errors.As(err, &notFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -692,6 +730,8 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	case errors.As(err, &rateLimited):
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, err.Error())
+	case errors.As(err, &depthExceeded):
+		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		slog.Error("store error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

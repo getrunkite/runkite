@@ -121,6 +121,32 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		return nil, nil, &state.ErrConflict{Resource: "thread", ID: threadID}
 	}
 
+	// Agent-to-Agent (A2A) delegation bookkeeping: only set when this run
+	// is being created via POST /internal/a2a/runs (req.ParentRunID is
+	// never populated from a client-facing request body -- see
+	// RunCreate.ParentRunID's doc comment). A top-level run has Depth 0
+	// and no parent/root; a delegated run inherits and increments from
+	// its parent, enforced against a2aMaxDepthOrDefault() here so a
+	// cyclic or runaway delegation chain fails fast at creation time
+	// rather than consuming resources indefinitely.
+	var rootRunID *string
+	depth := 0
+	if req.ParentRunID != nil {
+		parent, err := s.store.GetRun(ctx, *req.ParentRunID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("a2a: look up parent run %s: %w", *req.ParentRunID, err)
+		}
+		depth = parent.Depth + 1
+		if depth > s.a2aMaxDepthOrDefault() {
+			return nil, nil, &ErrA2ADepthExceeded{Depth: depth, MaxDepth: s.a2aMaxDepthOrDefault()}
+		}
+		if parent.RootRunID != nil {
+			rootRunID = parent.RootRunID
+		} else {
+			rootRunID = &parent.RunID
+		}
+	}
+
 	run := &models.Run{
 		RunID:       runID,
 		ThreadID:    threadID,
@@ -132,6 +158,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		Config:      req.Config,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		ParentRunID: req.ParentRunID,
+		RootRunID:   rootRunID,
+		Depth:       depth,
 	}
 
 	// LLM response caching: compute the cache key HERE, from the raw
@@ -972,6 +1001,21 @@ func streamCacheHitRun(w http.ResponseWriter, run *models.Run) {
 }
 
 func (s *Server) waitForRun(w http.ResponseWriter, r *http.Request, run *models.Run, assignment *transport.RunAssignment) {
+	resp, err := s.waitForRunResult(r.Context(), run, assignment)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, *resp)
+}
+
+// waitForRunResult is waitForRun's HTTP-independent core, extracted so
+// the internal A2A endpoint (POST /internal/a2a/runs, which needs the
+// same "enqueue and block for the terminal result" behavior but returns
+// a Go value to its own caller instead of writing an HTTP response
+// directly) doesn't duplicate this logic and risk it drifting from the
+// client-facing /wait behavior.
+func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignment *transport.RunAssignment) (*models.RunWaitResponse, error) {
 	// A cache hit (see tryServeCachedRun) already completed synchronously
 	// with no broker events published for it -- respond directly instead
 	// of subscribing and waiting for events that will never arrive.
@@ -980,20 +1024,17 @@ func (s *Server) waitForRun(w http.ResponseWriter, r *http.Request, run *models.
 		var vals map[string]interface{}
 		json.Unmarshal(run.Output, &vals)
 		resp.Values = vals
-		writeJSON(w, http.StatusOK, resp)
-		return
+		return &resp, nil
 	}
 
 	// Subscribe BEFORE enqueuing
-	eventCh, err := s.broker.Subscribe(r.Context(), run.RunID)
+	eventCh, err := s.broker.Subscribe(ctx, run.RunID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to subscribe")
-		return
+		return nil, fmt.Errorf("failed to subscribe: %w", err)
 	}
 
-	if err := s.enqueue(r.Context(), assignment); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to enqueue")
-		return
+	if err := s.enqueue(ctx, assignment); err != nil {
+		return nil, fmt.Errorf("failed to enqueue: %w", err)
 	}
 
 	// Wait for terminal event
@@ -1025,12 +1066,12 @@ func (s *Server) waitForRun(w http.ResponseWriter, r *http.Request, run *models.
 	// see waitForExistingRun's identical fix for the full rationale --
 	// without this, a plain GET immediately after this response could
 	// still see "pending" even though this response says "success").
-	finalRun, _ := s.store.GetRun(r.Context(), run.RunID)
+	finalRun, _ := s.store.GetRun(ctx, run.RunID)
 	if finalRun == nil {
 		finalRun = run
 	}
 	if terminalStatus != "" && !isTerminalStatus(finalRun.Status) {
-		if err := s.store.UpdateRunStatus(r.Context(), run.RunID, models.RunStatus(terminalStatus), nil, ""); err != nil {
+		if err := s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatus(terminalStatus), nil, ""); err != nil {
 			slog.Error("wait: failed to persist status derived from event stream", "run_id", run.RunID, "error", err)
 		}
 		// See waitForExistingRun's identical fix for the full rationale:
@@ -1042,7 +1083,7 @@ func (s *Server) waitForRun(w http.ResponseWriter, r *http.Request, run *models.
 		if terminalStatus == string(models.RunStatusInterrupted) {
 			threadStatus = models.ThreadStatusInterrupted
 		}
-		if err := s.store.SetThreadStatus(r.Context(), finalRun.ThreadID, threadStatus); err != nil {
+		if err := s.store.SetThreadStatus(ctx, finalRun.ThreadID, threadStatus); err != nil {
 			slog.Error("wait: failed to reset thread status derived from event stream", "thread_id", finalRun.ThreadID, "error", err)
 		}
 		finalRun.Status = models.RunStatus(terminalStatus)
@@ -1056,7 +1097,7 @@ func (s *Server) waitForRun(w http.ResponseWriter, r *http.Request, run *models.
 		json.Unmarshal(lastValues, &vals)
 		resp.Values = vals
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return &resp, nil
 }
 
 func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runID string) {

@@ -132,9 +132,16 @@ func (s *Store) Init(ctx context.Context) error {
 		updated_at TIMESTAMPTZ DEFAULT NOW()
 	);
 	ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	-- Agent-to-Agent (A2A) delegation bookkeeping -- see models.Run's doc
+	-- comment. parent_run_id/root_run_id are nullable (a normal
+	-- top-level run has neither); depth defaults to 0.
+	ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id TEXT;
+	ALTER TABLE runs ADD COLUMN IF NOT EXISTS root_run_id TEXT;
+	ALTER TABLE runs ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0;
 	CREATE INDEX IF NOT EXISTS idx_runs_thread ON runs(thread_id);
 	CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 	CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id);
+	CREATE INDEX IF NOT EXISTS idx_runs_root ON runs(root_run_id);
 
 	CREATE TABLE IF NOT EXISTS thread_checkpoints (
 		tenant_id       TEXT NOT NULL DEFAULT 'default',
@@ -753,16 +760,16 @@ func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
 	meta, _ := json.Marshal(run.Metadata)
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at, parent_run_id, root_run_id, depth)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
 		nullableJSON(run.Input), nullableJSON(run.Config),
-		run.CreatedAt, run.UpdatedAt)
+		run.CreatedAt, run.UpdatedAt, run.ParentRunID, run.RootRunID, run.Depth)
 	return err
 }
 
 func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs WHERE run_id = $1`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE run_id = $1`
 	args := []interface{}{runID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = $2`
@@ -772,7 +779,7 @@ func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
 
 	var r models.Run
 	var metaBytes, inputBytes, configBytes, outputBytes []byte
-	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
 		}
@@ -909,7 +916,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
 	var args []interface{}
 	var where []string
 	argN := 1
@@ -961,7 +968,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	for rows.Next() {
 		var r models.Run
 		var metaBytes, inputBytes, configBytes, outputBytes []byte
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
 			return nil, err
 		}
 		if metaBytes != nil {
