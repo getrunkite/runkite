@@ -1,0 +1,57 @@
+# Ephemeral Postgres + Redis + MongoDB for running conformance tests locally or in CI.
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   make test-all
+#   docker compose -f docker-compose.test.yml down -v
+services:
+  postgres:
+    # pgvector/pgvector:pg16 is a drop-in postgres:16 image with the
+    # pgvector extension binary available (not enabled by default -- see
+    # internal/vectorstore/pgvector's own `CREATE EXTENSION IF NOT
+    # EXISTS`). Using it everywhere Postgres is used for tests means the
+    # vector store conformance suite runs against the same test infra as
+    # everything else, no separate service needed.
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: runkite
+      POSTGRES_PASSWORD: runkite
+      POSTGRES_DB: runkite_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runkite -d runkite_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /data
+
+  mongo:
+    # internal/state/mongo's non-SQL exemplar backend -- same conformance
+    # suite as Postgres/SQLite (see internal/state/conformance), so this
+    # needs to be part of the standard test infra, not a manually-started
+    # side container (a real gap found in review: MONGO_URI wasn't
+    # documented anywhere and this service didn't exist here, so `make
+    # test-all`/CI silently skipped Mongo conformance entirely).
+    image: mongo:7
+    ports:
+      - "27018:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping')", "--quiet"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /data/db

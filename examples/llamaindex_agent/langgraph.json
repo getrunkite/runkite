@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "llamaindex_agent": "./chat_engine.py:chat_engine"
+  },
+  "dependencies": ["."],
+  "runner_kind": "python-llamaindex"
+}

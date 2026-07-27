@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector/pgvector:pg16 (drop-in postgres:16 + pgvector extension
+        # binary) so the vector store test suite (internal/vectorstore/pgvector)
+        # can run in CI, not just against a developer's local docker-compose.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: runkite
+          POSTGRES_PASSWORD: runkite
+          POSTGRES_DB: runkite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U runkite -d runkite_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+      mongo:
+        # The non-SQL exemplar state.Store backend (internal/state/mongo) --
+        # same conformance suite as Postgres/SQLite, so this needs to run
+        # in CI too, not just locally.
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand(\"ping\")' --quiet"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python runner dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Install example custom-app dependencies
+        # fastapi is the example custom_routes_agent app's own framework
+        # choice, not a runkite_runner dependency (uvicorn alone, already in
+        # requirements.txt, is all the SDK needs to serve any ASGI app) --
+        # installed separately so CI actually exercises test_custom_app.py
+        # instead of it silently skipping.
+        run: pip install fastapi
+
+      - name: Admin UI - install, lint, typecheck, build
+        # Builds straight into internal/adminui/dist (see admin-ui/vite.config.ts),
+        # so the Go build step right after this actually exercises a fresh
+        # bundle instead of whatever was last committed.
+        working-directory: admin-ui
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Build
+        run: go build -o /dev/null ./cmd/
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (all backends)
+        env:
+          POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          MONGO_URI: mongodb://localhost:27017
+        run: go test ./internal/... -race -count=1 -v
+
+      - name: Python runner unit tests
+        env:
+          PYTHONPATH: python
+        run: |
+          python python/tests/test_store_dual_mode.py
+          python python/tests/test_custom_app.py
+          python python/tests/test_factory_graph.py
+          # Live dual-mode interop portion skips without RUNKITE_HTTP_URL
+          # set (same as test_store_dual_mode.py above) -- no live control
+          # plane is started for this step; the live path is verified
+          # manually the same way store.py's and cron's are.
+          python python/tests/test_vectorstore_dual_mode.py
+          python python/tests/test_generic_worker.py
+          python python/tests/test_langchain_adapter.py
+          python python/tests/test_worker_cancel_race.py
+
+      - name: CrewAI/LlamaIndex adapter unit tests
+        # Isolated venvs, deliberately NOT installed into the shared
+        # python/requirements.txt environment above -- see
+        # python/adapters/*/README.md for why (a stray `pip install
+        # crewai` there downgraded protobuf during development).
+        run: |
+          pip install uv
+          uv venv --python 3.12 python/adapters/crewai_adapter/.venv
+          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf
+          PYTHONPATH=python:python/adapters python/adapters/crewai_adapter/.venv/bin/python python/adapters/crewai_adapter/test_adapter.py
+
+          uv venv --python 3.12 python/adapters/llamaindex_adapter/.venv
+          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf
+          PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_adapter.py
+
+      - name: TypeScript runner unit tests
+        working-directory: typescript/runkite-runner
+        run: |
+          npm install
+          npx tsc -p tsconfig.json --noEmit
+          npx tsx --test src/*.test.ts
+
+      - name: E2E (real binary + real Python/LangChain-adapter runners + real Postgres/Redis)
+        # ./test/e2e/... recurses into test/e2e/adapters too -- the
+        # LangChain adapter's own end-to-end coverage (real control
+        # plane + real langchain_adapter runner subprocess + cancel via
+        # a real gRPC signal), not just unit tests against fakes.
+        env:
+          POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+        run: go test ./test/e2e/... -v -timeout 120s -count=1

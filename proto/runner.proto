@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package runkite.runner.v0;
+
+option go_package = "github.com/runkite/runkite/internal/bridge/runnerpb";
+
+// RunnerService is the gRPC service that runners implement.
+// The control plane connects to runners (long-poll style) or runners
+// connect to the control plane -- either way, this is the contract.
+service RunnerService {
+  // GetJob blocks until a job is available for the runner.
+  // Runner calls this in a loop (long-poll pattern).
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+
+  // StreamEvents is called by the runner to stream events back
+  // to the control plane for a specific run.
+  rpc StreamEvents(stream RunEventProto) returns (StreamEventsResponse);
+
+  // ReportStatus reports the final status of a run.
+  rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
+
+  // WatchCancels is a server-streaming RPC the runner calls to receive
+  // cancel signals for runs it is executing. The runner sends its
+  // runner_kind; the server streams CancelSignal messages whenever
+  // a run of that kind is cancelled.
+  rpc WatchCancels(WatchCancelsRequest) returns (stream CancelSignal);
+}
+
+message GetJobRequest {
+  string runner_kind = 1;
+  int32 timeout_seconds = 2; // how long to wait for a job
+}
+
+message GetJobResponse {
+  bool has_job = 1;
+  string assignment_json = 2; // JSON-encoded RunAssignment
+}
+
+message RunEventProto {
+  string run_id = 1;
+  string event_json = 2; // JSON-encoded RunEvent
+}
+
+message StreamEventsResponse {
+  bool ok = 1;
+}
+
+message ReportStatusRequest {
+  string run_id = 1;
+  string status = 2; // "success", "error", "interrupted"
+  string error_message = 3; // only if status == "error"
+}
+
+message ReportStatusResponse {
+  bool ok = 1;
+}
+
+message WatchCancelsRequest {
+  string runner_kind = 1;
+}
+
+message CancelSignal {
+  string run_id = 1;
+}

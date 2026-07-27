@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "slow_langchain_agent": "./chain.py:chain"
+  },
+  "dependencies": ["."],
+  "runner_kind": "python-langchain"
+}

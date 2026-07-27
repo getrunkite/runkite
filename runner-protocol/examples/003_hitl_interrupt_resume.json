@@ -1,0 +1,119 @@
+{
+  "_description": "Agent hits an interrupt (human approval gate). First run stops with interrupted status. Second run resumes with the approval response. Tests the full HITL lifecycle.",
+  "_test_id": "RP-021",
+
+  "run_1_assignment": {
+    "run_id": "a1b2c3d4-0003-4000-8000-000000000003",
+    "thread_id": "t1t2t3t4-0003-4000-8000-000000000003",
+    "runner_kind": "python-langgraph",
+    "graph_id": "approval_agent",
+    "input": { "messages": [{ "role": "user", "content": "Send an email to alice@example.com" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-3234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0003a"
+    }
+  },
+
+  "run_1_expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "Send an email to alice@example.com" },
+          { "role": "ai", "content": "I'll send an email to alice@example.com. Please approve." }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "interrupted" }
+    },
+    {
+      "seq": 4,
+      "method": "input.requested",
+      "namespace": [],
+      "data": {
+        "interrupt_id": "interrupt-001",
+        "value": {
+          "action": "send_email",
+          "to": "alice@example.com",
+          "subject": "Hello",
+          "body": "Hi Alice, ..."
+        },
+        "description": "Approve sending this email?"
+      }
+    },
+    {
+      "seq": 5,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "interrupted" }
+    }
+  ],
+
+  "run_2_assignment": {
+    "run_id": "a1b2c3d4-0003-4000-8000-000000000004",
+    "thread_id": "t1t2t3t4-0003-4000-8000-000000000003",
+    "runner_kind": "python-langgraph",
+    "graph_id": "approval_agent",
+    "input": null,
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "checkpoint_ref": "checkpoint-after-interrupt",
+    "resume_command": {
+      "interrupt_id": "interrupt-001",
+      "response": { "approved": true }
+    },
+    "stream_modes": ["values"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-4234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0003b"
+    }
+  },
+
+  "run_2_expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "Send an email to alice@example.com" },
+          { "role": "ai", "content": "I'll send an email to alice@example.com. Please approve." },
+          { "role": "ai", "content": "Email sent to alice@example.com successfully." }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}

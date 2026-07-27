@@ -1,0 +1,35 @@
+# Go
+runkite
+*.db
+
+# Node (admin-ui, typescript/runkite-runner)
+node_modules/
+
+# internal/adminui/dist is the Admin UI's built output and IS committed
+# (see internal/adminui/adminui.go's doc comment) so `go build` never
+# needs npm -- do not ignore it here.
+
+# Editors / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local env
+.env
+.venv/
+
+# Internal design diaries / dogfooding notes -- not for the public tree.
+# Contains product-migration narrative that must not ship.
+plans/

@@ -1,0 +1,54 @@
+{
+  "_description": "Agent is cancelled mid-execution. Tests that the runner stops and emits the correct terminal event. Events emitted before cancel are preserved.",
+  "_test_id": "RP-024",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0005-4000-8000-000000000006",
+    "thread_id": "t1t2t3t4-0005-4000-8000-000000000006",
+    "runner_kind": "python-langgraph",
+    "graph_id": "slow_agent",
+    "input": { "messages": [{ "role": "user", "content": "do something slow" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-6234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0005"
+    }
+  },
+
+  "cancel_after_seq": 2,
+  "_note_cancel": "Cancel signal is sent after the runner emits seq=2. The runner should stop and emit an end event.",
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "do something slow" },
+          { "role": "ai", "content": "Starting slow operation..." }
+        ]
+      },
+      "_note": "This event is emitted before cancel arrives"
+    },
+    {
+      "seq": 3,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "interrupted" },
+      "_note": "No more events after this. Status is 'interrupted', not 'error'."
+    }
+  ]
+}

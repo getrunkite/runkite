@@ -1,0 +1,14 @@
+.git
+.venv
+python/.venv
+*.db
+runkite
+.cursor/
+.github/
+plans/
+node_modules/
+typescript/*/dist/
+# admin-ui's source/toolchain isn't needed in the Docker build context --
+# its build output is committed straight into internal/adminui/dist/
+# (see internal/adminui/adminui.go), which the Go build already picks up.
+admin-ui/

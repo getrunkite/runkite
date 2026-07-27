@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "echo_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."]
+}

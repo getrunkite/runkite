@@ -1,0 +1,519 @@
+// Package redistransport implements the transport.JobQueue, transport.EventBroker,
+// and transport.CancelBroker interfaces using Redis.
+//
+// JobQueue uses Redis Lists (LPUSH/BRPOP) per runner_kind.
+// EventBroker uses Redis Streams (XADD/XREAD) per run_id — every subscriber
+// tails the stream directly via a blocking XREAD goroutine, so delivery works
+// identically whether publisher and subscriber are in the same process or on
+// different nodes.
+// CancelBroker uses Redis Pub/Sub — SubscribeCancel blocks on the Redis
+// subscription, not a local map.
+package redistransport
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+
+	"github.com/runkite/runkite/internal/transport"
+)
+
+// --------------------------------------------------------------------------
+// JobQueue
+// --------------------------------------------------------------------------
+
+type inflightEntry struct {
+	job        *transport.RunAssignment
+	dequeuedAt time.Time
+}
+
+// Queue implements transport.JobQueue using Redis Lists.
+// In-flight tracking (Ack/Nack/ReclaimStale) is process-local: the control
+// plane node that Dequeue'd a job is responsible for reclaiming it if the
+// runner dies before Ack. This closes the "zombie GetJob steals a job and
+// loses it" window without requiring a Redis Streams consumer-group redesign.
+type Queue struct {
+	rdb      *redis.Client
+	mu       sync.Mutex
+	inflight map[string]*inflightEntry
+}
+
+// NewQueue creates a new Redis-backed job queue.
+func NewQueue(rdb *redis.Client) *Queue {
+	return &Queue{
+		rdb:      rdb,
+		inflight: make(map[string]*inflightEntry),
+	}
+}
+
+func queueKey(runnerKind string) string { return "rk:queue:" + runnerKind }
+
+const canceledSetKey = "rk:canceled"
+
+func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
+	ok, err := q.rdb.SIsMember(ctx, canceledSetKey, job.RunID).Result()
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+
+	data, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	return q.rdb.LPush(ctx, queueKey(job.RunnerKind), data).Err()
+}
+
+func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*transport.RunAssignment, error) {
+	deadline := time.Now().Add(timeout)
+	key := queueKey(runnerKind)
+
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, nil
+		}
+
+		// BRPOP timeout is integer seconds in Redis. Sub-second values get
+		// truncated to 0 which means "block forever." Clamp to 1s minimum
+		// to avoid that; the slight over-block is harmless.
+		blockTime := remaining
+		if blockTime < time.Second {
+			blockTime = time.Second
+		}
+
+		result, err := q.rdb.BRPop(ctx, blockTime, key).Result()
+		if err != nil {
+			if err == redis.Nil {
+				// Timeout — check if our actual deadline has passed
+				if time.Now().After(deadline) {
+					return nil, nil
+				}
+				continue
+			}
+			return nil, err
+		}
+		if len(result) < 2 {
+			return nil, nil
+		}
+
+		var job transport.RunAssignment
+		if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
+			continue
+		}
+
+		canceled, _ := q.rdb.SIsMember(ctx, canceledSetKey, job.RunID).Result()
+		if canceled {
+			continue
+		}
+
+		q.mu.Lock()
+		q.inflight[job.RunID] = &inflightEntry{job: &job, dequeuedAt: time.Now()}
+		q.mu.Unlock()
+		return &job, nil
+	}
+}
+
+func (q *Queue) Ack(ctx context.Context, runID string) error {
+	q.mu.Lock()
+	delete(q.inflight, runID)
+	q.mu.Unlock()
+	return nil
+}
+
+func (q *Queue) Nack(ctx context.Context, runID string) error {
+	q.mu.Lock()
+	entry, ok := q.inflight[runID]
+	if !ok {
+		q.mu.Unlock()
+		return nil
+	}
+	delete(q.inflight, runID)
+	q.mu.Unlock()
+	return q.Enqueue(ctx, entry.job)
+}
+
+func (q *Queue) Cancel(ctx context.Context, runID string) error {
+	q.mu.Lock()
+	delete(q.inflight, runID)
+	q.mu.Unlock()
+	return q.rdb.SAdd(ctx, canceledSetKey, runID).Err()
+}
+
+// ReclaimStale re-enqueues jobs dequeued more than maxAge ago without Ack.
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().Add(-maxAge)
+	q.mu.Lock()
+	var stale []*transport.RunAssignment
+	for runID, entry := range q.inflight {
+		if entry.dequeuedAt.Before(cutoff) {
+			stale = append(stale, entry.job)
+			delete(q.inflight, runID)
+		}
+	}
+	q.mu.Unlock()
+
+	for _, job := range stale {
+		if err := q.Enqueue(ctx, job); err != nil {
+			return 0, err
+		}
+	}
+	return len(stale), nil
+}
+
+func (q *Queue) Len(ctx context.Context) (int64, error) {
+	var total int64
+	iter := q.rdb.Scan(ctx, 0, "rk:queue:*", 100).Iterator()
+	for iter.Next(ctx) {
+		n, err := q.rdb.LLen(ctx, iter.Val()).Result()
+		if err != nil {
+			return 0, err
+		}
+		total += n
+	}
+	return total, iter.Err()
+}
+
+// --------------------------------------------------------------------------
+// EventBroker
+// --------------------------------------------------------------------------
+
+// Broker implements transport.EventBroker using Redis Streams.
+// Every Subscribe call spawns an XREAD-based goroutine that tails the stream
+// directly from Redis — no local fan-out map. This means delivery works
+// identically whether publisher and subscriber are in the same process or on
+// separate nodes.
+type Broker struct {
+	rdb *redis.Client
+
+	mu      sync.Mutex
+	nextID  uint64
+	tailers map[string]map[uint64]context.CancelFunc // run_id -> tailer_id -> cancel
+}
+
+// NewBroker creates a new Redis-backed event broker.
+func NewBroker(rdb *redis.Client) *Broker {
+	return &Broker{
+		rdb:     rdb,
+		tailers: make(map[string]map[uint64]context.CancelFunc),
+	}
+}
+
+func streamKey(runID string) string { return "rk:events:" + runID }
+func closedKey(runID string) string { return "rk:closed:" + runID }
+
+// eventStreamTTL bounds how long a completed run's event stream survives
+// in Redis before expiring, matching closedKey's own existing 24h
+// window. Real gap found via pprof/keyspace inspection under load:
+// XAdd never set any expiry on the stream key, so EVERY run's stream
+// persisted in Redis forever -- confirmed 5,476 accumulated rk:events:*
+// keys (one per historical run, going back to container start) on a
+// long-lived test Redis instance. That bloated keyspace is what made
+// Queue.Len's SCAN-based lookup (see below) slow, which is what
+// actually caused bench/REPORT.md's "Redis gets slower under
+// concurrency" finding -- not connection-pool contention, and not the
+// separate (also real, already fixed) cancel-subscription leak.
+const eventStreamTTL = 24 * time.Hour
+
+// hungRunStreamTTL is a safety-net expiry refreshed on every non-terminal
+// event, not just the terminal one. Without this, a run that never
+// reaches a terminal event or Close at all -- a genuine hang or a
+// runner crash mid-execution, not a normal completion -- would leave
+// its stream with no TTL forever, since eventStreamTTL above is only
+// ever applied once a run actually finishes. Long enough not to
+// interfere with any legitimately long-running agent execution, short
+// enough that an abandoned run's stream doesn't accumulate permanently
+// either. Superseded by the tighter eventStreamTTL the moment a run
+// does reach a terminal event, since Expire always resets the
+// countdown to exactly the given duration from now, not "extend if
+// longer."
+const hungRunStreamTTL = 7 * 24 * time.Hour
+
+// Publish appends an event to the run's Redis Stream. If the event is terminal,
+// sets a closed marker so late subscribers get an immediately-closed channel,
+// and expires the stream itself so it doesn't accumulate forever.
+// No local fan-out — subscribers read from the stream via XREAD.
+func (b *Broker) Publish(ctx context.Context, runID string, event *transport.RunEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	err = b.rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: streamKey(runID),
+		Values: map[string]interface{}{
+			"data": string(data),
+			"seq":  event.Seq,
+		},
+	}).Err()
+	if err != nil {
+		return err
+	}
+
+	if event.IsTerminal() {
+		b.rdb.Set(ctx, closedKey(runID), "1", eventStreamTTL)
+		b.rdb.Expire(ctx, streamKey(runID), eventStreamTTL)
+	} else {
+		b.rdb.Expire(ctx, streamKey(runID), hungRunStreamTTL)
+	}
+
+	return nil
+}
+
+// Subscribe returns a channel that receives events for the given runID by
+// tailing the Redis Stream via blocking XREAD. The goroutine reads directly
+// from Redis, so it works across processes/nodes.
+func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
+	ch := make(chan *transport.RunEvent, 4096)
+
+	// If stream is already closed, return a closed channel immediately
+	closed, _ := b.rdb.Exists(ctx, closedKey(runID)).Result()
+	if closed > 0 {
+		close(ch)
+		return ch, nil
+	}
+
+	// Capture the current stream tail synchronously. Using Redis's "$"
+	// marker would resolve when XREAD actually blocks on the server, not
+	// when Subscribe returns — any Publish landing in that gap is silently
+	// lost forever. Reading the tail here closes that race.
+	lastID := "0-0"
+	msgs, err := b.rdb.XRevRangeN(ctx, streamKey(runID), "+", "-", 1).Result()
+	if err == nil && len(msgs) > 0 {
+		lastID = msgs[0].ID
+	}
+
+	subCtx, cancel := context.WithCancel(ctx)
+
+	b.mu.Lock()
+	b.nextID++
+	tailerID := b.nextID
+	if b.tailers[runID] == nil {
+		b.tailers[runID] = make(map[uint64]context.CancelFunc)
+	}
+	b.tailers[runID][tailerID] = cancel
+	b.mu.Unlock()
+
+	go b.tailStream(subCtx, runID, tailerID, lastID, ch)
+
+	return ch, nil
+}
+
+// tailStream reads from the Redis Stream via blocking XREAD, forwarding events
+// to ch. Exits on terminal event, context cancellation, or stream closure.
+func (b *Broker) tailStream(ctx context.Context, runID string, tailerID uint64, lastID string, ch chan *transport.RunEvent) {
+	defer close(ch)
+	defer b.removeTailer(runID, tailerID)
+
+	key := streamKey(runID)
+	for {
+		results, err := b.rdb.XRead(ctx, &redis.XReadArgs{
+			Streams: []string{key, lastID},
+			Count:   100,
+			Block:   time.Second, // short block so we can check context/closed
+		}).Result()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if err == redis.Nil {
+				// Timeout with no new entries — check if stream was closed
+				cl, _ := b.rdb.Exists(ctx, closedKey(runID)).Result()
+				if cl > 0 {
+					return
+				}
+				continue
+			}
+			// Transient Redis error — back off briefly and retry
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+
+		for _, stream := range results {
+			for _, msg := range stream.Messages {
+				lastID = msg.ID
+
+				dataStr, ok := msg.Values["data"].(string)
+				if !ok {
+					continue
+				}
+				var event transport.RunEvent
+				if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+					continue
+				}
+
+				select {
+				case ch <- &event:
+				case <-ctx.Done():
+					return
+				}
+
+				if event.IsTerminal() {
+					return
+				}
+			}
+		}
+	}
+}
+
+// Replay returns stored events after the given sequence number.
+func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*transport.RunEvent, error) {
+	msgs, err := b.rdb.XRange(ctx, streamKey(runID), "-", "+").Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var events []*transport.RunEvent
+	for _, msg := range msgs {
+		dataStr, ok := msg.Values["data"].(string)
+		if !ok {
+			continue
+		}
+		var event transport.RunEvent
+		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+			continue
+		}
+		if event.Seq > sinceSeq {
+			events = append(events, &event)
+		}
+	}
+	return events, nil
+}
+
+// removeTailer cleans up a specific tailing goroutine from the tailers map
+// when it exits naturally (terminal event, closed marker, or context cancel).
+func (b *Broker) removeTailer(runID string, tailerID uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if m, ok := b.tailers[runID]; ok {
+		delete(m, tailerID)
+		if len(m) == 0 {
+			delete(b.tailers, runID)
+		}
+	}
+}
+
+// Close marks a run's stream as finished. Cancels all tailing goroutines
+// for this run (they close their channels on exit).
+func (b *Broker) Close(runID string) error {
+	b.rdb.Set(context.Background(), closedKey(runID), "1", eventStreamTTL)
+	b.rdb.Expire(context.Background(), streamKey(runID), eventStreamTTL)
+
+	b.mu.Lock()
+	m := b.tailers[runID]
+	delete(b.tailers, runID)
+	b.mu.Unlock()
+
+	for _, cancel := range m {
+		cancel()
+	}
+	return nil
+}
+
+// --------------------------------------------------------------------------
+// CancelBroker
+// --------------------------------------------------------------------------
+
+// CancelBus implements transport.CancelBroker using Redis Pub/Sub.
+// SubscribeCancel creates a real Redis subscription — delivery works across
+// nodes, not just in-process.
+type CancelBus struct {
+	rdb *redis.Client
+}
+
+// NewCancelBus creates a new Redis-backed cancel broker.
+func NewCancelBus(rdb *redis.Client) *CancelBus {
+	return &CancelBus{rdb: rdb}
+}
+
+func cancelChannel(runID string) string { return "rk:cancel:" + runID }
+
+func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
+	return c.rdb.Publish(ctx, cancelChannel(runID), "cancel").Err()
+}
+
+// SubscribeCancel creates a Redis Pub/Sub subscription synchronously (the
+// subscription is confirmed before returning) then spawns a goroutine to
+// wait for the cancel message.
+//
+// ctx cancellation MUST release this subscription (see CancelBroker's
+// doc comment) -- this used to be silently violated in practice because
+// every caller passed context.Background(), which never cancels, so
+// this goroutine (and the Redis connection pubsub.Channel() holds) only
+// ever exited via a real cancel message. For a run that completes
+// normally (never cancelled -- the common case), that meant the
+// subscription leaked for the rest of the process's life. Confirmed via
+// pprof under concurrent load: 3646 leaked subscriptions (each with 2
+// background goroutines: the message reader and go-redis's own
+// per-channel health-check ticker) after roughly 1800 completed runs
+// against a single long-lived control plane -- the actual root cause of
+// bench/REPORT.md's "Redis transport latency/memory blows up under
+// concurrency" finding, not connection-pool contention as originally
+// hypothesized there.
+func (c *CancelBus) SubscribeCancel(ctx context.Context, runID string) (<-chan struct{}, error) {
+	ch := make(chan struct{}, 1)
+
+	pubsub := c.rdb.Subscribe(ctx, cancelChannel(runID))
+
+	// Block until subscription is confirmed by Redis — ensures no race
+	// between SubscribeCancel returning and a concurrent PublishCancel.
+	if _, err := pubsub.Receive(ctx); err != nil {
+		pubsub.Close()
+		return nil, err
+	}
+
+	go func() {
+		defer pubsub.Close()
+		msgCh := pubsub.Channel()
+		select {
+		case <-msgCh:
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+			close(ch)
+		case <-ctx.Done():
+			// ctx cancelled without a real cancel message (the run
+			// completed normally) -- exit and release the Redis
+			// subscription (deferred pubsub.Close() above) WITHOUT
+			// closing ch. A caller selecting on both ch and this same
+			// ctx must be able to tell "real cancel" (value sent, then
+			// closed) apart from "I stopped waiting" -- closing ch here
+			// too would make a closed-channel read indistinguishable
+			// from a genuine cancel signal to that caller.
+		}
+	}()
+
+	return ch, nil
+}
+
+// FlushAll clears all Redis keys used by this transport. For testing only.
+func FlushAll(ctx context.Context, rdb *redis.Client) error {
+	var cursor uint64
+	for {
+		keys, next, err := rdb.Scan(ctx, cursor, "rk:*", 1000).Result()
+		if err != nil {
+			return err
+		}
+		if len(keys) > 0 {
+			rdb.Del(ctx, keys...)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+// Compile-time interface checks.
+var (
+	_ transport.JobQueue     = (*Queue)(nil)
+	_ transport.EventBroker  = (*Broker)(nil)
+	_ transport.CancelBroker = (*CancelBus)(nil)
+)

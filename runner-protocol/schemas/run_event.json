@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runner-protocol.dev/schemas/run_event.json",
+  "title": "RunEvent",
+  "description": "An event published by a runner back to the control plane during agent execution.",
+  "type": "object",
+  "required": ["event_id", "seq", "method", "namespace", "data", "ts"],
+  "additionalProperties": true,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier for this event within the run. Recommended format: {run_id}_evt_{seq}."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing sequence number within the run. Starts at 1."
+    },
+    "method": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The event type. Known values: values, updates, messages, lifecycle, input.requested, custom, custom:{name}, end, error. Unknown values MUST be forwarded without interpretation."
+    },
+    "namespace": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Hierarchical path in the agent tree. Empty array [] for root-level events."
+    },
+    "data": {
+      "description": "The event payload. Shape depends on the method."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Timestamp in milliseconds since Unix epoch."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "method": { "const": "end" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["success", "error", "interrupted"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "error" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "Human-readable error message."
+              },
+              "type": {
+                "type": "string",
+                "description": "Error type/class name."
+              },
+              "stacktrace": {
+                "type": "string",
+                "description": "Optional stack trace for debugging."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "lifecycle" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["event"],
+            "properties": {
+              "event": {
+                "type": "string",
+                "enum": ["running", "completed", "failed", "started", "interrupted"],
+                "description": "Lifecycle event type."
+              },
+              "graph_name": {
+                "type": "string",
+                "description": "Name of the graph (for subgraph lifecycle events)."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "input.requested" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["interrupt_id"],
+            "properties": {
+              "interrupt_id": {
+                "type": "string",
+                "description": "Unique identifier for this interrupt."
+              },
+              "value": {
+                "description": "The interrupt payload from the agent."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of what input is needed."
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

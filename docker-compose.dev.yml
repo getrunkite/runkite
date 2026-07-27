@@ -1,0 +1,41 @@
+# Zero-dependency development stack (master plan local DX).
+# Control plane + Python runner only — no Postgres/Redis.
+# Uses embedded SQLite + in-memory transport.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   docker compose -f docker-compose.dev.yml down -v
+services:
+  runkite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2026:2026"
+      - "50051:50051"
+    environment:
+      HTTP_PORT: "2026"
+      GRPC_PORT: "50051"
+      LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      DATABASE_PATH: /tmp/runkite.db
+    volumes:
+      - ./examples:/app/examples:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    environment:
+      RUNKITE_GRPC_URL: runkite:50051
+      RUNKITE_HTTP_URL: http://runkite:2026
+    volumes:
+      - ./python:/app/python:ro
+      - ./examples:/app/examples:ro
+    depends_on:
+      runkite:
+        condition: service_healthy

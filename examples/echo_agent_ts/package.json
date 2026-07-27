@@ -1,0 +1,9 @@
+{
+  "name": "echo-agent-ts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@langchain/langgraph": "^1.4.8",
+    "zod": "^4.4.3"
+  }
+}

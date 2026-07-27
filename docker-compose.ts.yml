@@ -1,0 +1,38 @@
+# Standalone TypeScript runner demo (master plan: Runner Protocol is
+# language-agnostic -- this proves the TS runner works in Docker, not
+# just via `npx tsx` locally). Fully self-contained: SQLite + in-memory
+# transport (both zero-config defaults, see cmd/serve.go's initStore/
+# initTransport), so this needs no postgres/redis. Separate from
+# docker-compose.yml (the Python-focused stack) and on different ports
+# (2027/50052) so both can run side by side without colliding.
+#
+# Usage:
+#   docker compose -f docker-compose.ts.yml up --build
+services:
+  runkite-ts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2027:2027"
+      - "50052:50052"
+    environment:
+      HTTP_PORT: "2027"
+      GRPC_PORT: "50052"
+      LANGGRAPH_CONFIG: /app/examples/echo_agent_ts/langgraph.json
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2027/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  runner-ts:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner-ts
+    environment:
+      RUNKITE_GRPC_URL: runkite-ts:50052
+      RUNKITE_HTTP_URL: http://runkite-ts:2027
+    depends_on:
+      runkite-ts:
+        condition: service_healthy

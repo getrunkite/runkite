@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "approval_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."]
+}

@@ -1,0 +1,10 @@
+{
+  "graphs": {
+    "vector_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."],
+  "vector_store": {
+    "type": "pgvector",
+    "dimensions": 16
+  }
+}

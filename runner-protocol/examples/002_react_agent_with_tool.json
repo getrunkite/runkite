@@ -1,0 +1,120 @@
+{
+  "_description": "ReAct agent that calls a search tool once and returns a response. Tests values + updates interleaving and tool-call event shape.",
+  "_test_id": "RP-020",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0002-4000-8000-000000000002",
+    "thread_id": "t1t2t3t4-0002-4000-8000-000000000002",
+    "runner_kind": "python-langgraph",
+    "graph_id": "react_agent",
+    "input": { "messages": [{ "role": "user", "content": "What is the weather in London?" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values", "updates"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-2234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0002"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "agent": {
+          "messages": [
+            {
+              "role": "ai",
+              "content": "",
+              "tool_calls": [{ "name": "search", "args": { "query": "weather London" }, "id": "call_001" }]
+            }
+          ]
+        }
+      },
+      "_note": "Agent decides to call the search tool"
+    },
+    {
+      "seq": 3,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "What is the weather in London?" },
+          { "role": "ai", "content": "", "tool_calls": [{ "name": "search", "args": { "query": "weather London" }, "id": "call_001" }] }
+        ]
+      },
+      "_note": "Full state after agent node"
+    },
+    {
+      "seq": 4,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "tools": {
+          "messages": [
+            { "role": "tool", "content": "London: 15°C, partly cloudy", "tool_call_id": "call_001" }
+          ]
+        }
+      },
+      "_note": "Tool execution result"
+    },
+    {
+      "seq": 5,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "What is the weather in London?" },
+          { "role": "ai", "content": "", "tool_calls": [{ "name": "search", "args": { "query": "weather London" }, "id": "call_001" }] },
+          { "role": "tool", "content": "London: 15°C, partly cloudy", "tool_call_id": "call_001" }
+        ]
+      },
+      "_note": "Full state after tool node"
+    },
+    {
+      "seq": 6,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "agent": {
+          "messages": [
+            { "role": "ai", "content": "The weather in London is 15°C and partly cloudy." }
+          ]
+        }
+      },
+      "_note": "Agent final response"
+    },
+    {
+      "seq": 7,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "What is the weather in London?" },
+          { "role": "ai", "content": "", "tool_calls": [{ "name": "search", "args": { "query": "weather London" }, "id": "call_001" }] },
+          { "role": "tool", "content": "London: 15°C, partly cloudy", "tool_call_id": "call_001" },
+          { "role": "ai", "content": "The weather in London is 15°C and partly cloudy." }
+        ]
+      },
+      "_note": "Full final state"
+    },
+    {
+      "seq": 8,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+{
+  "_description": "Agent calls multiple tools in parallel (two tool calls in one agent step). Tests that parallel tool results are emitted correctly and state accumulates.",
+  "_test_id": "RP-022",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0010-4000-8000-000000000011",
+    "thread_id": "t1t2t3t4-0010-4000-8000-000000000011",
+    "runner_kind": "python-langgraph",
+    "graph_id": "multi_tool_agent",
+    "input": { "messages": [{ "role": "user", "content": "Compare weather in London and Paris" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values", "updates"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-b234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0010"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "agent": {
+          "messages": [
+            {
+              "role": "ai",
+              "content": "",
+              "tool_calls": [
+                { "name": "weather", "args": { "city": "London" }, "id": "call_L" },
+                { "name": "weather", "args": { "city": "Paris" }, "id": "call_P" }
+              ]
+            }
+          ]
+        }
+      },
+      "_note": "Agent issues two parallel tool calls"
+    },
+    {
+      "seq": 3,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "Compare weather in London and Paris" },
+          { "role": "ai", "content": "", "tool_calls": [
+            { "name": "weather", "args": { "city": "London" }, "id": "call_L" },
+            { "name": "weather", "args": { "city": "Paris" }, "id": "call_P" }
+          ]}
+        ]
+      }
+    },
+    {
+      "seq": 4,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "tools": {
+          "messages": [
+            { "role": "tool", "content": "London: 15°C, cloudy", "tool_call_id": "call_L" },
+            { "role": "tool", "content": "Paris: 22°C, sunny", "tool_call_id": "call_P" }
+          ]
+        }
+      },
+      "_note": "Both tool results arrive together (parallel execution)"
+    },
+    {
+      "seq": 5,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "Compare weather in London and Paris" },
+          { "role": "ai", "content": "", "tool_calls": [
+            { "name": "weather", "args": { "city": "London" }, "id": "call_L" },
+            { "name": "weather", "args": { "city": "Paris" }, "id": "call_P" }
+          ]},
+          { "role": "tool", "content": "London: 15°C, cloudy", "tool_call_id": "call_L" },
+          { "role": "tool", "content": "Paris: 22°C, sunny", "tool_call_id": "call_P" }
+        ]
+      }
+    },
+    {
+      "seq": 6,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "agent": {
+          "messages": [
+            { "role": "ai", "content": "London is 15°C and cloudy. Paris is 22°C and sunny. Paris is warmer today." }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "Compare weather in London and Paris" },
+          { "role": "ai", "content": "", "tool_calls": [
+            { "name": "weather", "args": { "city": "London" }, "id": "call_L" },
+            { "name": "weather", "args": { "city": "Paris" }, "id": "call_P" }
+          ]},
+          { "role": "tool", "content": "London: 15°C, cloudy", "tool_call_id": "call_L" },
+          { "role": "tool", "content": "Paris: 22°C, sunny", "tool_call_id": "call_P" },
+          { "role": "ai", "content": "London is 15°C and cloudy. Paris is 22°C and sunny. Paris is warmer today." }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}

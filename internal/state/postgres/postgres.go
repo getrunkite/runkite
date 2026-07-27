@@ -1,0 +1,1395 @@
+// Package postgres implements the state.Store interface using PostgreSQL
+// via pgx. This is the production backend for multi-node deployments.
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/runkite/runkite/internal/models"
+	"github.com/runkite/runkite/internal/state"
+	"github.com/runkite/runkite/internal/tenant"
+)
+
+// Store implements state.Store with a PostgreSQL database.
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+// New creates a new Postgres store from a connection string (DSN).
+func New(ctx context.Context, dsn string) (*Store, error) {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool.New: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping: %w", err)
+	}
+	return &Store{pool: pool}, nil
+}
+
+// Init creates all tables.
+func (s *Store) Init(ctx context.Context) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS agents (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		agent_id     TEXT NOT NULL,
+		name         TEXT NOT NULL,
+		description  TEXT DEFAULT '',
+		metadata     JSONB DEFAULT '{}',
+		capabilities JSONB DEFAULT '{}',
+		version      INTEGER NOT NULL DEFAULT 1,
+		created_at   TIMESTAMPTZ DEFAULT NOW(),
+		updated_at   TIMESTAMPTZ DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, agent_id)
+	);
+	-- Postgres supports IF NOT EXISTS on ADD COLUMN (unlike SQLite's parser
+	-- here -- see addColumnIfMissing in the sqlite package), so existing
+	-- installs upgrading from a pre-version/pre-tenant schema get columns
+	-- added in place with a single idempotent statement each. Pre-existing
+	-- rows all become "default" tenant -- exactly today's single-tenant
+	-- behavior, nothing reassigned or hidden. As in SQLite, a table
+	-- created before this migration keeps its ORIGINAL primary key even
+	-- after the column is added (ALTER TABLE can't retroactively widen a
+	-- primary key here either) -- every query still filters by tenant_id
+	-- regardless, so isolation holds; only the extra DB-level composite
+	-- uniqueness constraint is unavailable on upgraded databases.
+	ALTER TABLE agents ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+	-- Every ALTER TABLE ... ADD COLUMN IF NOT EXISTS tenant_id below is
+	-- placed immediately after its own table's CREATE, and BEFORE any
+	-- later statement that depends on that column existing (an index on
+	-- tenant_id, or another table's FOREIGN KEY into this one) -- on a
+	-- pre-existing (pre-tenant) database, "agents" already exists so its
+	-- CREATE is a no-op and tenant_id genuinely doesn't exist until this
+	-- ALTER runs. Getting this ordering wrong is exactly the two bugs
+	-- confirmed live while building this migration: agent_schemas'
+	-- CREATE TABLE has a FOREIGN KEY into agents(tenant_id, agent_id),
+	-- and threads/runs each have a CREATE INDEX on their own tenant_id
+	-- column right after their CREATE TABLE -- both fail with "column
+	-- tenant_id does not exist" if the ALTER for that table hasn't run
+	-- yet. Batching all the ALTERs at the end of the script (the first
+	-- attempt here) is the wrong pattern for exactly this reason.
+	ALTER TABLE agents ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	-- ON CONFLICT(tenant_id, agent_id) in UpsertAgent needs an ACTUAL
+	-- unique constraint on exactly those two columns to target -- a
+	-- pre-existing table's original PRIMARY KEY (agent_id alone, from
+	-- before this migration) doesn't satisfy that, and ALTER TABLE can't
+	-- widen a primary key in place. A fresh table already has this
+	-- covered by its composite PRIMARY KEY above; CREATE UNIQUE INDEX IF
+	-- NOT EXISTS with an explicit name makes this idempotent and correct
+	-- for both cases uniformly, at the cost of one small redundant index
+	-- on a fresh install (harmless). Confirmed live: without this, a
+	-- pre-existing database fails every UpsertAgent with "no unique or
+	-- exclusion constraint matching the ON CONFLICT specification".
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_agents_tenant_agent ON agents(tenant_id, agent_id);
+
+	CREATE TABLE IF NOT EXISTS agent_schemas (
+		tenant_id     TEXT NOT NULL DEFAULT 'default',
+		agent_id      TEXT NOT NULL,
+		input_schema  JSONB DEFAULT '{}',
+		output_schema JSONB DEFAULT '{}',
+		state_schema  JSONB DEFAULT '{}',
+		config_schema JSONB DEFAULT '{}',
+		PRIMARY KEY (tenant_id, agent_id),
+		FOREIGN KEY (tenant_id, agent_id) REFERENCES agents(tenant_id, agent_id) ON DELETE CASCADE
+	);
+	ALTER TABLE agent_schemas ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_schemas_tenant_agent ON agent_schemas(tenant_id, agent_id);
+
+	CREATE TABLE IF NOT EXISTS threads (
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
+		thread_id  TEXT PRIMARY KEY,
+		status     TEXT DEFAULT 'idle',
+		metadata   JSONB DEFAULT '{}',
+		values_json JSONB DEFAULT '{}',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	ALTER TABLE threads ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE INDEX IF NOT EXISTS idx_threads_tenant ON threads(tenant_id);
+
+	CREATE TABLE IF NOT EXISTS runs (
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
+		run_id     TEXT PRIMARY KEY,
+		thread_id  TEXT REFERENCES threads(thread_id) ON DELETE CASCADE,
+		agent_id   TEXT,
+		status     TEXT DEFAULT 'pending',
+		metadata   JSONB DEFAULT '{}',
+		input      JSONB,
+		config     JSONB,
+		output     JSONB,
+		error_msg  TEXT DEFAULT '',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE INDEX IF NOT EXISTS idx_runs_thread ON runs(thread_id);
+	CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+	CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id);
+
+	CREATE TABLE IF NOT EXISTS thread_checkpoints (
+		tenant_id       TEXT NOT NULL DEFAULT 'default',
+		checkpoint_id   TEXT PRIMARY KEY,
+		thread_id       TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+		checkpoint_ns   TEXT DEFAULT '',
+		parent_id       TEXT,
+		values_json     JSONB DEFAULT '{}',
+		metadata        JSONB DEFAULT '{}',
+		next_nodes      JSONB DEFAULT '[]',
+		tasks           JSONB DEFAULT '[]',
+		interrupts      JSONB DEFAULT '[]',
+		created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	ALTER TABLE thread_checkpoints ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE INDEX IF NOT EXISTS idx_checkpoints_thread ON thread_checkpoints(thread_id, created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS store_items (
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
+		namespace  TEXT NOT NULL,
+		key        TEXT NOT NULL,
+		value      JSONB NOT NULL DEFAULT '{}',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, namespace, key)
+	);
+	ALTER TABLE store_items ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_store_items_tenant_ns_key ON store_items(tenant_id, namespace, key);
+	ALTER TABLE store_items ADD COLUMN IF NOT EXISTS ttl_minutes DOUBLE PRECISION;
+	ALTER TABLE store_items ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+	CREATE TABLE IF NOT EXISTS webhook_dead_letters (
+		id         TEXT PRIMARY KEY,
+		url        TEXT NOT NULL,
+		event_type TEXT NOT NULL,
+		run_id     TEXT NOT NULL,
+		payload    JSONB NOT NULL DEFAULT '{}',
+		error      TEXT DEFAULT '',
+		attempts   INTEGER NOT NULL DEFAULT 0,
+		failed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_dead_letters_failed_at ON webhook_dead_letters(failed_at DESC);
+
+	-- Composite PK so two tenants can cache the same logical input under
+	-- the same raw cache_key without colliding. computeCacheKey also
+	-- embeds tenant_id (defense in depth if a WHERE clause is missed).
+	CREATE TABLE IF NOT EXISTS run_cache (
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
+		cache_key  TEXT NOT NULL,
+		agent_id   TEXT NOT NULL,
+		output     JSONB NOT NULL DEFAULT '{}',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		expires_at TIMESTAMPTZ NOT NULL,
+		PRIMARY KEY (tenant_id, cache_key)
+	);
+	ALTER TABLE run_cache ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE INDEX IF NOT EXISTS idx_run_cache_expires ON run_cache(expires_at);
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_run_cache_tenant_key ON run_cache(tenant_id, cache_key);
+
+	CREATE TABLE IF NOT EXISTS cron_schedules (
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
+		name       TEXT NOT NULL,
+		agent_id   TEXT NOT NULL,
+		expression TEXT NOT NULL,
+		timezone   TEXT NOT NULL DEFAULT 'UTC',
+		input      JSONB NOT NULL DEFAULT '{}',
+		config     JSONB NOT NULL DEFAULT '{}',
+		enabled    BOOLEAN NOT NULL DEFAULT true,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, name)
+	);
+	ALTER TABLE cron_schedules ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_cron_schedules_tenant_name ON cron_schedules(tenant_id, name);
+
+	-- Postgres is the deployment where "multi-instance-safe claiming"
+	-- actually matters (multiple control-plane replicas, same DB) -- this
+	-- table plus TryClaimCronFire's INSERT ... ON CONFLICT DO NOTHING is
+	-- the "Postgres claim window" the master plan calls out by name.
+	CREATE TABLE IF NOT EXISTS cron_claims (
+		tenant_id     TEXT NOT NULL DEFAULT 'default',
+		schedule_name TEXT NOT NULL,
+		fire_time     TIMESTAMPTZ NOT NULL,
+		claimed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, schedule_name, fire_time)
+	);
+	ALTER TABLE cron_claims ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+	CREATE UNIQUE INDEX IF NOT EXISTS ux_cron_claims_tenant_sched_fire ON cron_claims(tenant_id, schedule_name, fire_time);
+	`
+	if _, err := s.pool.Exec(ctx, schema); err != nil {
+		return err
+	}
+	// Pre-multi-tenancy (and early multi-tenancy) run_cache used
+	// PRIMARY KEY (cache_key) alone. That makes ON CONFLICT(tenant_id,
+	// cache_key) unable to insert the same raw key for two tenants --
+	// widen the PK in place when the old shape is still present.
+	// Fresh installs already have the composite PK from CREATE TABLE.
+	_, err := s.pool.Exec(ctx, `
+		DO $$ BEGIN
+			IF EXISTS (
+				SELECT 1
+				FROM pg_constraint c
+				JOIN pg_class t ON c.conrelid = t.oid
+				WHERE t.relname = 'run_cache'
+				  AND c.contype = 'p'
+				  AND pg_get_constraintdef(c.oid) = 'PRIMARY KEY (cache_key)'
+			) THEN
+				ALTER TABLE run_cache DROP CONSTRAINT run_cache_pkey;
+				ALTER TABLE run_cache ADD PRIMARY KEY (tenant_id, cache_key);
+			END IF;
+		END $$;
+	`)
+	return err
+}
+
+// Close closes the connection pool.
+func (s *Store) Close() error {
+	s.pool.Close()
+	return nil
+}
+
+// TruncateAll removes all rows from all tables. For testing only.
+func (s *Store) TruncateAll(ctx context.Context) error {
+	// webhook_dead_letters and run_cache have no FK to any of the other
+	// tables (run_id/agent_id are plain TEXT references, not foreign
+	// keys), so TRUNCATE ... CASCADE from the other tables would never
+	// reach them -- they must be listed explicitly or a fresh conformance
+	// subtest sees leftover rows from an earlier subtest (confirmed:
+	// list_empty_when_none_saved failed with leftover rows from prior
+	// subtests before this fix was first applied for webhook_dead_letters).
+	_, err := s.pool.Exec(ctx, `
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
+	`)
+	return err
+}
+
+// --------------------------------------------------------------------------
+// Agents
+// --------------------------------------------------------------------------
+
+func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
+	meta, _ := json.Marshal(agent.Metadata)
+	caps, _ := json.Marshal(agent.Capabilities)
+	now := time.Now().UTC()
+
+	// version bumps only if the definition actually changed. JSONB equality
+	// compares the parsed value (not the source string), so this is
+	// robust to whitespace/key-order differences unlike a naive text
+	// comparison -- see the SQLite equivalent for the TEXT-column version.
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO agents (tenant_id, agent_id, name, description, metadata, capabilities, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
+		ON CONFLICT(tenant_id, agent_id) DO UPDATE SET
+			name=EXCLUDED.name, description=EXCLUDED.description,
+			metadata=EXCLUDED.metadata, capabilities=EXCLUDED.capabilities,
+			updated_at=EXCLUDED.updated_at,
+			version = CASE WHEN agents.name IS DISTINCT FROM EXCLUDED.name
+			                 OR agents.description IS DISTINCT FROM EXCLUDED.description
+			                 OR agents.metadata IS DISTINCT FROM EXCLUDED.metadata
+			                 OR agents.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+			               THEN agents.version + 1
+			               ELSE agents.version END
+	`, tenant.FromContext(ctx), agent.AgentID, agent.Name, agent.Description, meta, caps, now)
+	return err
+}
+
+func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {
+	query := `SELECT tenant_id, agent_id, name, description, metadata, capabilities, version FROM agents WHERE agent_id = $1`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var a models.Agent
+	var metaBytes, capsBytes []byte
+	if err := row.Scan(&a.TenantID, &a.AgentID, &a.Name, &a.Description, &metaBytes, &capsBytes, &a.Version); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent", ID: agentID}
+		}
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &a.Metadata)
+	json.Unmarshal(capsBytes, &a.Capabilities)
+	return &a, nil
+}
+
+func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest) ([]*models.Agent, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := `SELECT tenant_id, agent_id, name, description, metadata, capabilities, version FROM agents`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if req.Name != "" {
+		where = append(where, fmt.Sprintf("name ILIKE $%d", argN))
+		args = append(args, "%"+req.Name+"%")
+		argN++
+	}
+	for k, v := range req.Metadata {
+		where = append(where, fmt.Sprintf("metadata->>$%d = $%d", argN, argN+1))
+		args = append(args, k)
+		if sv, ok := v.(string); ok {
+			args = append(args, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, string(valJSON))
+		}
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY name LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	agents := []*models.Agent{}
+	for rows.Next() {
+		var a models.Agent
+		var metaBytes, capsBytes []byte
+		if err := rows.Scan(&a.TenantID, &a.AgentID, &a.Name, &a.Description, &metaBytes, &capsBytes, &a.Version); err != nil {
+			return nil, err
+		}
+		json.Unmarshal(metaBytes, &a.Metadata)
+		json.Unmarshal(capsBytes, &a.Capabilities)
+		agents = append(agents, &a)
+	}
+	return agents, nil
+}
+
+func (s *Store) UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error {
+	input, _ := json.Marshal(schema.InputSchema)
+	output, _ := json.Marshal(schema.OutputSchema)
+	st, _ := json.Marshal(schema.StateSchema)
+	cfg, _ := json.Marshal(schema.ConfigSchema)
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO agent_schemas (tenant_id, agent_id, input_schema, output_schema, state_schema, config_schema)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(tenant_id, agent_id) DO UPDATE SET
+			input_schema=EXCLUDED.input_schema, output_schema=EXCLUDED.output_schema,
+			state_schema=EXCLUDED.state_schema, config_schema=EXCLUDED.config_schema
+	`, tenant.FromContext(ctx), schema.AgentID, input, output, st, cfg)
+	return err
+}
+
+func (s *Store) GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error) {
+	query := `SELECT agent_id, input_schema, output_schema, state_schema, config_schema FROM agent_schemas WHERE agent_id = $1`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var as models.AgentSchema
+	var inBytes, outBytes, stBytes, cfgBytes []byte
+	if err := row.Scan(&as.AgentID, &inBytes, &outBytes, &stBytes, &cfgBytes); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent_schema", ID: agentID}
+		}
+		return nil, err
+	}
+	json.Unmarshal(inBytes, &as.InputSchema)
+	json.Unmarshal(outBytes, &as.OutputSchema)
+	json.Unmarshal(stBytes, &as.StateSchema)
+	json.Unmarshal(cfgBytes, &as.ConfigSchema)
+	return &as, nil
+}
+
+// --------------------------------------------------------------------------
+// Threads
+// --------------------------------------------------------------------------
+
+func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
+	meta, _ := json.Marshal(thread.Metadata)
+	vals, _ := json.Marshal(thread.Values)
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO threads (tenant_id, thread_id, status, metadata, values_json, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, tenant.FromContext(ctx), thread.ThreadID, thread.Status, meta, vals, thread.CreatedAt, thread.UpdatedAt)
+
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return &state.ErrConflict{Resource: "thread", ID: thread.ThreadID}
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads WHERE thread_id = $1`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var t models.Thread
+	var metaBytes, valsBytes []byte
+	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
+		}
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &t.Metadata)
+	json.Unmarshal(valsBytes, &t.Values)
+	return &t, nil
+}
+
+func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models.ThreadPatch) (*models.Thread, error) {
+	existing, err := s.GetThread(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+
+	if patch.Metadata != nil {
+		for k, v := range patch.Metadata {
+			if existing.Metadata == nil {
+				existing.Metadata = make(map[string]interface{})
+			}
+			existing.Metadata[k] = v
+		}
+	}
+	if patch.Values != nil {
+		for k, v := range patch.Values {
+			if existing.Values == nil {
+				existing.Values = make(map[string]interface{})
+			}
+			existing.Values[k] = v
+		}
+	}
+
+	existing.UpdatedAt = time.Now().UTC()
+	meta, _ := json.Marshal(existing.Metadata)
+	vals, _ := json.Marshal(existing.Values)
+
+	query := `UPDATE threads SET metadata = $1, values_json = $2, updated_at = $3 WHERE thread_id = $4`
+	args := []interface{}{meta, vals, existing.UpdatedAt, threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $5`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err = s.pool.Exec(ctx, query, args...)
+
+	return existing, err
+}
+
+func (s *Store) DeleteThread(ctx context.Context, threadID string) error {
+	query := `DELETE FROM threads WHERE thread_id = $1`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrNotFound{Resource: "thread", ID: threadID}
+	}
+	return nil
+}
+
+func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchRequest) ([]*models.Thread, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if req.Status != nil {
+		where = append(where, fmt.Sprintf("status = $%d", argN))
+		args = append(args, string(*req.Status))
+		argN++
+	}
+	for k, v := range req.Metadata {
+		where = append(where, fmt.Sprintf("metadata->>$%d = $%d", argN, argN+1))
+		args = append(args, k)
+		if sv, ok := v.(string); ok {
+			args = append(args, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, string(valJSON))
+		}
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	threads := []*models.Thread{}
+	for rows.Next() {
+		var t models.Thread
+		var metaBytes, valsBytes []byte
+		if err := rows.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal(metaBytes, &t.Metadata)
+		json.Unmarshal(valsBytes, &t.Values)
+		threads = append(threads, &t)
+	}
+	return threads, nil
+}
+
+func (s *Store) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
+	now := time.Now().UTC()
+	query := `UPDATE threads SET status = $1, updated_at = $2 WHERE thread_id = $3`
+	args := []interface{}{string(status), now, threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $4`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
+}
+
+func (s *Store) TryClaimThread(ctx context.Context, threadID string) (bool, error) {
+	now := time.Now().UTC()
+	query := `UPDATE threads SET status = $1, updated_at = $2 WHERE thread_id = $3 AND status != $1`
+	args := []interface{}{string(models.ThreadStatusBusy), now, threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $4`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// --------------------------------------------------------------------------
+// Checkpoints
+// --------------------------------------------------------------------------
+
+func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
+	vals, _ := json.Marshal(ts.Values)
+	meta, _ := json.Marshal(ts.Metadata)
+	next, _ := json.Marshal(ts.Next)
+	tasks, _ := json.Marshal(ts.Tasks)
+	interrupts, _ := json.Marshal(ts.Interrupts)
+
+	var parentID *string
+	if ts.ParentCheckpoint != nil {
+		parentID = &ts.ParentCheckpoint.CheckpointID
+	}
+
+	createdAt := time.Now().UTC()
+	if ts.CreatedAt != nil && *ts.CreatedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, *ts.CreatedAt); err == nil {
+			createdAt = parsed
+		}
+	}
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
+		parentID, vals, meta, next, tasks, interrupts, createdAt)
+	return err
+}
+
+func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error) {
+	query := `SELECT checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at
+		FROM thread_checkpoints WHERE thread_id = $1`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY created_at DESC LIMIT 1`
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var ts models.ThreadState
+	var cpID, tID, cpNS string
+	var parentID *string
+	var valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte
+	var createdAt time.Time
+
+	if err := row.Scan(&cpID, &tID, &cpNS, &parentID, &valsBytes, &metaBytes, &nextBytes, &tasksBytes, &intBytes, &createdAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "checkpoint", ID: "latest"}
+		}
+		return nil, err
+	}
+	fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt)
+	return &ts, nil
+}
+
+func (s *Store) ListCheckpoints(ctx context.Context, threadID string, limit int, before string) ([]*models.ThreadState, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `SELECT checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at
+		FROM thread_checkpoints WHERE thread_id = $1`
+	args := []interface{}{threadID}
+	argN := 2
+
+	if !tenant.IsSystem(ctx) {
+		query += fmt.Sprintf(` AND tenant_id = $%d`, argN)
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if before != "" {
+		query += fmt.Sprintf(` AND created_at < (SELECT created_at FROM thread_checkpoints WHERE checkpoint_id = $%d)`, argN)
+		args = append(args, before)
+		argN++
+	}
+	query += fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, argN)
+	args = append(args, limit)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	states := []*models.ThreadState{}
+	for rows.Next() {
+		var ts models.ThreadState
+		var cpID, tID, cpNS string
+		var parentID *string
+		var valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte
+		var createdAt time.Time
+
+		if err := rows.Scan(&cpID, &tID, &cpNS, &parentID, &valsBytes, &metaBytes, &nextBytes, &tasksBytes, &intBytes, &createdAt); err != nil {
+			return nil, err
+		}
+		fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt)
+		states = append(states, &ts)
+	}
+	return states, nil
+}
+
+func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *string, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte, createdAt time.Time) {
+	ts.Checkpoint = models.ThreadCheckpoint{
+		CheckpointID: cpID,
+		ThreadID:     tID,
+		CheckpointNS: cpNS,
+	}
+	if valsBytes != nil {
+		json.Unmarshal(valsBytes, &ts.Values)
+	}
+	if metaBytes != nil {
+		json.Unmarshal(metaBytes, &ts.Metadata)
+	}
+	if nextBytes != nil {
+		json.Unmarshal(nextBytes, &ts.Next)
+	}
+	if tasksBytes != nil {
+		json.Unmarshal(tasksBytes, &ts.Tasks)
+	}
+	if intBytes != nil {
+		json.Unmarshal(intBytes, &ts.Interrupts)
+	}
+	cat := createdAt.Format(time.RFC3339)
+	ts.CreatedAt = &cat
+	if parentID != nil {
+		ts.ParentCheckpoint = &models.ThreadCheckpoint{
+			CheckpointID: *parentID,
+			ThreadID:     tID,
+			CheckpointNS: cpNS,
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Runs
+// --------------------------------------------------------------------------
+
+func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
+	meta, _ := json.Marshal(run.Metadata)
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
+		nullableJSON(run.Input), nullableJSON(run.Config),
+		run.CreatedAt, run.UpdatedAt)
+	return err
+}
+
+func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs WHERE run_id = $1`
+	args := []interface{}{runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var r models.Run
+	var metaBytes, inputBytes, configBytes, outputBytes []byte
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
+		}
+		return nil, err
+	}
+	if metaBytes != nil {
+		json.Unmarshal(metaBytes, &r.Metadata)
+	}
+	if inputBytes != nil {
+		r.Input = json.RawMessage(inputBytes)
+	}
+	if configBytes != nil {
+		r.Config = json.RawMessage(configBytes)
+	}
+	if outputBytes != nil {
+		r.Output = json.RawMessage(outputBytes)
+	}
+	r.AssistantID = r.AgentID // SDK compat
+	return &r, nil
+}
+
+func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error {
+	now := time.Now().UTC()
+	query := `UPDATE runs SET status = $1, output = $2, error_msg = $3, updated_at = $4 WHERE run_id = $5`
+	args := []interface{}{string(status), nullableJSON(output), errMsg, now, runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $6`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
+}
+
+func (s *Store) DeleteRun(ctx context.Context, runID string) error {
+	query := `DELETE FROM runs WHERE run_id = $1`
+	args := []interface{}{runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrNotFound{Resource: "run", ID: runID}
+	}
+	return nil
+}
+
+// pruneableRunStatuses matches api.isTerminalStatus's definition
+// (internal/api/runs.go) -- duplicated here rather than imported to keep
+// internal/state free of a dependency on internal/api. "running" and
+// "pending" are never pruneable regardless of age; "interrupted" runs
+// (paused for human-in-the-loop resume) are included because resumption
+// operates on the thread's checkpoint state, not this run row.
+const pruneableRunStatusesSQL = `('success','error','interrupted','timeout')`
+
+func (s *Store) PruneRuns(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM runs WHERE status IN ` + pruneableRunStatusesSQL + ` AND updated_at < $1`
+	args := []interface{}{olderThan}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (s *Store) PruneCheckpoints(ctx context.Context, keepLast int) (int64, error) {
+	if keepLast <= 0 {
+		return 0, nil
+	}
+	// tenantArg stays nil (SQL NULL) for a system context, matching
+	// "$2::text IS NULL" below -- meaning "every tenant", not "no
+	// tenant". Ranking (ROW_NUMBER) is computed per-thread so a busy
+	// thread's history doesn't starve a quiet one's retention window.
+	var tenantArg interface{}
+	if !tenant.IsSystem(ctx) {
+		tenantArg = tenant.FromContext(ctx)
+	}
+	query := `
+		DELETE FROM thread_checkpoints
+		WHERE checkpoint_id IN (
+			SELECT checkpoint_id FROM (
+				SELECT checkpoint_id,
+					ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY created_at DESC) AS rn
+				FROM thread_checkpoints
+				WHERE ($2::text IS NULL OR tenant_id = $2)
+			) ranked
+			WHERE rn > $1
+		)`
+	tag, err := s.pool.Exec(ctx, query, keepLast, tenantArg)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (s *Store) PruneCronClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM cron_claims WHERE fire_time < $1`
+	args := []interface{}{olderThan}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (s *Store) PruneExpiredStoreItems(ctx context.Context) (int64, error) {
+	query := `DELETE FROM store_items WHERE expires_at IS NOT NULL AND expires_at <= $1`
+	args := []interface{}{time.Now().UTC()}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([]*models.Run, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at FROM runs`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if req.Status != nil {
+		where = append(where, fmt.Sprintf("status = $%d", argN))
+		args = append(args, string(*req.Status))
+		argN++
+	}
+	if req.ThreadID != "" {
+		where = append(where, fmt.Sprintf("thread_id = $%d", argN))
+		args = append(args, req.ThreadID)
+		argN++
+	}
+	if req.AgentID != "" {
+		where = append(where, fmt.Sprintf("agent_id = $%d", argN))
+		args = append(args, req.AgentID)
+		argN++
+	}
+	for k, v := range req.Metadata {
+		where = append(where, fmt.Sprintf("metadata->>$%d = $%d", argN, argN+1))
+		args = append(args, k)
+		if sv, ok := v.(string); ok {
+			args = append(args, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, string(valJSON))
+		}
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	runs := []*models.Run{}
+	for rows.Next() {
+		var r models.Run
+		var metaBytes, inputBytes, configBytes, outputBytes []byte
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if metaBytes != nil {
+			json.Unmarshal(metaBytes, &r.Metadata)
+		}
+		if inputBytes != nil {
+			r.Input = json.RawMessage(inputBytes)
+		}
+		if configBytes != nil {
+			r.Config = json.RawMessage(configBytes)
+		}
+		if outputBytes != nil {
+			r.Output = json.RawMessage(outputBytes)
+		}
+		r.AssistantID = r.AgentID // SDK compat
+		runs = append(runs, &r)
+	}
+	return runs, nil
+}
+
+// --------------------------------------------------------------------------
+// Store (key-value)
+// --------------------------------------------------------------------------
+
+// Same namespace encoding as SQLite — \x1F delimited, wrapped in leading
+// and trailing delimiters for boundary-safe prefix matching.
+const nsDelim = "\x1F"
+
+func nsToString(ns []string) string {
+	return nsDelim + strings.Join(ns, nsDelim) + nsDelim
+}
+
+func stringToNs(s string) []string {
+	trimmed := strings.Trim(s, nsDelim)
+	if trimmed == "" {
+		return []string{}
+	}
+	return strings.Split(trimmed, nsDelim)
+}
+
+func nsPrefixPattern(prefix []string) string {
+	if len(prefix) == 0 {
+		return "%"
+	}
+	return nsDelim + strings.Join(prefix, nsDelim) + nsDelim + "%"
+}
+
+// storeItemExpiresAt computes the absolute expiry from a TTL in minutes,
+// nil if ttlMinutes is nil (no expiration) -- shared by PutItem and the
+// refresh-on-read path in GetItem/SearchItems so both compute the same
+// way from the same "now."
+func storeItemExpiresAt(now time.Time, ttlMinutes *float64) *time.Time {
+	if ttlMinutes == nil {
+		return nil
+	}
+	t := now.Add(time.Duration(*ttlMinutes * float64(time.Minute)))
+	return &t
+}
+
+func (s *Store) PutItem(ctx context.Context, item *models.StoreItem) error {
+	val, _ := json.Marshal(item.Value)
+	ns := nsToString(item.Namespace)
+	now := time.Now().UTC()
+	expiresAt := storeItemExpiresAt(now, item.TTLMinutes)
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO store_items (tenant_id, namespace, key, value, created_at, updated_at, ttl_minutes, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT(tenant_id, namespace, key) DO UPDATE SET
+			value=EXCLUDED.value, updated_at=EXCLUDED.updated_at,
+			ttl_minutes=EXCLUDED.ttl_minutes, expires_at=EXCLUDED.expires_at
+	`, tenant.FromContext(ctx), ns, item.Key, val, now, now, item.TTLMinutes, expiresAt)
+	return err
+}
+
+func (s *Store) GetItem(ctx context.Context, namespace []string, key string, refreshTTL bool) (*models.StoreItem, error) {
+	ns := nsToString(namespace)
+	now := time.Now().UTC()
+	query := `SELECT tenant_id, namespace, key, value, created_at, updated_at, ttl_minutes FROM store_items
+		WHERE namespace = $1 AND key = $2 AND (expires_at IS NULL OR expires_at > $3)`
+	args := []interface{}{ns, key, now}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $4`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var item models.StoreItem
+	var tenantID, nsStr string
+	var valBytes []byte
+	var ttlMinutes *float64
+	if err := row.Scan(&tenantID, &nsStr, &item.Key, &valBytes, &item.CreatedAt, &item.UpdatedAt, &ttlMinutes); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "store_item", ID: key}
+		}
+		return nil, err
+	}
+	item.Namespace = stringToNs(nsStr)
+	json.Unmarshal(valBytes, &item.Value)
+
+	if refreshTTL && ttlMinutes != nil {
+		// Use the row's own tenant_id, not tenant.FromContext(ctx) --
+		// for a system-context caller reading across tenants, those can
+		// differ, which would otherwise silently match zero rows here.
+		newExpiry := storeItemExpiresAt(now, ttlMinutes)
+		_, _ = s.pool.Exec(ctx, `UPDATE store_items SET expires_at = $1 WHERE tenant_id = $2 AND namespace = $3 AND key = $4`,
+			newExpiry, tenantID, ns, key)
+	}
+	return &item, nil
+}
+
+func (s *Store) DeleteItem(ctx context.Context, namespace []string, key string) error {
+	ns := nsToString(namespace)
+	query := `DELETE FROM store_items WHERE namespace = $1 AND key = $2`
+	args := []interface{}{ns, key}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $3`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrNotFound{Resource: "store_item", ID: key}
+	}
+	return nil
+}
+
+func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest) ([]*models.StoreItem, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	now := time.Now().UTC()
+
+	query := `SELECT tenant_id, namespace, key, value, created_at, updated_at, ttl_minutes FROM store_items`
+	var args []interface{}
+	where := []string{"(expires_at IS NULL OR expires_at > $1)"}
+	args = append(args, now)
+	argN := 2
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if len(req.NamespacePrefix) > 0 {
+		where = append(where, fmt.Sprintf("namespace LIKE $%d", argN))
+		args = append(args, nsPrefixPattern(req.NamespacePrefix))
+		argN++
+	}
+	for k, v := range req.Filter {
+		where = append(where, fmt.Sprintf("value->>$%d = $%d", argN, argN+1))
+		args = append(args, k)
+		if sv, ok := v.(string); ok {
+			args = append(args, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, string(valJSON))
+		}
+		argN += 2
+	}
+	query += " WHERE " + strings.Join(where, " AND ")
+	query += fmt.Sprintf(" ORDER BY updated_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Non-nil so a no-results search JSON-encodes to "items": [] rather
+	// than "items": null -- SDK clients call .map() on it unconditionally.
+	items := []*models.StoreItem{}
+	// (tenantID, namespace-string, key, ttlMinutes) rows to refresh after
+	// rows.Close() below -- can't run UPDATEs against the same connection
+	// while still iterating a live pgx result set.
+	type refreshRow struct {
+		tenantID, ns, key string
+		ttlMinutes        float64
+	}
+	var toRefresh []refreshRow
+	for rows.Next() {
+		var item models.StoreItem
+		var tenantID, nsStr string
+		var valBytes []byte
+		var ttlMinutes *float64
+		if err := rows.Scan(&tenantID, &nsStr, &item.Key, &valBytes, &item.CreatedAt, &item.UpdatedAt, &ttlMinutes); err != nil {
+			return nil, err
+		}
+		item.Namespace = stringToNs(nsStr)
+		json.Unmarshal(valBytes, &item.Value)
+		items = append(items, &item)
+		if req.RefreshTTLOrDefault() && ttlMinutes != nil {
+			toRefresh = append(toRefresh, refreshRow{tenantID, nsStr, item.Key, *ttlMinutes})
+		}
+	}
+	rows.Close()
+	for _, rr := range toRefresh {
+		newExpiry := storeItemExpiresAt(now, &rr.ttlMinutes)
+		_, _ = s.pool.Exec(ctx, `UPDATE store_items SET expires_at = $1 WHERE tenant_id = $2 AND namespace = $3 AND key = $4`,
+			newExpiry, rr.tenantID, rr.ns, rr.key)
+	}
+	return items, nil
+}
+
+func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespacesRequest) ([][]string, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `SELECT DISTINCT namespace FROM store_items`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if len(req.Prefix) > 0 {
+		where = append(where, fmt.Sprintf("namespace LIKE $%d", argN))
+		args = append(args, nsPrefixPattern(req.Prefix))
+		argN++
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY namespace LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Non-nil so a no-results list JSON-encodes to [] rather than null.
+	namespaces := [][]string{}
+	for rows.Next() {
+		var nsStr string
+		if err := rows.Scan(&nsStr); err != nil {
+			return nil, err
+		}
+		namespaces = append(namespaces, stringToNs(nsStr))
+	}
+	return namespaces, nil
+}
+
+// --------------------------------------------------------------------------
+// Webhook dead-letter
+// --------------------------------------------------------------------------
+
+func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO webhook_dead_letters (id, url, event_type, run_id, payload, error, attempts, failed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, dl.ID, dl.URL, dl.EventType, dl.RunID, []byte(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
+	return err
+}
+
+func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*models.WebhookDeadLetter, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, url, event_type, run_id, payload, error, attempts, failed_at
+		FROM webhook_dead_letters ORDER BY failed_at DESC LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*models.WebhookDeadLetter{}
+	for rows.Next() {
+		var dl models.WebhookDeadLetter
+		var payloadBytes []byte
+		if err := rows.Scan(&dl.ID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
+			return nil, err
+		}
+		dl.Payload = json.RawMessage(payloadBytes)
+		out = append(out, &dl)
+	}
+	return out, nil
+}
+
+// --------------------------------------------------------------------------
+// Run cache (LLM response caching)
+// --------------------------------------------------------------------------
+
+func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*models.CachedRunResult, error) {
+	// cacheKey incorporates tenant_id via computeCacheKey; this WHERE
+	// clause is defense in depth on top of the composite PK.
+	query := `SELECT cache_key, agent_id, output, created_at, expires_at FROM run_cache WHERE cache_key = $1 AND expires_at > NOW()`
+	args := []interface{}{cacheKey}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+
+	var r models.CachedRunResult
+	var outputBytes []byte
+	if err := row.Scan(&r.CacheKey, &r.AgentID, &outputBytes, &r.CreatedAt, &r.ExpiresAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "run_cache", ID: cacheKey}
+		}
+		return nil, err
+	}
+	json.Unmarshal(outputBytes, &r.Output)
+	return &r, nil
+}
+
+// --------------------------------------------------------------------------
+// Cron scheduler
+// --------------------------------------------------------------------------
+
+func (s *Store) UpsertCronSchedule(ctx context.Context, sched *models.CronSchedule) error {
+	input, _ := json.Marshal(sched.Input)
+	config, _ := json.Marshal(sched.Config)
+	now := time.Now().UTC()
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO cron_schedules (tenant_id, name, agent_id, expression, timezone, input, config, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+		ON CONFLICT(tenant_id, name) DO UPDATE SET
+			agent_id=EXCLUDED.agent_id, expression=EXCLUDED.expression, timezone=EXCLUDED.timezone,
+			input=EXCLUDED.input, config=EXCLUDED.config, enabled=EXCLUDED.enabled, updated_at=EXCLUDED.updated_at
+	`, tenant.FromContext(ctx), sched.Name, sched.AgentID, sched.Expression, sched.Timezone, input, config, sched.Enabled, now)
+	return err
+}
+
+// ListCronSchedules -- see the SQLite equivalent's doc comment: always
+// called from a system context in practice (the scheduler loop must see
+// every tenant's schedules), TenantID is always populated on the returned
+// rows so the caller can dispatch each fire under its own tenant.
+func (s *Store) ListCronSchedules(ctx context.Context) ([]*models.CronSchedule, error) {
+	query := `SELECT tenant_id, name, agent_id, expression, timezone, input, config, enabled, created_at, updated_at FROM cron_schedules`
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = $1`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY tenant_id, name`
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*models.CronSchedule{}
+	for rows.Next() {
+		var sc models.CronSchedule
+		var inputBytes, configBytes []byte
+		if err := rows.Scan(&sc.TenantID, &sc.Name, &sc.AgentID, &sc.Expression, &sc.Timezone, &inputBytes, &configBytes, &sc.Enabled, &sc.CreatedAt, &sc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		sc.Input = json.RawMessage(inputBytes)
+		sc.Config = json.RawMessage(configBytes)
+		out = append(out, &sc)
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteCronSchedule(ctx context.Context, name string) error {
+	query := `DELETE FROM cron_schedules WHERE name = $1`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
+}
+
+func (s *Store) TryClaimCronFire(ctx context.Context, scheduleName string, fireTime time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO cron_claims (tenant_id, schedule_name, fire_time, claimed_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (tenant_id, schedule_name, fire_time) DO NOTHING
+	`, tenant.FromContext(ctx), scheduleName, fireTime.UTC(), time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *Store) ReleaseCronClaim(ctx context.Context, scheduleName string, fireTime time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM cron_claims WHERE tenant_id = $1 AND schedule_name = $2 AND fire_time = $3
+	`, tenant.FromContext(ctx), scheduleName, fireTime.UTC())
+	return err
+}
+
+func (s *Store) GetLastCronFireTime(ctx context.Context, scheduleName string) (time.Time, bool, error) {
+	var fireTime time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT fire_time FROM cron_claims WHERE tenant_id = $1 AND schedule_name = $2 ORDER BY fire_time DESC LIMIT 1
+	`, tenant.FromContext(ctx), scheduleName).Scan(&fireTime)
+	if err == pgx.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return fireTime, true, nil
+}
+
+func (s *Store) SaveCachedRunResult(ctx context.Context, result *models.CachedRunResult) error {
+	output, _ := json.Marshal(result.Output)
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO run_cache (tenant_id, cache_key, agent_id, output, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(tenant_id, cache_key) DO UPDATE SET
+			output=EXCLUDED.output, created_at=EXCLUDED.created_at, expires_at=EXCLUDED.expires_at
+	`, tenant.FromContext(ctx), result.CacheKey, result.AgentID, output, result.CreatedAt, result.ExpiresAt)
+	return err
+}
+
+// nullableJSON returns nil for empty/null JSON, otherwise the raw bytes.
+func nullableJSON(data []byte) interface{} {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	return data
+}

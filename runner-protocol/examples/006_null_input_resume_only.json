@@ -1,0 +1,48 @@
+{
+  "_description": "Run with null input -- resume-only scenario where checkpoint_ref drives execution. Tests that null input does not crash the runner.",
+  "_test_id": "RP-025",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0006-4000-8000-000000000007",
+    "thread_id": "t1t2t3t4-0006-4000-8000-000000000007",
+    "runner_kind": "python-langgraph",
+    "graph_id": "stateful_agent",
+    "input": null,
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "checkpoint_ref": "chk-previous-state",
+    "resume_command": null,
+    "stream_modes": ["values"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-7234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0006"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "ai", "content": "Continuing from previous state..." }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}

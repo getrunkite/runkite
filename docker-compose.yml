@@ -1,0 +1,90 @@
+# Full-stack Runkite deployment (production-like).
+# Usage:
+#   docker compose up -d --build
+#   docker compose down -v
+services:
+  postgres:
+    # pgvector/pgvector:pg16 is a drop-in postgres:16 image with the
+    # pgvector extension binary available. Not enabled by default --
+    # only matters if you also set "vector_store" in langgraph.json (see
+    # README's Vector Store section), which runs its own
+    # `CREATE EXTENSION IF NOT EXISTS vector`. A deployment that never
+    # touches vector_store is completely unaffected by this image swap.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: runkite
+      POSTGRES_PASSWORD: runkite
+      POSTGRES_DB: runkite
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runkite -d runkite"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  runkite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2026:2026"
+      - "50051:50051"
+    environment:
+      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      HTTP_PORT: "2026"
+      GRPC_PORT: "50051"
+      LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      # Runner auth (production mode): protects the gRPC bridge and
+      # /internal/* routes so only runners with this token can dequeue
+      # jobs, stream events, or fetch connector credentials. Change this
+      # value for a real deployment -- it's a placeholder here so the
+      # compose stack demonstrates production mode by default instead of
+      # silently running in local (trust-everyone) mode.
+      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:-change-me-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    environment:
+      RUNKITE_GRPC_URL: runkite:50051
+      RUNKITE_HTTP_URL: http://runkite:2026
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      # Same DATABASE_URL as the control plane (master plan: checkpoint
+      # direct mode). The runner writes checkpoints straight to Postgres
+      # with its own AsyncPostgresSaver tables, so thread state survives
+      # runner restarts. Without this, the runner falls back to an
+      # in-memory checkpointer (explicitly ephemeral, dev-only).
+      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+    depends_on:
+      runkite:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

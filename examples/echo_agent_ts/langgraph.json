@@ -1,0 +1,9 @@
+{
+  "graphs": {
+    "echo_agent_ts": "./graph.ts:graph",
+    "slow_agent_ts": "./slowGraph.ts:graph",
+    "approval_agent_ts": "./approvalGraph.ts:graph"
+  },
+  "dependencies": ["."],
+  "runner_kind": "typescript-langgraphjs"
+}

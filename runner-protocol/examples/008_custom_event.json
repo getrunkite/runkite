@@ -1,0 +1,67 @@
+{
+  "_description": "Agent emits a named custom event (user-defined stream channel). Tests custom event normalization.",
+  "_test_id": "RP-028",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0008-4000-8000-000000000009",
+    "thread_id": "t1t2t3t4-0008-4000-8000-000000000009",
+    "runner_kind": "python-langgraph",
+    "graph_id": "custom_event_agent",
+    "input": { "messages": [{ "role": "user", "content": "generate report" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values", "custom"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-9234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0008"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "custom:progress",
+      "namespace": [],
+      "data": {
+        "name": "progress",
+        "payload": { "percent": 25, "stage": "collecting data" }
+      }
+    },
+    {
+      "seq": 3,
+      "method": "custom:progress",
+      "namespace": [],
+      "data": {
+        "name": "progress",
+        "payload": { "percent": 75, "stage": "analyzing" }
+      }
+    },
+    {
+      "seq": 4,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "generate report" },
+          { "role": "ai", "content": "Report generated successfully." }
+        ]
+      }
+    },
+    {
+      "seq": 5,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}

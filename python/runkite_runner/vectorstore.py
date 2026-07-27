@@ -1,0 +1,287 @@
+"""Vector Store Dual Mode for the Python runner.
+
+Mirrors store.py's dual-mode pattern, applied to the control plane's
+pgvector-backed semantic store instead of the key-value store:
+
+- direct mode (POSTGRES_DSN set): queries the control plane's own
+  `vector_items` table straight over psycopg -- same schema as
+  internal/vectorstore/pgvector/pgvector.go. Zero HTTP hop. Always
+  operates in the "default" tenant (see _TENANT_ID below), the same
+  documented Direct Mode Trust Model trade-off as store.py.
+- proxy mode (no POSTGRES_DSN): calls the control plane's /vectors/*
+  HTTP API over httpx.
+
+Implements LangChain's `VectorStore` interface (`add_texts`,
+`similarity_search`, `similarity_search_by_vector`,
+`similarity_search_with_score`, `from_texts`) so it drops into existing
+LangChain/LangGraph RAG code unchanged -- a graph node that already calls
+`vectorstore.similarity_search(query)` doesn't need to know or care that
+the backing store is Runkite's control plane instead of, say, an
+in-process Chroma index.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+from typing import Any, Iterable, Sequence
+
+import httpx
+from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
+
+# Direct mode has no per-request tenant identity (a raw DB connection, not
+# an authenticated HTTP call) -- see store.py's identical note. Must match
+# internal/tenant.DefaultTenant on the Go side exactly.
+_TENANT_ID = "default"
+
+
+def _item_to_document(item: dict) -> Document:
+    return Document(page_content=item.get("content") or "", metadata=item.get("metadata") or {}, id=item.get("id"))
+
+
+class RunkiteVectorStore(VectorStore):
+    """LangChain VectorStore backed by the Runkite control plane's pgvector store."""
+
+    def __init__(
+        self,
+        embedding: Embeddings,
+        *,
+        namespace: str,
+        postgres_dsn: str | None = None,
+        http_base_url: str | None = None,
+        runner_token: str | None = None,
+        pool_size: int = 4,
+    ):
+        if not postgres_dsn and not http_base_url:
+            raise ValueError("RunkiteVectorStore requires postgres_dsn or http_base_url")
+        self._embedding = embedding
+        self._namespace = namespace
+        self._dsn = postgres_dsn
+        self._base_url = http_base_url.rstrip("/") if http_base_url else None
+        self._headers: dict[str, str] = {}
+        if runner_token:
+            self._headers["X-Runner-Kind"] = "python-langgraph"
+            self._headers["X-Runner-Token"] = runner_token
+        self.mode = "direct" if postgres_dsn else "proxy"
+        # Same pooling rationale and upgrade path as store.py: a single
+        # shared connection serialized by a lock is correct under
+        # concurrent runs but not actually parallel. Pool creation itself
+        # (not every op) is guarded by _pool_init_lock.
+        self._pool_size = pool_size
+        self._pool = None
+        self._pool_init_lock = asyncio.Lock()
+
+    @property
+    def embeddings(self) -> Embeddings:
+        return self._embedding
+
+    async def _get_pool(self):
+        if self._pool is None:
+            async with self._pool_init_lock:
+                if self._pool is None:
+                    from psycopg_pool import AsyncConnectionPool
+
+                    pool = AsyncConnectionPool(
+                        self._dsn,
+                        min_size=1,
+                        max_size=max(self._pool_size, 1),
+                        kwargs={"autocommit": True},
+                        open=False,
+                    )
+                    await pool.open()
+                    self._pool = pool
+        return self._pool
+
+    async def aclose(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+
+    # -- sync entrypoints (LangChain's default interface) -------------------
+    # Every sync method below hops to an event loop the same way
+    # RunkiteStore.batch does: langgraph tool/node code typically runs in a
+    # worker thread with no running loop, so asyncio.run is fine; if one is
+    # somehow already running, fall back to a fresh thread rather than
+    # raising "asyncio.run() cannot be called from a running event loop".
+
+    def _run(self, coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(coro)).result()
+
+    def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
+        return self._run(self.aadd_documents(documents, **kwargs))
+
+    def similarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
+        return self._run(self.asimilarity_search(query, k, **kwargs))
+
+    def similarity_search_by_vector(self, embedding: list[float], k: int = 4, **kwargs: Any) -> list[Document]:
+        return self._run(self.asimilarity_search_by_vector(embedding, k, **kwargs))
+
+    def similarity_search_with_score(self, query: str, k: int = 4, **kwargs: Any) -> list[tuple[Document, float]]:
+        return self._run(self.asimilarity_search_with_score(query, k, **kwargs))
+
+    def delete(self, ids: list[str] | None = None, **kwargs: Any) -> bool | None:
+        return self._run(self.adelete(ids, **kwargs))
+
+    @classmethod
+    def from_texts(
+        cls,
+        texts: list[str],
+        embedding: Embeddings,
+        metadatas: list[dict] | None = None,
+        *,
+        ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> "RunkiteVectorStore":
+        store = cls(embedding, **kwargs)
+        store.add_texts(texts, metadatas, ids=ids)
+        return store
+
+    # -- async implementations -----------------------------------------------
+
+    async def aadd_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
+        texts = [d.page_content for d in documents]
+        metadatas = [d.metadata for d in documents]
+        ids = kwargs.get("ids") or [d.id or str(uuid.uuid4()) for d in documents]
+        vectors = self._embedding.embed_documents(texts)
+        for doc_id, text, meta, vec in zip(ids, texts, metadatas, vectors, strict=True):
+            await self._upsert(doc_id, text, meta, vec)
+        return ids
+
+    async def aadd_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: list[dict] | None = None,
+        *,
+        ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        texts = list(texts)
+        docs = [
+            Document(page_content=t, metadata=(metadatas[i] if metadatas else {}), id=(ids[i] if ids else None))
+            for i, t in enumerate(texts)
+        ]
+        return await self.aadd_documents(docs, **kwargs)
+
+    async def asimilarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
+        embedding = self._embedding.embed_query(query)
+        return await self.asimilarity_search_by_vector(embedding, k, **kwargs)
+
+    async def asimilarity_search_by_vector(self, embedding: list[float], k: int = 4, **kwargs: Any) -> list[Document]:
+        results = await self._search(embedding, k, kwargs.get("filter"))
+        return [_item_to_document(r["item"]) for r in results]
+
+    async def asimilarity_search_with_score(self, query: str, k: int = 4, **kwargs: Any) -> list[tuple[Document, float]]:
+        embedding = self._embedding.embed_query(query)
+        results = await self._search(embedding, k, kwargs.get("filter"))
+        return [(_item_to_document(r["item"]), r["score"]) for r in results]
+
+    async def adelete(self, ids: list[str] | None = None, **kwargs: Any) -> bool | None:
+        if not ids:
+            return None
+        for doc_id in ids:
+            if self.mode == "direct":
+                await self._delete_direct(doc_id)
+            else:
+                await self._delete_proxy(doc_id)
+        return True
+
+    # -- proxy mode: HTTP calls to the control plane -------------------------
+
+    async def _upsert(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
+        if self.mode == "direct":
+            await self._upsert_direct(doc_id, content, metadata, embedding)
+        else:
+            await self._upsert_proxy(doc_id, content, metadata, embedding)
+
+    async def _search(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
+        if self.mode == "direct":
+            return await self._search_direct(embedding, k, filter_)
+        return await self._search_proxy(embedding, k, filter_)
+
+    async def _upsert_proxy(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+            resp = await client.put(
+                "/internal/vectors/items",
+                json={"namespace": self._namespace, "id": doc_id, "content": content, "metadata": metadata, "embedding": embedding},
+            )
+            resp.raise_for_status()
+
+    async def _delete_proxy(self, doc_id: str) -> None:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+            resp = await client.request(
+                "DELETE", "/internal/vectors/items", json={"namespace": self._namespace, "id": doc_id}
+            )
+            resp.raise_for_status()
+
+    async def _search_proxy(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+            resp = await client.post(
+                "/internal/vectors/search",
+                json={"namespace": self._namespace, "embedding": embedding, "top_k": k, "filter": filter_ or {}},
+            )
+            resp.raise_for_status()
+            return resp.json().get("results") or []
+
+    # -- direct mode: psycopg straight to vector_items -----------------------
+
+    async def _upsert_direct(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
+        pool = await self._get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO vector_items (tenant_id, namespace, id, content, embedding, metadata, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s::vector, %s, NOW(), NOW())
+                ON CONFLICT (tenant_id, namespace, id) DO UPDATE SET
+                    content = EXCLUDED.content, embedding = EXCLUDED.embedding,
+                    metadata = EXCLUDED.metadata, updated_at = NOW()
+                """,
+                (_TENANT_ID, self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
+            )
+
+    async def _delete_direct(self, doc_id: str) -> None:
+        pool = await self._get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM vector_items WHERE tenant_id = %s AND namespace = %s AND id = %s",
+                (_TENANT_ID, self._namespace, doc_id),
+            )
+
+    async def _search_direct(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
+        where = ["tenant_id = %s", "namespace = %s"]
+        args: list[Any] = [_TENANT_ID, self._namespace]
+        for key, val in (filter_ or {}).items():
+            where.append("metadata->>%s = %s")
+            args.append(key)
+            args.append(val if isinstance(val, str) else json.dumps(val))
+        query = (
+            "SELECT id, content, metadata, 1 - (embedding <=> %s::vector) AS score FROM vector_items "
+            f"WHERE {' AND '.join(where)} ORDER BY embedding <=> %s::vector LIMIT %s"
+        )
+        vec = _vector_literal(embedding)
+        pool = await self._get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(query, [vec, *args, vec, k])
+            rows = await cur.fetchall()
+        results = []
+        for doc_id, content, metadata, score in rows:
+            meta = metadata if isinstance(metadata, dict) else json.loads(metadata or "{}")
+            results.append({"item": {"id": doc_id, "content": content, "metadata": meta}, "score": score})
+        return results
+
+
+def _vector_literal(embedding: list[float]) -> str:
+    """pgvector accepts its `vector` type as a plain text literal cast
+    (`'[1,2,3]'::vector`) -- psycopg sends this as an ordinary string
+    parameter with no special adapter needed, avoiding an extra Python
+    dependency (the `pgvector` pip package) just for one query direction."""
+    return "[" + ",".join(str(x) for x in embedding) + "]"

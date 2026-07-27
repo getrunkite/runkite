@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "factory_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."]
+}

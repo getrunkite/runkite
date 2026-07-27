@@ -1,0 +1,51 @@
+{
+  "_description": "Agent produces values, updates, and messages events but stream_modes only requests 'messages'. Tests that the runner respects the stream mode filter (optimization -- control plane filters regardless, but runner SHOULD filter).",
+  "_test_id": "RP-029",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0009-4000-8000-000000000010",
+    "thread_id": "t1t2t3t4-0009-4000-8000-000000000010",
+    "runner_kind": "python-langgraph",
+    "graph_id": "chatbot",
+    "input": { "messages": [{ "role": "user", "content": "hi" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["messages"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-a234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0009"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running" }
+    },
+    {
+      "seq": 2,
+      "method": "messages",
+      "namespace": [],
+      "data": {
+        "role": "ai",
+        "content": "Hello! How can I help you?",
+        "id": "msg-001"
+      },
+      "_note": "Only messages events emitted. No values or updates, even though the agent produces them internally."
+    },
+    {
+      "seq": 3,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ],
+
+  "_note": "lifecycle and end events are always emitted regardless of stream_modes. Only data events (values, updates, messages, custom) are filtered."
+}

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runner-protocol.dev/schemas/run_assignment.json",
+  "title": "RunAssignment",
+  "description": "A job dispatched from the control plane to a runner. Contains everything the runner needs to execute one agent turn.",
+  "type": "object",
+  "required": ["run_id", "thread_id", "runner_kind", "graph_id"],
+  "additionalProperties": true,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this run. Assigned by the control plane."
+    },
+    "thread_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The thread this run executes on."
+    },
+    "runner_kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifies which runner should handle this job (e.g., 'python-langgraph')."
+    },
+    "graph_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifies which agent/graph to execute."
+    },
+    "input": {
+      "description": "The input to the agent. Shape is defined by the agent, not this protocol. Null means no input (resume-only)."
+    },
+    "config": {
+      "type": "object",
+      "description": "Agent configuration passed through to the framework.",
+      "properties": {
+        "configurable": {
+          "type": "object",
+          "description": "Key-value pairs the agent can read. thread_id and run_id are injected by the runner."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional tags for tracing/filtering."
+        },
+        "recursion_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum recursion depth for the agent."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata passed to the agent framework."
+        }
+      },
+      "additionalProperties": true
+    },
+    "context": {
+      "type": "object",
+      "description": "Authenticated user context from the control plane's auth layer.",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Authenticated user identifier."
+        },
+        "permissions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "User permissions/roles."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable user name."
+        }
+      },
+      "additionalProperties": true
+    },
+    "checkpoint_ref": {
+      "type": ["string", "null"],
+      "description": "Opaque reference to a checkpoint to resume from. Null for a fresh run. Format is runner-defined (may be UUID, hash, or any string)."
+    },
+    "resume_command": {
+      "type": ["object", "null"],
+      "description": "If non-null, this run is resuming from an interrupt. Contains the client's response.",
+      "properties": {
+        "interrupt_id": {
+          "type": "string",
+          "description": "The interrupt this response is for."
+        },
+        "response": {
+          "description": "The client's response data. Shape defined by the agent."
+        }
+      },
+      "additionalProperties": true
+    },
+    "stream_modes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": ["values"],
+      "description": "Which data event types the control plane wants. Well-known: values, updates, messages, custom. Unknown strings are passed through for forward compatibility. lifecycle/end/error events are always emitted regardless."
+    },
+    "connector_needs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Pre-warm hint for connector sessions. NOT an allow-list."
+    },
+    "trace_context": {
+      "type": "object",
+      "description": "W3C Trace Context for cross-process observability.",
+      "properties": {
+        "traceparent": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+          "description": "W3C traceparent header value."
+        },
+        "tracestate": {
+          "type": "string",
+          "description": "W3C tracestate header value."
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Request correlation ID for logging. Any non-empty string."
+        }
+      }
+    }
+  }
+}

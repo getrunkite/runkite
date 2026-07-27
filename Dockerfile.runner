@@ -1,0 +1,20 @@
+# Python runner for Runkite — executes LangGraph agents and streams
+# events back to the control plane via gRPC.
+
+FROM python:3.12-slim
+WORKDIR /app
+
+COPY python/requirements.txt ./python/requirements.txt
+COPY python/ ./python/
+COPY examples/ ./examples/
+
+RUN pip install --no-cache-dir -r python/requirements.txt
+
+ENV PYTHONUNBUFFERED=1
+# runkite_runner package lives at /app/python/runkite_runner -- PYTHONPATH
+# must include /app/python for `python -m runkite_runner` to resolve it
+# (same convention as local dev: PYTHONPATH=python python -m runkite_runner).
+ENV PYTHONPATH=/app/python
+
+ENTRYPOINT ["python", "-m", "runkite_runner"]
+CMD ["--config", "/app/examples/all_agents/langgraph.json"]

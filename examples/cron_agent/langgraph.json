@@ -1,0 +1,14 @@
+{
+  "graphs": {
+    "cron_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."],
+  "cron": {
+    "daily-report": {
+      "agent_id": "cron_agent",
+      "expression": "0 9 * * *",
+      "timezone": "America/New_York",
+      "input": {"messages": [{"role": "human", "content": "generate the daily report"}]}
+    }
+  }
+}

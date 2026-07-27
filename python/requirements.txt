@@ -1,0 +1,9 @@
+grpcio
+protobuf
+langgraph
+langgraph-sdk
+langchain-core
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
+httpx
+uvicorn

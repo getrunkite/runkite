@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "slow_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."]
+}

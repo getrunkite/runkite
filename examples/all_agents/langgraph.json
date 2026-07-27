@@ -1,0 +1,20 @@
+{
+  "graphs": {
+    "echo_agent": "../echo_agent/graph.py:graph",
+    "slow_agent": "../slow_agent/graph.py:graph",
+    "approval_agent": "../approval_agent/graph.py:graph",
+    "react_agent": "../react_agent/graph.py:graph",
+    "store_agent": "../store_agent/graph.py:graph"
+  },
+  "dependencies": ["../echo_agent", "../slow_agent", "../approval_agent", "../react_agent", "../store_agent"],
+  "llm_cache": {
+    "echo_agent": {"ttl_seconds": 3600}
+  },
+  "cron": {
+    "yearly-echo": {
+      "agent_id": "echo_agent",
+      "expression": "0 3 1 1 *",
+      "input": {"messages": [{"role": "human", "content": "cron bootstrap check"}]}
+    }
+  }
+}

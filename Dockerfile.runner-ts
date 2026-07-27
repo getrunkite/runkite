@@ -1,0 +1,19 @@
+# TypeScript runner for Runkite — executes LangGraph.js agents and streams
+# events back to the control plane via gRPC. Mirrors Dockerfile.runner's
+# structure (Python runner): no separate compile step for user agent code,
+# since tsx (esbuild-based) loads a user's graph.ts directly at runtime,
+# same "zero-build-step DX" as Python's importlib-based loading.
+
+FROM node:22-slim
+WORKDIR /app
+
+COPY typescript/runkite-runner/package.json typescript/runkite-runner/package-lock.json ./typescript/runkite-runner/
+RUN cd typescript/runkite-runner && npm ci
+
+COPY typescript/runkite-runner/ ./typescript/runkite-runner/
+COPY examples/ ./examples/
+
+WORKDIR /app/typescript/runkite-runner
+
+ENTRYPOINT ["npx", "tsx", "src/cli.ts"]
+CMD ["--config", "/app/examples/echo_agent_ts/langgraph.json"]

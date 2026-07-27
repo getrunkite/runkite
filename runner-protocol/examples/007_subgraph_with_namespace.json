@@ -1,0 +1,91 @@
+{
+  "_description": "Agent with a subgraph. Events from the subgraph carry the correct namespace path. Tests subgraph lifecycle events (started/completed) and namespace propagation.",
+  "_test_id": "RP-027",
+
+  "assignment": {
+    "run_id": "a1b2c3d4-0007-4000-8000-000000000008",
+    "thread_id": "t1t2t3t4-0007-4000-8000-000000000008",
+    "runner_kind": "python-langgraph",
+    "graph_id": "parent_agent",
+    "input": { "messages": [{ "role": "user", "content": "research and summarize" }] },
+    "config": { "configurable": {} },
+    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "checkpoint_ref": null,
+    "resume_command": null,
+    "stream_modes": ["values", "updates"],
+    "connector_needs": [],
+    "trace_context": {
+      "traceparent": "00-abcdef1234567890abcdef1234567890-8234567890abcdef-01",
+      "tracestate": "",
+      "correlation_id": "req-0007"
+    }
+  },
+
+  "expected_events": [
+    {
+      "seq": 1,
+      "method": "lifecycle",
+      "namespace": [],
+      "data": { "event": "running", "graph_name": "parent_agent" }
+    },
+    {
+      "seq": 2,
+      "method": "lifecycle",
+      "namespace": ["researcher"],
+      "data": { "event": "started", "graph_name": "research_subgraph" }
+    },
+    {
+      "seq": 3,
+      "method": "updates",
+      "namespace": ["researcher"],
+      "data": {
+        "search_node": {
+          "results": ["result 1", "result 2"]
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "method": "values",
+      "namespace": ["researcher"],
+      "data": {
+        "results": ["result 1", "result 2"]
+      }
+    },
+    {
+      "seq": 5,
+      "method": "lifecycle",
+      "namespace": ["researcher"],
+      "data": { "event": "completed" }
+    },
+    {
+      "seq": 6,
+      "method": "updates",
+      "namespace": [],
+      "data": {
+        "summarizer": {
+          "messages": [
+            { "role": "ai", "content": "Based on the research: result 1 and result 2." }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "method": "values",
+      "namespace": [],
+      "data": {
+        "messages": [
+          { "role": "user", "content": "research and summarize" },
+          { "role": "ai", "content": "Based on the research: result 1 and result 2." }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "method": "end",
+      "namespace": [],
+      "data": { "status": "success" }
+    }
+  ]
+}
