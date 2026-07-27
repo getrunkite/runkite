@@ -16,24 +16,22 @@
 //
 // Three things this endpoint adds on top of that shared path:
 //
-//  1. Auth context propagation: on_behalf_of carries the ORIGINAL
-//     caller's identity/permissions/tenant forward into the sub-run,
-//     via the exact transport.UserContext shape a runner already
-//     receives in its own RunAssignment.User -- the sub-agent executes
-//     within the same permission boundary as the run that delegated to
-//     it, never with more access than the original caller had. Tenant
-//     is derived from the PARENT run's own tenant_id (looked up
-//     server-side), not trusted from the request body, so a buggy or
-//     compromised runner can't escalate into a different tenant by
-//     forging on_behalf_of's claims.
+//  1. Auth context propagation: on_behalf_of forwards identity/
+//     permissions into the sub-run (propagation, not enforcement --
+//     the body is trusted from the runner; runs don't persist the
+//     original caller's auth to compare against). Tenant is derived
+//     from the PARENT run's own tenant_id (looked up server-side),
+//     never from the request body. Parent lookup uses SystemContext
+//     (runner-trusted /internal/*), so a compromised runner that
+//     knows another tenant's run UUID could attach a child there --
+//     same trust boundary as the rest of /internal/*, stated plainly.
 //  2. Recursion limits: parent_run_id is required, and createRunCtx
 //     (see runs.go) enforces a2a.max_depth against the parent's own
 //     depth, failing a chain that's gone too deep (accidental cycle or
 //     runaway delegation) with 400, not a resource leak.
 //  3. Cost attribution: every delegated run's root_run_id points at the
-//     top of its delegation tree, so "every run this original request
-//     ultimately caused" is one query (WHERE root_run_id = ?) rather
-//     than walking parent pointers.
+//     top of its delegation tree (persisted + indexed). A public
+//     RunSearchRequest filter on root_run_id is not exposed yet.
 //
 // Runner-authenticated (mounted under /internal/*, not client-facing) --
 // this is infrastructure a runner's own SDK helper calls on an agent's

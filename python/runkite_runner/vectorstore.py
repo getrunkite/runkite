@@ -1,23 +1,28 @@
 """Vector Store Dual Mode for the Python runner.
 
-Mirrors store.py's dual-mode pattern, applied to the control plane's
-pgvector-backed semantic store instead of the key-value store:
+Mirrors store.py's dual-mode pattern for the control plane's semantic
+store:
 
-- direct mode (POSTGRES_DSN set): queries the control plane's own
-  `vector_items` table straight over psycopg -- same schema as
-  internal/vectorstore/pgvector/pgvector.go. Zero HTTP hop. Always
+- proxy mode (http_base_url set): calls the control plane's /vectors/*
+  HTTP API over httpx. Works for every VectorStore backend (pgvector,
+  Qdrant, …) because the CP owns the backend choice.
+- direct mode (postgres_dsn set, http_base_url unset): queries the
+  control plane's own `vector_items` table straight over psycopg --
+  same schema as internal/vectorstore/pgvector/pgvector.go. Zero HTTP
+  hop. Only correct when the CP is actually on pgvector; always
   operates in the "default" tenant (see _TENANT_ID below), the same
   documented Direct Mode Trust Model trade-off as store.py.
-- proxy mode (no POSTGRES_DSN): calls the control plane's /vectors/*
-  HTTP API over httpx.
+
+When BOTH are provided, proxy wins. A common production shape is
+Postgres for state/checkpoints (POSTGRES_DSN set on the runner) plus
+Qdrant for vectors -- preferring DSN just because it exists would
+silently write to a table the control plane never reads. Pass only
+postgres_dsn (no http_base_url) to opt into direct mode deliberately.
 
 Implements LangChain's `VectorStore` interface (`add_texts`,
 `similarity_search`, `similarity_search_by_vector`,
 `similarity_search_with_score`, `from_texts`) so it drops into existing
-LangChain/LangGraph RAG code unchanged -- a graph node that already calls
-`vectorstore.similarity_search(query)` doesn't need to know or care that
-the backing store is Runkite's control plane instead of, say, an
-in-process Chroma index.
+LangChain/LangGraph RAG code unchanged.
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ def _item_to_document(item: dict) -> Document:
 
 
 class RunkiteVectorStore(VectorStore):
-    """LangChain VectorStore backed by the Runkite control plane's pgvector store."""
+    """LangChain VectorStore backed by the Runkite control plane's vector store."""
 
     def __init__(
         self,
@@ -59,13 +64,20 @@ class RunkiteVectorStore(VectorStore):
             raise ValueError("RunkiteVectorStore requires postgres_dsn or http_base_url")
         self._embedding = embedding
         self._namespace = namespace
-        self._dsn = postgres_dsn
-        self._base_url = http_base_url.rstrip("/") if http_base_url else None
         self._headers: dict[str, str] = {}
         if runner_token:
             self._headers["X-Runner-Kind"] = "python-langgraph"
             self._headers["X-Runner-Token"] = runner_token
-        self.mode = "direct" if postgres_dsn else "proxy"
+        # Proxy wins when both are set -- see module docstring. Direct
+        # mode only with an explicit DSN and no HTTP base URL.
+        if http_base_url:
+            self.mode = "proxy"
+            self._base_url = http_base_url.rstrip("/")
+            self._dsn = None
+        else:
+            self.mode = "direct"
+            self._base_url = None
+            self._dsn = postgres_dsn
         # Same pooling rationale and upgrade path as store.py: a single
         # shared connection serialized by a lock is correct under
         # concurrent runs but not actually parallel. Pool creation itself

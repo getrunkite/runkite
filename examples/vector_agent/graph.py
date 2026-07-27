@@ -54,14 +54,17 @@ _KNOWLEDGE_BASE = {
 
 
 def _vector_store() -> RunkiteVectorStore:
-    dsn = os.environ.get("POSTGRES_DSN")
+    # Always proxy through the control plane. POSTGRES_DSN is often set
+    # for checkpoints/state even when vectors live in Qdrant -- preferring
+    # the DSN for direct-mode vector_items access would silently write to
+    # the wrong backend. Opt into direct mode only by constructing
+    # RunkiteVectorStore(postgres_dsn=..., http_base_url=None) yourself.
     http_url = os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026")
     runner_token = os.environ.get("RUNNER_TOKEN")
     return RunkiteVectorStore(
         FakeEmbeddings(),
         namespace="vector_agent_kb",
-        postgres_dsn=dsn,
-        http_base_url=None if dsn else http_url,
+        http_base_url=http_url,
         runner_token=runner_token,
     )
 

@@ -70,7 +70,10 @@ func New(baseURL, collection string, dimensions int) (*Store, error) {
 		baseURL:    baseURL,
 		collection: collection,
 		dimensions: dimensions,
-		client:     &http.Client{},
+		// Bound every call: a hung/unreachable Qdrant must not hang the
+		// control plane's /vectors/* handlers forever. 30s covers large
+		// ANN searches without pretending the request can wait forever.
+		client: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 

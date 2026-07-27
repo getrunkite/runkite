@@ -86,6 +86,11 @@ func (s *Store) Init(ctx context.Context) error {
 	}
 	indexes := []idx{
 		{"agents", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}}, true},
+		// Same uniqueness Postgres/SQLite enforce with PRIMARY KEY
+		// (tenant_id, agent_id, version) -- without this, concurrent
+		// UpsertAgent InsertOnes can duplicate a version row (SQL's
+		// ON CONFLICT DO NOTHING has nothing to collide with here).
+		{"agent_versions", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}, {Key: "version", Value: 1}}, true},
 		{"agent_schemas", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}}, true},
 		{"threads", bson.D{{Key: "thread_id", Value: 1}}, true},
 		{"threads", bson.D{{Key: "tenant_id", Value: 1}}, false},
@@ -93,6 +98,10 @@ func (s *Store) Init(ctx context.Context) error {
 		{"runs", bson.D{{Key: "thread_id", Value: 1}}, false},
 		{"runs", bson.D{{Key: "status", Value: 1}}, false},
 		{"runs", bson.D{{Key: "tenant_id", Value: 1}}, false},
+		// A2A cost-attribution lookups (WHERE root_run_id = ?) -- SQL
+		// backends already have idx_runs_root; without this Mongo falls
+		// back to a collection scan for any tree query.
+		{"runs", bson.D{{Key: "root_run_id", Value: 1}}, false},
 		{"thread_checkpoints", bson.D{{Key: "checkpoint_id", Value: 1}}, true},
 		{"thread_checkpoints", bson.D{{Key: "thread_id", Value: 1}, {Key: "created_at", Value: -1}}, false},
 		{"store_items", bson.D{{Key: "tenant_id", Value: 1}, {Key: "namespace", Value: 1}, {Key: "key", Value: 1}}, true},
@@ -298,13 +307,41 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 	// that actually bumped the version (an unchanged re-registration,
 	// e.g. every control plane restart with an unchanged
 	// langgraph.json, must not duplicate a version snapshot).
+	//
+	// Known, stated limitation: this whole function is NOT atomic across
+	// the "agents" update above and this insert -- fine for two racers
+	// upserting the SAME new content (the duplicate-key handling below
+	// makes that a benign no-op), but two racers upserting DIFFERENT new
+	// content at the same instant can leave "agents" as whichever
+	// UpdateOne committed last (last-writer-wins) while agent_versions
+	// keeps a snapshot matching whichever InsertOne won instead --
+	// content mismatch between the current row and its own "latest"
+	// history entry. A real Mongo transaction (ClientSession) would
+	// close this, but requires a replica set; the test/deployment Mongo
+	// here runs standalone (confirmed: `rs.status()` fails with "not
+	// running with --replSet"), so that fix is deliberately deferred
+	// rather than silently assumed away. Narrow in practice -- agent
+	// registration is bootstrap-time from one static langgraph.json per
+	// control plane, not concurrent writers proposing different content
+	// for the same agent_id.
 	if versionChanged {
 		_, err = s.col("agent_versions").InsertOne(ctx, agentVersionDoc{
 			TenantID: tid, AgentID: agent.AgentID, Version: version,
 			Name: agent.Name, Description: agent.Description,
 			Metadata: agent.Metadata, Capabilities: agent.Capabilities, CreatedAt: now,
 		})
-		if err != nil {
+		// A duplicate key here means a concurrent UpsertAgent call for
+		// the same (tenant_id, agent_id) both read the same prior
+		// version and independently decided on the same next version
+		// number -- the unique index (see Init) catches exactly this
+		// race, which existed silently (duplicate rows) before it was
+		// added. Once the index exists, this is Mongo's equivalent of
+		// Postgres/SQLite's `ON CONFLICT (tenant_id, agent_id, version)
+		// DO NOTHING` above -- a benign, idempotent no-op, not a failure
+		// to report: the agents collection update just above already
+		// succeeded, and a version snapshot for this exact version
+		// already exists (written by whichever concurrent call won).
+		if err != nil && !mongo.IsDuplicateKeyError(err) {
 			return err
 		}
 	}

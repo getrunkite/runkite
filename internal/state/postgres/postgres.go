@@ -283,15 +283,18 @@ func (s *Store) Close() error {
 
 // TruncateAll removes all rows from all tables. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
-	// webhook_dead_letters and run_cache have no FK to any of the other
-	// tables (run_id/agent_id are plain TEXT references, not foreign
-	// keys), so TRUNCATE ... CASCADE from the other tables would never
-	// reach them -- they must be listed explicitly or a fresh conformance
-	// subtest sees leftover rows from an earlier subtest (confirmed:
-	// list_empty_when_none_saved failed with leftover rows from prior
-	// subtests before this fix was first applied for webhook_dead_letters).
+	// webhook_dead_letters, run_cache, and agent_versions have no FK to
+	// any of the other tables (run_id/agent_id are plain TEXT
+	// references, not foreign keys), so TRUNCATE ... CASCADE from the
+	// other tables would never reach them -- they must be listed
+	// explicitly or a fresh conformance subtest sees leftover rows from
+	// an earlier subtest (confirmed: list_empty_when_none_saved failed
+	// with leftover rows from prior subtests before this fix was first
+	// applied for webhook_dead_letters; agent_versions had the exact
+	// same bug, found via audit and fixed here -- same class of gap as
+	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
 	`)
 	return err
 }

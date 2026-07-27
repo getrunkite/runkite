@@ -111,10 +111,9 @@ jobs:
           REDIS_URL: redis://localhost:6379
           MONGO_URI: mongodb://localhost:27017
           QDRANT_URL: http://localhost:6333
-        # -p 1: see Makefile's test-all comment -- internal/state/postgres
-        # and internal/vectorstore/pgvector both run DDL-heavy per-subtest
-        # setup against the same shared Postgres database; parallel
-        # package execution produces a real, reproducible flake there.
+        # -p 1: see Makefile's test-all comment -- internal/api/vectors_test
+        # and internal/vectorstore/pgvector both DROP vector_items against
+        # the same shared Postgres test database.
         run: go test ./internal/... -race -count=1 -v -p 1
 
       - name: Python runner unit tests

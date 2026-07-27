@@ -48,16 +48,15 @@ test-qdrant:
 # All backends — SQLite + Postgres + Redis + MongoDB + Qdrant (requires infra-up)
 #
 # -p 1 (serialize package test binaries, not just tests within one
-# package) is required, not just a speed/safety tradeoff: internal/state/
-# postgres and internal/vectorstore/pgvector both run DDL-heavy per-subtest
-# setup (DROP/CREATE TABLE, CREATE INDEX) against the same shared Postgres
-# test database. Under Go's default parallel-package execution, this
-# produces a real, reproducible flake -- "relation does not exist" errors
-# from one package's table momentarily invisible to the other's session
-# during concurrent DDL -- confirmed via repeated runs (fails intermittently
-# without -p 1, 100% reliable with it). Pre-existing exposure in the
-# original pgvector tests, not introduced by adding Qdrant; -p 1 is the
-# structural fix rather than papering over one flaky assertion.
+# package) is required, not just a speed/safety tradeoff: both
+# internal/api/vectors_test.go and internal/vectorstore/pgvector/
+# pgvector_test.go DROP TABLE IF EXISTS vector_items against the same
+# shared Postgres test database in their setup. Under Go's default
+# parallel-package execution, one package's DROP races the other's
+# CREATE/use → intermittent "relation does not exist". Confirmed via
+# the DROP sites (not state/postgres TruncateAll, which never touches
+# vector_items). -p 1 is the structural fix rather than papering over
+# one flaky assertion; unique-per-package table names would also work.
 test-all:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
