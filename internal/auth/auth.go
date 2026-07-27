@@ -115,6 +115,22 @@ func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerT
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
+			// Admin key absent/invalid. If a primary provider also
+			// exists, fall through to it unchanged (a normal credential
+			// carrying "admin" via the primary provider should still
+			// work -- admin_keys is additive, not exclusive). But if
+			// there's no primary provider at all, don't fall through to
+			// client-facing local-dev "trust everyone" here: configuring
+			// admin_keys is an explicit signal the operator wants
+			// /admin-api/* protected, and silently granting access on a
+			// failed/missing admin credential would make configuring a
+			// credential leave the dashboard LESS protected than
+			// configuring none -- the opposite of what "admin_keys" was
+			// for. Fail closed instead.
+			if provider == nil {
+				writeUnauthorized(w, "invalid or missing admin credential")
+				return
+			}
 		}
 
 		if provider == nil {
