@@ -262,8 +262,8 @@ GET /admin-api/overview                     Summary counts (agents/threads/runs,
 GET /admin-api/agents                       List agents (tenant_id visible)
 GET /admin-api/agents/{id}                  Agent detail
 GET /admin-api/registry                     List registry entries (tenant_id visible)
-GET /admin-api/registry/{name}              Registry entry detail
-GET /admin-api/registry/{name}/versions     Registry entry version history
+GET /admin-api/registry/{name}              Registry entry detail (?tenant_id= disambiguates a cross-tenant name collision)
+GET /admin-api/registry/{name}/versions     Registry entry version history (same ?tenant_id=; omitted merges every tenant's history)
 GET /admin-api/threads                      List threads (tenant_id visible; ?status= filter)
 GET /admin-api/threads/{id}                 Thread detail
 GET /admin-api/threads/{id}/runs            Runs on a thread
@@ -455,7 +455,8 @@ Versioning follows the exact same convention as agent versioning above: publishi
 **Known limitations, stated plainly**:
 - **No security review workflow.** Anything published is immediately visible to every caller in that tenant -- there's no approve/reject step, unlike a real package registry's review queue.
 - **No deploy automation.** Publishing an entry doesn't register a runnable agent -- `source_ref` still requires a human (or separate tooling) to actually wire the code into a `langgraph.json` and restart/reload the relevant runner. The registry is a catalog, not a deployment pipeline.
-- **Mongo's publish is non-transactional** across the entry-table update and the version-snapshot insert, same stated limitation as agent versioning (see above) and for the same reason (no replica set in the test/deploy Mongo).
+- **Mongo's publish is non-transactional** across the entry-table update and the version-snapshot insert, same stated limitation as agent versioning (see above) and for the same reason (no replica set in the test/deploy Mongo). Delete is transactional on Postgres/SQLite (both statements commit or roll back together) but not on Mongo, for the same reason.
+- **Admin lookups by name alone are ambiguous under a cross-tenant name collision.** `registry_entries`' real key is `(tenant_id, name)`, not `name` -- if two tenants both publish "sales-bot", `GET /admin-api/registry/{name}` (system context, no tenant filter) returns an arbitrary match, and `GET /admin-api/registry/{name}/versions` genuinely merges both tenants' histories into one list. An explicit `?tenant_id=` query param on both routes disambiguates by scoping to one tenant; the admin version response also exposes `tenant_id` per entry so a merged (no-param) response is at least distinguishable after the fact. Client-facing routes are unaffected (already tenant-scoped from the caller's own auth context, same as every other resource).
 
 ## Architecture
 

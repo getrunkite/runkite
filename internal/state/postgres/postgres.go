@@ -612,13 +612,24 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
 	tenantID := tenant.FromContext(ctx)
 
+	// A transaction, not two independent Execs, so a crash/network
+	// failure between the two deletes can't leave the entry gone but
+	// its version history still present (same orphan-row class of bug
+	// as REG-005b, just from a different failure mode -- a partial
+	// crash instead of a missing statement).
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op if committed
+
 	query := `DELETE FROM registry_entries WHERE name = $1`
 	args := []interface{}{name}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = $2`
 		args = append(args, tenantID)
 	}
-	tag, err := s.pool.Exec(ctx, query, args...)
+	tag, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -632,8 +643,11 @@ func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
 		versionsQuery += ` AND tenant_id = $2`
 		versionsArgs = append(versionsArgs, tenantID)
 	}
-	_, err = s.pool.Exec(ctx, versionsQuery, versionsArgs...)
-	return err
+	if _, err := tx.Exec(ctx, versionsQuery, versionsArgs...); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (s *Store) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {

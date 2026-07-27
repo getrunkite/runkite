@@ -615,13 +615,21 @@ func (s *SQLiteStore) SearchRegistryEntries(ctx context.Context, req *models.Reg
 func (s *SQLiteStore) DeleteRegistryEntry(ctx context.Context, name string) error {
 	tenantID := tenant.FromContext(ctx)
 
+	// A transaction, not two independent Execs -- see the Postgres
+	// backend's identical fix for the full rationale.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
 	query := `DELETE FROM registry_entries WHERE name = ?`
 	args := []interface{}{name}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
 		args = append(args, tenantID)
 	}
-	result, err := s.db.ExecContext(ctx, query, args...)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -639,8 +647,11 @@ func (s *SQLiteStore) DeleteRegistryEntry(ctx context.Context, name string) erro
 		versionsQuery += ` AND tenant_id = ?`
 		versionsArgs = append(versionsArgs, tenantID)
 	}
-	_, err = s.db.ExecContext(ctx, versionsQuery, versionsArgs...)
-	return err
+	if _, err := tx.ExecContext(ctx, versionsQuery, versionsArgs...); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {

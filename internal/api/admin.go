@@ -32,6 +32,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"time"
 
@@ -191,10 +192,26 @@ func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, views)
 }
 
-// GET /admin-api/registry/{name}
+// adminScopedRegistryContext resolves the context a registry admin
+// lookup should run under. name alone is not a unique key across
+// tenants (registry_entries' real primary key is (tenant_id, name)) --
+// system context with no tenant filter at all would make GetRegistryEntry
+// return an arbitrary match and ListRegistryEntryVersions genuinely
+// MERGE two different tenants' version histories into one list under a
+// cross-tenant name collision. An explicit ?tenant_id= query param
+// disambiguates by scoping to that one tenant instead of system
+// context; omitting it keeps the old (ambiguous-under-collision)
+// behavior for a single-tenant deployment where no collision can occur.
+func adminScopedRegistryContext(r *http.Request) context.Context {
+	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
+		return tenant.WithContext(r.Context(), tid)
+	}
+	return tenant.SystemContext(r.Context())
+}
+
+// GET /admin-api/registry/{name}[?tenant_id=]
 func (s *Server) handleAdminGetRegistryEntry(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
-	entry, err := s.store.GetRegistryEntry(ctx, r.PathValue("name"))
+	entry, err := s.store.GetRegistryEntry(adminScopedRegistryContext(r), r.PathValue("name"))
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -202,15 +219,27 @@ func (s *Server) handleAdminGetRegistryEntry(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, toAdminRegistryEntryView(entry))
 }
 
-// GET /admin-api/registry/{name}/versions
+type adminRegistryEntryVersionView struct {
+	*models.RegistryEntryVersion
+	TenantID string `json:"tenant_id"`
+}
+
+// GET /admin-api/registry/{name}/versions[?tenant_id=]
 func (s *Server) handleAdminListRegistryEntryVersions(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
-	versions, err := s.store.ListRegistryEntryVersions(ctx, r.PathValue("name"))
+	versions, err := s.store.ListRegistryEntryVersions(adminScopedRegistryContext(r), r.PathValue("name"))
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, versions)
+	// tenant_id exposed here (unlike the client-facing response shape,
+	// where models.RegistryEntryVersion.TenantID is json:"-") so an
+	// operator can actually tell two same-named entries' histories
+	// apart when ?tenant_id= wasn't specified and they came back merged.
+	views := make([]adminRegistryEntryVersionView, 0, len(versions))
+	for _, v := range versions {
+		views = append(views, adminRegistryEntryVersionView{RegistryEntryVersion: v, TenantID: v.TenantID})
+	}
+	writeJSON(w, http.StatusOK, views)
 }
 
 // --------------------------------------------------------------------------
