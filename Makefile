@@ -40,19 +40,38 @@ test-mongo:
 	MONGO_URI="mongodb://localhost:27018" \
 		go test ./internal/state/mongo/ -race -count=1 -v
 
-# All backends — SQLite + Postgres + Redis + MongoDB (requires infra-up)
+# Qdrant vector store conformance (requires QDRANT_URL or infra-up)
+test-qdrant:
+	QDRANT_URL="http://localhost:6333" \
+		go test ./internal/vectorstore/qdrant/ -race -count=1 -v
+
+# All backends — SQLite + Postgres + Redis + MongoDB + Qdrant (requires infra-up)
+#
+# -p 1 (serialize package test binaries, not just tests within one
+# package) is required, not just a speed/safety tradeoff: internal/state/
+# postgres and internal/vectorstore/pgvector both run DDL-heavy per-subtest
+# setup (DROP/CREATE TABLE, CREATE INDEX) against the same shared Postgres
+# test database. Under Go's default parallel-package execution, this
+# produces a real, reproducible flake -- "relation does not exist" errors
+# from one package's table momentarily invisible to the other's session
+# during concurrent DDL -- confirmed via repeated runs (fails intermittently
+# without -p 1, 100% reliable with it). Pre-existing exposure in the
+# original pgvector tests, not introduced by adding Qdrant; -p 1 is the
+# structural fix rather than papering over one flaky assertion.
 test-all:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
 	MONGO_URI="mongodb://localhost:27018" \
-		go test ./internal/... -race -count=1
+	QDRANT_URL="http://localhost:6333" \
+		go test ./internal/... -race -count=1 -p 1
 
 # Verbose version of test-all
 test-all-v:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
 	MONGO_URI="mongodb://localhost:27018" \
-		go test ./internal/... -race -count=1 -v
+	QDRANT_URL="http://localhost:6333" \
+		go test ./internal/... -race -count=1 -v -p 1
 
 # End-to-end: builds the real binary, runs it + the real Python runner as
 # subprocesses against real Postgres/Redis, and re-validates VG-001/002/003

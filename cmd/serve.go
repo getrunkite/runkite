@@ -46,6 +46,7 @@ import (
 	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 	"github.com/sharanharsoor/runkite/internal/vectorstore"
 	pgvector "github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
+	qdrant "github.com/sharanharsoor/runkite/internal/vectorstore/qdrant"
 )
 
 func cmdDev(args []string) {
@@ -163,7 +164,8 @@ func startServer(opts serverOpts) {
 	// installed or permitted.
 	if vs := initVectorStore(ctx, opts.configPath); vs != nil {
 		apiServer.SetVectorStore(vs)
-		slog.Info("vector store: enabled", "type", "pgvector")
+		// initVectorStore already logs the specific backend/type/config
+		// it selected -- no separate log line needed here.
 	}
 
 	// Rate limiting (master plan: "per-user, per-agent, per-tenant,
@@ -754,30 +756,57 @@ func initVectorStore(ctx context.Context, configPath string) vectorstore.VectorS
 	if err != nil || cfg.VectorStore == nil {
 		return nil
 	}
-	if cfg.VectorStore.Type != "pgvector" {
-		slog.Error("vector_store.type not supported (only \"pgvector\" is implemented)", "type", cfg.VectorStore.Type)
-		return nil
-	}
-	dsn := os.Getenv("POSTGRES_DSN")
-	if dsn == "" {
-		slog.Error("vector_store: type=pgvector requires POSTGRES_DSN to be set")
-		return nil
-	}
 	dims := cfg.VectorStore.Dimensions
 	if dims <= 0 {
 		dims = defaultVectorDimensions
 	}
-	vs, err := pgvector.New(ctx, dsn, dims)
-	if err != nil {
-		slog.Error("vector store: failed to connect", "error", err)
+
+	switch cfg.VectorStore.Type {
+	case "pgvector":
+		dsn := os.Getenv("POSTGRES_DSN")
+		if dsn == "" {
+			slog.Error("vector_store: type=pgvector requires POSTGRES_DSN to be set")
+			return nil
+		}
+		vs, err := pgvector.New(ctx, dsn, dims)
+		if err != nil {
+			slog.Error("vector store: failed to connect", "error", err)
+			return nil
+		}
+		if err := vs.Init(ctx); err != nil {
+			slog.Error("vector store: failed to initialize schema", "error", err)
+			vs.Close()
+			return nil
+		}
+		slog.Info("vector store: pgvector", "dimensions", dims)
+		return vs
+
+	case "qdrant":
+		url := cfg.VectorStore.URL
+		if url == "" {
+			url = os.Getenv("QDRANT_URL")
+		}
+		if url == "" {
+			slog.Error("vector_store: type=qdrant requires vector_store.url or QDRANT_URL to be set")
+			return nil
+		}
+		vs, err := qdrant.New(url, cfg.VectorStore.Collection, dims)
+		if err != nil {
+			slog.Error("vector store: failed to configure qdrant", "error", err)
+			return nil
+		}
+		if err := vs.Init(ctx); err != nil {
+			slog.Error("vector store: failed to initialize qdrant collection", "error", err)
+			vs.Close()
+			return nil
+		}
+		slog.Info("vector store: qdrant", "url", url, "collection", cfg.VectorStore.Collection, "dimensions", dims)
+		return vs
+
+	default:
+		slog.Error("vector_store.type not supported (only \"pgvector\" and \"qdrant\" are implemented)", "type", cfg.VectorStore.Type)
 		return nil
 	}
-	if err := vs.Init(ctx); err != nil {
-		slog.Error("vector store: failed to initialize schema", "error", err)
-		vs.Close()
-		return nil
-	}
-	return vs
 }
 
 // initCorsConfig reads the "cors" section from the first discovered

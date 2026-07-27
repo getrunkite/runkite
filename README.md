@@ -182,6 +182,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `MONGO_DB` | `runkite` | MongoDB database name (used when `MONGO_URI` is set) |
 | `REDIS_URL` | (unset) | Redis URL; enables Redis transport (queue + broker) |
 | `DATABASE_PATH` | `./runkite.db` | SQLite file path (used when neither `POSTGRES_DSN` nor `MONGO_URI` is set) |
+| `QDRANT_URL` | (unset) | Qdrant REST base URL; fallback for `vector_store.url` when `vector_store.type` is `"qdrant"` (only read if `vector_store` is configured at all -- doesn't enable Qdrant by itself, unlike `POSTGRES_DSN`/`MONGO_URI` for the state backend) |
 | `LANGGRAPH_CONFIG` | (unset) | Path to langgraph.json (alternative to --config flag) |
 | `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_python_langgraph`) |
 
@@ -303,7 +304,7 @@ See `examples/factory_agent/` for a minimal working example, and `python/runkite
 
 ## Vector Store
 
-Semantic search over embeddings (master plan: "Vector/semantic store"), backed by **pgvector** (Tier 1 -- stable). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
+Semantic search over embeddings (master plan: "Vector/semantic store"), backed by **pgvector** (Tier 1, SQL-based) or **Qdrant** (the non-SQL exemplar, same role Mongo plays for the state store -- proof the `VectorStore` interface is implementable against a real standalone vector database, not just a Postgres extension). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
 
 ```json
 {
@@ -314,16 +315,29 @@ Semantic search over embeddings (master plan: "Vector/semantic store"), backed b
 }
 ```
 
-`dimensions` fixes the embedding column's width at schema-creation time (pgvector's `vector(N)` type is fixed-dimension) -- defaults to 1536 (OpenAI `text-embedding-3-small`/`ada-002`'s size) when omitted. Requires `POSTGRES_DSN` to be set on the control plane; the extension itself (`CREATE EXTENSION IF NOT EXISTS vector`) is created automatically on startup, but the Postgres server must have the pgvector extension binary available -- the `pgvector/pgvector:pg16` image (used by this repo's `docker-compose.yml`/`docker-compose.test.yml`) ships it; a bare `postgres:16` image does not.
+```json
+{
+  "vector_store": {
+    "type": "qdrant",
+    "url": "http://localhost:6333",
+    "collection": "vector_items",
+    "dimensions": 1536
+  }
+}
+```
 
-**API**: `PUT /vectors/items` (upsert -- overwrites on a repeat `id`, re-embedding a changed document is the common case, not a conflict), `DELETE /vectors/items`, `POST /vectors/search` (top-K cosine similarity, optional exact-match `filter` over metadata). Same dual-mode convention as the key-value store: mirrored under `/internal/vectors/*` for a runner's proxy-mode client. 501s (not 404s) when `vector_store` isn't configured -- "this feature isn't turned on" is a more actionable signal than "this route doesn't exist" for something opt-in.
+`dimensions` fixes the embedding vector's width at creation time (pgvector's `vector(N)` column / Qdrant's collection vector size are both fixed-dimension) -- defaults to 1536 (OpenAI `text-embedding-3-small`/`ada-002`'s size) when omitted. `pgvector` requires `POSTGRES_DSN` to be set on the control plane; the extension itself (`CREATE EXTENSION IF NOT EXISTS vector`) is created automatically on startup, but the Postgres server must have the pgvector extension binary available -- the `pgvector/pgvector:pg16` image (used by this repo's `docker-compose.yml`/`docker-compose.test.yml`) ships it; a bare `postgres:16` image does not. `qdrant` requires `vector_store.url` or `QDRANT_URL` -- one Qdrant collection holds every tenant/namespace (`tenant_id`/`namespace` are stored as payload fields and included in every filter, not one collection per tenant), and a caller's `(tenant_id, namespace, id)` is mapped to a deterministic UUID v5 for Qdrant's point ID (which must be an integer or UUID, never an arbitrary string).
 
-**Python SDK**: `RunkiteVectorStore` (`python/runkite_runner/vectorstore.py`) implements LangChain's `VectorStore` interface (`add_texts`, `similarity_search`, `similarity_search_with_score`, `from_texts`), so it drops into existing LangChain/LangGraph RAG code unchanged. Same direct/proxy dual mode as `RunkiteStore`: direct mode (`POSTGRES_DSN` set) queries `vector_items` straight over `psycopg`, proxy mode calls `/internal/vectors/*` over `httpx`. See `examples/vector_agent/` for a working retrieval demo (fake, deterministic embeddings -- no API key needed).
+**API**: `PUT /vectors/items` (upsert -- overwrites on a repeat `id`, re-embedding a changed document is the common case, not a conflict), `DELETE /vectors/items`, `POST /vectors/search` (top-K cosine similarity, optional exact-match `filter` over metadata) -- identical regardless of which backend is configured. Same dual-mode convention as the key-value store: mirrored under `/internal/vectors/*` for a runner's proxy-mode client. 501s (not 404s) when `vector_store` isn't configured -- "this feature isn't turned on" is a more actionable signal than "this route doesn't exist" for something opt-in.
+
+**Python SDK**: `RunkiteVectorStore` (`python/runkite_runner/vectorstore.py`) implements LangChain's `VectorStore` interface (`add_texts`, `similarity_search`, `similarity_search_with_score`, `from_texts`), so it drops into existing LangChain/LangGraph RAG code unchanged, regardless of the configured backend -- it talks to the control plane's HTTP API, never to pgvector or Qdrant directly. Same direct/proxy dual mode as `RunkiteStore` for the pgvector case (direct mode queries `vector_items` straight over `psycopg` when `POSTGRES_DSN` is set, proxy mode calls `/internal/vectors/*` over `httpx`); Qdrant is proxy-mode only today (see limitations below). See `examples/vector_agent/` for a working retrieval demo (fake, deterministic embeddings -- no API key needed).
 
 **Known limitations, stated plainly**:
-- **Dimension is fixed at first creation, not migrated.** Changing `vector_store.dimensions` after the `vector_items` table already exists does not migrate existing rows or the column type -- `Upsert` starts failing with a clear Postgres dimension-mismatch error (not silent corruption) until the table is manually dropped or recreated at the new width.
-- **Cosine similarity only.** pgvector also supports L2 and inner-product distance; only cosine (`vector_cosine_ops`, the most common choice for text embeddings) is wired up today.
-- **Qdrant, Weaviate, Pinecone are not implemented** (Tier 2 -- experimental, not yet built). The `VectorStore` interface (`internal/vectorstore`) is backend-agnostic, but pgvector is the only implementation.
+- **Dimension is fixed at first creation, not migrated**, for both backends. Changing `vector_store.dimensions` after the table/collection already exists does not migrate existing rows -- `Upsert` starts failing with a clear dimension-mismatch error (not silent corruption) until it's manually dropped or recreated at the new width.
+- **Cosine similarity only.** Both backends support other distance metrics (pgvector: L2, inner-product; Qdrant: Euclidean, dot product); only cosine is wired up today, the most common choice for text embeddings.
+- **Qdrant has no direct mode.** `RunkiteVectorStore`'s direct/proxy split only exists for pgvector (a runner with `POSTGRES_DSN` can query Postgres straight over `psycopg`); there's no equivalent runner-side Qdrant client, so a Qdrant-backed deployment always goes through the control plane's HTTP API. Functionally identical, just always one network hop instead of sometimes zero.
+- **Qdrant's `created_at` resets on re-index.** Qdrant has no built-in insert-vs-update distinction the way Postgres's `ON CONFLICT DO UPDATE` does, so pinning down "first write time" would need a read before every write. `created_at` is set to "now" on every `Upsert` call, including re-indexing an already-existing `id` -- correct for a fresh item, but re-indexing an existing document resets rather than preserves its original `created_at`.
+- **Weaviate, Pinecone are not implemented** (Tier 2 -- experimental, not yet built). The `VectorStore` interface (`internal/vectorstore`) is backend-agnostic and has a shared conformance suite (`internal/vectorstore/conformance`) both pgvector and Qdrant pass identically, but those two remaining backends have no implementation yet.
 
 ## Connectors
 
@@ -726,7 +740,7 @@ Honest gaps, not hidden ones:
 - **`on_tool_call` requires runner cooperation.** The control plane fires it whenever it sees a RunEvent with `method: "tool_call"`, but doesn't parse LangGraph/LangChain message shapes itself (staying framework-agnostic) -- it's up to a framework-aware runner to emit that method. `worker.py` (the flagship LangGraph runner) does: `find_new_tool_calls` scans every stream chunk for `AIMessage.tool_calls`, deduping by tool-call `id` so a message seen in both `values` and `updates` mode (if both are requested) only fires once. Live-verified end to end: `examples/react_agent` (a real `StateGraph` + `ToolNode`, not a mock) run through the real control plane + real Python runner, with a webhook configured for `tool_call`, actually delivers `{"name":"search","args":{...},"id":"call_001"}` to an external receiver. `generic_worker.py` and the TypeScript runner don't emit it yet -- `run_start`/`run_complete`/`error`/`interrupt` are fully wired for every runner and fire from real control-plane-observed lifecycle transitions regardless.
 - **In-runner custom routes are ASGI-only.** `uvicorn` (the SDK's only custom-routes dependency) doesn't serve WSGI apps -- Flask needs an adapter (e.g. `a2wsgi.WSGIMiddleware`) wrapped around it first. Sidecar mode has no such restriction (any language, any framework).
 - **TypeScript runner's Docker image (`Dockerfile.runner-ts`) is built and live-verified** (a real run against `echo_agent_ts` through `docker-compose.ts.yml` completes and echoes back correctly), but its own VG-001/002/003-equivalent verification is otherwise manual-only, not regression-guarded in CI (same as cron's multi-instance claim test).
-- **Vector store is pgvector-only.** Qdrant, Weaviate, and Pinecone are Tier 2 (experimental) and not yet built -- see the Vector Store section.
+- **Vector store supports pgvector and Qdrant.** Weaviate and Pinecone remain Tier 2 (experimental) and not yet built -- see the Vector Store section.
 - **Admin UI overview counts are capped, not a real `COUNT` query.** `GET /admin-api/overview` derives its totals/by-status breakdowns by fetching up to 1000 rows per resource type and counting in Go, same as every other list endpoint's pagination -- fine at the scale a single admin dashboard is typically used at; a deployment with more rows than that per resource would want a dedicated `COUNT` query added to `state.Store` instead.
 - **Factory Graph's `_ExecutionRuntime` construction depends on `langgraph_sdk`'s internal (underscore-prefixed) class.** `langgraph_sdk.runtime.ServerRuntime` has no public constructor -- factory_graph.py constructs `_ExecutionRuntime` directly, which could break on a `langgraph-sdk` upgrade that changes its internals; a `_MinimalRuntime` duck-typed stand-in (covering the same documented `.user`/`.store`/`.execution_runtime`/`.ensure_user()` surface) is used as a fallback if that construction fails, so factory graphs keep working either way for the common case.
 - **Factory Graph's `runtime.execution_runtime.context` is always the run's `configurable` dict, not a typed `context_schema` instance.** LangGraph Platform's own beta API supports strongly-typed context via a graph's declared `context_schema`; this passthrough is untyped (a plain dict), sufficient for factories that only read specific keys but not for ones relying on `context_schema`'s validation/defaults.

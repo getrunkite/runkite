@@ -118,15 +118,26 @@ type CorsEntry struct {
 }
 
 // VectorStoreEntry is the "vector_store" section of langgraph.json (master
-// plan: "Vector/semantic store"). Today only "pgvector" is implemented;
-// Qdrant/Weaviate/Pinecone are Tier 2, not yet built.
+// plan: "Vector/semantic store"). "pgvector" (Tier 1, SQL-based) and
+// "qdrant" (the non-SQL exemplar, same role Mongo plays for state.Store)
+// are implemented; Weaviate/Pinecone remain Tier 2, not yet built.
 type VectorStoreEntry struct {
-	Type string `json:"type"` // "pgvector"
-	// Dimensions fixes the embedding column's width (pgvector's vector(N)
-	// type is fixed-dimension). Defaults to 1536 (OpenAI
+	Type string `json:"type"` // "pgvector" | "qdrant"
+	// Dimensions fixes the embedding vector's width (pgvector's
+	// vector(N) column / Qdrant's collection vector size are both
+	// fixed-dimension). Defaults to 1536 (OpenAI
 	// text-embedding-3-small/ada-002's size) when omitted -- every item
 	// upserted must supply exactly this many floats.
 	Dimensions int `json:"dimensions,omitempty"`
+	// URL is Qdrant's REST base URL (e.g. "http://localhost:6333"), read
+	// from QDRANT_URL if unset here -- same env-var-first, config-second
+	// convention as POSTGRES_DSN for pgvector. Ignored for type=pgvector.
+	URL string `json:"url,omitempty"`
+	// Collection names the Qdrant collection every tenant/namespace
+	// shares (see internal/vectorstore/qdrant's package doc for why one
+	// shared collection, not one per tenant/namespace). Defaults to
+	// "vector_items". Ignored for type=pgvector.
+	Collection string `json:"collection,omitempty"`
 }
 
 // CronEntry is one entry in langgraph.json's "cron" section.
