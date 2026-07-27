@@ -87,6 +87,29 @@ type LangGraphConfig struct {
 	// applies -- A2A delegation itself (POST /internal/a2a/runs) is
 	// always available, this section only tunes the depth limit.
 	A2A *A2AEntry `json:"a2a,omitempty"`
+	// AgentAliases is control-plane-wide, same first-file convention as
+	// Auth/RateLimit/A2A (see initAgentAliases in cmd/serve.go). Absent
+	// means no alias exists at all -- an agent_id that happens to match
+	// a real registered agent runs it directly, same as always; a
+	// client-facing name that ISN'T a real registered agent and also
+	// isn't an alias 404s, same as always.
+	AgentAliases map[string]AgentAliasEntry `json:"agent_aliases,omitempty"`
+}
+
+// AgentAliasEntry is one entry in langgraph.json's "agent_aliases"
+// section (master plan: "Full agent versioning... A/B deployment
+// routing"). A client-facing name (the map key in AgentAliases) that
+// probabilistically resolves to one of several REAL registered
+// agent_ids at run-creation time -- e.g. rolling out a new graph
+// version to 10% of traffic while 90% still gets the stable one, both
+// deployed as ordinary, independently-registered agents.
+type AgentAliasEntry struct {
+	// Targets maps a real agent_id to its relative weight. Weights
+	// don't need to sum to 100 -- they're normalized against their own
+	// sum (so {"a": 1, "b": 1} and {"a": 50, "b": 50} both mean a 50/50
+	// split), matching how most weighted-routing configs work rather
+	// than requiring the operator to do the arithmetic themselves.
+	Targets map[string]int `json:"targets"`
 }
 
 // A2AEntry is the "a2a" section of langgraph.json (master plan:

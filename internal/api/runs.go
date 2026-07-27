@@ -44,6 +44,20 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		req.AgentID = req.AssistantID
 	}
 
+	// A/B deployment routing (master plan: "Full agent versioning...
+	// A/B deployment routing", see alias.go). Resolved BEFORE rate
+	// limiting/agent lookup so everything downstream -- per-agent rate
+	// limits, runner_kind lookup, the actual dispatched assignment --
+	// consistently sees the REAL target agent, not the alias name (a
+	// rate limit configured for a specific deployment target should
+	// apply to that target regardless of which alias routed to it).
+	// requestedAlias is empty for a normal, non-aliased agent_id.
+	requestedAlias := ""
+	if resolved, wasAlias := s.aliases.Resolve(req.AgentID); wasAlias {
+		requestedAlias = req.AgentID
+		req.AgentID = resolved
+	}
+
 	// Per-agent rate limiting (master plan: "Rate limiting: per-user,
 	// per-agent, per-tenant"). Enforced here rather than in generic HTTP
 	// middleware because agent_id is parsed from the request body, not the
@@ -161,6 +175,14 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		ParentRunID: req.ParentRunID,
 		RootRunID:   rootRunID,
 		Depth:       depth,
+	}
+	if requestedAlias != "" {
+		// Cost/observability attribution for A/B routing: agent_id on
+		// this run is already the REAL resolved target (see above) --
+		// this is the only record of which alias the client actually
+		// asked for, needed to answer "what fraction of alias X's
+		// traffic went to which target" after the fact.
+		run.Metadata["requested_alias"] = requestedAlias
 	}
 
 	// LLM response caching: compute the cache key HERE, from the raw

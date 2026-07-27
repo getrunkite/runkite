@@ -92,6 +92,24 @@ func (s *Store) Init(ctx context.Context) error {
 	-- exclusion constraint matching the ON CONFLICT specification".
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_agents_tenant_agent ON agents(tenant_id, agent_id);
 
+	-- Full agent versioning (master plan: "version history browsing,
+	-- rollback to arbitrary past versions") -- one immutable row per
+	-- version ever served, written by UpsertAgent itself the moment
+	-- agents.version bumps. Never updated or deleted afterward -- see
+	-- models.AgentVersion's doc comment for why rollback doesn't touch
+	-- old rows here.
+	CREATE TABLE IF NOT EXISTS agent_versions (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		agent_id     TEXT NOT NULL,
+		version      INTEGER NOT NULL,
+		name         TEXT,
+		description  TEXT,
+		metadata     JSONB DEFAULT '{}',
+		capabilities JSONB DEFAULT '{}',
+		created_at   TIMESTAMPTZ DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, agent_id, version)
+	);
+
 	CREATE TABLE IF NOT EXISTS agent_schemas (
 		tenant_id     TEXT NOT NULL DEFAULT 'default',
 		agent_id      TEXT NOT NULL,
@@ -286,12 +304,27 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 	meta, _ := json.Marshal(agent.Metadata)
 	caps, _ := json.Marshal(agent.Capabilities)
 	now := time.Now().UTC()
+	tenantID := tenant.FromContext(ctx)
 
+	// A transaction, not a single UPSERT statement, because writing the
+	// version-history snapshot (agent_versions) needs to know WHETHER
+	// this call actually bumped the version -- doing that inside one
+	// UPSERT's CASE expression (the pre-versioning-history approach)
+	// has no way to also conditionally write a second table's row from
+	// the same statement. Not a contended path: agent upserts happen at
+	// config-bootstrap time, not per-request.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op if committed
+
+	var newVersion int
 	// version bumps only if the definition actually changed. JSONB equality
 	// compares the parsed value (not the source string), so this is
 	// robust to whitespace/key-order differences unlike a naive text
 	// comparison -- see the SQLite equivalent for the TEXT-column version.
-	_, err := s.pool.Exec(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO agents (tenant_id, agent_id, name, description, metadata, capabilities, version, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
 		ON CONFLICT(tenant_id, agent_id) DO UPDATE SET
@@ -304,8 +337,92 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 			                 OR agents.capabilities IS DISTINCT FROM EXCLUDED.capabilities
 			               THEN agents.version + 1
 			               ELSE agents.version END
-	`, tenant.FromContext(ctx), agent.AgentID, agent.Name, agent.Description, meta, caps, now)
-	return err
+		RETURNING version
+	`, tenantID, agent.AgentID, agent.Name, agent.Description, meta, caps, now).Scan(&newVersion)
+	if err != nil {
+		return err
+	}
+
+	// Only write a version snapshot if this call is the one that
+	// created it -- an unchanged re-registration (e.g. every control
+	// plane restart with an unchanged langgraph.json) must not create
+	// duplicate agent_versions rows for the same version number.
+	// version=1 always needs a snapshot on first insert; version>1
+	// needs one only if it doesn't already exist (idempotent guard
+	// against this same "unchanged" case at any version).
+	_, err = tx.Exec(ctx, `
+		INSERT INTO agent_versions (tenant_id, agent_id, version, name, description, metadata, capabilities, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (tenant_id, agent_id, version) DO NOTHING
+	`, tenantID, agent.AgentID, newVersion, agent.Name, agent.Description, meta, caps, now)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (s *Store) ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = $1`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.AgentVersion{}
+	for rows.Next() {
+		v, err := scanAgentVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int) (*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = $1 AND version = $2`
+	args := []interface{}{agentID, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $3`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+	v, err := scanAgentVersion(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+// agentVersionScanner covers both pgx.Row (QueryRow) and pgx.Rows
+// (Query) -- both expose an identical Scan method, so this one helper
+// serves GetAgentVersion and ListAgentVersions without duplicating the
+// column list or JSON-unmarshal logic between them.
+type agentVersionScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
+	var v models.AgentVersion
+	var metaBytes, capsBytes []byte
+	if err := row.Scan(&v.TenantID, &v.AgentID, &v.Version, &v.Name, &v.Description, &metaBytes, &capsBytes, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &v.Metadata)
+	json.Unmarshal(capsBytes, &v.Capabilities)
+	return &v, nil
 }
 
 func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {

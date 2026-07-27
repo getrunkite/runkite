@@ -122,7 +122,7 @@ func (s *Store) Close() error {
 
 // TruncateAll removes all documents from all collections. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
-	for _, c := range []string{"agents", "agent_schemas", "threads", "runs", "thread_checkpoints",
+	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims"} {
 		if _, err := s.col(c).DeleteMany(ctx, bson.D{}); err != nil {
 			return err
@@ -256,8 +256,10 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 	var existing agentDoc
 	err := s.col("agents").FindOne(ctx, bson.M{"tenant_id": tid, "agent_id": agent.AgentID}).Decode(&existing)
 	version := 1
+	versionChanged := true // new agent (no existing doc) always needs its v1 snapshot
 	if err == nil {
 		version = existing.Version
+		versionChanged = false
 		// version bumps only if the definition actually changed --
 		// matches Postgres's JSONB-equality CASE expression, compared
 		// here as parsed Go values rather than serialized text.
@@ -268,6 +270,7 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 		if existing.Name != agent.Name || existing.Description != agent.Description ||
 			string(metaBytes) != string(existingMetaBytes) || string(capsBytes) != string(existingCapsBytes) {
 			version = existing.Version + 1
+			versionChanged = true
 		}
 	} else if err != mongo.ErrNoDocuments {
 		return err
@@ -285,7 +288,77 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 		},
 		options.UpdateOne().SetUpsert(true),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Full agent versioning (master plan: "version history browsing,
+	// rollback to arbitrary past versions") -- one immutable document
+	// per version ever served, written only when this call is the one
+	// that actually bumped the version (an unchanged re-registration,
+	// e.g. every control plane restart with an unchanged
+	// langgraph.json, must not duplicate a version snapshot).
+	if versionChanged {
+		_, err = s.col("agent_versions").InsertOne(ctx, agentVersionDoc{
+			TenantID: tid, AgentID: agent.AgentID, Version: version,
+			Name: agent.Name, Description: agent.Description,
+			Metadata: agent.Metadata, Capabilities: agent.Capabilities, CreatedAt: now,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type agentVersionDoc struct {
+	TenantID     string      `bson:"tenant_id"`
+	AgentID      string      `bson:"agent_id"`
+	Version      int         `bson:"version"`
+	Name         string      `bson:"name"`
+	Description  string      `bson:"description"`
+	Metadata     interface{} `bson:"metadata"`
+	Capabilities interface{} `bson:"capabilities"`
+	CreatedAt    time.Time   `bson:"created_at"`
+}
+
+func toAgentVersion(doc agentVersionDoc) *models.AgentVersion {
+	return &models.AgentVersion{
+		TenantID: doc.TenantID, AgentID: doc.AgentID, Version: doc.Version,
+		Name: doc.Name, Description: doc.Description,
+		Metadata: bsonToMap(doc.Metadata), Capabilities: bsonToMap(doc.Capabilities), CreatedAt: doc.CreatedAt,
+	}
+}
+
+func (s *Store) ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error) {
+	filter := tenantFilter(ctx, bson.M{"agent_id": agentID})
+	cur, err := s.col("agent_versions").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "version", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	versions := []*models.AgentVersion{}
+	for cur.Next(ctx) {
+		var doc agentVersionDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		versions = append(versions, toAgentVersion(doc))
+	}
+	return versions, cur.Err()
+}
+
+func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int) (*models.AgentVersion, error) {
+	var doc agentVersionDoc
+	err := s.col("agent_versions").FindOne(ctx, tenantFilter(ctx, bson.M{"agent_id": agentID, "version": version})).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toAgentVersion(doc), nil
 }
 
 func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {

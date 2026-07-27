@@ -517,6 +517,52 @@ func runAgentTests(t *testing.T, factory StoreFactory) {
 			t.Errorf("name search: got %d results, want 1 (beta)", len(results))
 		}
 	})
+
+	t.Run("SS-009d_version_history_and_rollback", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		agent := &models.Agent{AgentID: "agent-hist", Name: "v1", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}}
+		if err := s.UpsertAgent(ctx, agent); err != nil {
+			t.Fatalf("upsert v1: %v", err)
+		}
+		// Unchanged re-registration -- must NOT create a duplicate
+		// version snapshot (the common control-plane-restart case).
+		if err := s.UpsertAgent(ctx, agent); err != nil {
+			t.Fatalf("upsert v1 again (unchanged): %v", err)
+		}
+		agent.Name = "v2"
+		if err := s.UpsertAgent(ctx, agent); err != nil {
+			t.Fatalf("upsert v2: %v", err)
+		}
+
+		versions, err := s.ListAgentVersions(ctx, "agent-hist")
+		if err != nil {
+			t.Fatalf("ListAgentVersions: %v", err)
+		}
+		if len(versions) != 2 {
+			t.Fatalf("expected exactly 2 version snapshots, got %d: %+v", len(versions), versions)
+		}
+		if versions[0].Version != 2 || versions[0].Name != "v2" {
+			t.Errorf("expected newest-first ordering (v2 first), got %+v", versions[0])
+		}
+		if versions[1].Version != 1 || versions[1].Name != "v1" {
+			t.Errorf("expected v1 last, got %+v", versions[1])
+		}
+
+		got, err := s.GetAgentVersion(ctx, "agent-hist", 1)
+		if err != nil {
+			t.Fatalf("GetAgentVersion(1): %v", err)
+		}
+		if got.Name != "v1" {
+			t.Errorf("expected v1 snapshot name 'v1', got %q", got.Name)
+		}
+
+		_, err = s.GetAgentVersion(ctx, "agent-hist", 99)
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Errorf("expected ErrNotFound for unknown version, got %T: %v", err, err)
+		}
+	})
 }
 
 // --------------------------------------------------------------------------

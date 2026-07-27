@@ -598,12 +598,29 @@ make build          # Build the binary
 
 ### Agents
 ```
-POST   /agents/search              Search/list agents
-GET    /agents/{id}                Get agent details
-GET    /agents/{id}/schemas        Get agent input/output schemas
+POST   /agents/search                          Search/list agents
+GET    /agents/{id}                            Get agent details
+GET    /agents/{id}/schemas                    Get agent input/output schemas
+GET    /agents/{id}/versions                   List version history (newest first)
+POST   /agents/{id}/versions/{v}/rollback      Roll back to an old version's content
 ```
 
-Agents carry a `version` field (basic version tracking): starts at 1, increments only when an agent's actual definition (name/description/metadata/capabilities) changes on re-bootstrap -- restarting the control plane with an unchanged `langgraph.json` does not bump it. The latest version is always what's served; full version history, rollback, and A/B deployment are post-launch scope.
+Agents carry a `version` field: starts at 1, increments only when an agent's actual definition (name/description/metadata/capabilities) changes on re-bootstrap -- restarting the control plane with an unchanged `langgraph.json` does not bump it. Every bump writes an immutable snapshot to a separate version-history record (never updated or deleted afterward), so `GET /agents/{id}/versions` can show every definition an agent has ever had. `POST .../rollback` re-applies an old snapshot's content via the same `UpsertAgent` path -- this creates a NEW version whose content matches the old one, rather than deleting or rewriting history (`git revert`, not `git reset`): rolling back from v5 to v2's content produces v6, and v2/v3/v4 remain in history unchanged, showing that a rollback happened rather than erasing what came after it.
+
+**A/B deployment routing**: a client-facing name resolves to one of several REAL, independently-registered agents, weighted-random per run, via `langgraph.json`'s `agent_aliases` section:
+```json
+{
+  "agent_aliases": {
+    "my_agent": { "targets": { "my_agent_v1": 90, "my_agent_v2": 10 } }
+  }
+}
+```
+Weights are relative, not required to sum to 100 (`{"a": 1, "b": 1}` means an even 50/50 split, same as `{"a": 50, "b": 50}`). A run created against `my_agent` resolves to a real target (`my_agent_v1` or `my_agent_v2`) *before* rate limiting, agent lookup, or dispatch -- everything downstream sees the real target consistently, never the alias name. The resulting run's `agent_id` is the resolved target (what actually executed); `metadata.requested_alias` records which alias was asked for, for after-the-fact attribution (e.g. "what fraction of `my_agent`'s traffic actually went to v2").
+
+**Known limitations, stated plainly**:
+- **No built-in analytics dashboard.** `metadata.requested_alias` makes "which target did this run use" a queryable field, but comparing conversion/error rates between targets is left to the caller (e.g. via `POST /runs/search` filtered by `metadata.requested_alias`), not a built-in rollup.
+- **Rollback only affects future run creations.** It changes what `UpsertAgent` currently serves as the agent's definition; any run already in flight (or already completed) keeps whatever it was actually dispatched with -- there's no retroactive re-execution.
+- **Aliases are static config, not runtime-adjustable via API.** Changing a split percentage means editing `langgraph.json` and restarting (or hot-reloading, if the deployment supports that), not a `PATCH` call.
 
 ### Threads
 ```

@@ -185,6 +185,14 @@ func startServer(opts serverOpts) {
 		slog.Info("a2a: max_depth configured", "max_depth", maxDepth)
 	}
 
+	// A/B deployment routing (master plan: "Full agent versioning...
+	// A/B deployment routing"). Disabled (pure pass-through) unless
+	// "agent_aliases" is configured.
+	if aliasCfg := initAgentAliases(opts.configPath); len(aliasCfg) > 0 {
+		apiServer.SetAliasResolver(api.NewAliasResolver(aliasCfg))
+		slog.Info("agent aliases: configured", "count", len(aliasCfg))
+	}
+
 	// Event hooks + webhook delivery (master plan: on_run_start,
 	// on_run_complete, on_tool_call, on_error, on_interrupt).
 	hookDispatcher := initHooks(opts.configPath, store)
@@ -713,6 +721,22 @@ func initAdminAuthProvider(configPath string) auth.Provider {
 	}
 	slog.Info("admin auth: static keys", "count", len(keys))
 	return auth.NewAPIKeyProvider(keys)
+}
+
+// initAgentAliases reads the "agent_aliases" section from the first
+// discovered langgraph.json, same control-plane-wide/first-file
+// convention as initA2AMaxDepth. Returns nil (meaning "no aliasing at
+// all") if unconfigured.
+func initAgentAliases(configPath string) map[string]config.AgentAliasEntry {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil {
+		return nil
+	}
+	return cfg.AgentAliases
 }
 
 // initA2AMaxDepth reads the "a2a.max_depth" section from the first

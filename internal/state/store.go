@@ -23,6 +23,14 @@ type Store interface {
 	UpsertAgent(ctx context.Context, agent *models.Agent) error
 	GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error)
 	UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error
+	// ListAgentVersions returns every historical snapshot for agentID,
+	// newest first (master plan: "Full agent versioning: version
+	// history browsing"). Written by UpsertAgent itself, once per
+	// actual version bump -- see models.AgentVersion's doc comment.
+	ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error)
+	// GetAgentVersion returns one specific historical snapshot, or
+	// ErrNotFound if that version never existed for this agent.
+	GetAgentVersion(ctx context.Context, agentID string, version int) (*models.AgentVersion, error)
 
 	// --- Threads ---
 	CreateThread(ctx context.Context, thread *models.Thread) error

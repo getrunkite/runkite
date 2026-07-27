@@ -66,6 +66,21 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 		PRIMARY KEY (tenant_id, agent_id)
 	);
 
+	-- Full agent versioning (master plan: "version history browsing,
+	-- rollback to arbitrary past versions") -- one immutable row per
+	-- version ever served. Never updated or deleted afterward.
+	CREATE TABLE IF NOT EXISTS agent_versions (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		agent_id     TEXT NOT NULL,
+		version      INTEGER NOT NULL,
+		name         TEXT,
+		description  TEXT,
+		metadata     TEXT DEFAULT '{}',
+		capabilities TEXT DEFAULT '{}',
+		created_at   TEXT DEFAULT (datetime('now')),
+		PRIMARY KEY (tenant_id, agent_id, version)
+	);
+
 	CREATE TABLE IF NOT EXISTS agent_schemas (
 		tenant_id     TEXT NOT NULL DEFAULT 'default',
 		agent_id      TEXT NOT NULL,
@@ -324,12 +339,25 @@ func (s *SQLiteStore) UpsertAgent(ctx context.Context, agent *models.Agent) erro
 	now := time.Now().UTC().Format(time.RFC3339)
 	tenantID := tenant.FromContext(ctx)
 
+	// A transaction, not a single statement, because writing the
+	// version-history snapshot (agent_versions) needs to know WHETHER
+	// this call actually bumped the version -- same rationale as the
+	// Postgres backend's identical restructuring, see its comment for
+	// the full explanation. Not a contended path: agent upserts happen
+	// at config-bootstrap time, not per-request.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
 	// version bumps only if the definition actually changed -- comparing
 	// against the pre-update row (unqualified/table-qualified columns) vs
 	// the proposed one (excluded.*) in a single atomic statement, so a
 	// bootstrap re-running UpsertAgent with an unchanged langgraph.json on
 	// every restart doesn't inflate the version number.
-	_, err := s.db.ExecContext(ctx, `
+	var newVersion int
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO agents (tenant_id, agent_id, name, description, metadata, capabilities, version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
 		ON CONFLICT(tenant_id, agent_id) DO UPDATE SET
@@ -342,8 +370,89 @@ func (s *SQLiteStore) UpsertAgent(ctx context.Context, agent *models.Agent) erro
 			                 OR agents.capabilities != excluded.capabilities
 			               THEN agents.version + 1
 			               ELSE agents.version END
-	`, tenantID, agent.AgentID, agent.Name, agent.Description, string(meta), string(caps), now, now)
-	return err
+		RETURNING version
+	`, tenantID, agent.AgentID, agent.Name, agent.Description, string(meta), string(caps), now, now).Scan(&newVersion)
+	if err != nil {
+		return err
+	}
+
+	// Only write a version snapshot if this call is the one that
+	// created it -- see the Postgres backend's identical comment for
+	// why an unchanged re-registration must not duplicate a row.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO agent_versions (tenant_id, agent_id, version, name, description, metadata, capabilities, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (tenant_id, agent_id, version) DO NOTHING
+	`, tenantID, agent.AgentID, newVersion, agent.Name, agent.Description, string(meta), string(caps), now)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = ?`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.AgentVersion{}
+	for rows.Next() {
+		v, err := scanAgentVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *SQLiteStore) GetAgentVersion(ctx context.Context, agentID string, version int) (*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = ? AND version = ?`
+	args := []interface{}{agentID, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	v, err := scanAgentVersion(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+// agentVersionScanner covers both *sql.Row (QueryRowContext) and
+// *sql.Rows (QueryContext) -- both expose an identical Scan method, so
+// this one helper serves GetAgentVersion and ListAgentVersions without
+// duplicating the column list or timestamp-parsing logic between them.
+type agentVersionScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
+	var v models.AgentVersion
+	var metaStr, capsStr, createdStr string
+	if err := row.Scan(&v.TenantID, &v.AgentID, &v.Version, &v.Name, &v.Description, &metaStr, &capsStr, &createdStr); err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(metaStr), &v.Metadata)
+	json.Unmarshal([]byte(capsStr), &v.Capabilities)
+	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+	return &v, nil
 }
 
 func (s *SQLiteStore) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {

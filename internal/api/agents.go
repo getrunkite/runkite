@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/sharanharsoor/runkite/internal/models"
 )
@@ -52,6 +53,62 @@ func (s *Server) handleGetAgentSchemas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schema)
 }
 
+// GET /agents/{agentID}/versions -- full agent versioning (master plan:
+// "version history browsing"). Newest first, matching the store's own
+// ordering contract.
+func (s *Server) handleListAgentVersions(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agentID")
+
+	versions, err := s.store.ListAgentVersions(r.Context(), agentID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, versions)
+}
+
+// POST /agents/{agentID}/versions/{version}/rollback -- full agent
+// versioning (master plan: "rollback to arbitrary past versions").
+// Re-applies an old version's snapshot via the normal UpsertAgent path,
+// which itself creates a NEW version whose content matches the old one
+// -- see models.AgentVersion's doc comment for why this keeps history
+// strictly linear/append-only rather than rewriting or deleting
+// anything. The response is the resulting (new) Agent, whose Version
+// will be current+1, not the target version number.
+func (s *Server) handleRollbackAgent(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agentID")
+	versionStr := r.PathValue("version")
+	version, err := strconv.Atoi(versionStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "version must be an integer")
+		return
+	}
+
+	snapshot, err := s.store.GetAgentVersion(r.Context(), agentID, version)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+
+	if err := s.store.UpsertAgent(r.Context(), &models.Agent{
+		AgentID:      agentID,
+		Name:         snapshot.Name,
+		Description:  snapshot.Description,
+		Metadata:     snapshot.Metadata,
+		Capabilities: snapshot.Capabilities,
+	}); err != nil {
+		handleStoreError(w, err)
+		return
+	}
+
+	updated, err := s.store.GetAgent(r.Context(), agentID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
 // --------------------------------------------------------------------------
 // LangGraph SDK compatibility: /assistants/* routes
 //
@@ -81,7 +138,12 @@ func agentToAssistantView(a *models.Agent) assistantView {
 		Metadata:    a.Metadata,
 		Name:        a.Name,
 		Description: a.Description,
-		Version:     1,
+		// Real (not hardcoded) bug found in passing while touching this
+		// file for full agent versioning: this always reported "1" for
+		// every agent regardless of its actual version, silently hiding
+		// version bumps from any client using the SDK-compat /assistants
+		// surface instead of /agents.
+		Version: a.Version,
 	}
 }
 

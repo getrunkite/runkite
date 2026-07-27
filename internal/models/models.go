@@ -32,6 +32,30 @@ type Agent struct {
 	Version int `json:"version"`
 }
 
+// AgentVersion is one immutable, historical snapshot of an agent's
+// definition (master plan: "Full agent versioning: version history
+// browsing, rollback to arbitrary past versions"). Written once, at the
+// moment UpsertAgent bumps Agent.Version -- never updated afterward,
+// which is what makes it a reliable history rather than another mutable
+// copy of the current row. A rollback (see RollbackAgentVersion) doesn't
+// delete or rewrite any AgentVersion row -- it re-applies an old
+// snapshot's content via a normal UpsertAgent call, which itself creates
+// a NEW version whose CONTENT matches the old one. This keeps the
+// version history strictly linear and append-only (like `git revert`,
+// not `git reset`) -- "we rolled back to v2's content" is itself a
+// visible, auditable event (v6 exists and says so), not something that
+// erases v3/v4/v5 from history.
+type AgentVersion struct {
+	TenantID     string                 `json:"-"`
+	AgentID      string                 `json:"agent_id"`
+	Version      int                    `json:"version"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Capabilities map[string]interface{} `json:"capabilities"`
+	CreatedAt    time.Time              `json:"created_at"`
+}
+
 // AgentSchema contains the input/output/state/config schemas for an agent.
 type AgentSchema struct {
 	AgentID      string                 `json:"agent_id"`

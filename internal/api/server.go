@@ -43,6 +43,7 @@ type Server struct {
 	customProxy http.Handler            // nil if no custom_routes configured; mounted at /custom/
 	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
+	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until StatusCallback closes it out. ponytail: if the control plane
@@ -98,6 +99,14 @@ func (s *Server) a2aMaxDepthOrDefault() int {
 	return s.a2aMaxDepth
 }
 
+// SetAliasResolver attaches A/B deployment routing (see alias.go).
+// Called after NewServer when an "agent_aliases" config section is
+// present; a never-set resolver means every agent_id passes through
+// unchanged, same as before this feature existed.
+func (s *Server) SetAliasResolver(r *AliasResolver) {
+	s.aliases = r
+}
+
 // SetHookDispatcher attaches an event-hook dispatcher to the server.
 // Called after NewServer when webhooks (or other hook sinks) are configured.
 func (s *Server) SetHookDispatcher(d *hooks.Dispatcher) {
@@ -150,6 +159,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /agents/search", s.handleSearchAgents)
 	mux.HandleFunc("GET /agents/{agentID}", s.handleGetAgent)
 	mux.HandleFunc("GET /agents/{agentID}/schemas", s.handleGetAgentSchemas)
+	// Full agent versioning (master plan: "version history browsing,
+	// rollback to arbitrary past versions").
+	mux.HandleFunc("GET /agents/{agentID}/versions", s.handleListAgentVersions)
+	mux.HandleFunc("POST /agents/{agentID}/versions/{version}/rollback", s.handleRollbackAgent)
 
 	// LangGraph SDK compatibility: SDK calls /assistants/* not /agents/*
 	// These return the SDK-expected response shape (assistant_id, graph_id, etc.)
