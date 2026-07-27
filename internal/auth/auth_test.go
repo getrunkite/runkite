@@ -539,6 +539,46 @@ func TestMiddleware_AdminProviderGrantsAccessIndependentOfPrimary(t *testing.T) 
 	}
 }
 
+// TestMiddleware_AdminKeysAloneDoNotGateAnything is the misconfig footgun
+// an operator hits by setting only auth.admin_keys with no primary
+// auth.type: adminProvider rejects (or there's no credential), then
+// provider == nil falls through to local/dev trust-everyone -- for the
+// entire API, not just /admin-api/*. admin_keys only gate anything when
+// a real primary provider is also configured.
+func TestMiddleware_AdminKeysAloneDoNotGateAnything(t *testing.T) {
+	adminProvider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"break-glass-admin-key": {Name: "ops", Permissions: []string{"admin"}},
+	})
+
+	called := false
+	handler := auth.Middleware(nil, adminProvider, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(200)
+	}))
+
+	for _, path := range []string{"/admin-api/overview", "/threads"} {
+		called = false
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if !called || rec.Code != 200 {
+			t.Fatalf("%s: admin_keys alone must NOT reject unauthenticated (provider nil = open), called=%v code=%d", path, called, rec.Code)
+		}
+	}
+
+	// Contrast: the same admin key set WITH a primary provider does gate.
+	primary := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"user-key": {Name: "alice", Permissions: []string{"admin"}},
+	})
+	gated := auth.Middleware(primary, adminProvider, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	rec := httptest.NewRecorder()
+	gated.ServeHTTP(rec, httptest.NewRequest("GET", "/admin-api/overview", nil))
+	if rec.Code != 401 {
+		t.Fatalf("expected 401 once a primary provider exists, got %d", rec.Code)
+	}
+}
+
 // TestMiddleware_AdminProviderFallsThroughToPrimary proves the admin
 // credential is additive, not a replacement: a request that doesn't match
 // any admin key still gets the pre-existing behavior (primary provider,
