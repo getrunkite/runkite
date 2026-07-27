@@ -92,6 +92,10 @@ func (s *Store) Init(ctx context.Context) error {
 		// ON CONFLICT DO NOTHING has nothing to collide with here).
 		{"agent_versions", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}, {Key: "version", Value: 1}}, true},
 		{"agent_schemas", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}}, true},
+		// Same rationale as agents/agent_versions above, for the
+		// registry (master plan: "Agent marketplace / registry").
+		{"registry_entries", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, true},
+		{"registry_entry_versions", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}, {Key: "version", Value: 1}}, true},
 		{"threads", bson.D{{Key: "thread_id", Value: 1}}, true},
 		{"threads", bson.D{{Key: "tenant_id", Value: 1}}, false},
 		{"runs", bson.D{{Key: "run_id", Value: 1}}, true},
@@ -132,7 +136,8 @@ func (s *Store) Close() error {
 // TruncateAll removes all documents from all collections. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
 	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
-		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims"} {
+		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
+		"registry_entries", "registry_entry_versions"} {
 		if _, err := s.col(c).DeleteMany(ctx, bson.D{}); err != nil {
 			return err
 		}
@@ -396,6 +401,213 @@ func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int
 		return nil, err
 	}
 	return toAgentVersion(doc), nil
+}
+
+// --------------------------------------------------------------------------
+// Registry (master plan: "Agent marketplace / registry")
+// --------------------------------------------------------------------------
+
+type registryEntryDoc struct {
+	TenantID    string      `bson:"tenant_id"`
+	Name        string      `bson:"name"`
+	DisplayName string      `bson:"display_name"`
+	Description string      `bson:"description"`
+	Author      string      `bson:"author"`
+	Tags        []string    `bson:"tags"`
+	SourceType  string      `bson:"source_type"`
+	SourceRef   string      `bson:"source_ref"`
+	Metadata    interface{} `bson:"metadata"`
+	Version     int         `bson:"version"`
+	CreatedAt   time.Time   `bson:"created_at"`
+	UpdatedAt   time.Time   `bson:"updated_at"`
+}
+
+func toRegistryEntry(doc registryEntryDoc) *models.RegistryEntry {
+	return &models.RegistryEntry{
+		TenantID: doc.TenantID, Name: doc.Name, DisplayName: doc.DisplayName, Description: doc.Description,
+		Author: doc.Author, Tags: nonNilTags(doc.Tags), SourceType: doc.SourceType, SourceRef: doc.SourceRef,
+		Metadata: bsonToMap(doc.Metadata), Version: doc.Version, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt,
+	}
+}
+
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
+// PublishRegistryEntry follows the exact same read-compute-write pattern
+// as UpsertAgent above, including its identical, explicitly-stated
+// non-atomicity limitation (see that function's comment) and duplicate-
+// key handling for the identical-content race case.
+func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
+	tid := tenant.FromContext(ctx)
+	now := time.Now().UTC()
+	tags := nonNilTags(entry.Tags)
+
+	var existing registryEntryDoc
+	err := s.col("registry_entries").FindOne(ctx, bson.M{"tenant_id": tid, "name": entry.Name}).Decode(&existing)
+	version := 1
+	versionChanged := true
+	if err == nil {
+		version = existing.Version
+		versionChanged = false
+		metaBytes, _ := json.Marshal(entry.Metadata)
+		existingMetaBytes, _ := json.Marshal(existing.Metadata)
+		tagsBytes, _ := json.Marshal(tags)
+		existingTagsBytes, _ := json.Marshal(nonNilTags(existing.Tags))
+		if existing.DisplayName != entry.DisplayName || existing.Description != entry.Description ||
+			existing.Author != entry.Author || string(tagsBytes) != string(existingTagsBytes) ||
+			existing.SourceType != entry.SourceType || existing.SourceRef != entry.SourceRef ||
+			string(metaBytes) != string(existingMetaBytes) {
+			version = existing.Version + 1
+			versionChanged = true
+		}
+	} else if err != mongo.ErrNoDocuments {
+		return err
+	}
+
+	_, err = s.col("registry_entries").UpdateOne(ctx,
+		bson.M{"tenant_id": tid, "name": entry.Name},
+		bson.M{
+			"$set": bson.M{
+				"display_name": entry.DisplayName, "description": entry.Description,
+				"author": entry.Author, "tags": tags,
+				"source_type": entry.SourceType, "source_ref": entry.SourceRef,
+				"metadata": entry.Metadata, "version": version, "updated_at": now,
+			},
+			"$setOnInsert": bson.M{"tenant_id": tid, "name": entry.Name, "created_at": now},
+		},
+		options.UpdateOne().SetUpsert(true),
+	)
+	if err != nil {
+		return err
+	}
+
+	if versionChanged {
+		_, err = s.col("registry_entry_versions").InsertOne(ctx, registryEntryVersionDoc{
+			TenantID: tid, Name: entry.Name, Version: version,
+			DisplayName: entry.DisplayName, Description: entry.Description, Author: entry.Author, Tags: tags,
+			SourceType: entry.SourceType, SourceRef: entry.SourceRef, Metadata: entry.Metadata, CreatedAt: now,
+		})
+		// See UpsertAgent's identical comment: a duplicate key here is
+		// the benign identical-content race, not a real conflict.
+		if err != nil && !mongo.IsDuplicateKeyError(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error) {
+	var doc registryEntryDoc
+	err := s.col("registry_entries").FindOne(ctx, tenantFilter(ctx, bson.M{"name": name})).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toRegistryEntry(doc), nil
+}
+
+func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistrySearchRequest) ([]*models.RegistryEntry, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	filter := tenantFilter(ctx, bson.M{})
+	if req.Name != "" {
+		filter["name"] = bson.M{"$regex": regexQuoteMeta(req.Name), "$options": "i"}
+	}
+	if req.Author != "" {
+		filter["author"] = req.Author
+	}
+	if len(req.Tags) > 0 {
+		filter["tags"] = bson.M{"$all": req.Tags}
+	}
+
+	cur, err := s.col("registry_entries").Find(ctx, filter,
+		options.Find().SetSort(bson.D{{Key: "name", Value: 1}}).SetSkip(int64(req.Offset)).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	entries := []*models.RegistryEntry{}
+	for cur.Next(ctx) {
+		var doc registryEntryDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		entries = append(entries, toRegistryEntry(doc))
+	}
+	return entries, cur.Err()
+}
+
+func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
+	res, err := s.col("registry_entries").DeleteOne(ctx, tenantFilter(ctx, bson.M{"name": name}))
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
+	}
+	return nil
+}
+
+type registryEntryVersionDoc struct {
+	TenantID    string      `bson:"tenant_id"`
+	Name        string      `bson:"name"`
+	Version     int         `bson:"version"`
+	DisplayName string      `bson:"display_name"`
+	Description string      `bson:"description"`
+	Author      string      `bson:"author"`
+	Tags        []string    `bson:"tags"`
+	SourceType  string      `bson:"source_type"`
+	SourceRef   string      `bson:"source_ref"`
+	Metadata    interface{} `bson:"metadata"`
+	CreatedAt   time.Time   `bson:"created_at"`
+}
+
+func toRegistryEntryVersion(doc registryEntryVersionDoc) *models.RegistryEntryVersion {
+	return &models.RegistryEntryVersion{
+		TenantID: doc.TenantID, Name: doc.Name, Version: doc.Version,
+		DisplayName: doc.DisplayName, Description: doc.Description, Author: doc.Author, Tags: nonNilTags(doc.Tags),
+		SourceType: doc.SourceType, SourceRef: doc.SourceRef, Metadata: bsonToMap(doc.Metadata), CreatedAt: doc.CreatedAt,
+	}
+}
+
+func (s *Store) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {
+	filter := tenantFilter(ctx, bson.M{"name": name})
+	cur, err := s.col("registry_entry_versions").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "version", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	versions := []*models.RegistryEntryVersion{}
+	for cur.Next(ctx) {
+		var doc registryEntryVersionDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		versions = append(versions, toRegistryEntryVersion(doc))
+	}
+	return versions, cur.Err()
+}
+
+func (s *Store) GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error) {
+	var doc registryEntryVersionDoc
+	err := s.col("registry_entry_versions").FindOne(ctx, tenantFilter(ctx, bson.M{"name": name, "version": version})).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toRegistryEntryVersion(doc), nil
 }
 
 func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {

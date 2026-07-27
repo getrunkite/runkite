@@ -92,6 +92,40 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 		FOREIGN KEY (tenant_id, agent_id) REFERENCES agents(tenant_id, agent_id) ON DELETE CASCADE
 	);
 
+	-- Agent marketplace / registry (master plan: "publish, discover,
+	-- and deploy agent definitions") -- a metadata catalog, same
+	-- increment-on-change version pattern as agents/agent_versions
+	-- above, deliberately not storing or executing code.
+	CREATE TABLE IF NOT EXISTS registry_entries (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		name         TEXT NOT NULL,
+		display_name TEXT,
+		description  TEXT,
+		author       TEXT,
+		tags         TEXT DEFAULT '[]',
+		source_type  TEXT NOT NULL,
+		source_ref   TEXT NOT NULL,
+		metadata     TEXT DEFAULT '{}',
+		version      INTEGER NOT NULL DEFAULT 1,
+		created_at   TEXT DEFAULT (datetime('now')),
+		updated_at   TEXT DEFAULT (datetime('now')),
+		PRIMARY KEY (tenant_id, name)
+	);
+	CREATE TABLE IF NOT EXISTS registry_entry_versions (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		name         TEXT NOT NULL,
+		version      INTEGER NOT NULL,
+		display_name TEXT,
+		description  TEXT,
+		author       TEXT,
+		tags         TEXT DEFAULT '[]',
+		source_type  TEXT NOT NULL,
+		source_ref   TEXT NOT NULL,
+		metadata     TEXT DEFAULT '{}',
+		created_at   TEXT DEFAULT (datetime('now')),
+		PRIMARY KEY (tenant_id, name, version)
+	);
+
 	-- thread_id/run_id/checkpoint_id are system-generated UUIDs, kept as
 	-- sole primary keys (collision-safe) rather than composite-keyed with
 	-- tenant_id like the human-chosen IDs above -- every query still
@@ -451,6 +485,222 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 	}
 	json.Unmarshal([]byte(metaStr), &v.Metadata)
 	json.Unmarshal([]byte(capsStr), &v.Capabilities)
+	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+	return &v, nil
+}
+
+// --------------------------------------------------------------------------
+// Registry (master plan: "Agent marketplace / registry")
+// --------------------------------------------------------------------------
+
+func (s *SQLiteStore) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
+	meta, _ := json.Marshal(entry.Metadata)
+	tags, _ := json.Marshal(nonNilTags(entry.Tags))
+	now := time.Now().UTC().Format(time.RFC3339)
+	tenantID := tenant.FromContext(ctx)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	var newVersion int
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO registry_entries (tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+		ON CONFLICT(tenant_id, name) DO UPDATE SET
+			display_name=excluded.display_name, description=excluded.description,
+			author=excluded.author, tags=excluded.tags,
+			source_type=excluded.source_type, source_ref=excluded.source_ref,
+			metadata=excluded.metadata, updated_at=excluded.updated_at,
+			version = CASE WHEN registry_entries.display_name != excluded.display_name
+			                 OR registry_entries.description != excluded.description
+			                 OR registry_entries.author != excluded.author
+			                 OR registry_entries.tags != excluded.tags
+			                 OR registry_entries.source_type != excluded.source_type
+			                 OR registry_entries.source_ref != excluded.source_ref
+			                 OR registry_entries.metadata != excluded.metadata
+			               THEN registry_entries.version + 1
+			               ELSE registry_entries.version END
+		RETURNING version
+	`, tenantID, entry.Name, entry.DisplayName, entry.Description, entry.Author, string(tags), entry.SourceType, entry.SourceRef, string(meta), now, now).Scan(&newVersion)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO registry_entry_versions (tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (tenant_id, name, version) DO NOTHING
+	`, tenantID, entry.Name, newVersion, entry.DisplayName, entry.Description, entry.Author, string(tags), entry.SourceType, entry.SourceRef, string(meta), now)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error) {
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	e, err := scanRegistryEntry(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+func (s *SQLiteStore) SearchRegistryEntries(ctx context.Context, req *models.RegistrySearchRequest) ([]*models.RegistryEntry, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if req.Name != "" {
+		where = append(where, "name LIKE ?")
+		args = append(args, "%"+req.Name+"%")
+	}
+	if req.Author != "" {
+		where = append(where, "author = ?")
+		args = append(args, req.Author)
+	}
+	for _, tag := range req.Tags {
+		where = append(where, "tags LIKE ?")
+		tagJSON, _ := json.Marshal(tag)
+		args = append(args, "%"+string(tagJSON)+"%")
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY name ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := []*models.RegistryEntry{}
+	for rows.Next() {
+		e, err := scanRegistryEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteRegistryEntry(ctx context.Context, name string) error {
+	query := `DELETE FROM registry_entries WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.RegistryEntryVersion{}
+	for rows.Next() {
+		v, err := scanRegistryEntryVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *SQLiteStore) GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = ? AND version = ?`
+	args := []interface{}{name, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	v, err := scanRegistryEntryVersion(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
+func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
+	var e models.RegistryEntry
+	var tagsStr, metaStr, createdStr, updatedStr string
+	if err := row.Scan(&e.TenantID, &e.Name, &e.DisplayName, &e.Description, &e.Author, &tagsStr, &e.SourceType, &e.SourceRef, &metaStr, &e.Version, &createdStr, &updatedStr); err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(tagsStr), &e.Tags)
+	json.Unmarshal([]byte(metaStr), &e.Metadata)
+	e.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+	e.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
+	return &e, nil
+}
+
+func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVersion, error) {
+	var v models.RegistryEntryVersion
+	var tagsStr, metaStr, createdStr string
+	if err := row.Scan(&v.TenantID, &v.Name, &v.Version, &v.DisplayName, &v.Description, &v.Author, &tagsStr, &v.SourceType, &v.SourceRef, &metaStr, &createdStr); err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(tagsStr), &v.Tags)
+	json.Unmarshal([]byte(metaStr), &v.Metadata)
 	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return &v, nil
 }

@@ -467,6 +467,73 @@ type StreamingCommandResponse struct {
 }
 
 // --------------------------------------------------------------------------
+// Registry
+// --------------------------------------------------------------------------
+
+// RegistryEntry is a published, discoverable agent DEFINITION (master
+// plan: "Agent marketplace / registry: publish, discover, and deploy
+// agent definitions"). Deliberately a metadata catalog record, not
+// executable code the control plane runs directly -- "minimal viable
+// registry" scope: publish/list/discover/version-history via API +
+// Admin UI, no security review workflow, no automatic
+// clone-and-execute "deploy" pipeline (that's the actual "own product"
+// scope the master plan calls out; running arbitrary fetched code is a
+// different, much bigger trust and sandboxing problem than a catalog
+// is). SourceRef is where a human (or their own tooling) goes to
+// actually deploy it -- a git repo, a URL, or an inline langgraph.json
+// snippet -- exactly like a package registry's listing page, not the
+// package manager's install step.
+type RegistryEntry struct {
+	// TenantID is populated on read, same convention as models.Agent --
+	// a registry is private to the tenant that published it ("an
+	// internal/private registry for one's own agents", not a shared
+	// public catalog across tenants).
+	TenantID    string                 `json:"-"`
+	Name        string                 `json:"name"` // unique slug within a tenant, e.g. "sales-qualifier"
+	DisplayName string                 `json:"display_name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Author      string                 `json:"author,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	SourceType  string                 `json:"source_type"` // "git" | "url" | "inline"
+	SourceRef   string                 `json:"source_ref"`  // git URL+ref, a URL, or an inline langgraph.json snippet
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	// Version follows the exact same convention as models.Agent.Version:
+	// starts at 1, increments only when the entry's actual content
+	// changes on a republish, and every bump writes an immutable
+	// snapshot to its own version history -- same append-only,
+	// git-revert-not-git-reset model as agent versioning.
+	Version   int       `json:"version"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RegistryEntryVersion is one immutable, historical snapshot of a
+// registry entry's content -- same role AgentVersion plays for Agent,
+// see its doc comment for the full append-only rationale.
+type RegistryEntryVersion struct {
+	TenantID    string                 `json:"-"`
+	Name        string                 `json:"name"`
+	Version     int                    `json:"version"`
+	DisplayName string                 `json:"display_name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Author      string                 `json:"author,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	SourceType  string                 `json:"source_type"`
+	SourceRef   string                 `json:"source_ref"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+}
+
+// RegistrySearchRequest is the body for POST /registry/search.
+type RegistrySearchRequest struct {
+	Name   string   `json:"name,omitempty"`   // substring match, case-insensitive
+	Tags   []string `json:"tags,omitempty"`   // entry must have ALL listed tags
+	Author string   `json:"author,omitempty"` // exact match
+	Limit  int      `json:"limit,omitempty"`
+	Offset int      `json:"offset,omitempty"`
+}
+
+// --------------------------------------------------------------------------
 // Errors
 // --------------------------------------------------------------------------
 

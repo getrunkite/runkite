@@ -164,6 +164,56 @@ func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 // --------------------------------------------------------------------------
+// Registry (tenant_id visible) -- master plan: "Agent marketplace / registry"
+// --------------------------------------------------------------------------
+
+type adminRegistryEntryView struct {
+	*models.RegistryEntry
+	TenantID string `json:"tenant_id"`
+}
+
+func toAdminRegistryEntryView(e *models.RegistryEntry) adminRegistryEntryView {
+	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID}
+}
+
+// GET /admin-api/registry
+func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.SystemContext(r.Context())
+	entries, err := s.store.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: overviewSampleLimit})
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	views := make([]adminRegistryEntryView, 0, len(entries))
+	for _, e := range entries {
+		views = append(views, toAdminRegistryEntryView(e))
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+// GET /admin-api/registry/{name}
+func (s *Server) handleAdminGetRegistryEntry(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.SystemContext(r.Context())
+	entry, err := s.store.GetRegistryEntry(ctx, r.PathValue("name"))
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toAdminRegistryEntryView(entry))
+}
+
+// GET /admin-api/registry/{name}/versions
+func (s *Server) handleAdminListRegistryEntryVersions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.SystemContext(r.Context())
+	versions, err := s.store.ListRegistryEntryVersions(ctx, r.PathValue("name"))
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, versions)
+}
+
+// --------------------------------------------------------------------------
 // Threads (tenant_id visible)
 // --------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ type StoreFactory func(t *testing.T) state.Store
 // RunStoreSuite runs all conformance tests.
 func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("agents", func(t *testing.T) { runAgentTests(t, factory) })
+	t.Run("registry", func(t *testing.T) { runRegistryTests(t, factory) })
 	t.Run("threads", func(t *testing.T) { runThreadTests(t, factory) })
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
@@ -52,6 +53,28 @@ func runEmptyListTests(t *testing.T, factory StoreFactory) {
 		}
 		if got == nil {
 			t.Fatal("SearchAgents returned nil slice for zero results, want non-nil empty slice")
+		}
+	})
+
+	t.Run("SearchRegistryEntries", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRegistryEntries: %v", err)
+		}
+		if got == nil {
+			t.Fatal("SearchRegistryEntries returned nil slice for zero results, want non-nil empty slice")
+		}
+	})
+
+	t.Run("ListRegistryEntryVersions", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.ListRegistryEntryVersions(ctx, "does-not-exist")
+		if err != nil {
+			t.Fatalf("ListRegistryEntryVersions: %v", err)
+		}
+		if got == nil {
+			t.Fatal("ListRegistryEntryVersions returned nil slice for zero results, want non-nil empty slice")
 		}
 	})
 
@@ -561,6 +584,181 @@ func runAgentTests(t *testing.T, factory StoreFactory) {
 		_, err = s.GetAgentVersion(ctx, "agent-hist", 99)
 		if _, ok := err.(*state.ErrNotFound); !ok {
 			t.Errorf("expected ErrNotFound for unknown version, got %T: %v", err, err)
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// Registry (master plan: "Agent marketplace / registry")
+// --------------------------------------------------------------------------
+
+func runRegistryTests(t *testing.T, factory StoreFactory) {
+	t.Run("REG-001_publish_get_roundtrip", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		entry := &models.RegistryEntry{
+			Name: "sales-qualifier", DisplayName: "Sales Qualifier", Description: "Qualifies inbound leads",
+			Author: "alice", Tags: []string{"sales", "lead-gen"}, SourceType: "git",
+			SourceRef: "https://github.com/example/sales-qualifier", Metadata: map[string]interface{}{"framework": "langgraph"},
+		}
+		if err := s.PublishRegistryEntry(ctx, entry); err != nil {
+			t.Fatalf("PublishRegistryEntry: %v", err)
+		}
+
+		got, err := s.GetRegistryEntry(ctx, "sales-qualifier")
+		if err != nil {
+			t.Fatalf("GetRegistryEntry: %v", err)
+		}
+		if got.DisplayName != "Sales Qualifier" || got.Author != "alice" || got.SourceRef != "https://github.com/example/sales-qualifier" {
+			t.Errorf("roundtrip mismatch: %+v", got)
+		}
+		if len(got.Tags) != 2 || got.Tags[0] != "sales" {
+			t.Errorf("expected tags [sales lead-gen], got %v", got.Tags)
+		}
+		if got.Version != 1 {
+			t.Errorf("expected version 1 for first publish, got %d", got.Version)
+		}
+	})
+
+	t.Run("REG-002_republish_unchanged_does_not_bump_version", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		entry := &models.RegistryEntry{Name: "e1", SourceType: "url", SourceRef: "http://example.com/e1.json", Tags: []string{}, Metadata: map[string]interface{}{}}
+
+		s.PublishRegistryEntry(ctx, entry)
+		s.PublishRegistryEntry(ctx, entry) // unchanged republish
+
+		got, _ := s.GetRegistryEntry(ctx, "e1")
+		if got.Version != 1 {
+			t.Errorf("expected version to stay 1 for an unchanged republish, got %d", got.Version)
+		}
+
+		entry.Description = "now with a description"
+		s.PublishRegistryEntry(ctx, entry)
+		got, _ = s.GetRegistryEntry(ctx, "e1")
+		if got.Version != 2 {
+			t.Errorf("expected version 2 after an actual content change, got %d", got.Version)
+		}
+	})
+
+	t.Run("REG-003_version_history", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		entry := &models.RegistryEntry{Name: "e2", SourceType: "inline", SourceRef: "{}", DisplayName: "v1", Tags: []string{}, Metadata: map[string]interface{}{}}
+		s.PublishRegistryEntry(ctx, entry)
+		entry.DisplayName = "v2"
+		s.PublishRegistryEntry(ctx, entry)
+
+		versions, err := s.ListRegistryEntryVersions(ctx, "e2")
+		if err != nil {
+			t.Fatalf("ListRegistryEntryVersions: %v", err)
+		}
+		if len(versions) != 2 {
+			t.Fatalf("expected 2 versions, got %d", len(versions))
+		}
+		if versions[0].Version != 2 || versions[0].DisplayName != "v2" {
+			t.Errorf("expected newest-first ordering, got %+v", versions[0])
+		}
+
+		got, err := s.GetRegistryEntryVersion(ctx, "e2", 1)
+		if err != nil {
+			t.Fatalf("GetRegistryEntryVersion(1): %v", err)
+		}
+		if got.DisplayName != "v1" {
+			t.Errorf("expected v1 snapshot, got %+v", got)
+		}
+
+		_, err = s.GetRegistryEntryVersion(ctx, "e2", 99)
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Errorf("expected ErrNotFound for unknown version, got %T: %v", err, err)
+		}
+	})
+
+	t.Run("REG-004_search_by_name_author_tags", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		s.PublishRegistryEntry(ctx, &models.RegistryEntry{Name: "sales-bot", Author: "alice", Tags: []string{"sales"}, SourceType: "git", SourceRef: "x", Metadata: map[string]interface{}{}})
+		s.PublishRegistryEntry(ctx, &models.RegistryEntry{Name: "support-bot", Author: "bob", Tags: []string{"support"}, SourceType: "git", SourceRef: "x", Metadata: map[string]interface{}{}})
+		s.PublishRegistryEntry(ctx, &models.RegistryEntry{Name: "sales-support-bot", Author: "alice", Tags: []string{"sales", "support"}, SourceType: "git", SourceRef: "x", Metadata: map[string]interface{}{}})
+
+		all, err := s.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRegistryEntries(all): %v", err)
+		}
+		if len(all) != 3 {
+			t.Fatalf("expected 3 entries, got %d", len(all))
+		}
+
+		byName, err := s.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Name: "sales", Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRegistryEntries(name): %v", err)
+		}
+		if len(byName) != 2 {
+			t.Errorf("expected 2 entries matching name substring 'sales', got %d", len(byName))
+		}
+
+		byAuthor, err := s.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Author: "bob", Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRegistryEntries(author): %v", err)
+		}
+		if len(byAuthor) != 1 || byAuthor[0].Name != "support-bot" {
+			t.Errorf("expected only support-bot for author=bob, got %+v", byAuthor)
+		}
+
+		byTags, err := s.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Tags: []string{"sales", "support"}, Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRegistryEntries(tags): %v", err)
+		}
+		if len(byTags) != 1 || byTags[0].Name != "sales-support-bot" {
+			t.Errorf("expected only the entry with BOTH tags, got %+v", byTags)
+		}
+	})
+
+	t.Run("REG-005_delete", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		s.PublishRegistryEntry(ctx, &models.RegistryEntry{Name: "e3", SourceType: "url", SourceRef: "x", Tags: []string{}, Metadata: map[string]interface{}{}})
+
+		if err := s.DeleteRegistryEntry(ctx, "e3"); err != nil {
+			t.Fatalf("DeleteRegistryEntry: %v", err)
+		}
+		_, err := s.GetRegistryEntry(ctx, "e3")
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Errorf("expected ErrNotFound after delete, got %T: %v", err, err)
+		}
+		if err := s.DeleteRegistryEntry(ctx, "e3"); err == nil {
+			t.Error("expected deleting an already-deleted entry to return ErrNotFound, got nil")
+		}
+	})
+
+	t.Run("REG-006_get_nonexistent", func(t *testing.T) {
+		s := factory(t)
+		_, err := s.GetRegistryEntry(context.Background(), "does-not-exist")
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+		}
+	})
+
+	t.Run("REG-007_tenant_isolation", func(t *testing.T) {
+		s := factory(t)
+		ctxA := tenant.WithContext(context.Background(), "tenant-a")
+		ctxB := tenant.WithContext(context.Background(), "tenant-b")
+
+		s.PublishRegistryEntry(ctxA, &models.RegistryEntry{Name: "shared-name", DisplayName: "tenant-a's entry", SourceType: "url", SourceRef: "x", Tags: []string{}, Metadata: map[string]interface{}{}})
+		s.PublishRegistryEntry(ctxB, &models.RegistryEntry{Name: "shared-name", DisplayName: "tenant-b's entry", SourceType: "url", SourceRef: "x", Tags: []string{}, Metadata: map[string]interface{}{}})
+
+		gotA, err := s.GetRegistryEntry(ctxA, "shared-name")
+		if err != nil || gotA.DisplayName != "tenant-a's entry" {
+			t.Fatalf("expected tenant-a to see only its own entry, got %+v err=%v", gotA, err)
+		}
+
+		if err := s.DeleteRegistryEntry(ctxA, "shared-name"); err != nil {
+			t.Fatalf("Delete tenant-a: %v", err)
+		}
+		gotB, err := s.GetRegistryEntry(ctxB, "shared-name")
+		if err != nil || gotB.DisplayName != "tenant-b's entry" {
+			t.Fatalf("expected tenant-b's entry to survive tenant-a's delete, got %+v err=%v", gotB, err)
 		}
 	})
 }

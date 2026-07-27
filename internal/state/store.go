@@ -156,6 +156,21 @@ type Store interface {
 	// tenant-scoping rule as PruneRuns.
 	PruneExpiredStoreItems(ctx context.Context) (int64, error)
 
+	// --- Registry (master plan: "Agent marketplace / registry: publish,
+	// discover, and deploy agent definitions") ---
+	// PublishRegistryEntry creates a new entry or republishes an
+	// existing one, same increment-on-actual-change version semantics
+	// as UpsertAgent (see models.RegistryEntry's doc comment).
+	PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error
+	GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error)
+	SearchRegistryEntries(ctx context.Context, req *models.RegistrySearchRequest) ([]*models.RegistryEntry, error)
+	DeleteRegistryEntry(ctx context.Context, name string) error
+	// ListRegistryEntryVersions / GetRegistryEntryVersion mirror
+	// ListAgentVersions / GetAgentVersion exactly -- same append-only
+	// history contract.
+	ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error)
+	GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error)
+
 	// --- Lifecycle ---
 	Init(ctx context.Context) error // Create tables / run migrations
 	Close() error

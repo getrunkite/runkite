@@ -244,7 +244,7 @@ Flat tenant scoping (master plan: "workspace/org/team hierarchy with isolated da
 
 ## Admin UI
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters.
+A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters.
 
 ```
 runkite serve --config langgraph.json
@@ -261,6 +261,9 @@ The static UI shell (`GET /admin/*`) is always public at the HTTP layer, same as
 GET /admin-api/overview                     Summary counts (agents/threads/runs, by status) across every tenant
 GET /admin-api/agents                       List agents (tenant_id visible)
 GET /admin-api/agents/{id}                  Agent detail
+GET /admin-api/registry                     List registry entries (tenant_id visible)
+GET /admin-api/registry/{name}              Registry entry detail
+GET /admin-api/registry/{name}/versions     Registry entry version history
 GET /admin-api/threads                      List threads (tenant_id visible; ?status= filter)
 GET /admin-api/threads/{id}                 Thread detail
 GET /admin-api/threads/{id}/runs            Runs on a thread
@@ -422,6 +425,37 @@ Three things this adds on top of the shared run-creation/wait path:
 - **Parent lookup is cross-tenant under runner trust.** `/internal/a2a/runs` resolves `parent_run_id` with system context (no client tenant), then scopes the child to that parent's tenant. A compromised runner that learns another tenant's run UUID could attach a child there -- same "runner is trusted" boundary as other `/internal/*` routes, stated explicitly rather than implied closed.
 - **`root_run_id` isn't a `RunSearchRequest` filter yet.** Persisted (and indexed on every backend) but finding "every run in this delegation tree" today means fetching runs and filtering client-side. Top-level (non-delegated) runs leave `root_run_id` nil -- only descendants carry it.
 - **No cost/token aggregation / cancel cascade built on the tree yet.** Summing tokens across a tree, and cancelling children when a parent is cancelled, are left to the caller for now.
+
+## Agent Marketplace / Registry
+
+A searchable catalog of agent definitions (master plan: "Agent marketplace / registry: publish, discover, and deploy agent definitions"). **Minimal viable registry** scope, chosen deliberately: publish/search/get/version-history via API and Admin UI, no security review workflow, and no automatic clone-and-execute deploy pipeline. A registry entry is metadata plus a `source_ref` -- a git URL, a plain URL, or an inline `langgraph.json` snippet -- pointing at where a human (or their own tooling) goes to actually wire it into a deployment. This is deliberately a catalog, not a package manager's install step: running arbitrary fetched code is a fundamentally different trust/sandboxing problem than a searchable listing, and out of scope here.
+
+```
+PUT    /registry/entries/{name}                   Publish (create or new version)
+GET    /registry/entries/{name}                   Get current entry
+DELETE /registry/entries/{name}                   Unpublish
+POST   /registry/search                           Search (name substring, tags -- must have ALL, author -- exact)
+GET    /registry/entries/{name}/versions          Version history, newest first
+GET    /registry/entries/{name}/versions/{v}      One specific historical snapshot
+```
+
+```json
+{
+  "display_name": "Sales Qualifier",
+  "description": "Qualifies inbound leads using firmographic data",
+  "author": "alice",
+  "tags": ["sales", "lead-gen"],
+  "source_type": "git",
+  "source_ref": "https://github.com/example/sales-qualifier@main"
+}
+```
+
+Versioning follows the exact same convention as agent versioning above: publishing unchanged content doesn't bump the version, an actual content change does, and every bump writes an immutable snapshot to its own history (append-only, `git revert` not `git reset` -- see the versioning section above for the full rationale, identical here). A registry is private to the tenant that published it ("an internal/private registry for one's own agents," not a shared public catalog across tenants), same isolation convention as agents/threads/runs. Browsable at `/admin/registry` in the Admin UI.
+
+**Known limitations, stated plainly**:
+- **No security review workflow.** Anything published is immediately visible to every caller in that tenant -- there's no approve/reject step, unlike a real package registry's review queue.
+- **No deploy automation.** Publishing an entry doesn't register a runnable agent -- `source_ref` still requires a human (or separate tooling) to actually wire the code into a `langgraph.json` and restart/reload the relevant runner. The registry is a catalog, not a deployment pipeline.
+- **Mongo's publish is non-transactional** across the entry-table update and the version-snapshot insert, same stated limitation as agent versioning (see above) and for the same reason (no replica set in the test/deploy Mongo).
 
 ## Architecture
 
@@ -623,6 +657,17 @@ Weights are relative, not required to sum to 100 (`{"a": 1, "b": 1}` means an ev
 - **Rollback only affects future run creations.** It changes what `UpsertAgent` currently serves as the agent's definition; any run already in flight (or already completed) keeps whatever it was actually dispatched with -- there's no retroactive re-execution.
 - **Aliases are static config, not runtime-adjustable via API.** Changing a split percentage means editing `langgraph.json` and restarting (or hot-reloading, if the deployment supports that), not a `PATCH` call.
 - **Aliases are control-plane-global, not tenant-scoped.** One `langgraph.json` map applies to every tenant -- fine for single-tenant A/B; multi-tenant deployments that need different splits per tenant need separate control planes or a future per-tenant override.
+
+### Registry
+```
+PUT    /registry/entries/{name}                   Publish (create or new version)
+GET    /registry/entries/{name}                   Get current entry
+DELETE /registry/entries/{name}                   Unpublish
+POST   /registry/search                           Search (name/tags/author)
+GET    /registry/entries/{name}/versions          Version history
+GET    /registry/entries/{name}/versions/{v}      One specific snapshot
+```
+See [Agent Marketplace / Registry](#agent-marketplace--registry) above for the full design and known limitations.
 
 ### Threads
 ```

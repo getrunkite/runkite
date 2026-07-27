@@ -164,6 +164,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /agents/{agentID}/versions", s.handleListAgentVersions)
 	mux.HandleFunc("POST /agents/{agentID}/versions/{version}/rollback", s.handleRollbackAgent)
 
+	// Agent marketplace / registry (master plan: "publish, discover,
+	// and deploy agent definitions") -- see registry.go's package doc.
+	mux.HandleFunc("PUT /registry/entries/{name}", s.handlePublishRegistryEntry)
+	mux.HandleFunc("GET /registry/entries/{name}", s.handleGetRegistryEntry)
+	mux.HandleFunc("DELETE /registry/entries/{name}", s.handleDeleteRegistryEntry)
+	mux.HandleFunc("POST /registry/search", s.handleSearchRegistryEntries)
+	mux.HandleFunc("GET /registry/entries/{name}/versions", s.handleListRegistryEntryVersions)
+	mux.HandleFunc("GET /registry/entries/{name}/versions/{version}", s.handleGetRegistryEntryVersion)
+
 	// LangGraph SDK compatibility: SDK calls /assistants/* not /agents/*
 	// These return the SDK-expected response shape (assistant_id, graph_id, etc.)
 	mux.HandleFunc("POST /assistants/search", s.handleSearchAssistants)
@@ -265,6 +274,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/overview", s.handleAdminOverview)
 	mux.HandleFunc("GET /admin-api/agents", s.handleAdminListAgents)
 	mux.HandleFunc("GET /admin-api/agents/{agentID}", s.handleAdminGetAgent)
+	mux.HandleFunc("GET /admin-api/registry", s.handleAdminListRegistryEntries)
+	mux.HandleFunc("GET /admin-api/registry/{name}", s.handleAdminGetRegistryEntry)
+	mux.HandleFunc("GET /admin-api/registry/{name}/versions", s.handleAdminListRegistryEntryVersions)
 	mux.HandleFunc("GET /admin-api/threads", s.handleAdminListThreads)
 	mux.HandleFunc("GET /admin-api/threads/{threadID}", s.handleAdminGetThread)
 	mux.HandleFunc("GET /admin-api/threads/{threadID}/runs", s.handleAdminListThreadRuns)

@@ -23,6 +23,33 @@ export interface AdminAgent {
   version: number;
 }
 
+export interface AdminRegistryEntry {
+  tenant_id: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  author?: string;
+  tags?: string[];
+  source_type: string;
+  source_ref: string;
+  metadata?: Record<string, unknown>;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminRegistryEntryVersion {
+  name: string;
+  version: number;
+  display_name?: string;
+  description?: string;
+  author?: string;
+  tags?: string[];
+  source_type: string;
+  source_ref: string;
+  created_at: string;
+}
+
 export interface AdminThread {
   tenant_id: string;
   thread_id: string;

@@ -123,6 +123,40 @@ func (s *Store) Init(ctx context.Context) error {
 	ALTER TABLE agent_schemas ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_schemas_tenant_agent ON agent_schemas(tenant_id, agent_id);
 
+	-- Agent marketplace / registry (master plan: "publish, discover,
+	-- and deploy agent definitions") -- a metadata catalog, same
+	-- increment-on-change version pattern as agents/agent_versions
+	-- above, deliberately not storing or executing code.
+	CREATE TABLE IF NOT EXISTS registry_entries (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		name         TEXT NOT NULL,
+		display_name TEXT,
+		description  TEXT,
+		author       TEXT,
+		tags         JSONB DEFAULT '[]',
+		source_type  TEXT NOT NULL,
+		source_ref   TEXT NOT NULL,
+		metadata     JSONB DEFAULT '{}',
+		version      INTEGER NOT NULL DEFAULT 1,
+		created_at   TIMESTAMPTZ DEFAULT NOW(),
+		updated_at   TIMESTAMPTZ DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, name)
+	);
+	CREATE TABLE IF NOT EXISTS registry_entry_versions (
+		tenant_id    TEXT NOT NULL DEFAULT 'default',
+		name         TEXT NOT NULL,
+		version      INTEGER NOT NULL,
+		display_name TEXT,
+		description  TEXT,
+		author       TEXT,
+		tags         JSONB DEFAULT '[]',
+		source_type  TEXT NOT NULL,
+		source_ref   TEXT NOT NULL,
+		metadata     JSONB DEFAULT '{}',
+		created_at   TIMESTAMPTZ DEFAULT NOW(),
+		PRIMARY KEY (tenant_id, name, version)
+	);
+
 	CREATE TABLE IF NOT EXISTS threads (
 		tenant_id  TEXT NOT NULL DEFAULT 'default',
 		thread_id  TEXT PRIMARY KEY,
@@ -294,7 +328,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
 	`)
 	return err
 }
@@ -425,6 +459,224 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 	}
 	json.Unmarshal(metaBytes, &v.Metadata)
 	json.Unmarshal(capsBytes, &v.Capabilities)
+	return &v, nil
+}
+
+// --------------------------------------------------------------------------
+// Registry (master plan: "Agent marketplace / registry")
+// --------------------------------------------------------------------------
+
+// PublishRegistryEntry follows the exact same transaction + RETURNING +
+// conditional-version-snapshot pattern as UpsertAgent above -- see its
+// comment for the full rationale (a single UPSERT's CASE expression
+// can't also conditionally write a second table's row).
+func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
+	meta, _ := json.Marshal(entry.Metadata)
+	tags, _ := json.Marshal(nonNilTags(entry.Tags))
+	now := time.Now().UTC()
+	tenantID := tenant.FromContext(ctx)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op if committed
+
+	var newVersion int
+	err = tx.QueryRow(ctx, `
+		INSERT INTO registry_entries (tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $10)
+		ON CONFLICT(tenant_id, name) DO UPDATE SET
+			display_name=EXCLUDED.display_name, description=EXCLUDED.description,
+			author=EXCLUDED.author, tags=EXCLUDED.tags,
+			source_type=EXCLUDED.source_type, source_ref=EXCLUDED.source_ref,
+			metadata=EXCLUDED.metadata, updated_at=EXCLUDED.updated_at,
+			version = CASE WHEN registry_entries.display_name IS DISTINCT FROM EXCLUDED.display_name
+			                 OR registry_entries.description IS DISTINCT FROM EXCLUDED.description
+			                 OR registry_entries.author IS DISTINCT FROM EXCLUDED.author
+			                 OR registry_entries.tags IS DISTINCT FROM EXCLUDED.tags
+			                 OR registry_entries.source_type IS DISTINCT FROM EXCLUDED.source_type
+			                 OR registry_entries.source_ref IS DISTINCT FROM EXCLUDED.source_ref
+			                 OR registry_entries.metadata IS DISTINCT FROM EXCLUDED.metadata
+			               THEN registry_entries.version + 1
+			               ELSE registry_entries.version END
+		RETURNING version
+	`, tenantID, entry.Name, entry.DisplayName, entry.Description, entry.Author, tags, entry.SourceType, entry.SourceRef, meta, now).Scan(&newVersion)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO registry_entry_versions (tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (tenant_id, name, version) DO NOTHING
+	`, tenantID, entry.Name, newVersion, entry.DisplayName, entry.Description, entry.Author, tags, entry.SourceType, entry.SourceRef, meta, now)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
+func (s *Store) GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error) {
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries WHERE name = $1`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+	e, err := scanRegistryEntry(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistrySearchRequest) ([]*models.RegistryEntry, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if req.Name != "" {
+		where = append(where, fmt.Sprintf("name ILIKE $%d", argN))
+		args = append(args, "%"+req.Name+"%")
+		argN++
+	}
+	if req.Author != "" {
+		where = append(where, fmt.Sprintf("author = $%d", argN))
+		args = append(args, req.Author)
+		argN++
+	}
+	for _, tag := range req.Tags {
+		where = append(where, fmt.Sprintf("tags @> $%d", argN))
+		tagJSON, _ := json.Marshal([]string{tag})
+		args = append(args, string(tagJSON))
+		argN++
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY name ASC LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := []*models.RegistryEntry{}
+	for rows.Next() {
+		e, err := scanRegistryEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
+	query := `DELETE FROM registry_entries WHERE name = $1`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
+	}
+	return nil
+}
+
+func (s *Store) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = $1`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.RegistryEntryVersion{}
+	for rows.Next() {
+		v, err := scanRegistryEntryVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *Store) GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = $1 AND version = $2`
+	args := []interface{}{name, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $3`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
+	v, err := scanRegistryEntryVersion(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
+	var e models.RegistryEntry
+	var tagsBytes, metaBytes []byte
+	if err := row.Scan(&e.TenantID, &e.Name, &e.DisplayName, &e.Description, &e.Author, &tagsBytes, &e.SourceType, &e.SourceRef, &metaBytes, &e.Version, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(tagsBytes, &e.Tags)
+	json.Unmarshal(metaBytes, &e.Metadata)
+	return &e, nil
+}
+
+func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVersion, error) {
+	var v models.RegistryEntryVersion
+	var tagsBytes, metaBytes []byte
+	if err := row.Scan(&v.TenantID, &v.Name, &v.Version, &v.DisplayName, &v.Description, &v.Author, &tagsBytes, &v.SourceType, &v.SourceRef, &metaBytes, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(tagsBytes, &v.Tags)
+	json.Unmarshal(metaBytes, &v.Metadata)
 	return &v, nil
 }
 
