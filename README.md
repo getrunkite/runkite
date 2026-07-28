@@ -178,11 +178,12 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `HTTP_PORT` | `2026` | HTTP API listen port |
 | `GRPC_PORT` | `50051` | gRPC bridge listen port |
 | `POSTGRES_DSN` | (unset) | Postgres connection string; enables Postgres state backend |
-| `MONGO_URI` | (unset) | MongoDB connection URI; enables MongoDB state backend (checked after `POSTGRES_DSN`, so setting both uses Postgres). **Must point at a replica set** (even a single-node one, e.g. `?replicaSet=rs0&directConnection=true`) -- `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, which a standalone `mongod` rejects outright rather than silently degrading to non-atomic writes |
+| `MYSQL_DSN` | (unset) | MySQL connection string (`user:pass@tcp(host:3306)/db?parseTime=true` -- the `parseTime=true` param is required); enables MySQL state backend (checked after `POSTGRES_DSN`, before `MONGO_URI`) |
+| `MONGO_URI` | (unset) | MongoDB connection URI; enables MongoDB state backend (checked after `POSTGRES_DSN`/`MYSQL_DSN`, so setting multiple backend env vars at once is deterministic, not a race). **Must point at a replica set** (even a single-node one, e.g. `?replicaSet=rs0&directConnection=true`) -- `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, which a standalone `mongod` rejects outright rather than silently degrading to non-atomic writes |
 | `MONGO_DB` | `runkite` | MongoDB database name (used when `MONGO_URI` is set) |
 | `REDIS_URL` | (unset) | Redis URL; enables Redis transport (queue + broker) |
-| `DATABASE_PATH` | `./runkite.db` | SQLite file path (used when neither `POSTGRES_DSN` nor `MONGO_URI` is set) |
-| `QDRANT_URL` | (unset) | Qdrant REST base URL; fallback for `vector_store.url` when `vector_store.type` is `"qdrant"` (only read if `vector_store` is configured at all -- doesn't enable Qdrant by itself, unlike `POSTGRES_DSN`/`MONGO_URI` for the state backend) |
+| `DATABASE_PATH` | `./runkite.db` | SQLite file path (used when none of `POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI` is set) |
+| `QDRANT_URL` | (unset) | Qdrant REST base URL; fallback for `vector_store.url` when `vector_store.type` is `"qdrant"` (only read if `vector_store` is configured at all -- doesn't enable Qdrant by itself, unlike `POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI` for the state backend) |
 | `LANGGRAPH_CONFIG` | (unset) | Path to langgraph.json (alternative to --config flag) |
 | `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_python_langgraph`) |
 
@@ -494,10 +495,10 @@ Versioning follows the exact same convention as agent versioning above: publishi
 **State backends**:
 | Concern | Default | Production |
 |---------|---------|------------|
-| Metadata (agents/threads/runs) | Embedded SQLite | Postgres, or MongoDB |
+| Metadata (agents/threads/runs) | Embedded SQLite | Postgres, MySQL, or MongoDB |
 | Job queue + event broker | In-memory | Redis |
 
-Switch backends by setting `POSTGRES_DSN`, `MONGO_URI`, and/or `REDIS_URL`. No code changes, no config files. MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar backend -- proof `state.Store` is genuinely implementable against a document store, and a template for community-contributed backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. One caveat: the Python/TypeScript runners' own direct-mode checkpointer (`AsyncPostgresSaver`/its JS equivalent) only exists for Postgres -- a MongoDB-backed control plane's runners use **proxy mode** for checkpoints/store (see below), the same as SQLite deployments do. MySQL (`internal/state/mysql`) is also fully implemented and passes the same conformance suite, but isn't wired into `cmd/serve.go`'s backend selection yet (no `MYSQL_DSN` env var) -- usable today only by importing the package directly; DynamoDB remains a documented possible future driver, not built at all.
+Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, and/or `REDIS_URL`. No code changes, no config files. MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar backend -- proof `state.Store` is genuinely implementable against a document store, and a template for community-contributed backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. One caveat: the Python/TypeScript runners' own direct-mode checkpointer (`AsyncPostgresSaver`/its JS equivalent) only exists for Postgres -- MongoDB-, MySQL-, and SQLite-backed control planes' runners all use **proxy mode** for checkpoints/store (see below); Postgres is the only backend with a direct-mode option at all. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db reset` via `MYSQL_DSN`; DynamoDB remains a documented possible future driver, not built at all.
 
 ### Checkpoint dual mode
 
@@ -620,7 +621,7 @@ Full-stack compose uses Postgres/Redis on 5432/6379; stop local services on thos
 
 ### Test infrastructure
 
-`docker-compose.test.yml` starts ephemeral, tmpfs-backed Postgres + Redis + MongoDB for running the conformance test suite (see Development below), on non-standard ports (5433/6380/27018) specifically to avoid colliding with the full-stack compose above or any local services:
+`docker-compose.test.yml` starts ephemeral, tmpfs-backed Postgres + MySQL + Redis + MongoDB + Qdrant for running the conformance test suite (see Development below), on non-standard ports (5433/3307/6380/27018/6333) specifically to avoid colliding with the full-stack compose above or any local services:
 
 ```bash
 docker compose -f docker-compose.test.yml up -d
@@ -633,6 +634,7 @@ docker compose -f docker-compose.test.yml down -v
 ```bash
 make test           # SQLite + in-memory only (no external deps)
 make test-pg        # Postgres conformance (requires infra-up)
+make test-mysql     # MySQL conformance + cmd's backend-selection wiring (requires infra-up)
 make test-redis     # Redis conformance (requires infra-up)
 make test-mongo     # MongoDB conformance (requires infra-up)
 make test-all       # All backends (requires infra-up)
@@ -640,7 +642,7 @@ make test-e2e       # Black-box E2E: real binary + real runner + PG/Redis (requi
 make test-python    # Python runner unit tests
 make test-ts        # TypeScript runner unit tests
 make test-adapters  # CrewAI/LlamaIndex/AutoGen adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
-make infra-up       # Start ephemeral Postgres + Redis + MongoDB via Docker
+make infra-up       # Start ephemeral Postgres + MySQL + Redis + MongoDB + Qdrant via Docker
 make infra-down     # Stop test infrastructure
 make vet            # go vet
 make build          # Build the binary

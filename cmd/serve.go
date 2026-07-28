@@ -37,6 +37,7 @@ import (
 	"github.com/sharanharsoor/runkite/internal/ratelimit"
 	"github.com/sharanharsoor/runkite/internal/state"
 	mongostore "github.com/sharanharsoor/runkite/internal/state/mongo"
+	mysqlstore "github.com/sharanharsoor/runkite/internal/state/mysql"
 	pgstore "github.com/sharanharsoor/runkite/internal/state/postgres"
 	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
 	"github.com/sharanharsoor/runkite/internal/tenant"
@@ -474,6 +475,25 @@ func initStore(ctx context.Context) state.Store {
 		}
 		slog.Info("state store: postgres")
 		return pg
+	}
+
+	// MySQL: the second SQL exemplar alongside Postgres/SQLite (master
+	// plan: "MySQL stays 'future SQL twin if someone needs it'" -- see
+	// internal/state/mysql's package doc). Checked after POSTGRES_DSN,
+	// same precedence convention as MONGO_URI below, so setting
+	// multiple backend env vars at once is deterministic, not a race.
+	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
+		my, err := mysqlstore.New(ctx, mysqlDSN)
+		if err != nil {
+			slog.Error("failed to connect to mysql", "error", err)
+			os.Exit(1)
+		}
+		if err := my.Init(ctx); err != nil {
+			slog.Error("failed to initialize mysql store", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("state store: mysql")
+		return my
 	}
 
 	// MongoDB: the project's non-SQL exemplar backend (master plan:

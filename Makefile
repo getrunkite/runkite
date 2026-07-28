@@ -5,7 +5,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-redis test-mongo test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen
 
 # --- Build ---
 build:
@@ -25,6 +25,17 @@ test:
 test-pg:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 		go test ./internal/state/postgres/ -race -count=1 -v
+
+# MySQL conformance (requires MYSQL_DSN or infra-up). Same shared
+# conformance.RunStoreSuite as Postgres/SQLite/Mongo -- see
+# internal/state/mysql/mysql_test.go. Also exercises cmd's own
+# initStore/db-upgrade/db-reset backend-selection wiring (cmd/
+# store_selection_test.go), not just the internal/state/mysql package
+# in isolation -- serve wiring and conformance testing are two
+# separate things that can each be individually forgotten.
+test-mysql:
+	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
+		go test ./internal/state/mysql/ ./cmd/ -race -count=1 -v
 
 # Redis conformance (requires REDIS_URL or infra-up)
 test-redis:
@@ -59,18 +70,20 @@ test-qdrant:
 # one flaky assertion; unique-per-package table names would also work.
 test-all:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
+	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
 	REDIS_URL="redis://localhost:6380" \
 	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
-		go test ./internal/... -race -count=1 -p 1
+		go test ./internal/... ./cmd/... -race -count=1 -p 1
 
 # Verbose version of test-all
 test-all-v:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
+	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
 	REDIS_URL="redis://localhost:6380" \
 	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
-		go test ./internal/... -race -count=1 -v -p 1
+		go test ./internal/... ./cmd/... -race -count=1 -v -p 1
 
 # End-to-end: builds the real binary, runs it + the real Python runner as
 # subprocesses against real Postgres/Redis, and re-validates VG-001/002/003

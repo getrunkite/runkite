@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 
+	mysqlstore "github.com/sharanharsoor/runkite/internal/state/mysql"
 	pgstore "github.com/sharanharsoor/runkite/internal/state/postgres"
 	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
 )
@@ -31,6 +32,21 @@ func cmdDBUpgrade(args []string) {
 			os.Exit(1)
 		}
 		fmt.Println("Database initialized successfully (postgres)")
+		return
+	}
+
+	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
+		my, err := mysqlstore.New(ctx, mysqlDSN)
+		if err != nil {
+			slog.Error("failed to connect to mysql", "error", err)
+			os.Exit(1)
+		}
+		defer my.Close()
+		if err := my.Init(ctx); err != nil {
+			slog.Error("failed to initialize mysql", "error", err)
+			os.Exit(1)
+		}
+		fmt.Println("Database initialized successfully (mysql)")
 		return
 	}
 
@@ -93,6 +109,25 @@ func cmdDBReset(args []string) {
 			os.Exit(1)
 		}
 		fmt.Println("Database reset successfully (postgres)")
+		return
+	}
+
+	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
+		my, err := mysqlstore.New(ctx, mysqlDSN)
+		if err != nil {
+			slog.Error("failed to connect to mysql", "error", err)
+			os.Exit(1)
+		}
+		defer my.Close()
+		if err := my.TruncateAll(ctx); err != nil {
+			slog.Error("failed to truncate mysql", "error", err)
+			os.Exit(1)
+		}
+		if err := my.Init(ctx); err != nil {
+			slog.Error("failed to reinitialize mysql", "error", err)
+			os.Exit(1)
+		}
+		fmt.Println("Database reset successfully (mysql)")
 		return
 	}
 

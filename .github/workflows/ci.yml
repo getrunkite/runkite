@@ -27,6 +27,27 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      mysql:
+        # The second SQL exemplar alongside Postgres/SQLite
+        # (internal/state/mysql) -- same conformance suite, so this
+        # needs to run in CI too, not just locally. Unlike mongo below,
+        # MySQL's default command needs no override for this project's
+        # purposes, so a normal `services:` entry (not a manual `docker
+        # run` step) is sufficient.
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: runkite
+          MYSQL_USER: runkite
+          MYSQL_PASSWORD: runkite
+          MYSQL_DATABASE: runkite_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uroot -prunkite"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
       redis:
         image: redis:7-alpine
         ports:
@@ -112,13 +133,19 @@ jobs:
       - name: Test (all backends)
         env:
           POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          MYSQL_DSN: "runkite:runkite@tcp(127.0.0.1:3306)/runkite_test?parseTime=true"
           REDIS_URL: redis://localhost:6379
           MONGO_URI: "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true"
           QDRANT_URL: http://localhost:6333
         # -p 1: see Makefile's test-all comment -- internal/api/vectors_test
         # and internal/vectorstore/pgvector both DROP vector_items against
-        # the same shared Postgres test database.
-        run: go test ./internal/... -race -count=1 -v -p 1
+        # the same shared Postgres test database. ./cmd/... included so
+        # the initStore/db-upgrade/db-reset backend-selection wiring
+        # (cmd/store_selection_test.go) actually runs in CI, not just the
+        # internal/state/mysql package's own conformance suite in
+        # isolation -- serve wiring and conformance testing are two
+        # separate things that can each be individually forgotten.
+        run: go test ./internal/... ./cmd/... -race -count=1 -v -p 1
 
       - name: Python runner unit tests
         env:
