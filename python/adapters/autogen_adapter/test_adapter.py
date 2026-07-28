@@ -165,6 +165,53 @@ async def test_concurrent_run_on_shared_agent_is_serialized():
     check("all three concurrent runs still completed successfully", all(status == "success" for status, _ in results))
 
 
+async def test_sequential_runs_clear_shared_model_context():
+    """Regression: a shared AssistantAgent appends to model_context on
+    every run(). Without an explicit clear between runs, run N+1 would
+    see run N's history -- cross-thread leakage on a long-lived
+    graph_id. The adapter must clear before each run()."""
+    adapter = AutoGenAdapter()
+
+    class _Context:
+        def __init__(self):
+            self.messages = []
+
+        async def clear(self):
+            self.messages.clear()
+
+        def add(self, item):
+            self.messages.append(item)
+
+    class _AccumulatingAgent:
+        def __init__(self):
+            self._model_context = _Context()
+            self.seen_sizes = []
+
+        async def run(self, task):
+            # Mirror AutoGen: context already holds prior turns unless cleared.
+            self.seen_sizes.append(len(self._model_context.messages))
+            self._model_context.add(f"user:{task}")
+            self._model_context.add(f"ai:reply-to-{task}")
+            return _FakeTaskResult(f"reply-to-{task}")
+
+    fake = _AccumulatingAgent()
+    adapter.agents["shared_agent"] = fake
+
+    callback, _ = _collector()
+    for label in ("a", "b", "c"):
+        status = await adapter.execute(
+            {"run_id": label, "graph_id": "shared_agent", "input": {"messages": [{"role": "user", "content": label}]}},
+            callback,
+            None,
+        )
+        check(f"run {label} succeeded", status == "success")
+
+    check(
+        "each run started with empty context (clear between runs)",
+        fake.seen_sizes == [0, 0, 0],
+    )
+
+
 async def test_cancel_event_interrupts_a_slow_agent():
     adapter = AutoGenAdapter()
     adapter.agents["my_agent"] = _FakeAssistantAgent(delay=3600)
@@ -191,6 +238,7 @@ async def main():
     await test_unknown_graph_id_reports_error()
     await test_agent_exception_reports_error()
     await test_concurrent_run_on_shared_agent_is_serialized()
+    await test_sequential_runs_clear_shared_model_context()
     await test_cancel_event_interrupts_a_slow_agent()
     print("\nAll checks passed.")
 

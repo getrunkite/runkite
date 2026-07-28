@@ -15,24 +15,26 @@ last human/user message's text from `RunAssignment.input.messages` and
 calls `agent.run(task=<text>)`, using AutoGen's own native async run
 (no thread-pool wrapping needed).
 
-Concurrency note (runner-side concurrency spot-check, same discipline
-as the CrewAI adapter's): an `AssistantAgent` keeps its own
-conversation history in `self._model_context` (a
-`ChatCompletionContext`, e.g. `UnboundedChatCompletionContext`), a
-single shared, mutable object appended to on every `run()` call. Two
-concurrent `run()` calls on the SAME shared agent instance would
-interleave appends to that one context, corrupting both runs' history
--- there's no per-invocation isolation, same shape as CrewAI's shared
-`Crew.usage_metrics`/`_task_output_handler`. Since `load_config` builds
-one `AssistantAgent` per graph_id and shares it across every run
-dispatched to that graph_id (same convention as every other adapter's
-static graphs), a per-graph_id lock below serializes concurrent runs
-on the same agent -- correct, though it means AutoGen runs sharing a
-graph_id don't get real parallelism from `--concurrency > 1` the way
-LangGraph/LangChain/LlamaIndex runs do. Building a fresh AssistantAgent
-per run (LangGraph's Factory Graph pattern) would remove this ceiling;
-not done here since it's a bigger change than a concurrency-safety fix
-warrants on its own.
+Concurrency / isolation note: an `AssistantAgent` keeps conversation
+history in `self._model_context` (a `ChatCompletionContext`, e.g.
+`UnboundedChatCompletionContext`), a single shared, mutable object
+appended to on every `run()` call. That creates two problems for a
+long-lived agent shared across every run on a graph_id:
+
+1. Concurrent `run()` calls would interleave appends -- same shape as
+   CrewAI's shared `Crew.usage_metrics`. A per-graph_id lock below
+   serializes those calls (correctness over parallelism; AutoGen runs
+   sharing a graph_id don't get real `--concurrency > 1` overlap the
+   way LangGraph/LangChain/LlamaIndex do).
+2. Sequential runs would otherwise LEAK history across unrelated
+   threads/tenants (run B's model sees run A's turns). LlamaIndex's
+   adapter avoids the equivalent by reconstructing `chat_history` per
+   call; here we `await model_context.clear()` before each `run()` so
+   each Agent Protocol invocation starts from a clean slate. Multi-turn
+   continuity within a thread is still the caller's job via the
+   messages array (we only forward the last human text as `task=`,
+   same last-message convention as CrewAI) -- clear does not try to
+   rebuild AutoGen's context from prior messages.
 """
 
 from __future__ import annotations
@@ -132,11 +134,12 @@ class AutoGenAdapter:
             messages = list(input_data.get("messages", []))
             text = _last_human_text(messages)
 
-            # See module docstring: a shared AssistantAgent's run() isn't
-            # safe to invoke concurrently with itself (mutable
-            # conversation context), so concurrent runs on the same
-            # graph_id queue here rather than racing on that context.
+            # See module docstring: lock (no concurrent run() on one
+            # agent) + clear (no sequential cross-run history leak).
             async with self._agent_locks[graph_id]:
+                model_context = getattr(agent, "_model_context", None) or getattr(agent, "model_context", None)
+                if model_context is not None and hasattr(model_context, "clear"):
+                    await model_context.clear()
                 result = await run_cancellable(agent.run(task=text), cancel_event)
             reply = _extract_text(result)
 
