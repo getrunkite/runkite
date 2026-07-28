@@ -73,6 +73,8 @@ type Store struct {
 	db *sql.DB
 }
 
+var _ state.Store = (*Store)(nil)
+
 // New creates a new MySQL store from a DSN in the go-sql-driver/mysql
 // format (e.g. "user:password@tcp(host:3306)/dbname?parseTime=true").
 // parseTime=true is required in the DSN (not defaulted here, so it's
@@ -321,6 +323,60 @@ func (s *Store) Init(ctx context.Context) error {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// TruncateAll clears every table -- used by conformance test wiring for
+// a clean slate between subtests (see RunStoreSuite's factory pattern
+// in internal/state/conformance, and Postgres/Mongo's own TruncateAll).
+//
+// Unlike Postgres's single `TRUNCATE ... CASCADE` statement, MySQL's
+// TRUNCATE TABLE refuses to truncate a table referenced by another
+// table's foreign key regardless of ON DELETE CASCADE (and MySQL has no
+// CASCADE keyword for TRUNCATE at all) -- so this disables foreign key
+// checks for the duration instead of hand-ordering 13 tables around
+// their FK dependencies.
+//
+// Critically, SET FOREIGN_KEY_CHECKS is a per-CONNECTION session
+// variable, not a per-statement or per-transaction one -- issuing it
+// via s.db.ExecContext directly would be a real bug under connection
+// pooling, since Go's database/sql can route each ExecContext call to
+// a different pooled connection, silently leaving FK checks enabled on
+// whichever connection actually runs the TRUNCATEs. db.Conn(ctx) pins
+// every statement below to one specific physical connection instead of
+// letting the pool route them independently. Verified live before
+// trusting this (same "confirm against a live container" discipline
+// as every other dialect-surprise fix in this package): forcing a real
+// multi-connection pool (SetMaxOpenConns(5)) and truncating a
+// FK-referenced parent table BEFORE its child on the same pinned
+// connection, which would error under normal FK checks, succeeded.
+func (s *Store) TruncateAll(ctx context.Context) error {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+		return err
+	}
+	// context.Background(), not ctx: this reset must still run even if
+	// the caller's context is cancelled/times out mid-truncate --
+	// otherwise a pooled connection could return to the pool with FK
+	// checks left permanently off for whichever caller acquires it next.
+	defer conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck // best-effort reset before the connection returns to the pool
+
+	tables := []string{
+		"store_items", "runs", "thread_checkpoints", "threads",
+		"agent_schemas", "agents", "agent_versions",
+		"registry_entries", "registry_entry_versions",
+		"webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
+	}
+	for _, tbl := range tables {
+		if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE "+tbl); err != nil {
+			return fmt.Errorf("mysql: truncate %s: %w", tbl, err)
+		}
+	}
+	return nil
 }
 
 // --------------------------------------------------------------------------
@@ -1580,4 +1636,339 @@ func (s *Store) GetLastCronFireTime(ctx context.Context, scheduleName string) (t
 		return time.Time{}, false, err
 	}
 	return fireTime, true, nil
+}
+
+// --------------------------------------------------------------------------
+// Retention
+// --------------------------------------------------------------------------
+
+// pruneableRunStatusesSQL matches api.isTerminalStatus's definition
+// (internal/api/runs.go) -- duplicated here rather than imported to
+// keep internal/state free of a dependency on internal/api, same
+// convention Postgres/SQLite already use. "running" and "pending" are
+// never pruneable regardless of age; "interrupted" runs (paused for
+// human-in-the-loop resume) ARE included because resumption operates on
+// the thread's checkpoint state, not this run row.
+const pruneableRunStatusesSQL = `('success','error','interrupted','timeout')`
+
+func (s *Store) PruneRuns(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM runs WHERE status IN ` + pruneableRunStatusesSQL + ` AND updated_at < ?`
+	args := []interface{}{olderThan}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// PruneCheckpoints' DELETE ... WHERE id IN (SELECT ... FROM (window
+// function subquery) ranked WHERE rn > ?) shape looks like it should
+// hit MySQL's ER_UPDATE_TABLE_USED ("You can't specify target table
+// for update in FROM clause"), which normally blocks a DELETE/UPDATE
+// from reading the same table via a correlated subquery -- but wrapping
+// the window-function SELECT in its own derived table (the "ranked"
+// alias) materializes it first, which MySQL's optimizer treats as no
+// longer directly referencing the target table. Verified live against
+// a real MySQL 8.4 container before trusting this (the same "confirm
+// against a live container, not just the docs" discipline every
+// dialect-surprise fix in this package has followed) -- deleting 3 of 5
+// rows from a table via exactly this shape, keeping the newest 2 per
+// partition, worked without error.
+func (s *Store) PruneCheckpoints(ctx context.Context, keepLast int) (int64, error) {
+	if keepLast <= 0 {
+		return 0, nil
+	}
+	// tenantArg stays nil (SQL NULL) for a system context, matching
+	// "? IS NULL" below -- meaning "every tenant", not "no tenant".
+	// Ranking (ROW_NUMBER) is computed per-thread so a busy thread's
+	// history doesn't starve a quiet one's retention window.
+	var tenantArg interface{}
+	if !tenant.IsSystem(ctx) {
+		tenantArg = tenant.FromContext(ctx)
+	}
+	query := `
+		DELETE FROM thread_checkpoints
+		WHERE checkpoint_id IN (
+			SELECT checkpoint_id FROM (
+				SELECT checkpoint_id,
+					ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY created_at DESC) AS rn
+				FROM thread_checkpoints
+				WHERE (? IS NULL OR tenant_id = ?)
+			) ranked
+			WHERE rn > ?
+		)`
+	result, err := s.db.ExecContext(ctx, query, tenantArg, tenantArg, keepLast)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) PruneCronClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM cron_claims WHERE fire_time < ?`
+	args := []interface{}{olderThan}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// --------------------------------------------------------------------------
+// Registry
+// --------------------------------------------------------------------------
+
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
+// PublishRegistryEntry uses the exact same atomic INSERT ... ON
+// DUPLICATE KEY UPDATE + LAST_INSERT_ID(expr) pattern as UpsertAgent --
+// see that method's doc comment for the full explanation of why this
+// single-statement design is stronger than MongoDB's separate
+// read-then-write for the same race. tags is compared as a JSON
+// column (normalized array comparison via MySQL's real `!=` on JSON,
+// not naive text), same as agents' metadata/capabilities.
+func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
+	tenantID := tenant.FromContext(ctx)
+	now := time.Now().UTC()
+	tags, _ := json.Marshal(nonNilTags(entry.Tags))
+	meta, _ := json.Marshal(entry.Metadata)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO registry_entries (tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, LAST_INSERT_ID(1), ?, ?)
+		ON DUPLICATE KEY UPDATE
+			version = LAST_INSERT_ID(IF(display_name != VALUES(display_name) OR description != VALUES(description)
+			                              OR author != VALUES(author) OR tags != VALUES(tags)
+			                              OR source_type != VALUES(source_type) OR source_ref != VALUES(source_ref)
+			                              OR metadata != VALUES(metadata),
+			                            version + 1, version)),
+			display_name = VALUES(display_name), description = VALUES(description),
+			author = VALUES(author), tags = VALUES(tags),
+			source_type = VALUES(source_type), source_ref = VALUES(source_ref),
+			metadata = VALUES(metadata), updated_at = VALUES(updated_at)
+	`, tenantID, entry.Name, entry.DisplayName, entry.Description, entry.Author, tags, entry.SourceType, entry.SourceRef, meta, now, now)
+	if err != nil {
+		return fmt.Errorf("mysql: publish registry entry: %w", err)
+	}
+
+	var newVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&newVersion); err != nil {
+		return fmt.Errorf("mysql: read back computed version: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO registry_entry_versions (tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE name = name
+	`, tenantID, entry.Name, newVersion, entry.DisplayName, entry.Description, entry.Author, tags, entry.SourceType, entry.SourceRef, meta, now); err != nil {
+		return fmt.Errorf("mysql: write registry entry version snapshot: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error) {
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	e, err := scanRegistryEntry(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistrySearchRequest) ([]*models.RegistryEntry, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, name, display_name, description, author, tags, source_type, source_ref, metadata, version, created_at, updated_at FROM registry_entries`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if req.Name != "" {
+		where = append(where, "name LIKE ?")
+		args = append(args, "%"+req.Name+"%")
+	}
+	if req.Author != "" {
+		where = append(where, "author = ?")
+		args = append(args, req.Author)
+	}
+	// Every listed tag must be present -- matches Postgres's `tags @>
+	// $N` JSONB containment, one AND'd condition per requested tag.
+	// Verified live before trusting it: JSON_CONTAINS(tags, '"sales"')
+	// correctly checks scalar membership within a JSON array (not, say,
+	// requiring an exact array match or silently always-true/false).
+	for _, tag := range req.Tags {
+		where = append(where, "JSON_CONTAINS(tags, ?)")
+		tagJSON, _ := json.Marshal(tag)
+		args = append(args, string(tagJSON))
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY name ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := []*models.RegistryEntry{}
+	for rows.Next() {
+		e, err := scanRegistryEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// DeleteRegistryEntry also removes the entry's own version history, not
+// just its current row -- same real bug fix Postgres/SQLite's own doc
+// comments describe: without this, a delete-then-republish of the same
+// name would hit registry_entry_versions' own duplicate-key guard
+// against ORPHANED rows left over from before the delete, silently
+// discarding the new publish's own v1 snapshot (see REG-005b's
+// regression test). A transaction, not two independent Execs, so a
+// crash between the two deletes can't leave the entry gone but its
+// version history still present.
+func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
+	tenantID := tenant.FromContext(ctx)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	query := `DELETE FROM registry_entries WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenantID)
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
+	}
+
+	versionsQuery := `DELETE FROM registry_entry_versions WHERE name = ?`
+	versionsArgs := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		versionsQuery += ` AND tenant_id = ?`
+		versionsArgs = append(versionsArgs, tenantID)
+	}
+	if _, err := tx.ExecContext(ctx, versionsQuery, versionsArgs...); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) ListRegistryEntryVersions(ctx context.Context, name string) ([]*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.RegistryEntryVersion{}
+	for rows.Next() {
+		v, err := scanRegistryEntryVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *Store) GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error) {
+	query := `SELECT tenant_id, name, version, display_name, description, author, tags, source_type, source_ref, metadata, created_at FROM registry_entry_versions WHERE name = ? AND version = ?`
+	args := []interface{}{name, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	v, err := scanRegistryEntryVersion(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+func scanRegistryEntry(row rowScanner) (*models.RegistryEntry, error) {
+	var e models.RegistryEntry
+	var tagsBytes, metaBytes []byte
+	if err := row.Scan(&e.TenantID, &e.Name, &e.DisplayName, &e.Description, &e.Author, &tagsBytes, &e.SourceType, &e.SourceRef, &metaBytes, &e.Version, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(tagsBytes, &e.Tags)
+	json.Unmarshal(metaBytes, &e.Metadata)
+	return &e, nil
+}
+
+func scanRegistryEntryVersion(row rowScanner) (*models.RegistryEntryVersion, error) {
+	var v models.RegistryEntryVersion
+	var tagsBytes, metaBytes []byte
+	if err := row.Scan(&v.TenantID, &v.Name, &v.Version, &v.DisplayName, &v.Description, &v.Author, &tagsBytes, &v.SourceType, &v.SourceRef, &metaBytes, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(tagsBytes, &v.Tags)
+	json.Unmarshal(metaBytes, &v.Metadata)
+	return &v, nil
 }
