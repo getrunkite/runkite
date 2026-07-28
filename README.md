@@ -336,10 +336,24 @@ Semantic search over embeddings (master plan: "Vector/semantic store"), backed b
 
 **Python SDK**: `RunkiteVectorStore` (`python/runkite_runner/vectorstore.py`) implements LangChain's `VectorStore` interface (`add_texts`, `similarity_search`, `similarity_search_with_score`, `from_texts`), so it drops into existing LangChain/LangGraph RAG code unchanged. Prefer proxy mode (`http_base_url` / `RUNKITE_HTTP_URL`) -- it talks to the control plane's `/vectors/*` API and works for every backend (pgvector, Qdrant, …). Direct mode (`postgres_dsn` only, no HTTP URL) queries `vector_items` over `psycopg` and is correct **only** when the control plane is on pgvector; when both DSN and HTTP URL are provided, proxy wins so a runner with `POSTGRES_DSN` set for checkpoints doesn't silently write vectors to Postgres while the CP is on Qdrant. See `examples/vector_agent/` for a working retrieval demo (fake, deterministic embeddings -- no API key needed; always uses proxy).
 
+**TypeScript SDK**: `RunkiteVectorStore` (`typescript/runkite-runner/src/vectorstore.ts`) implements LangChain.js's `VectorStore` abstract class (`addDocuments`/`addVectors`/`similaritySearchVectorWithScore`/`delete`/`fromTexts`/`fromDocuments`) -- same role, **proxy mode only**, deliberately, not a port-in-progress omission: direct mode is only ever correct when the control plane's vector store happens to be pgvector specifically, and proxy mode is correct against every backend the control plane supports because the control plane -- not the runner -- owns that choice. Same reasoning Python's own module docstring gives for why proxy wins whenever both are configured there; this port just always takes the branch Python treats as the safe default.
+
+```typescript
+import { RunkiteVectorStore } from "runkite-runner";
+
+const store = new RunkiteVectorStore(embeddings, {
+  namespace: "docs",
+  httpBaseUrl: process.env.RUNKITE_HTTP_URL ?? "http://localhost:2026",
+  runnerToken: process.env.RUNNER_TOKEN,
+});
+await store.addDocuments([{ pageContent: "...", metadata: {} }]);
+const results = await store.similaritySearchWithScore("query text", 4);
+```
+
 **Known limitations, stated plainly**:
 - **Dimension is fixed at first creation, not migrated**, for both backends. Changing `vector_store.dimensions` after the table/collection already exists does not migrate existing rows -- `Upsert` starts failing with a clear dimension-mismatch error (not silent corruption) until it's manually dropped or recreated at the new width.
 - **Cosine similarity only.** Both backends support other distance metrics (pgvector: L2, inner-product; Qdrant: Euclidean, dot product); only cosine is wired up today, the most common choice for text embeddings.
-- **Direct mode is pgvector-only.** There is no runner-side Qdrant client; Qdrant-backed deployments always go through the control plane's HTTP API. Functionally identical, just always one network hop instead of sometimes zero.
+- **Direct mode is pgvector-only, and Python-only.** There is no runner-side Qdrant client in either language, and the TypeScript client has no direct-pgvector mode at all (proxy-only by design -- see above), so a Qdrant-backed deployment or any TypeScript runner always goes through the control plane's HTTP API. Functionally identical to Python's own proxy mode, just always one network hop instead of sometimes zero.
 - **Qdrant's `created_at` resets on re-index.** Qdrant has no built-in insert-vs-update distinction the way Postgres's `ON CONFLICT DO UPDATE` does, so pinning down "first write time" would need a read before every write. `created_at` is set to "now" on every `Upsert` call, including re-indexing an already-existing `id` -- correct for a fresh item, but re-indexing an existing document resets rather than preserves its original `created_at`.
 - **Weaviate, Pinecone are not implemented** (Tier 2 -- experimental, not yet built). The `VectorStore` interface (`internal/vectorstore`) is backend-agnostic and has a shared conformance suite (`internal/vectorstore/conformance`) both pgvector and Qdrant pass identically, but those two remaining backends have no implementation yet.
 

@@ -7,3 +7,4 @@ export { executeRun, buildRunConfig, type RunAssignment, type RunEvent, type Run
 export { loadRequestHandler, serveCustomApp, type CustomAppHandler } from "./customApp.js";
 export { callAgent, A2AError, type CallAgentOptions } from "./a2a.js";
 export { RunnerUser } from "./runnerUser.js";
+export { RunkiteVectorStore, type RunkiteVectorStoreOptions } from "./vectorstore.js";
