@@ -6,8 +6,9 @@
  * runner produced it (this equivalence is the whole point of proving the
  * Runner Protocol is language-agnostic).
  */
-import type { LangGraphAdapter } from "./adapter.js";
+import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
 import { RunnerUser } from "./runnerUser.js";
+import type { FactoryGraphBuild, RunFactoryContext } from "./factoryGraph.js";
 
 export interface RunEvent {
   event_id: string;
@@ -149,7 +150,13 @@ export async function executeRun(
   };
 
   try {
-    const graph = adapter.getGraph(graphId);
+    // Emitted BEFORE building the graph, not after: for a factory graph
+    // (see factoryGraph.ts) this construction runs fresh, on the
+    // request path, every single run -- it can genuinely take seconds
+    // (LLM client setup, tool binding, MCP session negotiation), and a
+    // static graph has zero equivalent cost since it's built once at
+    // startup. A client waiting for ANY signal that its run was even
+    // accepted, before the first real token, needs this ordering.
     await emit(makeEvent("lifecycle", { event: "running" }));
 
     if (resumeCommand != null) {
@@ -162,61 +169,87 @@ export async function executeRun(
 
     let hasInterrupt = false;
     const seenToolCallIds = new Set<string>();
-    const stream = await graph.stream(inputData, { ...config, streamMode: lgStreamMode });
 
-    for await (const chunk of stream) {
-      let mode: string;
-      let data: any;
-      if (Array.isArray(chunk) && chunk.length === 2 && typeof chunk[0] === "string") {
-        [mode, data] = chunk;
-      } else {
-        mode = lgStreamMode.length === 1 ? lgStreamMode[0] : "values";
-        data = chunk;
-      }
+    // Factory graph (master plan: LangGraph SDK/ServerRuntime
+    // compatibility) -- built fresh for this run alone, with
+    // checkpointer/store attached to THIS instance, not the shared one
+    // static graphs use. See factoryGraph.ts for the full rationale.
+    // factoryBuild.close() (in the finally below) runs regardless of
+    // how the inner try exits -- success, error, or an early
+    // "interrupted" return from the cancellation check further down.
+    let graph: RunnableGraph;
+    let factoryBuild: FactoryGraphBuild | null = null;
+    if (adapter.isFactory(graphId)) {
+      const runContext: RunFactoryContext = { runId, threadId: assignment.thread_id, user: assignment.user };
+      factoryBuild = adapter.buildFactoryGraph(graphId, config, runContext);
+      graph = await factoryBuild.open();
+    } else {
+      graph = adapter.getGraph(graphId);
+    }
 
-      for (const tc of findNewToolCalls(data, seenToolCallIds)) {
-        await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
-      }
+    try {
+      const stream = await graph.stream(inputData, { ...config, streamMode: lgStreamMode });
 
-      if (data && typeof data === "object" && "__interrupt__" in data) {
-        hasInterrupt = true;
-        const interrupts = Array.isArray(data.__interrupt__) ? data.__interrupt__ : [data.__interrupt__];
-        await emit(makeEvent("lifecycle", { event: "interrupted" }));
-        for (const it of interrupts) {
-          // LangGraph.js's actual interrupt shape carries "id" directly
-          // (confirmed against a real interrupt()/Command(resume) round
-          // trip, v1.4.8: {id, value} -- no "ns" field at all despite
-          // some published docs/examples showing an {ns, resumable, when}
-          // shape instead). Falls back to "ns" for forward/backward
-          // compatibility with whichever shape a given version actually
-          // produces, then to a synthesized id as a last resort.
-          const interruptId =
-            typeof it?.id === "string" && it.id
-              ? it.id
-              : Array.isArray(it?.ns) && it.ns.length > 0
-                ? it.ns.join(":")
-                : `interrupt-${seq}`;
-          await emit(makeEvent("input.requested", { interrupt_id: interruptId, value: it?.value ?? it }));
+      for await (const chunk of stream) {
+        let mode: string;
+        let data: any;
+        if (Array.isArray(chunk) && chunk.length === 2 && typeof chunk[0] === "string") {
+          [mode, data] = chunk;
+        } else {
+          mode = lgStreamMode.length === 1 ? lgStreamMode[0] : "values";
+          data = chunk;
         }
-        const cleanData = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "__interrupt__"));
-        if (Object.keys(cleanData).length > 0) await emit(makeEvent(mode, cleanData));
-        continue;
+
+        for (const tc of findNewToolCalls(data, seenToolCallIds)) {
+          await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
+        }
+
+        if (data && typeof data === "object" && "__interrupt__" in data) {
+          hasInterrupt = true;
+          const interrupts = Array.isArray(data.__interrupt__) ? data.__interrupt__ : [data.__interrupt__];
+          await emit(makeEvent("lifecycle", { event: "interrupted" }));
+          for (const it of interrupts) {
+            // LangGraph.js's actual interrupt shape carries "id" directly
+            // (confirmed against a real interrupt()/Command(resume) round
+            // trip, v1.4.8: {id, value} -- no "ns" field at all despite
+            // some published docs/examples showing an {ns, resumable, when}
+            // shape instead). Falls back to "ns" for forward/backward
+            // compatibility with whichever shape a given version actually
+            // produces, then to a synthesized id as a last resort.
+            const interruptId =
+              typeof it?.id === "string" && it.id
+                ? it.id
+                : Array.isArray(it?.ns) && it.ns.length > 0
+                  ? it.ns.join(":")
+                  : `interrupt-${seq}`;
+            await emit(makeEvent("input.requested", { interrupt_id: interruptId, value: it?.value ?? it }));
+          }
+          const cleanData = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "__interrupt__"));
+          if (Object.keys(cleanData).length > 0) await emit(makeEvent(mode, cleanData));
+          continue;
+        }
+
+        if (isCancelled()) {
+          await emit(makeEvent("end", { status: "interrupted" }));
+          return "interrupted";
+        }
+
+        await emit(makeEvent(mode, data));
       }
 
-      if (isCancelled()) {
+      if (hasInterrupt) {
         await emit(makeEvent("end", { status: "interrupted" }));
         return "interrupted";
       }
-
-      await emit(makeEvent(mode, data));
+      await emit(makeEvent("end", { status: "success" }));
+      return "success";
+    } finally {
+      // Runs regardless of how the inner try exits -- success, error,
+      // or an early "interrupted" return from the cancellation check
+      // above -- same as Python's AsyncExitStack tearing the factory
+      // down on the way out of `async with` regardless of exit reason.
+      if (factoryBuild) await factoryBuild.close();
     }
-
-    if (hasInterrupt) {
-      await emit(makeEvent("end", { status: "interrupted" }));
-      return "interrupted";
-    }
-    await emit(makeEvent("end", { status: "success" }));
-    return "success";
   } catch (err: any) {
     if (isCancelled()) {
       await emit(makeEvent("end", { status: "interrupted" }));

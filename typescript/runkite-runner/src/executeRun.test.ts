@@ -4,10 +4,12 @@ import { executeRun, buildRunConfig, type RunAssignment, type RunEvent } from ".
 import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
 import { RunnerUser } from "./runnerUser.js";
 
-/** Minimal fake adapter exposing a single graph, avoiding a real
- * LangGraphAdapter (which needs a real config file + dynamic import). */
+/** Minimal fake adapter exposing a single STATIC graph, avoiding a real
+ * LangGraphAdapter (which needs a real config file + dynamic import).
+ * isFactory always returns false -- see factoryGraph.test.ts and the
+ * dedicated factory-graph cases below for the other path. */
 function fakeAdapter(graph: RunnableGraph): LangGraphAdapter {
-  return { getGraph: () => graph } as unknown as LangGraphAdapter;
+  return { getGraph: () => graph, isFactory: () => false } as unknown as LangGraphAdapter;
 }
 
 function assignment(overrides: Partial<RunAssignment> = {}): RunAssignment {
@@ -310,6 +312,132 @@ test("buildRunConfig does not mutate the original assignment.config object", () 
   const a = assignment({ config: originalConfig });
   buildRunConfig(a);
   assert.deepEqual(originalConfig, { configurable: { recursion_limit: 10 } }, "assignment.config must not be mutated by buildRunConfig");
+});
+
+// -- Factory graph integration ------------------------------------------
+// executeRun.ts's own responsibility here is narrow and already tested
+// thoroughly at the unit level in factoryGraph.test.ts (classification,
+// param extraction, open/close semantics) -- these cases verify
+// executeRun.ts correctly WIRES that machinery in: it asks the adapter
+// whether a graph_id is a factory, builds+opens it before streaming,
+// and closes it afterward regardless of how the run ends.
+
+function fakeFactoryAdapter(graph: RunnableGraph, opts: { onOpen?: () => void; onClose?: () => void } = {}): LangGraphAdapter {
+  let closed = false;
+  return {
+    isFactory: () => true,
+    buildFactoryGraph: (_graphId: string, _config: unknown, _runContext: unknown) => ({
+      open: async () => {
+        opts.onOpen?.();
+        return graph;
+      },
+      close: async () => {
+        closed = true;
+        opts.onClose?.();
+      },
+    }),
+    getGraph: () => {
+      throw new Error("getGraph should never be called for a factory graph_id");
+    },
+    // Exposed for assertions below.
+    __wasClosed: () => closed,
+  } as unknown as LangGraphAdapter;
+}
+
+test("executeRun builds and opens a factory graph (not getGraph) when adapter.isFactory returns true", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([["values", { messages: [{ role: "ai", content: "hi from factory" }] }]]);
+    },
+  };
+  let opened = false;
+  const adapter = fakeFactoryAdapter(graph, { onOpen: () => (opened = true) });
+
+  const events: RunEvent[] = [];
+  const status = await executeRun(adapter, assignment(), async (e) => void events.push(e), () => false);
+
+  assert.equal(status, "success");
+  assert.equal(opened, true);
+  assert.deepEqual(
+    events.map((e) => e.method),
+    ["lifecycle", "values", "end"],
+  );
+});
+
+test("executeRun closes the factory build after a successful run", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([["values", {}]]);
+    },
+  };
+  const adapter = fakeFactoryAdapter(graph);
+  await executeRun(adapter, assignment(), async () => {}, () => false);
+  assert.equal((adapter as any).__wasClosed(), true);
+});
+
+test("executeRun closes the factory build even when the graph throws mid-stream", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      throw new Error("boom");
+    },
+  };
+  const adapter = fakeFactoryAdapter(graph);
+  const status = await executeRun(adapter, assignment(), async () => {}, () => false);
+  assert.equal(status, "error");
+  assert.equal((adapter as any).__wasClosed(), true, "factory build must be closed even after an error");
+});
+
+test("executeRun closes the factory build even when the run is cancelled mid-stream", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        ["values", { messages: [{ role: "user", content: "hi" }] }],
+        ["values", { messages: [{ role: "ai", content: "should not be reached" }] }],
+      ]);
+    },
+  };
+  const adapter = fakeFactoryAdapter(graph);
+  let cancelled = false;
+  const status = await executeRun(
+    adapter,
+    assignment(),
+    async (e) => {
+      if (e.method === "values") cancelled = true;
+    },
+    () => cancelled,
+  );
+  assert.equal(status, "interrupted");
+  assert.equal((adapter as any).__wasClosed(), true, "factory build must be closed even after a mid-stream cancel");
+});
+
+test("executeRun passes threadId/runId/user through to the factory's RunFactoryContext", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([["values", {}]]);
+    },
+  };
+  let capturedContext: any;
+  const adapter = {
+    isFactory: () => true,
+    buildFactoryGraph: (_graphId: string, _config: unknown, runContext: unknown) => {
+      capturedContext = runContext;
+      return { open: async () => graph, close: async () => {} };
+    },
+    getGraph: () => {
+      throw new Error("should not be called");
+    },
+  } as unknown as LangGraphAdapter;
+
+  await executeRun(
+    adapter,
+    assignment({ run_id: "run-xyz", thread_id: "thread-xyz", user: { identity: "alice" } }),
+    async () => {},
+    () => false,
+  );
+
+  assert.equal(capturedContext.runId, "run-xyz");
+  assert.equal(capturedContext.threadId, "thread-xyz");
+  assert.deepEqual(capturedContext.user, { identity: "alice" });
 });
 
 test("executeRun sets configurable.thread_id and run_id on the config passed to stream()", async () => {
