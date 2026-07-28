@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
+import { executeRun, buildRunConfig, type RunAssignment, type RunEvent } from "./executeRun.js";
 import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
+import { RunnerUser } from "./runnerUser.js";
 
 /** Minimal fake adapter exposing a single graph, avoiding a real
  * LangGraphAdapter (which needs a real config file + dynamic import). */
@@ -270,6 +271,45 @@ test("executeRun ignores a tool_calls entry with no id (can't be deduped/correla
   await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
 
   assert.equal(events.filter((e) => e.method === "tool_call").length, 0);
+});
+
+test("buildRunConfig sets thread_id, run_id, assistant_id, and graph_id on configurable", () => {
+  const config = buildRunConfig(assignment({ run_id: "run-1", thread_id: "thread-1", graph_id: "my_graph" }));
+  assert.equal(config.configurable.thread_id, "thread-1");
+  assert.equal(config.configurable.run_id, "run-1");
+  assert.equal(config.configurable.assistant_id, "my_graph");
+  assert.equal(config.configurable.graph_id, "my_graph");
+});
+
+test("buildRunConfig preserves an existing config.configurable's own fields", () => {
+  const config = buildRunConfig(assignment({ config: { configurable: { recursion_limit: 10 } } }));
+  assert.equal(config.configurable.recursion_limit, 10);
+  assert.equal(config.configurable.run_id, "run-1");
+});
+
+test("buildRunConfig omits langgraph_auth_user/user_id/user_display_name when assignment has no user", () => {
+  const config = buildRunConfig(assignment());
+  assert.equal("langgraph_auth_user" in config.configurable, false);
+  assert.equal("user_id" in config.configurable, false);
+  assert.equal("user_display_name" in config.configurable, false);
+});
+
+test("buildRunConfig sets langgraph_auth_user/user_id/user_display_name from assignment.user", () => {
+  const config = buildRunConfig(
+    assignment({ user: { identity: "alice", display_name: "Alice A.", is_authenticated: true, email: "alice@example.com" } }),
+  );
+  assert.ok(config.configurable.langgraph_auth_user instanceof RunnerUser);
+  assert.equal(config.configurable.langgraph_auth_user.identity, "alice");
+  assert.equal(config.configurable.langgraph_auth_user.get("email"), "alice@example.com");
+  assert.equal(config.configurable.user_id, "alice");
+  assert.equal(config.configurable.user_display_name, "Alice A.");
+});
+
+test("buildRunConfig does not mutate the original assignment.config object", () => {
+  const originalConfig = { configurable: { recursion_limit: 10 } };
+  const a = assignment({ config: originalConfig });
+  buildRunConfig(a);
+  assert.deepEqual(originalConfig, { configurable: { recursion_limit: 10 } }, "assignment.config must not be mutated by buildRunConfig");
 });
 
 test("executeRun sets configurable.thread_id and run_id on the config passed to stream()", async () => {

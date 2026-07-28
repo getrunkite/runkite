@@ -7,6 +7,7 @@
  * Runner Protocol is language-agnostic).
  */
 import type { LangGraphAdapter } from "./adapter.js";
+import { RunnerUser } from "./runnerUser.js";
 
 export interface RunEvent {
   event_id: string;
@@ -26,6 +27,45 @@ export interface RunAssignment {
   stream_modes?: string[];
   checkpoint_ref?: string | null;
   resume_command?: { response?: unknown } | null;
+  // The identity that authenticated this run's originating HTTP
+  // request, if any (internal/transport.UserContext's flat wire shape:
+  // identity/is_authenticated/display_name?/permissions?, plus any
+  // provider-specific Extra fields at the top level) -- undefined when
+  // no auth provider is configured, or the caller has no identity
+  // attached. See runnerUser.ts.
+  user?: Record<string, unknown>;
+}
+
+/**
+ * Builds the RunnableConfig passed to graph.stream(), including the keys
+ * LangGraph's own OSS code reads to populate Runtime.server_info for
+ * node code -- distinct from a Factory Graph's ServerRuntime.user (see
+ * factoryGraph.ts), which only the graph *factory* sees at build time.
+ * LangGraph documents this as "the server puts assistant_id/graph_id in
+ * config.configurable and the authenticated user dict in
+ * configurable.langgraph_auth_user" -- any hosting server (LangGraph
+ * Platform, this runner, or any other LangGraph SDK-compatible server)
+ * is expected to set these keys for node-level code to work at all.
+ * Direct TypeScript mirror of the Python runner's build_run_config() in
+ * worker.py -- a pure function (no I/O) so it's unit-testable without a
+ * live control plane or graph.
+ */
+export function buildRunConfig(assignment: RunAssignment): Record<string, any> {
+  const config: Record<string, any> = { ...(assignment.config ?? {}) };
+  config.configurable = { ...(config.configurable ?? {}) };
+  config.configurable.thread_id = assignment.thread_id;
+  config.configurable.run_id = assignment.run_id;
+  config.configurable.assistant_id = assignment.graph_id;
+  config.configurable.graph_id = assignment.graph_id;
+  if (assignment.user) {
+    const user = new RunnerUser(assignment.user);
+    config.configurable.langgraph_auth_user = user;
+    // LangGraph Platform hosting convenience shortcuts some agents read
+    // instead of (or in addition to) server_info.user.
+    config.configurable.user_id = user.identity;
+    config.configurable.user_display_name = user.displayName;
+  }
+  return config;
 }
 
 export type RunStatus = "success" | "error" | "interrupted";
@@ -91,13 +131,9 @@ export async function executeRun(
   const runId = assignment.run_id;
   const graphId = assignment.graph_id;
   let inputData: unknown = assignment.input;
-  const config: Record<string, any> = assignment.config ?? {};
+  const config = buildRunConfig(assignment);
   const streamModesReq = assignment.stream_modes ?? ["values"];
   const resumeCommand = assignment.resume_command;
-
-  config.configurable ??= {};
-  config.configurable.thread_id = assignment.thread_id;
-  config.configurable.run_id = runId;
 
   let seq = 0;
   const makeEvent = (method: string, data: unknown, namespace: string[] = []): RunEvent => {

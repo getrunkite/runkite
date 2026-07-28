@@ -410,11 +410,21 @@ async def coordinator_node(state, config: RunnableConfig) -> dict:
     ...
 ```
 
+**TypeScript SDK**: `callAgent` (`typescript/runkite-runner/src/a2a.ts`) is a direct port -- same request shape, same `config.configurable.run_id`/`langgraph_auth_user` forwarding. The runner's `executeRun.ts` now builds this via an exported `buildRunConfig`, which sets the same `configurable` keys Python's `build_run_config` does (`assistant_id`/`graph_id`/`langgraph_auth_user`/`user_id`/`user_display_name`, not just `thread_id`/`run_id` as before) -- one deliberate difference: the TypeScript version builds a fresh config object rather than mutating `assignment.config` in place, which Python's does (harmless either way; nothing compares object identity):
+
+```typescript
+import { callAgent } from "runkite-runner";
+
+async function coordinatorNode(state: State, config: RunnableConfig) {
+  const result = await callAgent(config, "worker_agent", { messages: [...] }, { wait: true });
+  ...
+```
+
 See `examples/a2a_agent/` for a complete working example (`coordinator_agent` delegates to `worker_agent`).
 
 Three things this adds on top of the shared run-creation/wait path:
 
-- **Auth context propagation**: the runner forwards the caller's identity/permissions via `on_behalf_of` (the Python helper copies them from the parent run's `langgraph_auth_user`). Tenant is derived from the PARENT run's own `tenant_id` (looked up server-side), never trusted from the request body. This is **propagation, not enforcement** -- the control plane does not re-check `on_behalf_of.permissions` against a stored parent-auth record (runs don't persist the original caller's auth), so a buggy or compromised agent/runner could claim higher permissions than the parent run actually had. The trust boundary is "the runner is trusted," same as the rest of `/internal/*`.
+- **Auth context propagation**: the runner forwards the caller's identity/permissions via `on_behalf_of` (both the Python and TypeScript helpers copy them from the parent run's `langgraph_auth_user`, via each language's own duck-typed `to_dict()`/`toDict()` check). Tenant is derived from the PARENT run's own `tenant_id` (looked up server-side), never trusted from the request body. This is **propagation, not enforcement** -- the control plane does not re-check `on_behalf_of.permissions` against a stored parent-auth record (runs don't persist the original caller's auth), so a buggy or compromised agent/runner could claim higher permissions than the parent run actually had. The trust boundary is "the runner is trusted," same as the rest of `/internal/*`.
 - **Recursion limits**: every sub-run's `depth` is enforced against `a2a.max_depth` (default 10) at creation time -- an accidental cycle or runaway delegation chain fails fast with `400`, not a resource leak. Configurable:
   ```json
   { "a2a": { "max_depth": 10 } }
