@@ -56,6 +56,26 @@ services:
     tmpfs:
       - /data/db
 
+  mysql:
+    # internal/state/mysql -- a second SQL exemplar alongside Postgres/
+    # SQLite (master plan: "MySQL stays 'future SQL twin if someone
+    # needs it'"). Same conformance suite as every other backend.
+    image: mysql:8.4
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: runkite
+      MYSQL_USER: runkite
+      MYSQL_PASSWORD: runkite
+      MYSQL_DATABASE: runkite_test
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-prunkite"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/mysql
+
   qdrant:
     # internal/vectorstore/qdrant's non-SQL exemplar vector backend --
     # same conformance suite as pgvector (see internal/vectorstore/conformance).

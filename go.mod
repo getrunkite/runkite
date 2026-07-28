@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.0
 	github.com/coder/websocket v1.8.15
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
@@ -30,6 +31,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/MicahParks/jwkset v0.11.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
