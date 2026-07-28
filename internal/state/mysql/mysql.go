@@ -2,8 +2,8 @@
 // the second SQL exemplar alongside Postgres/SQLite (master plan:
 // "MySQL stays 'future SQL twin if someone needs it'"), same
 // conformance suite (internal/state/conformance) as every other
-// backend. Checkpoint 1 is schema-only (New/Init/Close); CRUD lands
-// in later checkpoints before the Store interface is satisfied.
+// backend. Built in checkpoints: schema (New/Init/Close) plus Agents
+// CRUD so far; remaining Store methods land before conformance wiring.
 //
 // A fresh backend (no pre-multi-tenancy/pre-versioning legacy schema
 // to migrate the way Postgres/SQLite's Init() carries forward), so the
@@ -19,18 +19,15 @@
 // Two real dialect differences from Postgres/SQLite drove design
 // choices here, not just syntax substitution:
 //
-//  1. No RETURNING clause (confirmed against the MySQL 8.4 reference
-//     manual -- INSERT ... ON DUPLICATE KEY UPDATE has no equivalent,
-//     and the classic LAST_INSERT_ID(expr) workaround only helps
-//     AUTO_INCREMENT columns, which this schema doesn't use --
-//     every primary key here is an application-generated string).
-//     Postgres/SQLite's UpsertAgent-style "one statement, RETURNING
-//     the resulting version" pattern doesn't port. Versioned upserts
-//     here use the same explicit read-compute-write-in-a-transaction
-//     pattern already built for MongoDB instead (see mongo.go's
-//     UpsertAgent) -- compute the target version in Go from a row
-//     read inside the transaction, then write it, all under one
-//     transaction for atomicity.
+//  1. No RETURNING clause on INSERT ... ON DUPLICATE KEY UPDATE
+//     (confirmed against the MySQL 8.4 reference manual). Versioned
+//     upserts still stay single-statement for the agents row itself:
+//     LAST_INSERT_ID(expr) remembers the computed version on the
+//     connection even without AUTO_INCREMENT, then a same-transaction
+//     SELECT LAST_INSERT_ID() reads it back (see UpsertAgent). That is
+//     stronger than MongoDB's separate read-then-write; checkpoint 1's
+//     earlier "must use Mongo's pattern" note was wrong and is
+//     superseded by the UpsertAgent implementation.
 //  2. TEXT/BLOB columns cannot be part of a PRIMARY KEY or a plain
 //     index without an explicit prefix length in InnoDB, unlike
 //     Postgres/SQLite where a TEXT column is a perfectly normal
@@ -39,15 +36,24 @@
 //     schedule_name, namespace, store `key`) is VARCHAR(255) here
 //     instead of TEXT; large freeform content (description,
 //     error_msg, checkpoint_ns's occasional long value) stays TEXT
-//     since it's never part of a key.
+//     since it's never part of a key. store_items' composite PK of
+//     three VARCHAR(255) columns sits near InnoDB's utf8mb4 index
+//     byte limit (~3072) -- do not widen those columns casually.
 package mysql
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+
+	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // Store implements state.Store with a MySQL database.
@@ -303,4 +309,274 @@ func (s *Store) Init(ctx context.Context) error {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// --------------------------------------------------------------------------
+// Agents
+// --------------------------------------------------------------------------
+
+// UpsertAgent uses a single atomic INSERT ... ON DUPLICATE KEY UPDATE,
+// the same one-statement shape Postgres's UpsertAgent uses (not the
+// separate read-then-write transaction MongoDB's needs) -- verified
+// live before writing this that MySQL's JSON columns support a real
+// `!=` comparison here (normalized, not naive text comparison: an
+// unchanged republish with different JSON whitespace/key order still
+// correctly reports "unchanged"), and that LAST_INSERT_ID(expr) --
+// normally an AUTO_INCREMENT trick -- works as a general "remember an
+// arbitrary computed value for this connection" mechanism even though
+// none of these tables use AUTO_INCREMENT: the version number becomes
+// retrievable via a same-transaction `SELECT LAST_INSERT_ID()`
+// immediately after, MySQL's only substitute for Postgres/SQLite's
+// RETURNING clause.
+//
+// The version-history insert then always fires (not conditionally, the
+// way Postgres/Mongo explicitly check "did this call actually bump the
+// version"): agent_versions' own composite primary key
+// (tenant_id, agent_id, version) makes an unchanged republish's insert
+// collide with the row already there and become a same-content
+// ON DUPLICATE KEY UPDATE no-op, which is indistinguishable in effect
+// from not inserting at all -- correctness falls out of the key shape
+// rather than needing a separate versionChanged bool.
+//
+// Known, accepted trade-off: uses the VALUES(col) function inside
+// ON DUPLICATE KEY UPDATE, deprecated since MySQL 8.0.20 in favor of an
+// explicit row-alias (`INSERT ... AS new ON DUPLICATE KEY UPDATE col =
+// new.col`). Deliberately not migrated yet -- tried it directly against
+// this exact statement and it requires qualifying EVERY bare column
+// reference with either the target table name or the alias (found two
+// real ambiguous-column errors doing so, both from a column appearing
+// on both sides implicitly), which is meaningfully more error-prone
+// than the deprecated-but-unambiguous VALUES() form for a statement
+// this dense. VALUES() is still fully functional on 8.4 (the version
+// tested against throughout this backend) -- worth revisiting only if
+// upgrading to a MySQL version that actually removes it, not preemptively.
+func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
+	tenantID := tenant.FromContext(ctx)
+	now := time.Now().UTC()
+	meta, _ := json.Marshal(agent.Metadata)
+	caps, _ := json.Marshal(agent.Capabilities)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	// description != VALUES(description) (bare MySQL !=, not Postgres's
+	// IS DISTINCT FROM) would treat a NULL-vs-'' transition as "no
+	// change" -- not a real gap here since this column is never left
+	// SQL NULL by any code path in this package (agent.Description is
+	// always a real Go string, "" included, never nil), unlike
+	// Postgres's schema which carries a genuine legacy-migration NULL
+	// possibility IS DISTINCT FROM exists to handle.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO agents (tenant_id, agent_id, name, description, metadata, capabilities, version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, LAST_INSERT_ID(1), ?, ?)
+		ON DUPLICATE KEY UPDATE
+			version = LAST_INSERT_ID(IF(name != VALUES(name) OR description != VALUES(description)
+			                              OR metadata != VALUES(metadata) OR capabilities != VALUES(capabilities),
+			                            version + 1, version)),
+			name = VALUES(name), description = VALUES(description),
+			metadata = VALUES(metadata), capabilities = VALUES(capabilities), updated_at = VALUES(updated_at)
+	`, tenantID, agent.AgentID, agent.Name, agent.Description, meta, caps, now, now)
+	if err != nil {
+		return fmt.Errorf("mysql: upsert agent: %w", err)
+	}
+
+	var newVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&newVersion); err != nil {
+		return fmt.Errorf("mysql: read back computed version: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO agent_versions (tenant_id, agent_id, version, name, description, metadata, capabilities, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE agent_id = agent_id
+	`, tenantID, agent.AgentID, newVersion, agent.Name, agent.Description, meta, caps, now); err != nil {
+		return fmt.Errorf("mysql: write agent version snapshot: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, error) {
+	query := `SELECT tenant_id, agent_id, name, description, metadata, capabilities, version FROM agents WHERE agent_id = ?`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	a, err := scanAgent(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent", ID: agentID}
+		}
+		return nil, err
+	}
+	return a, nil
+}
+
+func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest) ([]*models.Agent, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, agent_id, name, description, metadata, capabilities, version FROM agents`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if req.Name != "" {
+		where = append(where, "name LIKE ?")
+		args = append(args, "%"+req.Name+"%")
+	}
+	for k, v := range req.Metadata {
+		where = append(where, "JSON_EXTRACT(metadata, ?) = ?")
+		path := "$." + k
+		if sv, ok := v.(string); ok {
+			args = append(args, path, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, path, string(valJSON))
+		}
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY name ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	agents := []*models.Agent{}
+	for rows.Next() {
+		a, err := scanAgent(rows)
+		if err != nil {
+			return nil, err
+		}
+		agents = append(agents, a)
+	}
+	return agents, rows.Err()
+}
+
+func (s *Store) GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error) {
+	query := `SELECT agent_id, input_schema, output_schema, state_schema, config_schema FROM agent_schemas WHERE agent_id = ?`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+
+	var as models.AgentSchema
+	var inBytes, outBytes, stBytes, cfgBytes []byte
+	if err := row.Scan(&as.AgentID, &inBytes, &outBytes, &stBytes, &cfgBytes); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent_schema", ID: agentID}
+		}
+		return nil, err
+	}
+	json.Unmarshal(inBytes, &as.InputSchema)
+	json.Unmarshal(outBytes, &as.OutputSchema)
+	json.Unmarshal(stBytes, &as.StateSchema)
+	json.Unmarshal(cfgBytes, &as.ConfigSchema)
+	return &as, nil
+}
+
+func (s *Store) UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error {
+	input, _ := json.Marshal(schema.InputSchema)
+	output, _ := json.Marshal(schema.OutputSchema)
+	st, _ := json.Marshal(schema.StateSchema)
+	cfg, _ := json.Marshal(schema.ConfigSchema)
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO agent_schemas (tenant_id, agent_id, input_schema, output_schema, state_schema, config_schema)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			input_schema = VALUES(input_schema), output_schema = VALUES(output_schema),
+			state_schema = VALUES(state_schema), config_schema = VALUES(config_schema)
+	`, tenant.FromContext(ctx), schema.AgentID, input, output, st, cfg)
+	return err
+}
+
+func (s *Store) ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = ?`
+	args := []interface{}{agentID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY version DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := []*models.AgentVersion{}
+	for rows.Next() {
+		v, err := scanAgentVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int) (*models.AgentVersion, error) {
+	query := `SELECT tenant_id, agent_id, version, name, description, metadata, capabilities, created_at FROM agent_versions WHERE agent_id = ? AND version = ?`
+	args := []interface{}{agentID, version}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	v, err := scanAgentVersion(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+// rowScanner covers both *sql.Row (QueryRowContext) and *sql.Rows
+// (QueryContext) -- both expose an identical Scan method, so this one
+// helper serves every Get.../List... pair below without duplicating
+// the column list or JSON-unmarshal logic between them.
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanAgent(row rowScanner) (*models.Agent, error) {
+	var a models.Agent
+	var metaBytes, capsBytes []byte
+	if err := row.Scan(&a.TenantID, &a.AgentID, &a.Name, &a.Description, &metaBytes, &capsBytes, &a.Version); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &a.Metadata)
+	json.Unmarshal(capsBytes, &a.Capabilities)
+	return &a, nil
+}
+
+func scanAgentVersion(row rowScanner) (*models.AgentVersion, error) {
+	var v models.AgentVersion
+	var metaBytes, capsBytes []byte
+	if err := row.Scan(&v.TenantID, &v.AgentID, &v.Version, &v.Name, &v.Description, &metaBytes, &capsBytes, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &v.Metadata)
+	json.Unmarshal(capsBytes, &v.Capabilities)
+	return &v, nil
 }
