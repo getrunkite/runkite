@@ -121,6 +121,7 @@ jobs:
           PYTHONPATH: python
         run: |
           python python/tests/test_store_dual_mode.py
+          python python/tests/test_store_pool.py
           python python/tests/test_custom_app.py
           python python/tests/test_factory_graph.py
           # Live dual-mode interop portion skips without RUNKITE_HTTP_URL
@@ -131,8 +132,11 @@ jobs:
           python python/tests/test_generic_worker.py
           python python/tests/test_langchain_adapter.py
           python python/tests/test_worker_cancel_race.py
+          python python/tests/test_worker_concurrency.py
+          python python/tests/test_tool_call_hook.py
+          python python/tests/test_a2a.py
 
-      - name: CrewAI/LlamaIndex adapter unit tests
+      - name: CrewAI/LlamaIndex/AutoGen adapter unit tests
         # Isolated venvs, deliberately NOT installed into the shared
         # python/requirements.txt environment above -- see
         # python/adapters/*/README.md for why (a stray `pip install
@@ -146,6 +150,10 @@ jobs:
           uv venv --python 3.12 python/adapters/llamaindex_adapter/.venv
           uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf
           PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_adapter.py
+
+          uv venv --python 3.12 python/adapters/autogen_adapter/.venv
+          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf
+          PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py
 
       - name: TypeScript runner unit tests
         working-directory: typescript/runkite-runner

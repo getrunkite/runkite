@@ -1,6 +1,6 @@
 # Runkite
 
-A Go control plane implementing the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) spec. Framework-agnostic by design -- the server never imports your agent framework, and the Runner Protocol (gRPC) is the only integration point. Shipped runners: Python/LangGraph, TypeScript/LangGraph.js, and (proving the framework-agnostic claim for real) CrewAI, LlamaIndex, and plain LangChain -- see [Framework Adapters](#framework-adapters) below. AutoGen remains on the roadmap, not yet implemented.
+A Go control plane implementing the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) spec. Framework-agnostic by design -- the server never imports your agent framework, and the Runner Protocol (gRPC) is the only integration point. Shipped runners: Python/LangGraph, TypeScript/LangGraph.js, and (proving the framework-agnostic claim for real) CrewAI, LlamaIndex, AutoGen, and plain LangChain -- see [Framework Adapters](#framework-adapters) below.
 
 ## What It Does
 
@@ -529,7 +529,7 @@ python -m runkite_runner --config langgraph.json --grpc-address localhost:50051 
 
 **What this actually helps, and what it doesn't**: genuinely effective for agents whose wall-clock time is dominated by *waiting* (slow LLM API calls, tool calls, external HTTP requests) -- many concurrent jobs can overlap productively since each spends most of its time not touching the CPU at all (proven: 20 concurrent runs against the same static graph, zero cross-contamination, combined wall time ~14x faster than the sequential sum -- see `bench/REPORT.md`'s finding 1d). It does **not** let one process exceed one CPU core's worth of throughput for a CPU-bound or near-zero-compute agent (`asyncio` only overlaps I/O waiting, not CPU work, and Python's GIL means one process uses one core at a time) -- confirmed via direct measurement in `bench/REPORT.md`. For that case, run multiple runner processes (replicas) of the same `runner_kind` against the same control plane instead -- already fully supported, zero config changes, since the queue's dispatch is fair across any runner of that kind.
 
-**CrewAI-specific caveat**: a shared `Crew` instance is not safe for concurrent `akickoff()` calls (confirmed by reading crewai's own source -- `kickoff`/`akickoff` write results onto shared instance attributes like `self.usage_metrics`), so `python/adapters/crewai_adapter/adapter.py` serializes concurrent calls on the same `graph_id` via a per-graph lock. This means CrewAI runs sharing a `graph_id` don't get real parallelism from `--concurrency`, only correctness -- LangGraph, LlamaIndex, and plain LangChain runs do get real parallelism (LlamaIndex's adapter was already designed to avoid the equivalent risk, reconstructing `chat_history` per call instead of relying on a shared engine's mutable state).
+**CrewAI/AutoGen-specific caveat**: a shared `Crew` (CrewAI) or `AssistantAgent` (AutoGen) instance is not safe for concurrent invocation -- confirmed by reading each framework's own source: CrewAI's `kickoff`/`akickoff` write results onto shared instance attributes like `self.usage_metrics`; AutoGen's `AssistantAgent.run()` appends to a shared, mutable `model_context` (conversation history). Both `python/adapters/crewai_adapter/adapter.py` and `python/adapters/autogen_adapter/adapter.py` serialize concurrent calls on the same `graph_id` via a per-graph lock. This means CrewAI/AutoGen runs sharing a `graph_id` don't get real parallelism from `--concurrency`, only correctness -- LangGraph, LlamaIndex, and plain LangChain runs do get real parallelism (LlamaIndex's adapter was already designed to avoid the equivalent risk, reconstructing `chat_history` per call instead of relying on a shared engine's mutable state).
 
 ```bash
 cd typescript/runkite-runner
@@ -551,26 +551,26 @@ Live-verified end to end against a real control plane -- manually, the same way 
 
 ### Framework Adapters
 
-Three more Python runners (`python/adapters/{crewai_adapter,llamaindex_adapter,langchain_adapter}/`), each proving the control plane never assumed LangGraph -- built on a new shared, framework-agnostic loop (`runkite_runner.generic_worker`, extracted from but not replacing `worker.py`'s LangGraph-specific one) that handles only the gRPC polling/streaming/status-reporting mechanics. Each adapter is a thin translation layer implementing just two methods (`load_config`, `execute`), matching the master plan's own "small framework-adapter shim" description:
+Four more Python runners (`python/adapters/{crewai_adapter,llamaindex_adapter,autogen_adapter,langchain_adapter}/`), each proving the control plane never assumed LangGraph -- built on a new shared, framework-agnostic loop (`runkite_runner.generic_worker`, extracted from but not replacing `worker.py`'s LangGraph-specific one) that handles only the gRPC polling/streaming/status-reporting mechanics. Each adapter is a thin translation layer implementing just two methods (`load_config`, `execute`), matching the master plan's own "small framework-adapter shim" description:
 
-| | CrewAI | LlamaIndex | Plain LangChain |
-|---|---|---|---|
-| `runner_kind` | `python-crewai` | `python-llamaindex` | `python-langchain` |
-| Loads | a `Crew` (`./crew.py:crew`) | a chat engine/agent (`./chat_engine.py:chat_engine`) | any `Runnable` (`./chain.py:chain`) |
-| Executes via | `crew.akickoff(inputs={"input": ...})` | `engine.achat(text, chat_history=...)` | `runnable.ainvoke({"input": ...})` |
-| Venv | isolated (`python/adapters/crewai_adapter/.venv`) | isolated (`python/adapters/llamaindex_adapter/.venv`) | shared `python/.venv` (`langchain-core` already a dependency) |
-| Example | `examples/crewai_agent/` | `examples/llamaindex_agent/` | `examples/langchain_agent/` |
+| | CrewAI | LlamaIndex | AutoGen | Plain LangChain |
+|---|---|---|---|---|
+| `runner_kind` | `python-crewai` | `python-llamaindex` | `python-autogen` | `python-langchain` |
+| Loads | a `Crew` (`./crew.py:crew`) | a chat engine/agent (`./chat_engine.py:chat_engine`) | an `AssistantAgent` (`./agent.py:agent`) | any `Runnable` (`./chain.py:chain`) |
+| Executes via | `crew.akickoff(inputs={"input": ...})` | `engine.achat(text, chat_history=...)` | `agent.run(task=...)` | `runnable.ainvoke({"input": ...})` |
+| Venv | isolated (`python/adapters/crewai_adapter/.venv`) | isolated (`python/adapters/llamaindex_adapter/.venv`) | isolated (`python/adapters/autogen_adapter/.venv`) | shared `python/.venv` (`langchain-core` already a dependency) |
+| Example | `examples/crewai_agent/` | `examples/llamaindex_agent/` | `examples/autogen_agent/` | `examples/langchain_agent/` |
 
-All three examples are offline and deterministic (a hand-written fake LLM subclass returning a fixed response) -- no API key needed, same convention as `examples/vector_agent`'s fake embeddings. Input/output convention matches the LangGraph runner: extract the last human message's text from `RunAssignment.input.messages`, invoke the framework, append the reply as `{"role": "ai", "content": ...}` -- so client code built against one `runner_kind` doesn't need to change to talk to another.
+All four examples are offline and deterministic (a hand-written fake LLM/model-client subclass returning a fixed response) -- no API key needed, same convention as `examples/vector_agent`'s fake embeddings. Input/output convention matches the LangGraph runner: extract the last human message's text from `RunAssignment.input.messages`, invoke the framework, append the reply as `{"role": "ai", "content": ...}` -- so client code built against one `runner_kind` doesn't need to change to talk to another.
 
-Cancellation is wired into all three via `generic_worker.run_cancellable` -- each adapter races its single framework call (`akickoff`/`achat`/`ainvoke`) against `cancel_event`, calling `.cancel()` on the underlying task and reporting `interrupted` (not `error`) if the cancel wins, the same outcome a cancelled LangGraph run reports. Live-verified against a real gRPC `WatchCancels` signal, not just a unit-test mock.
+Cancellation is wired into all four via `generic_worker.run_cancellable` -- each adapter races its single framework call (`akickoff`/`achat`/`run`/`ainvoke`) against `cancel_event`, calling `.cancel()` on the underlying task and reporting `interrupted` (not `error`) if the cancel wins, the same outcome a cancelled LangGraph run reports. Live-verified against a real gRPC `WatchCancels` signal, not just a unit-test mock.
 
-**Why CrewAI and LlamaIndex get their own isolated venv** (plain LangChain doesn't need one): confirmed live during development -- installing `crewai` into the shared `python/.venv` silently downgraded `protobuf`, a dependency the production LangGraph runner's generated gRPC stubs are version-sensitive about (see the Runner Protocol section's protobuf note). Real deployments would run each framework's runner as a genuinely separate process anyway (arguably a separate container), so an isolated venv here matches that reality rather than fighting it. Setup:
+**Why CrewAI, LlamaIndex, and AutoGen get their own isolated venv** (plain LangChain doesn't need one): confirmed live during development -- installing `crewai` into the shared `python/.venv` silently downgraded `protobuf`, a dependency the production LangGraph runner's generated gRPC stubs are version-sensitive about (see the Runner Protocol section's protobuf note). AutoGen's own dependencies didn't conflict during development, but an isolated venv is kept anyway for consistency and future-proofing. Real deployments would run each framework's runner as a genuinely separate process anyway (arguably a separate container), so an isolated venv here matches that reality rather than fighting it. Setup:
 
 ```bash
-cd python/adapters/crewai_adapter        # or llamaindex_adapter
+cd python/adapters/crewai_adapter        # or llamaindex_adapter / autogen_adapter
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python crewai grpcio protobuf   # or: llama-index-core grpcio protobuf
+uv pip install --python .venv/bin/python crewai grpcio protobuf   # or: llama-index-core ... / autogen-agentchat ...
 
 cd ../../../examples/crewai_agent
 PYTHONPATH=<repo>/python:<repo>/python/adapters \
@@ -578,7 +578,7 @@ PYTHONPATH=<repo>/python:<repo>/python/adapters \
   --config langgraph.json --grpc-address localhost:50051
 ```
 
-Live-verified end to end for all three: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal, not just the unit-level fakes. CrewAI/LlamaIndex don't have the equivalent e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
+Live-verified end to end for all four: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex/AutoGen unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex/AutoGen's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal, not just the unit-level fakes. CrewAI/LlamaIndex/AutoGen don't have the equivalent e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
 
 ## Docker
 
@@ -623,7 +623,7 @@ make test-all       # All backends (requires infra-up)
 make test-e2e       # Black-box E2E: real binary + real runner + PG/Redis (requires infra-up)
 make test-python    # Python runner unit tests
 make test-ts        # TypeScript runner unit tests
-make test-adapters  # CrewAI/LlamaIndex adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
+make test-adapters  # CrewAI/LlamaIndex/AutoGen adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
 make infra-up       # Start ephemeral Postgres + Redis + MongoDB via Docker
 make infra-down     # Stop test infrastructure
 make vet            # go vet

@@ -131,6 +131,11 @@ test-adapters:
 	else \
 		echo "skip: python/adapters/llamaindex_adapter/.venv not set up (see python/adapters/llamaindex_adapter/README.md)"; \
 	fi
+	@if [ -x python/adapters/autogen_adapter/.venv/bin/python ]; then \
+		PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py; \
+	else \
+		echo "skip: python/adapters/autogen_adapter/.venv not set up (see python/adapters/autogen_adapter/README.md)"; \
+	fi
 
 # TypeScript runner unit tests (pure logic -- namespace encoding, event
 # generation, cancel/interrupt handling -- no live control plane needed).

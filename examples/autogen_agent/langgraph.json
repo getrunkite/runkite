@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "autogen_greeter": "./agent.py:agent"
+  },
+  "dependencies": ["."],
+  "runner_kind": "python-autogen"
+}
