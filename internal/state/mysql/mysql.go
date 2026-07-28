@@ -1115,3 +1115,265 @@ func scanCheckpoint(row rowScanner) (*models.ThreadState, error) {
 	}
 	return &ts, nil
 }
+
+// --------------------------------------------------------------------------
+// Store (key-value)
+// --------------------------------------------------------------------------
+
+// Same namespace encoding as every other backend -- \x1F delimited,
+// wrapped in leading and trailing delimiters so a LIKE 'prefix%' search
+// on the encoded string can't accidentally match a longer sibling
+// (e.g. prefix ["team-a"] must match "team-a/docs" but not "team-abc").
+const nsDelim = "\x1F"
+
+func nsToString(ns []string) string {
+	return nsDelim + strings.Join(ns, nsDelim) + nsDelim
+}
+
+func stringToNs(s string) []string {
+	trimmed := strings.Trim(s, nsDelim)
+	if trimmed == "" {
+		return []string{}
+	}
+	return strings.Split(trimmed, nsDelim)
+}
+
+func nsPrefixPattern(prefix []string) string {
+	if len(prefix) == 0 {
+		return "%"
+	}
+	return nsDelim + strings.Join(prefix, nsDelim) + nsDelim + "%"
+}
+
+// storeItemExpiresAt computes the absolute expiry from a TTL in
+// minutes, nil if ttlMinutes is nil (no expiration) -- shared by
+// PutItem and the refresh-on-read path in GetItem/SearchItems so both
+// compute the same way from the same "now."
+func storeItemExpiresAt(now time.Time, ttlMinutes *float64) *time.Time {
+	if ttlMinutes == nil {
+		return nil
+	}
+	t := now.Add(time.Duration(*ttlMinutes * float64(time.Minute)))
+	return &t
+}
+
+func (s *Store) PutItem(ctx context.Context, item *models.StoreItem) error {
+	val, _ := json.Marshal(item.Value)
+	ns := nsToString(item.Namespace)
+	now := time.Now().UTC()
+	expiresAt := storeItemExpiresAt(now, item.TTLMinutes)
+
+	// A nil TTLMinutes/expiresAt on re-put must clear any TTL a
+	// previous PutItem set -- LangGraph's PutOp.ttl=None semantics are
+	// "no TTL," not "leave the existing one alone." ON DUPLICATE KEY
+	// UPDATE ... = VALUES(...) always overwrites both columns
+	// unconditionally, so a nil *float64/*time.Time here becomes a
+	// real SQL NULL on update, not a no-op.
+	_, err := s.db.ExecContext(ctx, "INSERT INTO store_items (tenant_id, namespace, `key`, value, created_at, updated_at, ttl_minutes, expires_at)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"+
+		" ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at), ttl_minutes = VALUES(ttl_minutes), expires_at = VALUES(expires_at)",
+		tenant.FromContext(ctx), ns, item.Key, val, now, now, item.TTLMinutes, expiresAt)
+	return err
+}
+
+func (s *Store) GetItem(ctx context.Context, namespace []string, key string, refreshTTL bool) (*models.StoreItem, error) {
+	ns := nsToString(namespace)
+	now := time.Now().UTC()
+	query := "SELECT tenant_id, namespace, `key`, value, created_at, updated_at, ttl_minutes FROM store_items" +
+		" WHERE namespace = ? AND `key` = ? AND (expires_at IS NULL OR expires_at > ?)"
+	args := []interface{}{ns, key, now}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = ?"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+
+	var item models.StoreItem
+	var tenantID, nsStr string
+	var valBytes []byte
+	var ttlMinutes *float64
+	if err := row.Scan(&tenantID, &nsStr, &item.Key, &valBytes, &item.CreatedAt, &item.UpdatedAt, &ttlMinutes); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "store_item", ID: key}
+		}
+		return nil, err
+	}
+	item.Namespace = stringToNs(nsStr)
+	json.Unmarshal(valBytes, &item.Value)
+
+	if refreshTTL && ttlMinutes != nil {
+		// Use the row's own tenant_id, not tenant.FromContext(ctx) --
+		// for a system-context caller reading across tenants, those
+		// can differ, which would otherwise silently match zero rows
+		// here (same reasoning as Postgres's GetItem).
+		newExpiry := storeItemExpiresAt(now, ttlMinutes)
+		_, _ = s.db.ExecContext(ctx, "UPDATE store_items SET expires_at = ? WHERE tenant_id = ? AND namespace = ? AND `key` = ?",
+			newExpiry, tenantID, ns, key)
+	}
+	return &item, nil
+}
+
+func (s *Store) DeleteItem(ctx context.Context, namespace []string, key string) error {
+	ns := nsToString(namespace)
+	query := "DELETE FROM store_items WHERE namespace = ? AND `key` = ?"
+	args := []interface{}{ns, key}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = ?"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "store_item", ID: key}
+	}
+	return nil
+}
+
+func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest) ([]*models.StoreItem, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	now := time.Now().UTC()
+
+	query := "SELECT tenant_id, namespace, `key`, value, created_at, updated_at, ttl_minutes FROM store_items"
+	var args []interface{}
+	where := []string{"(expires_at IS NULL OR expires_at > ?)"}
+	args = append(args, now)
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if len(req.NamespacePrefix) > 0 {
+		where = append(where, "namespace LIKE ?")
+		args = append(args, nsPrefixPattern(req.NamespacePrefix))
+	}
+	// Same MySQL scalar-vs-JSON implicit cast rule SearchThreads/
+	// SearchRuns' metadata filters already rely on.
+	for k, v := range req.Filter {
+		where = append(where, "JSON_EXTRACT(value, ?) = ?")
+		path := "$." + k
+		if sv, ok := v.(string); ok {
+			args = append(args, path, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, path, string(valJSON))
+		}
+	}
+	query += " WHERE " + strings.Join(where, " AND ")
+	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Non-nil so a no-results search JSON-encodes to "items": [] rather
+	// than "items": null -- SDK clients call .map() on it unconditionally.
+	items := []*models.StoreItem{}
+	// (tenantID, namespace-string, key, ttlMinutes) rows to refresh
+	// after rows.Close() below -- can't run UPDATEs against the same
+	// connection while still iterating a live result set, same
+	// constraint as the Postgres implementation.
+	type refreshRow struct {
+		tenantID, ns, key string
+		ttlMinutes        float64
+	}
+	var toRefresh []refreshRow
+	for rows.Next() {
+		var item models.StoreItem
+		var tenantID, nsStr string
+		var valBytes []byte
+		var ttlMinutes *float64
+		if err := rows.Scan(&tenantID, &nsStr, &item.Key, &valBytes, &item.CreatedAt, &item.UpdatedAt, &ttlMinutes); err != nil {
+			return nil, err
+		}
+		item.Namespace = stringToNs(nsStr)
+		json.Unmarshal(valBytes, &item.Value)
+		items = append(items, &item)
+		if req.RefreshTTLOrDefault() && ttlMinutes != nil {
+			toRefresh = append(toRefresh, refreshRow{tenantID, nsStr, item.Key, *ttlMinutes})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	for _, rr := range toRefresh {
+		newExpiry := storeItemExpiresAt(now, &rr.ttlMinutes)
+		_, _ = s.db.ExecContext(ctx, "UPDATE store_items SET expires_at = ? WHERE tenant_id = ? AND namespace = ? AND `key` = ?",
+			newExpiry, rr.tenantID, rr.ns, rr.key)
+	}
+	return items, nil
+}
+
+func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespacesRequest) ([][]string, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `SELECT DISTINCT namespace FROM store_items`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if len(req.Prefix) > 0 {
+		where = append(where, "namespace LIKE ?")
+		args = append(args, nsPrefixPattern(req.Prefix))
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY namespace LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Non-nil so a no-results list JSON-encodes to [] rather than null.
+	namespaces := [][]string{}
+	for rows.Next() {
+		var nsStr string
+		if err := rows.Scan(&nsStr); err != nil {
+			return nil, err
+		}
+		namespaces = append(namespaces, stringToNs(nsStr))
+	}
+	return namespaces, rows.Err()
+}
+
+// PruneExpiredStoreItems is grouped with Store rather than Retention
+// (despite state.Store's interface doc comment filing it under the
+// package's "Retention" heading) since it's tightly coupled to the TTL
+// machinery above -- same tenant-scoping rule as every other Prune*
+// method, but unconditional/always-run rather than opt-in (see the
+// interface doc comment on state.Store).
+func (s *Store) PruneExpiredStoreItems(ctx context.Context) (int64, error) {
+	query := `DELETE FROM store_items WHERE expires_at IS NOT NULL AND expires_at <= ?`
+	args := []interface{}{time.Now().UTC()}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
