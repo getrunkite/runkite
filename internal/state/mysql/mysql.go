@@ -1377,3 +1377,207 @@ func (s *Store) PruneExpiredStoreItems(ctx context.Context) (int64, error) {
 	}
 	return result.RowsAffected()
 }
+
+// --------------------------------------------------------------------------
+// Webhook dead-letters
+// --------------------------------------------------------------------------
+
+// Not tenant-scoped -- webhook_dead_letters carries no tenant_id column,
+// same as every other backend's schema for this table. A dead letter is
+// an operator-facing "delivery failed, here's why" record, not
+// per-tenant application data.
+func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO webhook_dead_letters (id, url, event_type, run_id, payload, error, attempts, failed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, dl.ID, dl.URL, dl.EventType, dl.RunID, nullableJSON(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
+	return err
+}
+
+func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*models.WebhookDeadLetter, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, url, event_type, run_id, payload, error, attempts, failed_at
+		FROM webhook_dead_letters ORDER BY failed_at DESC LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*models.WebhookDeadLetter{}
+	for rows.Next() {
+		var dl models.WebhookDeadLetter
+		var payloadBytes []byte
+		if err := rows.Scan(&dl.ID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
+			return nil, err
+		}
+		if payloadBytes != nil {
+			dl.Payload = json.RawMessage(payloadBytes)
+		}
+		out = append(out, &dl)
+	}
+	return out, rows.Err()
+}
+
+// --------------------------------------------------------------------------
+// Run cache (LLM response caching)
+// --------------------------------------------------------------------------
+
+func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*models.CachedRunResult, error) {
+	// cacheKey incorporates tenant_id via the caller's own
+	// computeCacheKey (internal/api); this WHERE clause is defense in
+	// depth on top of the composite PK, same as Postgres.
+	now := time.Now().UTC()
+	query := `SELECT cache_key, agent_id, output, created_at, expires_at FROM run_cache WHERE cache_key = ? AND expires_at > ?`
+	args := []interface{}{cacheKey, now}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+
+	var r models.CachedRunResult
+	var outputBytes []byte
+	if err := row.Scan(&r.CacheKey, &r.AgentID, &outputBytes, &r.CreatedAt, &r.ExpiresAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "run_cache", ID: cacheKey}
+		}
+		return nil, err
+	}
+	json.Unmarshal(outputBytes, &r.Output)
+	return &r, nil
+}
+
+func (s *Store) SaveCachedRunResult(ctx context.Context, result *models.CachedRunResult) error {
+	output, _ := json.Marshal(result.Output)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO run_cache (tenant_id, cache_key, agent_id, output, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE output = VALUES(output), created_at = VALUES(created_at), expires_at = VALUES(expires_at)
+	`, tenant.FromContext(ctx), result.CacheKey, result.AgentID, output, result.CreatedAt, result.ExpiresAt)
+	return err
+}
+
+// --------------------------------------------------------------------------
+// Cron scheduler
+// --------------------------------------------------------------------------
+
+func (s *Store) UpsertCronSchedule(ctx context.Context, sched *models.CronSchedule) error {
+	input := nullableJSON(sched.Input)
+	config := nullableJSON(sched.Config)
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO cron_schedules (tenant_id, name, agent_id, expression, timezone, input, config, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			agent_id = VALUES(agent_id), expression = VALUES(expression), timezone = VALUES(timezone),
+			input = VALUES(input), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)
+	`, tenant.FromContext(ctx), sched.Name, sched.AgentID, sched.Expression, sched.Timezone, input, config, sched.Enabled, now, now)
+	return err
+}
+
+// ListCronSchedules -- see Postgres/SQLite's equivalent doc comment:
+// always called from a system context in practice (the scheduler loop
+// must see every tenant's schedules), TenantID is always populated on
+// the returned rows so the caller can dispatch each fire under its own
+// tenant.
+func (s *Store) ListCronSchedules(ctx context.Context) ([]*models.CronSchedule, error) {
+	query := `SELECT tenant_id, name, agent_id, expression, timezone, input, config, enabled, created_at, updated_at FROM cron_schedules`
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY tenant_id, name`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*models.CronSchedule{}
+	for rows.Next() {
+		var sc models.CronSchedule
+		var inputBytes, configBytes []byte
+		if err := rows.Scan(&sc.TenantID, &sc.Name, &sc.AgentID, &sc.Expression, &sc.Timezone, &inputBytes, &configBytes, &sc.Enabled, &sc.CreatedAt, &sc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if inputBytes != nil {
+			sc.Input = json.RawMessage(inputBytes)
+		}
+		if configBytes != nil {
+			sc.Config = json.RawMessage(configBytes)
+		}
+		out = append(out, &sc)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteCronSchedule(ctx context.Context, name string) error {
+	query := `DELETE FROM cron_schedules WHERE name = ?`
+	args := []interface{}{name}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+// TryClaimCronFire's ON DUPLICATE KEY UPDATE is a genuine no-op update
+// (schedule_name = schedule_name) -- matches the schema's own doc
+// comment: the claim row existing at all, not what the update sets it
+// to, is the signal that another instance already claimed this exact
+// (tenant, schedule, fire_time) triple. MySQL's documented
+// affected-rows semantics for INSERT ... ON DUPLICATE KEY UPDATE are
+// what make this work without a race: 1 for a genuine new insert, 0
+// for an update whose SET clause doesn't change any column value
+// (confirmed against the MySQL reference manual and exercised directly
+// by TestCron_ClaimFireExactlyOnce) -- so RowsAffected() > 0 means
+// "this call was the one that inserted the row," never ambiguous with
+// "the row already existed and nothing changed." This depends on the
+// go-sql-driver/mysql DSN NOT setting clientFoundRows=true (its
+// default) -- that flag makes MySQL report "matched" rows rather than
+// "changed" rows, which would make a no-op ON DUPLICATE KEY UPDATE
+// report RowsAffected()=1 too, and every racer in
+// TestCron_ConcurrentClaimOnlyOneWins would "win."
+func (s *Store) TryClaimCronFire(ctx context.Context, scheduleName string, fireTime time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO cron_claims (tenant_id, schedule_name, fire_time, claimed_at)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE schedule_name = schedule_name
+	`, tenant.FromContext(ctx), scheduleName, fireTime.UTC(), time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *Store) ReleaseCronClaim(ctx context.Context, scheduleName string, fireTime time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM cron_claims WHERE tenant_id = ? AND schedule_name = ? AND fire_time = ?
+	`, tenant.FromContext(ctx), scheduleName, fireTime.UTC())
+	return err
+}
+
+func (s *Store) GetLastCronFireTime(ctx context.Context, scheduleName string) (time.Time, bool, error) {
+	var fireTime time.Time
+	err := s.db.QueryRowContext(ctx, `
+		SELECT fire_time FROM cron_claims WHERE tenant_id = ? AND schedule_name = ? ORDER BY fire_time DESC LIMIT 1
+	`, tenant.FromContext(ctx), scheduleName).Scan(&fireTime)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return fireTime, true, nil
+}
