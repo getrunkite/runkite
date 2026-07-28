@@ -22,6 +22,8 @@ one host -- no network latency between them).
 | Postgres, runner `--concurrency 20`, pool_max_conns=14 | 100 | 30s | 7,120 | 0 | 415ms | 462ms | 519ms | -- |
 | Postgres, runner `--concurrency 100`, pool_max_conns=50 | 100 | 20s | 5,033 | 0 | 389ms | 426ms | 525ms | -- |
 | Postgres, **2 runner replicas** `--concurrency 100` each | 100 | 20s | 6,169 | 0 | 308ms | 520ms | 732ms | -- |
+| MySQL + in-memory | 100 | 30s | 6,031 | 0 | 494ms | 546ms | 679ms | 5MB |
+| MySQL + Redis | 100 | 30s | 3,647 | 0 | 798ms | 912ms | 1,717ms | 0MB* |
 
 Zero errors across every configuration and every concurrency level -- the correctness bar
 (from the earlier smoke test and the full conformance suite) holds under load too, this
@@ -238,15 +240,31 @@ early-growth-then-plateau shape, not independent confirmation of a longer platea
 real regression-guard would sample RSS over several consecutive multi-minute windows per
 config, not a single window each.
 
-### 4. MongoDB backend performs comparably to (fractionally better than) SQLite for this workload
+### 4. MongoDB and MySQL both perform comparably to (within the same band as) SQLite for this workload
 
-384ms p50 vs SQLite's 463ms, roughly the same RSS delta magnitude (58MB vs 48MB). Both run
-the Python runner in **proxy mode** for checkpoints/store here (SQLite because the control
-plane owns the file exclusively; MongoDB because there's no direct-mode MongoDB
-checkpointer yet -- see README's Retention/Runners sections), which is the fairer
+MongoDB: 384ms p50 vs SQLite's 463ms, roughly the same RSS delta magnitude (58MB vs 48MB).
+MySQL (added in a later pass, once `internal/state/mysql` and its `cmd/serve.go` wiring
+existed): 494ms p50, between SQLite and Postgres-in-memory's 559ms, closer to SQLite than to
+Postgres despite MySQL and Postgres both being row-store SQL engines with a similar driver
+shape (`database/sql` + a Go driver) -- not surprising given the earlier finding (#5) that all
+state backends land in the same reasonable band for this workload; a 65-115ms spread inside
+that band isn't a meaningful backend-choice signal on its own.
+
+All three run the Python runner in **proxy mode** for checkpoints/store here (SQLite because
+the control plane owns the file exclusively; MongoDB and MySQL because there's no direct-mode
+checkpointer for either yet -- see README's Retention/Runners sections), which is the fairer
 comparison: this isolates the *state backend's* own read/write cost from any transport
-differences, and MongoDB holds up well against the SQLite baseline it's most naturally
-compared to.
+differences, and both MongoDB and MySQL hold up well against the SQLite baseline they're most
+naturally compared to.
+
+**MySQL + Redis** (798ms p50, 912ms p90, 1,717ms p99, 3,647 total over 30s) was also run as
+the direct MySQL analogue of the existing "Postgres + Redis (post-fix)" row (910ms p50) --
+close enough (798ms vs 910ms) to reinforce finding #5's conclusion again: the queue/broker
+transport choice, not the SQL backend behind it, is what actually separates the in-memory-
+transport rows (~400-560ms) from the Redis-transport rows (~800-910ms) here. RSS delta reads
+as 0MB for this specific run (`ps`-based single-process RSS sampling landed on an
+already-stabilized process this time, not a real "zero growth" finding) -- treat that one
+number as noise, not a result; the p50/p90/p99 numbers are the real signal from this run.
 
 ### 5. Real correctness bug found and fixed: `/wait` could report "success" while a plain GET immediately after still showed "pending"
 
@@ -311,3 +329,10 @@ verified both fail against the pre-fix code and pass after.
 - Finding each system's actual breaking point (OOM, sustained failures) -- the
   resource-constrained comparison above stopped at 100 concurrent users with both systems
   still producing zero errors; pushing further until one fails would need a dedicated run.
+- **The TypeScript runner's own overhead.** Every number in this report is the Python
+  runner. The TypeScript runner reached full feature parity with it in a later pass (A2A
+  client, vector store client, factory graphs), but its latency/throughput characteristics
+  under load haven't been measured at all -- worth a dedicated follow-up given it's a
+  structurally different runtime (Node's event loop vs. Python's asyncio/GIL, which finding
+  1d above found to be the actual ceiling for the Python runner under sustained CPU-bound
+  load).

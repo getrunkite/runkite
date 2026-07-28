@@ -58,8 +58,10 @@ one container, sharing one resource limit) rather than measuring the control pla
 ## Findings
 
 See [`REPORT.md`](REPORT.md) for full results: internal scale tests across
-SQLite/Postgres/MongoDB state backends and in-memory/Redis transports, and a
-real correctness bug found and fixed along the way. Headline: the Redis
-transport, not the state backend choice, is the dominant latency/memory cost
-at high concurrency, and it's concurrency-dependent (contention), not a
-fixed per-operation overhead.
+SQLite/Postgres/MongoDB/MySQL state backends and in-memory/Redis transports,
+and several real correctness/leak bugs found and fixed along the way.
+Headline: all four state backends land in the same reasonable latency band
+for this workload -- the queue/broker transport choice (in-memory vs. Redis)
+is what actually separates the fast rows from the slow ones, and even that
+gap turned out to be secondary to the Python runner's own single-job-at-a-
+time concurrency model (see finding 1c/1d) once profiled properly.
