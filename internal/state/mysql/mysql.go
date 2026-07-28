@@ -45,16 +45,28 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/sharanharsoor/runkite/internal/models"
 	"github.com/sharanharsoor/runkite/internal/state"
 	"github.com/sharanharsoor/runkite/internal/tenant"
 )
+
+// mysqlDuplicateKeyError is MySQL's ER_DUP_ENTRY code (1062), the
+// equivalent of Postgres's "23505" unique_violation -- checked wherever
+// a plain INSERT (not an ON DUPLICATE KEY UPDATE upsert) needs to
+// report a real conflict to the caller instead of a generic error.
+const mysqlDuplicateKeyError = 1062
+
+func isDuplicateKeyError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == mysqlDuplicateKeyError
+}
 
 // Store implements state.Store with a MySQL database.
 type Store struct {
@@ -579,4 +591,198 @@ func scanAgentVersion(row rowScanner) (*models.AgentVersion, error) {
 	json.Unmarshal(metaBytes, &v.Metadata)
 	json.Unmarshal(capsBytes, &v.Capabilities)
 	return &v, nil
+}
+
+// --------------------------------------------------------------------------
+// Threads
+// --------------------------------------------------------------------------
+
+func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
+	meta, _ := json.Marshal(thread.Metadata)
+	vals, _ := json.Marshal(thread.Values)
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO threads (tenant_id, thread_id, status, metadata, values_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, tenant.FromContext(ctx), thread.ThreadID, thread.Status, meta, vals, thread.CreatedAt, thread.UpdatedAt)
+	if err != nil {
+		if isDuplicateKeyError(err) {
+			return &state.ErrConflict{Resource: "thread", ID: thread.ThreadID}
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	t, err := scanThread(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
+		}
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models.ThreadPatch) (*models.Thread, error) {
+	existing, err := s.GetThread(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+
+	if patch.Metadata != nil {
+		if existing.Metadata == nil {
+			existing.Metadata = make(map[string]interface{})
+		}
+		for k, v := range patch.Metadata {
+			existing.Metadata[k] = v
+		}
+	}
+	if patch.Values != nil {
+		if existing.Values == nil {
+			existing.Values = make(map[string]interface{})
+		}
+		for k, v := range patch.Values {
+			existing.Values[k] = v
+		}
+	}
+
+	existing.UpdatedAt = time.Now().UTC()
+	meta, _ := json.Marshal(existing.Metadata)
+	vals, _ := json.Marshal(existing.Values)
+
+	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ? WHERE thread_id = ?`
+	args := []interface{}{meta, vals, existing.UpdatedAt, threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err = s.db.ExecContext(ctx, query, args...)
+	return existing, err
+}
+
+func (s *Store) DeleteThread(ctx context.Context, threadID string) error {
+	query := `DELETE FROM threads WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "thread", ID: threadID}
+	}
+	return nil
+}
+
+func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchRequest) ([]*models.Thread, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if req.Status != nil {
+		where = append(where, "status = ?")
+		args = append(args, string(*req.Status))
+	}
+	for k, v := range req.Metadata {
+		where = append(where, "JSON_EXTRACT(metadata, ?) = ?")
+		path := "$." + k
+		if sv, ok := v.(string); ok {
+			args = append(args, path, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, path, string(valJSON))
+		}
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	threads := []*models.Thread{}
+	for rows.Next() {
+		t, err := scanThread(rows)
+		if err != nil {
+			return nil, err
+		}
+		threads = append(threads, t)
+	}
+	return threads, rows.Err()
+}
+
+func (s *Store) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
+	now := time.Now().UTC()
+	query := `UPDATE threads SET status = ?, updated_at = ? WHERE thread_id = ?`
+	args := []interface{}{string(status), now, threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+// TryClaimThread is a single atomic conditional UPDATE (idle/interrupted/
+// etc -> busy), same TOCTOU-safe shape as Postgres/SQLite -- two
+// concurrent callers can never both see RowsAffected() > 0, since
+// InnoDB's row lock during the UPDATE serializes them and the second
+// one's WHERE status != 'busy' no longer matches once the first commits.
+func (s *Store) TryClaimThread(ctx context.Context, threadID string) (bool, error) {
+	now := time.Now().UTC()
+	query := `UPDATE threads SET status = ?, updated_at = ? WHERE thread_id = ? AND status != ?`
+	args := []interface{}{string(models.ThreadStatusBusy), now, threadID, string(models.ThreadStatusBusy)}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func scanThread(row rowScanner) (*models.Thread, error) {
+	var t models.Thread
+	var metaBytes, valsBytes []byte
+	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal(metaBytes, &t.Metadata)
+	json.Unmarshal(valsBytes, &t.Values)
+	return &t, nil
 }
