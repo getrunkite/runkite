@@ -59,9 +59,18 @@ one container, sharing one resource limit) rather than measuring the control pla
 
 See [`REPORT.md`](REPORT.md) for full results: internal scale tests across
 SQLite/Postgres/MongoDB/MySQL state backends and in-memory/Redis transports,
-and several real correctness/leak bugs found and fixed along the way.
-Headline: all four state backends land in the same reasonable latency band
-for this workload -- the queue/broker transport choice (in-memory vs. Redis)
-is what actually separates the fast rows from the slow ones, and even that
-gap turned out to be secondary to the Python runner's own single-job-at-a-
-time concurrency model (see finding 1c/1d) once profiled properly.
+plus the TypeScript runner (section 6), and several real correctness/leak
+bugs found and fixed along the way. Headline: all four state backends land
+in the same reasonable latency band for this workload -- the queue/broker
+transport choice (in-memory vs. Redis) is what actually separates the fast
+rows from the slow ones, and even that gap turned out to be secondary to the
+Python runner's own single-job-at-a-time concurrency model (see finding
+1c/1d) once profiled properly. The TypeScript runner bucks this pattern in
+one surprising way (section 6): it's slower than Python on the
+zero-dependency default but on par with Python on the production Redis
+config, unlike every other backend/transport combination measured, where
+adding Redis + a real SQL backend always made things slower. Confirmed via
+a deliberate reversed-order control (5 runs total) that this isn't a
+JIT-warm-up artifact -- a real, order-independent effect with one
+concrete, unverified hypothesis (a single global mutex in the in-process
+event broker) worth profiling next.

@@ -24,6 +24,11 @@ one host -- no network latency between them).
 | Postgres, **2 runner replicas** `--concurrency 100` each | 100 | 20s | 6,169 | 0 | 308ms | 520ms | 732ms | -- |
 | MySQL + in-memory | 100 | 30s | 6,031 | 0 | 494ms | 546ms | 679ms | 5MB |
 | MySQL + Redis | 100 | 30s | 3,647 | 0 | 798ms | 912ms | 1,717ms | 0MB* |
+| **TS runner**, SQLite + in-memory | 100 | 30s | 4,639 | 0 | 662ms | 699ms | 742ms | 5MB |
+| **TS runner**, SQLite + in-memory (repeat) | 100 | 30s | 4,754 | 0 | 650ms | 711ms | 736ms | 5MB |
+| **TS runner**, Postgres + Redis | 100 | 30s | 5,029 | 0 | 598ms | 655ms | 760ms | 0MB* |
+| **TS runner**, Postgres + Redis (reversed order, run 1st) | 100 | 30s | 5,144 | 0 | 580ms | 638ms | 752ms | 0MB* |
+| **TS runner**, SQLite + in-memory (reversed order, run 2nd) | 100 | 30s | 4,798 | 0 | 630ms | 696ms | 764ms | 0MB* |
 
 Zero errors across every configuration and every concurrency level -- the correctness bar
 (from the earlier smoke test and the full conformance suite) holds under load too, this
@@ -328,6 +333,74 @@ verified both fail against the pre-fix code and pass after.
    at concurrency=100) is consistent with Redis's inherent network-round-trip cost, not a
    backend-specific defect worth chasing further right now.
 
+### 6. TypeScript runner: slower than Python on the zero-dependency default, on par with Python on the production Redis config -- order-independence confirmed via a reversed-order control, root cause still open
+
+Same methodology as the Python runner's own comparison rows (`examples/echo_agent_ts`,
+concurrency=100, proxy mode for checkpoint/store since the TS runner has no direct-mode
+option at all -- see README's Runners section). Four runs total, deliberately alternating
+which config went first, specifically to test an obvious confound before trusting the
+comparison at all:
+
+- **SQLite + in-memory, run 1st in session**: 662ms p50 / 699ms p90 / 742ms p99 (4,639 total,
+  30s).
+- **SQLite + in-memory, repeated 2nd in session**: 650ms p50 / 711ms p90 / 736ms p99 (4,754
+  total, 30s).
+- **Postgres + Redis, run 3rd in session (after both SQLite runs above)**: 598ms p50 / 655ms
+  p90 / 760ms p99 (5,029 total, 30s).
+- **Postgres + Redis, repeated on a fresh process, run 1st this time (reversed order,
+  no prior SQLite run in that process's lifetime)**: 580ms p50 / 638ms p90 / 752ms p99
+  (5,144 total, 30s).
+- **SQLite + in-memory, repeated on a fresh process, run 2nd this time (after the reversed
+  Redis run above)**: 630ms p50 / 696ms p90 / 764ms p99 (4,798 total, 30s).
+
+**Order-independence confirmed, not assumed.** Before trusting "Redis is faster than SQLite
+for TS" as a real effect rather than a JIT-warm-up or OS-page-cache artifact (Node's V8 does
+warm up hot code paths across repeated calls within a process's lifetime, and each config
+here needs a fresh `tsx` process), the SQLite/Redis run order was deliberately reversed and
+re-measured. Redis stayed in the ~580-598ms band whether it ran 1st or 3rd; SQLite stayed in
+the ~630-662ms band whether it ran 1st, 2nd (repeat), or 2nd-after-Redis. This rules out
+"whichever config runs last in a warmed-up process wins" as the explanation -- the two
+configs occupy genuinely separate, non-overlapping latency bands regardless of run order.
+
+**A concrete, testable (but not yet tested) mechanism**: `internal/transport/inprocess.go`'s
+`Broker` uses a single package-level `sync.RWMutex` (`b.mu`) shared across **every
+concurrently-running run**, not one lock per run -- every `Publish` (one call per streamed
+event from any runner) and every `Subscribe` (one call per `/wait` HTTP request) takes the
+same exclusive lock. At concurrency=100, with roughly 300+ total `Publish` calls plus 100
+`Subscribe` calls all serializing through that one mutex, this is a plausible source of exactly
+the kind of added latency (and a source of tail-widening from lock-convoy effects) that
+wouldn't exist for the Redis broker, where each run's event stream is its own Redis key and
+concurrent access is handled by Redis's own server, not a shared Go-side lock. This is the
+same file the leaked-subscription bug (finding 1a) and the unbounded-`c.subs`-map bug were
+found in, so a global lock in this package wouldn't be a novel discovery, just a
+previously-undocumented byproduct of the same "quick, correct, not yet scale-hardened"
+zero-dependency-default design.
+
+**What this mechanism does NOT yet explain**: the exact same `Broker`/`Queue` code runs
+underneath the Python benchmarks too (it's Go code, not runner-language-specific), yet
+Python's SQLite+in-memory (463ms) was its *fastest* config, the opposite pattern from TS. A
+single shared Go-side lock should add roughly the same absolute contention cost regardless of
+which runner language is on the other end of the gRPC connection -- so if this mechanism is
+real, something about the *relative* size of that added cost versus each runtime's own
+baseline per-job overhead (Python: large and CPU-bound per finding 1c/1d; TS: apparently much
+smaller, unmeasured directly) would have to explain why it's large enough to flip the ordering
+for TS but not for Python. That composition hasn't been tested -- flagged as the concrete next
+step (a CPU/lock-contention profile of the control plane specifically, correlated against
+which runner is attached) rather than asserted here.
+
+**Also worth restating plainly, per this report's own MySQL-vs-Redis precedent**: TS's
+Postgres+Redis p50 (598ms, or 580ms on the reversed-order run) is close to Python's
+Postgres+Redis post-fix p50 (910ms) only in the sense that both exist in the same rough
+"couple hundred ms above the zero-dependency default" territory -- the actual gap (roughly
+35% lower) is not small, and Python's row ran for 20s while every TS row here ran for 30s, so
+none of these totals are directly comparable to each other, only the percentile latencies are.
+"On par with Python" is a fairer characterization than "ahead of Python" for this gap size.
+
+Bottom line: **the SQLite-vs-Redis inversion for TS is now a confirmed, reproducible, order-
+independent effect** (five runs, two of them a deliberate reversed-order control), not
+explained away as noise -- but its root cause is still open, with one concrete, code-level
+hypothesis (`Broker`'s single global mutex) worth profiling directly before trusting it.
+
 ## What this report does NOT cover
 
 - Real agent workloads (LLM calls, tool calls) -- `echo_agent` isolates control-plane
@@ -339,10 +412,11 @@ verified both fail against the pre-fix code and pass after.
 - Finding each system's actual breaking point (OOM, sustained failures) -- the
   resource-constrained comparison above stopped at 100 concurrent users with both systems
   still producing zero errors; pushing further until one fails would need a dedicated run.
-- **The TypeScript runner's own overhead.** Every number in this report is the Python
-  runner. The TypeScript runner reached full feature parity with it in a later pass (A2A
-  client, vector store client, factory graphs), but its latency/throughput characteristics
-  under load haven't been measured at all -- worth a dedicated follow-up given it's a
-  structurally different runtime (Node's event loop vs. Python's asyncio/GIL, which finding
-  1d above found to be the actual ceiling for the Python runner under sustained CPU-bound
-  load).
+- **The TypeScript runner's own concurrency ceiling under sustained CPU-bound load** --
+  section 6 above measures its latency but doesn't repeat finding 1c/1d's deeper
+  investigation (CPU profiling, `--concurrency`-equivalent dispatch, horizontal replicas) for
+  Node specifically. `worker.ts`'s own poll loop is a single sequential loop with no
+  dispatch-multiple-jobs option at all (unlike the Python runner's
+  `--concurrency`/`RUNKITE_CONCURRENCY` flag) -- worth a dedicated follow-up if TS throughput
+  under real (I/O-wait-dominated) agent workloads becomes a concern. Section 6's surprising
+  SQLite-vs-Redis ordering is also unexplained by a profile, not just this ceiling question.
