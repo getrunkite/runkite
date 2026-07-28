@@ -418,13 +418,28 @@ Three things this adds on top of the shared run-creation/wait path:
   ```json
   { "a2a": { "max_depth": 10 } }
   ```
-- **Cost attribution**: every *delegated* run carries `parent_run_id` and `root_run_id` (the top of the chain). The fields are persisted and indexed; a server-side `GET /runs/search?root_run_id=` filter is not exposed yet (see limitations), so tree queries today are client-side filters over listed runs.
+- **Cost attribution**: every *delegated* run carries `parent_run_id` and `root_run_id` (the top of the chain), persisted and indexed. `RunSearchRequest` exposes `root_run_id` as a client-facing filter (`POST /runs/search`) -- pass the tree's root `run_id` (or any descendant's own `root_run_id` value, which is the same thing) to list every OTHER run in the tree with one query. The root itself is never returned this way (its own `root_run_id` is nil by design; fetch it separately by ID), and this filtered search is subject to the same `maxSearchLimit` (100) clamp as any other client-facing search. `GET /runs/{runID}/cost` (below) is more permissive: pass ANY run's ID in the tree -- root or descendant -- and it resolves to the same root internally before aggregating, no client-side root-finding required.
+- **Cancel cascade**: cancelling a run cancels everything it delegated to, directly or transitively (not ancestors or siblings) -- a cancelled parent can't leave orphaned children still executing.
+
+**Cost aggregation** (`GET /runs/{runID}/cost`) is deliberately convention-based, not a Runner Protocol change: nothing requires a runner to report token usage today, so this reads whatever a run's own `output` JSON already contains. If it happens to include a top-level `usage` object shaped like most LLM APIs already return it (`prompt_tokens`/`completion_tokens`/`total_tokens`, plus an optional `cost_usd`), it's summed across every run in the tree; a run with no such object just contributes zero. `total_tokens` is filled in as `prompt_tokens + completion_tokens` if a runner reports the two halves but not their sum.
+
+```json
+// GET /runs/{any-run-in-the-tree}/cost
+{
+  "root_run_id": "root-run-id",
+  "run_count": 3,
+  "usage": {"prompt_tokens": 420, "completion_tokens": 180, "total_tokens": 600, "cost_usd": 0.03},
+  "runs": [
+    {"run_id": "root-run-id", "agent_id": "coordinator", "depth": 0, "usage": {...}},
+    {"run_id": "child-run-id", "agent_id": "worker", "depth": 1, "usage": {...}}
+  ]
+}
+```
 
 **Known limitations, stated plainly**:
 - **Concurrency deadlock risk, real and easy to hit**: if the SAME runner process executes both the calling agent and the agent it delegates to, a `wait=True` call blocks that runner's in-flight job slot waiting for a sub-run the same process must dequeue. Default `--concurrency 1` deadlocks on a single hop. **`--concurrency 2` covers one wait-hop**; a deeper wait-chain (A waits on B waits on C) on one process needs roughly `concurrency >= chain_depth + 1`, or another replica of the same `runner_kind`. Horizontally-scaled runner replicas avoid this entirely (any replica can pick up the sub-run).
 - **Parent lookup is cross-tenant under runner trust.** `/internal/a2a/runs` resolves `parent_run_id` with system context (no client tenant), then scopes the child to that parent's tenant. A compromised runner that learns another tenant's run UUID could attach a child there -- same "runner is trusted" boundary as other `/internal/*` routes, stated explicitly rather than implied closed.
-- **`root_run_id` isn't a `RunSearchRequest` filter yet.** Persisted (and indexed on every backend) but finding "every run in this delegation tree" today means fetching runs and filtering client-side. Top-level (non-delegated) runs leave `root_run_id` nil -- only descendants carry it.
-- **No cost/token aggregation / cancel cascade built on the tree yet.** Summing tokens across a tree, and cancelling children when a parent is cancelled, are left to the caller for now.
+- **Cost aggregation is best-effort, not authoritative.** It's reading a convention out of existing `output` JSON, not a value the control plane verified or a runner is required to produce -- a misbehaving or silent runner reports zero, not an error.
 
 ## Agent Marketplace / Registry
 

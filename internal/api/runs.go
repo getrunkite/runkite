@@ -1323,6 +1323,32 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, 
 		return nil, err
 	}
 
+	updated, err := s.cancelRunSingle(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+
+	// A2A cancel cascade (master plan follow-up: cancelling a run must
+	// also cancel anything it delegated to, directly or transitively --
+	// otherwise a cancelled parent leaves orphaned child runs still
+	// executing with no way for the caller to have stopped them). Best-
+	// effort: a lookup/cancel failure here must never fail the parent's
+	// own cancel, which already succeeded above.
+	s.cascadeCancelDescendants(ctx, run)
+
+	return updated, nil
+}
+
+// cancelRunSingle performs the side effects of cancelling exactly ONE
+// run (queue cancel, pub/sub cancel signal, status update, thread idle,
+// terminal bookkeeping) without touching any other run in its
+// delegation tree -- factored out of cancelRunCore so
+// cascadeCancelDescendants can apply the same side effects to each
+// descendant without re-triggering a redundant tree lookup per node
+// (cancelRunCore itself already looked up the whole tree once).
+func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run) (*models.Run, error) {
+	runID := run.RunID
+
 	if isTerminalStatus(run.Status) {
 		return run, nil
 	}
@@ -1352,6 +1378,55 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, 
 		return updated, nil
 	}
 	return nil, nil
+}
+
+// maxA2ACascadeRuns caps the single SearchRuns(RootRunID=...) query
+// cascadeCancelDescendants issues -- a safety ceiling against a
+// pathological delegation tree, not a realistic limit (a2a.max_depth
+// already bounds tree depth; this bounds the total node count fetched
+// in one query regardless of shape).
+const maxA2ACascadeRuns = 5000
+
+// cascadeCancelDescendants cancels every run delegated (directly or
+// transitively) from run, via a single SearchRuns(root_run_id=...)
+// query for the whole delegation tree followed by an in-memory
+// breadth-first walk starting at run itself -- one query regardless of
+// tree depth, instead of one query per level for a deep chain.
+//
+// Uses a system context: the entire tree always shares one tenant in
+// practice (handleA2ACreateRun forces a delegated run's tenant to match
+// its parent's, never the caller's), so this isn't crossing a tenant
+// boundary -- it just avoids re-deriving tenant scoping for a lookup
+// that's keyed by root_run_id/parent_run_id, not caller identity.
+func (s *Server) cascadeCancelDescendants(ctx context.Context, run *models.Run) {
+	rootID := run.RunID
+	if run.RootRunID != nil {
+		rootID = *run.RootRunID
+	}
+
+	sysCtx := tenant.SystemContext(ctx)
+	treeRuns, err := s.store.SearchRuns(sysCtx, &models.RunSearchRequest{RootRunID: rootID, Limit: maxA2ACascadeRuns})
+	if err != nil {
+		slog.Warn("a2a cancel cascade: failed to look up delegation tree", "run_id", run.RunID, "error", err)
+		return
+	}
+
+	childrenOf := make(map[string][]*models.Run, len(treeRuns))
+	for _, r := range treeRuns {
+		if r.ParentRunID != nil {
+			childrenOf[*r.ParentRunID] = append(childrenOf[*r.ParentRunID], r)
+		}
+	}
+
+	queue := childrenOf[run.RunID]
+	for len(queue) > 0 {
+		child := queue[0]
+		queue = queue[1:]
+		if _, err := s.cancelRunSingle(sysCtx, child); err != nil {
+			slog.Warn("a2a cancel cascade: failed to cancel descendant run", "root_run_id", rootID, "parent_run_id", run.RunID, "child_run_id", child.RunID, "error", err)
+		}
+		queue = append(queue, childrenOf[child.RunID]...)
+	}
 }
 
 func isTerminalStatus(status models.RunStatus) bool {

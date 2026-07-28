@@ -1349,6 +1349,11 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		args = append(args, req.AgentID)
 		argN++
 	}
+	if req.RootRunID != "" {
+		where = append(where, fmt.Sprintf("root_run_id = $%d", argN))
+		args = append(args, req.RootRunID)
+		argN++
+	}
 	for k, v := range req.Metadata {
 		where = append(where, fmt.Sprintf("metadata->>$%d = $%d", argN, argN+1))
 		args = append(args, k)

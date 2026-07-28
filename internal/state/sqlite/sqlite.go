@@ -1363,6 +1363,10 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		where = append(where, "agent_id = ?")
 		args = append(args, req.AgentID)
 	}
+	if req.RootRunID != "" {
+		where = append(where, "root_run_id = ?")
+		args = append(args, req.RootRunID)
+	}
 	for k, v := range req.Metadata {
 		where = append(where, "json_extract(metadata, ?) = ?")
 		args = append(args, "$."+k)

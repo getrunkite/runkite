@@ -1111,6 +1111,9 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	if req.AgentID != "" {
 		filter["agent_id"] = req.AgentID
 	}
+	if req.RootRunID != "" {
+		filter["root_run_id"] = req.RootRunID
+	}
 	for k, v := range req.Metadata {
 		filter["metadata."+k] = metadataMatchValue(v)
 	}

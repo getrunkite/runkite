@@ -30,12 +30,19 @@
 //     depth, failing a chain that's gone too deep (accidental cycle or
 //     runaway delegation) with 400, not a resource leak.
 //  3. Cost attribution: every delegated run's root_run_id points at the
-//     top of its delegation tree (persisted + indexed). A public
-//     RunSearchRequest filter on root_run_id is not exposed yet.
+//     top of its delegation tree (persisted + indexed). RunSearchRequest
+//     exposes this as a client-facing filter (root_run_id) so any run
+//     in a tree can be used to find every other run in it with one
+//     query, and GET /runs/{runID}/cost (below) aggregates best-effort
+//     token/cost usage across the whole tree from it.
 //
 // Runner-authenticated (mounted under /internal/*, not client-facing) --
 // this is infrastructure a runner's own SDK helper calls on an agent's
 // behalf, not something an end-user client should ever call directly.
+//
+// Cancelling a run cascades to everything it delegated, directly or
+// transitively (see runs.go's cancelRunCore/cascadeCancelDescendants) --
+// a cancelled parent can't leave orphaned children still executing.
 package api
 
 import (
@@ -132,4 +139,119 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, *resp)
+}
+
+// --------------------------------------------------------------------------
+// Cost aggregation (master plan follow-up: "cost attribution via
+// root_run_id" -- a rollup on top of it, not just the raw field).
+// --------------------------------------------------------------------------
+
+// RunUsage is LLM token/cost usage for one run. Every field is best-
+// effort: nothing in the Runner Protocol requires a runner to report
+// usage today (deliberately, to ship this without a protocol version
+// bump -- see RunCostSummary's doc comment), so a run that never
+// reported any of this simply contributes all zeros to a rollup.
+type RunUsage struct {
+	PromptTokens     int64   `json:"prompt_tokens,omitempty"`
+	CompletionTokens int64   `json:"completion_tokens,omitempty"`
+	TotalTokens      int64   `json:"total_tokens,omitempty"`
+	CostUSD          float64 `json:"cost_usd,omitempty"`
+}
+
+// RunCostDetail is one run's contribution to a RunCostSummary.
+type RunCostDetail struct {
+	RunID   string   `json:"run_id"`
+	AgentID string   `json:"agent_id"`
+	Depth   int      `json:"depth"`
+	Usage   RunUsage `json:"usage"`
+}
+
+// RunCostSummary is the response for GET /runs/{runID}/cost: a rollup
+// of usage across an entire A2A delegation tree, keyed by whichever
+// run's ID the caller happened to have on hand -- any run in the tree
+// resolves to the same root and the same aggregate.
+//
+// Deliberately convention-based, not a new required field on Run or a
+// Runner Protocol change: it reads whatever a run's own Output JSON
+// already contains. If a runner's output happens to include a
+// top-level "usage" object -- the same shape most LLM APIs already
+// return (OpenAI/Anthropic-style prompt_tokens/completion_tokens/
+// total_tokens), plus an optional cost_usd -- it's picked up and summed
+// across the tree. This ships real value against what agents already
+// emit today; a future Runner Protocol version could make usage
+// reporting authoritative instead of best-effort without changing this
+// endpoint's shape, only extractRunUsage's source.
+type RunCostSummary struct {
+	RootRunID string          `json:"root_run_id"`
+	RunCount  int             `json:"run_count"`
+	Usage     RunUsage        `json:"usage"`
+	Runs      []RunCostDetail `json:"runs"`
+}
+
+// GET /runs/{runID}/cost
+func (s *Server) handleGetRunCost(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runID")
+	run, err := s.store.GetRun(r.Context(), runID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+
+	rootID := run.RunID
+	if run.RootRunID != nil {
+		rootID = *run.RootRunID
+	}
+
+	// SearchRuns(root_run_id=...) excludes the root itself by design
+	// (a root's own RootRunID is nil -- see models.Run's doc comment),
+	// so it's fetched separately here unless the run being queried
+	// already IS the tree's own root.
+	allRuns := make([]*models.Run, 0, 1)
+	if rootID == run.RunID {
+		allRuns = append(allRuns, run)
+	} else if rootRun, err := s.store.GetRun(r.Context(), rootID); err == nil {
+		allRuns = append(allRuns, rootRun)
+	}
+	descendants, err := s.store.SearchRuns(r.Context(), &models.RunSearchRequest{RootRunID: rootID, Limit: maxA2ACascadeRuns})
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	allRuns = append(allRuns, descendants...)
+
+	summary := RunCostSummary{RootRunID: rootID, RunCount: len(allRuns), Runs: make([]RunCostDetail, 0, len(allRuns))}
+	for _, rn := range allRuns {
+		usage := extractRunUsage(rn.Output)
+		summary.Usage.PromptTokens += usage.PromptTokens
+		summary.Usage.CompletionTokens += usage.CompletionTokens
+		summary.Usage.TotalTokens += usage.TotalTokens
+		summary.Usage.CostUSD += usage.CostUSD
+		summary.Runs = append(summary.Runs, RunCostDetail{RunID: rn.RunID, AgentID: rn.AgentID, Depth: rn.Depth, Usage: usage})
+	}
+
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// extractRunUsage reads a run's Output JSON for a conventional
+// top-level "usage" object, tolerating the key (or any field within
+// it) being entirely absent -- see RunCostSummary's doc comment for
+// why this is a best-effort convention, not a contract enforced
+// anywhere in the Runner Protocol. If a runner reports prompt/
+// completion tokens but not their sum, total_tokens is filled in as a
+// fallback rather than left at zero.
+func extractRunUsage(output json.RawMessage) RunUsage {
+	if len(output) == 0 {
+		return RunUsage{}
+	}
+	var parsed struct {
+		Usage RunUsage `json:"usage"`
+	}
+	if err := json.Unmarshal(output, &parsed); err != nil {
+		return RunUsage{}
+	}
+	u := parsed.Usage
+	if u.TotalTokens == 0 && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	return u
 }

@@ -1085,6 +1085,54 @@ func runRunTests(t *testing.T, factory StoreFactory) {
 			t.Errorf("expected 1 pending run (r-1), got %d", len(results))
 		}
 	})
+
+	t.Run("SS-008a_search_by_root_run_id_finds_whole_delegation_tree", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-tree", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		// A2A tree: root -> child -> grandchild, plus an unrelated
+		// top-level run that must NOT show up in the root's results.
+		s.CreateRun(ctx, &models.Run{RunID: "root", ThreadID: "t-tree", Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now})
+		rootID, childID := "root", "child"
+		s.CreateRun(ctx, &models.Run{RunID: "child", ThreadID: "t-tree", Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now, ParentRunID: &rootID, RootRunID: &rootID, Depth: 1})
+		s.CreateRun(ctx, &models.Run{RunID: "grandchild", ThreadID: "t-tree", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now, ParentRunID: &childID, RootRunID: &rootID, Depth: 2})
+		s.CreateRun(ctx, &models.Run{RunID: "unrelated", ThreadID: "t-tree", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now})
+
+		results, err := s.SearchRuns(ctx, &models.RunSearchRequest{RootRunID: "root", Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRuns(root_run_id): %v", err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 runs (child + grandchild) under root_run_id=root, got %d: %+v", len(results), results)
+		}
+		var foundChild, foundGrandchild bool
+		for _, r := range results {
+			switch r.RunID {
+			case "child":
+				foundChild = true
+			case "grandchild":
+				foundGrandchild = true
+			case "root", "unrelated":
+				t.Errorf("SearchRuns(root_run_id=root) must not return the root itself or an unrelated run, got %q", r.RunID)
+			}
+		}
+		if !foundChild || !foundGrandchild {
+			t.Fatalf("expected both child and grandchild, foundChild=%v foundGrandchild=%v", foundChild, foundGrandchild)
+		}
+
+		// The root itself is never returned (its own RootRunID is nil,
+		// by design -- see models.Run's doc comment) -- a caller who
+		// wants the root too must fetch it separately by RunID.
+		noneForUnrelated, err := s.SearchRuns(ctx, &models.RunSearchRequest{RootRunID: "unrelated", Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchRuns(root_run_id=unrelated): %v", err)
+		}
+		if len(noneForUnrelated) != 0 {
+			t.Errorf("expected 0 runs for a root_run_id that was never anyone's parent, got %d", len(noneForUnrelated))
+		}
+	})
 }
 
 // --------------------------------------------------------------------------

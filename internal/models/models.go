@@ -234,8 +234,14 @@ type RunSearchRequest struct {
 	Status   *RunStatus             `json:"status,omitempty"`
 	ThreadID string                 `json:"thread_id,omitempty"`
 	AgentID  string                 `json:"agent_id,omitempty"`
-	Limit    int                    `json:"limit,omitempty"`
-	Offset   int                    `json:"offset,omitempty"`
+	// RootRunID finds every run in an A2A delegation tree with one
+	// query (see Run.RootRunID's doc comment) -- pass any run's own
+	// RootRunID (or its RunID, if it IS the tree's root) to list every
+	// run delegated from it, directly or transitively. Matches exactly,
+	// no partial/prefix semantics.
+	RootRunID string `json:"root_run_id,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
 }
 
 // RunWaitResponse is returned by GET /runs/{id}/wait.

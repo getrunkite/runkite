@@ -980,6 +980,10 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		where = append(where, "agent_id = ?")
 		args = append(args, req.AgentID)
 	}
+	if req.RootRunID != "" {
+		where = append(where, "root_run_id = ?")
+		args = append(args, req.RootRunID)
+	}
 	// Same MySQL scalar-vs-JSON comparison rule SearchThreads relies
 	// on: JSON_EXTRACT(...) returns a JSON value, and comparing it with
 	// = against a non-JSON operand implicitly casts that operand to

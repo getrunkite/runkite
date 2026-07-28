@@ -212,6 +212,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /runs/{runID}/wait", s.handleWaitRun)
 	mux.HandleFunc("GET /runs/{runID}/stream", s.handleStreamRun)
 	mux.HandleFunc("POST /runs/{runID}/cancel", s.handleCancelRun)
+	// A2A cost aggregation (see a2a.go) -- any run in a delegation tree
+	// resolves to the same rollup across the whole tree.
+	mux.HandleFunc("GET /runs/{runID}/cost", s.handleGetRunCost)
 
 	// Store (AP-070..081) -- client-facing, client auth (API key/JWT)
 	mux.HandleFunc("PUT /store/items", s.handlePutItem)
