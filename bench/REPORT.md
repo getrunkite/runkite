@@ -258,13 +258,23 @@ differences, and both MongoDB and MySQL hold up well against the SQLite baseline
 naturally compared to.
 
 **MySQL + Redis** (798ms p50, 912ms p90, 1,717ms p99, 3,647 total over 30s) was also run as
-the direct MySQL analogue of the existing "Postgres + Redis (post-fix)" row (910ms p50) --
-close enough (798ms vs 910ms) to reinforce finding #5's conclusion again: the queue/broker
-transport choice, not the SQL backend behind it, is what actually separates the in-memory-
-transport rows (~400-560ms) from the Redis-transport rows (~800-910ms) here. RSS delta reads
-as 0MB for this specific run (`ps`-based single-process RSS sampling landed on an
-already-stabilized process this time, not a real "zero growth" finding) -- treat that one
-number as noise, not a result; the p50/p90/p99 numbers are the real signal from this run.
+the direct MySQL analogue of the existing "Postgres + Redis (post-fix, fresh keyspace)" row
+(910ms p50, 989ms p90, 1,028ms p99, 2,260 total over 20s) -- **note the different durations
+(30s vs 20s), so the two totals aren't a like-for-like throughput comparison, only the
+percentile latencies are.** At **p50 and p90 the two are close** (798ms vs 910ms; 912ms vs
+989ms), reinforcing finding #5's conclusion again: the queue/broker transport choice, not the
+SQL backend behind it, is what separates the in-memory-transport rows (~400-560ms) from the
+Redis-transport rows (~800-910ms) here. **The tail does NOT hold up the same way**: MySQL +
+Redis's p99 (1,717ms) is ~67% higher than Postgres + Redis's post-fix p99 (1,028ms), despite a
+*better* p50 -- a real, honestly-reported divergence, not glossed over as "close enough" the
+way the p50/p90 comparison is. One 30s sample isn't enough to say whether this is a genuine
+MySQL-driver-under-Redis-contention tail effect or a one-off (a slow migration/connection-pool
+warm-up moment, GC pause, or shared-machine noise from the other services also running
+throughout this session -- see this report's own opening caveat) -- flagged as a real, open
+question rather than either explained away or silently dropped. RSS delta reads as 0MB for
+this specific run (`ps`-based single-process RSS sampling landed on an already-stabilized
+process this time, not a real "zero growth" finding) -- treat that one number as noise, not a
+result; the p50/p90/p99 numbers are the real signal from this run.
 
 ### 5. Real correctness bug found and fixed: `/wait` could report "success" while a plain GET immediately after still showed "pending"
 
