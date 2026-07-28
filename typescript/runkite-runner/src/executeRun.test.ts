@@ -180,6 +180,98 @@ test("executeRun serializes LangChain-message-like objects via toDict/toJSON", a
   assert.deepEqual(valuesEvent.data, { messages: [{ role: "ai", content: "hello" }] });
 });
 
+test("executeRun emits a tool_call event for a new AIMessage.tool_calls entry", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        [
+          "values",
+          {
+            messages: [
+              { role: "ai", content: "", tool_calls: [{ id: "call_1", name: "get_weather", args: { city: "SF" } }] },
+            ],
+          },
+        ],
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+
+  assert.equal(status, "success");
+  assert.deepEqual(
+    events.map((e) => e.method),
+    ["lifecycle", "tool_call", "values", "end"],
+  );
+  assert.deepEqual(events[1].data, { name: "get_weather", args: { city: "SF" }, id: "call_1" });
+});
+
+test("executeRun dedupes a tool_call already seen in an earlier chunk (e.g. re-streamed on a later graph step)", async () => {
+  const toolCallMsg = { role: "ai", content: "", tool_calls: [{ id: "call_1", name: "get_weather", args: { city: "SF" } }] };
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        ["values", { messages: [toolCallMsg] }],
+        ["values", { messages: [toolCallMsg, { role: "tool", content: "72F" }] }],
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+
+  const toolCallEvents = events.filter((e) => e.method === "tool_call");
+  assert.equal(toolCallEvents.length, 1, "expected exactly one tool_call event despite the same id appearing in two chunks");
+});
+
+test("executeRun emits a separate tool_call event per distinct id, and does not recurse past a message that has tool_calls", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        [
+          "values",
+          {
+            messages: [
+              {
+                role: "ai",
+                content: "",
+                tool_calls: [
+                  { id: "call_1", name: "get_weather", args: { city: "SF" } },
+                  { id: "call_2", name: "get_time", args: { tz: "PST" } },
+                ],
+                // Nested field that would itself contain a tool_calls-shaped
+                // value -- must NOT be scanned once the message's own
+                // tool_calls array already matched (mirrors Python's
+                // if/elif branching, not an unconditional recursive scan).
+                extra: { tool_calls: [{ id: "call_should_not_emit", name: "ignored" }] },
+              },
+            ],
+          },
+        ],
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+
+  const toolCallEvents = events.filter((e) => e.method === "tool_call");
+  assert.deepEqual(
+    toolCallEvents.map((e) => (e.data as { id: string }).id),
+    ["call_1", "call_2"],
+  );
+});
+
+test("executeRun ignores a tool_calls entry with no id (can't be deduped/correlated)", async () => {
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([["values", { messages: [{ role: "ai", tool_calls: [{ name: "no_id_here", args: {} }] }] }]]);
+    },
+  };
+  const events: RunEvent[] = [];
+  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+
+  assert.equal(events.filter((e) => e.method === "tool_call").length, 0);
+});
+
 test("executeRun sets configurable.thread_id and run_id on the config passed to stream()", async () => {
   let capturedConfig: any;
   const graph: RunnableGraph = {

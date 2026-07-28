@@ -30,6 +30,37 @@ export interface RunAssignment {
 
 export type RunStatus = "success" | "error" | "interrupted";
 
+/** Recursively scans a LangGraph.js stream chunk for AIMessage.tool_calls
+ * the control plane's on_tool_call hook watches for -- TypeScript mirror
+ * of the Python runner's find_new_tool_calls() in worker.py (master plan
+ * gap: "neither runner emits that method today"). `seenIds` is mutated
+ * in place (dedup state); pass a fresh Set per run.
+ *
+ * Checked in every stream mode, same reasoning as the Python version:
+ * "values"/"updates" give complete, already-materialized messages per
+ * graph step; "messages" streams per-token deltas, so an early chunk's
+ * tool_calls may have incomplete args from partially-parsed JSON --
+ * deduping by id means a real but minor trade-off (emitting on an
+ * early, args-incomplete chunk) against missing tool calls entirely for
+ * messages-only stream requests. */
+function findNewToolCalls(obj: unknown, seenIds: Set<string>): Array<{ id?: string; name?: string; args?: unknown }> {
+  const found: Array<{ id?: string; name?: string; args?: unknown }> = [];
+  const toolCalls = obj != null && typeof obj === "object" ? (obj as any).tool_calls : undefined;
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    for (const tc of toolCalls) {
+      const id = tc?.id;
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+      found.push({ id: tc.id, name: tc.name, args: tc.args });
+    }
+  } else if (Array.isArray(obj)) {
+    for (const item of obj) found.push(...findNewToolCalls(item, seenIds));
+  } else if (obj != null && typeof obj === "object") {
+    for (const v of Object.values(obj)) found.push(...findNewToolCalls(v, seenIds));
+  }
+  return found;
+}
+
 /** Converts LangChain message objects (BaseMessage etc.) and arbitrary
  * class instances into plain JSON-serializable values, the same job
  * Python's _serialize() helper does for LangChain's model_dump()/dict(). */
@@ -94,6 +125,7 @@ export async function executeRun(
     const lgStreamMode = streamMode.length > 0 ? streamMode : ["values"];
 
     let hasInterrupt = false;
+    const seenToolCallIds = new Set<string>();
     const stream = await graph.stream(inputData, { ...config, streamMode: lgStreamMode });
 
     for await (const chunk of stream) {
@@ -104,6 +136,10 @@ export async function executeRun(
       } else {
         mode = lgStreamMode.length === 1 ? lgStreamMode[0] : "values";
         data = chunk;
+      }
+
+      for (const tc of findNewToolCalls(data, seenToolCallIds)) {
+        await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
       }
 
       if (data && typeof data === "object" && "__interrupt__" in data) {
