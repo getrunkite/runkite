@@ -19,10 +19,11 @@
  *
  * Operational note (same as Python): with `wait: true` (the default),
  * the parent run's worker slot stays occupied until the child finishes.
- * The TypeScript runner processes one job at a time (no --concurrency
- * flag yet, unlike the Python runner), so it deadlocks on ANY nested A2A
- * call with wait=true -- there is no way to opt out of this today short
- * of `wait: false` + polling the child run yourself.
+ * A runner process with the default `--concurrency 1` therefore
+ * deadlocks on nested A2A -- the child job cannot be dequeued until the
+ * parent frees its slot. Use `--concurrency >= 2` (or another runner
+ * replica of the same runner_kind, or `wait: false` + polling the
+ * child run yourself) for any graph that delegates synchronously.
  */
 export class A2AError extends Error {}
 

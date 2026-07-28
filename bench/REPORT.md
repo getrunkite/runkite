@@ -575,12 +575,16 @@ each other.
   resource-constrained comparison above stopped at 100 concurrent users with both systems
   still producing zero errors; pushing further until one fails would need a dedicated run.
 - **The TypeScript runner's own concurrency ceiling under sustained CPU-bound load** --
-  section 6 above profiles the *control plane's* SQLite-vs-Redis difference but doesn't repeat
-  finding 1c/1d's deeper investigation (CPU profiling, `--concurrency`-equivalent dispatch,
-  horizontal replicas) for the *runner* side, i.e. Node specifically. `worker.ts`'s own poll
-  loop is a single sequential loop with no dispatch-multiple-jobs option at all (unlike the
-  Python runner's `--concurrency`/`RUNKITE_CONCURRENCY` flag) -- worth a dedicated follow-up
-  if TS throughput under real (I/O-wait-dominated) agent workloads becomes a concern.
+  section 6 above profiles the *control plane's* SQLite-vs-Redis difference, not the *runner*
+  side, i.e. Node specifically. `worker.ts` now has the same `--concurrency`/
+  `RUNKITE_CONCURRENCY` semaphore-bounded dispatcher the Python runner has (closing the gap
+  this bullet originally flagged -- live-verified: 5 concurrent runs against `slow_agent_ts`'s
+  3-step, 2s-per-step graph with `--concurrency 5` all completed within the same 6-second
+  window, not staggered 6s apart), but finding 1c/1d's deeper investigation (CPU profiling
+  under sustained load, confirming where Node's own single-core ceiling actually sits for a
+  CPU-bound/near-zero-compute agent, the way it was confirmed for Python) hasn't been repeated
+  for Node -- worth a dedicated follow-up if TS throughput under real (I/O-wait-dominated)
+  agent workloads becomes a concern.
 - **A dedicated write connection + separate read-only pool for SQLite** -- section 6's DSN
   fix alone (WAL mode + real busy_timeout, `MaxOpenConns` unchanged at 1) already made SQLite
   the fastest default single-runner state-backend config measured for both runners in this
