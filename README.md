@@ -178,7 +178,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `HTTP_PORT` | `2026` | HTTP API listen port |
 | `GRPC_PORT` | `50051` | gRPC bridge listen port |
 | `POSTGRES_DSN` | (unset) | Postgres connection string; enables Postgres state backend |
-| `MONGO_URI` | (unset) | MongoDB connection URI; enables MongoDB state backend (checked after `POSTGRES_DSN`, so setting both uses Postgres) |
+| `MONGO_URI` | (unset) | MongoDB connection URI; enables MongoDB state backend (checked after `POSTGRES_DSN`, so setting both uses Postgres). **Must point at a replica set** (even a single-node one, e.g. `?replicaSet=rs0&directConnection=true`) -- `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, which a standalone `mongod` rejects outright rather than silently degrading to non-atomic writes |
 | `MONGO_DB` | `runkite` | MongoDB database name (used when `MONGO_URI` is set) |
 | `REDIS_URL` | (unset) | Redis URL; enables Redis transport (queue + broker) |
 | `DATABASE_PATH` | `./runkite.db` | SQLite file path (used when neither `POSTGRES_DSN` nor `MONGO_URI` is set) |
@@ -470,8 +470,9 @@ Versioning follows the exact same convention as agent versioning above: publishi
 **Known limitations, stated plainly**:
 - **No security review workflow.** Anything published is immediately visible to every caller in that tenant -- there's no approve/reject step, unlike a real package registry's review queue.
 - **No deploy automation.** Publishing an entry doesn't register a runnable agent -- `source_ref` still requires a human (or separate tooling) to actually wire the code into a `langgraph.json` and restart/reload the relevant runner. The registry is a catalog, not a deployment pipeline.
-- **Mongo's publish is non-transactional** across the entry-table update and the version-snapshot insert, same stated limitation as agent versioning (see above) and for the same reason (no replica set in the test/deploy Mongo). Delete is transactional on Postgres/SQLite (both statements commit or roll back together) but not on Mongo, for the same reason.
 - **Admin lookups by name alone are ambiguous under a cross-tenant name collision.** `registry_entries`' real key is `(tenant_id, name)`, not `name` -- if two tenants both publish "sales-bot", `GET /admin-api/registry/{name}` (system context, no tenant filter) returns an arbitrary match, and `GET /admin-api/registry/{name}/versions` genuinely merges both tenants' histories into one list. An explicit `?tenant_id=` query param on both routes disambiguates by scoping to one tenant; the admin version response also exposes `tenant_id` per entry so a merged (no-param) response is at least distinguishable after the fact. Client-facing routes are unaffected (already tenant-scoped from the caller's own auth context, same as every other resource).
+
+`PublishRegistryEntry` and `DeleteRegistryEntry` run inside a real Mongo transaction on the MongoDB backend (same as agent versioning's `UpsertAgent` -- see State Backends below), not the non-atomic entry-table-update-then-version-insert this section used to describe as a limitation. Requires Mongo to run as a replica set (`docker-compose.test.yml`/CI now do); a standalone `mongod` rejects the transaction outright rather than silently degrading.
 
 ## Architecture
 
@@ -496,7 +497,7 @@ Versioning follows the exact same convention as agent versioning above: publishi
 | Metadata (agents/threads/runs) | Embedded SQLite | Postgres, or MongoDB |
 | Job queue + event broker | In-memory | Redis |
 
-Switch backends by setting `POSTGRES_DSN`, `MONGO_URI`, and/or `REDIS_URL`. No code changes, no config files. MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar backend -- proof `state.Store` is genuinely implementable against a document store, and a template for community-contributed backends (MySQL/DynamoDB are documented as possible future drivers, not built). It passes the identical conformance suite Postgres and SQLite do. One caveat: the Python/TypeScript runners' own direct-mode checkpointer (`AsyncPostgresSaver`/its JS equivalent) only exists for Postgres -- a MongoDB-backed control plane's runners use **proxy mode** for checkpoints/store (see below), the same as SQLite deployments do.
+Switch backends by setting `POSTGRES_DSN`, `MONGO_URI`, and/or `REDIS_URL`. No code changes, no config files. MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar backend -- proof `state.Store` is genuinely implementable against a document store, and a template for community-contributed backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. One caveat: the Python/TypeScript runners' own direct-mode checkpointer (`AsyncPostgresSaver`/its JS equivalent) only exists for Postgres -- a MongoDB-backed control plane's runners use **proxy mode** for checkpoints/store (see below), the same as SQLite deployments do. MySQL (`internal/state/mysql`) is also fully implemented and passes the same conformance suite, but isn't wired into `cmd/serve.go`'s backend selection yet (no `MYSQL_DSN` env var) -- usable today only by importing the package directly; DynamoDB remains a documented possible future driver, not built at all.
 
 ### Checkpoint dual mode
 

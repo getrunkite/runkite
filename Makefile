@@ -37,7 +37,7 @@ test-redis:
 # unset, same convention as test-pg's POSTGRES_DSN, so plain `make test`
 # never requires Docker.
 test-mongo:
-	MONGO_URI="mongodb://localhost:27018" \
+	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 		go test ./internal/state/mongo/ -race -count=1 -v
 
 # Qdrant vector store conformance (requires QDRANT_URL or infra-up)
@@ -60,7 +60,7 @@ test-qdrant:
 test-all:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
-	MONGO_URI="mongodb://localhost:27018" \
+	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
 		go test ./internal/... -race -count=1 -p 1
 
@@ -68,7 +68,7 @@ test-all:
 test-all-v:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
-	MONGO_URI="mongodb://localhost:27018" \
+	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
 		go test ./internal/... -race -count=1 -v -p 1
 

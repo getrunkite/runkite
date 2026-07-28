@@ -37,19 +37,6 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
-      mongo:
-        # The non-SQL exemplar state.Store backend (internal/state/mongo) --
-        # same conformance suite as Postgres/SQLite, so this needs to run
-        # in CI too, not just locally.
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand(\"ping\")' --quiet"
-          --health-interval 3s
-          --health-timeout 3s
-          --health-retries 10
-
       qdrant:
         # The non-SQL exemplar vectorstore.VectorStore backend
         # (internal/vectorstore/qdrant) -- same conformance suite as
@@ -105,11 +92,28 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Start MongoDB (single-node replica set)
+        # Started as a plain container here, not a `services:` entry above
+        # like postgres/redis/qdrant: GitHub Actions' services block has no
+        # way to override a service container's command, and multi-document
+        # transactions (session.WithTransaction -- see internal/state/mongo/
+        # mongo.go's UpsertAgent/PublishRegistryEntry/DeleteRegistryEntry)
+        # require mongod to be started with --replSet in the first place, a
+        # standalone mongod rejects them outright. Same replica-set-of-one
+        # setup as docker-compose.test.yml's mongo service -- see that
+        # file's mongo service comment for the full rationale (including
+        # why the connection string below needs directConnection=true).
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
+          timeout 60 bash -c 'until docker exec mongo mongosh --quiet --eval "db.runCommand(\"ping\").ok" 2>/dev/null | grep -q 1; do sleep 1; done'
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
+          timeout 60 bash -c 'until docker exec mongo mongosh --quiet --eval "rs.status().ok" 2>/dev/null | grep -q 1; do sleep 1; done'
+
       - name: Test (all backends)
         env:
           POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
-          MONGO_URI: mongodb://localhost:27017
+          MONGO_URI: "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true"
           QDRANT_URL: http://localhost:6333
         # -p 1: see Makefile's test-all comment -- internal/api/vectors_test
         # and internal/vectorstore/pgvector both DROP vector_items against

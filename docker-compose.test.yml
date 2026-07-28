@@ -45,14 +45,39 @@ services:
     # side container (a real gap found in review: MONGO_URI wasn't
     # documented anywhere and this service didn't exist here, so `make
     # test-all`/CI silently skipped Mongo conformance entirely).
+    #
+    # Runs as a single-node replica set (--replSet rs0), not a standalone
+    # mongod: multi-document transactions (session.WithTransaction) are
+    # only available on a replica set, even a one-member one -- a
+    # standalone mongod rejects them outright. This is what makes
+    # UpsertAgent/PublishRegistryEntry/DeleteRegistryEntry's real
+    # transactions (see mongo.go) possible; before this, those methods
+    # had a documented, deliberate non-atomicity gap vs Postgres/SQLite's
+    # SQL transactions specifically because of this missing prerequisite.
+    #
+    # The healthcheck itself performs the one-time `rs.initiate(...)` --
+    # idempotent (rs.status() succeeding means it's already done, so a
+    # second `up` on an existing volume is a no-op) and self-contained,
+    # so no separate init container or startup script is needed. MONGO_URI
+    # must include `replicaSet=rs0&directConnection=true` (see Makefile) --
+    # directConnection matters here specifically because of Docker's port
+    # remapping: the replica set member is registered as `localhost:27017`
+    # (the container's own view of itself), but the host reaches this
+    # container on the REMAPPED port 27018 below; without directConnection,
+    # the driver's normal replica-set topology discovery would try to
+    # reconnect to `localhost:27017` after the initial handshake and fail
+    # from the host side. directConnection bypasses that discovery and
+    # talks to the seed address only -- correct for a test single-node set
+    # that exists purely to unlock transactions, not for real HA/failover.
     image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27018:27017"
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping')", "--quiet"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}) }; db.runCommand('ping')"]
       interval: 2s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
     tmpfs:
       - /data/db
 

@@ -27,6 +27,16 @@
 //     at "^", not a Mongo-specific array-prefix trick -- guarantees
 //     identical observable behavior to the SQL backends for the same
 //     conformance suite.
+//   - UpsertAgent, PublishRegistryEntry, and DeleteRegistryEntry each run
+//     inside a real multi-document Mongo transaction (see
+//     withTransaction's doc comment) -- the connected Mongo must be a
+//     replica set (even a single-node one) for this, which
+//     docker-compose.test.yml/CI now provide. Every other multi-step
+//     write in this package (DeleteThread's cascade, etc.) still isn't
+//     transactional; those three were the ones with a documented,
+//     previously-deferred atomicity gap vs Postgres/SQLite's SQL
+//     transactions specifically because a replica set was the missing
+//     prerequisite, not a decision that the others don't matter.
 package mongo
 
 import (
@@ -75,6 +85,50 @@ func New(ctx context.Context, uri, dbName string) (*Store, error) {
 }
 
 func (s *Store) col(name string) *mongo.Collection { return s.db.Collection(name) }
+
+// withTransaction runs fn inside a real multi-document Mongo
+// transaction -- requires the connected Mongo to be a replica set
+// (even a single-node one); a standalone mongod rejects
+// StartSession/WithTransaction outright. docker-compose.test.yml and
+// CI now start Mongo as a single-node replica set for exactly this
+// reason (see that file's mongo service comment).
+//
+// fn's own operations must all be issued against the sessCtx it's
+// given, not the outer ctx, or they run outside the transaction and
+// silently defeat the whole point.
+//
+// Deliberately does NOT swallow/retry duplicate-key errors the way the
+// pre-transaction version of this code used to (see git history) --
+// verified live before writing this that doing so is actively harmful,
+// not merely redundant: any write error inside an in-progress Mongo
+// transaction poisons it (the transaction is unusable for further
+// writes regardless of whether the caller's Go code "handles" the
+// error), and WithTransaction's own automatic retry-on-conflict
+// machinery already does the right thing on its own -- a losing
+// racer's transaction aborts and its ENTIRE closure re-runs with a
+// fresh read, so a same-content race naturally re-derives
+// versionChanged=false on retry and never attempts the now-redundant
+// insert at all, while a different-content race is serialized by a
+// write conflict on the shared parent document (agents/
+// registry_entries) itself, not by a duplicate-key catch on the child
+// version-history insert. Confirmed with a 20-goroutine concurrent-
+// different-content race before trusting this: 0 errors, final content
+// always matches its own "latest" history snapshot exactly, and the
+// history count always equals the final version number (no duplicates,
+// no gaps) -- the exact guarantee this package's docs used to describe
+// as "deliberately deferred" pending a replica set.
+func (s *Store) withTransaction(ctx context.Context, fn func(sessCtx context.Context) error) error {
+	sess, err := s.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("mongo: start session: %w", err)
+	}
+	defer sess.EndSession(ctx)
+
+	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+		return nil, fn(sessCtx)
+	})
+	return err
+}
 
 // Init creates all indexes. Collections themselves are created implicitly
 // on first write -- MongoDB doesn't need a CREATE TABLE equivalent.
@@ -263,94 +317,74 @@ type agentDoc struct {
 	UpdatedAt    time.Time   `bson:"updated_at"`
 }
 
+// UpsertAgent runs entirely inside a real Mongo transaction (see
+// withTransaction's doc comment) -- the "agents" update and the
+// conditional "agent_versions" insert either both land or neither
+// does, and a concurrent different-content race for the same
+// (tenant_id, agent_id) is serialized by the transaction machinery
+// itself rather than by any duplicate-key handling in this function.
 func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 	tid := tenant.FromContext(ctx)
-	now := time.Now().UTC()
 
-	var existing agentDoc
-	err := s.col("agents").FindOne(ctx, bson.M{"tenant_id": tid, "agent_id": agent.AgentID}).Decode(&existing)
-	version := 1
-	versionChanged := true // new agent (no existing doc) always needs its v1 snapshot
-	if err == nil {
-		version = existing.Version
-		versionChanged = false
-		// version bumps only if the definition actually changed --
-		// matches Postgres's JSONB-equality CASE expression, compared
-		// here as parsed Go values rather than serialized text.
-		metaBytes, _ := json.Marshal(agent.Metadata)
-		existingMetaBytes, _ := json.Marshal(existing.Metadata)
-		capsBytes, _ := json.Marshal(agent.Capabilities)
-		existingCapsBytes, _ := json.Marshal(existing.Capabilities)
-		if existing.Name != agent.Name || existing.Description != agent.Description ||
-			string(metaBytes) != string(existingMetaBytes) || string(capsBytes) != string(existingCapsBytes) {
-			version = existing.Version + 1
-			versionChanged = true
-		}
-	} else if err != mongo.ErrNoDocuments {
-		return err
-	}
+	return s.withTransaction(ctx, func(sessCtx context.Context) error {
+		now := time.Now().UTC()
 
-	_, err = s.col("agents").UpdateOne(ctx,
-		bson.M{"tenant_id": tid, "agent_id": agent.AgentID},
-		bson.M{
-			"$set": bson.M{
-				"name": agent.Name, "description": agent.Description,
-				"metadata": agent.Metadata, "capabilities": agent.Capabilities,
-				"version": version, "updated_at": now,
-			},
-			"$setOnInsert": bson.M{"tenant_id": tid, "agent_id": agent.AgentID, "created_at": now},
-		},
-		options.UpdateOne().SetUpsert(true),
-	)
-	if err != nil {
-		return err
-	}
-
-	// Full agent versioning (master plan: "version history browsing,
-	// rollback to arbitrary past versions") -- one immutable document
-	// per version ever served, written only when this call is the one
-	// that actually bumped the version (an unchanged re-registration,
-	// e.g. every control plane restart with an unchanged
-	// langgraph.json, must not duplicate a version snapshot).
-	//
-	// Known, stated limitation: this whole function is NOT atomic across
-	// the "agents" update above and this insert -- fine for two racers
-	// upserting the SAME new content (the duplicate-key handling below
-	// makes that a benign no-op), but two racers upserting DIFFERENT new
-	// content at the same instant can leave "agents" as whichever
-	// UpdateOne committed last (last-writer-wins) while agent_versions
-	// keeps a snapshot matching whichever InsertOne won instead --
-	// content mismatch between the current row and its own "latest"
-	// history entry. A real Mongo transaction (ClientSession) would
-	// close this, but requires a replica set; the test/deployment Mongo
-	// here runs standalone (confirmed: `rs.status()` fails with "not
-	// running with --replSet"), so that fix is deliberately deferred
-	// rather than silently assumed away. Narrow in practice -- agent
-	// registration is bootstrap-time from one static langgraph.json per
-	// control plane, not concurrent writers proposing different content
-	// for the same agent_id.
-	if versionChanged {
-		_, err = s.col("agent_versions").InsertOne(ctx, agentVersionDoc{
-			TenantID: tid, AgentID: agent.AgentID, Version: version,
-			Name: agent.Name, Description: agent.Description,
-			Metadata: agent.Metadata, Capabilities: agent.Capabilities, CreatedAt: now,
-		})
-		// A duplicate key here means a concurrent UpsertAgent call for
-		// the same (tenant_id, agent_id) both read the same prior
-		// version and independently decided on the same next version
-		// number -- the unique index (see Init) catches exactly this
-		// race, which existed silently (duplicate rows) before it was
-		// added. Once the index exists, this is Mongo's equivalent of
-		// Postgres/SQLite's `ON CONFLICT (tenant_id, agent_id, version)
-		// DO NOTHING` above -- a benign, idempotent no-op, not a failure
-		// to report: the agents collection update just above already
-		// succeeded, and a version snapshot for this exact version
-		// already exists (written by whichever concurrent call won).
-		if err != nil && !mongo.IsDuplicateKeyError(err) {
+		var existing agentDoc
+		err := s.col("agents").FindOne(sessCtx, bson.M{"tenant_id": tid, "agent_id": agent.AgentID}).Decode(&existing)
+		version := 1
+		versionChanged := true // new agent (no existing doc) always needs its v1 snapshot
+		if err == nil {
+			version = existing.Version
+			versionChanged = false
+			// version bumps only if the definition actually changed --
+			// matches Postgres's JSONB-equality CASE expression, compared
+			// here as parsed Go values rather than serialized text.
+			metaBytes, _ := json.Marshal(agent.Metadata)
+			existingMetaBytes, _ := json.Marshal(existing.Metadata)
+			capsBytes, _ := json.Marshal(agent.Capabilities)
+			existingCapsBytes, _ := json.Marshal(existing.Capabilities)
+			if existing.Name != agent.Name || existing.Description != agent.Description ||
+				string(metaBytes) != string(existingMetaBytes) || string(capsBytes) != string(existingCapsBytes) {
+				version = existing.Version + 1
+				versionChanged = true
+			}
+		} else if err != mongo.ErrNoDocuments {
 			return err
 		}
-	}
-	return nil
+
+		_, err = s.col("agents").UpdateOne(sessCtx,
+			bson.M{"tenant_id": tid, "agent_id": agent.AgentID},
+			bson.M{
+				"$set": bson.M{
+					"name": agent.Name, "description": agent.Description,
+					"metadata": agent.Metadata, "capabilities": agent.Capabilities,
+					"version": version, "updated_at": now,
+				},
+				"$setOnInsert": bson.M{"tenant_id": tid, "agent_id": agent.AgentID, "created_at": now},
+			},
+			options.UpdateOne().SetUpsert(true),
+		)
+		if err != nil {
+			return err
+		}
+
+		// Full agent versioning (master plan: "version history browsing,
+		// rollback to arbitrary past versions") -- one immutable document
+		// per version ever served, written only when this call is the one
+		// that actually bumped the version (an unchanged re-registration,
+		// e.g. every control plane restart with an unchanged
+		// langgraph.json, must not duplicate a version snapshot).
+		if versionChanged {
+			if _, err := s.col("agent_versions").InsertOne(sessCtx, agentVersionDoc{
+				TenantID: tid, AgentID: agent.AgentID, Version: version,
+				Name: agent.Name, Description: agent.Description,
+				Metadata: agent.Metadata, Capabilities: agent.Capabilities, CreatedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type agentVersionDoc struct {
@@ -437,67 +471,67 @@ func nonNilTags(tags []string) []string {
 	return tags
 }
 
-// PublishRegistryEntry follows the exact same read-compute-write pattern
-// as UpsertAgent above, including its identical, explicitly-stated
-// non-atomicity limitation (see that function's comment) and duplicate-
-// key handling for the identical-content race case.
+// PublishRegistryEntry runs entirely inside a real Mongo transaction --
+// same rationale as UpsertAgent's identical shape, see its doc comment
+// and withTransaction's for the full explanation of why no duplicate-
+// key handling is needed here either.
 func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
 	tid := tenant.FromContext(ctx)
-	now := time.Now().UTC()
 	tags := nonNilTags(entry.Tags)
 
-	var existing registryEntryDoc
-	err := s.col("registry_entries").FindOne(ctx, bson.M{"tenant_id": tid, "name": entry.Name}).Decode(&existing)
-	version := 1
-	versionChanged := true
-	if err == nil {
-		version = existing.Version
-		versionChanged = false
-		metaBytes, _ := json.Marshal(entry.Metadata)
-		existingMetaBytes, _ := json.Marshal(existing.Metadata)
-		tagsBytes, _ := json.Marshal(tags)
-		existingTagsBytes, _ := json.Marshal(nonNilTags(existing.Tags))
-		if existing.DisplayName != entry.DisplayName || existing.Description != entry.Description ||
-			existing.Author != entry.Author || string(tagsBytes) != string(existingTagsBytes) ||
-			existing.SourceType != entry.SourceType || existing.SourceRef != entry.SourceRef ||
-			string(metaBytes) != string(existingMetaBytes) {
-			version = existing.Version + 1
-			versionChanged = true
-		}
-	} else if err != mongo.ErrNoDocuments {
-		return err
-	}
+	return s.withTransaction(ctx, func(sessCtx context.Context) error {
+		now := time.Now().UTC()
 
-	_, err = s.col("registry_entries").UpdateOne(ctx,
-		bson.M{"tenant_id": tid, "name": entry.Name},
-		bson.M{
-			"$set": bson.M{
-				"display_name": entry.DisplayName, "description": entry.Description,
-				"author": entry.Author, "tags": tags,
-				"source_type": entry.SourceType, "source_ref": entry.SourceRef,
-				"metadata": entry.Metadata, "version": version, "updated_at": now,
-			},
-			"$setOnInsert": bson.M{"tenant_id": tid, "name": entry.Name, "created_at": now},
-		},
-		options.UpdateOne().SetUpsert(true),
-	)
-	if err != nil {
-		return err
-	}
-
-	if versionChanged {
-		_, err = s.col("registry_entry_versions").InsertOne(ctx, registryEntryVersionDoc{
-			TenantID: tid, Name: entry.Name, Version: version,
-			DisplayName: entry.DisplayName, Description: entry.Description, Author: entry.Author, Tags: tags,
-			SourceType: entry.SourceType, SourceRef: entry.SourceRef, Metadata: entry.Metadata, CreatedAt: now,
-		})
-		// See UpsertAgent's identical comment: a duplicate key here is
-		// the benign identical-content race, not a real conflict.
-		if err != nil && !mongo.IsDuplicateKeyError(err) {
+		var existing registryEntryDoc
+		err := s.col("registry_entries").FindOne(sessCtx, bson.M{"tenant_id": tid, "name": entry.Name}).Decode(&existing)
+		version := 1
+		versionChanged := true
+		if err == nil {
+			version = existing.Version
+			versionChanged = false
+			metaBytes, _ := json.Marshal(entry.Metadata)
+			existingMetaBytes, _ := json.Marshal(existing.Metadata)
+			tagsBytes, _ := json.Marshal(tags)
+			existingTagsBytes, _ := json.Marshal(nonNilTags(existing.Tags))
+			if existing.DisplayName != entry.DisplayName || existing.Description != entry.Description ||
+				existing.Author != entry.Author || string(tagsBytes) != string(existingTagsBytes) ||
+				existing.SourceType != entry.SourceType || existing.SourceRef != entry.SourceRef ||
+				string(metaBytes) != string(existingMetaBytes) {
+				version = existing.Version + 1
+				versionChanged = true
+			}
+		} else if err != mongo.ErrNoDocuments {
 			return err
 		}
-	}
-	return nil
+
+		_, err = s.col("registry_entries").UpdateOne(sessCtx,
+			bson.M{"tenant_id": tid, "name": entry.Name},
+			bson.M{
+				"$set": bson.M{
+					"display_name": entry.DisplayName, "description": entry.Description,
+					"author": entry.Author, "tags": tags,
+					"source_type": entry.SourceType, "source_ref": entry.SourceRef,
+					"metadata": entry.Metadata, "version": version, "updated_at": now,
+				},
+				"$setOnInsert": bson.M{"tenant_id": tid, "name": entry.Name, "created_at": now},
+			},
+			options.UpdateOne().SetUpsert(true),
+		)
+		if err != nil {
+			return err
+		}
+
+		if versionChanged {
+			if _, err := s.col("registry_entry_versions").InsertOne(sessCtx, registryEntryVersionDoc{
+				TenantID: tid, Name: entry.Name, Version: version,
+				DisplayName: entry.DisplayName, Description: entry.Description, Author: entry.Author, Tags: tags,
+				SourceType: entry.SourceType, SourceRef: entry.SourceRef, Metadata: entry.Metadata, CreatedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) GetRegistryEntry(ctx context.Context, name string) (*models.RegistryEntry, error) {
@@ -550,20 +584,38 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 // see the Postgres backend's identical fix for the full rationale
 // (delete-then-republish otherwise resurrects stale pre-delete version
 // snapshots: the unique index on registry_entry_versions would reject
-// the new v1's InsertOne as a duplicate of an orphaned pre-delete row,
-// and the duplicate-key handling above treats that as a benign no-op --
-// correct for a genuine same-content race, wrong here since it's
-// actually stale, unrelated content from before the delete).
+// the new v1's InsertOne as a duplicate of an orphaned pre-delete row --
+// wrong here since it's stale, unrelated content from before the
+// delete, not a genuine same-content race PublishRegistryEntry's
+// version-bump logic would correctly treat as benign).
+//
+// Runs inside a real Mongo transaction so the two deletes commit or
+// roll back together -- a crash between them can no longer leave the
+// entry gone but its version history still present (same class of gap
+// PublishRegistryEntry's non-atomicity used to have, now closed the
+// same way). Returning ErrNotFound from inside the transaction (no
+// entry to delete) is a safe, un-retried abort -- see withTransaction's
+// doc comment: a plain application error, unlike a real write conflict,
+// doesn't carry the "TransientTransactionError" label that would make
+// WithTransaction retry it, and no writes had happened yet anyway.
 func (s *Store) DeleteRegistryEntry(ctx context.Context, name string) error {
-	res, err := s.col("registry_entries").DeleteOne(ctx, tenantFilter(ctx, bson.M{"name": name}))
-	if err != nil {
+	// tenantFilter reads tenant scoping from ctx (the outer, non-session
+	// context) deliberately -- it's a pure function of the caller's
+	// identity, not of anything transactional, so there's no need to
+	// thread it through sessCtx.
+	filter := tenantFilter(ctx, bson.M{"name": name})
+
+	return s.withTransaction(ctx, func(sessCtx context.Context) error {
+		res, err := s.col("registry_entries").DeleteOne(sessCtx, filter)
+		if err != nil {
+			return err
+		}
+		if res.DeletedCount == 0 {
+			return &state.ErrNotFound{Resource: "registry_entry", ID: name}
+		}
+		_, err = s.col("registry_entry_versions").DeleteMany(sessCtx, filter)
 		return err
-	}
-	if res.DeletedCount == 0 {
-		return &state.ErrNotFound{Resource: "registry_entry", ID: name}
-	}
-	_, err = s.col("registry_entry_versions").DeleteMany(ctx, tenantFilter(ctx, bson.M{"name": name}))
-	return err
+	})
 }
 
 type registryEntryVersionDoc struct {
