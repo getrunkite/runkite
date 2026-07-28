@@ -76,7 +76,9 @@ The `dev` command auto-discovers `langgraph.json` in the current directory. Outp
   Runkite Control Plane (dev)
   HTTP API:    http://localhost:2026
   gRPC bridge: localhost:50051
+  Admin UI:    http://localhost:2026/admin/
   Health:      http://localhost:2026/health
+  Metrics:     http://localhost:2026/metrics
 
 INF state store: sqlite path=./runkite.db
 INF transport: in-memory

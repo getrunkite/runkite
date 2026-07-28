@@ -1,6 +1,14 @@
 # Runkite — development and test targets
 
-VERSION ?= dev
+# Auto-derives from the nearest git tag when one exists (e.g. "v1.0.0",
+# or "v1.0.0-3-gabc1234" for commits past the last tag). With no tags
+# at all, `--always` falls back to the short commit hash instead (e.g.
+# "574b65b", or "574b65b-dirty" with uncommitted changes) -- NOT the
+# literal string "dev"; that only happens if the `git` invocation itself
+# fails (not a git repo, git not installed). Override explicitly with
+# `make build VERSION=v1.0.0` if you want a specific value regardless of
+# what HEAD currently resolves to.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)

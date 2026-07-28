@@ -1,6 +1,6 @@
 {
   "name": "runkite-runner",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Runkite Runner Protocol SDK for TypeScript/LangGraph.js -- connects to a Runkite control plane, executes LangGraph.js agents, and streams events back. TypeScript/Node equivalent of the Python runner (runkite_runner), proving the Runner Protocol is genuinely language-agnostic.",
   "type": "module",
   "bin": {

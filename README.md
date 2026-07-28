@@ -96,6 +96,8 @@ async for event in client.runs.stream(
     print(event.event, event.data)
 ```
 
+For a more detailed, step-by-step walkthrough (writing a custom agent, HITL, auth, connectors, enabling Postgres/Redis, production compose), see [`docs/quickstart.md`](docs/quickstart.md).
+
 ## CLI Reference
 
 ```
@@ -218,7 +220,7 @@ Example (webhook sidecar):
 
 ## Multi-tenancy
 
-Flat tenant scoping (master plan: "workspace/org/team hierarchy with isolated data" -- a flat `tenant_id` is the actual scope built; a hierarchy can be layered on top later via a naming convention without a schema change, and wasn't needed to satisfy anything else already built, including `rate_limit.per_tenant`). Opt-in and fully additive: with no `auth` configured (or a provider that doesn't supply a tenant), every request resolves to an implicit `default` tenant -- exactly today's single-tenant behavior, unchanged.
+Flat tenant scoping -- a full workspace/org/team hierarchy with isolated data was considered, but a flat `tenant_id` is the actual scope built; a hierarchy can be layered on top later via a naming convention without a schema change, and wasn't needed to satisfy anything else already built, including `rate_limit.per_tenant`. Opt-in and fully additive: with no `auth` configured (or a provider that doesn't supply a tenant), every request resolves to an implicit `default` tenant -- exactly today's single-tenant behavior, unchanged.
 
 **Enabling it** is one field on whichever auth provider is already configured:
 
@@ -239,7 +241,7 @@ Flat tenant scoping (master plan: "workspace/org/team hierarchy with isolated da
 **What's control-plane-wide, not per-tenant** (deployment config, not tenant data): `auth`, `rate_limit`, `webhooks`, `custom_routes`, and connector definitions. Agents/cron schedules bootstrapped from `langgraph.json` at startup always land in the `default` tenant -- a config file is one deployment-wide artifact, not tenant-scoped data; a specific tenant's own agents/schedules would need to be created dynamically via the API under that tenant's authenticated context, not static config.
 
 **Known gaps, stated plainly, not hidden**:
-- **Direct-mode runner store/checkpoint access always operates as the `default` tenant.** A direct-mode runner (Python or TypeScript) talks straight to Postgres with a raw DB connection, not an authenticated HTTP request -- there's no tenant identity to carry across that boundary without a Runner Protocol wire change. This is exactly the master plan's own Direct Mode Trust Model guidance: proxy mode is the recommended path for real per-tenant store/checkpoint isolation; direct mode is documented as bypassing control-plane authz on that data in multi-tenant deployments, not something this feature silently fixed.
+- **Direct-mode runner store/checkpoint access always operates as the `default` tenant.** A direct-mode runner (Python or TypeScript) talks straight to Postgres with a raw DB connection, not an authenticated HTTP request -- there's no tenant identity to carry across that boundary without a Runner Protocol wire change. This is a known, documented trade-off of direct mode (see Runners below): proxy mode is the recommended path for real per-tenant store/checkpoint isolation; direct mode bypasses control-plane authz on that data in multi-tenant deployments, not something this feature silently fixed.
 - **No central tenant registry.** A tenant "exists" the moment any resource is tagged with it -- there's no `POST /tenants` to pre-create one, list all known tenants, or manage tenant-level settings. Fine for a flat, claim-driven model; would matter if a full org/workspace/team hierarchy is built later. The Admin UI's Overview/Agents/Threads/Runs/Cron views do surface `tenant_id` per row across every tenant (see Admin UI below), which covers *visibility* -- there's just no dedicated tenant *management* surface yet.
 - **A pre-existing (upgraded, not freshly created) database keeps its original single-column primary keys** on `agents`/`agent_schemas`/`store_items`/`cron_schedules`/`cron_claims` even after the migration adds `tenant_id` -- SQLite and Postgres both refuse to widen a primary key in place. Explicit unique indexes are created alongside so upserts still work correctly either way; every query still filters by `tenant_id` regardless, so isolation itself holds on both fresh and upgraded databases -- confirmed by running the full conformance suite against a real pre-existing (pre-multi-tenancy) Postgres database, not just fresh ones.
 
@@ -328,7 +330,7 @@ See `examples/echo_agent_ts/factoryGraph.ts` for a minimal working example, and 
 
 ## Vector Store
 
-Semantic search over embeddings (master plan: "Vector/semantic store"), backed by **pgvector** (Tier 1, SQL-based) or **Qdrant** (the non-SQL exemplar, same role Mongo plays for the state store -- proof the `VectorStore` interface is implementable against a real standalone vector database, not just a Postgres extension). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
+Semantic search over embeddings, backed by **pgvector** (Tier 1, SQL-based) or **Qdrant** (the non-SQL exemplar, same role Mongo plays for the state store -- proof the `VectorStore` interface is implementable against a real standalone vector database, not just a Postgres extension). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
 
 ```json
 {
@@ -415,7 +417,7 @@ Standard closed/open/half-open state machine: closed passes calls through and co
 
 ## Custom Routes
 
-User-defined HTTP endpoints mounted at `/custom/*` alongside the Agent Protocol API (master plan: "Custom routes"). From the control plane's side, both modes below are the exact same mechanism -- a reverse proxy to `custom_routes.url` in `langgraph.json`, with the `/custom` prefix stripped before forwarding (`/custom/webhook` reaches the target as `/webhook`). Unreachable target returns `502`; unconfigured returns `404`.
+User-defined HTTP endpoints mounted at `/custom/*` alongside the Agent Protocol API. From the control plane's side, both modes below are the exact same mechanism -- a reverse proxy to `custom_routes.url` in `langgraph.json`, with the `/custom` prefix stripped before forwarding (`/custom/webhook` reaches the target as `/webhook`). Unreachable target returns `502`; unconfigured returns `404`.
 
 **Sidecar mode** (language-agnostic): run any HTTP service yourself, point `custom_routes.url` at it. Works for non-Python routes, or routes that need independent scaling/deployment from the runner.
 
@@ -432,7 +434,7 @@ User-defined HTTP endpoints mounted at `/custom/*` alongside the Agent Protocol 
 
 ## Agent-to-Agent (A2A)
 
-An agent calls another agent as a sub-task, mid-execution (master plan: "Agent-to-agent (A2A): agent calls agent via the same Agent Protocol API -- native sub-agent delegation"). The mechanism is deliberately **not** a new protocol surface -- it's the exact same `POST /threads/{id}/runs` + wait-for-result path any client already uses, just reachable from inside a runner's own process via one new internal route (`POST /internal/a2a/runs`) instead of a public one.
+An agent calls another agent as a sub-task, mid-execution -- native sub-agent delegation via the same Agent Protocol API. The mechanism is deliberately **not** a new protocol surface -- it's the exact same `POST /threads/{id}/runs` + wait-for-result path any client already uses, just reachable from inside a runner's own process via one new internal route (`POST /internal/a2a/runs`) instead of a public one.
 
 **Python SDK**: `call_agent` (`python/runkite_runner/a2a.py`) is what a node calls, using the exact `config` LangGraph already passes it -- everything needed (the calling run's own `run_id`, the authenticated user to forward) is already there:
 
@@ -488,7 +490,7 @@ Three things this adds on top of the shared run-creation/wait path:
 
 ## Agent Marketplace / Registry
 
-A searchable catalog of agent definitions (master plan: "Agent marketplace / registry: publish, discover, and deploy agent definitions"). **Minimal viable registry** scope, chosen deliberately: publish/search/get/version-history via API and Admin UI, no security review workflow, and no automatic clone-and-execute deploy pipeline. A registry entry is metadata plus a `source_ref` -- a git URL, a plain URL, or an inline `langgraph.json` snippet -- pointing at where a human (or their own tooling) goes to actually wire it into a deployment. This is deliberately a catalog, not a package manager's install step: running arbitrary fetched code is a fundamentally different trust/sandboxing problem than a searchable listing, and out of scope here.
+A searchable catalog of agent definitions -- publish, discover, and deploy agent definitions. **Minimal viable registry** scope, chosen deliberately: publish/search/get/version-history via API and Admin UI, no security review workflow, and no automatic clone-and-execute deploy pipeline. A registry entry is metadata plus a `source_ref` -- a git URL, a plain URL, or an inline `langgraph.json` snippet -- pointing at where a human (or their own tooling) goes to actually wire it into a deployment. This is deliberately a catalog, not a package manager's install step: running arbitrary fetched code is a fundamentally different trust/sandboxing problem than a searchable listing, and out of scope here.
 
 ```
 PUT    /registry/entries/{name}                   Publish (create or new version)
@@ -523,7 +525,7 @@ Versioning follows the exact same convention as agent versioning above: publishi
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP/SSE surface
-- State persistence (SQLite default, Postgres opt-in)
+- State persistence (SQLite default; Postgres, MySQL, or MongoDB opt-in)
 - Transport layer (in-memory default, Redis opt-in)
 - Auth engine (JWT, API key, webhook, plus a separate runner-token tier for the gRPC bridge)
 - Connector/MCP registry
@@ -612,7 +614,7 @@ Live-verified end to end against a real control plane -- manually, the same way 
 
 ### Framework Adapters
 
-Four more Python runners (`python/adapters/{crewai_adapter,llamaindex_adapter,autogen_adapter,langchain_adapter}/`), each proving the control plane never assumed LangGraph -- built on a new shared, framework-agnostic loop (`runkite_runner.generic_worker`, extracted from but not replacing `worker.py`'s LangGraph-specific one) that handles only the gRPC polling/streaming/status-reporting mechanics. Each adapter is a thin translation layer implementing just two methods (`load_config`, `execute`), matching the master plan's own "small framework-adapter shim" description:
+Four more Python runners (`python/adapters/{crewai_adapter,llamaindex_adapter,autogen_adapter,langchain_adapter}/`), each proving the control plane never assumed LangGraph -- built on a new shared, framework-agnostic loop (`runkite_runner.generic_worker`, extracted from but not replacing `worker.py`'s LangGraph-specific one) that handles only the gRPC polling/streaming/status-reporting mechanics. Each adapter is a thin translation layer implementing just two methods (`load_config`, `execute`) -- a small framework-adapter shim:
 
 | | CrewAI | LlamaIndex | AutoGen | Plain LangChain |
 |---|---|---|---|---|
@@ -877,7 +879,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 | `examples/approval_agent/` | HITL interrupt/resume with `langgraph.types.interrupt()` |
 | `examples/slow_agent/` | Long-running agent for streaming/cancel testing |
 | `examples/all_agents/` | Multi-agent config referencing all example graphs |
-| `examples/cron_agent/` | Cron-scheduled daily run (master plan: "Cron scheduler") |
+| `examples/cron_agent/` | Cron-scheduled daily run |
 | `examples/store_agent/` | Uses `get_store()` to prove Store Dual Mode's direct/proxy interop |
 | `examples/custom_routes_agent/` | FastAPI app hosted in-runner, reachable via `/custom/*` |
 | `examples/echo_agent_ts/` | Echo, slow (cancel), approval (HITL), and factory-graph agents, in TypeScript/LangGraph.js -- proves the Runner Protocol is language-agnostic |
@@ -893,7 +895,7 @@ Honest gaps, not hidden ones:
 - **Authorization is coarse-grained.** Permissions are enforced at `read`/`write`/`admin` method-level granularity (see Auth section), not per-resource ACLs.
 - **`db downgrade` isn't implemented.** The schema is a single idempotent migration, not versioned up/down migrations.
 - **OTel tracing covers the control plane, not runner-internal spans.** Neither runner's own LLM calls, tool calls, etc. are wrapped in OTel spans yet -- but the run's real W3C `traceparent` is already propagated to both (`RunAssignment.trace_context`), so a runner-side OTel integration (e.g. wiring LangChain's tracing callback to the same propagator) has what it needs and nests correctly under the same trace the moment it's added.
-- **Direct-mode store/checkpoint access is single-tenant regardless of multi-tenancy config.** See the Multi-tenancy section's "Known gaps" -- this is the master plan's own documented Direct Mode Trust Model trade-off, not new.
+- **Direct-mode store/checkpoint access is single-tenant regardless of multi-tenancy config.** See the Multi-tenancy section's "Known gaps" -- a known, documented trade-off of direct mode (see Runners above), not new.
 - **No central tenant registry, and no user/API-key management UI.** See Multi-tenancy and Admin UI -- a tenant exists implicitly the moment a resource is tagged with it, and there's no persisted user/API-key table to manage in the first place (`api_key` entries are static config).
 - **`on_tool_call` requires runner cooperation.** The control plane fires it whenever it sees a RunEvent with `method: "tool_call"`, but doesn't parse LangGraph/LangChain message shapes itself (staying framework-agnostic) -- it's up to a framework-aware runner to emit that method. Both LangGraph runners do: Python's `worker.py` (`find_new_tool_calls`) and the TypeScript runner's `executeRun.ts` (`findNewToolCalls`, a direct port -- same recursive scan for `AIMessage.tool_calls`, same dedup-by-`id` semantics, same "checked before interrupt/cancel handling in the stream loop" ordering) both scan every stream chunk and dedupe by tool-call `id` so a message seen in both `values` and `updates` mode (if both are requested) only fires once. Live-verified end to end for Python: `examples/react_agent` (a real `StateGraph` + `ToolNode`, not a mock) run through the real control plane + real Python runner, with a webhook configured for `tool_call`, actually delivers `{"name":"search","args":{...},"id":"call_001"}` to an external receiver; the TypeScript port is unit-tested against the same message shapes (`executeRun.test.ts`) but not yet re-verified against a live tool-using TS example graph the same way. `generic_worker.py` still doesn't emit it -- `run_start`/`run_complete`/`error`/`interrupt` are fully wired for every runner and fire from real control-plane-observed lifecycle transitions regardless.
 - **In-runner custom routes are ASGI-only.** `uvicorn` (the SDK's only custom-routes dependency) doesn't serve WSGI apps -- Flask needs an adapter (e.g. `a2wsgi.WSGIMiddleware`) wrapped around it first. Sidecar mode has no such restriction (any language, any framework).
