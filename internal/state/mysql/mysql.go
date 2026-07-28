@@ -786,3 +786,203 @@ func scanThread(row rowScanner) (*models.Thread, error) {
 	json.Unmarshal(valsBytes, &t.Values)
 	return &t, nil
 }
+
+// nullableJSON returns nil (SQL NULL) for empty/absent JSON data instead
+// of passing an empty byte slice through -- MySQL's JSON column type
+// rejects an empty string as invalid JSON syntax, but happily accepts
+// SQL NULL for a nullable column. Non-empty data (including the 4-byte
+// literal "null") passes through unchanged.
+func nullableJSON(data []byte) interface{} {
+	if len(data) == 0 {
+		return nil
+	}
+	return []byte(data)
+}
+
+// nullableString/nullStringToPtr convert between a *string model field
+// (nil = absent, e.g. Run.ParentRunID on a top-level run) and the
+// sql.NullString round-trip database/sql requires for nullable TEXT/
+// VARCHAR columns. Unlike pgx (used by the Postgres backend), the
+// standard database/sql driver interface go-sql-driver/mysql implements
+// has no built-in support for scanning directly into a **string, so
+// every nullable *string column here goes through sql.NullString
+// instead -- same pattern the SQLite backend uses for the same reason
+// (also a database/sql driver).
+func nullableString(s *string) interface{} {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
+func nullStringToPtr(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	v := s.String
+	return &v
+}
+
+// --------------------------------------------------------------------------
+// Runs
+// --------------------------------------------------------------------------
+
+func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
+	meta, _ := json.Marshal(run.Metadata)
+	// error_msg is written explicitly as '' rather than left to a
+	// schema-level DEFAULT: unlike Postgres, plain MySQL TEXT columns
+	// reject a literal string DEFAULT outright (ER_BLOB_CANT_HAVE_DEFAULT,
+	// confirmed against a live MySQL 8.4 container) -- only an
+	// expression-syntax default like `DEFAULT ('')` is accepted, and
+	// that's a more obscure dialect quirk to lean on than just writing
+	// the value explicitly here, where every other Run field is
+	// already written explicitly. scanRun's plain string destination
+	// for this column (not sql.NullString) depends on this column
+	// never actually being SQL NULL for an app-created row.
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
+		nullableJSON(run.Input), nullableJSON(run.Config), "",
+		run.CreatedAt, run.UpdatedAt, nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
+	return err
+}
+
+func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE run_id = ?`
+	args := []interface{}{runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	r, err := scanRun(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
+		}
+		return nil, err
+	}
+	return r, nil
+}
+
+func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error {
+	now := time.Now().UTC()
+	query := `UPDATE runs SET status = ?, output = ?, error_msg = ?, updated_at = ? WHERE run_id = ?`
+	args := []interface{}{string(status), nullableJSON(output), errMsg, now, runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (s *Store) DeleteRun(ctx context.Context, runID string) error {
+	query := `DELETE FROM runs WHERE run_id = ?`
+	args := []interface{}{runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "run", ID: runID}
+	}
+	return nil
+}
+
+func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([]*models.Run, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	var args []interface{}
+	var where []string
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, "tenant_id = ?")
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if req.Status != nil {
+		where = append(where, "status = ?")
+		args = append(args, string(*req.Status))
+	}
+	if req.ThreadID != "" {
+		where = append(where, "thread_id = ?")
+		args = append(args, req.ThreadID)
+	}
+	if req.AgentID != "" {
+		where = append(where, "agent_id = ?")
+		args = append(args, req.AgentID)
+	}
+	// Same MySQL scalar-vs-JSON comparison rule SearchThreads relies
+	// on: JSON_EXTRACT(...) returns a JSON value, and comparing it with
+	// = against a non-JSON operand implicitly casts that operand to
+	// JSON first, so a plain Go string on the right still matches a
+	// JSON string on the left without needing JSON_UNQUOTE.
+	for k, v := range req.Metadata {
+		where = append(where, "JSON_EXTRACT(metadata, ?) = ?")
+		path := "$." + k
+		if sv, ok := v.(string); ok {
+			args = append(args, path, sv)
+		} else {
+			valJSON, _ := json.Marshal(v)
+			args = append(args, path, string(valJSON))
+		}
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, req.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	runs := []*models.Run{}
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
+func scanRun(row rowScanner) (*models.Run, error) {
+	var r models.Run
+	var metaBytes, inputBytes, configBytes, outputBytes []byte
+	var parentRunID, rootRunID sql.NullString
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &parentRunID, &rootRunID, &r.Depth); err != nil {
+		return nil, err
+	}
+	r.ParentRunID = nullStringToPtr(parentRunID)
+	r.RootRunID = nullStringToPtr(rootRunID)
+	if metaBytes != nil {
+		json.Unmarshal(metaBytes, &r.Metadata)
+	}
+	if inputBytes != nil {
+		r.Input = json.RawMessage(inputBytes)
+	}
+	if configBytes != nil {
+		r.Config = json.RawMessage(configBytes)
+	}
+	if outputBytes != nil {
+		r.Output = json.RawMessage(outputBytes)
+	}
+	r.AssistantID = r.AgentID // SDK compat
+	return &r, nil
+}
