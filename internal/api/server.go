@@ -454,21 +454,25 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // justify. Upgrade path if this ever needs closing: add that as a new
 // state.Store method instead of two separate calls.
 func threadHasOtherActiveRun(ctx context.Context, store state.Store, threadID, excludeRunID string) bool {
-	runs, err := store.SearchRuns(ctx, &models.RunSearchRequest{
-		ThreadID: threadID,
-		Limit:    50,
-	})
-	if err != nil {
-		// Fail closed: skip the release rather than risk clobbering a
-		// newer claim when we can't tell.
-		return true
-	}
-	for _, r := range runs {
-		if r.RunID == excludeRunID {
-			continue
-		}
-		if r.Status == models.RunStatusPending || r.Status == models.RunStatusRunning {
+	// Filter by status -- an unfiltered newest-N search hides older
+	// pending/running runs behind a flood of cache-hit success rows on a
+	// hot thread (real bug: StatusCallback then idled a busy thread).
+	for _, st := range []models.RunStatus{models.RunStatusPending, models.RunStatusRunning} {
+		st := st
+		runs, err := store.SearchRuns(ctx, &models.RunSearchRequest{
+			ThreadID: threadID,
+			Status:   &st,
+			Limit:    5,
+		})
+		if err != nil {
+			// Fail closed: skip the release rather than risk clobbering a
+			// newer claim when we can't tell.
 			return true
+		}
+		for _, r := range runs {
+			if r.RunID != excludeRunID {
+				return true
+			}
 		}
 	}
 	return false
@@ -724,9 +728,29 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, models.ErrorResponse{Message: msg})
 }
 
+// maxJSONBodyBytes caps request bodies decoded by readJSON. Without a
+// bound, a single POST /runs/search (or any JSON handler) can pin
+// unbounded memory in the decoder -- the opposite of the scale goal.
+const maxJSONBodyBytes = 1 << 20 // 1 MiB
+
+// maxSearchLimit caps Limit on search endpoints. Stores historically
+// treated Limit<=0 as "no limit" / a huge default; a client sending
+// {"limit":1000000} would scan and marshal the world.
+const maxSearchLimit = 100
+
+func clampSearchLimit(limit, defaultLimit int) int {
+	if limit <= 0 {
+		return defaultLimit
+	}
+	if limit > maxSearchLimit {
+		return maxSearchLimit
+	}
+	return limit
+}
+
 func readJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(v)
+	return json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)).Decode(v)
 }
 
 // ErrA2ADepthExceeded means creating this run would exceed the

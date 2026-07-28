@@ -118,6 +118,7 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 
 	if !req.Wait {
 		if err := s.enqueue(ctx, assignment); err != nil {
+			s.rollbackCreatedRun(ctx, run)
 			writeError(w, http.StatusInternalServerError, "failed to enqueue")
 			return
 		}

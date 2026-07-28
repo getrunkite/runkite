@@ -111,9 +111,7 @@ func (s *Server) handleSearchThreads(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Limit <= 0 {
-		req.Limit = 10
-	}
+	req.Limit = clampSearchLimit(req.Limit, 10)
 
 	threads, err := s.store.SearchThreads(r.Context(), &req)
 	if err != nil {

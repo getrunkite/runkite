@@ -14,9 +14,7 @@ func (s *Server) handleSearchAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Limit <= 0 {
-		req.Limit = 10
-	}
+	req.Limit = clampSearchLimit(req.Limit, 10)
 
 	agents, err := s.store.SearchAgents(r.Context(), &req)
 	if err != nil {
@@ -163,9 +161,7 @@ func (s *Server) handleSearchAssistants(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Limit <= 0 {
-		req.Limit = 10
-	}
+	req.Limit = clampSearchLimit(req.Limit, 10)
 
 	agents, err := s.store.SearchAgents(r.Context(), &req)
 	if err != nil {

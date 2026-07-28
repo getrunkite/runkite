@@ -13,6 +13,13 @@ set as parent_run_id, the authenticated user to forward as
 on_behalf_of) is already there, set by `build_run_config` in worker.py
 for every run. A node function just calls
 ``await call_agent(config, "other_agent", {"messages": [...]})``.
+
+Operational note: with ``wait=True`` (the default), the parent run's
+worker slot stays occupied until the child finishes. A runner process
+with ``concurrency=1`` therefore deadlocks on nested A2A -- the child
+job cannot be dequeued until the parent frees its slot. Use
+concurrency >= 2 (or ``wait=False`` + poll) for any graph that
+delegates synchronously.
 """
 
 from __future__ import annotations

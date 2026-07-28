@@ -231,6 +231,7 @@ func (s *Server) runStartCommandCore(r *http.Request, threadID string, cmd *mode
 		return nil, err
 	}
 	if err := s.enqueue(r.Context(), assignment); err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		return nil, err
 	}
 	return run, nil
@@ -262,6 +263,7 @@ func (s *Server) inputRespondCommandCore(r *http.Request, threadID string, cmd *
 		return nil, err
 	}
 	if err := s.enqueue(r.Context(), assignment); err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		return nil, err
 	}
 	return run, nil

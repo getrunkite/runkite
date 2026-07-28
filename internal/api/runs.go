@@ -35,7 +35,12 @@ func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCrea
 // HTTP call site (via createRun, above) and the cron scheduler (which has
 // no *http.Request to derive a context from -- see internal's cron loop in
 // cmd/serve.go).
-func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (*models.Run, *transport.RunAssignment, error) {
+//
+// Named returns so a failed path after TryClaimThread can release the
+// thread claim via defer -- without that, an A2A parent-lookup failure or
+// CreateRun error left the thread stuck busy forever (no future run on
+// that thread could claim it).
+func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
 	now := time.Now().UTC()
 	runID := uuid.New().String()
 
@@ -83,7 +88,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	}
 
 	// Ensure thread exists (create if requested)
-	_, err := s.store.GetThread(ctx, threadID)
+	_, err = s.store.GetThread(ctx, threadID)
 	if err != nil {
 		ifNotExists := req.IfNotExists
 		if ifNotExists == "" {
@@ -127,13 +132,23 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// conditional UPDATE. Two concurrent requests can never both succeed here --
 	// checking status first and writing busy second (two separate calls) is a
 	// TOCTOU race under real concurrency, confirmed empirically before this fix.
-	claimed, err := s.store.TryClaimThread(ctx, threadID)
-	if err != nil {
-		return nil, nil, err
+	claimed, claimErr := s.store.TryClaimThread(ctx, threadID)
+	if claimErr != nil {
+		return nil, nil, claimErr
 	}
 	if !claimed {
 		return nil, nil, &state.ErrConflict{Resource: "thread", ID: threadID}
 	}
+	// Release the claim on any subsequent error before CreateRun succeeds
+	// (A2A parent missing, depth exceeded, CreateRun failure). After
+	// CreateRun the pending run owns the claim and callers that fail
+	// enqueue must use rollbackCreatedRun instead.
+	created := false
+	defer func() {
+		if err != nil && !created {
+			_ = s.store.SetThreadStatus(ctx, threadID, models.ThreadStatusIdle)
+		}
+	}()
 
 	// Agent-to-Agent (A2A) delegation bookkeeping: only set when this run
 	// is being created via POST /internal/a2a/runs (req.ParentRunID is
@@ -146,13 +161,15 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	var rootRunID *string
 	depth := 0
 	if req.ParentRunID != nil {
-		parent, err := s.store.GetRun(ctx, *req.ParentRunID)
+		var parent *models.Run
+		parent, err = s.store.GetRun(ctx, *req.ParentRunID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("a2a: look up parent run %s: %w", *req.ParentRunID, err)
 		}
 		depth = parent.Depth + 1
 		if depth > s.a2aMaxDepthOrDefault() {
-			return nil, nil, &ErrA2ADepthExceeded{Depth: depth, MaxDepth: s.a2aMaxDepthOrDefault()}
+			err = &ErrA2ADepthExceeded{Depth: depth, MaxDepth: s.a2aMaxDepthOrDefault()}
+			return nil, nil, err
 		}
 		if parent.RootRunID != nil {
 			rootRunID = parent.RootRunID
@@ -203,9 +220,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		}
 	}
 
-	if err := s.store.CreateRun(ctx, run); err != nil {
+	if err = s.store.CreateRun(ctx, run); err != nil {
 		return nil, nil, err
 	}
+	created = true // pending run owns the claim; do not idle the thread on later returns
 
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "created").Inc()
 	metrics.ActiveRuns.Inc()
@@ -334,6 +352,25 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	return run, assignment, nil
 }
 
+// rollbackCreatedRun cleans up after createRunCtx succeeded but a later
+// enqueue (or equivalent) failed: the run is stuck pending, the thread
+// is stuck busy, and ActiveRuns was already incremented. Without this,
+// that thread can never accept another run.
+func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
+	if run == nil {
+		return
+	}
+	_ = s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
+	metrics.ActiveRuns.Dec()
+	if !threadHasOtherActiveRun(ctx, s.store, run.ThreadID, run.RunID) {
+		_ = s.store.SetThreadStatus(ctx, run.ThreadID, models.ThreadStatusIdle)
+	}
+	// Close after any Subscribe that may have already happened (stream/wait
+	// paths subscribe before enqueue) so tailers and broker state do not leak.
+	_ = s.broker.Close(run.RunID)
+	s.finishRun(run.RunID, run.ThreadID, run.AgentID, models.RunStatusError, "enqueue failed")
+}
+
 // DispatchScheduledRun creates and enqueues a run with no HTTP request
 // involved at all -- for the cron scheduler (see cmd/cron.go) or any other
 // non-HTTP caller. Uses a fixed thread per schedule name ("cron:<name>")
@@ -349,6 +386,7 @@ func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID
 		return nil, err
 	}
 	if err := s.enqueue(ctx, assignment); err != nil {
+		s.rollbackCreatedRun(ctx, run)
 		return nil, err
 	}
 	return run, nil
@@ -412,6 +450,16 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	cached, cacheErr := s.store.GetCachedRunResult(ctx, cacheKey)
 	if cacheErr != nil {
 		return nil, false, nil // miss (including "not found or expired") -- caller proceeds normally
+	}
+
+	// Cache hits run before TryClaimThread. If the thread is already busy
+	// with a real run, mutating values/checkpoint here races that run and
+	// leaves two "success" narratives for one thread. Refuse the hit and
+	// let the caller take the normal claim path (which will 409).
+	if th, thErr := s.store.GetThread(ctx, threadID); thErr == nil && th != nil {
+		if th.Status == models.ThreadStatusBusy {
+			return nil, false, &state.ErrConflict{Resource: "thread", ID: threadID}
+		}
 	}
 
 	outputJSON, _ := json.Marshal(cached.Output)
@@ -571,6 +619,7 @@ func (s *Server) handleCreateBackgroundRun(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := s.enqueue(r.Context(), assignment); err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to enqueue run")
 		return
 	}
@@ -666,9 +715,7 @@ func (s *Server) handleSearchRuns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Limit <= 0 {
-		req.Limit = 10
-	}
+	req.Limit = clampSearchLimit(req.Limit, 10)
 
 	runs, err := s.store.SearchRuns(r.Context(), &req)
 	if err != nil {
@@ -718,6 +765,7 @@ func (s *Server) handleCreateThreadRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.enqueue(r.Context(), assignment); err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to enqueue run")
 		return
 	}
@@ -880,11 +928,13 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request, run *models.R
 	// Subscribe BEFORE enqueuing (no race)
 	eventCh, err := s.broker.Subscribe(r.Context(), run.RunID)
 	if err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to subscribe to events")
 		return
 	}
 
 	if err := s.enqueue(r.Context(), assignment); err != nil {
+		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to enqueue run")
 		return
 	}
@@ -1052,10 +1102,12 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	// Subscribe BEFORE enqueuing
 	eventCh, err := s.broker.Subscribe(ctx, run.RunID)
 	if err != nil {
+		s.rollbackCreatedRun(ctx, run)
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
 	}
 
 	if err := s.enqueue(ctx, assignment); err != nil {
+		s.rollbackCreatedRun(ctx, run)
 		return nil, fmt.Errorf("failed to enqueue: %w", err)
 	}
 

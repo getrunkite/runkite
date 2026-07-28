@@ -153,10 +153,19 @@ func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views)
 }
 
-// GET /admin-api/agents/{agentID}
+// adminScopedAgentContext mirrors adminScopedRegistryContext: agent_id is
+// only unique within a tenant. System-context GetAgent under a cross-tenant
+// ID collision returns an arbitrary match. ?tenant_id= scopes the lookup.
+func adminScopedAgentContext(r *http.Request) context.Context {
+	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
+		return tenant.WithContext(r.Context(), tid)
+	}
+	return tenant.SystemContext(r.Context())
+}
+
+// GET /admin-api/agents/{agentID}[?tenant_id=]
 func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
-	agent, err := s.store.GetAgent(ctx, r.PathValue("agentID"))
+	agent, err := s.store.GetAgent(adminScopedAgentContext(r), r.PathValue("agentID"))
 	if err != nil {
 		handleStoreError(w, err)
 		return
