@@ -916,3 +916,7 @@ you may not offer Runkite itself as a hosted/managed service to third
 parties without a commercial license. Each release converts to
 Apache 2.0 four years after publication -- see the `LICENSE` file for
 the exact terms.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, running tests, and how to add a new state/vector-store backend, runner language, or framework adapter. Found a security issue? See [`SECURITY.md`](SECURITY.md) instead of opening a public issue.
