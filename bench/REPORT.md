@@ -333,7 +333,7 @@ verified both fail against the pre-fix code and pass after.
    at concurrency=100) is consistent with Redis's inherent network-round-trip cost, not a
    backend-specific defect worth chasing further right now.
 
-### 6. TypeScript runner: slower than Python on the zero-dependency default, on par with Python on the production Redis config -- order-independence confirmed via a reversed-order control, root cause still open
+### 6. TypeScript runner: slower than Python on the zero-dependency default, on par with Python on the production Redis config -- order-independence confirmed, root cause found (a syscall-heavy SQLite driver, not a Go mutex), a fix attempted and reverted after it caused near-total failures
 
 Same methodology as the Python runner's own comparison rows (`examples/echo_agent_ts`,
 concurrency=100, proxy mode for checkpoint/store since the TS runner has no direct-mode
@@ -362,31 +362,59 @@ the ~630-662ms band whether it ran 1st, 2nd (repeat), or 2nd-after-Redis. This r
 "whichever config runs last in a warmed-up process wins" as the explanation -- the two
 configs occupy genuinely separate, non-overlapping latency bands regardless of run order.
 
-**A concrete, testable (but not yet tested) mechanism**: `internal/transport/inprocess.go`'s
-`Broker` uses a single package-level `sync.RWMutex` (`b.mu`) shared across **every
-concurrently-running run**, not one lock per run -- every `Publish` (one call per streamed
-event from any runner) and every `Subscribe` (one call per `/wait` HTTP request) takes the
-same exclusive lock. At concurrency=100, with roughly 300+ total `Publish` calls plus 100
-`Subscribe` calls all serializing through that one mutex, this is a plausible source of exactly
-the kind of added latency (and a source of tail-widening from lock-convoy effects) that
-wouldn't exist for the Redis broker, where each run's event stream is its own Redis key and
-concurrent access is handled by Redis's own server, not a shared Go-side lock. This is the
-same file the leaked-subscription bug (finding 1a) and the unbounded-`c.subs`-map bug were
-found in, so a global lock in this package wouldn't be a novel discovery, just a
-previously-undocumented byproduct of the same "quick, correct, not yet scale-hardened"
-zero-dependency-default design.
+**Root cause investigated with real profiles (RUNKITE_PPROF=1), not just reasoned about --
+the original mutex hypothesis was wrong, and the actual mechanism is more interesting.**
+`runtime.SetMutexProfileFraction(1)`/`runtime.SetBlockProfileRate(1)` were added to `cmd/serve.go`
+(gated behind the same `RUNKITE_PPROF=1` opt-in, since `/debug/pprof/mutex` and
+`/debug/pprof/block` are silently empty forever without them) specifically to test the
+"`Broker`'s single global mutex" hypothesis directly, instead of leaving it as an untested
+guess:
 
-**What this mechanism does NOT yet explain**: the exact same `Broker`/`Queue` code runs
-underneath the Python benchmarks too (it's Go code, not runner-language-specific), yet
-Python's SQLite+in-memory (463ms) was its *fastest* config, the opposite pattern from TS. A
-single shared Go-side lock should add roughly the same absolute contention cost regardless of
-which runner language is on the other end of the gRPC connection -- so if this mechanism is
-real, something about the *relative* size of that added cost versus each runtime's own
-baseline per-job overhead (Python: large and CPU-bound per finding 1c/1d; TS: apparently much
-smaller, unmeasured directly) would have to explain why it's large enough to flip the ordering
-for TS but not for Python. That composition hasn't been tested -- flagged as the concrete next
-step (a CPU/lock-contention profile of the control plane specifically, correlated against
-which runner is attached) rather than asserted here.
+- **Mutex contention is negligible for both configs**: 118ms total lock-wait delay for
+  SQLite+in-memory, 22ms for Postgres+Redis, over an 18s sampling window at concurrency=100.
+  Not the cause. The original hypothesis above was concrete and testable, and testing it
+  disproved it -- worth stating plainly rather than quietly dropping.
+- **CPU profiling found the real, much larger effect**: over the same 18s window, the SQLite
+  config burned **7.03s of CPU** vs. Postgres+Redis's **4.24s** -- SQLite consumed ~66% MORE
+  total CPU for the identical workload, despite needing zero network hops. `syscall.rawsyscalln`
+  alone accounted for 76.5% of the SQLite config's CPU time (vs. 42.7% for Postgres+Redis,
+  where `runtime.kevent` -- real network I/O polling -- accounts for another 28.3%). The pure-Go
+  `modernc.org/sqlite` driver (no CGo, so no native SQLite C code -- everything, including
+  low-level file I/O, goes through Go's own syscall layer) is simply syscall-heavy per query.
+
+**Why this doesn't show up for Python**: this cost lives entirely in the Go control plane,
+identical code regardless of which runner language is attached -- so it should, in principle,
+be paid equally by both. The likely explanation is proportional, not mechanistic: Python's own
+per-job overhead is already large and CPU-bound (findings 1c/1d: one process pegged at
+~100-106% of a single core), so this SQLite driver cost is a small fraction of Python's ~463ms
+total, while switching Python to Postgres+Redis adds pure network-hop latency on top of an
+already CPU-starved process with no offsetting benefit -- hence Python's SQLite number stays
+its fastest. TS/Node's own per-job overhead for this trivial graph appears to be much smaller
+(unmeasured directly, but consistent with Node's design), so the same SQLite driver cost is a
+proportionally larger share of TS's total, and removing it (switching to Postgres+Redis) is a
+net win for TS despite adding network hops. Not confirmed by isolating TS's own baseline
+overhead directly -- stated as the working theory, not a proven fact.
+
+**Attempted a fix, found it made things drastically worse, reverted it -- documented as a
+real negative result, not silently dropped.** `internal/state/sqlite/sqlite.go` had
+`db.SetMaxOpenConns(1)`, forcing literally every query (reads included) through one Go
+connection -- an obvious thing to try widening given the CPU-cost finding above. Widening it
+to 8 (matching the MySQL backend's own `SetMaxOpenConns(5)`-style convention) passed the full
+`-race` test suite cleanly, but under the actual concurrency=100 loadgen sweep produced a
+**~99.8% error rate**, every single one `SQLITE_BUSY: database is locked`, despite WAL mode +
+a 5s `_busy_timeout` already being configured. The single connection turned out to be
+load-bearing correctness, not just conservative caution: with exactly one connection, Go's own
+`database/sql` connection checkout already serializes every writer *before* a query ever
+reaches SQLite, so SQLite's single-writer lock is never contended by more than one goroutine at
+a time. Opening 8 connections let 8 goroutines reach that lock simultaneously instead, and under
+sustained 100-way write pressure, enough of them exhausted their busy_timeout budget waiting for
+their turn to produce a near-total failure rate. Reverted; confirmed the revert restores the
+original ~630-662ms/0-error baseline exactly (four independent runs across this investigation
+now: 662ms, 650ms, 630ms, and 660ms p50, all zero errors). A real fix for the CPU-cost finding
+would need a materially different design -- e.g. one dedicated write connection plus a separate
+read-only connection pool, since WAL mode's MVCC snapshot reads don't contend with the writer --
+not attempted here; flagged as the concrete next step if SQLite-backed TS throughput becomes a
+priority, now with a profile-verified target instead of a guess.
 
 **Also worth restating plainly, per this report's own MySQL-vs-Redis precedent**: TS's
 Postgres+Redis p50 (598ms, or 580ms on the reversed-order run) is close to Python's
@@ -396,10 +424,17 @@ Postgres+Redis post-fix p50 (910ms) only in the sense that both exist in the sam
 none of these totals are directly comparable to each other, only the percentile latencies are.
 "On par with Python" is a fairer characterization than "ahead of Python" for this gap size.
 
-Bottom line: **the SQLite-vs-Redis inversion for TS is now a confirmed, reproducible, order-
-independent effect** (five runs, two of them a deliberate reversed-order control), not
-explained away as noise -- but its root cause is still open, with one concrete, code-level
-hypothesis (`Broker`'s single global mutex) worth profiling directly before trusting it.
+Bottom line: **the SQLite-vs-Redis inversion for TS is now a confirmed, reproducible,
+order-independent, profile-verified effect** (five loadgen runs including a reversed-order
+control, plus two more profiled runs), not explained away as noise and not left as an
+untested guess either. The mutex hypothesis this report originally proposed was tested and
+disproven (118ms/22ms of total contention, negligible). The real cause -- the pure-Go SQLite
+driver's syscall-heavy queries under full single-connection serialization -- was found via CPU
+profiling, and the obvious fix (widen the connection pool) was attempted, found to cause a
+~99.8% error rate under real load, and reverted. Net result: a fully profile-backed
+explanation for *why* SQLite is slow here, an honestly-reported dead end for the first fix
+tried, and a concretely scoped real fix (separate read/write connection pools) for whoever
+picks this up next.
 
 ## What this report does NOT cover
 
@@ -413,10 +448,13 @@ hypothesis (`Broker`'s single global mutex) worth profiling directly before trus
   resource-constrained comparison above stopped at 100 concurrent users with both systems
   still producing zero errors; pushing further until one fails would need a dedicated run.
 - **The TypeScript runner's own concurrency ceiling under sustained CPU-bound load** --
-  section 6 above measures its latency but doesn't repeat finding 1c/1d's deeper
-  investigation (CPU profiling, `--concurrency`-equivalent dispatch, horizontal replicas) for
-  Node specifically. `worker.ts`'s own poll loop is a single sequential loop with no
-  dispatch-multiple-jobs option at all (unlike the Python runner's
-  `--concurrency`/`RUNKITE_CONCURRENCY` flag) -- worth a dedicated follow-up if TS throughput
-  under real (I/O-wait-dominated) agent workloads becomes a concern. Section 6's surprising
-  SQLite-vs-Redis ordering is also unexplained by a profile, not just this ceiling question.
+  section 6 above profiles the *control plane's* SQLite-vs-Redis difference but doesn't repeat
+  finding 1c/1d's deeper investigation (CPU profiling, `--concurrency`-equivalent dispatch,
+  horizontal replicas) for the *runner* side, i.e. Node specifically. `worker.ts`'s own poll
+  loop is a single sequential loop with no dispatch-multiple-jobs option at all (unlike the
+  Python runner's `--concurrency`/`RUNKITE_CONCURRENCY` flag) -- worth a dedicated follow-up
+  if TS throughput under real (I/O-wait-dominated) agent workloads becomes a concern.
+- **A real fix for the SQLite driver's syscall-heavy CPU cost under concurrent load**
+  (section 6) -- root-caused via profiling, but the one fix attempted (widening the connection
+  pool) caused a ~99.8% error rate and was reverted. A real fix needs a different design
+  (dedicated write connection + separate read-only pool) not attempted here.

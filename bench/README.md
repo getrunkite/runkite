@@ -20,6 +20,20 @@ go tool pprof http://localhost:2026/debug/pprof/profile?seconds=30
 curl "http://localhost:2026/debug/pprof/goroutine?debug=1"
 ```
 
+`RUNKITE_PPROF=1` also sets `runtime.SetMutexProfileFraction(1)` and
+`runtime.SetBlockProfileRate(1)` -- both default to 0 (no samples at all)
+unless set explicitly, so `/debug/pprof/mutex` and `/debug/pprof/block`
+would otherwise always come back empty regardless of real contention.
+Added specifically to test (and, in `bench/REPORT.md` section 6, disprove)
+a Go-mutex-contention hypothesis for the TS runner's SQLite-vs-Redis
+finding -- useful for any future "is this actually lock contention"
+question, not a one-off.
+
+```bash
+go tool pprof http://localhost:2026/debug/pprof/mutex
+go tool pprof http://localhost:2026/debug/pprof/block
+```
+
 ## Load generator
 
 `bench/loadgen` drives concurrent create-thread-and-run-and-wait cycles
@@ -70,7 +84,12 @@ one surprising way (section 6): it's slower than Python on the
 zero-dependency default but on par with Python on the production Redis
 config, unlike every other backend/transport combination measured, where
 adding Redis + a real SQL backend always made things slower. Confirmed via
-a deliberate reversed-order control (5 runs total) that this isn't a
-JIT-warm-up artifact -- a real, order-independent effect with one
-concrete, unverified hypothesis (a single global mutex in the in-process
-event broker) worth profiling next.
+a deliberate reversed-order control that this isn't a JIT-warm-up artifact,
+then root-caused with real CPU/mutex profiles (not just reasoned about):
+the pure-Go `modernc.org/sqlite` driver's syscall-heavy queries under full
+single-connection serialization, not Go-level mutex contention as
+originally guessed (mutex profiling showed that hypothesis was wrong --
+negligible contention either way). The obvious fix (widen the connection
+pool) was tried, caused a ~99.8% error rate under real load (SQLite's
+single-writer lock, not the pool size, turned out to be load-bearing), and
+was reverted -- a real fix needs a different design, not attempted here.

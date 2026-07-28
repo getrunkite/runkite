@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -324,7 +325,18 @@ func startServer(opts serverOpts) {
 	// an operator/developer tool, not part of the Agent Protocol surface.
 	if os.Getenv("RUNKITE_PPROF") == "1" {
 		mountPprof(root)
-		slog.Info("pprof: enabled at /debug/pprof/ (RUNKITE_PPROF=1)")
+		// Both default to 0 (no samples collected at all) unless set --
+		// /debug/pprof/mutex and /debug/pprof/block would otherwise
+		// always come back empty regardless of real contention, silently
+		// implying "no contention found" for a profile that was never
+		// actually sampling anything. Rate 1 (sample every contention/
+		// blocking event) is the finest granularity and the right choice
+		// for a short, opt-in diagnostic run -- this flag already carries
+		// its own "real DoS/info-disclosure surface" warning above, so
+		// the added overhead of full sampling isn't a new class of risk.
+		runtime.SetMutexProfileFraction(1)
+		runtime.SetBlockProfileRate(1)
+		slog.Info("pprof: enabled at /debug/pprof/ (RUNKITE_PPROF=1)", "mutex_block_profiling", true)
 	}
 	root.Handle("/", authedAPI)
 

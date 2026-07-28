@@ -38,7 +38,35 @@ func New(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Single connection for SQLite (avoids locking issues)
+	// Single connection for SQLite (avoids locking issues).
+	//
+	// Investigated widening this (bench/REPORT.md section 6: CPU
+	// profiling under 100-way concurrent load showed the pure-Go
+	// modernc.org/sqlite driver's syscall-heavy per-query cost was the
+	// real bottleneck behind SQLite+in-memory being slower than
+	// Postgres+Redis for the TypeScript runner, not Go-level mutex
+	// contention as originally hypothesized -- that part of the
+	// diagnosis holds). But actually widening MaxOpenConns made things
+	// drastically WORSE, not better: a 100-way concurrent create-thread
+	// load (a write-heavy path) against an 8-connection pool produced a
+	// ~99.8% error rate, all "SQLITE_BUSY: database is locked", despite
+	// WAL mode + a 5s _busy_timeout already being set. The single
+	// connection isn't just conservative caution -- it's load-bearing
+	// correctness: with exactly one connection, Go's own
+	// database/sql connection checkout already serializes every writer
+	// before a query ever reaches SQLite, so SQLite's own write lock is
+	// never contended by more than one goroutine at a time. Opening
+	// multiple connections lets that many goroutines reach SQLite's
+	// write-lock layer simultaneously instead, and under sustained
+	// high-concurrency write pressure, more of them exhaust their
+	// busy_timeout budget before ever getting a turn than would with a
+	// single, Go-side, unbounded-wait queue. A real fix for the
+	// underlying CPU-cost finding would need a fundamentally different
+	// design (e.g. one dedicated write connection + a separate
+	// read-only connection pool, since WAL mode's MVCC snapshot reads
+	// don't contend with the writer) -- meaningfully more invasive than
+	// a pool-size tweak, not attempted here. Keeping MaxOpenConns(1)
+	// unconditionally until that redesign happens.
 	db.SetMaxOpenConns(1)
 
 	// Ensure foreign keys are enabled (required for ON DELETE CASCADE)
