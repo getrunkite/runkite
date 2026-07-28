@@ -986,3 +986,132 @@ func scanRun(row rowScanner) (*models.Run, error) {
 	r.AssistantID = r.AgentID // SDK compat
 	return &r, nil
 }
+
+// --------------------------------------------------------------------------
+// Checkpoints
+// --------------------------------------------------------------------------
+
+func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
+	vals, _ := json.Marshal(ts.Values)
+	meta, _ := json.Marshal(ts.Metadata)
+	next, _ := json.Marshal(ts.Next)
+	tasks, _ := json.Marshal(ts.Tasks)
+	interrupts, _ := json.Marshal(ts.Interrupts)
+
+	var parentID *string
+	if ts.ParentCheckpoint != nil {
+		parentID = &ts.ParentCheckpoint.CheckpointID
+	}
+
+	createdAt := time.Now().UTC()
+	if ts.CreatedAt != nil && *ts.CreatedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, *ts.CreatedAt); err == nil {
+			createdAt = parsed
+		}
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
+		nullableString(parentID), vals, meta, next, tasks, interrupts, createdAt)
+	return err
+}
+
+func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error) {
+	query := `SELECT checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at
+		FROM thread_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY created_at DESC LIMIT 1`
+	row := s.db.QueryRowContext(ctx, query, args...)
+
+	ts, err := scanCheckpoint(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "checkpoint", ID: "latest"}
+		}
+		return nil, err
+	}
+	return ts, nil
+}
+
+// ListCheckpoints' "before" filter looks up created_at by checkpoint_id
+// via a subquery rather than joining tenant_id into it -- same as
+// Postgres/SQLite: checkpoint_id is a global primary key (a UUID-like
+// value from the caller, not tenant-scoped), so a plain lookup by ID is
+// enough, and the outer query's own tenant filter already bounds the
+// result set to the caller's tenant regardless of what the subquery
+// matches.
+func (s *Store) ListCheckpoints(ctx context.Context, threadID string, limit int, before string) ([]*models.ThreadState, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	query := `SELECT checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at
+		FROM thread_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	if before != "" {
+		query += ` AND created_at < (SELECT created_at FROM thread_checkpoints WHERE checkpoint_id = ?)`
+		args = append(args, before)
+	}
+	query += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	states := []*models.ThreadState{}
+	for rows.Next() {
+		ts, err := scanCheckpoint(rows)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, ts)
+	}
+	return states, rows.Err()
+}
+
+func scanCheckpoint(row rowScanner) (*models.ThreadState, error) {
+	var ts models.ThreadState
+	var cpID, tID, cpNS string
+	var parentID sql.NullString
+	var valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte
+	var createdAt time.Time
+
+	if err := row.Scan(&cpID, &tID, &cpNS, &parentID, &valsBytes, &metaBytes, &nextBytes, &tasksBytes, &intBytes, &createdAt); err != nil {
+		return nil, err
+	}
+	ts.Checkpoint = models.ThreadCheckpoint{CheckpointID: cpID, ThreadID: tID, CheckpointNS: cpNS}
+	if valsBytes != nil {
+		json.Unmarshal(valsBytes, &ts.Values)
+	}
+	if metaBytes != nil {
+		json.Unmarshal(metaBytes, &ts.Metadata)
+	}
+	if nextBytes != nil {
+		json.Unmarshal(nextBytes, &ts.Next)
+	}
+	if tasksBytes != nil {
+		json.Unmarshal(tasksBytes, &ts.Tasks)
+	}
+	if intBytes != nil {
+		json.Unmarshal(intBytes, &ts.Interrupts)
+	}
+	cat := createdAt.Format(time.RFC3339)
+	ts.CreatedAt = &cat
+	if parentID.Valid {
+		ts.ParentCheckpoint = &models.ThreadCheckpoint{CheckpointID: parentID.String, ThreadID: tID, CheckpointNS: cpNS}
+	}
+	return &ts, nil
+}

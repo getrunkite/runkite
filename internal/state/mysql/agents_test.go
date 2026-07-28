@@ -47,7 +47,7 @@ func newTestStore(t *testing.T) *mysql.Store {
 // since TruncateAll (a test-only concept on every other backend) isn't
 // part of this checkpoint's scope yet either.
 func execTruncate(ctx context.Context, s *mysql.Store) (bool, error) {
-	for _, tbl := range []string{"agent_schemas", "agent_versions", "agents", "runs", "threads"} {
+	for _, tbl := range []string{"agent_schemas", "agent_versions", "agents", "thread_checkpoints", "runs", "threads"} {
 		if err := mysqlExec(ctx, s, "DELETE FROM "+tbl); err != nil {
 			return false, err
 		}
