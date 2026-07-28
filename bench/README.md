@@ -74,22 +74,26 @@ one container, sharing one resource limit) rather than measuring the control pla
 See [`REPORT.md`](REPORT.md) for full results: internal scale tests across
 SQLite/Postgres/MongoDB/MySQL state backends and in-memory/Redis transports,
 plus the TypeScript runner (section 6), and several real correctness/leak
-bugs found and fixed along the way. Headline: all four state backends land
-in the same reasonable latency band for this workload -- the queue/broker
-transport choice (in-memory vs. Redis) is what actually separates the fast
-rows from the slow ones, and even that gap turned out to be secondary to the
-Python runner's own single-job-at-a-time concurrency model (see finding
-1c/1d) once profiled properly. The TypeScript runner bucks this pattern in
-one surprising way (section 6): it's slower than Python on the
-zero-dependency default but on par with Python on the production Redis
-config, unlike every other backend/transport combination measured, where
-adding Redis + a real SQL backend always made things slower. Confirmed via
-a deliberate reversed-order control that this isn't a JIT-warm-up artifact,
-then root-caused with real CPU/mutex profiles (not just reasoned about):
-the pure-Go `modernc.org/sqlite` driver's syscall-heavy queries under full
-single-connection serialization, not Go-level mutex contention as
-originally guessed (mutex profiling showed that hypothesis was wrong --
-negligible contention either way). The obvious fix (widen the connection
-pool) was tried, caused a ~99.8% error rate under real load (SQLite's
-single-writer lock, not the pool size, turned out to be load-bearing), and
-was reverted -- a real fix needs a different design, not attempted here.
+bugs found and fixed along the way. Headline: investigating a surprising
+early result (the TypeScript runner was slower than Python on the
+zero-dependency SQLite default but on par with Python on Postgres+Redis,
+unlike every other combination measured) led to finding and fixing a real,
+previously-undetected bug: `modernc.org/sqlite`'s DSN had silently never
+applied WAL mode or its busy_timeout for the project's entire history (it
+used mattn/go-sqlite3 query-param forms the actual driver ignores). A
+mutex-contention hypothesis for the original asymmetry was tested with real
+profiling and disproven along the way (negligible contention either way).
+Fixing the DSN alone -- no connection-pool change at all -- made SQLite the
+**fastest default single-runner state-backend config** measured for both
+runners: Python's SQLite p50 dropped from 463ms to ~360ms, TypeScript's
+from ~650ms to ~365ms, both ahead of every other state backend including
+each runner's own Postgres+Redis (the only faster row in the whole report
+is a horizontal-runner-replicas config, a different lever entirely). A
+connection-pool-widening idea (reasoned from a CPU profile that turned out
+to be measuring the broken DSN's slow rollback-journal mode, not an
+inherent driver cost) was tried twice and reverted twice: once against the
+still-broken DSN (~99.8% error rate), once against the fixed DSN (worked,
+0 errors, but measurably slower on p50/p90 than just fixing the DSN and
+leaving the pool at 1 -- p99 was roughly a wash between the two pool
+sizes, not a clean loss either way). See REPORT section 6 for the full
+four-stage story.

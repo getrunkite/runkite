@@ -27,10 +27,17 @@ func New(path string) (*SQLiteStore, error) {
 	if path == "" {
 		path = ":memory:"
 	}
-	// WAL mode + busy timeout for concurrent reads + foreign keys enabled
-	dsn := path + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON"
+	// modernc.org/sqlite only honors `_pragma=...` query params (see its
+	// driver.go docs). The mattn/go-sqlite3 forms `_journal_mode` /
+	// `_busy_timeout` / `_foreign_keys` are silently ignored — open
+	// succeeds, pragmas never apply. Caught live: those mattn-style
+	// params left file-backed DBs at journal_mode=delete + busy_timeout=0
+	// for the entire project history until this was fixed. `:memory:`
+	// can't actually be WAL (SQLite reports journal_mode=memory); still
+	// set busy_timeout + foreign_keys there.
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 	if path == ":memory:" {
-		dsn = ":memory:?_journal_mode=WAL&_foreign_keys=ON"
+		dsn = ":memory:?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 	}
 
 	db, err := sql.Open("sqlite", dsn)
@@ -38,35 +45,48 @@ func New(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Single connection for SQLite (avoids locking issues).
+	// Single connection for SQLite (avoids locking issues) -- kept
+	// unconditionally after a four-stage investigation (bench/REPORT.md
+	// section 6), each stage confirmed live with real benchmarks, not
+	// just reasoned about:
 	//
-	// Investigated widening this (bench/REPORT.md section 6: CPU
-	// profiling under 100-way concurrent load showed the pure-Go
-	// modernc.org/sqlite driver's syscall-heavy per-query cost was the
-	// real bottleneck behind SQLite+in-memory being slower than
-	// Postgres+Redis for the TypeScript runner, not Go-level mutex
-	// contention as originally hypothesized -- that part of the
-	// diagnosis holds). But actually widening MaxOpenConns made things
-	// drastically WORSE, not better: a 100-way concurrent create-thread
-	// load (a write-heavy path) against an 8-connection pool produced a
-	// ~99.8% error rate, all "SQLITE_BUSY: database is locked", despite
-	// WAL mode + a 5s _busy_timeout already being set. The single
-	// connection isn't just conservative caution -- it's load-bearing
-	// correctness: with exactly one connection, Go's own
-	// database/sql connection checkout already serializes every writer
-	// before a query ever reaches SQLite, so SQLite's own write lock is
-	// never contended by more than one goroutine at a time. Opening
-	// multiple connections lets that many goroutines reach SQLite's
-	// write-lock layer simultaneously instead, and under sustained
-	// high-concurrency write pressure, more of them exhaust their
-	// busy_timeout budget before ever getting a turn than would with a
-	// single, Go-side, unbounded-wait queue. A real fix for the
-	// underlying CPU-cost finding would need a fundamentally different
-	// design (e.g. one dedicated write connection + a separate
-	// read-only connection pool, since WAL mode's MVCC snapshot reads
-	// don't contend with the writer) -- meaningfully more invasive than
-	// a pool-size tweak, not attempted here. Keeping MaxOpenConns(1)
-	// unconditionally until that redesign happens.
+	// 1. CPU profiling under 100-way concurrent load pinned SQLite+
+	//    in-memory being slower than Postgres+Redis (for the TypeScript
+	//    runner) on "the pure-Go modernc.org/sqlite driver is
+	//    syscall-heavy per query" (ruling out Go-level mutex contention
+	//    first, via a real mutex/block profile). This diagnosis turned
+	//    out itself confounded -- see stage 4.
+	// 2. A first attempt at widening this pool to 8 produced a ~99.8%
+	//    error rate ("SQLITE_BUSY: database is locked") under real
+	//    concurrent write load -- but that attempt was against a DSN
+	//    that silently never applied WAL mode or the busy_timeout it
+	//    claimed to set (see the `_pragma=` comment above): every lock
+	//    collision failed immediately with zero retry budget, not after
+	//    a real 5s wait.
+	// 3. Once the DSN was fixed to use `_pragma=...` (the only form
+	//    modernc.org/sqlite actually honors), widening the pool to 8
+	//    was re-tested and worked cleanly: 0 errors across 4
+	//    independent 30s/concurrency-100 loadgen runs (2 TypeScript, 2
+	//    Python), both runners faster than the original broken-DSN
+	//    baseline.
+	// 4. A direct isolation test -- DSN fixed, pool held at 1, no
+	//    widening at all -- showed the fixed DSN ALONE was faster
+	//    still on p50/p90 for both runners (~360-366ms p50 vs.
+	//    ~390-400ms with pool=8, across 2 runs per runner per config).
+	//    p99 is noisier and roughly comparable between pool=1 and
+	//    pool=8 rather than a clean win either way (pool=8's own p99
+	//    wasn't consistently worse than pool=1's across every run).
+	//    Stage 1's "syscall-heavy driver" diagnosis was itself
+	//    confounded: that CPU profile measured `journal_mode=delete`
+	//    (the broken DSN's slow rollback-journal mode, mislabeled as
+	//    WAL) -- once WAL is genuinely active, most of that cost
+	//    disappears, and connection-pool tuning was never going to fix
+	//    a journal-mode problem. Widening the pool added Go-side
+	//    connection-checkout overhead for no offsetting p50/p90 benefit
+	//    on this write-heavy workload (SQLite's single-writer nature
+	//    caps write throughput at 1 regardless of pool size), so it was
+	//    reverted a second time. See bench/REPORT.md section 6 for the
+	//    full numbers from all four stages.
 	db.SetMaxOpenConns(1)
 
 	// Ensure foreign keys are enabled (required for ON DELETE CASCADE)

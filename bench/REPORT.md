@@ -10,7 +10,7 @@ one host -- no network latency between them).
 
 | Config | Concurrency | Duration | Total | Errors | p50 | p90 | p99 | RSS delta |
 |---|---|---|---|---|---|---|---|---|
-| SQLite + in-process | 100 | 30s | 6,432 | 0 | 463ms | 522ms | 571ms | 48MB |
+| SQLite + in-process (**pre-DSN-fix** -- see section 6, superseded below) | 100 | 30s | 6,432 | 0 | 463ms | 522ms | 571ms | 48MB |
 | Postgres + Redis (pre-fix) | 100 | 30s | 2,608 | 0 | **1,221ms** | 1,463ms | 1,669ms | **223MB** |
 | Postgres + in-memory | 100 | 30s | 5,388 | 0 | 559ms | 597ms | 660ms | 40MB |
 | MongoDB + in-memory | 100 | 30s | 7,752 | 0 | 384ms | 410ms | 474ms | 58MB |
@@ -24,11 +24,30 @@ one host -- no network latency between them).
 | Postgres, **2 runner replicas** `--concurrency 100` each | 100 | 20s | 6,169 | 0 | 308ms | 520ms | 732ms | -- |
 | MySQL + in-memory | 100 | 30s | 6,031 | 0 | 494ms | 546ms | 679ms | 5MB |
 | MySQL + Redis | 100 | 30s | 3,647 | 0 | 798ms | 912ms | 1,717ms | 0MB* |
-| **TS runner**, SQLite + in-memory | 100 | 30s | 4,639 | 0 | 662ms | 699ms | 742ms | 5MB |
-| **TS runner**, SQLite + in-memory (repeat) | 100 | 30s | 4,754 | 0 | 650ms | 711ms | 736ms | 5MB |
+| **TS runner**, SQLite + in-memory (**pre-DSN-fix**) | 100 | 30s | 4,639 | 0 | 662ms | 699ms | 742ms | 5MB |
+| **TS runner**, SQLite + in-memory (pre-DSN-fix, repeat) | 100 | 30s | 4,754 | 0 | 650ms | 711ms | 736ms | 5MB |
 | **TS runner**, Postgres + Redis | 100 | 30s | 5,029 | 0 | 598ms | 655ms | 760ms | 0MB* |
 | **TS runner**, Postgres + Redis (reversed order, run 1st) | 100 | 30s | 5,144 | 0 | 580ms | 638ms | 752ms | 0MB* |
-| **TS runner**, SQLite + in-memory (reversed order, run 2nd) | 100 | 30s | 4,798 | 0 | 630ms | 696ms | 764ms | 0MB* |
+| **TS runner**, SQLite + in-memory (pre-DSN-fix, reversed order, run 2nd) | 100 | 30s | 4,798 | 0 | 630ms | 696ms | 764ms | 0MB* |
+| **TS runner**, SQLite + in-memory (post-DSN-fix, pool=8 -- **tried, reverted**) | 100 | 30s | 7,440 | 0 | 399ms | 531ms | 602ms | 0MB* |
+| **TS runner**, SQLite + in-memory (post-DSN-fix, pool=8, repeat -- tried, reverted) | 100 | 30s | 7,386 | 0 | 398ms | 534ms | 634ms | 0MB* |
+| **Python runner**, SQLite + in-process (post-DSN-fix, pool=8 -- **tried, reverted**) | 100 | 30s | 7,652 | 0 | 383ms | 541ms | 673ms | 0MB* |
+| **Python runner**, SQLite + in-process (post-DSN-fix, pool=8, repeat -- tried, reverted) | 100 | 30s | 7,627 | 0 | 392ms | 536ms | 658ms | 0MB* |
+| **TS runner**, SQLite + in-memory (**post-DSN-fix, pool=1 -- shipped**) | 100 | 30s | 8,199 | 0 | **366ms** | 475ms | 549ms | 0MB* |
+| **TS runner**, SQLite + in-memory (post-DSN-fix, pool=1, repeat -- shipped) | 100 | 30s | 8,492 | 0 | 364ms | 461ms | 628ms | 0MB* |
+| **Python runner**, SQLite + in-process (**post-DSN-fix, pool=1 -- shipped**) | 100 | 30s | 8,154 | 0 | **359ms** | 499ms | 602ms | 0MB* |
+| **Python runner**, SQLite + in-process (post-DSN-fix, pool=1, repeat -- shipped) | 100 | 30s | 8,055 | 0 | 362ms | 497ms | 660ms | 0MB* |
+
+**"pre-DSN-fix" rows are stale, kept for historical context, not current behavior. "pool=8"
+rows are also superseded** -- both are kept to show the investigation's actual path, not
+edited away. A real bug (section 6) meant SQLite's DSN silently never applied WAL mode or its
+busy_timeout for this project's entire history until that section's investigation found and
+fixed it. A first instinct to also widen the connection pool to 8 was tested, worked (0
+errors), but turned out unnecessary and mildly counterproductive on p50/p90 once isolated from
+the DSN fix (p99 was a wash, not a clean loss for pool=8) -- **the shipped configuration is
+the fixed DSN with `MaxOpenConns(1)` unchanged from its original value**, which beats pool=8
+on p50/p90 for both runners. See section 6
+for the full four-stage story.
 
 Zero errors across every configuration and every concurrency level -- the correctness bar
 (from the earlier smoke test and the full conformance suite) holds under load too, this
@@ -333,11 +352,11 @@ verified both fail against the pre-fix code and pass after.
    at concurrency=100) is consistent with Redis's inherent network-round-trip cost, not a
    backend-specific defect worth chasing further right now.
 
-### 6. TypeScript runner: slower than Python on the zero-dependency default, on par with Python on the production Redis config -- order-independence confirmed, root cause found (a syscall-heavy SQLite driver, not a Go mutex), a fix attempted and reverted after it caused near-total failures
+### 6. TypeScript runner: SQLite-vs-Redis inversion investigated end to end -- a wrong mutex hypothesis disproven, a real DSN bug found and fixed, a connection-pool fix tried and found unnecessary, and SQLite ends up the fastest default single-runner state-backend config for both runners
 
 Same methodology as the Python runner's own comparison rows (`examples/echo_agent_ts`,
 concurrency=100, proxy mode for checkpoint/store since the TS runner has no direct-mode
-option at all -- see README's Runners section). Four runs total, deliberately alternating
+option at all -- see README's Runners section). Five runs total, deliberately alternating
 which config went first, specifically to test an obvious confound before trusting the
 comparison at all:
 
@@ -395,26 +414,132 @@ proportionally larger share of TS's total, and removing it (switching to Postgre
 net win for TS despite adding network hops. Not confirmed by isolating TS's own baseline
 overhead directly -- stated as the working theory, not a proven fact.
 
-**Attempted a fix, found it made things drastically worse, reverted it -- documented as a
-real negative result, not silently dropped.** `internal/state/sqlite/sqlite.go` had
-`db.SetMaxOpenConns(1)`, forcing literally every query (reads included) through one Go
-connection -- an obvious thing to try widening given the CPU-cost finding above. Widening it
-to 8 (matching the MySQL backend's own `SetMaxOpenConns(5)`-style convention) passed the full
-`-race` test suite cleanly, but under the actual concurrency=100 loadgen sweep produced a
-**~99.8% error rate**, every single one `SQLITE_BUSY: database is locked`, despite WAL mode +
-a 5s `_busy_timeout` already being configured. The single connection turned out to be
-load-bearing correctness, not just conservative caution: with exactly one connection, Go's own
-`database/sql` connection checkout already serializes every writer *before* a query ever
-reaches SQLite, so SQLite's single-writer lock is never contended by more than one goroutine at
-a time. Opening 8 connections let 8 goroutines reach that lock simultaneously instead, and under
-sustained 100-way write pressure, enough of them exhausted their busy_timeout budget waiting for
-their turn to produce a near-total failure rate. Reverted; confirmed the revert restores the
-original ~630-662ms/0-error baseline exactly (four independent runs across this investigation
-now: 662ms, 650ms, 630ms, and 660ms p50, all zero errors). A real fix for the CPU-cost finding
-would need a materially different design -- e.g. one dedicated write connection plus a separate
-read-only connection pool, since WAL mode's MVCC snapshot reads don't contend with the writer --
-not attempted here; flagged as the concrete next step if SQLite-backed TS throughput becomes a
-priority, now with a profile-verified target instead of a guess.
+**First attempt at a fix: widen the connection pool. Made things drastically worse --
+~99.8% errors -- for a reason that turned out to be a completely separate, much older bug.**
+`internal/state/sqlite/sqlite.go` had `db.SetMaxOpenConns(1)`, forcing literally every query
+(reads included) through one Go connection -- an obvious thing to try widening given the
+CPU-cost finding above. Widening it to 8 (matching the MySQL backend's own
+`SetMaxOpenConns(5)`-style convention) passed the full `-race` test suite cleanly, but under
+the actual concurrency=100 loadgen sweep produced a **~99.8% error rate**, every single one
+`SQLITE_BUSY: database is locked`. Reverted immediately, confirmed the revert restored the
+original ~630-662ms/0-error baseline exactly.
+
+**An independent review then found the actual bug the pool-widening experiment had exposed
+-- and it predates this whole investigation.** `New()`'s DSN used mattn/go-sqlite3 query-param
+forms (`?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON`), but `modernc.org/sqlite`
+(the driver this project actually uses) only honors its own `_pragma=name(value)` syntax --
+the mattn-style params are silently ignored, no error, connection opens fine. Verified live,
+independently, against the actual driver in this repo:
+
+```
+mattn-style DSN (what New() actually used) => journal_mode=delete  busy_timeout=0    foreign_keys=0
+_pragma=... DSN (what modernc.org/sqlite requires) => journal_mode=wal  busy_timeout=5000  foreign_keys=1
+```
+
+WAL mode and the 5-second busy_timeout this file's own comments claimed were active had
+**never once been applied, for the entire project history** -- the explicit follow-up
+`db.Exec("PRAGMA foreign_keys = ON")` a few lines later was real SQL (not a DSN param) and did
+correctly enable that one pragma independently, so foreign-key cascades were never actually
+broken; only WAL and busy_timeout were silent no-ops. This had zero observable effect under
+the normal `MaxOpenConns(1)` configuration (a single connection is never internally lock-
+contended regardless of journal mode), which is exactly why it went unnoticed until an
+experiment introduced real concurrent connections for the first time. The ~99.8% failure
+wasn't "waited 5 seconds then gave up" as this report first assumed -- it was "collided and
+failed instantly, zero retry budget," a more severe failure mode than documented.
+
+**Fixed the DSN** (`?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)`,
+`:memory:` gets `_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)` only, since an in-memory
+database can't actually be WAL) and pinned it with two new regression tests
+(`pragma_test.go`) asserting the real `PRAGMA journal_mode`/`busy_timeout`/`foreign_keys`
+values a connection sees, not just that `New()` returns no error -- exactly the gap that let
+the original bug survive undetected: nothing ever checked that a DSN param actually applied
+its pragma.
+
+**Re-ran the pool-widening experiment under the corrected DSN -- a clean, verified pass,
+but a fourth stage below shows it wasn't even the right fix.** Widened `MaxOpenConns` to 8
+again (still pinned to 1 for `:memory:` -- an in-memory SQLite database is connection-scoped,
+not process-scoped, so a second connection there gets its own separate, empty database, not a
+shared one, confirmed the hard way earlier in this same investigation). Full `-race` suite
+green (3x). Four independent 30s/concurrency-100 loadgen runs, two per runner, all zero
+errors:
+
+| Config | Run | p50 | p90 | p99 | Total |
+|---|---|---|---|---|---|
+| TS runner, SQLite (fixed DSN + pool=8) | 1st | 399ms | 531ms | 602ms | 7,440 |
+| TS runner, SQLite (fixed DSN + pool=8) | 2nd | 398ms | 534ms | 634ms | 7,386 |
+| Python runner, SQLite (fixed DSN + pool=8) | 1st | 383ms | 541ms | 673ms | 7,652 |
+| Python runner, SQLite (fixed DSN + pool=8) | 2nd | 392ms | 536ms | 658ms | 7,627 |
+
+Both runners got meaningfully faster on p50, not just error-free: TS's SQLite p50 dropped from
+the original ~650ms to ~399ms. Python's dropped from ~463ms to ~387ms, landing in the same
+band as Mongo+in-memory (384ms) and Postgres-with-`--concurrency 100` (389ms) -- a tie for
+best Python p50, not a unique winner. **A real p99 cost, not papered over**: Python's
+post-fix p99 (658-673ms) is ~100ms *worse* than its pre-fix single-connection p99 (571ms).
+Independent review flagged this and asked whether the p50 win genuinely needed the pool
+widening, or whether it came entirely from the DSN fix -- these four runs alone can't answer
+that, since they change DSN and pool size together.
+
+**Stage 4: isolated the two changes -- the pool widening turned out to be unnecessary for the
+win, and mildly counterproductive on p50/p90. Reverted a second time, this time for good.**
+Ran the fixed DSN with `MaxOpenConns` held at 1 (no widening at all) and compared directly
+against the pool=8 numbers above, same workload, same machine, back to back -- two runs per
+runner, matching the pool=8 table above:
+
+| Config | Run | p50 | p90 | p99 | Total |
+|---|---|---|---|---|---|
+| TS runner, SQLite (fixed DSN, **pool=1**) | 1st | 366ms | 475ms | 549ms | 8,199 |
+| TS runner, SQLite (fixed DSN, **pool=1**) | 2nd | 364ms | 461ms | 628ms | 8,492 |
+| Python runner, SQLite (fixed DSN, **pool=1**) | 1st | 359ms | 499ms | 602ms | 8,154 |
+| Python runner, SQLite (fixed DSN, **pool=1**) | 2nd | 362ms | 497ms | 660ms | 8,055 |
+
+**p50 and p90 are a clean, consistent win for pool=1 on both runners, across all four
+runs**: ~364-366ms p50 for TS (vs. ~398-399ms at pool=8), ~359-362ms p50 for Python (vs.
+~383-392ms at pool=8) -- no overlap between the two pool sizes' p50/p90 ranges in either
+runner. **p99 is noisier and not a clean win either way between pool sizes**: TS pool=1's
+two runs (549ms, 628ms) straddle pool=8's two runs (602ms, 634ms) rather than beating them
+outright; Python pool=1's two runs (602ms, 660ms) land in essentially the same band as
+pool=8's (658ms, 673ms) -- pool=1 vs. pool=8 is a wash on p99 for both runners, not a
+regression either way at this sample size (2 runs per config isn't enough to resolve a
+~50-70ms difference with confidence).
+
+**Versus the *original* pre-DSN-fix single-connection p99s, the two runners diverge**: TS's
+own pre-fix p99 was 736-742ms, so both pool=1 (549-628ms) and pool=8 (602-634ms) are a real
+tail improvement for TS. Python's pre-fix p99 was 571ms -- lower than *either* post-fix
+config (602-660ms at pool=1, 658-673ms at pool=8) -- so the DSN fix improved Python's p50/p90
+substantially but did not improve its p99 versus that original baseline; if anything it's
+mildly worse there, at either pool size. Not papered over: the DSN fix is still worth
+shipping (p50/p90 dominate this workload's overall latency far more than a ~30-90ms p99
+shift), but "the fixed DSN improved the tail for both runners" would overstate it -- it's
+true for TS, not clearly true for Python.
+
+**Given p50/p90 favor pool=1 clearly and p99 doesn't favor pool=8 at all, pool=1 is the
+better choice on the evidence, with less code besides.** The connection-pool widening idea
+that motivated this stage was itself reasoned from a CPU profile that turned out to be
+confounded: that profile's "SQLite driver is syscall-heavy" conclusion (stage 1) was
+measuring `journal_mode=delete` (the broken DSN's rollback-journal mode, which fsyncs a
+separate journal file per transaction) mislabeled as WAL. Once WAL is genuinely active, most
+of that syscall cost disappears on its own, and no amount of connection-pool tuning was ever
+going to fix what was actually a journal-mode problem. Widening the pool to 8 does still work
+correctly (0 errors, stage 3) -- it's not unsafe, just unnecessary complexity that doesn't
+pay for itself on this write-heavy workload (SQLite's single-writer nature caps write
+throughput at 1 regardless of pool size).
+
+**Final, shipped configuration**: DSN fixed to `_pragma=` form, `MaxOpenConns(1)` kept exactly
+as it always was (pool-widening code written, tested, and reverted twice in this
+investigation -- see `internal/state/sqlite/sqlite.go`'s own doc comment for the full
+four-stage account). The two new pool-oriented tests (`pool_smoke_test.go`) still pass and
+are still meaningful at pool=1 (concurrent Go-level callers correctly queue for the single
+connection without ever seeing `SQLITE_BUSY`), even though they were originally written to
+validate the now-abandoned pool=8 configuration.
+
+**Scoping the "fastest" claim precisely**: SQLite (fixed DSN, pool=1) is the fastest *default
+single-runner state-backend* config measured for both runners -- ahead of Mongo+in-memory
+(384ms), Postgres+in-memory (559ms), MySQL+in-memory (494ms), and each runner's own
+Postgres+Redis number. It is *not* the fastest row in this entire report: "Postgres, 2 runner
+replicas `--concurrency 100` each" (308ms p50) is faster, but that's a runner-scaling change
+(horizontal replicas + concurrent dispatch), not a state-backend choice -- comparing it
+directly to a single-runner SQLite number would conflate two different levers this report
+treats separately (see findings 1c/1d and the Optimization opportunities section).
 
 **Also worth restating plainly, per this report's own MySQL-vs-Redis precedent**: TS's
 Postgres+Redis p50 (598ms, or 580ms on the reversed-order run) is close to Python's
@@ -422,19 +547,21 @@ Postgres+Redis post-fix p50 (910ms) only in the sense that both exist in the sam
 "couple hundred ms above the zero-dependency default" territory -- the actual gap (roughly
 35% lower) is not small, and Python's row ran for 20s while every TS row here ran for 30s, so
 none of these totals are directly comparable to each other, only the percentile latencies are.
-"On par with Python" is a fairer characterization than "ahead of Python" for this gap size.
 
-Bottom line: **the SQLite-vs-Redis inversion for TS is now a confirmed, reproducible,
-order-independent, profile-verified effect** (five loadgen runs including a reversed-order
-control, plus two more profiled runs), not explained away as noise and not left as an
-untested guess either. The mutex hypothesis this report originally proposed was tested and
-disproven (118ms/22ms of total contention, negligible). The real cause -- the pure-Go SQLite
-driver's syscall-heavy queries under full single-connection serialization -- was found via CPU
-profiling, and the obvious fix (widen the connection pool) was attempted, found to cause a
-~99.8% error rate under real load, and reverted. Net result: a fully profile-backed
-explanation for *why* SQLite is slow here, an honestly-reported dead end for the first fix
-tried, and a concretely scoped real fix (separate read/write connection pools) for whoever
-picks this up next.
+Bottom line: what started as "is TS's SQLite-vs-Redis inversion real, and if so why" ended up
+surfacing and fixing a real bug (`modernc.org/sqlite`'s DSN silently never applying WAL mode
+or busy_timeout, for the project's entire history) that had nothing to do with the original
+question -- and fixing *only* that bug, with zero connection-pool changes, makes SQLite the
+fastest *default single-runner state-backend* config measured for both runners (~365ms TS,
+~359ms Python p50, ahead of every other state-backend config including each runner's own
+Postgres+Redis number -- but not ahead of the horizontal-runner-replicas row, a different
+lever entirely, see the scoping note above). Two other ideas this investigation generated
+along the way were tested and both turned out wrong, or at least oversold: the mutex
+hypothesis (118ms/22ms of contention, negligible) and the connection-pool-widening fix
+(works correctly, but adds complexity for a p50/p90 loss and an at-best-neutral p99 versus
+the DSN fix alone). The original TS-vs-Python asymmetry this section opened with is largely
+gone too: TS's SQLite p50 (~364-366ms) and Python's (~359-362ms) now sit within noise of
+each other.
 
 ## What this report does NOT cover
 
@@ -454,7 +581,9 @@ picks this up next.
   loop is a single sequential loop with no dispatch-multiple-jobs option at all (unlike the
   Python runner's `--concurrency`/`RUNKITE_CONCURRENCY` flag) -- worth a dedicated follow-up
   if TS throughput under real (I/O-wait-dominated) agent workloads becomes a concern.
-- **A real fix for the SQLite driver's syscall-heavy CPU cost under concurrent load**
-  (section 6) -- root-caused via profiling, but the one fix attempted (widening the connection
-  pool) caused a ~99.8% error rate and was reverted. A real fix needs a different design
-  (dedicated write connection + separate read-only pool) not attempted here.
+- **A dedicated write connection + separate read-only pool for SQLite** -- section 6's DSN
+  fix alone (WAL mode + real busy_timeout, `MaxOpenConns` unchanged at 1) already made SQLite
+  the fastest default single-runner state-backend config measured for both runners in this
+  report; a connection-pool redesign would only matter for a read-heavy workload this report
+  didn't test (this benchmark's create-thread-and-run cycle is write-heavy). Low priority
+  given the current numbers, not attempted here.
