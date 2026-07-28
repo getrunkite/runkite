@@ -174,20 +174,22 @@ export async function executeRun(
     // compatibility) -- built fresh for this run alone, with
     // checkpointer/store attached to THIS instance, not the shared one
     // static graphs use. See factoryGraph.ts for the full rationale.
-    // factoryBuild.close() (in the finally below) runs regardless of
-    // how the inner try exits -- success, error, or an early
-    // "interrupted" return from the cancellation check further down.
+    // factoryBuild.close() MUST wrap open() as well as the stream loop:
+    // open() can set a dispose()-able resource and then throw (e.g.
+    // compile/attach failure), and closing only after a successful open
+    // would leak that resource. Same "teardown regardless of exit
+    // reason" job as Python's AsyncExitStack around `async with`.
     let graph: RunnableGraph;
     let factoryBuild: FactoryGraphBuild | null = null;
-    if (adapter.isFactory(graphId)) {
-      const runContext: RunFactoryContext = { runId, threadId: assignment.thread_id, user: assignment.user };
-      factoryBuild = adapter.buildFactoryGraph(graphId, config, runContext);
-      graph = await factoryBuild.open();
-    } else {
-      graph = adapter.getGraph(graphId);
-    }
-
     try {
+      if (adapter.isFactory(graphId)) {
+        const runContext: RunFactoryContext = { runId, threadId: assignment.thread_id, user: assignment.user };
+        factoryBuild = adapter.buildFactoryGraph(graphId, config, runContext);
+        graph = await factoryBuild.open();
+      } else {
+        graph = adapter.getGraph(graphId);
+      }
+
       const stream = await graph.stream(inputData, { ...config, streamMode: lgStreamMode });
 
       for await (const chunk of stream) {
@@ -244,10 +246,6 @@ export async function executeRun(
       await emit(makeEvent("end", { status: "success" }));
       return "success";
     } finally {
-      // Runs regardless of how the inner try exits -- success, error,
-      // or an early "interrupted" return from the cancellation check
-      // above -- same as Python's AsyncExitStack tearing the factory
-      // down on the way out of `async with` regardless of exit reason.
       if (factoryBuild) await factoryBuild.close();
     }
   } catch (err: any) {

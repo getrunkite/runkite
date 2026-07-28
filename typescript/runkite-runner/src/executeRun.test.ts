@@ -387,6 +387,28 @@ test("executeRun closes the factory build even when the graph throws mid-stream"
   assert.equal((adapter as any).__wasClosed(), true, "factory build must be closed even after an error");
 });
 
+test("executeRun closes the factory build even when open() itself throws", async () => {
+  let closed = false;
+  const adapter = {
+    isFactory: () => true,
+    buildFactoryGraph: () => ({
+      open: async () => {
+        throw new Error("open failed after allocating resources");
+      },
+      close: async () => {
+        closed = true;
+      },
+    }),
+    getGraph: () => {
+      throw new Error("should not be called");
+    },
+  } as unknown as LangGraphAdapter;
+
+  const status = await executeRun(adapter, assignment(), async () => {}, () => false);
+  assert.equal(status, "error");
+  assert.equal(closed, true, "factory build must be closed even when open() throws -- otherwise dispose()-ables leak");
+});
+
 test("executeRun closes the factory build even when the run is cancelled mid-stream", async () => {
   const graph: RunnableGraph = {
     async stream() {

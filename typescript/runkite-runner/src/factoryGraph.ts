@@ -296,41 +296,54 @@ export class FactoryGraphBuild {
   ) {}
 
   async open(): Promise<RunnableGraph> {
-    const kwargs: Record<string, unknown> = {};
-    if (this.paramNames.includes("config")) kwargs.config = this.config;
-    if (this.paramNames.includes("runtime")) {
-      const user = this.runContext.user ? new RunnerUser(this.runContext.user) : null;
-      kwargs.runtime = new ServerRuntimeStandIn(user, this.store);
-    }
+    try {
+      const kwargs: Record<string, unknown> = {};
+      if (this.paramNames.includes("config")) kwargs.config = this.config;
+      if (this.paramNames.includes("runtime")) {
+        const user = this.runContext.user ? new RunnerUser(this.runContext.user) : null;
+        kwargs.runtime = new ServerRuntimeStandIn(user, this.store);
+      }
 
-    // Call with kwargs in the SAME declared parameter order the
-    // function actually uses (not always config-then-runtime) -- LangGraph's
-    // own convention documents "any parameter order/subset" as
-    // supported, and examples/factory_agent/graph.py's own signature
-    // (config, runtime) happens to match declaration order already, but
-    // this must not assume that.
-    const args = this.paramNames.map((name) => kwargs[name]);
-    let result = this.func(...args);
-    if (result != null && typeof (result as any).then === "function") {
-      result = await result;
-    }
+      // Call with kwargs in the SAME declared parameter order the
+      // function actually uses (not always config-then-runtime) -- LangGraph's
+      // own convention documents "any parameter order/subset" as
+      // supported, and examples/factory_agent/graph.py's own signature
+      // (config, runtime) happens to match declaration order already, but
+      // this must not assume that.
+      const args = this.paramNames.map((name) => kwargs[name]);
+      let result = this.func(...args);
+      if (result != null && typeof (result as any).then === "function") {
+        result = await result;
+      }
 
-    if (result != null && typeof (result as any).dispose === "function") {
-      this.disposable = result as { dispose(): Promise<void> };
-    }
+      if (result != null && typeof (result as any).dispose === "function") {
+        this.disposable = result as { dispose(): Promise<void> };
+      }
 
-    let graph: unknown = result;
-    if (isStateGraphBuilder(graph)) {
-      graph = graph.compile();
-    }
+      let graph: unknown = result;
+      if (isStateGraphBuilder(graph)) {
+        graph = graph.compile();
+      }
 
-    const compiled = graph as RunnableGraph;
-    if (this.checkpointerManager) this.checkpointerManager.attach(compiled);
-    if (this.store) compiled.store = this.store;
-    return compiled;
+      const compiled = graph as RunnableGraph;
+      if (this.checkpointerManager) this.checkpointerManager.attach(compiled);
+      if (this.store) compiled.store = this.store;
+      return compiled;
+    } catch (err) {
+      // open() can set disposable then throw on compile/attach -- tear
+      // down here so a caller that only closes after a successful open
+      // (or whose finally never runs) still doesn't leak. Idempotent
+      // close() below means executeRun's finally can call close again
+      // harmlessly.
+      await this.close();
+      throw err;
+    }
   }
 
   async close(): Promise<void> {
-    if (this.disposable) await this.disposable.dispose();
+    if (!this.disposable) return;
+    const d = this.disposable;
+    this.disposable = null;
+    await d.dispose();
   }
 }

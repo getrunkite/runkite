@@ -35,12 +35,13 @@ test("extractParamNames: arrow function with parens, sync", () => {
 });
 
 test("extractParamNames: parenthesis-free single-param arrow function", () => {
-  const graph = (config: any) => config;
-  // Written with parens above for valid syntax with a type annotation,
-  // but exercise the truly parenthesis-free runtime form directly too.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const bareArrow = (x: unknown) => x;
-  assert.deepEqual(extractParamNames(graph), ["config"]);
+  // Must be constructed via eval -- a TypeScript `(x: T) => ...` source
+  // always keeps the parentheses around a typed param, so writing the
+  // bare form in this .ts file would not actually exercise the
+  // parenthesis-free branch in extractParamListSource.
+  const bareArrow = eval("x => x") as (x: unknown) => unknown;
+  assert.deepEqual(extractParamNames(bareArrow), ["x"]);
+  assert.match(bareArrow.toString(), /^x\s*=>/);
 });
 
 test("extractParamNames: 0-arg arrow function", () => {
@@ -310,4 +311,28 @@ test("FactoryGraphBuild.close() is a no-op when the factory's result has no disp
   const build = factory.build({}, runContext(), { checkpointerManager: null, store: null });
   await build.open();
   await assert.doesNotReject(() => build.close());
+});
+
+test("FactoryGraphBuild.open() disposes on failure after the factory returned a disposable (compile/attach throw)", async () => {
+  let disposed = false;
+  const factory = new FactoryGraph(
+    () => ({
+      // Has dispose, and looks like a StateGraph builder -- compile()
+      // throws AFTER open() has already recorded the disposable.
+      compile: () => {
+        throw new Error("compile failed");
+      },
+      dispose: async () => {
+        disposed = true;
+      },
+    }),
+    ["config"],
+  );
+  const build = factory.build({}, runContext(), { checkpointerManager: null, store: null });
+  await assert.rejects(() => build.open(), /compile failed/);
+  assert.equal(disposed, true, "open() must tear down a disposable it already recorded when a later step fails");
+  // close() after a failed open must be idempotent (executeRun's finally
+  // will call it again).
+  await assert.doesNotReject(() => build.close());
+  assert.equal(disposed, true, "dispose must not run a second time");
 });
