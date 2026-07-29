@@ -23,7 +23,7 @@ one host -- no network latency between them).
 | Postgres, runner `--concurrency 100`, pool_max_conns=50 | 100 | 20s | 5,033 | 0 | 389ms | 426ms | 525ms | -- |
 | Postgres, **2 runner replicas** `--concurrency 100` each | 100 | 20s | 6,169 | 0 | 308ms | 520ms | 732ms | -- |
 | MySQL + in-memory | 100 | 30s | 6,031 | 0 | 494ms | 546ms | 679ms | 5MB |
-| MySQL + Redis | 100 | 30s | 3,647 | 0 | 798ms | 912ms | 1,717ms | 0MB* |
+| MySQL + Redis (single sample -- see section 4 for a 3-run follow-up, superseded below) | 100 | 30s | 3,647 | 0 | 798ms | 912ms | 1,717ms | 0MB* |
 | **TS runner**, SQLite + in-memory (**pre-DSN-fix**) | 100 | 30s | 4,639 | 0 | 662ms | 699ms | 742ms | 5MB |
 | **TS runner**, SQLite + in-memory (pre-DSN-fix, repeat) | 100 | 30s | 4,754 | 0 | 650ms | 711ms | 736ms | 5MB |
 | **TS runner**, Postgres + Redis | 100 | 30s | 5,029 | 0 | 598ms | 655ms | 760ms | 0MB* |
@@ -281,24 +281,67 @@ comparison: this isolates the *state backend's* own read/write cost from any tra
 differences, and both MongoDB and MySQL hold up well against the SQLite baseline they're most
 naturally compared to.
 
-**MySQL + Redis** (798ms p50, 912ms p90, 1,717ms p99, 3,647 total over 30s) was also run as
-the direct MySQL analogue of the existing "Postgres + Redis (post-fix, fresh keyspace)" row
-(910ms p50, 989ms p90, 1,028ms p99, 2,260 total over 20s) -- **note the different durations
-(30s vs 20s), so the two totals aren't a like-for-like throughput comparison, only the
-percentile latencies are.** At **p50 and p90 the two are close** (798ms vs 910ms; 912ms vs
-989ms), reinforcing finding #5's conclusion again: the queue/broker transport choice, not the
-SQL backend behind it, is what separates the in-memory-transport rows (~400-560ms) from the
-Redis-transport rows (~800-910ms) here. **The tail does NOT hold up the same way**: MySQL +
-Redis's p99 (1,717ms) is ~67% higher than Postgres + Redis's post-fix p99 (1,028ms), despite a
-*better* p50 -- a real, honestly-reported divergence, not glossed over as "close enough" the
-way the p50/p90 comparison is. One 30s sample isn't enough to say whether this is a genuine
-MySQL-driver-under-Redis-contention tail effect or a one-off (a slow migration/connection-pool
-warm-up moment, GC pause, or shared-machine noise from the other services also running
-throughout this session -- see this report's own opening caveat) -- flagged as a real, open
-question rather than either explained away or silently dropped. RSS delta reads as 0MB for
-this specific run (`ps`-based single-process RSS sampling landed on an already-stabilized
-process this time, not a real "zero growth" finding) -- treat that one number as noise, not a
-result; the p50/p90/p99 numbers are the real signal from this run.
+**MySQL + Redis** was originally reported from a single 30s sample (798ms p50, 912ms p90,
+1,717ms p99, 3,647 total) compared against a single Postgres + Redis sample that used a
+**different duration** (post-fix, fresh keyspace: 910ms p50, 989ms p90, 1,028ms p99, 2,260
+total over **20s**, not 30s) -- an honest same-percentiles-different-totals caveat at the
+time, but still only an n=1-vs-n=1 comparison with a duration mismatch. Both numbers below are
+now superseded by a proper repeat-run, matched-duration follow-up:
+
+**Follow-up: 3x MySQL + Redis and 3x Postgres + Redis, both at the identical 100-concurrency,
+30s-duration `bench/loadgen` config, same host, same commit, run back-to-back** (raw output in
+`/tmp/loadgen_mysql_redis_results.txt` / `/tmp/loadgen_pg_redis_results.txt` at the time of
+this pass -- not committed, reproduce via the commands in this section if needed):
+
+| | p50 | p90 | p99 | total |
+|---|---|---|---|---|
+| MySQL + Redis, run 1 | 885ms | 970ms | 1,224ms | 3,377 |
+| MySQL + Redis, run 2 | 916ms | 1,009ms | 1,065ms | 3,298 |
+| MySQL + Redis, run 3 | 878ms | 930ms | 1,022ms | 3,466 |
+| Postgres + Redis, run 1 | 700ms | 765ms | 801ms | 4,282 |
+| Postgres + Redis, run 2 | 686ms | 749ms | 794ms | 4,407 |
+| Postgres + Redis, run 3 | 769ms | 902ms | 1,092ms | 3,916 |
+
+(An earlier, exploratory trio of MySQL + Redis runs in this same pass -- p99 935ms/1,033ms/
+1,649ms -- pointed the same direction and is consistent with the table above, but its raw
+`loadgen` stdout wasn't piped to a file, only observed in the terminal at the time, so it's
+mentioned here for color and is deliberately **not** folded into the numbers/claims below,
+which rest only on the three-plus-three runs with an auditable log on disk.)
+
+**Two findings, both more modest than the original single-sample comparison suggested:**
+
+1. **The p99 divergence direction holds, but at roughly 1.3x, not the originally-reported
+   1.67x.** MySQL + Redis's p99s (1,022-1,224ms) and Postgres + Redis's p99s (794-1,092ms)
+   overlap at the edges (Postgres's own worst run, 1,092ms, lands inside MySQL's range) -- a
+   mild, noisy tendency for MySQL + Redis to run a somewhat higher tail in this environment,
+   not a clean, reproducible MySQL-specific defect. The original 1,717ms was a real
+   observation, not a fluke number invented after the fact, but it was the high end of natural
+   run-to-run variance, not a representative constant -- three runs is still a small enough
+   sample that this framing itself could still move with more data; treat "~1.3x, overlapping"
+   as the current best estimate, not a settled ratio.
+2. **In this specific matched-30s-duration campaign, Postgres + Redis was clearly faster on
+   p50** (686-769ms vs MySQL + Redis's 878-916ms) -- the opposite ranking from the original
+   table's mismatched-duration comparison (MySQL 798ms vs Postgres 910ms). This is **not**
+   claimed as "the ranking flipped" in any general sense -- the original two numbers came from
+   different sessions *and* different durations (20s vs 30s), so they were never a controlled
+   comparison to begin with, and this new data doesn't retroactively falsify them. What this
+   matched, controlled re-run *does* show cleanly: **within one same-host, same-commit,
+   back-to-back session, which SQL backend "wins" on p50 is close enough (a ~160ms gap on a
+   ~700-900ms baseline) that it's plausible for a different session, on the same shared dev
+   machine running other services throughout, to land the other way.** That's a stronger,
+   better-controlled version of finding #5's original point (transport choice, not SQL backend
+   choice, is what actually separates the latency bands here) than the single-sample numbers
+   ever demonstrated -- the backend-vs-backend ordering isn't stable enough within the noise of
+   this measurement setup to be worth ranking at all.
+
+**Honest bookkeeping**: n=3 vs n=3, not n=6 vs n=6 -- asymmetric sample sizes, stated plainly
+rather than padded out. A single high-tail run on either side (Postgres's own 1,092ms p99 in
+run 3, for instance) visibly moves a 3-sample mean; more repeats on both sides would tighten
+these bands further but weren't run here since the qualitative conclusion (mild/overlapping,
+not a clean backend defect) was already clear from what's above. RSS deltas are omitted from
+this table -- the original single-sample run's "0MB" reading was already flagged as `ps`
+sampling landing on an already-stabilized process rather than a real zero-growth finding, and
+this follow-up didn't re-attempt RSS measurement.
 
 ### 5. Real correctness bug found and fixed: `/wait` could report "success" while a plain GET immediately after still showed "pending"
 
