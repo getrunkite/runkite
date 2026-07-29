@@ -143,7 +143,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 		// "ponytail" ceiling, not an oversight): if this process crashes in
 		// the gap between BRPop succeeding and this pipeline completing,
 		// the job is popped from the queue but never recorded in-flight, so
-        // it's lost the same way the old design lost it for a job's ENTIRE
+		// it's lost the same way the old design lost it for a job's ENTIRE
 		// execution time. That window here is a single Redis round-trip
 		// (single-digit milliseconds), not minutes -- a large, worthwhile
 		// improvement even though it isn't a mathematically perfect
