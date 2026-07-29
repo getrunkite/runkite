@@ -85,7 +85,10 @@ export class RunkiteStore extends BaseStore {
         }
         this.mode = opts.postgresDsn ? "direct" : "proxy";
         if (opts.postgresDsn) {
-            this.pool = new pg.Pool({ connectionString: opts.postgresDsn });
+            // poolSize mirrors the Python runner's pool_size=concurrency --
+            // see checkpoint.ts's CheckpointerManager.start() for the full
+            // rationale. Undefined leaves node-postgres's own default (10).
+            this.pool = new pg.Pool({ connectionString: opts.postgresDsn, ...(opts.poolSize ? { max: opts.poolSize } : {}) });
         }
         if (opts.httpBaseUrl) {
             this.baseUrl = opts.httpBaseUrl.replace(/\/+$/, "");

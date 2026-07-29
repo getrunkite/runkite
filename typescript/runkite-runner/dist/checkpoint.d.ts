@@ -20,7 +20,18 @@ export declare class CheckpointerManager {
     checkpointer: BaseCheckpointSaver | null;
     mode: CheckpointMode;
     private closeFn;
-    start(postgresDsn: string | undefined): Promise<void>;
+    /** poolSize mirrors the Python runner's `pool_size=concurrency` --
+     * with --concurrency > 1, multiple jobs' checkpoint reads/writes can
+     * be genuinely in flight at once, and a single connection would
+     * serialize them regardless of how many jobs the dispatcher allows
+     * concurrently. Undefined leaves node-postgres's own default (10),
+     * fine for the concurrency=1 common case. PostgresSaver.fromConnString
+     * doesn't expose a pool-size option (only `schema`) -- it's a thin
+     * wrapper around `new Pool({connectionString}); new
+     * PostgresSaver(pool)` (see its own source), so constructing the pool
+     * directly and passing it to PostgresSaver's other constructor gets
+     * the same behavior with pool-size control added. */
+    start(postgresDsn: string | undefined, poolSize?: number): Promise<void>;
     stop(): Promise<void>;
     /** Overrides a compiled graph's checkpointer with the shared one -- checkpoint
      * mode is a runner concern, not something agent authors configure in graph.ts. */

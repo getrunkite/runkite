@@ -26,6 +26,22 @@ export interface RunAssignment {
     resume_command?: {
         response?: unknown;
     } | null;
+    user?: Record<string, unknown>;
 }
+/**
+ * Builds the RunnableConfig passed to graph.stream(), including the keys
+ * LangGraph's own OSS code reads to populate Runtime.server_info for
+ * node code -- distinct from a Factory Graph's ServerRuntime.user (see
+ * factoryGraph.ts), which only the graph *factory* sees at build time.
+ * LangGraph documents this as "the server puts assistant_id/graph_id in
+ * config.configurable and the authenticated user dict in
+ * configurable.langgraph_auth_user" -- any hosting server (LangGraph
+ * Platform, this runner, or any other LangGraph SDK-compatible server)
+ * is expected to set these keys for node-level code to work at all.
+ * Direct TypeScript mirror of the Python runner's build_run_config() in
+ * worker.py -- a pure function (no I/O) so it's unit-testable without a
+ * live control plane or graph.
+ */
+export declare function buildRunConfig(assignment: RunAssignment): Record<string, any>;
 export type RunStatus = "success" | "error" | "interrupted";
 export declare function executeRun(adapter: LangGraphAdapter, assignment: RunAssignment, emit: (event: RunEvent) => Promise<void>, isCancelled: () => boolean): Promise<RunStatus>;

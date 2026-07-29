@@ -4,14 +4,28 @@
  * config format, same "zero changes to graph code" principle: checkpoint
  * and store mode are runner concerns, attached after loading, never
  * something an agent author configures in their own graph.ts.
+ *
+ * A loaded graph_id is one of two kinds (see factoryGraph.ts for the
+ * full rationale -- this implements LangGraph's own documented factory-
+ * graph/ServerRuntime convention):
+ *
+ * - static (the original, only supported form): a compiled graph,
+ *   shared across every concurrent run. Stored in `graphs`.
+ * - factory (`factories`): a callable built fresh PER RUN instead, for
+ *   agents that need request-isolated state -- resolved in
+ *   executeRun.ts via buildFactoryGraph, not here.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { classifyGraphExport } from "./factoryGraph.js";
 export class LangGraphAdapter {
     configPath;
     graphs = new Map();
+    factories = new Map();
     configDir;
+    checkpointerManager = null;
+    store = null;
     constructor(configPath) {
         this.configPath = configPath;
         this.configDir = path.dirname(path.resolve(configPath));
@@ -27,33 +41,67 @@ export class LangGraphAdapter {
             // build step on their end -- the same "drop a file in your
             // project" DX as the Python runner's importlib-based loading.
             const mod = await import(pathToFileURL(absPath).href);
-            let graph = mod[exportName];
-            if (graph === undefined) {
+            const exportValue = mod[exportName];
+            if (exportValue === undefined) {
                 throw new Error(`Cannot load graph module: ${absPath} has no export "${exportName}"`);
             }
-            // If the export is an uncompiled StateGraph builder, compile it --
-            // mirrors the Python adapter's isinstance(graph, StateGraph) check.
-            if (typeof graph.compile === "function" && typeof graph.stream !== "function") {
-                graph = graph.compile();
+            const classified = await classifyGraphExport(exportValue);
+            if (classified.kind === "factory") {
+                this.factories.set(graphId, classified.factory);
+                console.log(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
             }
-            this.graphs.set(graphId, graph);
-            console.log(`Loaded graph: ${graphId} from ${absPath}`);
+            else {
+                this.graphs.set(graphId, classified.graph);
+                console.log(`Loaded graph: ${graphId} from ${absPath}`);
+            }
         }
     }
+    isFactory(graphId) {
+        return this.factories.has(graphId);
+    }
+    /** Returns the compiled graph for a STATIC graph_id. Throws for a
+     * factory graph_id -- those are only resolvable per-run, with a run's
+     * own config/runtime context, via buildFactoryGraph. */
     getGraph(graphId) {
         const graph = this.graphs.get(graphId);
-        if (!graph) {
-            throw new Error(`Graph not found: ${graphId}. Available: ${[...this.graphs.keys()].join(", ")}`);
+        if (graph)
+            return graph;
+        if (this.factories.has(graphId)) {
+            throw new Error(`'${graphId}' is a factory graph -- build it per-run via buildFactoryGraph, not getGraph.`);
         }
-        return graph;
+        throw new Error(`Graph not found: ${graphId}. Available: ${this.allGraphIds().join(", ")}`);
     }
+    allGraphIds() {
+        return [...this.graphs.keys(), ...this.factories.keys()];
+    }
+    /** Resolves a factory graph_id for one run. Returns a builder whose
+     * `.open()`/`.close()` bracket exactly one run -- callers do
+     * `const graph = await adapter.buildFactoryGraph(...).open()` then
+     * `await build.close()` in a finally block (see executeRun.ts). */
+    buildFactoryGraph(graphId, config, runContext) {
+        const factory = this.factories.get(graphId);
+        if (!factory) {
+            throw new Error(`'${graphId}' is not a factory graph. Available factories: ${[...this.factories.keys()].join(", ")}`);
+        }
+        return factory.build(config, runContext, { checkpointerManager: this.checkpointerManager, store: this.store });
+    }
+    /** Overrides every loaded STATIC graph's checkpointer with the
+     * runner's shared one, and remembers it so factory graphs get the
+     * same treatment per-instance in buildFactoryGraph. Checkpoint mode
+     * is a runner concern (see checkpoint.ts), not something agent
+     * authors configure in their own graph.ts. */
     attachCheckpointer(manager) {
+        this.checkpointerManager = manager;
         for (const [graphId, graph] of this.graphs) {
             manager.attach(graph);
             console.log(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
         }
     }
+    /** Attaches the runner's Store Dual Mode client (see store.ts) to
+     * every loaded STATIC graph, the same way attachCheckpointer works,
+     * and remembers it for factory graphs. */
     attachStore(store) {
+        this.store = store;
         for (const [graphId, graph] of this.graphs) {
             graph.store = store;
             console.log(`Attached ${store.mode} store to graph: ${graphId}`);

@@ -42,6 +42,7 @@ export declare class RunkiteStore extends BaseStore {
         postgresDsn?: string;
         httpBaseUrl?: string;
         runnerToken?: string;
+        poolSize?: number;
     });
     close(): Promise<void>;
     batch<Op extends Operation[]>(operations: Op): Promise<OperationResults<Op>>;

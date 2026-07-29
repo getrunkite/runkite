@@ -193,6 +193,21 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npx tsx --test src/*.test.ts
 
+      - name: TypeScript runner dist/ is in sync with src/
+        # Unit tests above run against src/ directly via tsx, never touching
+        # dist/ -- the actual npm-published, `bin`/`main`-referenced build
+        # output -- so a stale, uncommitted-after-editing dist/ (once found:
+        # unbuilt since the initial commit, missing entire files added in
+        # later TS-parity passes) can drift silently forever without this
+        # check. Rebuild for real and fail if the committed dist/ doesn't
+        # match -- catches "forgot to run npm run build before committing"
+        # the same day it happens instead of leaving installed packages
+        # stale indefinitely.
+        working-directory: typescript/runkite-runner
+        run: |
+          npm run build
+          git diff --exit-code -- dist/
+
       - name: E2E (real binary + real Python/LangChain-adapter runners + real Postgres/Redis)
         # ./test/e2e/... recurses into test/e2e/adapters too -- the
         # LangChain adapter's own end-to-end coverage (real control
