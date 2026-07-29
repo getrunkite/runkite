@@ -170,7 +170,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 // them to the event broker for SSE fan-out.
 func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error {
 	var lastRunID string
-	acked := map[string]bool{}
+	seenFirstEvent := map[string]bool{}
 	for {
 		msg, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -182,11 +182,21 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 		}
 
 		lastRunID = msg.RunId
-		// First event from a runner proves delivery succeeded — Ack so the
-		// reclaimer won't re-enqueue a job that's actively running.
-		if !acked[msg.RunId] {
-			_ = s.queue.Ack(stream.Context(), msg.RunId)
-			acked[msg.RunId] = true
+		// First event from a runner proves delivery succeeded -- Renew
+		// (not Ack) the in-flight lease so the reclaimer won't re-enqueue
+		// a job that's actively running. Deliberately NOT a full Ack here
+		// any more (see plans/pending_items.md item 16, Problem 2, found
+		// live): removing the job from in-flight tracking entirely at
+		// this point meant NOTHING watched it for the rest of its
+		// execution -- a runner crash any time after its first event
+		// left the run permanently stuck, confirmed live. Renew keeps it
+		// in-flight; the Heartbeat RPC (called periodically by the
+		// runner for the whole run, not just here once) keeps renewing
+		// it throughout execution. The true, final Ack now only happens
+		// in ReportStatus below, once the run actually completes.
+		if !seenFirstEvent[msg.RunId] {
+			_ = s.queue.Renew(stream.Context(), msg.RunId)
+			seenFirstEvent[msg.RunId] = true
 		}
 
 		var event transport.RunEvent
@@ -219,6 +229,22 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 	}
 
 	return &pb.ReportStatusResponse{Ok: true}, nil
+}
+
+// Heartbeat is called periodically by the runner while a run is actively
+// executing (plans/pending_items.md item 16, Problem 2) -- extends the
+// job's in-flight lease so the stale-job reaper's "time since last
+// touch" check reflects real liveness for the whole run, not just the
+// window up to the first StreamEvents message. A runner that stops
+// heartbeating (crashed, or simply doesn't implement this RPC) falls
+// stale after the reaper's max-age and gets reclaimed by the existing
+// mechanism -- this adds no new reclaim path, just keeps resetting the
+// clock during real work. Always returns ok:true even if the run_id is
+// no longer in-flight (already completed, or reclaimed away) -- a late
+// heartbeat racing completion is expected, not an error condition.
+func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+	_ = s.queue.Renew(ctx, req.RunId)
+	return &pb.HeartbeatResponse{Ok: true}, nil
 }
 
 // WatchCancels streams cancel signals to the runner. The runner calls this

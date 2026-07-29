@@ -28,8 +28,9 @@ func (failQueue) Enqueue(context.Context, *transport.RunAssignment) error {
 func (failQueue) Dequeue(context.Context, string, time.Duration) (*transport.RunAssignment, error) {
 	return nil, errors.New("unused")
 }
-func (failQueue) Ack(context.Context, string) error  { return nil }
-func (failQueue) Nack(context.Context, string) error { return nil }
+func (failQueue) Ack(context.Context, string) error   { return nil }
+func (failQueue) Nack(context.Context, string) error  { return nil }
+func (failQueue) Renew(context.Context, string) error { return nil }
 func (failQueue) Cancel(context.Context, string) error {
 	return nil
 }
@@ -196,7 +197,7 @@ func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {
 	now := time.Now().UTC()
 	if err := store.SaveCachedRunResult(ctx, &models.CachedRunResult{
 		CacheKey: key, AgentID: "cached-agent",
-		Output: map[string]interface{}{"ok": true},
+		Output:    map[string]interface{}{"ok": true},
 		CreatedAt: now, ExpiresAt: now.Add(time.Minute),
 	}); err != nil {
 		t.Fatal(err)

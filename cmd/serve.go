@@ -456,6 +456,19 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue) {
 	}
 	// Keepalive detects a dead runner in ~4s; reclaim shortly after so a
 	// resume-after-crash can recover within a normal client retry window.
+	//
+	// This threshold now protects a job's WHOLE execution, not just the
+	// zombie-GetJob window it was originally sized for (see
+	// plans/pending_items.md item 16, Problem 2): the runner's periodic
+	// Heartbeat RPC (bridge/server.go) and StreamEvents' first-event
+	// Renew both reset the same in-flight clock this reads, at roughly
+	// the same 2s cadence as this ticker. A live runner heartbeating
+	// every ~2s never gets within one missed beat of this 6s cutoff;
+	// a crashed one (zero heartbeats, not just a slow one) reliably
+	// does. No retuning needed to cover the larger window -- the same
+	// numbers that worked for "dequeue to first event" also work for
+	// "dequeue to completion" once the clock is reset throughout,
+	// rather than frozen at dequeue time.
 	const maxAge = 6 * time.Second
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
