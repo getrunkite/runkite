@@ -239,6 +239,90 @@ before/after benchmark for the *intended* workload would use an agent with an ar
 async sleep standing in for LLM latency, not `echo_agent` -- flagged as a good follow-up, not
 done here since it's a benchmarking-methodology task, not a code change.
 
+### 1e. The TypeScript runner's own concurrency ceiling: same headline shape as Python, but the *control plane* hits its own limit first, not the runner
+
+Follow-up to 1d's own flagged gap (this exact test hadn't been repeated for Node). Same
+method: `examples/echo_agent_ts`, zero-dependency SQLite + in-process control plane,
+`bench/loadgen -concurrency 100 -duration 30s` sweep across the TS runner's own
+`--concurrency 1/20/100`, sampling the runner process's `ps %cpu` throughout.
+
+**A methodology mistake was made and caught before it reached this report**: the first sweep
+reused one SQLite file across all three `--concurrency` stages back-to-back, so the
+`--concurrency 100` stage ran against a database that already had ~13,000 rows from the two
+prior stages -- and showed total requests going *down* as `--concurrency` went *up* (7,739 ->
+5,538 -> 4,053) with runner CPU also dropping (35.9% -> 23.9% -> 18.8% avg), which read at
+first like `--concurrency` actively hurting TS throughput. That would have been a real,
+reportable, and wrong finding: a quick fresh-database spot-check at `--concurrency 100`
+immediately produced p50=193ms against the accumulated-DB stage's 730ms -- a growing-SQLite-
+file effect (consistent with this report's own established pattern of SQLite performance
+depending on accumulated table size), not a concurrency regression. Repeating the full sweep
+with a **fresh SQLite file per stage** gives the real result:
+
+| `--concurrency` | Total | p50 | p90 | p99 | Runner CPU (avg/max) |
+|---|---|---|---|---|---|
+| 1 | 7,775 | 390ms | 494ms | 523ms | 33.1% / 71.7% |
+| 20 | 10,468 | 266ms | 503ms | 582ms | 36.6% / 88.1% |
+| 100 | 10,575 | 249ms | 518ms | 784ms | 36.7% / 88.7% |
+
+Surface shape looks like Python's finding 1d: a real jump from baseline to `--concurrency 20`
+(+35% throughput, p50 ~266ms vs ~390ms -- a ~32% drop, not the halving it might look like at a
+glance), then an early plateau (`--concurrency 100` adds only ~1% over `--concurrency 20`).
+p99/max latency both *rise* with concurrency (523ms -> 784ms p99) even as p50 improves -- the
+expected cost of oversubscribing one process with more concurrent work: some jobs queue longer
+while most finish faster. **But the cause is not the same as Python's, and the first draft of
+this section claimed it was without actually checking** -- worth walking through as a real
+example of pattern-matching to a prior finding instead of verifying it:
+
+Python's finding 1d directly implicated the *runner's own CPU core*: `ps` showed that runner
+process at a sustained ~100-106% throughout the load, and the investigation explicitly ruled
+out the control plane's Postgres pool size and checkpointer as causes first. The TS numbers
+above don't show that pattern: **average** runner CPU stays at 33.1-36.7% across all three
+concurrency levels -- only the **max** sample reaches 88-89%, meaning most of the 30s window
+the runner isn't CPU-bound at all, just occasionally spiking. That's a materially weaker
+signal than "sustained one-core saturation," and shouldn't have been described as the same
+underlying limit as Python's. The actual cause traces to the *control plane* instead --
+covered next, since the same measurement also explains the replica result below.
+
+**Horizontal runner replicas did not help, and the control plane is why.** Running 2 TS
+runner replicas (`--concurrency 20` each, same `runner_kind`, zero control-plane config
+changes) against the same control plane produced 10,302 total -- statistically the same as one
+replica's 10,468-10,575, not an uplift. Sampling the **control plane's own** `ps %cpu` during a
+*separate*, standalone single-replica `--concurrency 20` verification run (10,349 total --
+close to but not one of the three sweep rows above, run independently to get this measurement)
+showed it running at **118.7% avg / 144.2% max** -- already over one full CPU core's worth of
+work, at the same `--concurrency 20` setting and the same ~10,300-10,500-per-30s throughput
+level as the single-runner sweep's plateau above. That's the more likely explanation for
+*both* results, not just the replica one: the single-process Go control plane, not the TS
+runner's event loop, is plausibly already the saturated resource by the time `--concurrency
+20` is reached, which would explain why going to `--concurrency 100` on one runner barely
+moves the needle (only ~1%) *and* why a second replica adds nothing -- both are trying to push
+more work through a control plane that's already near its own ceiling. Consistent with section
+6's own finding that SQLite's `MaxOpenConns` stays at 1 (serializing every write onto one
+connection) even after the DSN/WAL fix -- a plausible mechanism for *this specific
+configuration's* ceiling, though this section didn't isolate the control plane's CPU
+independently at every sweep stage to confirm it's the cause at `--concurrency 100` too, only
+at `--concurrency 20` in a separate verification run, so treat this as the best-supported
+explanation rather than a fully isolated proof.
+
+**Not a clean Python-vs-Node comparison, since the backends differ**: Python's 1d replica
+test (and the pool-size/checkpointer investigation before it) ran against **Postgres**
+(`pool_max_conns` 14 vs. 50, `AsyncPostgresSaver`), where the control plane's Postgres pool
+was explicitly ruled out as the cause and the runner's own CPU was directly implicated
+instead. This TS test ran against **SQLite + in-process** (`MaxOpenConns(1)`), a backend with
+a much lower, more easily-reached write-serialization ceiling by design. So "Python's replica
+helped, TS's didn't" is not evidence about Node vs. Python as runtimes -- it's two different
+backends hitting two different bottlenecks (runner CPU vs. control-plane write path) at two
+different throughput levels, and this report doesn't have a same-backend Python vs. TS
+replica comparison to say whether Python's runner-CPU story would also apply to TS under
+Postgres, or whether TS's control-plane story would also apply to Python under SQLite. Both
+are plausible open questions, neither tested here. **Practical reading**: for this specific
+zero-dependency (SQLite + in-process) configuration, the ceiling worth chasing next -- if this
+throughput level is a real target -- is the control plane's own
+write path, not more runner replicas or a bigger `--concurrency`; a Redis/Postgres transport
+(this report's own section 6 default recommendation is still SQLite + in-process for typical
+single-runner use, so this only matters at this specific higher-throughput tier) or genuine
+horizontal control-plane scaling would be the next things to test, not attempted here.
+
 Also found and fixed along the way: CrewAI's `Crew` object is **not** safe for concurrent
 `akickoff()` calls on the same shared instance -- confirmed by reading crewai's own
 `crew.py`: both `kickoff`/`akickoff` write results directly onto shared instance attributes
@@ -711,17 +795,18 @@ zero-cost, zero-flakiness benchmark, not an oversight; see "What this report doe
 - Finding each system's actual breaking point (OOM, sustained failures) -- the
   resource-constrained comparison above stopped at 100 concurrent users with both systems
   still producing zero errors; pushing further until one fails would need a dedicated run.
-- **The TypeScript runner's own concurrency ceiling under sustained CPU-bound load** --
-  section 6 above profiles the *control plane's* SQLite-vs-Redis difference, not the *runner*
-  side, i.e. Node specifically. `worker.ts` now has the same `--concurrency`/
-  `RUNKITE_CONCURRENCY` semaphore-bounded dispatcher the Python runner has (closing the gap
-  this bullet originally flagged -- live-verified: 5 concurrent runs against `slow_agent_ts`'s
-  3-step, 2s-per-step graph with `--concurrency 5` all completed within the same 6-second
-  window, not staggered 6s apart), but finding 1c/1d's deeper investigation (CPU profiling
-  under sustained load, confirming where Node's own single-core ceiling actually sits for a
-  CPU-bound/near-zero-compute agent, the way it was confirmed for Python) hasn't been repeated
-  for Node -- worth a dedicated follow-up if TS throughput under real (I/O-wait-dominated)
-  agent workloads becomes a concern.
+- ~~The TypeScript runner's own concurrency ceiling under sustained CPU-bound load~~ --
+  **done, see finding 1e**: real throughput gain to `--concurrency 20` then an early plateau,
+  but -- unlike Python -- the runner's own CPU never shows sustained saturation (avg stays
+  33-37%, only brief spikes to ~88%), and the control plane's CPU (118-144%, measured
+  separately) is the better-supported explanation for both the single-runner plateau and a
+  failed 2-replica test. Explicitly not a same-backend comparison to Python's 1d (Postgres
+  there, SQLite + in-process here), so it isn't evidence about Node vs. Python as runtimes.
+  Two things were caught and corrected before this made it into the report: a methodology
+  mistake (reusing one growing SQLite file across concurrency stages, which briefly looked
+  like `--concurrency` actively hurting TS throughput) via a fresh-database spot-check, and an
+  analysis mistake (pattern-matching to Python's "runner CPU ceiling" story without checking
+  whether the TS data actually supported it) caught on external review -- see 1e for both.
 - **A dedicated write connection + separate read-only pool for SQLite** -- section 6's DSN
   fix alone (WAL mode + real busy_timeout, `MaxOpenConns` unchanged at 1) already made SQLite
   the fastest default single-runner state-backend config measured for both runners in this
