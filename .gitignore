@@ -1,6 +1,8 @@
 # Go
 runkite
 *.db
+*.db-shm
+*.db-wal
 
 # Node (admin-ui, typescript/runkite-runner)
 node_modules/

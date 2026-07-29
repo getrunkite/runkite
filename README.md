@@ -403,6 +403,10 @@ Supported auth types: `oauth2_client_credentials`, `oauth2_token_exchange`, `api
 
 Runners call `POST /internal/connectors/{name}/session` to get ready-to-use credentials without implementing auth flows themselves.
 
+### Tool allow/deny enforcement (MCP connectors)
+
+The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just an advisory hint. `GetSession`'s `mcp.url` points at this control plane's own MCP proxy (`POST /internal/connectors/{name}/mcp`), not the connector's raw downstream MCP server -- so every `tools/call` request, regardless of which MCP client library an agent's own code uses, passes through here first, where a denied tool is rejected with a JSON-RPC error and **never reaches the downstream server at all**. `tools/list` responses are filtered against the same allow/deny list using the downstream server's own real tool list -- correct even for a deny-only filter (no allow list), which can't be represented in a static preview without knowing the full tool universe the downstream server exposes. Every other JSON-RPC method (`initialize`, `resources/*`, etc.) is forwarded transparently -- this is scoped to the two methods where enforcement actually matters, not a full protocol reimplementation. The connector's existing circuit breaker (guarding token fetches) also guards the proxied MCP call.
+
 ### Circuit breakers
 
 Every OAuth2 connector (`oauth2_client_credentials`, `oauth2_token_exchange`) gets a per-connector circuit breaker guarding its actual token-fetch network call -- always on, with tunable thresholds:
