@@ -49,8 +49,24 @@ type SessionResponse struct {
 
 // MCPSession describes a ready-to-use MCP connection.
 type MCPSession struct {
-	URL   string   `json:"url"`
-	Tools []string `json:"tools,omitempty"` // filtered by allow/deny
+	// URL is a path relative to the control plane's own HTTP base
+	// (which the runner already knows -- RUNKITE_HTTP_URL/--http-address),
+	// NOT the connector's raw downstream MCP server URL. It points at
+	// this control plane's own MCP proxy (mcpproxy.go), which forwards
+	// requests to the real server while actually enforcing the tool
+	// allow/deny filter (tools/call is gated, tools/list is filtered) --
+	// see mcpproxy.go's doc comment for why a proxy is what makes that
+	// enforcement real instead of advisory. Was the raw downstream URL
+	// before this existed; every caller of this field needed no changes
+	// since it was already treated as an opaque endpoint to connect to.
+	URL string `json:"url"`
+	// Tools is a best-effort preview of what tools/list through URL
+	// will return, computed WITHOUT calling the downstream server (see
+	// allowedTools' own doc comment for why this can't represent a
+	// deny-only filter correctly) -- an agent that needs the accurate,
+	// fully-filtered list should call tools/list through URL itself
+	// rather than relying on this field alone.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // NewRegistry creates a Registry from a map of connector configs.
@@ -112,9 +128,11 @@ func (r *Registry) GetSession(ctx context.Context, name string, userCtx map[stri
 		resp.Credentials["refresh_token"] = token.RefreshToken
 	}
 
-	// Attach MCP info if configured
+	// Attach MCP info if configured. URL points at this control plane's
+	// own MCP proxy, not c.Config.MCP.URL directly -- see MCPSession.URL's
+	// doc comment for why.
 	if c.Config.MCP != nil {
-		resp.MCP = &MCPSession{URL: c.Config.MCP.URL}
+		resp.MCP = &MCPSession{URL: "/internal/connectors/" + name + "/mcp"}
 		if c.Config.Tools != nil {
 			resp.MCP.Tools = r.allowedTools(c)
 		}
@@ -216,12 +234,21 @@ func (c *Connector) getClientCredentialsToken(ctx context.Context) (*CachedToken
 	return token, nil
 }
 
-// allowedTools returns the filtered list of MCP tools for a connector.
+// allowedTools returns a best-effort preview of a connector's allowed
+// tools, computed statically at session-creation time WITHOUT calling
+// the downstream MCP server -- only usable for an allow-list ("only
+// exactly these tools"), never for a deny-only filter ("everything
+// except these"), since correctly representing the latter needs the
+// downstream server's own real tool list, which this function doesn't
+// have. A deny-only connector's SessionResponse.MCP.Tools is empty as a
+// result -- NOT "no tools are allowed," just "this preview can't
+// represent that filter shape." The proxy (mcpproxy.go's
+// filterToolsListResponse) applies deny-only filters correctly, because
+// it filters the real tools/list response instead of guessing.
 func (r *Registry) allowedTools(c *Connector) []string {
 	if c.Config.Tools == nil {
 		return nil
 	}
-	// If allow list is set, return it (it's the positive filter)
 	if len(c.Config.Tools.Allow) > 0 {
 		return c.Config.Tools.Allow
 	}

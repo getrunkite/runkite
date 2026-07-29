@@ -259,8 +259,12 @@ func TestSession_MCPInfo(t *testing.T) {
 	if sess.MCP == nil {
 		t.Fatal("expected MCP in session response")
 	}
-	if sess.MCP.URL != "https://sf-mcp.internal/sse" {
-		t.Fatalf("MCP URL = %s", sess.MCP.URL)
+	// URL points at this control plane's own MCP proxy (relative path),
+	// NOT the connector's raw downstream URL -- see MCPSession.URL's own
+	// doc comment / mcpproxy.go for why: routing through the proxy is
+	// what makes tool allow/deny enforcement real instead of advisory.
+	if sess.MCP.URL != "/internal/connectors/sf/mcp" {
+		t.Fatalf("MCP URL = %s, want the proxy path", sess.MCP.URL)
 	}
 	if len(sess.MCP.Tools) != 2 {
 		t.Fatalf("expected 2 tools, got %v", sess.MCP.Tools)
