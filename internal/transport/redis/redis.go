@@ -13,6 +13,7 @@ package redistransport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -25,33 +26,57 @@ import (
 // JobQueue
 // --------------------------------------------------------------------------
 
-type inflightEntry struct {
-	job        *transport.RunAssignment
-	dequeuedAt time.Time
-}
-
-// Queue implements transport.JobQueue using Redis Lists.
-// In-flight tracking (Ack/Nack/ReclaimStale) is process-local: the control
-// plane node that Dequeue'd a job is responsible for reclaiming it if the
-// runner dies before Ack. This closes the "zombie GetJob steals a job and
-// loses it" window without requiring a Redis Streams consumer-group redesign.
+// Queue implements transport.JobQueue using Redis Lists, with in-flight
+// tracking held in Redis itself (not process memory) -- see the two
+// package-level keys below and reclaimStaleScript's doc comment for why.
+//
+// Previously (superseded, see plans/pending_items.md item 16 for the
+// incident): in-flight tracking (Ack/Nack/ReclaimStale) was a plain Go map
+// on this struct, scoped to whichever control-plane process happened to
+// call Dequeue. That's fine for a single instance, but breaks in exactly
+// the multi-instance topology this project's own docker-compose.multi.yml
+// exists to test, in two confirmed ways: (1) if the replica that dequeued
+// a job crashes, no *other* replica's map ever had that entry, so nobody
+// can reclaim it -- silent loss, not just "unreaped for a while"; (2) with
+// a plain load-balanced gRPC bridge (no session affinity), a runner's
+// GetJob and its later completion call can land on different replicas --
+// the completing replica's Ack is a no-op on a map that never had the
+// entry, the dequeuing replica's entry lingers, and its own reaper
+// eventually re-enqueues an already-finished job. Moving the bookkeeping
+// into Redis (visible to every replica) closes both.
 type Queue struct {
-	rdb      *redis.Client
-	mu       sync.Mutex
-	inflight map[string]*inflightEntry
+	rdb *redis.Client
 }
 
 // NewQueue creates a new Redis-backed job queue.
 func NewQueue(rdb *redis.Client) *Queue {
-	return &Queue{
-		rdb:      rdb,
-		inflight: make(map[string]*inflightEntry),
-	}
+	return &Queue{rdb: rdb}
 }
 
 func queueKey(runnerKind string) string { return "rk:queue:" + runnerKind }
 
 const canceledSetKey = "rk:canceled"
+
+// inflightZSetKey holds one entry per in-flight (dequeued, not yet Ack'd)
+// job: member=run_id, score=dequeued-at as a Unix millisecond timestamp.
+// A sorted set (not a plain set) specifically so ReclaimStale can ask
+// Redis directly for "everything older than this cutoff" via
+// ZRANGEBYSCORE, rather than fetching every in-flight job and filtering
+// in Go -- the same shape as SQS's visibility-timeout queue or a Redis
+// Streams consumer group's pending-entries list, adapted to this
+// project's plain-list queue instead of adopting Streams wholesale.
+const inflightZSetKey = "rk:inflight:zset"
+
+// inflightDataKey holds the actual job payload for each in-flight run_id
+// (field=run_id, value=JSON-encoded RunAssignment) -- needed so ANY
+// replica's ReclaimStale can re-enqueue the job, not just the one that
+// originally dequeued it.
+const inflightDataKey = "rk:inflight:data"
+
+// nowMillis is a var (not a plain time.Now call) so tests can freeze/
+// control it without sleeping in wall-clock time -- see redis_test.go's
+// use of this for exercising ReclaimStale's cutoff boundary precisely.
+var nowMillis = func() int64 { return time.Now().UnixMilli() }
 
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
 	ok, err := q.rdb.SIsMember(ctx, canceledSetKey, job.RunID).Result()
@@ -112,58 +137,132 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			continue
 		}
 
-		q.mu.Lock()
-		q.inflight[job.RunID] = &inflightEntry{job: &job, dequeuedAt: time.Now()}
-		q.mu.Unlock()
+		// Record in-flight state in Redis itself (not a local map) so any
+		// replica's Ack/ReclaimStale can see it -- see this type's own doc
+		// comment. One small, deliberately-accepted residual risk (a
+		// "ponytail" ceiling, not an oversight): if this process crashes in
+		// the gap between BRPop succeeding and this pipeline completing,
+		// the job is popped from the queue but never recorded in-flight, so
+        // it's lost the same way the old design lost it for a job's ENTIRE
+		// execution time. That window here is a single Redis round-trip
+		// (single-digit milliseconds), not minutes -- a large, worthwhile
+		// improvement even though it isn't a mathematically perfect
+		// zero-gap guarantee. Closing the gap fully would need BRPOPLPUSH/
+		// LMOVE's atomic pop-and-transfer semantics instead of BRPOP, a
+		// larger change than this fix warrants on its own.
+		if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.HSet(ctx, inflightDataKey, job.RunID, result[1])
+			pipe.ZAdd(ctx, inflightZSetKey, redis.Z{Score: float64(nowMillis()), Member: job.RunID})
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 		return &job, nil
 	}
 }
 
 func (q *Queue) Ack(ctx context.Context, runID string) error {
-	q.mu.Lock()
-	delete(q.inflight, runID)
-	q.mu.Unlock()
-	return nil
+	_, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HDel(ctx, inflightDataKey, runID)
+		pipe.ZRem(ctx, inflightZSetKey, runID)
+		return nil
+	})
+	return err
 }
 
 func (q *Queue) Nack(ctx context.Context, runID string) error {
-	q.mu.Lock()
-	entry, ok := q.inflight[runID]
-	if !ok {
-		q.mu.Unlock()
-		return nil
+	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
+	if err == redis.Nil {
+		return nil // not in-flight (already Ack'd/reclaimed/never existed) -- nothing to do
 	}
-	delete(q.inflight, runID)
-	q.mu.Unlock()
-	return q.Enqueue(ctx, entry.job)
+	if err != nil {
+		return err
+	}
+
+	if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HDel(ctx, inflightDataKey, runID)
+		pipe.ZRem(ctx, inflightZSetKey, runID)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	var job transport.RunAssignment
+	if err := json.Unmarshal([]byte(data), &job); err != nil {
+		return err
+	}
+	return q.Enqueue(ctx, &job)
 }
 
 func (q *Queue) Cancel(ctx context.Context, runID string) error {
-	q.mu.Lock()
-	delete(q.inflight, runID)
-	q.mu.Unlock()
+	if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HDel(ctx, inflightDataKey, runID)
+		pipe.ZRem(ctx, inflightZSetKey, runID)
+		return nil
+	}); err != nil {
+		return err
+	}
 	return q.rdb.SAdd(ctx, canceledSetKey, runID).Err()
 }
 
-// ReclaimStale re-enqueues jobs dequeued more than maxAge ago without Ack.
-func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
-	cutoff := time.Now().Add(-maxAge)
-	q.mu.Lock()
-	var stale []*transport.RunAssignment
-	for runID, entry := range q.inflight {
-		if entry.dequeuedAt.Before(cutoff) {
-			stale = append(stale, entry.job)
-			delete(q.inflight, runID)
-		}
-	}
-	q.mu.Unlock()
+// reclaimStaleScript atomically finds every in-flight job older than the
+// given cutoff, removes it from in-flight tracking, and re-enqueues it
+// (unless it's been canceled meanwhile) -- all as one Redis-server-side
+// operation. That atomicity is the actual point, not just an optimization:
+// Redis executes one Lua script to completion before starting the next
+// command from ANY client, so if every control-plane replica's reaper
+// ticker calls this same script, only the replica whose call Redis happens
+// to run first will find and claim each stale entry -- by the time a
+// second replica's call runs (a few milliseconds later at most, never
+// concurrently), those entries are already gone from the zset. This is
+// what makes ReclaimStale safe to call from every replica simultaneously,
+// the same correctness property TryClaimCronFire's SQL "INSERT ... ON
+// CONFLICT DO NOTHING" gives cron claiming, achieved here via Redis's own
+// single-threaded script execution instead of a SQL unique constraint.
+const reclaimStaleScript = `
+local zset_key = KEYS[1]
+local data_key = KEYS[2]
+local canceled_key = KEYS[3]
+local cutoff = ARGV[1]
 
-	for _, job := range stale {
-		if err := q.Enqueue(ctx, job); err != nil {
-			return 0, err
-		}
+local stale_ids = redis.call('ZRANGEBYSCORE', zset_key, '-inf', cutoff)
+local reclaimed = 0
+
+for _, run_id in ipairs(stale_ids) do
+    local job_json = redis.call('HGET', data_key, run_id)
+    redis.call('ZREM', zset_key, run_id)
+    redis.call('HDEL', data_key, run_id)
+
+    if job_json then
+        local is_canceled = redis.call('SISMEMBER', canceled_key, run_id)
+        if is_canceled == 0 then
+            local job = cjson.decode(job_json)
+            redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, job_json)
+            reclaimed = reclaimed + 1
+        end
+    end
+end
+
+return reclaimed
+`
+
+// ReclaimStale re-enqueues jobs dequeued more than maxAge ago without Ack.
+// Safe to call concurrently from multiple control-plane replicas -- see
+// reclaimStaleScript's own doc comment for why.
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := nowMillis() - maxAge.Milliseconds()
+	result, err := q.rdb.Eval(ctx, reclaimStaleScript,
+		[]string{inflightZSetKey, inflightDataKey, canceledSetKey},
+		cutoff,
+	).Result()
+	if err != nil {
+		return 0, err
 	}
-	return len(stale), nil
+	n, ok := result.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected reclaim script result type %T", result)
+	}
+	return int(n), nil
 }
 
 func (q *Queue) Len(ctx context.Context) (int64, error) {

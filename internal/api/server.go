@@ -48,11 +48,15 @@ type Server struct {
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until StatusCallback closes it out. ponytail: if the control plane
 	// restarts mid-run, that run's span is never End()'d and is dropped
-	// with the process -- a missing trace segment, not corrupted data, and
-	// the same "process-local" ceiling already documented for crash
-	// recovery elsewhere. No cleanup goroutine needed: every run that
-	// reaches a terminal status (including via the reclaim/redelivery path)
-	// removes its own entry.
+	// with the process -- a missing trace segment, not corrupted data.
+	// Deliberately still process-local (unlike the job queue's in-flight
+	// tracking, moved into Redis itself -- see internal/transport/redis's
+	// Queue doc comment -- after being found to cause actual duplicate/
+	// lost job execution): losing a trace segment on crash is a much
+	// lower-severity gap than losing or duplicating a run, so this one is
+	// an accepted trade-off, not an oversight. No cleanup goroutine
+	// needed: every run that reaches a terminal status (including via the
+	// reclaim/redelivery path) removes its own entry.
 	runSpans sync.Map // run_id -> trace.Span
 }
 
