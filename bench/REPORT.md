@@ -399,12 +399,17 @@ session, 2 of them unrelated to this project) was checked directly instead of as
   query patterns for 14,203 requests in that run) -- point-lookup `SELECT`s on `runs`/`threads`/
   `agents` by primary key, called from several different places across a run's lifecycle
   (status checks, thread-state reads/writes, `ReportStatus` bookkeeping), each cheap
-  individually (sub-2ms mean) but real in aggregate. More concurrent job throughput (2 replicas
-  pushing more jobs/sec) means proportionally more of these round-trips per second, and
-  Postgres running inside a Docker container's virtualized networking pays real per-connection/
-  per-round-trip overhead on each one -- a cost that scales with total query *count*, not just
-  total compute, so adding a second runner replica multiplies the query volume without a
-  matching efficiency gain, and can net out worse once that overhead compounds.
+  individually (sub-2ms mean) but real in aggregate. The wait-event profile itself says where
+  that cost actually sits: `ClientRead` (waiting on the network) was only ~4% of samples, so
+  this is not primarily a Docker-networking/RTT story -- it's Postgres's own CPU genuinely
+  spent parsing, planning, and executing ~24x the queries per unit time once 2 replicas push
+  more jobs/sec through. More concurrent job throughput means proportionally more of these
+  round-trips per second, and Postgres's CPU cost scales with query *count*, not just total
+  compute -- so a second runner replica multiplies the query volume without a matching
+  efficiency gain. (The absolute regression -- 26,854/32,465 below one replica's 35,289-37,541,
+  not just flat -- is somewhat larger than "no efficiency gain" alone predicts; control-plane
+  scheduling overhead from juggling two separate gRPC client connections likely also
+  contributes something on top of the query-count effect, not isolated separately here.)
 
 **This is a real, actionable finding, not just a curiosity**: the number of small DB round-
 trips per run is itself a lever worth pulling for high-throughput Postgres deployments --
