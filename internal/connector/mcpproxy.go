@@ -113,7 +113,22 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 			Name string `json:"name"`
 		}
 		_ = json.Unmarshal(req.Params, &params)
-		if params.Name != "" && !isAllowed(c.Config.Tools, params.Name) {
+		// A tools/call with no name is never a legitimate request,
+		// REGARDLESS of the connector's allow/deny configuration -- so
+		// this is checked as its own structural rule, before consulting
+		// the filter at all, not folded into isAllowed. Found live on
+		// review (plans/pending_items.md item 17), the hard way: an
+		// earlier version of this fix just called isAllowed(filter, "")
+		// unconditionally, which is correct FOR isAllowed's OWN
+		// semantics with an allow-list (empty string matches no allow
+		// entry, denied) but wrong for a deny-only filter -- deny-only
+		// means "allow everything except these," and "" isn't on the
+		// deny list, so isAllowed correctly-per-its-own-contract
+		// returned true. Confirmed live: a deny-only connector forwarded
+		// an empty-name tools/call straight to the downstream server.
+		// An empty name should never reach a real MCP server no matter
+		// what the filter shape is, so it's rejected here unconditionally.
+		if params.Name == "" || !isAllowed(c.Config.Tools, params.Name) {
 			return deniedToolResult(req.ID, name, params.Name)
 		}
 	}

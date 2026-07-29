@@ -2107,6 +2107,33 @@ func TestConnector_ListConnectors(t *testing.T) {
 	}
 }
 
+// TestConnector_ListConnectors_MCPShowsProxyPathNotRawURL is a
+// regression test for a real bypass found on review (plans/pending_items.md
+// item 17): handleGetConnector (the single-connector GET) was fixed to
+// show the proxy path instead of the raw downstream MCP URL, but
+// handleListConnectors (this one) leaked the raw URL through the same
+// runner-token-reachable trust boundary -- missed the first time because
+// TestConnector_ListConnectors above never configured a connector with
+// MCP set, so it never exercised this field at all.
+func TestConnector_ListConnectors_MCPShowsProxyPathNotRawURL(t *testing.T) {
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {Auth: connector.AuthConfig{Type: "api_key", APIKey: "k"}, MCP: &connector.MCPConfig{URL: "https://sf-mcp.internal/sse"}},
+	})
+
+	resp, _ := http.Get(env.srv.URL + "/internal/connectors")
+	expectStatus(t, resp, 200)
+	body := readBody(t, resp)
+
+	var list []map[string]interface{}
+	json.Unmarshal(body, &list)
+	if len(list) != 1 || list[0]["mcp"] != "/internal/connectors/sf/mcp" {
+		t.Fatalf("expected the proxy path in the list response, got %v", list)
+	}
+	if strings.Contains(string(body), "sf-mcp.internal") {
+		t.Fatal("connector list must not expose the raw downstream MCP URL")
+	}
+}
+
 func TestConnector_ListConnectorsEmpty(t *testing.T) {
 	env := newTestEnv(t)
 
@@ -2132,6 +2159,52 @@ func TestConnector_SessionAPIKey(t *testing.T) {
 	json.Unmarshal(readBody(t, resp), &sess)
 	if sess.Credentials["access_token"] != "the-key" {
 		t.Fatalf("expected access_token=the-key, got %s", sess.Credentials["access_token"])
+	}
+}
+
+// TestConnector_SessionOmitsCredentialsWhenMCPConfigured proves the fix
+// for a real bypass found on review (plans/pending_items.md item 17):
+// the MCP proxy alone wasn't a complete fix while the session response
+// ALSO handed out the raw downstream access_token -- a misbehaving or
+// compromised agent could just take that token and call the real server
+// directly, skipping the proxy's tool allow/deny enforcement entirely.
+func TestConnector_SessionOmitsCredentialsWhenMCPConfigured(t *testing.T) {
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {
+			Auth: connector.AuthConfig{Type: "api_key", APIKey: "raw-secret-should-not-leak"},
+			MCP:  &connector.MCPConfig{URL: "https://sf-mcp.internal/sse"},
+		},
+	})
+
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/session", map[string]interface{}{})
+	expectStatus(t, resp, 200)
+	body := readBody(t, resp)
+
+	var sess connector.SessionResponse
+	json.Unmarshal(body, &sess)
+	if sess.Credentials != nil {
+		t.Fatalf("expected no credentials in the session response for an MCP-proxied connector, got %v", sess.Credentials)
+	}
+	if strings.Contains(string(body), "raw-secret-should-not-leak") {
+		t.Fatal("raw downstream credential leaked into the session response despite MCP being configured")
+	}
+}
+
+// TestConnector_SessionIncludesCredentialsWhenNoMCP proves the fix above
+// didn't overreach -- a connector with no MCP endpoint at all (pure
+// direct-API-token use, the only way the runner could ever use it) must
+// still get its credentials normally.
+func TestConnector_SessionIncludesCredentialsWhenNoMCP(t *testing.T) {
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"myapi": {Auth: connector.AuthConfig{Type: "api_key", APIKey: "the-key"}},
+	})
+
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/myapi/session", map[string]interface{}{})
+	expectStatus(t, resp, 200)
+	var sess connector.SessionResponse
+	json.Unmarshal(readBody(t, resp), &sess)
+	if sess.Credentials["access_token"] != "the-key" {
+		t.Fatalf("expected credentials for a non-MCP connector, got %v", sess.Credentials)
 	}
 }
 
@@ -2164,11 +2237,19 @@ func TestConnector_GetConnectorInfo(t *testing.T) {
 	if info["type"] != "api_key" {
 		t.Fatalf("expected type=api_key, got %v", info["type"])
 	}
-	if info["mcp"] != "https://sf-mcp.internal/sse" {
-		t.Fatalf("expected mcp url, got %v", info["mcp"])
+	// The raw downstream MCP URL must NOT be exposed here -- this
+	// endpoint is reachable with just a runner token, so leaking it
+	// would let a misbehaving agent bypass the proxy's tool
+	// allow/deny enforcement by connecting directly (found on review,
+	// plans/pending_items.md item 17). The proxy path is shown instead.
+	if info["mcp"] != "/internal/connectors/sf/mcp" {
+		t.Fatalf("expected the proxy path, not the raw downstream URL, got %v", info["mcp"])
+	}
+	body, _ := json.Marshal(info)
+	if strings.Contains(string(body), "sf-mcp.internal") {
+		t.Fatal("connector info must not expose the raw downstream MCP URL")
 	}
 	// Secrets should NOT appear in response
-	body, _ := json.Marshal(info)
 	if strings.Contains(string(body), "secret-should-not-appear") {
 		t.Fatal("connector info must not expose secrets")
 	}

@@ -116,16 +116,29 @@ func (r *Registry) GetSession(ctx context.Context, name string, userCtx map[stri
 	}
 
 	resp := &SessionResponse{
-		Credentials: map[string]string{
-			"access_token": token.AccessToken,
-		},
 		ExpiresAt: token.ExpiresAt.Format(time.RFC3339),
 	}
-	if token.InstanceURL != "" {
-		resp.Credentials["instance_url"] = token.InstanceURL
-	}
-	if token.RefreshToken != "" {
-		resp.Credentials["refresh_token"] = token.RefreshToken
+
+	// Raw downstream credentials are ONLY included for connectors with no
+	// MCP endpoint configured. Found on review (plans/pending_items.md
+	// item 17): handing out both the proxy path AND the raw access_token
+	// defeated the whole point of the proxy -- a misbehaving or
+	// compromised agent could just take this token and call the
+	// downstream server directly with it, bypassing tool allow/deny
+	// enforcement entirely, regardless of how well the proxy itself
+	// enforced the filter. Once MCP is configured, the proxy (mcpproxy.go)
+	// injects this same credential server-side, so the runner has no
+	// legitimate use for it -- handing it out anyway is a pure liability.
+	if c.Config.MCP == nil {
+		resp.Credentials = map[string]string{
+			"access_token": token.AccessToken,
+		}
+		if token.InstanceURL != "" {
+			resp.Credentials["instance_url"] = token.InstanceURL
+		}
+		if token.RefreshToken != "" {
+			resp.Credentials["refresh_token"] = token.RefreshToken
+		}
 	}
 
 	// Attach MCP info if configured. URL points at this control plane's

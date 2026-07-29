@@ -613,8 +613,14 @@ func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
 	for _, name := range names {
 		c, _ := s.connectors.Get(name)
 		info := connectorInfo{Name: name, Type: c.Config.Auth.Type, CircuitBreaker: s.connectors.BreakerState(name)}
+		// Same fix, same reason as handleGetConnector -- the raw
+		// downstream MCP URL was leaking through this endpoint too
+		// (found on review, plans/pending_items.md item 17). Missed the
+		// first time because only the single-connector GET had a test
+		// asserting on the MCP field; the list endpoint's own test only
+		// checked name/type. Shows the proxy path instead.
 		if c.Config.MCP != nil {
-			info.MCP = c.Config.MCP.URL
+			info.MCP = "/internal/connectors/" + name + "/mcp"
 		}
 		result = append(result, info)
 	}
@@ -649,8 +655,16 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		Tools:          c.Config.Tools,
 		CircuitBreaker: s.connectors.BreakerState(name),
 	}
+	// The raw downstream MCP URL is deliberately NOT exposed here --
+	// this endpoint is reachable with just a runner token, same as
+	// GetSession (see registry.go's GetSession doc comment), so leaking
+	// it here would let a misbehaving or compromised agent discover and
+	// connect to the real server directly, bypassing the proxy's tool
+	// allow/deny enforcement the same way a leaked raw credential would.
+	// Shows the proxy path instead -- the actually-correct place to
+	// connect to, and consistent with what GetSession itself hands out.
 	if c.Config.MCP != nil {
-		resp.MCP = c.Config.MCP.URL
+		resp.MCP = "/internal/connectors/" + name + "/mcp"
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

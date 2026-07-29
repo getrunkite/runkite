@@ -154,6 +154,55 @@ func TestMCPProxy_DeniedToolCall_NeverReachesDownstream(t *testing.T) {
 	}
 }
 
+// TestMCPProxy_EmptyToolName_StillGated is a regression test for two
+// successive real bugs found on review (plans/pending_items.md item 17).
+// Bug 1: the proxy used to special-case a non-empty tool name before
+// checking isAllowed at all, which meant a tools/call with an empty or
+// missing name SKIPPED the allow/deny check entirely and was forwarded
+// to the downstream server unchecked. Bug 2, found live AFTER "fixing"
+// bug 1 by just calling isAllowed(filter, "") unconditionally: that's
+// correct for an ALLOW-list filter (empty string matches no allow
+// entry, correctly denied) but wrong for a DENY-ONLY filter -- deny-only
+// means "allow everything except these," "" isn't on the deny list, so
+// isAllowed correctly-per-its-own-contract returned true, and a live
+// test confirmed an empty-name call reached a real downstream server
+// through a deny-only-configured connector. Both filter shapes are
+// covered here so this can't regress silently in either direction.
+func TestMCPProxy_EmptyToolName_StillGated(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter *ToolFilter
+	}{
+		{"allow-list filter", &ToolFilter{Allow: []string{"query"}}},
+		{"deny-only filter", &ToolFilter{Deny: []string{"deleteRecord"}}},
+		{"no filter at all", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeMCPServer(t)
+			r := NewRegistry(map[string]ConnectorConfig{
+				"sf": {Auth: AuthConfig{Type: "api_key", APIKey: "k"}, MCP: &MCPConfig{URL: fake.URL}, Tools: tc.filter},
+			})
+
+			req := map[string]interface{}{
+				"jsonrpc": "2.0", "id": 20, "method": "tools/call", "params": map[string]interface{}{},
+			}
+			b, _ := json.Marshal(req)
+			result, err := r.ProxyMCPRequest(context.Background(), "sf", nil, b)
+			if err != nil {
+				t.Fatalf("ProxyMCPRequest failed: %v", err)
+			}
+			if fake.toolsCallHits.Load() != 0 {
+				t.Fatalf("a tools/call with no name reached the downstream server -- gate was bypassed, got %d hits", fake.toolsCallHits.Load())
+			}
+			var resp jsonRPCResponse
+			json.Unmarshal(result.Body, &resp)
+			if resp.Error == nil {
+				t.Fatal("expected a tools/call with no name to always be denied, regardless of filter shape, not silently forwarded")
+			}
+		})
+	}
+}
+
 // TestMCPProxy_DenyOnlyFilter_ToolsList_FilteredCorrectly proves the fix
 // for allowedTools()'s static-preview limitation: a deny-only filter
 // (no allow list) can't be represented without knowing the real tool
