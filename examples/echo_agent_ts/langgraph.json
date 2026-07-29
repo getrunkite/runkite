@@ -3,7 +3,8 @@
     "echo_agent_ts": "./graph.ts:graph",
     "slow_agent_ts": "./slowGraph.ts:graph",
     "approval_agent_ts": "./approvalGraph.ts:graph",
-    "factory_agent_ts": "./factoryGraph.ts:graph"
+    "factory_agent_ts": "./factoryGraph.ts:graph",
+    "llm_sim_agent_ts": "./llmSimGraph.ts:graph"
   },
   "dependencies": ["."],
   "runner_kind": "typescript-langgraphjs"

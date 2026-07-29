@@ -888,6 +888,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 | `examples/echo_agent_ts/` | Echo, slow (cancel), approval (HITL), and factory-graph agents, in TypeScript/LangGraph.js -- proves the Runner Protocol is language-agnostic |
 | `examples/vector_agent/` | Retrieval-augmented demo using `RunkiteVectorStore` (Vector Store Dual Mode) -- fake, deterministic embeddings, no API key needed |
 | `examples/factory_agent/` | Per-request Factory Graph -- proves fresh-instance-per-run isolation and `runtime.user` identity passthrough |
+| `examples/llm_sim_agent/` | Configurable simulated-LLM-latency agent (`LLM_SIM_DELAY_MS`) for `--concurrency` benchmarking under a realistic, I/O-wait-dominated workload shape -- see `bench/REPORT.md` section 7. `echo_agent_ts/llmSimGraph.ts` is the TypeScript equivalent. |
 | `examples/a2a_agent/` | `coordinator_agent` delegates to `worker_agent` mid-execution via `call_agent` -- proves Agent-to-Agent delegation end to end (see [Agent-to-Agent (A2A)](#agent-to-agent-a2a)) |
 
 ## Known Limitations

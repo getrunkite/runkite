@@ -563,10 +563,104 @@ the DSN fix alone). The original TS-vs-Python asymmetry this section opened with
 gone too: TS's SQLite p50 (~364-366ms) and Python's (~359-362ms) now sit within noise of
 each other.
 
+### 7. `--concurrency`'s value proposition, finally benchmarked as a sustained-load, realistic-latency workload instead of just a burst -- and it scales exactly as the theory predicts, identically for both runners
+
+Finding 1d proved `--concurrency` works via a burst test (20 concurrent runs, ~14x speedup)
+and explicitly flagged its own limitation: "a genuinely rigorous before/after benchmark for
+the *intended* workload would use an agent with an artificial async sleep standing in for LLM
+latency, not `echo_agent`... flagged as a good follow-up, not done here since it's a
+benchmarking-methodology task." This closes that gap.
+
+**New example agents** (`examples/llm_sim_agent/graph.py`, `examples/echo_agent_ts/
+llmSimGraph.ts`): a single node that `await`s a configurable delay (`LLM_SIM_DELAY_MS`,
+default 800ms -- a fast, typical single-turn LLM response, not a worst case) before
+returning a canned response. Deliberately a sleep, not a real LLM API call: deterministic,
+free, no external dependency, no rate limits/retries/non-determinism to pollute a benchmark
+meant to be re-run repeatedly -- and a sleep *is* what a real LLM call looks like from the
+runner's own perspective (an awaited I/O wait, not CPU work), so it exercises exactly the
+mechanism `--concurrency` (asyncio.Task / un-awaited-promise fan-out) is supposed to help
+with, without the noise a real API call would add.
+
+**Methodology**: `bench/loadgen -concurrency 100 -duration 30s -wait-timeout 10s` (100
+concurrent clients -- deliberately far more than any single concurrency setting below can
+keep up with, so the *runner's own* concurrency setting is always the bottleneck being
+measured, not client-side demand) against SQLite + in-memory (the current fastest default,
+per section 6), varying only `--concurrency` on the runner. Same matrix, same parameters, for
+both Python and TypeScript:
+
+| Runner | `--concurrency` | Total | Errors | p50 | Effective throughput |
+|---|---|---|---|---|---|
+| Python | 1 | 312 | 300 (96.2%, all 10s timeouts) | 10.00s | ~0.4 req/s (12 successes) |
+| Python | 10 | 470 | 0 | 8.07s | ~12.2 req/s |
+| Python | 20 | 840 | 0 | 4.04s | ~24.3 req/s |
+| TypeScript | 1 | 312 | 300 (96.2%, all 10s timeouts) | 10.00s | ~0.4 req/s (12 successes) |
+| TypeScript | 10 | 470 | 0 | 8.06s | ~12.2 req/s |
+| TypeScript | 20 | 840 | 0 | 4.03s | ~24.3 req/s |
+
+**How "Effective throughput" is computed, precisely (two different formulas, by row):**
+- **`--concurrency 1` row**: `successes / nominal 30s duration` = `12 / 30` ≈ 0.4 req/s. Not
+  comparable to the other rows -- at `--concurrency 1`, 96% of requests never complete at all
+  (they hit the 10s client-side timeout), so "throughput" here really means "rate of requests
+  that got through the queue," not a steady-state completion rate.
+- **`--concurrency 10`/`20` rows**: `Total / loadgen's own measured wall-clock runtime`, NOT
+  `Total / 30`. `loadgen`'s `-duration` is a deadline each worker checks only *between* its
+  own create-wait-read cycles, not a hard cutoff -- a worker already mid-cycle when the
+  deadline passes keeps running until that cycle finishes, so the command's real wall-clock
+  time exceeds the nominal 30s. Dividing by 30 instead would overstate throughput (e.g.
+  470/30 ≈ 15.7 req/s -- a real but wrong number for this table). The reported ~12.2/~24.3
+  match two independent cross-checks, which is why they're trusted as the real steady-state
+  rate: Little's Law from p50 (`clients / p50` = `100 / 8.07s` ≈ 12.4, `100 / 4.04s` ≈ 24.8)
+  and the simple theoretical ceiling below.
+
+**Three things stand out:**
+
+1. **At `--concurrency 1`, 100 concurrent clients against an 800ms-per-job runner is a
+   genuine, severe failure mode, not a benign slowdown**: 96% of requests hit a 10s
+   client-side timeout waiting in queue. This is the honest, sharp edge behind "default
+   `--concurrency 1` deadlocks/starves under real concurrent demand" -- not a hypothetical,
+   a directly reproduced one.
+2. **Throughput scales linearly with `--concurrency`, matching the simple theoretical model
+   almost exactly**: at `--concurrency N` with an 800ms per-job delay, the theoretical
+   ceiling is `N / 0.8` req/s -- 12.5 req/s at N=10, 25 req/s at N=20. Measured: ~12.2 and
+   ~24.3 req/s respectively, both within ~2-3% of the prediction. p50 latency also tracks the
+   theory: doubling concurrency from 10 to 20 almost exactly halved p50 (8.07s -> 4.04s for
+   Python, 8.06s -> 4.03s for TypeScript) -- the signature of a supply-constrained queue (not
+   labeled "M/M/c" deliberately: service time here is a fixed 800ms sleep, not exponentially
+   distributed, so the classic M/M/c model doesn't strictly apply -- but the qualitative
+   behavior, throughput capped by server count and latency dominated by queueing delay ahead
+   of a fixed service time, is the same fixed-service-time queueing signature regardless), not
+   noise.
+3. **Python and TypeScript are indistinguishable here** -- every p50 above matches within
+   1-2% across the two runners at every concurrency level, and the `--concurrency 10`/`20`
+   *totals* (470 and 840) match EXACTLY between the two, not just closely. That exactness is
+   expected, not suspicious: both runs used the identical closed-loop `loadgen` parameters
+   (100 clients, same 800ms delay, same 10s timeout) against a demand/supply ratio stable
+   enough that the same number of complete-or-timeout cycles fit in a comparable wall-clock
+   window for both -- including the exact same 96.15% error rate at `--concurrency 1`, the
+   same kind of coincidence for the same reason. This is the expected, correct outcome for a
+   purely I/O-wait-dominated workload: neither `asyncio`'s single-core GIL ceiling (finding
+   1d) nor Node's single-threaded event loop ever becomes the bottleneck when every job spends
+   800ms doing nothing but waiting -- the language/runtime underneath the `await` genuinely
+   doesn't matter for this workload shape, only whether it can suspend efficiently while
+   waiting, which both do.
+
+**What this does and doesn't establish**: this proves `--concurrency`'s throughput-scaling
+claim under sustained load, with a workload shape (an awaited delay) representative of real
+LLM-call latency, for both runners identically. It does NOT reproduce finding 1d's own
+"CPU-bound ceiling" result (a near-zero-compute agent like `echo_agent` pins one core and
+`--concurrency` can't exceed that) -- this workload has essentially zero CPU work per job by
+design, so it was never going to hit that ceiling; the two findings are complementary, not
+contradictory. It also doesn't include a real LLM API call (network variance, provider rate
+limits, token-count-dependent latency) -- a deliberate scope choice for a repeatable,
+zero-cost, zero-flakiness benchmark, not an oversight; see "What this report does NOT cover."
+
 ## What this report does NOT cover
 
 - Real agent workloads (LLM calls, tool calls) -- `echo_agent` isolates control-plane
   overhead deliberately; a real agent's own latency will dwarf these numbers in practice.
+  Section 7's `llm_sim_agent`/`llm_sim_agent_ts` narrow this gap for the *shape* of a real
+  agent's latency (an awaited delay) without a real API call's cost/variance/non-determinism
+  -- still not a substitute for measuring an actual production agent's own LLM/tool-call mix.
 - Multi-node control plane or multi-node Redis/Postgres -- single-host only.
 - The CrewAI/LlamaIndex/plain-LangChain adapters' own overhead -- not benchmarked here,
   out of scope for "state backend + transport" comparison; worth a follow-up if any of

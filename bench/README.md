@@ -97,3 +97,16 @@ still-broken DSN (~99.8% error rate), once against the fixed DSN (worked,
 leaving the pool at 1 -- p99 was roughly a wash between the two pool
 sizes, not a clean loss either way). See REPORT section 6 for the full
 four-stage story.
+
+Section 7 finally benchmarks `--concurrency` as a sustained-load,
+realistic-latency workload (a new `llm_sim_agent`/`llm_sim_agent_ts`
+example with a configurable simulated-LLM delay, not a real API call --
+deterministic and free) instead of just the earlier burst test. Result:
+throughput scales linearly with `--concurrency`, within ~2-3% of the
+simple queueing-theory prediction (`N / delay` req/s) at every level --
+and Python and TypeScript match each other even tighter (every p50
+within 1-2%, and `--concurrency 10`/`20` totals identical) -- so
+`--concurrency`'s scaling behavior is effectively runner-independent.
+`--concurrency 1` against real concurrent demand is a severe,
+directly-reproduced failure mode (96% of requests time out), not a
+hypothetical edge case.

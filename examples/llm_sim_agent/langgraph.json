@@ -1,0 +1,6 @@
+{
+  "graphs": {
+    "llm_sim_agent": "./graph.py:graph"
+  },
+  "dependencies": ["."]
+}
