@@ -17,7 +17,7 @@
 # Verify (see plans/pending_items.md item 1 for the full checklist):
 #   - All three replicas report healthy: docker compose -f docker-compose.multi.yml ps
 #   - Requests land on different replicas: curl repeatedly, check which
-#     instance answers (each replicase logs its own hostname/instance id)
+#     instance answers (each replica logs its own hostname/instance id)
 #   - Cron fires exactly once per tick across all three (CH-003) --
 #     TryClaimCronFire/ReleaseCronClaim in cmd/cron.go is the mechanism this
 #     is meant to exercise for real, not just via its own unit tests
