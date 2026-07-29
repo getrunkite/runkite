@@ -372,17 +372,47 @@ and *both* runners' own CPU becomes the limiting factor instead -- a genuine, la
 independent one-core-per-process ceiling for a near-zero-compute agent, exactly as Python's
 1d described it, now confirmed for TS too.
 
-**One more result, surfaced but not fully chased down**: 2 TS replicas under Postgres
-(`--concurrency 20` each) produced **26,854** total -- *less* than one replica's 35,789-37,541,
-not just "no uplift" the way SQLite's replica tests read, and the opposite of Python's original
-+22% uplift under (presumably) similar Postgres conditions in 1d. Checked for an obvious
-explanation rather than left unexplained: this machine has 14 logical CPUs, but was also
-running 7 Docker containers throughout this session (5 for this project's own test infra, 2
-entirely unrelated ones from another local project) plus the control plane and 2 TS runner
-processes each wanting a full core under Postgres -- a real, plausible contention explanation
-on a shared, noisy dev machine, but not confirmed (no isolated re-run on a quieter machine, no
-repeat sample to rule out a one-off). Flagged honestly as a genuine anomaly worth a dedicated,
-controlled follow-up, not quietly smoothed into "replicas didn't help here either."
+**One more result, chased down with direct instrumentation rather than left as a guess**: 2 TS
+replicas under Postgres (`--concurrency 20` each) initially produced **26,854** total -- *less*
+than one replica's 35,789-37,541, not just "no uplift" the way SQLite's replica tests read, and
+the opposite of Python's original +22% uplift under Postgres in 1d. The obvious first guess
+(shared, noisy dev machine -- 14 logical CPUs, but 7 Docker containers running throughout this
+session, 2 of them unrelated to this project) was checked directly instead of assumed:
+
+- **Ruled out: VM CPU starvation.** `docker info` reports the container runtime sees the full
+  14 CPUs, matching the host -- no small-VM ceiling.
+- **Ruled out: connection-pool exhaustion.** `max_connections=100`; live `pg_stat_activity`
+  sampling during a 2-replica run peaked at only 20-21 connections.
+- **Found: Postgres's own container CPU roughly doubles from 1 to 2 replicas** (103-169% ->
+  160-344%, climbing through the run, sampled via `docker stats`), while producing a rerun
+  total of 32,465 vs one replica's 35,289 in the same session -- smaller gap than the first
+  measurement but consistently no better, confirming the direction is real, not a one-off.
+- **Found the actual mechanism**, via continuous `pg_stat_activity` wait-event sampling
+  (every 0.3s across a full 30s run, not one snapshot) plus `pg_stat_statements` (Postgres
+  restarted once with `shared_preload_libraries=pg_stat_statements` for this investigation,
+  then restored to the normal `docker-compose.test.yml`-managed container afterward): **~90%
+  of active-backend samples (393/436) show `CPU/none` -- Postgres backends caught actually
+  executing, not waiting on locks or WAL.** Lock/buffer contention was negligible (3 samples
+  total across the whole run) and WAL-related waits were a small minority (~5%). This rules out
+  lock contention as the cause. `pg_stat_statements` then showed why the CPU cost is so high:
+  **roughly 24 SQL round-trips per single logical loadgen cycle** (340,872 calls across the top
+  query patterns for 14,203 requests in that run) -- point-lookup `SELECT`s on `runs`/`threads`/
+  `agents` by primary key, called from several different places across a run's lifecycle
+  (status checks, thread-state reads/writes, `ReportStatus` bookkeeping), each cheap
+  individually (sub-2ms mean) but real in aggregate. More concurrent job throughput (2 replicas
+  pushing more jobs/sec) means proportionally more of these round-trips per second, and
+  Postgres running inside a Docker container's virtualized networking pays real per-connection/
+  per-round-trip overhead on each one -- a cost that scales with total query *count*, not just
+  total compute, so adding a second runner replica multiplies the query volume without a
+  matching efficiency gain, and can net out worse once that overhead compounds.
+
+**This is a real, actionable finding, not just a curiosity**: the number of small DB round-
+trips per run is itself a lever worth pulling for high-throughput Postgres deployments --
+batching or caching some of these lookups (e.g. avoiding a redundant `GetRun` where a caller
+already has the row in hand) would reduce Postgres's per-request query count directly, likely
+raising the ceiling this section found. Not attempted here -- this section's scope was
+diagnosis, not optimization -- but the mechanism is now understood well enough to act on rather
+than being an open question.
 
 Also found and fixed along the way: CrewAI's `Crew` object is **not** safe for concurrent
 `akickoff()` calls on the same shared instance -- confirmed by reading crewai's own
