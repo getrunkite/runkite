@@ -10,6 +10,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { LangGraphAdapter, loadCustomAppConfig } from "./adapter.js";
 import { CheckpointerManager } from "./checkpoint.js";
+import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
@@ -292,6 +293,11 @@ export async function handleJob(
 
     const cancelState = registerRun(pendingCancels, runId);
 
+    // Started as soon as runId is known, BEFORE streamEvents' first
+    // message -- see heartbeat.ts / the Python runner's mirrored change
+    // in worker.py's _handle_job.
+    const heartbeat = startHeartbeatLoop(client, runId, metadata);
+
     try {
       // Open one persistent client-streaming call per run, same pattern
       // as the Python runner's asyncio.Queue-backed generator -- the
@@ -334,6 +340,7 @@ export async function handleJob(
 
       console.log(`Run completed: run_id=${runId} status=${status}`);
     } finally {
+      heartbeat.stop();
       // Always clear the cancel registration, even if executeRun itself
       // threw -- otherwise a failure here would leak an entry in
       // pendingCancels for every job that hits it.

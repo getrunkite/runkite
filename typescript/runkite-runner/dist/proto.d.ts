@@ -36,6 +36,12 @@ export interface WatchCancelsRequest {
 export interface CancelSignal {
     runId: string;
 }
+export interface HeartbeatRequest {
+    runId: string;
+}
+export interface HeartbeatResponse {
+    ok: boolean;
+}
 /**
  * Minimal typed surface of the generated RunnerService client we actually
  * use. A @grpc/proto-loader-generated client's methods are shaped
@@ -51,6 +57,7 @@ export interface RunnerServiceClient extends Client {
     streamEvents(metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: StreamEventsResponse) => void): import("@grpc/grpc-js").ClientWritableStream<RunEventProto>;
     reportStatus(req: ReportStatusRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: ReportStatusResponse) => void): void;
     watchCancels(req: WatchCancelsRequest, metadata: import("@grpc/grpc-js").Metadata): import("@grpc/grpc-js").ClientReadableStream<CancelSignal>;
+    heartbeat(req: HeartbeatRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): void;
 }
 /** Creates a RunnerService client against grpcAddress (insecure, matching the Python/Go runners -- gRPC transport security is out of scope, same as the rest of the Runner Protocol). */
 export declare function createRunnerClient(grpcAddress: string): RunnerServiceClient;
