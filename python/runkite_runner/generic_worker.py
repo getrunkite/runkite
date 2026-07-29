@@ -31,6 +31,7 @@ import grpc
 
 from . import runner_pb2
 from . import runner_pb2_grpc
+from .heartbeat import heartbeat_loop
 
 logger = logging.getLogger("runkite.runner")
 
@@ -282,6 +283,10 @@ async def _handle_job(
             pending_cancels, pre_cancelled, pending_cancels_lock, run_id,
         )
 
+        # Started as soon as run_id is known, before StreamEvents' first
+        # message -- see worker.py's mirrored change / heartbeat.py.
+        heartbeat_task = asyncio.create_task(heartbeat_loop(stub, run_id, auth_metadata))
+
         try:
             stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
             stream_task = asyncio.ensure_future(stream_call)
@@ -298,6 +303,9 @@ async def _handle_job(
                 await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
                 status = "error"
         finally:
+            heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
             # Always clear the cancel registration, even on an
             # unexpected failure above -- otherwise it leaks an entry in
             # pending_cancels for every job that hits this path.

@@ -27,6 +27,7 @@ from . import runner_pb2_grpc
 from .checkpoint import CheckpointerManager
 from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
+from .heartbeat import heartbeat_loop
 from .store import RunkiteStore
 
 logger = logging.getLogger("runkite.runner")
@@ -622,6 +623,13 @@ async def _handle_job(
         # pre-arrived cancel signal for it.
         cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
 
+        # Started as soon as run_id is known -- BEFORE StreamEvents' first
+        # message, not after -- so the control plane's in-flight lease
+        # (extended by StreamEvents' first-event Renew, then by this loop
+        # for everything after) never goes untouched even if execute_run
+        # takes a while to produce its first event. See heartbeat.py.
+        heartbeat_task = asyncio.create_task(heartbeat_loop(stub, run_id, auth_metadata))
+
         try:
             # Start the gRPC stream call
             stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
@@ -634,6 +642,9 @@ async def _handle_job(
             # Execute the agent with cancel support
             status = await execute_run(adapter, assignment, send_event, cancel_event=cancel_event)
         finally:
+            heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
             # Always clear the cancel registration, even if execute_run
             # itself raised -- otherwise a failure here would leak an
             # entry in pending_cancels for every job that hits it.
