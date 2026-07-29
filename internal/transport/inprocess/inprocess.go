@@ -97,6 +97,19 @@ func (q *Queue) Ack(ctx context.Context, runID string) error {
 	return nil
 }
 
+// Renew resets an in-flight job's dequeuedAt timestamp without removing
+// it from tracking -- see transport.JobQueue's Renew doc comment for the
+// heartbeat mechanism this backs. A no-op if the job is no longer
+// in-flight (already Ack'd/reclaimed/canceled).
+func (q *Queue) Renew(ctx context.Context, runID string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if entry, ok := q.inflight[runID]; ok {
+		entry.dequeuedAt = time.Now()
+	}
+	return nil
+}
+
 // Nack re-enqueues a previously dequeued job so another runner can take it.
 func (q *Queue) Nack(ctx context.Context, runID string) error {
 	q.mu.Lock()

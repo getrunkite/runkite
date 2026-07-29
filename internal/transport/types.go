@@ -160,6 +160,19 @@ type JobQueue interface {
 	// any pending/retry tracking.
 	Ack(ctx context.Context, runID string) error
 
+	// Renew extends an in-flight job's lease (resets its staleness clock)
+	// WITHOUT removing it from tracking, unlike Ack. Backs the runner
+	// heartbeat mechanism (plans/pending_items.md item 16, Problem 2):
+	// a runner calls this periodically for the WHOLE duration of a job's
+	// execution, not just once at the start, so a stale-job reaper's
+	// "time since last touch" check reflects real liveness throughout
+	// execution instead of just the window between Dequeue and the
+	// first StreamEvents message. Must be a no-op (not an error) if the
+	// job is no longer in-flight (already Ack'd, reclaimed, or
+	// canceled) -- a late or racing renewal for a job that already
+	// finished or was reclaimed away must not resurrect it.
+	Renew(ctx context.Context, runID string) error
+
 	// Nack signals that the job was not processed successfully.
 	// The job should be made available for re-delivery.
 	Nack(ctx context.Context, runID string) error

@@ -294,6 +294,82 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Error("runner-alpha should not see runner-beta jobs")
 		}
 	})
+
+	// TR-031: heartbeat extends lease (plans/pending_items.md item 16,
+	// Problem 2) -- Renew must keep a job in-flight (not remove it the
+	// way Ack does), and must be a safe no-op once a job is no longer
+	// in-flight, so a late/racing heartbeat can't resurrect a finished
+	// or reclaimed job.
+	t.Run("TR-031_renew_keeps_job_inflight_not_removed", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-renew-1", "test-runner", "echo")
+		_ = q.Enqueue(ctx, job)
+
+		got, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || got == nil {
+			t.Fatalf("Dequeue failed: %v", err)
+		}
+
+		if err := q.Renew(ctx, got.RunID); err != nil {
+			t.Fatalf("Renew failed: %v", err)
+		}
+
+		// Renew must NOT have removed the job from in-flight tracking
+		// like Ack would -- proven here via Nack, which only re-enqueues
+		// a job that's still tracked as in-flight.
+		if err := q.Nack(ctx, got.RunID); err != nil {
+			t.Fatalf("Nack failed: %v", err)
+		}
+		again, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || again == nil || again.RunID != "run-renew-1" {
+			t.Fatalf("expected job re-enqueued by Nack after Renew, got %v (err=%v)", again, err)
+		}
+	})
+
+	t.Run("TR-031b_renew_after_ack_is_a_no-op_does_not_resurrect_job", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-renew-2", "test-runner", "echo")
+		_ = q.Enqueue(ctx, job)
+
+		got, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || got == nil {
+			t.Fatalf("Dequeue failed: %v", err)
+		}
+		if err := q.Ack(ctx, got.RunID); err != nil {
+			t.Fatalf("Ack failed: %v", err)
+		}
+
+		// A heartbeat racing (or arriving after) completion must not
+		// resurrect the job -- e.g. by creating a phantom in-flight
+		// entry a later ReclaimStale would incorrectly re-queue.
+		if err := q.Renew(ctx, got.RunID); err != nil {
+			t.Fatalf("Renew after Ack should be a safe no-op, got error: %v", err)
+		}
+
+		if r, ok := q.(staleReclaimer); ok {
+			n, err := r.ReclaimStale(ctx, 0)
+			if err != nil {
+				t.Fatalf("ReclaimStale failed: %v", err)
+			}
+			if n != 0 {
+				t.Fatalf("ReclaimStale reclaimed %d jobs after Ack+Renew, want 0 (job should be gone for good)", n)
+			}
+		}
+
+		extra, _ := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
+		if extra != nil {
+			t.Fatalf("job resurrected after Ack+Renew: %v", extra)
+		}
+	})
+}
+
+// staleReclaimer mirrors cmd/serve.go's own interface -- implemented by
+// both queue backends but not part of the core transport.JobQueue
+// interface, since it's a reaper-specific capability.
+type staleReclaimer interface {
+	ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error)
 }
 
 // --------------------------------------------------------------------------

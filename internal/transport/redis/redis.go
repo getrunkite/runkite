@@ -170,6 +170,36 @@ func (q *Queue) Ack(ctx context.Context, runID string) error {
 	return err
 }
 
+// renewScript atomically resets an in-flight job's staleness score, but
+// ONLY if it's still tracked in inflightDataKey -- a plain two-step
+// "check HEXISTS, then ZADD" from Go would have a race window where a
+// concurrent ReclaimStale on another replica removes the job between the
+// two calls, and this Renew would resurrect a phantom zset entry with no
+// backing data (harmless -- the next reclaim cycle's HGET finds nothing
+// and self-cleans it -- but avoidable with one round trip instead of two
+// by doing the check-and-set as one Redis-side operation).
+const renewScript = `
+local data_key = KEYS[1]
+local zset_key = KEYS[2]
+local run_id = ARGV[1]
+local score = ARGV[2]
+
+if redis.call('HEXISTS', data_key, run_id) == 1 then
+    redis.call('ZADD', zset_key, score, run_id)
+    return 1
+end
+return 0
+`
+
+// Renew extends an in-flight job's lease -- see transport.JobQueue's
+// Renew doc comment for the heartbeat mechanism this backs.
+func (q *Queue) Renew(ctx context.Context, runID string) error {
+	return q.rdb.Eval(ctx, renewScript,
+		[]string{inflightDataKey, inflightZSetKey},
+		runID, nowMillis(),
+	).Err()
+}
+
 func (q *Queue) Nack(ctx context.Context, runID string) error {
 	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
 	if err == redis.Nil {
