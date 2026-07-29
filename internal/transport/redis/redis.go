@@ -94,11 +94,38 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 	return q.rdb.LPush(ctx, queueKey(job.RunnerKind), data).Err()
 }
 
+// dequeueBlockCap bounds a single BRPOP call's blocking duration,
+// regardless of how much of the overall Dequeue timeout remains. This
+// matters for a reason beyond "don't block too long on one call": a
+// runner whose gRPC connection just died (crash, restart) leaves its
+// GetJob call's ctx blocked inside exactly this BRPOP until grpc-go's
+// keepalive detects the dead peer and cancels it -- confirmed live to
+// take ~4-6s (plans/pending_items.md item 20). BRPOP's blocking-command
+// semantics mean Redis can atomically pop a freshly-pushed item to
+// deliver to a connection at almost the same instant that connection is
+// being torn down for cancellation -- a genuine Redis/network race
+// (not a Go channel, which never loses a value this way) where the item
+// is removed from the list server-side but never actually received
+// client-side, because the connection closed mid-delivery. Confirmed
+// live via a real flake: a resume request's newly-enqueued job vanished
+// this exact way, at the same millisecond a zombie GetJob's 30s-long
+// single BRPOP call got cancelled. Capping each call to this shorter
+// duration doesn't make the race impossible (it can still happen on any
+// individual call), but shrinks a zombie's vulnerable window from up to
+// the full GetJob timeout (~30s) down to this cap, and the explicit
+// ctx.Err() check below means a cancelled context is noticed within one
+// cap-sized tick instead of only when BRPOP itself eventually surfaces
+// the cancellation.
+const dequeueBlockCap = 2 * time.Second
+
 func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*transport.RunAssignment, error) {
 	deadline := time.Now().Add(timeout)
 	key := queueKey(runnerKind)
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			return nil, nil
@@ -106,8 +133,12 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 
 		// BRPOP timeout is integer seconds in Redis. Sub-second values get
 		// truncated to 0 which means "block forever." Clamp to 1s minimum
-		// to avoid that; the slight over-block is harmless.
+		// to avoid that; the slight over-block is harmless. Also capped at
+		// dequeueBlockCap -- see its own doc comment for why.
 		blockTime := remaining
+		if blockTime > dequeueBlockCap {
+			blockTime = dequeueBlockCap
+		}
 		if blockTime < time.Second {
 			blockTime = time.Second
 		}

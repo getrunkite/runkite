@@ -29,7 +29,15 @@ import (
 // resume path against the fresh runner. Job-loss after a crashed runner's
 // zombie GetJob is mitigated by: (1) gRPC keepalive, (2) inflight
 // Ack/Nack + ReclaimStale on the queue, (3) a short post-kill wait in
-// restartRunner so the e2e path is deterministic.
+// restartRunner so the e2e path is deterministic, and (4) capping each
+// individual BRPOP call's blocking duration in redis.Queue.Dequeue (see
+// dequeueBlockCap's doc comment) -- this test used to flake ~50-70% of
+// the time on a genuine Redis race that (4) closes: a zombie's
+// long-lived single BRPOP call could atomically pop a freshly-enqueued
+// resume job to deliver to a connection that was being torn down at the
+// same instant, losing the job client-side even though Redis had
+// already removed it from the list server-side. Root-caused live via
+// plans/pending_items.md item 20 -- see that item for the full timeline.
 func TestVG003b_ResumeSurvivesRunnerRestart(t *testing.T) {
 	resp := postJSON(t, "/threads", map[string]interface{}{})
 	var thread map[string]interface{}
@@ -96,7 +104,11 @@ func TestVG003b_ResumeSurvivesRunnerRestart(t *testing.T) {
 	}
 
 	if !resumed {
-		t.Fatalf("resume after runner restart failed (%s); checkpoint was present in Postgres", lastErr)
+		var cpLog string
+		if serveLogRef != nil {
+			cpLog = serveLogRef.String()
+		}
+		t.Fatalf("resume after runner restart failed (%s); checkpoint was present in Postgres\n--- control plane log ---\n%s", lastErr, cpLog)
 	}
 
 	values, _ := result["values"].(map[string]interface{})
