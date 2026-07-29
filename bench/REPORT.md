@@ -323,6 +323,67 @@ write path, not more runner replicas or a bigger `--concurrency`; a Redis/Postgr
 single-runner use, so this only matters at this specific higher-throughput tier) or genuine
 horizontal control-plane scaling would be the next things to test, not attempted here.
 
+### 1f. Resolving 1e's two open questions: it's the backend, not the language
+
+Both cross-checked directly (fresh DB/schema per stage throughout, same `ps %cpu` sampling
+method as 1e):
+
+**Does Python's runner-CPU story hold for TS under Postgres?** Yes, clearly. TS + Postgres
+(`db reset` before each stage, in-memory transport, same `echo_agent_ts` sweep):
+
+| `--concurrency` | Total | p50 | Runner CPU (avg/max) |
+|---|---|---|---|
+| 1 | 8,623 | 347ms | 40.4% / 62.0% |
+| 20 | 35,789 | 81ms | 104.8% / 157.4% |
+| 100 | 37,541 | 76ms | 103.7% / 134.9% |
+
+Night-and-day difference from 1e's SQLite numbers: throughput jumps ~4x (not ~35%) from
+baseline to `--concurrency 20`, and runner CPU now shows **sustained ~104% avg** -- not brief
+spikes off a 33-37% baseline, but pinned at slightly over one full core throughout the load,
+the same signature Python's 1d found under Postgres. Removing the control plane's SQLite
+single-connection ceiling (Postgres has a real connection pool) lets the TS runner's own CPU
+become the limiting factor, exactly as 1e predicted it would if backend were the real
+variable. This directly confirms 1e's claim was right to retract: TS *does* hit a Python-like
+one-core runner ceiling -- just not under the SQLite config 1e originally tested.
+
+**Does TS's control-plane story hold for Python under SQLite?** Also yes. Python + SQLite
+(`echo_agent`, fresh DB per stage, identical method to 1e):
+
+| `--concurrency` | Total | p50 | Runner CPU (avg/max) |
+|---|---|---|---|
+| 1 | 7,582 | 409ms | 46.2% / 63.6% |
+| 20 | 10,409 | 266ms | 55.3% / 119.2% |
+| 100 | 10,664 | 250ms | 56.0% / 125.0% |
+
+Nearly identical totals to TS's own SQLite numbers from 1e (7,775 / 10,468 / 10,575) -- within
+a few percent at every stage, despite being a different language runtime entirely. Python's
+runner CPU here also never sustains near 100% (avg tops out at 56%), unlike its own Postgres-
+backed 1d result. Two Python replicas (`--concurrency 20` each, mirroring 1e's TS replica
+test) produced 10,569 total -- again no uplift over one replica -- while the **control
+plane's** CPU during that run measured 124.8% avg / 160.9% max, over one full core, matching
+TS's control-plane reading (118.7%/144.2%) under the identical backend. Same plateau, same
+no-replica-uplift, same control-plane saturation signature, different language.
+
+**Conclusion: the SQLite-vs-Postgres split in 1e wasn't about Node vs. Python at all.** Under
+SQLite + in-process, the control plane's own `MaxOpenConns(1)` write-serialization is the
+shared bottleneck for *both* runners, at nearly the same throughput ceiling (~10,400-10,600
+per 30s) regardless of which language is executing jobs. Under Postgres, that ceiling lifts
+and *both* runners' own CPU becomes the limiting factor instead -- a genuine, language-
+independent one-core-per-process ceiling for a near-zero-compute agent, exactly as Python's
+1d described it, now confirmed for TS too.
+
+**One more result, surfaced but not fully chased down**: 2 TS replicas under Postgres
+(`--concurrency 20` each) produced **26,854** total -- *less* than one replica's 35,789-37,541,
+not just "no uplift" the way SQLite's replica tests read, and the opposite of Python's original
++22% uplift under (presumably) similar Postgres conditions in 1d. Checked for an obvious
+explanation rather than left unexplained: this machine has 14 logical CPUs, but was also
+running 7 Docker containers throughout this session (5 for this project's own test infra, 2
+entirely unrelated ones from another local project) plus the control plane and 2 TS runner
+processes each wanting a full core under Postgres -- a real, plausible contention explanation
+on a shared, noisy dev machine, but not confirmed (no isolated re-run on a quieter machine, no
+repeat sample to rule out a one-off). Flagged honestly as a genuine anomaly worth a dedicated,
+controlled follow-up, not quietly smoothed into "replicas didn't help here either."
+
 Also found and fixed along the way: CrewAI's `Crew` object is **not** safe for concurrent
 `akickoff()` calls on the same shared instance -- confirmed by reading crewai's own
 `crew.py`: both `kickoff`/`akickoff` write results directly onto shared instance attributes
