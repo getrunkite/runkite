@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -245,6 +246,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/connectors", s.handleListConnectors)
 	mux.HandleFunc("GET /internal/connectors/{name}", s.handleGetConnector)
 	mux.HandleFunc("POST /internal/connectors/{name}/session", s.handleGetConnectorSession)
+	mux.HandleFunc("POST /internal/connectors/{name}/mcp", s.handleProxyMCPRequest)
 	mux.HandleFunc("GET /internal/cron", s.handleListCronSchedules)
 
 	// Store, proxy mode (master plan: "Unified Store, Dual Mode") -- same
@@ -717,6 +719,67 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, sess)
+}
+
+// POST /internal/connectors/{name}/mcp — proxy one JSON-RPC request to a
+// connector's downstream MCP server, enforcing its tool allow/deny list
+// (see internal/connector/mcpproxy.go's doc comment for the full
+// rationale: this is what makes that filter a real gate instead of an
+// advisory hint the agent's own MCP client could just ignore). The
+// request body is the raw JSON-RPC message, forwarded (or rejected)
+// as-is -- not wrapped the way /session's body is, since altering the
+// JSON-RPC envelope would break any standard MCP client sending it.
+// User context for oauth2_token_exchange connectors (which need a fresh
+// per-call token, not a cached one -- see getToken's own doc comment)
+// travels via a header instead of the body for the same reason.
+func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if s.connectors == nil {
+		writeError(w, http.StatusNotFound, "connector not found: "+name)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var userCtx map[string]interface{}
+	if raw := r.Header.Get("X-Runkite-User-Context"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &userCtx)
+	}
+
+	result, err := s.connectors.ProxyMCPRequest(r.Context(), name, userCtx, body)
+	if err != nil {
+		if errors.Is(err, connector.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "connector not found: "+name)
+			return
+		}
+		var circuitOpen *connector.ErrCircuitOpen
+		if errors.As(err, &circuitOpen) {
+			w.Header().Set("Retry-After", "5")
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		slog.Error("mcp proxy request failed", "connector", name, "error", err)
+		msg := "failed to proxy mcp request"
+		if c, cErr := s.connectors.Get(name); cErr == nil && len(c.Config.Errors) > 0 {
+			errStr := err.Error()
+			for code, userMsg := range c.Config.Errors {
+				if strings.Contains(errStr, code) {
+					msg = userMsg
+					break
+				}
+			}
+		}
+		writeError(w, http.StatusBadGateway, msg)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(result.StatusCode)
+	w.Write(result.Body)
 }
 
 // --- Shared helpers ---

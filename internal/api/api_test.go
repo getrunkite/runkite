@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2205,6 +2206,109 @@ func TestConnector_PreWarmFromAgentMetadata(t *testing.T) {
 	}
 	if len(assignment.ConnectorNeeds) != 1 || assignment.ConnectorNeeds[0] != "salesforce" {
 		t.Fatalf("expected connector_needs=[salesforce] on the dispatched assignment, got %v", assignment.ConnectorNeeds)
+	}
+}
+
+// ============================================================================
+// Connector MCP Proxy — makes IsToolAllowed a real enforcement gate
+// (plans/pending_items.md item 17), tested end to end through the actual
+// HTTP handler + a fake downstream MCP server, not just the registry
+// method directly (internal/connector/mcpproxy_test.go covers that).
+// ============================================================================
+
+func TestConnector_MCPProxy_AllowedToolReachesDownstream(t *testing.T) {
+	var toolCallHits int32
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]interface{}
+		json.Unmarshal(body, &req)
+		if req["method"] == "tools/call" {
+			atomic.AddInt32(&toolCallHits, 1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"jsonrpc": "2.0", "id": req["id"], "result": map[string]interface{}{"content": []interface{}{}},
+		})
+	}))
+	t.Cleanup(fake.Close)
+
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {
+			Auth:  connector.AuthConfig{Type: "api_key", APIKey: "k"},
+			MCP:   &connector.MCPConfig{URL: fake.URL},
+			Tools: &connector.ToolFilter{Allow: []string{"query"}},
+		},
+	})
+
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/mcp", map[string]interface{}{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "query"},
+	})
+	expectStatus(t, resp, 200)
+	body := readBody(t, resp)
+	if atomic.LoadInt32(&toolCallHits) != 1 {
+		t.Fatalf("expected downstream to be hit once for an allowed tool, got %d", toolCallHits)
+	}
+	var rpcResp map[string]interface{}
+	json.Unmarshal(body, &rpcResp)
+	if rpcResp["error"] != nil {
+		t.Fatalf("expected no JSON-RPC error for an allowed tool, got %v", rpcResp["error"])
+	}
+}
+
+func TestConnector_MCPProxy_DeniedToolNeverReachesDownstream(t *testing.T) {
+	var toolCallHits int32
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&toolCallHits, 1)
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	}))
+	t.Cleanup(fake.Close)
+
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {
+			Auth:  connector.AuthConfig{Type: "api_key", APIKey: "k"},
+			MCP:   &connector.MCPConfig{URL: fake.URL},
+			Tools: &connector.ToolFilter{Allow: []string{"query"}},
+		},
+	})
+
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/mcp", map[string]interface{}{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]interface{}{"name": "deleteEverything"},
+	})
+	expectStatus(t, resp, 200) // JSON-RPC errors are still HTTP 200
+	body := readBody(t, resp)
+	if atomic.LoadInt32(&toolCallHits) != 0 {
+		t.Fatalf("downstream MCP server must never be contacted for a denied tool call, got %d hits", toolCallHits)
+	}
+	var rpcResp map[string]interface{}
+	json.Unmarshal(body, &rpcResp)
+	if rpcResp["error"] == nil {
+		t.Fatalf("expected a JSON-RPC error for a denied tool call, got %s", body)
+	}
+}
+
+func TestConnector_MCPProxy_UnknownConnector(t *testing.T) {
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {Auth: connector.AuthConfig{Type: "api_key", APIKey: "k"}},
+	})
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/nope/mcp", map[string]interface{}{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+	})
+	expectStatus(t, resp, 404)
+}
+
+func TestConnector_MCPProxy_SessionURLPointsAtProxyNotRawDownstream(t *testing.T) {
+	env := newTestEnvWithConnectors(t, map[string]connector.ConnectorConfig{
+		"sf": {
+			Auth: connector.AuthConfig{Type: "api_key", APIKey: "k"},
+			MCP:  &connector.MCPConfig{URL: "https://raw-downstream.internal/mcp"},
+		},
+	})
+	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/session", map[string]interface{}{})
+	expectStatus(t, resp, 200)
+	var sess connector.SessionResponse
+	json.Unmarshal(readBody(t, resp), &sess)
+	if sess.MCP == nil || sess.MCP.URL != "/internal/connectors/sf/mcp" {
+		t.Fatalf("expected session to point at the proxy path, got %+v", sess.MCP)
 	}
 }
 
