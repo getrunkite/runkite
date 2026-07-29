@@ -27,11 +27,46 @@ connection's internal lock (correct, but not actually parallel).
 `checkpoint/postgres/_ainternal.py`) -- confirmed it checks out a
 connection per operation via that same module's `get_connection` helper,
 so this is a supported usage, not a hack.
+
+Concurrent-startup migration race (found live, plans/pending_items.md item
+16.2a): `AsyncPostgresSaver.setup()` runs `CREATE TABLE IF NOT EXISTS` DDL
+for its own `checkpoint_migrations` table, which is not actually race-free
+on a truly fresh database -- the same class of bug this project's own
+`internal/state/postgres/postgres.go` had and fixed with a session advisory
+lock. When 2+ runner replicas start simultaneously against a fresh
+Postgres, one `setup()` call can lose that race and crash with
+`duplicate key value violates unique constraint "pg_type_typname_nsp_index"`.
+
+Fixed here with an advisory lock too, but `pg_try_advisory_lock` polled in
+a loop, NOT a blocking `pg_advisory_lock` -- tried the blocking version
+first and hit a real deadlock, not just a slower path: `setup()` also runs
+`CREATE INDEX CONCURRENTLY`, which must wait for every *other* backend's
+in-flight statement in the whole database to finish before it can proceed
+(a Postgres-wide barrier, unrelated to which table the other statement
+touches). A losing replica blocked inside a single `SELECT
+pg_advisory_lock(...)` call counts as an in-flight statement -- so the
+winner's `CREATE INDEX CONCURRENTLY` waits on the losers, and the losers
+wait on the winner to finish `setup()` and unlock. Circular wait,
+confirmed live via `pg_stat_activity`/`pg_locks` (losers stuck on
+`Lock/advisory`, winner stuck on `Lock/virtualxid` waiting on them).
+Polling `pg_try_advisory_lock` avoids this because each poll is its own
+complete, instantly-committed statement -- a losing replica is never
+mid-statement between polls, so it never blocks the winner's
+`CREATE INDEX CONCURRENTLY`.
 """
 
+import asyncio
 import logging
 
 logger = logging.getLogger("runkite.runner")
+
+# Distinct from the Go control plane's own schema-init advisory lock key
+# (894127001, internal/state/postgres/postgres.go) -- unrelated schemas
+# (runner checkpoint tables vs. control-plane state tables), no reason for
+# one to block the other.
+_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY = 894127002
+_LOCK_POLL_INTERVAL_S = 0.2
+_LOCK_POLL_TIMEOUT_S = 60.0
 
 
 class CheckpointerManager:
@@ -52,6 +87,7 @@ class CheckpointerManager:
 
     async def start(self, postgres_dsn: str | None, pool_size: int = 4):
         if postgres_dsn:
+            import psycopg
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             from psycopg.rows import dict_row
             from psycopg_pool import AsyncConnectionPool
@@ -68,7 +104,38 @@ class CheckpointerManager:
             )
             await self._pool.open()
             self._checkpointer = AsyncPostgresSaver(conn=self._pool)
-            await self._checkpointer.setup()
+
+            # Serialize setup() across concurrently-starting runner replicas so
+            # its CREATE TABLE IF NOT EXISTS / CREATE INDEX CONCURRENTLY DDL
+            # can't race on a fresh DB (see module docstring). Deliberately a
+            # standalone connection, NOT checked out from self._pool: setup()
+            # itself checks out a connection from that same pool internally,
+            # and with --concurrency 1 (pool max_size=1) holding the lock from
+            # inside the pool would starve setup()'s own checkout of the only
+            # connection available.
+            async with await psycopg.AsyncConnection.connect(postgres_dsn, autocommit=True) as lock_conn:
+                waited = 0.0
+                while True:
+                    row = await (
+                        await lock_conn.execute(
+                            "SELECT pg_try_advisory_lock(%s)", (_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY,)
+                        )
+                    ).fetchone()
+                    if row and row[0]:
+                        break
+                    if waited >= _LOCK_POLL_TIMEOUT_S:
+                        raise TimeoutError(
+                            "timed out waiting for checkpoint setup() advisory lock "
+                            f"(held by another runner replica for over {_LOCK_POLL_TIMEOUT_S}s)"
+                        )
+                    await asyncio.sleep(_LOCK_POLL_INTERVAL_S)
+                    waited += _LOCK_POLL_INTERVAL_S
+                try:
+                    await self._checkpointer.setup()
+                finally:
+                    await lock_conn.execute(
+                        "SELECT pg_advisory_unlock(%s)", (_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY,)
+                    )
             self.mode = "direct-postgres"
             logger.info(f"checkpoint mode: direct (postgres, pool_size={pool_size}) -- state survives runner restarts")
         else:
