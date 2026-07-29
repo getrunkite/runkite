@@ -26,6 +26,17 @@
 #   - Rate limits are shared across replicas, not per-instance (RL-002/RL-003
 #     policy) -- state.Store-backed rate limiting is required for this, not
 #     an in-memory-per-process limiter
+#
+# `name:` below pins the Compose project name explicitly -- without it,
+# Compose defaults to the directory name, which is the SAME default
+# docker-compose.test.yml uses. Confirmed live, twice, the hard way: running
+# this file without an explicit project name recreates docker-compose.test.yml's
+# postgres/redis containers under this file's config instead of adding new
+# ones, silently displacing the standard test infra (ports 5433/6380) until
+# someone notices `make test-pg`/`test-redis` failing and manually restores it
+# with `make infra-up`. The name below makes that collision structurally
+# impossible instead of relying on everyone remembering `-p runkite-multi`.
+name: runkite-multi
 services:
   postgres:
     image: pgvector/pgvector:pg16
