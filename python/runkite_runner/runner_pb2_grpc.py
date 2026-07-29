@@ -57,6 +57,11 @@ class RunnerServiceStub(object):
                 request_serializer=runner__pb2.WatchCancelsRequest.SerializeToString,
                 response_deserializer=runner__pb2.CancelSignal.FromString,
                 _registered_method=True)
+        self.Heartbeat = channel.unary_unary(
+                '/runkite.runner.v0.RunnerService/Heartbeat',
+                request_serializer=runner__pb2.HeartbeatRequest.SerializeToString,
+                response_deserializer=runner__pb2.HeartbeatResponse.FromString,
+                _registered_method=True)
 
 
 class RunnerServiceServicer(object):
@@ -98,6 +103,24 @@ class RunnerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Heartbeat(self, request, context):
+        """Heartbeat is called periodically by the runner while a run is
+        actively executing, to prove liveness for the WHOLE run, not just
+        delivery (plans/pending_items.md item 16, Problem 2). Without this,
+        the control plane only knows a job is alive up to its first
+        StreamEvents message (~15ms after dequeue in practice) -- a runner
+        crash any time after that left the run permanently stuck, confirmed
+        live. The server extends the same in-flight lease Dequeue creates
+        (see transport.JobQueue's Renew) each time this arrives; a runner
+        that stops heartbeating (crashed, or an older runner that doesn't
+        send this RPC at all) eventually falls stale and gets reclaimed by
+        the existing ReclaimStale reaper -- no new reclaim mechanism needed,
+        just a mechanism to keep resetting the clock during real work.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RunnerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -120,6 +143,11 @@ def add_RunnerServiceServicer_to_server(servicer, server):
                     servicer.WatchCancels,
                     request_deserializer=runner__pb2.WatchCancelsRequest.FromString,
                     response_serializer=runner__pb2.CancelSignal.SerializeToString,
+            ),
+            'Heartbeat': grpc.unary_unary_rpc_method_handler(
+                    servicer.Heartbeat,
+                    request_deserializer=runner__pb2.HeartbeatRequest.FromString,
+                    response_serializer=runner__pb2.HeartbeatResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -233,6 +261,33 @@ class RunnerService(object):
             '/runkite.runner.v0.RunnerService/WatchCancels',
             runner__pb2.WatchCancelsRequest.SerializeToString,
             runner__pb2.CancelSignal.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Heartbeat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/runkite.runner.v0.RunnerService/Heartbeat',
+            runner__pb2.HeartbeatRequest.SerializeToString,
+            runner__pb2.HeartbeatResponse.FromString,
             options,
             channel_credentials,
             insecure,

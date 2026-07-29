@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crunner.proto\x12\x11runkite.runner.v0\"=\n\rGetJobRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\x02 \x01(\x05\":\n\x0eGetJobResponse\x12\x0f\n\x07has_job\x18\x01 \x01(\x08\x12\x17\n\x0f\x61ssignment_json\x18\x02 \x01(\t\"3\n\rRunEventProto\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\nevent_json\x18\x02 \x01(\t\"\"\n\x14StreamEventsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"L\n\x13ReportStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x15\n\rerror_message\x18\x03 \x01(\t\"\"\n\x14ReportStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"*\n\x13WatchCancelsRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\"\x1e\n\x0c\x43\x61ncelSignal\x12\x0e\n\x06run_id\x18\x01 \x01(\t2\xf7\x02\n\rRunnerService\x12M\n\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n\x0cStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a\'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n\x0cReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a\'.runkite.runner.v0.ReportStatusResponse\x12Y\n\x0cWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x42;Z9github.com/sharanharsoor/runkite/internal/bridge/runnerpbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crunner.proto\x12\x11runkite.runner.v0\"=\n\rGetJobRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\x02 \x01(\x05\":\n\x0eGetJobResponse\x12\x0f\n\x07has_job\x18\x01 \x01(\x08\x12\x17\n\x0f\x61ssignment_json\x18\x02 \x01(\t\"3\n\rRunEventProto\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\nevent_json\x18\x02 \x01(\t\"\"\n\x14StreamEventsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"L\n\x13ReportStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x15\n\rerror_message\x18\x03 \x01(\t\"\"\n\x14ReportStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"*\n\x13WatchCancelsRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\"\x1e\n\x0c\x43\x61ncelSignal\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\"\n\x10HeartbeatRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\x1f\n\x11HeartbeatResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x32\xcf\x03\n\rRunnerService\x12M\n\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n\x0cStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a\'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n\x0cReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a\'.runkite.runner.v0.ReportStatusResponse\x12Y\n\x0cWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x12V\n\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB;Z9github.com/sharanharsoor/runkite/internal/bridge/runnerpbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -48,6 +48,10 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_WATCHCANCELSREQUEST']._serialized_end=403
   _globals['_CANCELSIGNAL']._serialized_start=405
   _globals['_CANCELSIGNAL']._serialized_end=435
-  _globals['_RUNNERSERVICE']._serialized_start=438
-  _globals['_RUNNERSERVICE']._serialized_end=813
+  _globals['_HEARTBEATREQUEST']._serialized_start=437
+  _globals['_HEARTBEATREQUEST']._serialized_end=471
+  _globals['_HEARTBEATRESPONSE']._serialized_start=473
+  _globals['_HEARTBEATRESPONSE']._serialized_end=504
+  _globals['_RUNNERSERVICE']._serialized_start=507
+  _globals['_RUNNERSERVICE']._serialized_end=970
 # @@protoc_insertion_point(module_scope)

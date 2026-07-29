@@ -24,6 +24,20 @@ service RunnerService {
   // runner_kind; the server streams CancelSignal messages whenever
   // a run of that kind is cancelled.
   rpc WatchCancels(WatchCancelsRequest) returns (stream CancelSignal);
+
+  // Heartbeat is called periodically by the runner while a run is
+  // actively executing, to prove liveness for the WHOLE run, not just
+  // delivery (plans/pending_items.md item 16, Problem 2). Without this,
+  // the control plane only knows a job is alive up to its first
+  // StreamEvents message (~15ms after dequeue in practice) -- a runner
+  // crash any time after that left the run permanently stuck, confirmed
+  // live. The server extends the same in-flight lease Dequeue creates
+  // (see transport.JobQueue's Renew) each time this arrives; a runner
+  // that stops heartbeating (crashed, or an older runner that doesn't
+  // send this RPC at all) eventually falls stale and gets reclaimed by
+  // the existing ReclaimStale reaper -- no new reclaim mechanism needed,
+  // just a mechanism to keep resetting the clock during real work.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 
 message GetJobRequest {
@@ -61,4 +75,12 @@ message WatchCancelsRequest {
 
 message CancelSignal {
   string run_id = 1;
+}
+
+message HeartbeatRequest {
+  string run_id = 1;
+}
+
+message HeartbeatResponse {
+  bool ok = 1;
 }

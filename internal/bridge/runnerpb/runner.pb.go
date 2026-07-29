@@ -413,6 +413,94 @@ func (x *CancelSignal) GetRunId() string {
 	return ""
 }
 
+type HeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatRequest) Reset() {
+	*x = HeartbeatRequest{}
+	mi := &file_runner_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatRequest) ProtoMessage() {}
+
+func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_runner_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *HeartbeatRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+type HeartbeatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatResponse) Reset() {
+	*x = HeartbeatResponse{}
+	mi := &file_runner_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatResponse) ProtoMessage() {}
+
+func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
+func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
+	return file_runner_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *HeartbeatResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_runner_proto protoreflect.FileDescriptor
 
 const file_runner_proto_rawDesc = "" +
@@ -441,12 +529,17 @@ const file_runner_proto_rawDesc = "" +
 	"\vrunner_kind\x18\x01 \x01(\tR\n" +
 	"runnerKind\"%\n" +
 	"\fCancelSignal\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId2\xf7\x02\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\")\n" +
+	"\x10HeartbeatRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\"#\n" +
+	"\x11HeartbeatResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xcf\x03\n" +
 	"\rRunnerService\x12M\n" +
 	"\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n" +
 	"\fStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n" +
 	"\fReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a'.runkite.runner.v0.ReportStatusResponse\x12Y\n" +
-	"\fWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01B;Z9github.com/sharanharsoor/runkite/internal/bridge/runnerpbb\x06proto3"
+	"\fWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x12V\n" +
+	"\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB;Z9github.com/sharanharsoor/runkite/internal/bridge/runnerpbb\x06proto3"
 
 var (
 	file_runner_proto_rawDescOnce sync.Once
@@ -460,7 +553,7 @@ func file_runner_proto_rawDescGZIP() []byte {
 	return file_runner_proto_rawDescData
 }
 
-var file_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_runner_proto_goTypes = []any{
 	(*GetJobRequest)(nil),        // 0: runkite.runner.v0.GetJobRequest
 	(*GetJobResponse)(nil),       // 1: runkite.runner.v0.GetJobResponse
@@ -470,18 +563,22 @@ var file_runner_proto_goTypes = []any{
 	(*ReportStatusResponse)(nil), // 5: runkite.runner.v0.ReportStatusResponse
 	(*WatchCancelsRequest)(nil),  // 6: runkite.runner.v0.WatchCancelsRequest
 	(*CancelSignal)(nil),         // 7: runkite.runner.v0.CancelSignal
+	(*HeartbeatRequest)(nil),     // 8: runkite.runner.v0.HeartbeatRequest
+	(*HeartbeatResponse)(nil),    // 9: runkite.runner.v0.HeartbeatResponse
 }
 var file_runner_proto_depIdxs = []int32{
 	0, // 0: runkite.runner.v0.RunnerService.GetJob:input_type -> runkite.runner.v0.GetJobRequest
 	2, // 1: runkite.runner.v0.RunnerService.StreamEvents:input_type -> runkite.runner.v0.RunEventProto
 	4, // 2: runkite.runner.v0.RunnerService.ReportStatus:input_type -> runkite.runner.v0.ReportStatusRequest
 	6, // 3: runkite.runner.v0.RunnerService.WatchCancels:input_type -> runkite.runner.v0.WatchCancelsRequest
-	1, // 4: runkite.runner.v0.RunnerService.GetJob:output_type -> runkite.runner.v0.GetJobResponse
-	3, // 5: runkite.runner.v0.RunnerService.StreamEvents:output_type -> runkite.runner.v0.StreamEventsResponse
-	5, // 6: runkite.runner.v0.RunnerService.ReportStatus:output_type -> runkite.runner.v0.ReportStatusResponse
-	7, // 7: runkite.runner.v0.RunnerService.WatchCancels:output_type -> runkite.runner.v0.CancelSignal
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	8, // 4: runkite.runner.v0.RunnerService.Heartbeat:input_type -> runkite.runner.v0.HeartbeatRequest
+	1, // 5: runkite.runner.v0.RunnerService.GetJob:output_type -> runkite.runner.v0.GetJobResponse
+	3, // 6: runkite.runner.v0.RunnerService.StreamEvents:output_type -> runkite.runner.v0.StreamEventsResponse
+	5, // 7: runkite.runner.v0.RunnerService.ReportStatus:output_type -> runkite.runner.v0.ReportStatusResponse
+	7, // 8: runkite.runner.v0.RunnerService.WatchCancels:output_type -> runkite.runner.v0.CancelSignal
+	9, // 9: runkite.runner.v0.RunnerService.Heartbeat:output_type -> runkite.runner.v0.HeartbeatResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -498,7 +595,7 @@ func file_runner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_rawDesc), len(file_runner_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

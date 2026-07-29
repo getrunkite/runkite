@@ -23,6 +23,7 @@ const (
 	RunnerService_StreamEvents_FullMethodName = "/runkite.runner.v0.RunnerService/StreamEvents"
 	RunnerService_ReportStatus_FullMethodName = "/runkite.runner.v0.RunnerService/ReportStatus"
 	RunnerService_WatchCancels_FullMethodName = "/runkite.runner.v0.RunnerService/WatchCancels"
+	RunnerService_Heartbeat_FullMethodName    = "/runkite.runner.v0.RunnerService/Heartbeat"
 )
 
 // RunnerServiceClient is the client API for RunnerService service.
@@ -46,6 +47,19 @@ type RunnerServiceClient interface {
 	// runner_kind; the server streams CancelSignal messages whenever
 	// a run of that kind is cancelled.
 	WatchCancels(ctx context.Context, in *WatchCancelsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CancelSignal], error)
+	// Heartbeat is called periodically by the runner while a run is
+	// actively executing, to prove liveness for the WHOLE run, not just
+	// delivery (plans/pending_items.md item 16, Problem 2). Without this,
+	// the control plane only knows a job is alive up to its first
+	// StreamEvents message (~15ms after dequeue in practice) -- a runner
+	// crash any time after that left the run permanently stuck, confirmed
+	// live. The server extends the same in-flight lease Dequeue creates
+	// (see transport.JobQueue's Renew) each time this arrives; a runner
+	// that stops heartbeating (crashed, or an older runner that doesn't
+	// send this RPC at all) eventually falls stale and gets reclaimed by
+	// the existing ReclaimStale reaper -- no new reclaim mechanism needed,
+	// just a mechanism to keep resetting the clock during real work.
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type runnerServiceClient struct {
@@ -108,6 +122,16 @@ func (c *runnerServiceClient) WatchCancels(ctx context.Context, in *WatchCancels
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RunnerService_WatchCancelsClient = grpc.ServerStreamingClient[CancelSignal]
 
+func (c *runnerServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, RunnerService_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RunnerServiceServer is the server API for RunnerService service.
 // All implementations must embed UnimplementedRunnerServiceServer
 // for forward compatibility.
@@ -129,6 +153,19 @@ type RunnerServiceServer interface {
 	// runner_kind; the server streams CancelSignal messages whenever
 	// a run of that kind is cancelled.
 	WatchCancels(*WatchCancelsRequest, grpc.ServerStreamingServer[CancelSignal]) error
+	// Heartbeat is called periodically by the runner while a run is
+	// actively executing, to prove liveness for the WHOLE run, not just
+	// delivery (plans/pending_items.md item 16, Problem 2). Without this,
+	// the control plane only knows a job is alive up to its first
+	// StreamEvents message (~15ms after dequeue in practice) -- a runner
+	// crash any time after that left the run permanently stuck, confirmed
+	// live. The server extends the same in-flight lease Dequeue creates
+	// (see transport.JobQueue's Renew) each time this arrives; a runner
+	// that stops heartbeating (crashed, or an older runner that doesn't
+	// send this RPC at all) eventually falls stale and gets reclaimed by
+	// the existing ReclaimStale reaper -- no new reclaim mechanism needed,
+	// just a mechanism to keep resetting the clock during real work.
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedRunnerServiceServer()
 }
 
@@ -150,6 +187,9 @@ func (UnimplementedRunnerServiceServer) ReportStatus(context.Context, *ReportSta
 }
 func (UnimplementedRunnerServiceServer) WatchCancels(*WatchCancelsRequest, grpc.ServerStreamingServer[CancelSignal]) error {
 	return status.Error(codes.Unimplemented, "method WatchCancels not implemented")
+}
+func (UnimplementedRunnerServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
 }
 func (UnimplementedRunnerServiceServer) mustEmbedUnimplementedRunnerServiceServer() {}
 func (UnimplementedRunnerServiceServer) testEmbeddedByValue()                       {}
@@ -226,6 +266,24 @@ func _RunnerService_WatchCancels_Handler(srv interface{}, stream grpc.ServerStre
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RunnerService_WatchCancelsServer = grpc.ServerStreamingServer[CancelSignal]
 
+func _RunnerService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RunnerServiceServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RunnerService_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RunnerServiceServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RunnerService_ServiceDesc is the grpc.ServiceDesc for RunnerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -240,6 +298,10 @@ var RunnerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportStatus",
 			Handler:    _RunnerService_ReportStatus_Handler,
+		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _RunnerService_Heartbeat_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
