@@ -363,7 +363,12 @@ func startServer(opts serverOpts) {
 	handler = otelhttp.NewHandler(handler, "runkite-http")
 
 	// Start HTTP server
-	slog.Info("control plane starting", "http_port", opts.httpPort, "grpc_port", opts.grpcPort)
+	// hostname is logged (not a new config knob) specifically so multiple
+	// replicas behind a load balancer are distinguishable in shared logs --
+	// Docker/K8s already give each container/pod a unique hostname, so this
+	// is free instance identification with zero new configuration surface.
+	hostname, _ := os.Hostname()
+	slog.Info("control plane starting", "http_port", opts.httpPort, "grpc_port", opts.grpcPort, "hostname", hostname)
 
 	if opts.devMode {
 		fmt.Printf("\n  Runkite Control Plane (dev)\n")

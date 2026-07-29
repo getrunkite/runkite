@@ -37,8 +37,101 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{pool: pool}, nil
 }
 
-// Init creates all tables.
+// initAdvisoryLockKey is an arbitrary constant used as a Postgres session
+// advisory lock key to serialize schema initialization across concurrent
+// processes (multiple control-plane replicas starting simultaneously
+// against the same fresh database -- see Init's own doc comment for the
+// race this closes). Value has no meaning beyond being a fixed, unique-
+// enough int64 unlikely to collide with any other advisory lock a user's
+// own application might independently take on the same database.
+const initAdvisoryLockKey = 894127001
+
+// Init creates all tables. Safe to call concurrently from multiple
+// processes against the same database (e.g. several `runkite serve`
+// replicas starting up at once, all pointed at one fresh Postgres) --
+// wrapped in a session-level advisory lock so only one process actually
+// runs the DDL while the others wait, then find the schema already
+// present. Without this, concurrent CREATE TABLE IF NOT EXISTS calls
+// against a table that doesn't exist yet can race on Postgres's own
+// catalog (confirmed live: "duplicate key value violates unique
+// constraint \"pg_type_typname_nsp_index\"" when 3 replicas started
+// together against a fresh database) -- IF NOT EXISTS makes each
+// individual statement idempotent once the schema exists, but doesn't by
+// itself make the very first, from-nothing creation race-free.
 func (s *Store) Init(ctx context.Context) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection for schema init lock: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", initAdvisoryLockKey); err != nil {
+		return fmt.Errorf("acquire schema init advisory lock: %w", err)
+	}
+	defer func() {
+		// Best-effort unlock on the same connection the lock was taken on
+		// (required -- session-level advisory locks are connection-scoped).
+		// A failed unlock isn't fatal: the lock releases automatically when
+		// this connection is closed/returned to the pool, at worst
+		// delaying (not blocking forever) any other replica's Init call.
+		if _, unlockErr := conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", initAdvisoryLockKey); unlockErr != nil {
+			return
+		}
+	}()
+
+	return s.initSchemaLocked(ctx, conn)
+}
+
+// splitSchemaStatements splits a semicolon-delimited SQL script into
+// individual statements. Comments are stripped *before* splitting on ";",
+// not after -- a `-- comment` runs to the end of its line regardless of any
+// semicolon characters that appear within the comment's own prose (several
+// of this schema's comments do, e.g. "...covered by its composite PRIMARY
+// KEY above; CREATE UNIQUE INDEX..." as explanatory text, not real SQL), so
+// splitting the raw string first and only checking for comment-only lines
+// afterward mis-splits mid-comment. Stripping first is correct and loses
+// nothing -- Postgres doesn't need the comments to execute the statements.
+// NOT a general-purpose SQL splitter -- it does not understand dollar-
+// quoting (`$$ ... $$`), so it must only be used on scripts confirmed not
+// to contain any (see initSchemaLocked's call site for that check), and it
+// assumes "--" never appears inside a string literal, true for this DDL-
+// only schema (identifiers and types, no string-valued data).
+func splitSchemaStatements(script string) []string {
+	var codeLines []string
+	for _, line := range strings.Split(script, "\n") {
+		if idx := strings.Index(line, "--"); idx >= 0 {
+			line = line[:idx]
+		}
+		codeLines = append(codeLines, line)
+	}
+	codeOnly := strings.Join(codeLines, "\n")
+
+	var out []string
+	for _, part := range strings.Split(codeOnly, ";") {
+		if strings.TrimSpace(part) != "" {
+			out = append(out, strings.TrimSpace(part)+";")
+		}
+	}
+	return out
+}
+
+// firstLine returns stmt's first non-blank, non-comment line, trimmed --
+// used only to make a schema-statement error message identify which
+// statement failed without dumping the whole (possibly multi-line) block.
+func firstLine(stmt string) string {
+	for _, line := range strings.Split(stmt, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+			return trimmed
+		}
+	}
+	return strings.TrimSpace(stmt)
+}
+
+// initSchemaLocked runs the actual schema DDL, called only while Init
+// holds the advisory lock -- split out so the lock-acquisition wrapper
+// above and the DDL itself aren't tangled together in one long function.
+func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS agents (
 		tenant_id    TEXT NOT NULL DEFAULT 'default',
@@ -283,15 +376,36 @@ func (s *Store) Init(ctx context.Context) error {
 	ALTER TABLE cron_claims ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_cron_claims_tenant_sched_fire ON cron_claims(tenant_id, schedule_name, fire_time);
 	`
-	if _, err := s.pool.Exec(ctx, schema); err != nil {
-		return err
+	// Executed as separate statements (not one conn.Exec(ctx, schema) call)
+	// deliberately -- a second real race found via the same live
+	// multi-instance test that found the advisory-lock issue above.
+	// Postgres's simple-query protocol runs a multi-statement string as ONE
+	// implicit transaction, so a single conn.Exec(ctx, schema) call holds
+	// every table's DDL locks (many tables' worth) for the whole
+	// transaction's duration. The advisory lock serializes this DDL against
+	// *other Init() calls*, but not against a DIFFERENT, already-initialized
+	// replica's normal application queries (cron polling, agent
+	// registration, etc.) touching the same tables -- confirmed live:
+	// "deadlock detected (SQLSTATE 40P01)" when a third replica's
+	// still-open, multi-table DDL transaction crossed lock-acquisition
+	// order with a second replica's already-running queries. Splitting into
+	// individually-committing statements shrinks each one's lock footprint
+	// to a single table for a few milliseconds, closing that window. Safe
+	// here specifically because this schema string contains no dollar-
+	// quoted (`DO $$ ... END $$`) blocks with internal semicolons -- see
+	// the separate run_cache migration below, which does, and stays a
+	// single conn.Exec call for exactly that reason.
+	for _, stmt := range splitSchemaStatements(schema) {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("schema statement %q: %w", firstLine(stmt), err)
+		}
 	}
 	// Pre-multi-tenancy (and early multi-tenancy) run_cache used
 	// PRIMARY KEY (cache_key) alone. That makes ON CONFLICT(tenant_id,
 	// cache_key) unable to insert the same raw key for two tenants --
 	// widen the PK in place when the old shape is still present.
 	// Fresh installs already have the composite PK from CREATE TABLE.
-	_, err := s.pool.Exec(ctx, `
+	_, err := conn.Exec(ctx, `
 		DO $$ BEGIN
 			IF EXISTS (
 				SELECT 1

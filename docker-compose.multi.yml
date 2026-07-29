@@ -1,0 +1,136 @@
+# Multi-instance control plane topology (P0 item 1 in plans/pending_items.md).
+#
+# Stands up 3 `runkite serve` replicas sharing one Postgres + one Redis, behind
+# an nginx load balancer that proxies both HTTP (client API) and gRPC (runner
+# bridge) traffic across all three -- the exact topology that was previously
+# only architecturally asserted, never actually run. REDIS_URL is required
+# (not just POSTGRES_DSN) because the Redis-backed queue/broker/cancel-bus is
+# the only transport in this codebase safe to share across multiple processes
+# today; the in-process broker (no REDIS_URL) only works within one process,
+# so it's a single-instance-only configuration by design, not a multi-instance
+# one with a bug.
+#
+# Usage:
+#   docker compose -f docker-compose.multi.yml up -d --build
+#   docker compose -f docker-compose.multi.yml down -v
+#
+# Verify (see plans/pending_items.md item 1 for the full checklist):
+#   - All three replicas report healthy: docker compose -f docker-compose.multi.yml ps
+#   - Requests land on different replicas: curl repeatedly, check which
+#     instance answers (each replicase logs its own hostname/instance id)
+#   - Cron fires exactly once per tick across all three (CH-003) --
+#     TryClaimCronFire/ReleaseCronClaim in cmd/cron.go is the mechanism this
+#     is meant to exercise for real, not just via its own unit tests
+#   - Killing one replica mid-run: its in-flight run's lease is reaped by a
+#     surviving replica, not left stuck (CH-004)
+#   - Rate limits are shared across replicas, not per-instance (RL-002/RL-003
+#     policy) -- state.Store-backed rate limiting is required for this, not
+#     an in-memory-per-process limiter
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: runkite
+      POSTGRES_PASSWORD: runkite
+      POSTGRES_DB: runkite
+    # Host port offset (5434/6381, not the usual 5432/6379) deliberately --
+    # this stack runs alongside other local projects/compose files that
+    # already claim the defaults; only other containers on this compose's
+    # own network need these by service name, host access is for ad hoc
+    # debugging only.
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_multi_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runkite -d runkite"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  runkite-1: &runkite-replica
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment: &runkite-env
+      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      HTTP_PORT: "2026"
+      GRPC_PORT: "50051"
+      LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:-change-me-in-production}
+    # hostname: each service gets a distinct one automatically (defaults to
+    # the container ID unless overridden below) -- cmd/serve.go now logs it
+    # at startup, so replicas are distinguishable in `docker compose logs`
+    # without any new config surface.
+    hostname: runkite-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  runkite-2:
+    <<: *runkite-replica
+    hostname: runkite-2
+
+  runkite-3:
+    <<: *runkite-replica
+    hostname: runkite-3
+
+  lb:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx-multi.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "2026:2026"   # HTTP client API, load-balanced across all 3 replicas
+      - "50051:50051" # gRPC runner bridge, load-balanced across all 3 replicas
+    depends_on:
+      runkite-1:
+        condition: service_healthy
+      runkite-2:
+        condition: service_healthy
+      runkite-3:
+        condition: service_healthy
+
+  runner-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    environment:
+      RUNKITE_GRPC_URL: lb:50051
+      RUNKITE_HTTP_URL: http://lb:2026
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+    depends_on:
+      - lb
+
+  runner-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    environment:
+      RUNKITE_GRPC_URL: lb:50051
+      RUNKITE_HTTP_URL: http://lb:2026
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+    depends_on:
+      - lb
+
+volumes:
+  postgres_multi_data:
