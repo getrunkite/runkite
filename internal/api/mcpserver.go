@@ -230,7 +230,11 @@ func extractMCPResponseText(values map[string]interface{}) string {
 //
 // Wrapped in mcpSessionOwner's own middleware -- see its doc comment
 // for a real, confirmed cross-tenant hijack this closes that the SDK's
-// own built-in protection does not.
+// own built-in protection does not. SessionTimeout is set explicitly
+// (not left at the SDK's own default of "never") -- see
+// mcpSDKSessionTimeout's own doc comment for why that specific value,
+// not just any positive one, matters for this middleware's own
+// correctness.
 func (s *Server) mcpHTTPHandler() http.Handler {
 	base := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		server, err := s.newMCPServer(r.Context())
@@ -239,8 +243,8 @@ func (s *Server) mcpHTTPHandler() http.Handler {
 			return nil
 		}
 		return server
-	}, nil)
-	return newMCPSessionOwner().middleware(base)
+	}, &mcp.StreamableHTTPOptions{SessionTimeout: mcpSDKSessionTimeout})
+	return newMCPSessionOwner(mcpSessionTTL, mcpSessionSweepInterval).middleware(base)
 }
 
 // --------------------------------------------------------------------------
@@ -254,15 +258,41 @@ func (s *Server) mcpHTTPHandler() http.Handler {
 // routing keys off of.
 const mcpSessionIDHeader = "Mcp-Session-Id"
 
-// mcpSessionTTL bounds how long an established session's ownership
-// record is kept without being touched again before this process's own
-// sweep evicts it -- independent of (and a bit more generous than)
-// whatever idle-session timeout the SDK's own StreamableHTTPOptions
-// might be configured with, since this map's only job is closing the
-// hijack window below, not managing the session's actual lifecycle.
-const mcpSessionTTL = 30 * time.Minute
+const (
+	// mcpSessionTTL bounds how long an established session's ownership
+	// record is kept without being touched again before this process's
+	// own sweep evicts it. Deliberately NOT independent of the SDK's
+	// own idle-session timeout below -- see mcpSDKSessionTimeout's own
+	// doc comment for why the two must stay in this specific order.
+	mcpSessionTTL = 30 * time.Minute
 
-const mcpSessionSweepInterval = 5 * time.Minute
+	mcpSessionSweepInterval = 5 * time.Minute
+
+	// mcpSDKSessionTimeout is passed as the MCP SDK's own
+	// StreamableHTTPOptions.SessionTimeout, so the underlying SDK
+	// session itself closes strictly BEFORE this process's ownership
+	// record for it could ever be swept away.
+	//
+	// This isn't just "pick some positive value" -- a real,
+	// live-confirmed gap: leaving this at the SDK's own default (zero
+	// = idle sessions never close) meant a session could still be
+	// alive and answering requests long after mcpSessionOwner's own
+	// ownership record for it had been swept at mcpSessionTTL. Once
+	// that happens, an unrecognized (evicted) session ID is
+	// deliberately treated as "pass through, let the SDK's routing
+	// decide" (see the middleware's own doc comment on why an unknown
+	// ID isn't outright rejected) -- which reopens the exact
+	// cross-tenant hijack window this middleware exists to close,
+	// just after mcpSessionTTL of activity instead of never.
+	//
+	// The margin below mcpSessionTTL (a full sweep interval, not just
+	// one tick less) matters too: an ownership record idle for exactly
+	// mcpSessionTTL isn't necessarily evicted the instant it crosses
+	// that threshold, only at the sweep's next tick, up to
+	// mcpSessionSweepInterval later -- the SDK session needs to already
+	// be closed by THAT point, not merely by mcpSessionTTL itself.
+	mcpSDKSessionTimeout = mcpSessionTTL - mcpSessionSweepInterval
+)
 
 // mcpSessionOwner records which caller (tenant + identity) established
 // each active MCP session, so a later request presenting a DIFFERENT
@@ -283,6 +313,7 @@ const mcpSessionSweepInterval = 5 * time.Minute
 type mcpSessionOwner struct {
 	mu       sync.Mutex
 	sessions map[string]mcpSessionEntry
+	ttl      time.Duration
 }
 
 type mcpSessionEntry struct {
@@ -290,9 +321,14 @@ type mcpSessionEntry struct {
 	lastSeen time.Time
 }
 
-func newMCPSessionOwner() *mcpSessionOwner {
-	o := &mcpSessionOwner{sessions: make(map[string]mcpSessionEntry)}
-	go o.sweepLoop()
+// newMCPSessionOwner takes ttl/sweepInterval as parameters (rather than
+// reading the package constants directly) so a test can exercise the
+// sweep/timeout interaction on a realistic timescale instead of either
+// waiting on mcpSessionTTL for real or only checking the constants'
+// arithmetic in isolation.
+func newMCPSessionOwner(ttl, sweepInterval time.Duration) *mcpSessionOwner {
+	o := &mcpSessionOwner{sessions: make(map[string]mcpSessionEntry), ttl: ttl}
+	go o.sweepLoop(sweepInterval)
 	return o
 }
 
@@ -365,7 +401,7 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 // split out from sweepLoop so a test can call it directly with an
 // artificial "now" instead of waiting on the real ticker.
 func (o *mcpSessionOwner) sweepOnce(now time.Time) {
-	cutoff := now.Add(-mcpSessionTTL)
+	cutoff := now.Add(-o.ttl)
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for id, entry := range o.sessions {
@@ -375,8 +411,8 @@ func (o *mcpSessionOwner) sweepOnce(now time.Time) {
 	}
 }
 
-func (o *mcpSessionOwner) sweepLoop() {
-	ticker := time.NewTicker(mcpSessionSweepInterval)
+func (o *mcpSessionOwner) sweepLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
 		o.sweepOnce(time.Now())
