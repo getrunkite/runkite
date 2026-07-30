@@ -54,6 +54,8 @@ export interface GetJobResponse {
 export interface RunEventProto {
   runId: string;
   eventJson: string;
+  /** See HeartbeatRequest.generation's own doc comment -- same fencing field, threaded through every RPC that identifies a specific dispatch attempt. */
+  generation: string;
 }
 export interface StreamEventsResponse {
   ok: boolean;
@@ -62,9 +64,12 @@ export interface ReportStatusRequest {
   runId: string;
   status: string;
   errorMessage: string;
+  generation: string;
 }
 export interface ReportStatusResponse {
   ok: boolean;
+  /** See HeartbeatResponse.superseded's own doc comment. Informational here -- the runner already finished, nothing left to do besides logging it. */
+  superseded: boolean;
 }
 export interface WatchCancelsRequest {
   runnerKind: string;
@@ -74,9 +79,30 @@ export interface CancelSignal {
 }
 export interface HeartbeatRequest {
   runId: string;
+  /**
+   * The attempt number this runner was handed in its RunAssignment (see
+   * proto/runner.proto's HeartbeatRequest.generation for the full
+   * fencing rationale). A string here, not a number: @grpc/proto-loader's
+   * `longs: String` option (this file's own loadSync config, chosen so a
+   * genuinely large int64 doesn't silently lose precision going through
+   * JS's float64 numbers) means every proto int64 field arrives as a
+   * string on this client -- callers do a plain numeric comparison
+   * (`Number(generation)`) since generations are small monotonic
+   * counters, never large enough for that conversion to lose precision.
+   */
+  generation: string;
 }
 export interface HeartbeatResponse {
   ok: boolean;
+  /**
+   * True when this run's generation is no longer current -- a newer
+   * attempt already exists (this runner was reclaimed while genuinely
+   * still executing). The runner should treat this like a
+   * self-triggered cancel: stop executing and report "interrupted"
+   * instead of continuing to burn resources on a run already retried
+   * elsewhere.
+   */
+  superseded: boolean;
 }
 
 /**

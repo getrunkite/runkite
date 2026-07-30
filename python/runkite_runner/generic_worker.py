@@ -273,9 +273,17 @@ async def _handle_job(
     run_id = None
     stream_task = None
     status = "error"
+    # item 16, Problem 3 fencing token -- see heartbeat.py's docstring.
+    # Initialized here so the outer except's own ReportStatus call
+    # always has a defined value even if json.loads/assignment["run_id"]
+    # itself raised first.
+    generation = 0
     try:
         assignment = json.loads(response.assignment_json)
         run_id = assignment["run_id"]
+        # Defaults to 0 (unfenced) for a control plane that predates
+        # this field, same convention as the Go side.
+        generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
 
         event_queue: asyncio.Queue = asyncio.Queue()
@@ -288,7 +296,9 @@ async def _handle_job(
                 yield item
 
         async def send_event(event: dict):
-            await event_queue.put(runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event)))
+            await event_queue.put(
+                runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+            )
 
         cancel_event = await register_run(
             pending_cancels,
@@ -299,7 +309,11 @@ async def _handle_job(
 
         # Started as soon as run_id is known, before StreamEvents' first
         # message -- see worker.py's mirrored change / heartbeat.py.
-        heartbeat_task = asyncio.create_task(heartbeat_loop(stub, run_id, auth_metadata))
+        # Shares cancel_event with adapter.execute below -- a superseded
+        # heartbeat sets the SAME event a real cancel signal would.
+        heartbeat_task = asyncio.create_task(
+            heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+        )
 
         try:
             stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
@@ -340,6 +354,7 @@ async def _handle_job(
                 run_id=run_id,
                 status=status,
                 error_message="" if status != "error" else "see error event",
+                generation=generation,
             ),
             metadata=auth_metadata,
         )
@@ -357,6 +372,7 @@ async def _handle_job(
                         run_id=run_id,
                         status="error",
                         error_message=str(e),
+                        generation=generation,
                     ),
                     metadata=auth_metadata,
                 )

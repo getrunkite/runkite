@@ -194,8 +194,17 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 		// here once) keeps renewing it throughout execution. The true,
 		// final Ack now only happens in ReportStatus below, once the run
 		// actually completes.
+		//
+		// Not fenced on the returned `current` bool here (unlike
+		// Heartbeat below) -- deliberately: this is a stream, there's no
+		// per-message response to carry a "you've been superseded"
+		// signal back to the runner even if we wanted to reject it here,
+		// and rejecting would just mean NOT renewing, which the runner
+		// can't observe anyway from inside StreamEvents. Heartbeat is
+		// the channel a stale runner actually learns it's been
+		// superseded through and can act on (see its own handler).
 		if !seenFirstEvent[msg.RunId] {
-			_ = s.queue.Renew(stream.Context(), msg.RunId)
+			_, _ = s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
 			seenFirstEvent[msg.RunId] = true
 		}
 
@@ -215,11 +224,27 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 	}
 }
 
-// ReportStatus receives the final status from the runner.
+// ReportStatus receives the final status from the runner. Fenced by
+// generation (item 16, Problem 3): a runner that was reclaimed and
+// replaced while genuinely still executing (a transient blip made it
+// miss the reaper's max-age window) might finish its own stale work
+// anyway and call this late, after a second runner already took over
+// and may have its own status pending or already reported. Accepting
+// that stale report here -- applying its status, or Acking a slot that
+// no longer belongs to this attempt -- would let it clobber or race the
+// real outcome. See RunAssignment.Generation's own doc comment for the
+// full mechanism.
 func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) (*pb.ReportStatusResponse, error) {
-	slog.Info("run status reported", "run_id", req.RunId, "status", req.Status)
+	accepted, err := s.queue.Ack(ctx, req.RunId, req.Generation)
+	if err != nil {
+		slog.Error("failed to ack run status", "run_id", req.RunId, "error", err)
+	}
+	if !accepted {
+		slog.Warn("ignored superseded status report", "run_id", req.RunId, "status", req.Status, "generation", req.Generation)
+		return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
+	}
 
-	_ = s.queue.Ack(ctx, req.RunId)
+	slog.Info("run status reported", "run_id", req.RunId, "status", req.Status)
 
 	// Clean up the cancel-watcher goroutine for this run
 	s.cleanupRun(req.RunId)
@@ -241,8 +266,24 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 // clock during real work. Always returns ok:true even if the run_id is
 // no longer in-flight (already completed, or reclaimed away) -- a late
 // heartbeat racing completion is expected, not an error condition.
+//
+// Fenced by generation (item 16, Problem 3): if a NEWER generation has
+// already been dispatched (this runner was reclaimed while genuinely
+// still executing, then its blip turned out to be transient), Renew
+// returns current=false and this response carries Superseded=true --
+// this is the runner's OWN, actionable signal to detect lease loss and
+// stop (closes TR-033), at the next ~2s heartbeat tick rather than only
+// whenever it eventually finishes and calls ReportStatus.
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	_ = s.queue.Renew(ctx, req.RunId)
+	current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
+	if err != nil {
+		slog.Error("failed to renew heartbeat lease", "run_id", req.RunId, "error", err)
+		return &pb.HeartbeatResponse{Ok: true}, nil
+	}
+	if !current {
+		slog.Warn("heartbeat superseded, signaling runner to stop", "run_id", req.RunId, "generation", req.Generation)
+		return &pb.HeartbeatResponse{Ok: true, Superseded: true}, nil
+	}
 	return &pb.HeartbeatResponse{Ok: true}, nil
 }
 

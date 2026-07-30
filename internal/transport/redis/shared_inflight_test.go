@@ -43,8 +43,8 @@ func TestSharedInflight_AckFromDifferentInstanceThanDequeue(t *testing.T) {
 
 	// The Ack for this job arrives via instanceB, not the instance that
 	// dequeued it -- must still work, not silently no-op.
-	if err := instanceB.Ack(ctx, got.RunID); err != nil {
-		t.Fatalf("instanceB.Ack: %v", err)
+	if accepted, err := instanceB.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+		t.Fatalf("instanceB.Ack: accepted=%v err=%v", accepted, err)
 	}
 
 	// If the Ack landed correctly in shared state, reclaiming (from

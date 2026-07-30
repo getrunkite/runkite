@@ -287,17 +287,33 @@ export async function handleJob(
   pendingCancels: Map<string, CancelState>,
 ): Promise<void> {
   let runId: string | undefined;
+  // item 16, Problem 3 fencing token -- see heartbeat.ts's doc comment.
+  // Hoisted here (not just below), like runId, so the outer catch's own
+  // reportStatus call always has a defined value even if
+  // JSON.parse/assignment.run_id itself threw first.
+  let generation = 0;
   try {
     const assignment: RunAssignment = JSON.parse(response.assignmentJson);
     runId = assignment.run_id;
+    // Defaults to 0 (unfenced) for a control plane that predates this
+    // field, same convention as the Go/Python side.
+    generation = assignment.generation ?? 0;
     logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
 
     const cancelState = registerRun(pendingCancels, runId);
 
     // Started as soon as runId is known, BEFORE streamEvents' first
     // message -- see heartbeat.ts / the Python runner's mirrored change
-    // in worker.py's _handle_job.
-    const heartbeat = startHeartbeatLoop(client, runId, metadata);
+    // in worker.py's _handle_job. onSuperseded shares cancelState with
+    // executeRun below -- a superseded heartbeat sets the SAME flag a
+    // real cancel signal would, so this runner stops cooperatively
+    // instead of racing a second runner that's already taken over.
+    const heartbeat = startHeartbeatLoop(client, runId, metadata, {
+      generation,
+      onSuperseded: () => {
+        cancelState.cancelled = true;
+      },
+    });
 
     try {
       // Open one persistent client-streaming call per run, same pattern
@@ -316,7 +332,7 @@ export async function handleJob(
       });
 
       const sendEvent = async (event: RunEvent): Promise<void> => {
-        call.write({ runId: runId!, eventJson: JSON.stringify(event) });
+        call.write({ runId: runId!, eventJson: JSON.stringify(event), generation: String(generation) });
       };
 
       const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
@@ -330,7 +346,12 @@ export async function handleJob(
 
       await new Promise<void>((resolve, reject) => {
         client.reportStatus(
-          { runId: runId!, status, errorMessage: status === "error" ? "see error event" : "" },
+          {
+            runId: runId!,
+            status,
+            errorMessage: status === "error" ? "see error event" : "",
+            generation: String(generation),
+          },
           metadata,
           (err) => {
             if (err) reject(err);
@@ -352,8 +373,10 @@ export async function handleJob(
     if (runId) {
       const failedRunId = runId;
       await new Promise<void>((resolve) => {
-        client.reportStatus({ runId: failedRunId, status: "error", errorMessage: String(err) }, metadata, () =>
-          resolve(),
+        client.reportStatus(
+          { runId: failedRunId, status: "error", errorMessage: String(err), generation: String(generation) },
+          metadata,
+          () => resolve(),
         );
       }).catch(() => {});
     }

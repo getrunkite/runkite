@@ -44,6 +44,13 @@ func TestReclaimStale_ReenqueuesUnackedJob(t *testing.T) {
 	if again.RunID != "run-stale" {
 		t.Fatalf("got run %s, want run-stale", again.RunID)
 	}
+	// Item 16, Problem 3 (fencing): a reclaimed job's generation must be
+	// bumped so the ORIGINAL runner's late Heartbeat/ReportStatus (if
+	// its blip was transient and it finishes anyway) presents a stale
+	// value and gets rejected instead of clobbering this new attempt.
+	if again.Generation != 1 {
+		t.Fatalf("generation after one reclaim = %d, want 1 (started at 0, ReclaimStale increments once)", again.Generation)
+	}
 }
 
 func TestAck_PreventsReclaim(t *testing.T) {
@@ -61,8 +68,8 @@ func TestAck_PreventsReclaim(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected job")
 	}
-	if err := q.Ack(ctx, got.RunID); err != nil {
-		t.Fatal(err)
+	if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 
 	n, err := q.ReclaimStale(ctx, 0)

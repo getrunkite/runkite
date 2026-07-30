@@ -13,15 +13,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fakeClient(onHeartbeat: (req: HeartbeatRequest) => Error | undefined): RunnerServiceClient {
+function fakeClient(
+  onHeartbeat: (req: HeartbeatRequest) => Error | HeartbeatResponse | undefined,
+): RunnerServiceClient {
   return {
     heartbeat(
       req: HeartbeatRequest,
       _metadata: Metadata,
       callback: (err: Error | null, resp: HeartbeatResponse) => void,
     ): void {
-      const err = onHeartbeat(req);
-      callback(err ?? null, { ok: !err });
+      const result = onHeartbeat(req);
+      if (result instanceof Error) {
+        callback(result, { ok: false, superseded: false });
+      } else {
+        callback(null, result ?? { ok: true, superseded: false });
+      }
     },
   } as unknown as RunnerServiceClient;
 }
@@ -33,7 +39,7 @@ test("startHeartbeatLoop calls heartbeat repeatedly with the correct runId", asy
     return undefined;
   });
 
-  const handle = startHeartbeatLoop(client, "run-x", new Metadata(), 50);
+  const handle = startHeartbeatLoop(client, "run-x", new Metadata(), { intervalMs: 50 });
   await sleep(230);
   handle.stop();
 
@@ -51,7 +57,7 @@ test("startHeartbeatLoop stops cleanly on stop() -- no calls land afterward", as
     return undefined;
   });
 
-  const handle = startHeartbeatLoop(client, "run-y", new Metadata(), 50);
+  const handle = startHeartbeatLoop(client, "run-y", new Metadata(), { intervalMs: 50 });
   await sleep(120);
   handle.stop();
   const countAtStop = count;
@@ -68,9 +74,94 @@ test("startHeartbeatLoop survives a failed RPC and keeps ticking", async () => {
     return undefined;
   });
 
-  const handle = startHeartbeatLoop(client, "run-z", new Metadata(), 50);
+  const handle = startHeartbeatLoop(client, "run-z", new Metadata(), { intervalMs: 50 });
   await sleep(230);
   handle.stop();
 
   assert.ok(count >= 3, `loop should keep running after the first RPC failed, got ${count} calls`);
+});
+
+test("startHeartbeatLoop sends the given generation on every call", async () => {
+  const generations: string[] = [];
+  const client = fakeClient((req) => {
+    generations.push(req.generation);
+    return undefined;
+  });
+
+  const handle = startHeartbeatLoop(client, "run-gen", new Metadata(), { generation: 7, intervalMs: 50 });
+  await sleep(120);
+  handle.stop();
+
+  assert.ok(generations.length >= 2, `expected at least 2 heartbeats, got ${generations.length}`);
+  assert.ok(
+    generations.every((g) => g === "7"),
+    `every heartbeat should carry generation=7, got ${JSON.stringify(generations)}`,
+  );
+});
+
+test("startHeartbeatLoop defaults generation to 0 when not given", async () => {
+  const generations: string[] = [];
+  const client = fakeClient((req) => {
+    generations.push(req.generation);
+    return undefined;
+  });
+
+  const handle = startHeartbeatLoop(client, "run-default-gen", new Metadata(), { intervalMs: 50 });
+  await sleep(120);
+  handle.stop();
+
+  assert.ok(
+    generations.every((g) => g === "0"),
+    `unspecified generation should default to 0 (unfenced), got ${JSON.stringify(generations)}`,
+  );
+});
+
+test("startHeartbeatLoop stops itself and fires onSuperseded when superseded=true", async () => {
+  let count = 0;
+  let supersededFired = false;
+  const client = fakeClient(() => {
+    count++;
+    return { ok: true, superseded: count >= 2 };
+  });
+
+  const handle = startHeartbeatLoop(client, "run-superseded", new Metadata(), {
+    generation: 1,
+    intervalMs: 50,
+    onSuperseded: () => {
+      supersededFired = true;
+    },
+  });
+  // 2nd call (superseded=true) lands at ~100ms; give it real margin.
+  await sleep(300);
+
+  assert.ok(supersededFired, "onSuperseded should have fired");
+  const countAtSupersede = count;
+  await sleep(150);
+  assert.equal(count, countAtSupersede, "no further heartbeat calls after superseded");
+
+  handle.stop(); // no-op, but exercises the already-stopped path cleanly
+});
+
+test("startHeartbeatLoop does not fire onSuperseded while not superseded", async () => {
+  let supersededFired = false;
+  const client = fakeClient(() => ({ ok: true, superseded: false }));
+
+  const handle = startHeartbeatLoop(client, "run-not-superseded", new Metadata(), {
+    generation: 1,
+    intervalMs: 50,
+    onSuperseded: () => {
+      supersededFired = true;
+    },
+  });
+  await sleep(120);
+  assert.equal(supersededFired, false, "onSuperseded should not fire while not superseded");
+  handle.stop();
+});
+
+test("startHeartbeatLoop superseded without onSuperseded does not throw", async () => {
+  const client = fakeClient(() => ({ ok: true, superseded: true }));
+
+  const handle = startHeartbeatLoop(client, "run-no-callback", new Metadata(), { generation: 1, intervalMs: 50 });
+  await sleep(150);
+  handle.stop(); // must not throw even though onSuperseded was never provided
 });

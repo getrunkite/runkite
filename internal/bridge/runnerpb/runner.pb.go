@@ -126,9 +126,16 @@ func (x *GetJobResponse) GetAssignmentJson() string {
 }
 
 type RunEventProto struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	EventJson     string                 `protobuf:"bytes,2,opt,name=event_json,json=eventJson,proto3" json:"event_json,omitempty"` // JSON-encoded RunEvent
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RunId     string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	EventJson string                 `protobuf:"bytes,2,opt,name=event_json,json=eventJson,proto3" json:"event_json,omitempty"` // JSON-encoded RunEvent
+	// generation is the attempt number this runner was handed in its
+	// RunAssignment (see internal/transport/types.go's RunAssignment.Generation
+	// doc comment for the full fencing rationale) -- 0 from an older
+	// runner build that predates fencing, treated the same as "always
+	// matches" for backward compat (see server.go's Heartbeat/ReportStatus
+	// handlers).
+	Generation    int64 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -175,6 +182,13 @@ func (x *RunEventProto) GetEventJson() string {
 		return x.EventJson
 	}
 	return ""
+}
+
+func (x *RunEventProto) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
 }
 
 type StreamEventsResponse struct {
@@ -226,6 +240,7 @@ type ReportStatusRequest struct {
 	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                                 // "success", "error", "interrupted"
 	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // only if status == "error"
+	Generation    int64                  `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`                        // see RunEventProto.generation
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -281,9 +296,23 @@ func (x *ReportStatusRequest) GetErrorMessage() string {
 	return ""
 }
 
+func (x *ReportStatusRequest) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
 type ReportStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// superseded is true when this report's generation was stale -- a
+	// newer attempt (dispatched after this runner was reclaimed) already
+	// owns the run, so the control plane ignored this report's status
+	// entirely rather than risk overwriting the real outcome. The runner
+	// has nothing further to do when this is true; it's informational
+	// (log it), not something to retry.
+	Superseded    bool `protobuf:"varint,2,opt,name=superseded,proto3" json:"superseded,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -321,6 +350,13 @@ func (*ReportStatusResponse) Descriptor() ([]byte, []int) {
 func (x *ReportStatusResponse) GetOk() bool {
 	if x != nil {
 		return x.Ok
+	}
+	return false
+}
+
+func (x *ReportStatusResponse) GetSuperseded() bool {
+	if x != nil {
+		return x.Superseded
 	}
 	return false
 }
@@ -416,6 +452,7 @@ func (x *CancelSignal) GetRunId() string {
 type HeartbeatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Generation    int64                  `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"` // see RunEventProto.generation
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -457,9 +494,29 @@ func (x *HeartbeatRequest) GetRunId() string {
 	return ""
 }
 
+func (x *HeartbeatRequest) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
 type HeartbeatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// superseded is true when this run's generation is no longer current
+	// -- a newer attempt has already been dispatched (this runner was
+	// reclaimed while it was still, genuinely, executing). Unlike
+	// ReportStatusResponse.superseded, this arrives WHILE the runner is
+	// still mid-execution (heartbeats fire every ~2s throughout a run,
+	// not just once at the end) -- the runner should treat this exactly
+	// like a self-triggered cancel: stop executing its graph and report
+	// "interrupted" rather than continuing to burn resources on a run
+	// that's already being retried elsewhere. This is what closes
+	// TR-033 ("old runner must detect lease loss and stop") -- detecting
+	// it at the NEXT heartbeat tick, not only when the runner eventually
+	// finishes and calls ReportStatus.
+	Superseded    bool `protobuf:"varint,2,opt,name=superseded,proto3" json:"superseded,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -501,6 +558,13 @@ func (x *HeartbeatResponse) GetOk() bool {
 	return false
 }
 
+func (x *HeartbeatResponse) GetSuperseded() bool {
+	if x != nil {
+		return x.Superseded
+	}
+	return false
+}
+
 var File_runner_proto protoreflect.FileDescriptor
 
 const file_runner_proto_rawDesc = "" +
@@ -512,28 +576,43 @@ const file_runner_proto_rawDesc = "" +
 	"\x0ftimeout_seconds\x18\x02 \x01(\x05R\x0etimeoutSeconds\"R\n" +
 	"\x0eGetJobResponse\x12\x17\n" +
 	"\ahas_job\x18\x01 \x01(\bR\x06hasJob\x12'\n" +
-	"\x0fassignment_json\x18\x02 \x01(\tR\x0eassignmentJson\"E\n" +
+	"\x0fassignment_json\x18\x02 \x01(\tR\x0eassignmentJson\"e\n" +
 	"\rRunEventProto\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1d\n" +
 	"\n" +
-	"event_json\x18\x02 \x01(\tR\teventJson\"&\n" +
+	"event_json\x18\x02 \x01(\tR\teventJson\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x03 \x01(\x03R\n" +
+	"generation\"&\n" +
 	"\x14StreamEventsResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"i\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x89\x01\n" +
 	"\x13ReportStatusRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"&\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x04 \x01(\x03R\n" +
+	"generation\"F\n" +
 	"\x14ReportStatusResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"6\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x1e\n" +
+	"\n" +
+	"superseded\x18\x02 \x01(\bR\n" +
+	"superseded\"6\n" +
 	"\x13WatchCancelsRequest\x12\x1f\n" +
 	"\vrunner_kind\x18\x01 \x01(\tR\n" +
 	"runnerKind\"%\n" +
 	"\fCancelSignal\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\")\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\"I\n" +
 	"\x10HeartbeatRequest\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\"#\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x03R\n" +
+	"generation\"C\n" +
 	"\x11HeartbeatResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xcf\x03\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x1e\n" +
+	"\n" +
+	"superseded\x18\x02 \x01(\bR\n" +
+	"superseded2\xcf\x03\n" +
 	"\rRunnerService\x12M\n" +
 	"\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n" +
 	"\fStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n" +

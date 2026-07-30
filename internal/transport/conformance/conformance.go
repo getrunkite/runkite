@@ -310,8 +310,8 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
 
-		if err := q.Renew(ctx, got.RunID); err != nil {
-			t.Fatalf("Renew failed: %v", err)
+		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || !current {
+			t.Fatalf("Renew failed: current=%v err=%v", current, err)
 		}
 
 		// Renew must NOT have removed the job from in-flight tracking
@@ -336,15 +336,15 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if err != nil || got == nil {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
-		if err := q.Ack(ctx, got.RunID); err != nil {
-			t.Fatalf("Ack failed: %v", err)
+		if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+			t.Fatalf("Ack failed: accepted=%v err=%v", accepted, err)
 		}
 
 		// A heartbeat racing (or arriving after) completion must not
 		// resurrect the job -- e.g. by creating a phantom in-flight
 		// entry a later ReclaimStale would incorrectly re-queue.
-		if err := q.Renew(ctx, got.RunID); err != nil {
-			t.Fatalf("Renew after Ack should be a safe no-op, got error: %v", err)
+		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || current {
+			t.Fatalf("Renew after Ack should be a safe no-op reporting current=false, got current=%v err=%v", current, err)
 		}
 
 		if r, ok := q.(staleReclaimer); ok {
@@ -360,6 +360,118 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		extra, _ := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
 		if extra != nil {
 			t.Fatalf("job resurrected after Ack+Renew: %v", extra)
+		}
+	})
+
+	// TR-034/035/036: fencing (item 16, Problem 3) -- a runner reclaimed
+	// while genuinely still executing (a transient blip made it miss
+	// the reaper's max-age window) might finish its own stale work
+	// anyway and call Heartbeat/ReportStatus late, after a second
+	// runner already took over. These prove the control plane rejects
+	// that stale generation's calls instead of letting them clobber or
+	// duplicate the current attempt.
+	t.Run("TR-034_stale_generation_ack_is_rejected_current_generation_ack_succeeds", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-fence-1", "test-runner", "echo")
+		job.Generation = 1
+		_ = q.Enqueue(ctx, job)
+
+		original, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || original == nil || original.Generation != 1 {
+			t.Fatalf("expected to dequeue generation 1, got %v (err=%v)", original, err)
+		}
+
+		r, ok := q.(staleReclaimer)
+		if !ok {
+			t.Skip("backend doesn't implement ReclaimStale")
+		}
+		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+		}
+
+		replacement, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || replacement == nil || replacement.Generation != 2 {
+			t.Fatalf("expected the reclaimed redispatch at generation 2, got %v (err=%v)", replacement, err)
+		}
+
+		// The ORIGINAL runner's blip was transient -- it finishes anyway
+		// and calls Ack presenting its OWN (now stale) generation 1.
+		// Must be rejected, and must NOT touch the replacement's own
+		// generation-2 in-flight entry.
+		if accepted, err := q.Ack(ctx, "run-fence-1", 1); err != nil || accepted {
+			t.Fatalf("stale generation-1 Ack: expected accepted=false, got accepted=%v err=%v", accepted, err)
+		}
+
+		// The replacement (generation 2) must still be genuinely
+		// in-flight and un-touched by the rejected stale Ack --
+		// confirmed via Renew, which only succeeds while the job is
+		// still tracked.
+		if current, err := q.Renew(ctx, "run-fence-1", 2); err != nil || !current {
+			t.Fatalf("expected generation 2 to still be current after the stale generation-1 Ack was rejected, got current=%v err=%v", current, err)
+		}
+
+		// Now the CURRENT (replacement) runner reports its own real
+		// completion at generation 2 -- must be accepted.
+		if accepted, err := q.Ack(ctx, "run-fence-1", 2); err != nil || !accepted {
+			t.Fatalf("current generation-2 Ack: expected accepted=true, got accepted=%v err=%v", accepted, err)
+		}
+	})
+
+	t.Run("TR-035_stale_generation_heartbeat_renew_is_rejected", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-fence-2", "test-runner", "echo")
+		job.Generation = 1
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+
+		r, ok := q.(staleReclaimer)
+		if !ok {
+			t.Skip("backend doesn't implement ReclaimStale")
+		}
+		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+		}
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue replacement: %v", err)
+		}
+
+		// The stale (generation 1) runner's heartbeat must be rejected
+		// -- current=false is its actionable "you've been superseded,
+		// stop executing" signal (see JobQueue.Renew's own doc comment).
+		if current, err := q.Renew(ctx, "run-fence-2", 1); err != nil || current {
+			t.Fatalf("stale generation-1 Renew: expected current=false, got current=%v err=%v", current, err)
+		}
+
+		// The genuinely-current generation 2 must be unaffected.
+		if current, err := q.Renew(ctx, "run-fence-2", 2); err != nil || !current {
+			t.Fatalf("current generation-2 Renew: expected current=true, got current=%v err=%v", current, err)
+		}
+	})
+
+	t.Run("TR-036_generation_zero_bypasses_fencing_for_pre-fencing_runner_builds", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-fence-3", "test-runner", "echo")
+		job.Generation = 1
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+
+		// A runner build that predates fencing never sends a
+		// generation at all, which unmarshals to the Go zero value 0
+		// -- must be treated as "always matches" (the exact
+		// unconditional-trust behavior Ack/Renew had before fencing
+		// existed), not as a real, mismatched generation number.
+		if current, err := q.Renew(ctx, "run-fence-3", 0); err != nil || !current {
+			t.Fatalf("generation-0 Renew should bypass fencing, got current=%v err=%v", current, err)
+		}
+		if accepted, err := q.Ack(ctx, "run-fence-3", 0); err != nil || !accepted {
+			t.Fatalf("generation-0 Ack should bypass fencing, got accepted=%v err=%v", accepted, err)
 		}
 	})
 }

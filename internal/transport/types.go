@@ -31,6 +31,29 @@ type RunAssignment struct {
 	// runtime.user for per-request factory graphs). Nil when no auth
 	// provider is configured, or the caller has no identity attached.
 	User *UserContext `json:"user,omitempty"`
+
+	// Generation fences a job against a runner that gets reclaimed
+	// while genuinely still executing, then finishes anyway and
+	// reports a stale result after a second runner already took over
+	// (item 16, Problem 3 -- the "TR-033: old runner must detect lease
+	// loss and stop" gap). Starts at 1 when a run is first created
+	// (internal/api/runs.go's createRunCtx); ReclaimStale increments it
+	// every time it re-enqueues a stale job, atomically with the
+	// re-enqueue itself (both transports) so the incremented value is
+	// what the NEXT runner to Dequeue this job actually receives.
+	//
+	// The runner echoes whatever generation it was handed back on
+	// every RPC that identifies this specific dispatch attempt
+	// (Heartbeat, the first StreamEvents message, ReportStatus) --
+	// see JobQueue.Ack/Renew's own doc comments for how the control
+	// plane uses this to reject a stale attempt's report instead of
+	// letting it overwrite (or duplicate work alongside) whatever the
+	// current attempt is doing. A runner build that predates fencing
+	// simply never sends this field, which unmarshals to the Go zero
+	// value 0 -- treated as "always matches" for backward compat, not
+	// as a real generation number (see the same reasoning in
+	// Ack/Renew).
+	Generation int64 `json:"generation,omitempty"`
 }
 
 // UserContext is the identity that authenticated a run's originating
@@ -156,22 +179,42 @@ type JobQueue interface {
 	// Returns nil, nil if timeout expires with no job.
 	Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*RunAssignment, error)
 
-	// Ack acknowledges successful processing of a job. Removes it from
-	// any pending/retry tracking.
-	Ack(ctx context.Context, runID string) error
+	// Ack acknowledges successful processing of a job, fenced by
+	// generation (see RunAssignment.Generation's own doc comment for
+	// the full rationale): only removes the job from in-flight
+	// tracking if generation matches the CURRENT in-flight generation
+	// for runID, OR generation is 0 (a pre-fencing runner build,
+	// trusted unconditionally the same way this method always behaved
+	// before fencing existed). accepted=false means the report must
+	// NOT be applied to run state -- either a newer attempt already
+	// exists (this one was reclaimed and superseded), or nothing is
+	// tracked for runID at all (already finished by the real owner, or
+	// never existed) -- both are "not this caller's job to finalize
+	// anymore," not an error.
+	Ack(ctx context.Context, runID string, generation int64) (accepted bool, err error)
 
 	// Renew extends an in-flight job's lease (resets its staleness clock)
 	// WITHOUT removing it from tracking, unlike Ack. Backs the runner
 	// heartbeat mechanism: a runner calls this periodically for the
 	// WHOLE duration of a job's execution, not just once at the start,
-	// so a stale-job reaper's
-	// "time since last touch" check reflects real liveness throughout
-	// execution instead of just the window between Dequeue and the
-	// first StreamEvents message. Must be a no-op (not an error) if the
-	// job is no longer in-flight (already Ack'd, reclaimed, or
-	// canceled) -- a late or racing renewal for a job that already
-	// finished or was reclaimed away must not resurrect it.
-	Renew(ctx context.Context, runID string) error
+	// so a stale-job reaper's "time since last touch" check reflects
+	// real liveness throughout execution instead of just the window
+	// between Dequeue and the first StreamEvents message.
+	//
+	// Also fenced by generation, same rules as Ack: current=false means
+	// this runner has been superseded (a newer generation is now the
+	// one being tracked) or nothing is tracked for runID at all
+	// (finished, reclaimed away with no successor yet, or canceled) --
+	// callers (the Heartbeat RPC handler) should treat current=false
+	// as "stop executing," not just "retry the heartbeat." generation
+	// 0 always returns current=true if the job is in-flight at all
+	// (pre-fencing runner build, same unconditional-trust behavior
+	// this method always had before fencing existed). Still never an
+	// error just because the job is no longer in-flight at all
+	// (already Ack'd, reclaimed, or canceled) -- a late or racing
+	// renewal for a job that already finished must not resurrect it,
+	// it just gets current=false instead of true.
+	Renew(ctx context.Context, runID string, generation int64) (current bool, err error)
 
 	// Nack signals that the job was not processed successfully.
 	// The job should be made available for re-delivery.

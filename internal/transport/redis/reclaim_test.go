@@ -53,6 +53,13 @@ func TestRedisReclaimStale_ReenqueuesUnackedJob(t *testing.T) {
 	if again.RunID != "run-stale" {
 		t.Fatalf("got run %s, want run-stale", again.RunID)
 	}
+	// Item 16, Problem 3 (fencing): a reclaimed job's generation must be
+	// bumped so the ORIGINAL runner's late Heartbeat/ReportStatus (if
+	// its blip was transient and it finishes anyway) presents a stale
+	// value and gets rejected instead of clobbering this new attempt.
+	if again.Generation != 1 {
+		t.Fatalf("generation after one reclaim = %d, want 1 (started at 0, ReclaimStale increments once)", again.Generation)
+	}
 }
 
 func TestRedisAck_PreventsReclaim(t *testing.T) {
@@ -73,8 +80,8 @@ func TestRedisAck_PreventsReclaim(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected job")
 	}
-	if err := q.Ack(ctx, got.RunID); err != nil {
-		t.Fatal(err)
+	if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 
 	n, err := q.ReclaimStale(ctx, 0)
@@ -162,6 +169,63 @@ func TestRedisReclaimStale_SkipsCanceledJob(t *testing.T) {
 	}
 	if again != nil {
 		t.Fatalf("expected no job after canceling an in-flight run, got %v", again)
+	}
+}
+
+// TestRedisReclaimStale_PreservesEmptyArrayFields is a regression test
+// for a real bug found live while building item 16, Problem 3
+// (fencing): the first version of reclaimStaleScript bumped generation
+// via a full cjson.decode-then-cjson.encode round-trip of the whole job
+// payload. Redis's bundled lua-cjson has no way to tell an empty JSON
+// array apart from an empty object once decoded to an empty Lua table
+// (cjson.array_mt, the textbook fix, doesn't exist in Redis 7.4's
+// bundled version, confirmed live) -- so re-encoding silently turned
+// every empty-array field (e.g. ConnectorNeeds:[]) into {}, which Go's
+// own json.Unmarshal then rejects, making the NEXT Dequeue loop forever
+// on the corrupted payload instead of ever returning it. Fixed by doing
+// string-level surgery on just the "generation" substring instead of a
+// full re-encode -- this proves that fix by asserting a reclaimed job's
+// own empty-array field actually survives, not just that Dequeue
+// returns *something*.
+func TestRedisReclaimStale_PreservesEmptyArrayFields(t *testing.T) {
+	rdb := getRedisClient(t)
+	defer rdb.Close()
+	redistransport.FlushAll(context.Background(), rdb)
+	q := redistransport.NewQueue(rdb)
+	ctx := context.Background()
+
+	job := &transport.RunAssignment{
+		RunID:          "run-empty-array",
+		ThreadID:       "t1",
+		GraphID:        "echo",
+		RunnerKind:     "test-runner",
+		Generation:     1,
+		ConnectorNeeds: []string{}, // the exact empty-array shape that triggered the bug
+		StreamModes:    []string{"values"},
+	}
+	if err := q.Enqueue(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := q.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+	}
+
+	again, err := q.Dequeue(ctx, "test-runner", time.Second)
+	if err != nil || again == nil {
+		t.Fatalf("expected reclaimed job to still be dequeueable (not stuck on a corrupted payload), got=%v err=%v", again, err)
+	}
+	if again.ConnectorNeeds == nil || len(again.ConnectorNeeds) != 0 {
+		t.Fatalf("ConnectorNeeds after reclaim = %#v, want a non-nil empty slice (not corrupted into an object Go can't unmarshal)", again.ConnectorNeeds)
+	}
+	if len(again.StreamModes) != 1 || again.StreamModes[0] != "values" {
+		t.Fatalf("StreamModes after reclaim = %#v, want [\"values\"] unchanged", again.StreamModes)
+	}
+	if again.Generation != 2 {
+		t.Fatalf("Generation after one reclaim = %d, want 2", again.Generation)
 	}
 }
 

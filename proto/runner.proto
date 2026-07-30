@@ -53,6 +53,13 @@ message GetJobResponse {
 message RunEventProto {
   string run_id = 1;
   string event_json = 2; // JSON-encoded RunEvent
+  // generation is the attempt number this runner was handed in its
+  // RunAssignment (see internal/transport/types.go's RunAssignment.Generation
+  // doc comment for the full fencing rationale) -- 0 from an older
+  // runner build that predates fencing, treated the same as "always
+  // matches" for backward compat (see server.go's Heartbeat/ReportStatus
+  // handlers).
+  int64 generation = 3;
 }
 
 message StreamEventsResponse {
@@ -63,10 +70,18 @@ message ReportStatusRequest {
   string run_id = 1;
   string status = 2; // "success", "error", "interrupted"
   string error_message = 3; // only if status == "error"
+  int64 generation = 4; // see RunEventProto.generation
 }
 
 message ReportStatusResponse {
   bool ok = 1;
+  // superseded is true when this report's generation was stale -- a
+  // newer attempt (dispatched after this runner was reclaimed) already
+  // owns the run, so the control plane ignored this report's status
+  // entirely rather than risk overwriting the real outcome. The runner
+  // has nothing further to do when this is true; it's informational
+  // (log it), not something to retry.
+  bool superseded = 2;
 }
 
 message WatchCancelsRequest {
@@ -79,8 +94,22 @@ message CancelSignal {
 
 message HeartbeatRequest {
   string run_id = 1;
+  int64 generation = 2; // see RunEventProto.generation
 }
 
 message HeartbeatResponse {
   bool ok = 1;
+  // superseded is true when this run's generation is no longer current
+  // -- a newer attempt has already been dispatched (this runner was
+  // reclaimed while it was still, genuinely, executing). Unlike
+  // ReportStatusResponse.superseded, this arrives WHILE the runner is
+  // still mid-execution (heartbeats fire every ~2s throughout a run,
+  // not just once at the end) -- the runner should treat this exactly
+  // like a self-triggered cancel: stop executing its graph and report
+  // "interrupted" rather than continuing to burn resources on a run
+  // that's already being retried elsewhere. This is what closes
+  // TR-033 ("old runner must detect lease loss and stop") -- detecting
+  // it at the NEXT heartbeat tick, not only when the runner eventually
+  // finishes and calls ReportStatus.
+  bool superseded = 2;
 }

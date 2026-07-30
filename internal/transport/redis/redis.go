@@ -192,43 +192,107 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 	}
 }
 
-func (q *Queue) Ack(ctx context.Context, runID string) error {
-	_, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HDel(ctx, inflightDataKey, runID)
-		pipe.ZRem(ctx, inflightZSetKey, runID)
-		return nil
-	})
-	return err
+// fencingCheck is shared Lua logic (via a comment, not a callable Lua
+// function -- these scripts are each their own standalone EVAL) between
+// ackScript and renewScript: given the in-flight job's own JSON payload
+// and a presented generation, decide whether to proceed. generation 0
+// (from a pre-fencing runner build) or a current_gen of 0 (a job's
+// payload that predates this field entirely -- only possible during a
+// rolling upgrade window) both mean "don't enforce fencing here,"
+// matching how Ack/Renew behaved unconditionally before fencing
+// existed -- see transport.JobQueue's Ack/Renew doc comments for the
+// full rationale.
+
+// ackScript atomically checks the presented generation against the
+// in-flight job's own stored generation before removing it -- see
+// transport.JobQueue's Ack doc comment for why this must be one
+// Redis-side operation, not a separate HGET-then-decide-then-HDEL from
+// Go (a concurrent ReclaimStale between those steps could otherwise
+// remove a CURRENT job based on a check that was true a moment ago but
+// isn't anymore).
+const ackScript = `
+local data_key = KEYS[1]
+local zset_key = KEYS[2]
+local run_id = ARGV[1]
+local generation = tonumber(ARGV[2])
+
+local job_json = redis.call('HGET', data_key, run_id)
+if not job_json then
+    return 0
+end
+
+if generation ~= 0 then
+    local job = cjson.decode(job_json)
+    local current_gen = job.generation or 0
+    if current_gen ~= 0 and current_gen ~= generation then
+        return 0
+    end
+end
+
+redis.call('HDEL', data_key, run_id)
+redis.call('ZREM', zset_key, run_id)
+return 1
+`
+
+// Ack acknowledges successful processing of a job, fenced by generation
+// -- see transport.JobQueue's Ack doc comment for the full rationale.
+func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+	result, err := q.rdb.Eval(ctx, ackScript,
+		[]string{inflightDataKey, inflightZSetKey},
+		runID, generation,
+	).Result()
+	if err != nil {
+		return false, err
+	}
+	n, _ := result.(int64)
+	return n == 1, nil
 }
 
 // renewScript atomically resets an in-flight job's staleness score, but
-// ONLY if it's still tracked in inflightDataKey -- a plain two-step
-// "check HEXISTS, then ZADD" from Go would have a race window where a
-// concurrent ReclaimStale on another replica removes the job between the
-// two calls, and this Renew would resurrect a phantom zset entry with no
-// backing data (harmless -- the next reclaim cycle's HGET finds nothing
-// and self-cleans it -- but avoidable with one round trip instead of two
-// by doing the check-and-set as one Redis-side operation).
+// ONLY if it's still tracked in inflightDataKey AND (fencing) the
+// presented generation still matches the job's own stored generation
+// -- a plain two-step "check, then ZADD" from Go would have a race
+// window where a concurrent ReclaimStale on another replica removes or
+// supersedes the job between the two calls, and this Renew would
+// either resurrect a phantom zset entry with no backing data, or
+// (worse, post-fencing) extend the lease for a generation that's
+// already been superseded.
 const renewScript = `
 local data_key = KEYS[1]
 local zset_key = KEYS[2]
 local run_id = ARGV[1]
 local score = ARGV[2]
+local generation = tonumber(ARGV[3])
 
-if redis.call('HEXISTS', data_key, run_id) == 1 then
-    redis.call('ZADD', zset_key, score, run_id)
-    return 1
+local job_json = redis.call('HGET', data_key, run_id)
+if not job_json then
+    return 0
 end
-return 0
+
+if generation ~= 0 then
+    local job = cjson.decode(job_json)
+    local current_gen = job.generation or 0
+    if current_gen ~= 0 and current_gen ~= generation then
+        return 0
+    end
+end
+
+redis.call('ZADD', zset_key, score, run_id)
+return 1
 `
 
 // Renew extends an in-flight job's lease -- see transport.JobQueue's
-// Renew doc comment for the heartbeat mechanism this backs.
-func (q *Queue) Renew(ctx context.Context, runID string) error {
-	return q.rdb.Eval(ctx, renewScript,
+// Renew doc comment for the heartbeat mechanism and fencing this backs.
+func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
+	result, err := q.rdb.Eval(ctx, renewScript,
 		[]string{inflightDataKey, inflightZSetKey},
-		runID, nowMillis(),
-	).Err()
+		runID, nowMillis(), generation,
+	).Result()
+	if err != nil {
+		return false, err
+	}
+	n, _ := result.(int64)
+	return n == 1, nil
 }
 
 func (q *Queue) Nack(ctx context.Context, runID string) error {
@@ -298,7 +362,59 @@ for _, run_id in ipairs(stale_ids) do
         local is_canceled = redis.call('SISMEMBER', canceled_key, run_id)
         if is_canceled == 0 then
             local job = cjson.decode(job_json)
-            redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, job_json)
+
+            -- Bump generation before redispatching (item 16, Problem 3
+            -- fencing): whichever runner Dequeues this next receives the
+            -- incremented value, so the ORIGINAL runner's own later
+            -- Heartbeat/ReportStatus (if its blip was transient and it
+            -- finishes anyway) presents the OLD generation and gets
+            -- rejected by ackScript/renewScript above instead of
+            -- clobbering or duplicating this new attempt's work.
+            --
+            -- Done as STRING surgery on job_json directly (find/replace
+            -- just the "generation":N substring), NOT a
+            -- cjson.decode-then-cjson.encode round-trip of the whole
+            -- payload -- confirmed live that the round-trip corrupts
+            -- data: Redis's bundled lua-cjson has no way to distinguish
+            -- an empty JSON array from an empty object once decoded to
+            -- an empty Lua table (both decode to {}), so re-encoding
+            -- turns every empty array field (e.g. this project's own
+            -- connector_needs:[]) into {} silently -- which Go's own
+            -- json.Unmarshal then rejects, making Dequeue quietly loop
+            -- forever on the corrupted payload. cjson.array_mt (the
+            -- textbook lua-cjson fix for exactly this) does not exist
+            -- in Redis 7.4's bundled version, confirmed live.
+            local new_job_json = job_json
+            local old_gen_str = job_json:match('"generation":(%d+)')
+            local expected_gen
+            if old_gen_str then
+                expected_gen = tonumber(old_gen_str) + 1
+                new_job_json = job_json:gsub('"generation":' .. old_gen_str, '"generation":' .. expected_gen, 1)
+            else
+                -- Field entirely absent (a payload from before this
+                -- feature existed, or Generation was its Go zero value
+                -- 0 and json:",omitempty" dropped it) -- inject it
+                -- fresh, incrementing from the implicit starting point
+                -- of 0 the same as an explicit "0" would (matches the
+                -- in-process implementation's entry.job.Generation++,
+                -- which does exactly this via Go's own zero value).
+                expected_gen = 1
+                new_job_json = job_json:gsub('^{', '{"generation":' .. expected_gen .. ',', 1)
+            end
+            -- Validate the surgery before trusting it -- fall back to
+            -- redispatching the ORIGINAL, unmodified payload (skipping
+            -- the generation bump for just this one reclaim, a strictly
+            -- better failure mode than redispatching something no
+            -- runner can parse) if anything about it looks wrong, e.g.
+            -- the match accidentally landed inside a user-controlled
+            -- string field that happened to contain this exact
+            -- substring rather than the real top-level key.
+            local ok, decoded = pcall(cjson.decode, new_job_json)
+            if ok and decoded.generation == expected_gen then
+                redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
+            else
+                redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, job_json)
+            end
             reclaimed = reclaimed + 1
         end
     end

@@ -143,6 +143,128 @@ func TestHeartbeat_UnknownRunIDIsNotAnError(t *testing.T) {
 	}
 }
 
+// TestHeartbeat_SupersededGenerationSignalsRunnerToStop proves item 16,
+// Problem 3 (fencing) end to end through the actual gRPC handlers, not
+// just the JobQueue layer: a runner reclaimed while genuinely still
+// executing (its blip was transient, it finishes anyway) gets
+// Superseded=true on its NEXT heartbeat, not an error and not a silent
+// "ok" that lets it keep burning resources on a run someone else now
+// owns.
+func TestHeartbeat_SupersededGenerationSignalsRunnerToStop(t *testing.T) {
+	queue := inprocess.NewQueue()
+	srv := NewServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	ctx := context.Background()
+
+	runID := "run-fence-bridge-1"
+	assignment := &transport.RunAssignment{RunID: runID, ThreadID: "t", RunnerKind: "k", GraphID: "g", Input: json.RawMessage(`{}`), Generation: 1}
+	if err := queue.Enqueue(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1})
+	if err != nil || !resp.HasJob {
+		t.Fatalf("GetJob failed: %v %v", resp, err)
+	}
+	var original transport.RunAssignment
+	if err := json.Unmarshal([]byte(resp.AssignmentJson), &original); err != nil {
+		t.Fatalf("unmarshal assignment: %v", err)
+	}
+	if original.Generation != 1 {
+		t.Fatalf("expected generation 1, got %d", original.Generation)
+	}
+
+	// This runner's connection blips -- another replica's reaper
+	// reclaims and redispatches the job (generation bumps to 2) to a
+	// second runner, before this original runner's own Heartbeat call
+	// arrives.
+	if n, err := queue.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+	}
+	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {
+		t.Fatalf("GetJob for the redispatched replacement failed: %v", err)
+	}
+
+	// The original runner's blip turns out to be transient -- it's
+	// still executing, unaware it's been reclaimed, and calls Heartbeat
+	// presenting the generation it was actually handed (1, now stale).
+	hbResp, err := srv.Heartbeat(ctx, &pb.HeartbeatRequest{RunId: runID, Generation: original.Generation})
+	if err != nil {
+		t.Fatalf("Heartbeat should not itself error just because it's stale: %v", err)
+	}
+	if !hbResp.Ok {
+		t.Fatalf("expected Ok=true (the RPC itself succeeded) even when superseded, got %v", hbResp)
+	}
+	if !hbResp.Superseded {
+		t.Fatalf("expected Superseded=true for a stale generation, got %v", hbResp)
+	}
+
+	// A heartbeat from the CURRENT (replacement) generation must NOT be
+	// superseded.
+	hbResp2, err := srv.Heartbeat(ctx, &pb.HeartbeatRequest{RunId: runID, Generation: 2})
+	if err != nil {
+		t.Fatalf("Heartbeat for the current generation failed: %v", err)
+	}
+	if hbResp2.Superseded {
+		t.Fatalf("expected Superseded=false for the current generation, got %v", hbResp2)
+	}
+}
+
+// TestReportStatus_SupersededGenerationIsIgnoredNotAppliedToRunState
+// proves the same fencing at the OTHER end of a run's lifecycle: the
+// stale runner from the test above eventually finishes its own
+// (worthless) execution and calls ReportStatus. That report must be
+// ignored -- not applied via the statusCallback -- so it can't clobber
+// whatever the real, current-generation runner reports.
+func TestReportStatus_SupersededGenerationIsIgnoredNotAppliedToRunState(t *testing.T) {
+	queue := inprocess.NewQueue()
+	var reportedStatuses []string
+	srv := NewServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), func(runID, status, errorMsg string) {
+		reportedStatuses = append(reportedStatuses, status)
+	})
+	ctx := context.Background()
+
+	runID := "run-fence-bridge-2"
+	assignment := &transport.RunAssignment{RunID: runID, ThreadID: "t", RunnerKind: "k", GraphID: "g", Input: json.RawMessage(`{}`), Generation: 1}
+	if err := queue.Enqueue(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+
+	if n, err := queue.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+	}
+	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {
+		t.Fatalf("GetJob for replacement: %v", err)
+	}
+
+	// The stale (generation 1) runner reports success for its own,
+	// no-longer-relevant execution -- must be ignored entirely.
+	resp, err := srv.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: runID, Status: "success", Generation: 1})
+	if err != nil {
+		t.Fatalf("ReportStatus should not error just because it's superseded: %v", err)
+	}
+	if !resp.Superseded {
+		t.Fatalf("expected Superseded=true for the stale generation-1 report, got %v", resp)
+	}
+	if len(reportedStatuses) != 0 {
+		t.Fatalf("statusCallback must NOT have been invoked for a superseded report, got %v", reportedStatuses)
+	}
+
+	// The genuinely current (generation 2) runner's real report must
+	// still go through normally.
+	resp2, err := srv.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: runID, Status: "error", Generation: 2})
+	if err != nil {
+		t.Fatalf("ReportStatus for the current generation failed: %v", err)
+	}
+	if resp2.Superseded {
+		t.Fatalf("expected Superseded=false for the current generation, got %v", resp2)
+	}
+	if len(reportedStatuses) != 1 || reportedStatuses[0] != "error" {
+		t.Fatalf("expected exactly one applied status (\"error\", from the current generation), got %v", reportedStatuses)
+	}
+}
+
 // TestReportStatus_StillFullyAcksOnCompletion proves ReportStatus (not
 // StreamEvents' first event any more) is what permanently removes a job
 // from in-flight tracking -- Nack after ReportStatus must be a no-op.

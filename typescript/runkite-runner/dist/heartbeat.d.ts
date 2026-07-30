@@ -22,6 +22,17 @@
  * (cmd/serve.go) picks it up after its normal max-age, exactly as it
  * already does for the dequeue-to-first-event window. No new reclaim
  * mechanism, just a mechanism to keep resetting the clock.
+ *
+ * Also carries item 16, Problem 3's fencing token (generation): this
+ * runner's transient connectivity blip might make it miss the reaper's
+ * max-age window, get reclaimed, and replaced by a second runner -- but
+ * if the blip was genuinely transient, THIS runner is still executing
+ * and doesn't know any of that happened yet. The next Heartbeat call
+ * after a reclaim gets back superseded=true, which is this runner's
+ * actionable signal to stop: onSuperseded fires (worker.ts wires it to
+ * the SAME cancelState a real WatchCancels cancel signal would set), so
+ * executeRun's existing cooperative-cancellation check takes over
+ * without this module needing its own separate stopping mechanism.
  */
 import type { Metadata } from "@grpc/grpc-js";
 import type { RunnerServiceClient } from "./proto.js";
@@ -32,13 +43,25 @@ export declare const DEFAULT_HEARTBEAT_INTERVAL_MS = 2000;
 export interface HeartbeatHandle {
     stop(): void;
 }
+export interface HeartbeatLoopOptions {
+    /** Fencing token from this run's RunAssignment (see this module's own
+     * doc comment) -- 0 (the default) is "unfenced," matching a control
+     * plane that predates this field. */
+    generation?: number;
+    /** Fired the FIRST time a heartbeat comes back superseded=true, then
+     * the loop stops itself -- see this module's own doc comment for why
+     * continuing to heartbeat after that point is pointless. Deliberately
+     * a plain callback, not a shared mutable object, to keep this module
+     * decoupled from worker.ts's CancelState shape. */
+    onSuperseded?: () => void;
+    intervalMs?: number;
+}
 /**
- * Starts calling Heartbeat(runId) every intervalMs until stop() is
- * called. A failed heartbeat RPC is logged and swallowed, not thrown --
- * this loop is a liveness signal, not part of the run's own correctness:
- * a few missed heartbeats just mean the job might get reclaimed a bit
- * earlier than a perfectly-tuned system would (the residual "reclaimed
- * but original runner finishes anyway" edge case is Problem 3's fencing
- * token, not yet built, not this loop's job to prevent).
+ * Starts calling Heartbeat(runId, generation) every intervalMs until
+ * stop() is called (or a superseded response stops it early). A failed
+ * heartbeat RPC is logged and swallowed, not thrown -- this loop is a
+ * liveness signal, not part of the run's own correctness: a few missed
+ * heartbeats just mean the job might get reclaimed a bit earlier than a
+ * perfectly-tuned system would.
  */
-export declare function startHeartbeatLoop(client: RunnerServiceClient, runId: string, metadata: Metadata, intervalMs?: number): HeartbeatHandle;
+export declare function startHeartbeatLoop(client: RunnerServiceClient, runId: string, metadata: Metadata, options?: HeartbeatLoopOptions): HeartbeatHandle;

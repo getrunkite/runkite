@@ -106,16 +106,16 @@ class RunnerServiceServicer(object):
     def Heartbeat(self, request, context):
         """Heartbeat is called periodically by the runner while a run is
         actively executing, to prove liveness for the WHOLE run, not just
-        delivery. Without this,
-        the control plane only knows a job is alive up to its first
-        StreamEvents message (~15ms after dequeue in practice) -- a runner
-        crash any time after that left the run permanently stuck, confirmed
-        live. The server extends the same in-flight lease Dequeue creates
-        (see transport.JobQueue's Renew) each time this arrives; a runner
-        that stops heartbeating (crashed, or an older runner that doesn't
-        send this RPC at all) eventually falls stale and gets reclaimed by
-        the existing ReclaimStale reaper -- no new reclaim mechanism needed,
-        just a mechanism to keep resetting the clock during real work.
+        delivery. Without this, the control plane only knows a job is alive
+        up to its first StreamEvents message (~15ms after dequeue in
+        practice) -- a runner crash any time after that left the run
+        permanently stuck, confirmed live. The server extends the same
+        in-flight lease Dequeue creates (see transport.JobQueue's Renew)
+        each time this arrives; a runner that stops heartbeating (crashed,
+        or an older runner that doesn't send this RPC at all) eventually
+        falls stale and gets reclaimed by the existing ReclaimStale reaper
+        -- no new reclaim mechanism needed, just a mechanism to keep
+        resetting the clock during real work.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

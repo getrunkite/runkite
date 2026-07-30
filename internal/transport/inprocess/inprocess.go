@@ -89,25 +89,48 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 	}
 }
 
-// Ack removes a job from inflight tracking after the runner has claimed it.
-func (q *Queue) Ack(ctx context.Context, runID string) error {
+// generationMatches implements the fencing rule shared by Ack and Renew
+// -- see transport.JobQueue's own doc comments for the full rationale.
+// generation 0 (pre-fencing runner build) or a tracked job whose own
+// Generation is 0 (predates this field) both mean "don't enforce
+// fencing," matching how Ack/Renew behaved unconditionally before
+// fencing existed.
+func generationMatches(entry *inflightEntry, generation int64) bool {
+	if generation == 0 || entry.job.Generation == 0 {
+		return true
+	}
+	return entry.job.Generation == generation
+}
+
+// Ack removes a job from inflight tracking after the runner has claimed
+// it, fenced by generation -- see transport.JobQueue's Ack doc comment
+// for the full rationale. accepted=false (not an error) if nothing is
+// tracked for runID, or a newer generation has already superseded it.
+func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	entry, ok := q.inflight[runID]
+	if !ok || !generationMatches(entry, generation) {
+		return false, nil
+	}
 	delete(q.inflight, runID)
-	return nil
+	return true, nil
 }
 
 // Renew resets an in-flight job's dequeuedAt timestamp without removing
 // it from tracking -- see transport.JobQueue's Renew doc comment for the
-// heartbeat mechanism this backs. A no-op if the job is no longer
-// in-flight (already Ack'd/reclaimed/canceled).
-func (q *Queue) Renew(ctx context.Context, runID string) error {
+// heartbeat mechanism and fencing this backs. current=false (not an
+// error) if the job is no longer in-flight (already Ack'd/reclaimed/
+// canceled) or has been superseded by a newer generation.
+func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if entry, ok := q.inflight[runID]; ok {
-		entry.dequeuedAt = time.Now()
+	entry, ok := q.inflight[runID]
+	if !ok || !generationMatches(entry, generation) {
+		return false, nil
 	}
-	return nil
+	entry.dequeuedAt = time.Now()
+	return true, nil
 }
 
 // Nack re-enqueues a previously dequeued job so another runner can take it.
@@ -158,6 +181,10 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 	var stale []*transport.RunAssignment
 	for runID, entry := range q.inflight {
 		if entry.dequeuedAt.Before(cutoff) {
+			// Bump generation before redispatching (item 16, Problem 3
+			// fencing) -- see the Redis implementation's identical
+			// reclaimStaleScript comment for the full rationale.
+			entry.job.Generation++
 			stale = append(stale, entry.job)
 			delete(q.inflight, runID)
 		}

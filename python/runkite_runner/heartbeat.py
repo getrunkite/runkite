@@ -18,6 +18,18 @@ crashes simply stops heartbeating, and the control plane's existing
 ReclaimStale reaper (cmd/serve.go) picks it up after its normal max-age,
 exactly as it already does for the dequeue-to-first-event window. No new
 reclaim mechanism, just a mechanism to keep resetting the clock.
+
+Also carries item 16, Problem 3's fencing token (generation): this
+runner's transient connectivity blip might make it miss the reaper's
+max-age window, get reclaimed, and replaced by a second runner -- but if
+the blip was genuinely transient, THIS runner is still executing and
+doesn't know any of that happened yet. The next Heartbeat call after a
+reclaim gets back superseded=True, which is this runner's actionable
+signal to stop: it sets cancel_event, the SAME event a real WatchCancels
+cancel signal would set, so execute_run's existing cooperative-
+cancellation path (checked every streamed chunk in worker.py, raced via
+run_cancellable in generic_worker.py's single-call adapters) takes over
+without this module needing its own separate stopping mechanism.
 """
 
 from __future__ import annotations
@@ -43,9 +55,12 @@ async def heartbeat_loop(
     stub: runner_pb2_grpc.RunnerServiceStub,
     run_id: str,
     auth_metadata: list,
+    generation: int = 0,
+    cancel_event: asyncio.Event | None = None,
     interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S,
 ) -> None:
-    """Calls Heartbeat(run_id) every interval_s until cancelled.
+    """Calls Heartbeat(run_id, generation) every interval_s until
+    cancelled.
 
     Intended to run as its own asyncio.Task, cancelled by the caller once
     the job finishes (success, error, or interruption) -- see worker.py/
@@ -53,14 +68,32 @@ async def heartbeat_loop(
     swallowed, not raised: this loop is a liveness signal, not part of
     the run's own correctness -- a few missed heartbeats just mean the
     job might get reclaimed a bit earlier than a perfectly-tuned system
-    would (the residual "reclaimed but original runner finishes anyway"
-    edge case is Problem 3's fencing token, not yet built, not this
-    loop's job to prevent).
+    would.
+
+    generation defaults to 0 (unfenced -- matches a pre-fencing control
+    plane, or a caller that doesn't track it) so existing callers don't
+    have to change to keep working. If the response comes back
+    superseded=True -- a newer generation has already been dispatched,
+    meaning this runner was reclaimed while genuinely still executing --
+    this sets cancel_event (if given) and stops looping: continuing to
+    heartbeat a generation the control plane has already moved on from
+    is pointless, and every subsequent call would just be rejected the
+    same way.
     """
     while True:
         await asyncio.sleep(interval_s)
         try:
-            await stub.Heartbeat(runner_pb2.HeartbeatRequest(run_id=run_id), metadata=auth_metadata)
+            resp = await stub.Heartbeat(
+                runner_pb2.HeartbeatRequest(run_id=run_id, generation=generation), metadata=auth_metadata
+            )
+            if resp.superseded:
+                logger.warning(
+                    f"Run {run_id} superseded (generation {generation} is stale) -- "
+                    "signaling cancellation and stopping heartbeat"
+                )
+                if cancel_event is not None:
+                    cancel_event.set()
+                return
         except grpc.aio.AioRpcError as e:
             logger.warning(f"Heartbeat RPC failed for run {run_id}: {e.code()} {e.details()}")
         except Exception:
