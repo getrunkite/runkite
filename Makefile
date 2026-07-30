@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
 
 # --- Build ---
 build:
@@ -82,7 +82,21 @@ test-nats:
 	NATS_URL="nats://localhost:4222" \
 		go test ./internal/transport/nats/ -race -count=1 -v
 
-# All backends — SQLite + Postgres + Redis + MongoDB + Qdrant + Weaviate + Pinecone + NATS (requires infra-up)
+# Kafka transport conformance -- JobQueue only (see
+# internal/transport/kafka's own package doc for why it doesn't
+# implement the full triad the way Redis/NATS do). Confirmed live: this
+# is meaningfully slower than every other backend's own conformance
+# suite here (~3 minutes vs seconds) -- each of its ~15 sub-tests joins
+# and leaves its own fresh, uniquely-namespaced Kafka consumer group
+# (see kafka_test.go's own comment for why namespacing is required),
+# and that join/leave protocol exchange itself, not this project's own
+# code, is what's slow. Not a hang; just Kafka's own per-group-lifecycle
+# overhead paid ~15 times in a row. (requires KAFKA_URL or infra-up)
+test-kafka:
+	KAFKA_URL="localhost:9092" \
+		go test ./internal/transport/kafka/ -race -count=1 -v -timeout 400s
+
+# All backends — SQLite + Postgres + Redis + MongoDB + Qdrant + Weaviate + Pinecone + NATS + Kafka (requires infra-up)
 #
 # -p 1 (serialize package test binaries, not just tests within one
 # package) is required, not just a speed/safety tradeoff: both
@@ -103,7 +117,8 @@ test-all:
 	WEAVIATE_URL="http://localhost:8080" \
 	PINECONE_URL="http://localhost:5080" \
 	NATS_URL="nats://localhost:4222" \
-		go test ./internal/... ./cmd/... -race -count=1 -p 1
+	KAFKA_URL="localhost:9092" \
+		go test ./internal/... ./cmd/... -race -count=1 -p 1 -timeout 600s
 
 # Verbose version of test-all
 test-all-v:
@@ -115,7 +130,8 @@ test-all-v:
 	WEAVIATE_URL="http://localhost:8080" \
 	PINECONE_URL="http://localhost:5080" \
 	NATS_URL="nats://localhost:4222" \
-		go test ./internal/... ./cmd/... -race -count=1 -v -p 1
+	KAFKA_URL="localhost:9092" \
+		go test ./internal/... ./cmd/... -race -count=1 -v -p 1 -timeout 600s
 
 # End-to-end: builds the real binary, runs it + the real Python runner as
 # subprocesses against real Postgres/Redis, and re-validates VG-001/002/003

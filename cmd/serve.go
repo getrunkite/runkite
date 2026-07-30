@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +47,7 @@ import (
 	"github.com/sharanharsoor/runkite/internal/tracing"
 	"github.com/sharanharsoor/runkite/internal/transport"
 	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	kafkatransport "github.com/sharanharsoor/runkite/internal/transport/kafka"
 	natstransport "github.com/sharanharsoor/runkite/internal/transport/nats"
 	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 	"github.com/sharanharsoor/runkite/internal/vectorstore"
@@ -564,6 +566,38 @@ func initStore(ctx context.Context) state.Store {
 }
 
 func initTransport(ctx context.Context) (transport.JobQueue, transport.EventBroker, transport.CancelBroker) {
+	// Kafka is a JobQueue-only backend (see internal/transport/kafka's
+	// own package doc for why) -- KAFKA_URL only ever picks the queue,
+	// paired with Redis's own EventBroker/CancelBroker when REDIS_URL
+	// is also set, or the in-process ones otherwise. Checked before the
+	// REDIS_URL branch below so "both set" means "Kafka queue, Redis
+	// broker/cancelbus," not "Redis for everything."
+	if kafkaURL := os.Getenv("KAFKA_URL"); kafkaURL != "" {
+		queue, err := kafkatransport.NewQueue(ctx, strings.Split(kafkaURL, ","))
+		if err != nil {
+			slog.Error("failed to initialize kafka job queue", "error", err)
+			os.Exit(1)
+		}
+		if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+			opts, err := goredis.ParseURL(redisURL)
+			if err != nil {
+				slog.Error("failed to parse REDIS_URL", "error", err)
+				os.Exit(1)
+			}
+			rdb := goredis.NewClient(opts)
+			if err := rdb.Ping(ctx).Err(); err != nil {
+				slog.Error("failed to connect to redis", "error", err)
+				os.Exit(1)
+			}
+			broker := redistransport.NewBroker(rdb)
+			cancelBus := redistransport.NewCancelBus(rdb)
+			slog.Info("transport: kafka queue + redis broker/cancelbus", "kafka_url", kafkaURL, "redis_url", redisURL)
+			return queue, broker, cancelBus
+		}
+		slog.Info("transport: kafka queue + in-process broker/cancelbus", "kafka_url", kafkaURL)
+		return queue, inprocess.NewBroker(), inprocess.NewCancelBus()
+	}
+
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL != "" {
 		opts, err := goredis.ParseURL(redisURL)

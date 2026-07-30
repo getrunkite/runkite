@@ -189,3 +189,47 @@ services:
     # fine in practice -- this is a lightweight in-memory emulator that
     # binds its port almost immediately on startup, not a database with
     # a real spool-up sequence to wait out.
+
+  kafka:
+    # internal/transport/kafka's own JobQueue-only backend (see that
+    # package's own doc comment for why it doesn't implement the full
+    # transport triad the way Redis/NATS do) -- same conformance suite,
+    # run via `make test-kafka`.
+    #
+    # Single-node KRaft mode (no Zookeeper) -- the officially documented
+    # minimal setup, per Kafka's own quickstart docs. Three env vars
+    # aren't just performance tuning, they're load-bearing for this
+    # package's own tests, confirmed live:
+    #   - KAFKA_MESSAGE_MAX_BYTES / KAFKA_REPLICA_FETCH_MAX_BYTES: the
+    #     broker's own default (~1MB) rejects this project's own
+    #     large-payload conformance test outright.
+    #   - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0: Kafka's own default
+    #     (3000ms) deliberately delays a brand-new consumer group's
+    #     first partition assignment to let other near-simultaneous
+    #     joiners batch in -- fine in production, but adds 3s to every
+    #     single fresh-namespace conformance sub-test here for no
+    #     benefit (nothing else is racing to join the same group).
+    image: apache/kafka:latest
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MESSAGE_MAX_BYTES: 8388608
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 8388608
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9092:9092"
+    # No healthcheck: this image ships no shell utility suited to a
+    # simple exec probe against the broker port. `docker compose up
+    # --wait` falls back to waiting for "running" state, same as the
+    # nats/pinecone services above -- Makefile's own test-kafka target
+    # additionally waits for the port to actually accept connections
+    # before running tests, since this image's own startup (JVM boot +
+    # KRaft bootstrap) is slower than "container running" implies.
