@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -362,6 +363,76 @@ func TestAP018_PatchThread(t *testing.T) {
 	if thread.Metadata["a"] != "1" || thread.Metadata["b"] != "2" {
 		t.Fatalf("metadata not merged correctly: %+v", thread.Metadata)
 	}
+}
+
+// TestIR005_PatchThread_MatchingVersionSucceeds proves the full HTTP path
+// for optimistic concurrency (plans/pending_items.md item 18, IR-005): a
+// client that read the thread's current "version" and echoes it back as
+// "if_match_version" gets its patch applied, and the response's own new
+// "version" reflects the bump.
+func TestIR005_PatchThread_MatchingVersionSucceeds(t *testing.T) {
+	env := newTestEnv(t)
+
+	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t-ver"})
+
+	resp, _ := patchJSON(env.srv.URL+"/threads/t-ver", map[string]interface{}{
+		"metadata":         map[string]interface{}{"a": "1"},
+		"if_match_version": 1,
+	})
+	expectStatus(t, resp, 200)
+
+	var thread models.Thread
+	json.Unmarshal(readBody(t, resp), &thread)
+	if thread.Version != 2 {
+		t.Fatalf("Version = %d, want 2", thread.Version)
+	}
+}
+
+// TestIR005_PatchThread_StaleVersionReturns409 proves a client holding a
+// stale version gets a 409, not a silent overwrite of someone else's
+// concurrent change.
+func TestIR005_PatchThread_StaleVersionReturns409(t *testing.T) {
+	env := newTestEnv(t)
+
+	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t-ver-stale"})
+
+	// Someone else's write moves the thread to version 2 first.
+	resp1, _ := patchJSON(env.srv.URL+"/threads/t-ver-stale", map[string]interface{}{
+		"metadata": map[string]interface{}{"a": "1"},
+	})
+	expectStatus(t, resp1, 200)
+
+	// A client still holding version 1 tries to patch on top of it.
+	resp2, _ := patchJSON(env.srv.URL+"/threads/t-ver-stale", map[string]interface{}{
+		"metadata":         map[string]interface{}{"b": "2"},
+		"if_match_version": 1,
+	})
+	expectStatus(t, resp2, 409)
+
+	// The winning write's change must survive untouched.
+	getResp, _ := http.Get(env.srv.URL + "/threads/t-ver-stale")
+	var thread models.Thread
+	json.Unmarshal(readBody(t, getResp), &thread)
+	if thread.Metadata["a"] != "1" {
+		t.Errorf("expected the successful write's change to survive, got %+v", thread.Metadata)
+	}
+	if _, hasB := thread.Metadata["b"]; hasB {
+		t.Errorf("the rejected stale write must not have been applied, got %+v", thread.Metadata)
+	}
+}
+
+// TestIR005_PatchThread_NoIfMatchVersionIsUnconditional proves omitting
+// if_match_version entirely keeps the original last-write-wins behavior,
+// unchanged for callers that don't opt into the protection.
+func TestIR005_PatchThread_NoIfMatchVersionIsUnconditional(t *testing.T) {
+	env := newTestEnv(t)
+
+	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t-ver-uncond"})
+
+	resp, _ := patchJSON(env.srv.URL+"/threads/t-ver-uncond", map[string]interface{}{
+		"metadata": map[string]interface{}{"a": "1"},
+	})
+	expectStatus(t, resp, 200)
 }
 
 func TestAP020_SearchThreads(t *testing.T) {
@@ -838,6 +909,183 @@ func TestTS009_ConcurrentRunReject409(t *testing.T) {
 	// Second run while first is still running — should 409
 	resp2, _ := postJSON(env.srv.URL+"/threads/t1/runs", map[string]interface{}{"agent_id": "test2"})
 	expectStatus(t, resp2, 409)
+}
+
+// ============================================================================
+// IR-001: client-supplied run_id makes run creation idempotent against
+// network retries (plans/pending_items.md item 18).
+// ============================================================================
+
+func TestIdempotentRun_BackgroundRun_RetrySameRunIDReturnsExisting(t *testing.T) {
+	env := newTestEnv(t)
+
+	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-1"}
+	resp1, _ := postJSON(env.srv.URL+"/runs", body)
+	expectStatus(t, resp1, 200)
+	var run1 models.Run
+	json.Unmarshal(readBody(t, resp1), &run1)
+	if run1.RunID != "client-retry-1" {
+		t.Fatalf("expected the client-supplied run_id to be used, got %s", run1.RunID)
+	}
+
+	// Simulate a network retry: same request, sent again.
+	resp2, _ := postJSON(env.srv.URL+"/runs", body)
+	expectStatus(t, resp2, 200)
+	var run2 models.Run
+	json.Unmarshal(readBody(t, resp2), &run2)
+	if run2.RunID != run1.RunID {
+		t.Fatalf("retry returned a different run_id: %s vs %s", run2.RunID, run1.RunID)
+	}
+
+	// No duplicate row, and the queue only ever saw one job for it.
+	runs, err := env.store.SearchRuns(context.Background(), &models.RunSearchRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, r := range runs {
+		if r.RunID == "client-retry-1" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 run row for the retried run_id, found %d", count)
+	}
+
+	// Drain the ONE legitimate job the first request enqueued, then
+	// confirm nothing else shows up -- if the retry had also enqueued a
+	// duplicate, this second Dequeue would find it.
+	ctx := context.Background()
+	first, err := env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
+	if err != nil || first == nil || first.RunID != "client-retry-1" {
+		t.Fatalf("expected the original request's job in the queue: %v %v", first, err)
+	}
+	shortCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if job, _ := env.queue.Dequeue(shortCtx, "python-langgraph", 150*time.Millisecond); job != nil {
+		t.Fatalf("retry re-enqueued a second job for the same run_id: %+v", job)
+	}
+}
+
+func TestIdempotentRun_DifferentRunIDsCreateSeparateRuns(t *testing.T) {
+	env := newTestEnv(t)
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test", "run_id": "run-a"})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test", "run_id": "run-b"})
+	expectStatus(t, resp2, 200)
+	readBody(t, resp2)
+
+	if _, err := env.store.GetRun(context.Background(), "run-a"); err != nil {
+		t.Fatalf("run-a should exist: %v", err)
+	}
+	if _, err := env.store.GetRun(context.Background(), "run-b"); err != nil {
+		t.Fatalf("run-b should exist: %v", err)
+	}
+}
+
+func TestIdempotentRun_NoRunIDStillGeneratesServerSideID(t *testing.T) {
+	env := newTestEnv(t)
+
+	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
+	expectStatus(t, resp, 200)
+	var run models.Run
+	json.Unmarshal(readBody(t, resp), &run)
+	if run.RunID == "" {
+		t.Fatal("expected a server-generated run_id when none was supplied")
+	}
+}
+
+func TestIdempotentRun_StreamRetry_DoesNotReDispatch(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Simulate a runner so the first /runs/stream call's SSE loop
+	// actually terminates (it blocks on the event channel until a
+	// terminal event arrives -- see streamRun).
+	go func() {
+		ctx := context.Background()
+		assignment, err := env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
+		if err != nil || assignment == nil {
+			return
+		}
+		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+			EventID: assignment.RunID + "_end", Seq: 1, Method: "end",
+			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
+		})
+	}()
+
+	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-stream"}
+	resp1, _ := postJSON(env.srv.URL+"/runs/stream", body)
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	// By now the run is terminal, so the retry's streamExistingRun call
+	// takes the immediate-replay fast path (no blocking on new events)
+	// instead of enqueuing anything new.
+	resp2, _ := postJSON(env.srv.URL+"/runs/stream", body)
+	expectStatus(t, resp2, 200)
+	streamed := readBody(t, resp2)
+	if !strings.Contains(string(streamed), "client-retry-stream") {
+		t.Fatalf("expected the retry's SSE stream to reference the existing run_id, got %s", streamed)
+	}
+
+	ctx := context.Background()
+	shortCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if job, _ := env.queue.Dequeue(shortCtx, "python-langgraph", 150*time.Millisecond); job != nil {
+		t.Fatalf("stream retry re-enqueued a second job: %+v", job)
+	}
+}
+
+func TestIdempotentRun_WaitRetry_ReturnsSameResultWithoutSecondDispatch(t *testing.T) {
+	env := newTestEnv(t)
+
+	var dequeueCount int32
+	go func() {
+		ctx := context.Background()
+		assignment, err := env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
+		if err != nil || assignment == nil {
+			return
+		}
+		atomic.AddInt32(&dequeueCount, 1)
+		time.Sleep(150 * time.Millisecond) // let the retry race in before finishing
+		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
+			Namespace: []string{}, Data: json.RawMessage(`{"answer":"42"}`), Ts: time.Now().UnixMilli(),
+		})
+		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
+			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
+		})
+	}()
+
+	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-wait"}
+
+	var wg sync.WaitGroup
+	results := make(chan models.RunWaitResponse, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(delay time.Duration) {
+			defer wg.Done()
+			time.Sleep(delay)
+			resp, _ := postJSON(env.srv.URL+"/threads/wait-retry-thread/runs/wait", body)
+			var result models.RunWaitResponse
+			json.Unmarshal(readBody(t, resp), &result)
+			results <- result
+		}(time.Duration(i) * 30 * time.Millisecond)
+	}
+	wg.Wait()
+	close(results)
+
+	for result := range results {
+		if result.Values["answer"] != "42" {
+			t.Fatalf("expected both the original and the retry to see the same successful result, got %+v", result.Values)
+		}
+	}
+	if atomic.LoadInt32(&dequeueCount) != 1 {
+		t.Fatalf("expected exactly 1 dequeue (one dispatch) for the retried run_id, got %d", dequeueCount)
+	}
 }
 
 func TestTS011_RunAutoCreatesThread(t *testing.T) {

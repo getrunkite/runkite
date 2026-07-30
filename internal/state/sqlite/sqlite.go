@@ -325,6 +325,13 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 	if err := addColumnIfMissing(ctx, s.db, "runs", "depth", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// Optimistic concurrency for PATCH /threads (plans/pending_items.md
+	// item 18, IR-005) -- see postgres.go's identical column for the
+	// full rationale (a plain counter, not the updated_at timestamp,
+	// to avoid cross-backend precision-matching issues).
+	if err := addColumnIfMissing(ctx, s.db, "threads", "version", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
 	if _, err := s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_runs_root ON runs(root_run_id)"); err != nil {
 		return err
 	}
@@ -913,14 +920,21 @@ func (s *SQLiteStore) CreateThread(ctx context.Context, thread *models.Thread) e
 	`, tenant.FromContext(ctx), thread.ThreadID, thread.Status, string(meta), string(vals),
 		thread.CreatedAt.Format(time.RFC3339), thread.UpdatedAt.Format(time.RFC3339))
 
-	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
-		return &state.ErrConflict{Resource: "thread", ID: thread.ThreadID}
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return &state.ErrConflict{Resource: "thread", ID: thread.ThreadID}
+		}
+		return err
 	}
-	return err
+	// See postgres.go's identical CreateThread for why this is set here
+	// (the DB default the caller's struct never saw, but handlers echo
+	// straight back as the create response).
+	thread.Version = 1
+	return nil
 }
 
 func (s *SQLiteStore) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads WHERE thread_id = ?`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads WHERE thread_id = ?`
 	args := []interface{}{threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -930,7 +944,7 @@ func (s *SQLiteStore) GetThread(ctx context.Context, threadID string) (*models.T
 
 	var t models.Thread
 	var metaStr, valsStr, createdStr, updatedStr string
-	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaStr, &valsStr, &createdStr, &updatedStr); err != nil {
+	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaStr, &valsStr, &createdStr, &updatedStr, &t.Version); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
 		}
@@ -970,15 +984,34 @@ func (s *SQLiteStore) UpdateThread(ctx context.Context, threadID string, patch *
 	meta, _ := json.Marshal(existing.Metadata)
 	vals, _ := json.Marshal(existing.Values)
 
-	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ? WHERE thread_id = ?`
+	// See postgres.go's identical UpdateThread for why version = version + 1
+	// (not existing.Version+1 as a bound value) and why the IfMatchVersion
+	// check lives in this same statement's WHERE clause.
+	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ?, version = version + 1 WHERE thread_id = ?`
 	args := []interface{}{string(meta), string(vals), existing.UpdatedAt.Format(time.RFC3339), threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
 		args = append(args, tenant.FromContext(ctx))
 	}
-	_, err = s.db.ExecContext(ctx, query, args...)
-
-	return existing, err
+	if patch.IfMatchVersion != nil {
+		query += ` AND version = ?`
+		args = append(args, *patch.IfMatchVersion)
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if patch.IfMatchVersion != nil {
+		n, raErr := result.RowsAffected()
+		if raErr != nil {
+			return nil, raErr
+		}
+		if n == 0 {
+			return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
+		}
+	}
+	existing.Version++
+	return existing, nil
 }
 
 func (s *SQLiteStore) DeleteThread(ctx context.Context, threadID string) error {

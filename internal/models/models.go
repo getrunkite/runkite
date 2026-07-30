@@ -97,6 +97,14 @@ type Thread struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 	Status    ThreadStatus           `json:"status"`
 	Values    map[string]interface{} `json:"values,omitempty"`
+	// Version is a plain increment-on-write counter for optimistic
+	// concurrency on PATCH /threads (plans/pending_items.md item 18,
+	// IR-005) -- a client that wants to detect "someone else changed
+	// this since I last read it" round-trips this value back as
+	// ThreadPatch.IfMatchVersion. Starts at 1 on creation, +1 on every
+	// successful UpdateThread. Not the same "version" concept as agent
+	// versioning (models.Agent) -- purely a per-thread write counter.
+	Version int `json:"version"`
 }
 
 // ThreadCreate is the body for POST /threads.
@@ -110,6 +118,17 @@ type ThreadCreate struct {
 type ThreadPatch struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	Values   map[string]interface{} `json:"values,omitempty"`
+	// IfMatchVersion, if set, makes this PATCH conditional (IR-001-style
+	// optimistic concurrency, see Thread.Version's own doc comment): the
+	// update only applies if the thread's CURRENT version still equals
+	// this value at write time, checked atomically in the same UPDATE
+	// statement (not a separate read-then-compare, which would still
+	// race). A mismatch (someone else updated the thread first) returns
+	// state.ErrConflict, not a silent overwrite. nil (the default,
+	// unchanged from before this field existed) means "apply
+	// unconditionally," preserving the original last-write-wins
+	// behavior for callers that don't need this protection.
+	IfMatchVersion *int `json:"if_match_version,omitempty"`
 }
 
 // ThreadSearchRequest is the body for POST /threads/search.
@@ -207,6 +226,17 @@ type Run struct {
 
 // RunCreate is the body for POST /runs and POST /threads/{id}/runs.
 type RunCreate struct {
+	// RunID lets a client supply its own run ID instead of the server
+	// generating one, specifically to make run creation idempotent
+	// against network retries (plans/pending_items.md item 18, IR-001):
+	// a client that sent a create-run request but never received the
+	// response (timeout, dropped connection) can safely retry with the
+	// SAME RunID -- the retry returns the run that's already there
+	// instead of creating a duplicate. Empty (the common case) means
+	// "generate a fresh server-side ID," unchanged from before this
+	// field existed. Any non-empty string is accepted, no format
+	// validation, matching ThreadID's own existing precedent.
+	RunID         string          `json:"run_id,omitempty"`
 	ThreadID      string          `json:"thread_id,omitempty"`
 	AgentID       string          `json:"agent_id,omitempty"`
 	AssistantID   string          `json:"assistant_id,omitempty"` // SDK compat: alias for AgentID

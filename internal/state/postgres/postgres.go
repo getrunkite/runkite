@@ -261,6 +261,14 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	);
 	ALTER TABLE threads ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE INDEX IF NOT EXISTS idx_threads_tenant ON threads(tenant_id);
+	-- Optimistic concurrency for PATCH /threads (plans/pending_items.md
+	-- item 18, IR-005): a plain increment-on-write counter, not the
+	-- updated_at timestamp -- comparing a client-round-tripped timestamp
+	-- for exact equality across four backends with different column
+	-- types and precisions (Postgres microseconds, SQLite text, MySQL,
+	-- Mongo) is a real source of false-positive conflicts; an integer
+	-- has no such ambiguity.
+	ALTER TABLE threads ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 
 	CREATE TABLE IF NOT EXISTS runs (
 		tenant_id  TEXT NOT NULL DEFAULT 'default',
@@ -974,11 +982,18 @@ func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
 		}
 		return err
 	}
+	// The column defaults to 1 in the DB (see the schema above), but the
+	// caller's own struct -- which handlers echo straight back as the
+	// create response, without a follow-up GetThread -- never had this
+	// field set. Without this, a client that creates a thread and reads
+	// "version" off THAT response to make an immediate IfMatchVersion
+	// patch would see a stale 0 and needlessly get rejected.
+	thread.Version = 1
 	return nil
 }
 
 func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads WHERE thread_id = $1`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads WHERE thread_id = $1`
 	args := []interface{}{threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = $2`
@@ -988,7 +1003,7 @@ func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread,
 
 	var t models.Thread
 	var metaBytes, valsBytes []byte
-	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt, &t.Version); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
 		}
@@ -1026,15 +1041,35 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	meta, _ := json.Marshal(existing.Metadata)
 	vals, _ := json.Marshal(existing.Values)
 
-	query := `UPDATE threads SET metadata = $1, values_json = $2, updated_at = $3 WHERE thread_id = $4`
+	// version = version + 1 in the SET clause (not existing.Version+1 as
+	// a bound parameter) so this stays correct even under the IfMatchVersion
+	// race fallback below, where existing.Version might be stale by the
+	// time this statement actually runs -- the DB computes the increment
+	// from whatever the CURRENT row has, atomically, in the same statement
+	// that checks the WHERE-clause version match.
+	query := `UPDATE threads SET metadata = $1, values_json = $2, updated_at = $3, version = version + 1 WHERE thread_id = $4`
 	args := []interface{}{meta, vals, existing.UpdatedAt, threadID}
 	if !tenant.IsSystem(ctx) {
-		query += ` AND tenant_id = $5`
+		query += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
 		args = append(args, tenant.FromContext(ctx))
 	}
-	_, err = s.pool.Exec(ctx, query, args...)
-
-	return existing, err
+	// Atomic optimistic-concurrency check: the version comparison lives
+	// in the SAME UPDATE's WHERE clause, not a separate read-then-compare
+	// in Go, which would still race under real concurrency (the same
+	// TOCTOU class TryClaimThread's own doc comment calls out).
+	if patch.IfMatchVersion != nil {
+		query += fmt.Sprintf(" AND version = $%d", len(args)+1)
+		args = append(args, *patch.IfMatchVersion)
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if patch.IfMatchVersion != nil && tag.RowsAffected() == 0 {
+		return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
+	}
+	existing.Version++
+	return existing, nil
 }
 
 func (s *Store) DeleteThread(ctx context.Context, threadID string) error {

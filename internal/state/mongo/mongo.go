@@ -179,6 +179,22 @@ func (s *Store) Init(ctx context.Context) error {
 			return fmt.Errorf("create index on %s: %w", i.collection, err)
 		}
 	}
+
+	// threads.version backfill (plans/pending_items.md item 18,
+	// IR-005): added after this package's initial release. Unlike the
+	// SQL backends (which need an explicit ALTER TABLE to even have the
+	// column exist), Mongo's schemaless documents just silently lack
+	// the field on any thread created before this -- normalizing them
+	// to version: 1 here once means every read/write path downstream
+	// can treat "version" as always present, instead of scattering
+	// "field might be missing, treat as 1" special-casing through every
+	// query that touches it.
+	if _, err := s.col("threads").UpdateMany(ctx,
+		bson.M{"version": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"version": 1}},
+	); err != nil {
+		return fmt.Errorf("backfill threads.version: %w", err)
+	}
 	return nil
 }
 
@@ -769,6 +785,7 @@ type threadDoc struct {
 	Values    interface{} `bson:"values"`
 	CreatedAt time.Time   `bson:"created_at"`
 	UpdatedAt time.Time   `bson:"updated_at"`
+	Version   int         `bson:"version"`
 }
 
 func toThread(doc threadDoc) *models.Thread {
@@ -776,6 +793,13 @@ func toThread(doc threadDoc) *models.Thread {
 		TenantID: doc.TenantID, ThreadID: doc.ThreadID, Status: models.ThreadStatus(doc.Status),
 		Metadata: bsonToMap(doc.Metadata), Values: bsonToMap(doc.Values),
 		CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt,
+		// A document that predates the version field (and somehow
+		// missed Init's backfill -- e.g. a thread inserted between an
+		// old binary's write and a new binary's Init running) decodes
+		// Version as the Go zero value, 0, not the intended "unset
+		// means 1." Normalizing it here too is cheap defense in depth
+		// on top of the backfill, not a replacement for it.
+		Version: max(doc.Version, 1),
 	}
 }
 
@@ -783,11 +807,19 @@ func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
 	_, err := s.col("threads").InsertOne(ctx, threadDoc{
 		TenantID: tenant.FromContext(ctx), ThreadID: thread.ThreadID, Status: string(thread.Status),
 		Metadata: thread.Metadata, Values: thread.Values, CreatedAt: thread.CreatedAt, UpdatedAt: thread.UpdatedAt,
+		Version: 1,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return &state.ErrConflict{Resource: "thread", ID: thread.ThreadID}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// See postgres.go's identical CreateThread for why this is set here
+	// (the caller's struct never had this field set, but handlers echo
+	// it straight back as the create response).
+	thread.Version = 1
+	return nil
 }
 
 func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
@@ -825,9 +857,30 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	}
 	existing.UpdatedAt = time.Now().UTC()
 
-	_, err = s.col("threads").UpdateOne(ctx, tenantFilter(ctx, bson.M{"thread_id": threadID}),
-		bson.M{"$set": bson.M{"metadata": existing.Metadata, "values": existing.Values, "updated_at": existing.UpdatedAt}})
-	return existing, err
+	// Optimistic concurrency (IR-005): the version match lives in the
+	// FILTER (Mongo's equivalent of a SQL WHERE clause), checked
+	// atomically by the same UpdateOne call that applies the change --
+	// not a separate read-then-compare, which would still race. $inc
+	// (not a bound existing.Version+1) so the actual stored value is
+	// always derived from whatever's currently in the document, same
+	// reasoning as the SQL backends' `version = version + 1`.
+	filter := tenantFilter(ctx, bson.M{"thread_id": threadID})
+	if patch.IfMatchVersion != nil {
+		filter["version"] = *patch.IfMatchVersion
+	}
+	result, err := s.col("threads").UpdateOne(ctx, filter,
+		bson.M{
+			"$set": bson.M{"metadata": existing.Metadata, "values": existing.Values, "updated_at": existing.UpdatedAt},
+			"$inc": bson.M{"version": 1},
+		})
+	if err != nil {
+		return nil, err
+	}
+	if patch.IfMatchVersion != nil && result.MatchedCount == 0 {
+		return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
+	}
+	existing.Version++
+	return existing, nil
 }
 
 func (s *Store) DeleteThread(ctx context.Context, threadID string) error {

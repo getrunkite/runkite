@@ -96,6 +96,35 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 // Init creates all tables. Safe to call on every startup (CREATE TABLE
 // IF NOT EXISTS throughout) -- same idempotent, non-versioned migration
 // convention as every other backend's Init.
+// addColumnIfMissing adds a column to an existing table if it isn't
+// already there. MySQL, unlike Postgres/MariaDB, has no `ADD COLUMN IF
+// NOT EXISTS` clause at all (confirmed against the official 8.4 ALTER
+// TABLE grammar -- not a version gap, genuinely unsupported syntax) --
+// found live: `ALTER TABLE threads ADD COLUMN IF NOT EXISTS ...` failed
+// with a syntax error against a real MySQL 8.4 server, not just an
+// older one. Checking INFORMATION_SCHEMA.COLUMNS first, in Go, is more
+// robust than SQLite's own string-matching-the-duplicate-column-error
+// approach (internal/state/sqlite's addColumnIfMissing) -- no risk of
+// an error-message wording change across MySQL versions/locales
+// breaking the idempotency check silently.
+func (s *Store) addColumnIfMissing(ctx context.Context, table, column, ddl string) error {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+	`, table, column).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
 func (s *Store) Init(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS agents (
@@ -184,6 +213,10 @@ func (s *Store) Init(ctx context.Context) error {
 			PRIMARY KEY (thread_id),
 			KEY idx_threads_tenant (tenant_id)
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
+		// version is NOT declared inline above -- added via
+		// addColumnIfMissing below instead, for both fresh and
+		// pre-existing databases uniformly (a single source of truth for
+		// this one migration, not two declarations that could drift).
 
 		// Agent-to-Agent (A2A) delegation bookkeeping -- see models.Run's
 		// doc comment. parent_run_id/root_run_id are nullable (a normal
@@ -317,6 +350,18 @@ func (s *Store) Init(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("mysql: init schema: %w\nstatement: %s", err, stmt)
 		}
+	}
+
+	// threads.version (plans/pending_items.md item 18, IR-005): added
+	// after this package's initial release, so -- unlike every other
+	// column here -- it genuinely needs the "existing deployment, add a
+	// column in place" migration path this package's own doc comment
+	// says it doesn't need. Confirmed live: an already-initialized test
+	// database threw "Unknown column 'version'" without this. See
+	// addColumnIfMissing's own doc comment for why MySQL needs a real
+	// existence check here instead of an IF NOT EXISTS clause.
+	if err := s.addColumnIfMissing(ctx, "threads", "version", "INT NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("mysql: init schema: %w", err)
 	}
 	return nil
 }
@@ -667,11 +712,15 @@ func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
 		}
 		return err
 	}
+	// See postgres.go's identical CreateThread for why this is set here
+	// (the DB default the caller's struct never saw, but handlers echo
+	// straight back as the create response).
+	thread.Version = 1
 	return nil
 }
 
 func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread, error) {
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads WHERE thread_id = ?`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads WHERE thread_id = ?`
 	args := []interface{}{threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -715,14 +764,34 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	meta, _ := json.Marshal(existing.Metadata)
 	vals, _ := json.Marshal(existing.Values)
 
-	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ? WHERE thread_id = ?`
+	// See postgres.go's identical UpdateThread for why version = version + 1
+	// (not existing.Version+1 as a bound value) and why the IfMatchVersion
+	// check lives in this same statement's WHERE clause.
+	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ?, version = version + 1 WHERE thread_id = ?`
 	args := []interface{}{meta, vals, existing.UpdatedAt, threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
 		args = append(args, tenant.FromContext(ctx))
 	}
-	_, err = s.db.ExecContext(ctx, query, args...)
-	return existing, err
+	if patch.IfMatchVersion != nil {
+		query += ` AND version = ?`
+		args = append(args, *patch.IfMatchVersion)
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if patch.IfMatchVersion != nil {
+		n, raErr := result.RowsAffected()
+		if raErr != nil {
+			return nil, raErr
+		}
+		if n == 0 {
+			return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
+		}
+	}
+	existing.Version++
+	return existing, nil
 }
 
 func (s *Store) DeleteThread(ctx context.Context, threadID string) error {
@@ -751,7 +820,7 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 	if limit <= 0 {
 		limit = 10
 	}
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads`
 	var args []interface{}
 	var where []string
 
@@ -835,7 +904,7 @@ func (s *Store) TryClaimThread(ctx context.Context, threadID string) (bool, erro
 func scanThread(row rowScanner) (*models.Thread, error) {
 	var t models.Thread
 	var metaBytes, valsBytes []byte
-	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt, &t.Version); err != nil {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &t.Metadata)

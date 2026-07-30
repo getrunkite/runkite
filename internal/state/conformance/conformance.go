@@ -946,6 +946,165 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 			t.Errorf("c = %v, want '3'", got.Metadata["c"])
 		}
 	})
+
+	// IR-005 (plans/pending_items.md item 18): optimistic concurrency on
+	// PATCH /threads via a plain version counter, checked atomically in
+	// the UPDATE's own WHERE clause -- not a separate read-then-compare,
+	// which would still race under real concurrency.
+	t.Run("IR-005_new_thread_starts_at_version_1", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		thread := &models.Thread{ThreadID: "t-ver-1", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}
+		if err := s.CreateThread(ctx, thread); err != nil {
+			t.Fatalf("CreateThread: %v", err)
+		}
+		// The passed-in struct itself must reflect the DB-assigned
+		// version immediately, not just a subsequent GetThread -- a
+		// handler that echoes this same struct back as the create
+		// response (as handleCreateThread does) would otherwise return
+		// a stale 0, and a client that immediately IfMatchVersion's off
+		// that response would wrongly get rejected.
+		if thread.Version != 1 {
+			t.Errorf("CreateThread should set Version=1 on the caller's own struct, got %d", thread.Version)
+		}
+
+		got, err := s.GetThread(ctx, "t-ver-1")
+		if err != nil {
+			t.Fatalf("GetThread: %v", err)
+		}
+		if got.Version != 1 {
+			t.Errorf("Version = %d, want 1 for a freshly-created thread", got.Version)
+		}
+	})
+
+	t.Run("IR-005_unconditional_patch_still_works_and_bumps_version", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-ver-2", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		// No IfMatchVersion at all -- must behave exactly as before this
+		// feature existed (unconditional apply), the default for callers
+		// that don't opt into the protection.
+		got, err := s.UpdateThread(ctx, "t-ver-2", &models.ThreadPatch{Metadata: map[string]interface{}{"a": "1"}})
+		if err != nil {
+			t.Fatalf("unconditional UpdateThread should succeed: %v", err)
+		}
+		if got.Version != 2 {
+			t.Errorf("Version = %d, want 2 after one update", got.Version)
+		}
+	})
+
+	t.Run("IR-005_matching_version_succeeds", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-ver-3", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		v1 := 1
+		got, err := s.UpdateThread(ctx, "t-ver-3", &models.ThreadPatch{
+			Metadata:       map[string]interface{}{"a": "1"},
+			IfMatchVersion: &v1,
+		})
+		if err != nil {
+			t.Fatalf("expected success when IfMatchVersion matches the current version: %v", err)
+		}
+		if got.Version != 2 {
+			t.Errorf("Version = %d, want 2", got.Version)
+		}
+	})
+
+	t.Run("IR-005_stale_version_returns_conflict_no_silent_data_loss", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{
+			ThreadID: "t-ver-4", Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{"original": "value"}, CreatedAt: now, UpdatedAt: now,
+		})
+
+		// A real write moves the thread to version 2.
+		if _, err := s.UpdateThread(ctx, "t-ver-4", &models.ThreadPatch{Metadata: map[string]interface{}{"a": "1"}}); err != nil {
+			t.Fatalf("setup update: %v", err)
+		}
+
+		// A second client, still holding the STALE version 1 it read
+		// before the update above, tries to patch on top of it.
+		staleVersion := 1
+		_, err := s.UpdateThread(ctx, "t-ver-4", &models.ThreadPatch{
+			Metadata:       map[string]interface{}{"b": "2"},
+			IfMatchVersion: &staleVersion,
+		})
+		if _, ok := err.(*state.ErrConflict); !ok {
+			t.Fatalf("expected ErrConflict for a stale IfMatchVersion, got %T: %v", err, err)
+		}
+
+		// No silent data loss: the winning write's own changes ("a")
+		// must still be there, untouched by the rejected stale write.
+		got, getErr := s.GetThread(ctx, "t-ver-4")
+		if getErr != nil {
+			t.Fatalf("GetThread: %v", getErr)
+		}
+		if got.Metadata["a"] != "1" {
+			t.Errorf("expected the successful write's change to survive, got metadata=%v", got.Metadata)
+		}
+		if _, hasB := got.Metadata["b"]; hasB {
+			t.Errorf("the rejected stale write's change must NOT have been applied, got metadata=%v", got.Metadata)
+		}
+		if got.Version != 2 {
+			t.Errorf("a rejected conflicting write must not bump the version further, got %d, want 2", got.Version)
+		}
+	})
+
+	t.Run("IR-005_concurrent_patches_exactly_one_wins", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-ver-race", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		const n = 8
+		v1 := 1
+		results := make(chan error, n)
+		for i := 0; i < n; i++ {
+			i := i
+			go func() {
+				_, err := s.UpdateThread(ctx, "t-ver-race", &models.ThreadPatch{
+					Metadata:       map[string]interface{}{"writer": fmt.Sprintf("w%d", i)},
+					IfMatchVersion: &v1,
+				})
+				results <- err
+			}()
+		}
+
+		var succeeded, conflicted int
+		for i := 0; i < n; i++ {
+			err := <-results
+			switch {
+			case err == nil:
+				succeeded++
+			default:
+				if _, ok := err.(*state.ErrConflict); !ok {
+					t.Fatalf("expected either success or ErrConflict, got %T: %v", err, err)
+				}
+				conflicted++
+			}
+		}
+		if succeeded != 1 {
+			t.Fatalf("expected exactly 1 of %d concurrent same-version patches to succeed, got %d", n, succeeded)
+		}
+		if conflicted != n-1 {
+			t.Fatalf("expected %d conflicts, got %d", n-1, conflicted)
+		}
+
+		got, err := s.GetThread(ctx, "t-ver-race")
+		if err != nil {
+			t.Fatalf("GetThread: %v", err)
+		}
+		if got.Version != 2 {
+			t.Errorf("expected exactly one successful write to bump the version once, got %d", got.Version)
+		}
+	})
 }
 
 // --------------------------------------------------------------------------
