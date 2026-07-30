@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -86,6 +88,13 @@ var mcpToolInputSchema = map[string]any{
 // entry, e.g. in Claude Desktop's config), not a limitation being worked
 // around.
 func (s *Server) newMCPServer(ctx context.Context) (*mcp.Server, error) {
+	// Limit 1000: every configured agent becomes a tool, and this is a
+	// SINGLE page, not paginated against SearchAgents -- a tenant with
+	// more than 1000 registered agents (far beyond any real deployment
+	// this project has been tested against) would silently see only
+	// the first 1000 as MCP tools rather than an error. Worth revisiting
+	// with real pagination if that ever becomes a real deployment's
+	// actual scale, not a hypothetical one.
 	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{Limit: 1000})
 	if err != nil {
 		return nil, err
@@ -218,8 +227,12 @@ func extractMCPResponseText(values map[string]interface{}) string {
 // Cursor, etc.) predominantly still speak the older, session-based
 // protocol -- see this file's own package doc comment for why /mcp is
 // mounted as a normal client-facing route rather than under /internal/*.
+//
+// Wrapped in mcpSessionOwner's own middleware -- see its doc comment
+// for a real, confirmed cross-tenant hijack this closes that the SDK's
+// own built-in protection does not.
 func (s *Server) mcpHTTPHandler() http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+	base := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		server, err := s.newMCPServer(r.Context())
 		if err != nil {
 			slog.Error("mcp: failed to build server", "error", err)
@@ -227,4 +240,145 @@ func (s *Server) mcpHTTPHandler() http.Handler {
 		}
 		return server
 	}, nil)
+	return newMCPSessionOwner().middleware(base)
+}
+
+// --------------------------------------------------------------------------
+// Session-to-caller binding
+// --------------------------------------------------------------------------
+
+// mcpSessionIDHeader is the header name the SDK itself uses to carry a
+// session ID once one is established -- see the SDK's own
+// streamable_headers.go. Read here (not exported by the SDK) so this
+// middleware can inspect the same value the SDK's internal session
+// routing keys off of.
+const mcpSessionIDHeader = "Mcp-Session-Id"
+
+// mcpSessionTTL bounds how long an established session's ownership
+// record is kept without being touched again before this process's own
+// sweep evicts it -- independent of (and a bit more generous than)
+// whatever idle-session timeout the SDK's own StreamableHTTPOptions
+// might be configured with, since this map's only job is closing the
+// hijack window below, not managing the session's actual lifecycle.
+const mcpSessionTTL = 30 * time.Minute
+
+const mcpSessionSweepInterval = 5 * time.Minute
+
+// mcpSessionOwner records which caller (tenant + identity) established
+// each active MCP session, so a later request presenting a DIFFERENT
+// caller's otherwise-valid credentials but the SAME session ID is
+// rejected instead of silently continuing the original caller's
+// session.
+//
+// This closes a real, live-confirmed gap: the MCP Go SDK has its own
+// session-hijack protection, but it keys off an OAuth-specific
+// TokenInfo.UserID field that none of Runkite's own auth providers
+// (API key, JWT) ever populate -- so that check is silently a no-op
+// here. Confirmed live: establish a session with one tenant's API key,
+// then call tools/call presenting a SECOND, entirely different (but
+// otherwise perfectly valid) tenant's API key alongside the FIRST
+// session's leaked or guessed ID -- without this middleware, the call
+// succeeds and dispatches a run under the ORIGINAL (wrong) tenant, not
+// the caller who actually made this specific request.
+type mcpSessionOwner struct {
+	mu       sync.Mutex
+	sessions map[string]mcpSessionEntry
+}
+
+type mcpSessionEntry struct {
+	caller   string
+	lastSeen time.Time
+}
+
+func newMCPSessionOwner() *mcpSessionOwner {
+	o := &mcpSessionOwner{sessions: make(map[string]mcpSessionEntry)}
+	go o.sweepLoop()
+	return o
+}
+
+// mcpCallerKey identifies "who is making this specific HTTP request,"
+// derived the same way every tool call's own tenant/identity capture
+// is (see newMCPServer's doc comment) -- tenant alone would still let
+// two DIFFERENT identities within the same tenant hijack each other's
+// sessions, so identity is part of the binding too.
+func mcpCallerKey(ctx context.Context) string {
+	identity := ""
+	if a := auth.FromContext(ctx); a != nil {
+		identity = a.Identity
+	}
+	return tenant.FromContext(ctx) + "|" + identity
+}
+
+// middleware checks the incoming request's own caller against whoever
+// established the session named in its Mcp-Session-Id header (if any),
+// BEFORE the wrapped MCP handler ever runs -- this must happen at the
+// HTTP layer, not inside a tool handler, because a tool handler only
+// ever sees the caller who created the session (see newMCPServer's own
+// doc comment for why), never the CURRENT request's actual caller.
+func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		caller := mcpCallerKey(r.Context())
+		sessionID := r.Header.Get(mcpSessionIDHeader)
+
+		if sessionID != "" {
+			o.mu.Lock()
+			entry, exists := o.sessions[sessionID]
+			o.mu.Unlock()
+			if exists && entry.caller != caller {
+				writeError(w, http.StatusForbidden, "mcp session belongs to a different caller")
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+
+		// A brand-new session's ID is only known AFTER the wrapped
+		// handler runs -- the SDK assigns it and sets this same
+		// response header on the "initialize" call. Record ownership
+		// then; for an existing session's later request, this just
+		// refreshes lastSeen for the sweep below.
+		if newID := w.Header().Get(mcpSessionIDHeader); newID != "" {
+			o.mu.Lock()
+			o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+			o.mu.Unlock()
+		} else if sessionID != "" {
+			o.mu.Lock()
+			if entry, exists := o.sessions[sessionID]; exists {
+				entry.lastSeen = time.Now()
+				o.sessions[sessionID] = entry
+			}
+			o.mu.Unlock()
+		}
+
+		// DELETE is how the Streamable HTTP transport's client
+		// explicitly closes a session -- release the ownership record
+		// with it rather than waiting for the sweep below.
+		if r.Method == http.MethodDelete && sessionID != "" {
+			o.mu.Lock()
+			delete(o.sessions, sessionID)
+			o.mu.Unlock()
+		}
+	})
+}
+
+// sweepOnce evicts ownership records untouched since before cutoff,
+// split out from sweepLoop so a test can call it directly with an
+// artificial "now" instead of waiting on the real ticker.
+func (o *mcpSessionOwner) sweepOnce(now time.Time) {
+	cutoff := now.Add(-mcpSessionTTL)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for id, entry := range o.sessions {
+		if entry.lastSeen.Before(cutoff) {
+			delete(o.sessions, id)
+		}
+	}
+}
+
+func (o *mcpSessionOwner) sweepLoop() {
+	ticker := time.NewTicker(mcpSessionSweepInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		o.sweepOnce(time.Now())
+	}
 }

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/sharanharsoor/runkite/internal/models"
 	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
@@ -70,10 +72,17 @@ func runMCPAgentInBackground(t *testing.T, env *testEnv, reply string) {
 
 // TestMCP_ToolsListReflectsConfiguredAgents proves every registered
 // agent shows up as exactly one MCP tool, named after the agent_id,
-// with the agent's own description carried through.
+// with the agent's own description carried through when set, and a
+// generic fallback description when it isn't (seedAgent's helper
+// doesn't set Description at all, so "summarizer" below exercises that
+// fallback path for free).
 func TestMCP_ToolsListReflectsConfiguredAgents(t *testing.T) {
 	env := newTestEnv(t)
-	seedAgent(t, env, "chatbot", "chatbot", map[string]interface{}{"description": "ignored, Name is what's used"})
+	if err := env.store.UpsertAgent(context.Background(), &models.Agent{
+		AgentID: "chatbot", Name: "chatbot", Description: "A friendly chatbot agent.",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	seedAgent(t, env, "summarizer", "summarizer", nil)
 
 	session := mcpConnect(t, env.srv.URL, nil)
@@ -82,12 +91,18 @@ func TestMCP_ToolsListReflectsConfiguredAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	names := map[string]bool{}
+	tools := map[string]*mcp.Tool{}
 	for _, tool := range res.Tools {
-		names[tool.Name] = true
+		tools[tool.Name] = tool
 	}
-	if !names["chatbot"] || !names["summarizer"] {
-		t.Fatalf("expected tools for both configured agents, got %+v", names)
+	if tools["chatbot"] == nil || tools["summarizer"] == nil {
+		t.Fatalf("expected tools for both configured agents, got %+v", tools)
+	}
+	if tools["chatbot"].Description != "A friendly chatbot agent." {
+		t.Fatalf("expected the agent's own description to be carried through, got %q", tools["chatbot"].Description)
+	}
+	if tools["summarizer"].Description == "" {
+		t.Fatal("expected a non-empty fallback description for an agent with none set")
 	}
 }
 
@@ -203,6 +218,59 @@ func TestMCP_RawInputOverridesMessage(t *testing.T) {
 	}
 	if decoded["custom_field"] != "custom_value" {
 		t.Fatalf("expected raw input to be passed through verbatim, got %v", decoded)
+	}
+}
+
+// TestMCP_SessionHijackAcrossTenantsIsRejected is a regression test for
+// a real, live-confirmed gap: the MCP SDK's own session-hijack
+// protection keys off an OAuth-specific field Runkite's auth providers
+// never populate, so a SECOND, entirely different but otherwise valid
+// credential presenting the FIRST session's leaked or guessed
+// Mcp-Session-Id must not be allowed to continue that session --
+// especially not under the ORIGINAL (wrong) tenant.
+func TestMCP_SessionHijackAcrossTenantsIsRejected(t *testing.T) {
+	env := newTestEnv(t)
+	seedAgent(t, env, "chatbot", "chatbot", nil)
+
+	provider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"tenant-a-key": {Name: "Tenant A User", Permissions: []string{"read", "write"}, TenantID: "tenant-a"},
+		"tenant-b-key": {Name: "Tenant B User", Permissions: []string{"read", "write"}, TenantID: "tenant-b"},
+	})
+	env.srv.Close()
+	env.srv = httptest.NewServer(auth.Middleware(provider, nil, nil, env.apiServer.Handler()))
+	t.Cleanup(env.srv.Close)
+
+	// Tenant A establishes a real session and gets a real session ID.
+	sessionA := mcpConnect(t, env.srv.URL, map[string]string{"Authorization": "Bearer tenant-a-key"})
+	hijackedID := sessionA.ID()
+	if hijackedID == "" {
+		t.Fatal("expected a non-empty session ID after connecting")
+	}
+
+	// Tenant B presents its OWN, otherwise perfectly valid credential,
+	// but tenant A's session ID, with a well-formed tools/list request
+	// -- must be rejected outright, not silently continue tenant A's
+	// session (a malformed/empty body would also get a non-200, but for
+	// the wrong reason -- this proves the SESSION check specifically).
+	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	req, _ := http.NewRequest(http.MethodPost, env.srv.URL+"/mcp", body)
+	req.Header.Set("Authorization", "Bearer tenant-b-key")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Session-Id", hijackedID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("hijack attempt request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for a session hijack attempt across tenants, got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	// Tenant A's own, legitimate continued use of its OWN session must
+	// still work -- this isn't a blanket "reject known sessions" bug.
+	if _, err := sessionA.ListTools(context.Background(), nil); err != nil {
+		t.Fatalf("tenant A's own session should still work: %v", err)
 	}
 }
 
