@@ -23,8 +23,8 @@
  * already does for the dequeue-to-first-event window. No new reclaim
  * mechanism, just a mechanism to keep resetting the clock.
  *
- * Also carries item 16, Problem 3's fencing token (generation): this
- * runner's transient connectivity blip might make it miss the reaper's
+ * Also carries a fencing token (generation): this runner's transient
+ * connectivity blip might make it miss the reaper's
  * max-age window, get reclaimed, and replaced by a second runner -- but
  * if the blip was genuinely transient, THIS runner is still executing
  * and doesn't know any of that happened yet. The next Heartbeat call

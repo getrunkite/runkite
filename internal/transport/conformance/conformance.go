@@ -363,13 +363,12 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	// TR-034/035/036: fencing (item 16, Problem 3) -- a runner reclaimed
-	// while genuinely still executing (a transient blip made it miss
-	// the reaper's max-age window) might finish its own stale work
-	// anyway and call Heartbeat/ReportStatus late, after a second
-	// runner already took over. These prove the control plane rejects
-	// that stale generation's calls instead of letting them clobber or
-	// duplicate the current attempt.
+	// Fencing: a runner reclaimed while genuinely still executing (a
+	// transient blip made it miss the reaper's max-age window) might
+	// finish its own stale work anyway and call Heartbeat/ReportStatus
+	// late, after a second runner already took over. These prove the
+	// control plane rejects that stale generation's calls instead of
+	// letting them clobber or duplicate the current attempt.
 	t.Run("TR-034_stale_generation_ack_is_rejected_current_generation_ack_succeeds", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()

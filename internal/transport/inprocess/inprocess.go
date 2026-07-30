@@ -181,9 +181,13 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 	var stale []*transport.RunAssignment
 	for runID, entry := range q.inflight {
 		if entry.dequeuedAt.Before(cutoff) {
-			// Bump generation before redispatching (item 16, Problem 3
-			// fencing) -- see the Redis implementation's identical
-			// reclaimStaleScript comment for the full rationale.
+			// Bump generation before redispatching -- see
+			// RunAssignment.Generation's own doc comment for why:
+			// whichever runner Dequeues this next receives the
+			// incremented value, so the ORIGINAL runner's own later
+			// Heartbeat/ReportStatus (if its blip was transient and it
+			// finishes anyway) presents the OLD generation and gets
+			// rejected instead of clobbering this new attempt's work.
 			entry.job.Generation++
 			stale = append(stale, entry.job)
 			delete(q.inflight, runID)

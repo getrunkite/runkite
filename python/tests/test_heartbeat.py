@@ -8,7 +8,7 @@ Proves:
    unhandled exception escaping).
 3. A failing Heartbeat RPC is logged and swallowed, not raised -- one bad
    call must not kill the loop or propagate into the caller's _handle_job.
-4. item 16, Problem 3 (fencing): a superseded=True response sets
+4. Fencing: a superseded=True response sets
    cancel_event and stops the loop -- the runner's own actionable
    "you've been reclaimed, stop" signal.
 5. A non-superseded response leaves cancel_event untouched and the loop

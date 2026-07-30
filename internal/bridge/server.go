@@ -214,30 +214,60 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 			continue
 		}
 
-		if err := s.broker.Publish(stream.Context(), msg.RunId, &event); err != nil {
-			slog.Error("failed to publish event", "run_id", msg.RunId, "error", err)
+		// A terminal event ("end"/"error") is what callers waiting on
+		// this run (the HTTP long-poll path, and any SSE subscriber)
+		// treat as authoritative for the run's final outcome -- unlike
+		// an ordinary progress event, publishing a stale one would
+		// actively corrupt a caller's view of what happened, not just
+		// look confusing. So terminal events specifically are checked
+		// against the current generation before publishing (using the
+		// same Renew call the rest of this stream already relies on,
+		// purely for its true/false answer here -- extending the lease
+		// one more time this late in a run's life is harmless): a
+		// runner that was reclaimed and superseded, but finishes its
+		// own now-pointless execution anyway, has its terminal event
+		// silently dropped instead of being believed. The gRPC call
+		// itself still succeeds either way -- there's no per-message
+		// response in this streaming RPC to report a rejection through,
+		// and the runner doesn't need one for this to be safe.
+		if event.IsTerminal() {
+			current, _ := s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
+			if !current {
+				slog.Warn("dropping terminal event from a superseded run", "run_id", msg.RunId, "method", event.Method, "generation", msg.Generation)
+				continue
+			}
+			slog.Info("run terminal event", "run_id", msg.RunId, "method", event.Method)
 		}
 
-		if event.IsTerminal() {
-			slog.Info("run terminal event", "run_id", msg.RunId, "method", event.Method)
+		if err := s.broker.Publish(stream.Context(), msg.RunId, &event); err != nil {
+			slog.Error("failed to publish event", "run_id", msg.RunId, "error", err)
 		}
 	}
 }
 
 // ReportStatus receives the final status from the runner. Fenced by
-// generation (item 16, Problem 3): a runner that was reclaimed and
-// replaced while genuinely still executing (a transient blip made it
-// miss the reaper's max-age window) might finish its own stale work
-// anyway and call this late, after a second runner already took over
-// and may have its own status pending or already reported. Accepting
-// that stale report here -- applying its status, or Acking a slot that
-// no longer belongs to this attempt -- would let it clobber or race the
-// real outcome. See RunAssignment.Generation's own doc comment for the
-// full mechanism.
+// generation: a runner that was reclaimed and replaced while genuinely
+// still executing (a transient blip made it miss the reaper's max-age
+// window) might finish its own stale work anyway and call this late,
+// after a second runner already took over and may have its own status
+// pending or already reported. Accepting that stale report here --
+// applying its status, or Acking a slot that no longer belongs to this
+// attempt -- would let it clobber or race the real outcome. See
+// RunAssignment.Generation's own doc comment for the full mechanism.
 func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) (*pb.ReportStatusResponse, error) {
 	accepted, err := s.queue.Ack(ctx, req.RunId, req.Generation)
 	if err != nil {
-		slog.Error("failed to ack run status", "run_id", req.RunId, "error", err)
+		// A queue/transport error here is not evidence that this report
+		// is stale -- treating it as "superseded" would silently drop a
+		// genuinely current run's real result just because the backend
+		// had a transient hiccup, which is a worse outcome than the
+		// rare case a stale report slips through during that same
+		// outage (reclaim itself depends on the same backend, so a
+		// second runner reporting concurrently during an outage is
+		// unlikely anyway). Fail toward applying the status, not toward
+		// dropping it.
+		slog.Error("failed to ack run status via queue, applying status anyway", "run_id", req.RunId, "error", err)
+		accepted = true
 	}
 	if !accepted {
 		slog.Warn("ignored superseded status report", "run_id", req.RunId, "status", req.Status, "generation", req.Generation)
@@ -267,13 +297,13 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 // no longer in-flight (already completed, or reclaimed away) -- a late
 // heartbeat racing completion is expected, not an error condition.
 //
-// Fenced by generation (item 16, Problem 3): if a NEWER generation has
-// already been dispatched (this runner was reclaimed while genuinely
-// still executing, then its blip turned out to be transient), Renew
-// returns current=false and this response carries Superseded=true --
-// this is the runner's OWN, actionable signal to detect lease loss and
-// stop (closes TR-033), at the next ~2s heartbeat tick rather than only
-// whenever it eventually finishes and calls ReportStatus.
+// Fenced by generation: if a NEWER generation has already been
+// dispatched (this runner was reclaimed while genuinely still
+// executing, then its blip turned out to be transient), Renew returns
+// current=false and this response carries Superseded=true -- this is
+// the runner's OWN, actionable signal that it's lost its lease and
+// should stop, delivered at the next ~2s heartbeat tick rather than
+// only once it eventually finishes and calls ReportStatus.
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
 	if err != nil {

@@ -635,10 +635,10 @@ async def _handle_job(
     run_id = None
     stream_task = None
     status = "error"
-    # item 16, Problem 3 fencing token -- see heartbeat.py's docstring.
-    # Initialized here (not just below) so the outer except's own
-    # ReportStatus call always has a defined value even if
-    # json.loads/assignment["run_id"] itself raised first.
+    # Fencing token -- see heartbeat.py's docstring. Initialized here
+    # (not just below) so the outer except's own ReportStatus call
+    # always has a defined value even if json.loads/assignment["run_id"]
+    # itself raised first.
     generation = 0
     try:
         assignment = json.loads(response.assignment_json)

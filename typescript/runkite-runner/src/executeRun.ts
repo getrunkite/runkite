@@ -36,7 +36,7 @@ export interface RunAssignment {
   // no auth provider is configured, or the caller has no identity
   // attached. See runnerUser.ts.
   user?: Record<string, unknown>;
-  // item 16, Problem 3 fencing token -- see heartbeat.ts's doc comment.
+  // Fencing token -- see heartbeat.ts's doc comment.
   // Absent (undefined) from a control plane that predates this field,
   // treated the same as 0 (unfenced) by worker.ts's own `?? 0`.
   generation?: number;

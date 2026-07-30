@@ -512,10 +512,10 @@ type HeartbeatResponse struct {
 	// not just once at the end) -- the runner should treat this exactly
 	// like a self-triggered cancel: stop executing its graph and report
 	// "interrupted" rather than continuing to burn resources on a run
-	// that's already being retried elsewhere. This is what closes
-	// TR-033 ("old runner must detect lease loss and stop") -- detecting
-	// it at the NEXT heartbeat tick, not only when the runner eventually
-	// finishes and calls ReportStatus.
+	// that's already being retried elsewhere. Catching this at the NEXT
+	// heartbeat tick, rather than only once the runner eventually
+	// finishes and calls ReportStatus, is what makes an old runner
+	// actually detect its own lease loss and stop.
 	Superseded    bool `protobuf:"varint,2,opt,name=superseded,proto3" json:"superseded,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

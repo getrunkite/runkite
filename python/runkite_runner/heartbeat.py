@@ -19,17 +19,17 @@ ReclaimStale reaper (cmd/serve.go) picks it up after its normal max-age,
 exactly as it already does for the dequeue-to-first-event window. No new
 reclaim mechanism, just a mechanism to keep resetting the clock.
 
-Also carries item 16, Problem 3's fencing token (generation): this
-runner's transient connectivity blip might make it miss the reaper's
-max-age window, get reclaimed, and replaced by a second runner -- but if
-the blip was genuinely transient, THIS runner is still executing and
-doesn't know any of that happened yet. The next Heartbeat call after a
-reclaim gets back superseded=True, which is this runner's actionable
-signal to stop: it sets cancel_event, the SAME event a real WatchCancels
-cancel signal would set, so execute_run's existing cooperative-
-cancellation path (checked every streamed chunk in worker.py, raced via
-run_cancellable in generic_worker.py's single-call adapters) takes over
-without this module needing its own separate stopping mechanism.
+Also carries a fencing token (generation): this runner's transient
+connectivity blip might make it miss the reaper's max-age window, get
+reclaimed, and replaced by a second runner -- but if the blip was
+genuinely transient, THIS runner is still executing and doesn't know any
+of that happened yet. The next Heartbeat call after a reclaim gets back
+superseded=True, which is this runner's actionable signal to stop: it
+sets cancel_event, the SAME event a real WatchCancels cancel signal
+would set, so execute_run's existing cooperative-cancellation path
+(checked every streamed chunk in worker.py, raced via run_cancellable in
+generic_worker.py's single-call adapters) takes over without this
+module needing its own separate stopping mechanism.
 """
 
 from __future__ import annotations

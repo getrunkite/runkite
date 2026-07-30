@@ -34,9 +34,10 @@ type RunAssignment struct {
 
 	// Generation fences a job against a runner that gets reclaimed
 	// while genuinely still executing, then finishes anyway and
-	// reports a stale result after a second runner already took over
-	// (item 16, Problem 3 -- the "TR-033: old runner must detect lease
-	// loss and stop" gap). Starts at 1 when a run is first created
+	// reports a stale result after a second runner already took over.
+	// Without this, nothing stops an old, superseded runner's late
+	// report from clobbering or duplicating the runner that replaced
+	// it. Starts at 1 when a run is first created
 	// (internal/api/runs.go's createRunCtx); ReclaimStale increments it
 	// every time it re-enqueues a stale job, atomically with the
 	// re-enqueue itself (both transports) so the incremented value is

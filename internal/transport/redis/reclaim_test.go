@@ -2,6 +2,7 @@ package redistransport_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -53,10 +54,10 @@ func TestRedisReclaimStale_ReenqueuesUnackedJob(t *testing.T) {
 	if again.RunID != "run-stale" {
 		t.Fatalf("got run %s, want run-stale", again.RunID)
 	}
-	// Item 16, Problem 3 (fencing): a reclaimed job's generation must be
-	// bumped so the ORIGINAL runner's late Heartbeat/ReportStatus (if
-	// its blip was transient and it finishes anyway) presents a stale
-	// value and gets rejected instead of clobbering this new attempt.
+	// Fencing: a reclaimed job's generation must be bumped so the
+	// ORIGINAL runner's late Heartbeat/ReportStatus (if its blip was
+	// transient and it finishes anyway) presents a stale value and
+	// gets rejected instead of clobbering this new attempt.
 	if again.Generation != 1 {
 		t.Fatalf("generation after one reclaim = %d, want 1 (started at 0, ReclaimStale increments once)", again.Generation)
 	}
@@ -173,20 +174,18 @@ func TestRedisReclaimStale_SkipsCanceledJob(t *testing.T) {
 }
 
 // TestRedisReclaimStale_PreservesEmptyArrayFields is a regression test
-// for a real bug found live while building item 16, Problem 3
-// (fencing): the first version of reclaimStaleScript bumped generation
-// via a full cjson.decode-then-cjson.encode round-trip of the whole job
-// payload. Redis's bundled lua-cjson has no way to tell an empty JSON
-// array apart from an empty object once decoded to an empty Lua table
-// (cjson.array_mt, the textbook fix, doesn't exist in Redis 7.4's
-// bundled version, confirmed live) -- so re-encoding silently turned
-// every empty-array field (e.g. ConnectorNeeds:[]) into {}, which Go's
-// own json.Unmarshal then rejects, making the NEXT Dequeue loop forever
-// on the corrupted payload instead of ever returning it. Fixed by doing
-// string-level surgery on just the "generation" substring instead of a
-// full re-encode -- this proves that fix by asserting a reclaimed job's
-// own empty-array field actually survives, not just that Dequeue
-// returns *something*.
+// for a real bug found live: an earlier version of reclaimStaleScript
+// bumped generation via a full cjson.decode-then-cjson.encode
+// round-trip of the whole job payload. Redis's bundled lua-cjson has no
+// way to tell an empty JSON array apart from an empty object once
+// decoded to an empty Lua table (cjson.array_mt, the textbook fix,
+// doesn't exist in Redis 7.4's bundled version, confirmed live) -- so
+// re-encoding silently turned every empty-array field (e.g.
+// ConnectorNeeds:[]) into {}, which Go's own json.Unmarshal then
+// rejects, silently dropping the job instead of ever redelivering it.
+// Fixed by never re-encoding the payload at all: this asserts a
+// reclaimed job's own empty-array field survives byte-for-byte, not
+// just that Dequeue returns *something*.
 func TestRedisReclaimStale_PreservesEmptyArrayFields(t *testing.T) {
 	rdb := getRedisClient(t)
 	defer rdb.Close()
@@ -226,6 +225,73 @@ func TestRedisReclaimStale_PreservesEmptyArrayFields(t *testing.T) {
 	}
 	if again.Generation != 2 {
 		t.Fatalf("Generation after one reclaim = %d, want 2", again.Generation)
+	}
+}
+
+// TestRedisReclaimStale_NestedGenerationInInputDoesNotConfuseTheBump is a
+// regression test for a real, confirmed-live bug: an earlier version
+// bumped the fencing generation by text-searching the job's own raw
+// JSON for a "generation":N substring and replacing the first match.
+// When the job's own Input happened to contain a field ALSO named
+// "generation" (arbitrary user/agent content -- nothing stops this),
+// that search found and mutated the WRONG occurrence, leaving the real
+// top-level generation unbumped while silently corrupting the run's
+// input. This run's Input deliberately contains its own "generation"
+// key with a DIFFERENT value than the run's real (top-level) one, to
+// catch exactly that confusion.
+func TestRedisReclaimStale_NestedGenerationInInputDoesNotConfuseTheBump(t *testing.T) {
+	rdb := getRedisClient(t)
+	defer rdb.Close()
+	redistransport.FlushAll(context.Background(), rdb)
+	q := redistransport.NewQueue(rdb)
+	ctx := context.Background()
+
+	job := &transport.RunAssignment{
+		RunID:      "run-nested-generation",
+		ThreadID:   "t1",
+		GraphID:    "echo",
+		RunnerKind: "test-runner",
+		Generation: 1,
+		// A field named "generation" nested inside the run's own input
+		// -- ordinary, plausible agent content, not a crafted attack.
+		Input: json.RawMessage(`{"generation":999,"messages":[{"role":"user","content":"hi"}]}`),
+	}
+	if err := q.Enqueue(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := q.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+	}
+
+	again, err := q.Dequeue(ctx, "test-runner", time.Second)
+	if err != nil || again == nil {
+		t.Fatalf("expected reclaimed job, got=%v err=%v", again, err)
+	}
+	if again.Generation != 2 {
+		t.Fatalf("top-level Generation after one reclaim = %d, want 2 -- the nested \"generation\" in Input must not have been mistaken for the real field", again.Generation)
+	}
+	var input map[string]any
+	if err := json.Unmarshal(again.Input, &input); err != nil {
+		t.Fatalf("Input is no longer valid JSON after reclaim: %v", err)
+	}
+	if v, _ := input["generation"].(float64); v != 999 {
+		t.Fatalf("nested input.generation = %v, want unchanged 999 -- reclaim must not touch user content", input["generation"])
+	}
+
+	// A stale runner presenting generation 1 (what it was actually
+	// dispatched with) must be rejected now that the real generation
+	// is 2 -- this is the actual fencing property the bug above would
+	// have silently defeated (top-level generation staying at 1 would
+	// have made this Ack wrongly succeed).
+	if accepted, err := q.Ack(ctx, "run-nested-generation", 1); err != nil || accepted {
+		t.Fatalf("stale generation-1 Ack: expected accepted=false, got accepted=%v err=%v", accepted, err)
+	}
+	if accepted, err := q.Ack(ctx, "run-nested-generation", 2); err != nil || !accepted {
+		t.Fatalf("current generation-2 Ack: expected accepted=true, got accepted=%v err=%v", accepted, err)
 	}
 }
 

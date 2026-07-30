@@ -237,10 +237,10 @@ export async function runWorker(opts) {
  */
 export async function handleJob(client, adapter, response, metadata, pendingCancels) {
     let runId;
-    // item 16, Problem 3 fencing token -- see heartbeat.ts's doc comment.
-    // Hoisted here (not just below), like runId, so the outer catch's own
-    // reportStatus call always has a defined value even if
-    // JSON.parse/assignment.run_id itself threw first.
+    // Fencing token -- see heartbeat.ts's doc comment. Hoisted here (not
+    // just below), like runId, so the outer catch's own reportStatus call
+    // always has a defined value even if JSON.parse/assignment.run_id
+    // itself threw first.
     let generation = 0;
     try {
         const assignment = JSON.parse(response.assignmentJson);
