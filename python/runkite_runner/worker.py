@@ -239,9 +239,9 @@ async def execute_run(
     # client asking to resume from a SPECIFIC past checkpoint (rather
     # than the thread's latest one) gets no error, just silent
     # fallback to the checkpointer's normal latest-checkpoint lookup.
-    # A real, documented gap (see plans/pending_items.md), found via
-    # ruff flagging this as an unused local -- not something to paper
-    # over by just deleting the field read without noting why.
+    # A real, documented gap, found via ruff flagging this as an
+    # unused local -- not something to paper over by just deleting
+    # the field read without noting why.
     resume_command = assignment.get("resume_command")
 
     seq = 0

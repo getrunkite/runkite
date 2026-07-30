@@ -25,7 +25,7 @@ linters:
       # this lint run happened to flag -- fixing it properly means
       # auditing every Scan+Unmarshal pair for a real "what does a
       # corrupt row even mean here" recovery story, which is real,
-      # separate work (see plans/pending_items.md), not something to
+      # separate work tracked outside this config, not something to
       # paper over inconsistently in only the newest files. Excluded
       # here rather than fixed piecemeal so this gate doesn't quietly
       # bless a WORSE pattern (some call sites checked, most not) as
