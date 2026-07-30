@@ -24,6 +24,7 @@
  * mechanism, just a mechanism to keep resetting the clock.
  */
 import type { Metadata } from "@grpc/grpc-js";
+import { logger } from "./logger.js";
 import type { RunnerServiceClient } from "./proto.js";
 
 // Matches cmd/serve.go's reaper ticker cadence (2s) and the max-age (6s)
@@ -63,12 +64,12 @@ export function startHeartbeatLoop(
     try {
       await new Promise<void>((resolve) => {
         client.heartbeat({ runId }, metadata, (err) => {
-          if (err) console.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
+          if (err) logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
           resolve(); // never rejects the outer promise -- see doc comment
         });
       });
     } catch (err) {
-      console.warn(`Unexpected heartbeat error for run ${runId}:`, err);
+      logger.warn(`Unexpected heartbeat error for run ${runId}:`, err);
     }
     if (!stopped) {
       timer = setTimeout(() => {

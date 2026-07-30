@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 // Matches cmd/serve.go's reaper ticker cadence (2s) and the max-age (6s)
 // it reclaims stale jobs past -- see this module's doc comment: a live
 // runner heartbeating at this interval never gets within one missed beat
@@ -23,13 +24,13 @@ export function startHeartbeatLoop(client, runId, metadata, intervalMs = DEFAULT
             await new Promise((resolve) => {
                 client.heartbeat({ runId }, metadata, (err) => {
                     if (err)
-                        console.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
+                        logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
                     resolve(); // never rejects the outer promise -- see doc comment
                 });
             });
         }
         catch (err) {
-            console.warn(`Unexpected heartbeat error for run ${runId}:`, err);
+            logger.warn(`Unexpected heartbeat error for run ${runId}:`, err);
         }
         if (!stopped) {
             timer = setTimeout(() => {

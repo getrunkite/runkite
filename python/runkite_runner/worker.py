@@ -28,6 +28,7 @@ from .checkpoint import CheckpointerManager
 from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
+from .logging_config import setup_logging
 from .store import RunkiteStore
 
 logger = logging.getLogger("runkite.runner")
@@ -773,10 +774,7 @@ def main():
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
+    setup_logging()
 
     asyncio.run(run_worker(args.config, args.grpc_address, args.http_address, args.runner_kind, args.concurrency))
 

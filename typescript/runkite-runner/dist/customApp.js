@@ -15,6 +15,7 @@
 import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { logger } from "./logger.js";
 /** Loads the "path:exportName" module reference from custom_app.module,
  * same convention as langgraph.json's "graphs" entries. */
 export async function loadRequestHandler(configDir, moduleRef) {
@@ -39,7 +40,7 @@ export async function loadRequestHandler(configDir, moduleRef) {
 export function serveCustomApp(handler, host, port) {
     const server = createServer(handler);
     server.listen(port, host, () => {
-        console.log(`Custom app serving on http://${host}:${port}`);
+        logger.info(`Custom app serving on http://${host}:${port}`);
     });
     return {
         server,

@@ -1,9 +1,9 @@
 import argparse
 import asyncio
-import logging
 import os
 
 from runkite_runner.generic_worker import run_worker
+from runkite_runner.logging_config import setup_logging
 
 from .adapter import CrewAIAdapter
 
@@ -25,7 +25,7 @@ def main():
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    setup_logging()
 
     asyncio.run(run_worker(CrewAIAdapter(), args.config, args.grpc_address, args.runner_kind, args.concurrency))
 

@@ -23,6 +23,7 @@ import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { CheckpointerManager } from "./checkpoint.js";
 import type { RunkiteStore } from "./store.js";
 import { classifyGraphExport, FactoryGraph, type FactoryGraphBuild, type RunFactoryContext } from "./factoryGraph.js";
+import { logger } from "./logger.js";
 
 /** Minimal surface of a compiled LangGraph.js graph this runner needs.
  * Matches Pregel's actual instance shape (see node_modules/@langchain/
@@ -74,10 +75,10 @@ export class LangGraphAdapter {
       const classified = await classifyGraphExport(exportValue);
       if (classified.kind === "factory") {
         this.factories.set(graphId, classified.factory);
-        console.log(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
+        logger.info(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
       } else {
         this.graphs.set(graphId, classified.graph);
-        console.log(`Loaded graph: ${graphId} from ${absPath}`);
+        logger.info(`Loaded graph: ${graphId} from ${absPath}`);
       }
     }
   }
@@ -123,7 +124,7 @@ export class LangGraphAdapter {
     this.checkpointerManager = manager;
     for (const [graphId, graph] of this.graphs) {
       manager.attach(graph);
-      console.log(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
+      logger.info(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
     }
   }
 
@@ -134,7 +135,7 @@ export class LangGraphAdapter {
     this.store = store;
     for (const [graphId, graph] of this.graphs) {
       graph.store = store;
-      console.log(`Attached ${store.mode} store to graph: ${graphId}`);
+      logger.info(`Attached ${store.mode} store to graph: ${graphId}`);
     }
   }
 }

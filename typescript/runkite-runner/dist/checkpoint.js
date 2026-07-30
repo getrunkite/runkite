@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 export class CheckpointerManager {
     checkpointer = null;
     mode = "memory";
@@ -25,13 +26,13 @@ export class CheckpointerManager {
             this.closeFn = async () => {
                 await saver.end();
             };
-            console.log("checkpoint mode: direct (postgres) -- state survives runner restarts");
+            logger.info("checkpoint mode: direct (postgres) -- state survives runner restarts");
         }
         else {
             const { MemorySaver } = await import("@langchain/langgraph");
             this.checkpointer = new MemorySaver();
             this.mode = "memory";
-            console.warn("checkpoint mode: in-memory (no POSTGRES_DSN set) -- " +
+            logger.warn("checkpoint mode: in-memory (no POSTGRES_DSN set) -- " +
                 "thread state will NOT survive a runner restart. " +
                 "Set POSTGRES_DSN for production persistence.");
         }

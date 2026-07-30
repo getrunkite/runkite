@@ -95,7 +95,7 @@ type serverOpts struct {
 }
 
 func startServer(opts serverOpts) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	setupLogging()
 
 	ctx := context.Background()
 

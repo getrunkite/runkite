@@ -16,7 +16,7 @@ func cmdDBUpgrade(args []string) {
 	fs := flag.NewFlagSet("db upgrade", flag.ExitOnError)
 	fs.Parse(args)
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	setupLogging()
 	ctx := context.Background()
 
 	postgresDSN := os.Getenv("POSTGRES_DSN")
@@ -89,7 +89,7 @@ func cmdDBReset(args []string) {
 	fs := flag.NewFlagSet("db reset", flag.ExitOnError)
 	fs.Parse(args)
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	setupLogging()
 	ctx := context.Background()
 
 	postgresDSN := os.Getenv("POSTGRES_DSN")

@@ -1,4 +1,5 @@
 import { RunnerUser } from "./runnerUser.js";
+import { logger } from "./logger.js";
 /**
  * Builds the RunnableConfig passed to graph.stream(), including the keys
  * LangGraph's own OSS code reads to populate Runtime.server_info for
@@ -209,7 +210,7 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
             await emit(makeEvent("end", { status: "interrupted" }));
             return "interrupted";
         }
-        console.error(`Run ${runId} failed:`, err);
+        logger.error(`Run ${runId} failed:`, err);
         await emit(makeEvent("error", {
             message: err?.message ?? String(err),
             type: err?.constructor?.name ?? "Error",

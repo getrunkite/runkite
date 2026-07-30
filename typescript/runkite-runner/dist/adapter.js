@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyGraphExport } from "./factoryGraph.js";
+import { logger } from "./logger.js";
 export class LangGraphAdapter {
     configPath;
     graphs = new Map();
@@ -48,11 +49,11 @@ export class LangGraphAdapter {
             const classified = await classifyGraphExport(exportValue);
             if (classified.kind === "factory") {
                 this.factories.set(graphId, classified.factory);
-                console.log(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
+                logger.info(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
             }
             else {
                 this.graphs.set(graphId, classified.graph);
-                console.log(`Loaded graph: ${graphId} from ${absPath}`);
+                logger.info(`Loaded graph: ${graphId} from ${absPath}`);
             }
         }
     }
@@ -94,7 +95,7 @@ export class LangGraphAdapter {
         this.checkpointerManager = manager;
         for (const [graphId, graph] of this.graphs) {
             manager.attach(graph);
-            console.log(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
+            logger.info(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
         }
     }
     /** Attaches the runner's Store Dual Mode client (see store.ts) to
@@ -104,7 +105,7 @@ export class LangGraphAdapter {
         this.store = store;
         for (const [graphId, graph] of this.graphs) {
             graph.store = store;
-            console.log(`Attached ${store.mode} store to graph: ${graphId}`);
+            logger.info(`Attached ${store.mode} store to graph: ${graphId}`);
         }
     }
 }

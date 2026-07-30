@@ -14,6 +14,7 @@ import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
+import { logger } from "./logger.js";
 import { createRunnerClient, } from "./proto.js";
 /**
  * Minimal counting semaphore for bounding concurrent job dispatch.
@@ -156,8 +157,8 @@ export async function runWorker(opts) {
         poolSize,
     });
     adapter.attachStore(store);
-    console.log(`Store mode: ${store.mode}`);
-    console.log(`Connecting to control plane at ${opts.grpcAddress}`);
+    logger.info(`Store mode: ${store.mode}`);
+    logger.info(`Connecting to control plane at ${opts.grpcAddress}`);
     const client = createRunnerClient(opts.grpcAddress);
     // Track cancel state by run_id. watchCancelsLoop flips these; execute_run
     // polls isCancelled() for the currently-running job.
@@ -169,7 +170,7 @@ export async function runWorker(opts) {
                 await new Promise((resolve, reject) => {
                     const call = client.watchCancels({ runnerKind: opts.runnerKind }, metadata);
                     call.on("data", (signal) => {
-                        console.log(`Cancel signal received via gRPC for run ${signal.runId}`);
+                        logger.info(`Cancel signal received via gRPC for run ${signal.runId}`);
                         recordCancelSignal(pendingCancels, signal.runId);
                     });
                     call.on("error", reject);
@@ -177,7 +178,7 @@ export async function runWorker(opts) {
                 });
             }
             catch (err) {
-                console.error("WatchCancels error:", err);
+                logger.error("WatchCancels error:", err);
             }
             if (!watcherStopped)
                 await sleep(1000);
@@ -195,7 +196,7 @@ export async function runWorker(opts) {
         const handler = await loadRequestHandler(path.dirname(path.resolve(opts.configPath)), customAppConfig.module);
         customAppHandle = serveCustomApp(handler, customAppConfig.host ?? "127.0.0.1", customAppConfig.port ?? 8100);
     }
-    console.log(`Worker ready. Polling for jobs as runner_kind=${opts.runnerKind} concurrency=${concurrency}`);
+    logger.info(`Worker ready. Polling for jobs as runner_kind=${opts.runnerKind} concurrency=${concurrency}`);
     // Populated/drained by pollLoop's dispatcher, but declared here so it
     // survives pollLoop's own exit -- see pollLoop's doc comment for why
     // draining still-running jobs before store/checkpointer teardown
@@ -210,7 +211,7 @@ export async function runWorker(opts) {
         if (customAppHandle)
             await customAppHandle.stop();
         if (inFlight.size > 0) {
-            console.log(`Draining ${inFlight.size} in-flight job(s) before shutdown...`);
+            logger.info(`Draining ${inFlight.size} in-flight job(s) before shutdown...`);
             await Promise.allSettled([...inFlight]);
         }
         await checkpointerManager.stop();
@@ -239,7 +240,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
     try {
         const assignment = JSON.parse(response.assignmentJson);
         runId = assignment.run_id;
-        console.log(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
+        logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
         const cancelState = registerRun(pendingCancels, runId);
         // Started as soon as runId is known, BEFORE streamEvents' first
         // message -- see heartbeat.ts / the Python runner's mirrored change
@@ -271,7 +272,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
                 await streamDone;
             }
             catch (err) {
-                console.error("Stream finalization error:", err);
+                logger.error("Stream finalization error:", err);
             }
             await new Promise((resolve, reject) => {
                 client.reportStatus({ runId: runId, status, errorMessage: status === "error" ? "see error event" : "" }, metadata, (err) => {
@@ -281,7 +282,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
                         resolve();
                 });
             });
-            console.log(`Run completed: run_id=${runId} status=${status}`);
+            logger.info(`Run completed: run_id=${runId} status=${status}`);
         }
         finally {
             heartbeat.stop();
@@ -292,7 +293,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
         }
     }
     catch (err) {
-        console.error(`Worker error handling run_id=${runId}:`, err);
+        logger.error(`Worker error handling run_id=${runId}:`, err);
         if (runId) {
             const failedRunId = runId;
             await new Promise((resolve) => {
@@ -334,7 +335,7 @@ export async function pollLoop(client, adapter, runnerKind, metadata, pendingCan
             });
         }
         catch (err) {
-            console.error("Worker error:", err);
+            logger.error("Worker error:", err);
             sem.release();
             await sleep(1000);
             continue;

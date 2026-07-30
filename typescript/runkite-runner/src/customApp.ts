@@ -15,6 +15,7 @@
 import { createServer, type RequestListener, type Server } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { logger } from "./logger.js";
 
 export type CustomAppHandler = RequestListener;
 
@@ -44,7 +45,7 @@ export async function loadRequestHandler(configDir: string, moduleRef: string): 
 export function serveCustomApp(handler: CustomAppHandler, host: string, port: number): { server: Server; stop: () => Promise<void> } {
   const server = createServer(handler);
   server.listen(port, host, () => {
-    console.log(`Custom app serving on http://${host}:${port}`);
+    logger.info(`Custom app serving on http://${host}:${port}`);
   });
   return {
     server,

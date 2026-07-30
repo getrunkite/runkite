@@ -14,6 +14,7 @@ import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
+import { logger } from "./logger.js";
 import {
   createRunnerClient,
   type CancelSignal,
@@ -196,9 +197,9 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
     poolSize,
   });
   adapter.attachStore(store);
-  console.log(`Store mode: ${store.mode}`);
+  logger.info(`Store mode: ${store.mode}`);
 
-  console.log(`Connecting to control plane at ${opts.grpcAddress}`);
+  logger.info(`Connecting to control plane at ${opts.grpcAddress}`);
   const client = createRunnerClient(opts.grpcAddress);
 
   // Track cancel state by run_id. watchCancelsLoop flips these; execute_run
@@ -212,14 +213,14 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
         await new Promise<void>((resolve, reject) => {
           const call = client.watchCancels({ runnerKind: opts.runnerKind }, metadata);
           call.on("data", (signal: CancelSignal) => {
-            console.log(`Cancel signal received via gRPC for run ${signal.runId}`);
+            logger.info(`Cancel signal received via gRPC for run ${signal.runId}`);
             recordCancelSignal(pendingCancels, signal.runId);
           });
           call.on("error", reject);
           call.on("end", resolve);
         });
       } catch (err) {
-        console.error("WatchCancels error:", err);
+        logger.error("WatchCancels error:", err);
       }
       if (!watcherStopped) await sleep(1000);
     }
@@ -238,7 +239,7 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
     customAppHandle = serveCustomApp(handler, customAppConfig.host ?? "127.0.0.1", customAppConfig.port ?? 8100);
   }
 
-  console.log(`Worker ready. Polling for jobs as runner_kind=${opts.runnerKind} concurrency=${concurrency}`);
+  logger.info(`Worker ready. Polling for jobs as runner_kind=${opts.runnerKind} concurrency=${concurrency}`);
 
   // Populated/drained by pollLoop's dispatcher, but declared here so it
   // survives pollLoop's own exit -- see pollLoop's doc comment for why
@@ -253,7 +254,7 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
     await cancelWatcherPromise.catch(() => {});
     if (customAppHandle) await customAppHandle.stop();
     if (inFlight.size > 0) {
-      console.log(`Draining ${inFlight.size} in-flight job(s) before shutdown...`);
+      logger.info(`Draining ${inFlight.size} in-flight job(s) before shutdown...`);
       await Promise.allSettled([...inFlight]);
     }
     await checkpointerManager.stop();
@@ -289,7 +290,7 @@ export async function handleJob(
   try {
     const assignment: RunAssignment = JSON.parse(response.assignmentJson);
     runId = assignment.run_id;
-    console.log(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
+    logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
 
     const cancelState = registerRun(pendingCancels, runId);
 
@@ -324,7 +325,7 @@ export async function handleJob(
       try {
         await streamDone;
       } catch (err) {
-        console.error("Stream finalization error:", err);
+        logger.error("Stream finalization error:", err);
       }
 
       await new Promise<void>((resolve, reject) => {
@@ -338,7 +339,7 @@ export async function handleJob(
         );
       });
 
-      console.log(`Run completed: run_id=${runId} status=${status}`);
+      logger.info(`Run completed: run_id=${runId} status=${status}`);
     } finally {
       heartbeat.stop();
       // Always clear the cancel registration, even if executeRun itself
@@ -347,7 +348,7 @@ export async function handleJob(
       pendingCancels.delete(runId);
     }
   } catch (err) {
-    console.error(`Worker error handling run_id=${runId}:`, err);
+    logger.error(`Worker error handling run_id=${runId}:`, err);
     if (runId) {
       const failedRunId = runId;
       await new Promise<void>((resolve) => {
@@ -397,7 +398,7 @@ export async function pollLoop(
         });
       });
     } catch (err) {
-      console.error("Worker error:", err);
+      logger.error("Worker error:", err);
       sem.release();
       await sleep(1000);
       continue;

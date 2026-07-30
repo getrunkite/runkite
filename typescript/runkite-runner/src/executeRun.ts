@@ -9,6 +9,7 @@
 import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
 import { RunnerUser } from "./runnerUser.js";
 import type { FactoryGraphBuild, RunFactoryContext } from "./factoryGraph.js";
+import { logger } from "./logger.js";
 
 export interface RunEvent {
   event_id: string;
@@ -253,7 +254,7 @@ export async function executeRun(
       await emit(makeEvent("end", { status: "interrupted" }));
       return "interrupted";
     }
-    console.error(`Run ${runId} failed:`, err);
+    logger.error(`Run ${runId} failed:`, err);
     await emit(
       makeEvent("error", {
         message: err?.message ?? String(err),

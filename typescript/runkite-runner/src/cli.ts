@@ -4,6 +4,7 @@
  *
  *   npx runkite-runner --config langgraph.json --grpc-address localhost:50051
  */
+import { logger } from "./logger.js";
 import { runWorker } from "./worker.js";
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -40,6 +41,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  logger.error("fatal error", err);
   process.exit(1);
 });

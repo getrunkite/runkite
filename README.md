@@ -188,6 +188,8 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `QDRANT_URL` | (unset) | Qdrant REST base URL; fallback for `vector_store.url` when `vector_store.type` is `"qdrant"` (only read if `vector_store` is configured at all -- doesn't enable Qdrant by itself, unlike `POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI` for the state backend) |
 | `LANGGRAPH_CONFIG` | (unset) | Path to langgraph.json (alternative to --config flag) |
 | `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_python_langgraph`) |
+| `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` (case-insensitive). Same variable, same values, on the control plane and both runners. |
+| `LOG_FORMAT` | `text` | `text`\|`json`. `json` is the shape a log aggregator (Datadog, Grafana Loki, etc.) expects -- see [Logging](#logging) below. |
 
 ## Auth
 
@@ -865,6 +867,22 @@ GET    /metrics                    Prometheus metrics (outside auth)
 ```
 
 Metrics exposed: `runkite_http_requests_total`, `runkite_http_request_duration_seconds`, `runkite_runs_total`, `runkite_run_duration_seconds`, `runkite_active_runs`, `runkite_queue_depth`, `runkite_active_sse_connections`. HTTP path labels are normalized (UUIDs and resource IDs become `{id}`) to keep cardinality bounded.
+
+### Logging
+
+`LOG_LEVEL` (`debug`|`info`|`warn`|`error`, default `info`) and `LOG_FORMAT` (`text`|`json`, default `text`) are the same two env vars, with the same values, on the control plane binary and both runners -- set them once in your process manager / container env and every component picks them up consistently.
+
+```bash
+LOG_LEVEL=debug LOG_FORMAT=json ./runkite serve --config examples/echo_agent/langgraph.json
+LOG_LEVEL=debug LOG_FORMAT=json python -m runkite_runner.worker --config examples/echo_agent/langgraph.json
+LOG_LEVEL=debug LOG_FORMAT=json npx runkite-runner --config examples/echo_agent/langgraph.json
+```
+
+`json` is the shape a log aggregator (Datadog, Grafana Loki, an OTel Collector's log pipeline, etc.) expects -- every existing log call already passes structured fields (`run_id`, `thread_id`, `error`, ...), so switching the output format is the whole change; no call sites needed touching to get this. `text` (the default) is unchanged from before these env vars existed, so nothing regresses for anyone not setting them.
+
+- **Go control plane**: built on `log/slog`; `LOG_FORMAT=json` swaps in `slog.NewJSONHandler`.
+- **Python runner** (LangGraph + all 4 framework adapters -- CrewAI, LlamaIndex, AutoGen, plain LangChain): a minimal stdlib-only JSON formatter, no new dependency.
+- **TypeScript runner**: a small logger module (`src/logger.ts`) replacing raw `console.log`/`console.warn`/`console.error` calls; `Error` args are serialized into `{name, message, stack}` in JSON mode instead of being lost to `String(err)`.
 
 ### Distributed tracing (OpenTelemetry)
 
