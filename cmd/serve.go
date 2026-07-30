@@ -48,6 +48,7 @@ import (
 	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 	"github.com/sharanharsoor/runkite/internal/vectorstore"
 	pgvector "github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
+	pineconestore "github.com/sharanharsoor/runkite/internal/vectorstore/pinecone"
 	qdrant "github.com/sharanharsoor/runkite/internal/vectorstore/qdrant"
 	weaviatestore "github.com/sharanharsoor/runkite/internal/vectorstore/weaviate"
 )
@@ -922,8 +923,42 @@ func initVectorStore(ctx context.Context, configPath string) vectorstore.VectorS
 		slog.Info("vector store: weaviate", "url", url, "class", cfg.VectorStore.Class, "dimensions", dims)
 		return vs
 
+	case "pinecone":
+		url := cfg.VectorStore.URL
+		if url == "" {
+			url = os.Getenv("PINECONE_URL")
+		}
+		if url == "" {
+			// Pinecone's real control plane has one fixed, well-known
+			// host -- unlike Qdrant/Weaviate, there's no "unconfigured"
+			// error case here, just a default a real account needs
+			// (Pinecone Local users set vector_store.url/PINECONE_URL
+			// explicitly instead).
+			url = "https://api.pinecone.io"
+		}
+		apiKey := cfg.VectorStore.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("PINECONE_API_KEY")
+		}
+		if apiKey == "" && url == "https://api.pinecone.io" {
+			slog.Error("vector_store: type=pinecone requires vector_store.api_key or PINECONE_API_KEY when using the real Pinecone service (set vector_store.url for Pinecone Local instead)")
+			return nil
+		}
+		vs, err := pineconestore.New(url, apiKey, cfg.VectorStore.Index, dims, cfg.VectorStore.Cloud, cfg.VectorStore.Region)
+		if err != nil {
+			slog.Error("vector store: failed to configure pinecone", "error", err)
+			return nil
+		}
+		if err := vs.Init(ctx); err != nil {
+			slog.Error("vector store: failed to initialize pinecone index", "error", err)
+			vs.Close()
+			return nil
+		}
+		slog.Info("vector store: pinecone", "url", url, "index", cfg.VectorStore.Index, "dimensions", dims)
+		return vs
+
 	default:
-		slog.Error("vector_store.type not supported (only \"pgvector\", \"qdrant\", and \"weaviate\" are implemented)", "type", cfg.VectorStore.Type)
+		slog.Error("vector_store.type not supported (only \"pgvector\", \"qdrant\", \"weaviate\", and \"pinecone\" are implemented)", "type", cfg.VectorStore.Type)
 		return nil
 	}
 }

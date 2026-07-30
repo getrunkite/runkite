@@ -163,35 +163,58 @@ type CorsEntry struct {
 
 // VectorStoreEntry is the "vector_store" section of langgraph.json, the
 // vector/semantic store config. "pgvector" (Tier 1, SQL-based),
-// "qdrant", and "weaviate" (the non-SQL exemplars, same role Mongo plays
-// for state.Store) are implemented; Pinecone remains Tier 2, not yet
-// built.
+// "qdrant", "weaviate", and "pinecone" (the non-SQL exemplars, same
+// role Mongo plays for state.Store) are all implemented now -- every
+// backend named in the original plan is built.
 type VectorStoreEntry struct {
-	Type string `json:"type"` // "pgvector" | "qdrant" | "weaviate"
+	Type string `json:"type"` // "pgvector" | "qdrant" | "weaviate" | "pinecone"
 	// Dimensions fixes the embedding vector's width (pgvector's
-	// vector(N) column / Qdrant's collection vector size are both
-	// fixed-dimension; Weaviate has no such native constraint, so this
-	// package enforces it itself instead -- see internal/vectorstore/
-	// weaviate's own doc comment). Defaults to 1536 (OpenAI
-	// text-embedding-3-small/ada-002's size) when omitted -- every item
-	// upserted must supply exactly this many floats.
+	// vector(N) column / Qdrant's collection vector size / Pinecone's
+	// index dimension are all fixed-dimension; Weaviate has no such
+	// native constraint, so that package enforces it itself instead --
+	// see internal/vectorstore/weaviate's own doc comment). Defaults to
+	// 1536 (OpenAI text-embedding-3-small/ada-002's size) when omitted
+	// -- every item upserted must supply exactly this many floats.
 	Dimensions int `json:"dimensions,omitempty"`
-	// URL is Qdrant's or Weaviate's REST base URL (e.g.
-	// "http://localhost:6333" / "http://localhost:8080"), read from
-	// QDRANT_URL / WEAVIATE_URL if unset here -- same env-var-first,
-	// config-second convention as POSTGRES_DSN for pgvector. Ignored for
-	// type=pgvector.
+	// URL is Qdrant's, Weaviate's, or Pinecone's REST base URL (e.g.
+	// "http://localhost:6333" / "http://localhost:8080" /
+	// "https://api.pinecone.io"), read from QDRANT_URL / WEAVIATE_URL /
+	// PINECONE_URL if unset here -- same env-var-first, config-second
+	// convention as POSTGRES_DSN for pgvector. Ignored for type=pgvector.
+	// For type=pinecone specifically, defaults to Pinecone's own fixed
+	// control-plane host (https://api.pinecone.io) if left entirely
+	// unset -- only override this to point at a self-hosted Pinecone
+	// Local instance for development/testing.
 	URL string `json:"url,omitempty"`
 	// Collection names the Qdrant collection every tenant/namespace
 	// shares (see internal/vectorstore/qdrant's package doc for why one
 	// shared collection, not one per tenant/namespace). Defaults to
-	// "vector_items". Ignored for type=pgvector/weaviate (see Class).
+	// "vector_items". Ignored for type=pgvector/weaviate/pinecone.
 	Collection string `json:"collection,omitempty"`
 	// Class names the Weaviate class every tenant/namespace shares --
 	// Weaviate's own naming rule (must start with an uppercase letter)
 	// applies. Defaults to "VectorItems". Ignored for
-	// type=pgvector/qdrant.
+	// type=pgvector/qdrant/pinecone.
 	Class string `json:"class,omitempty"`
+	// Index names the Pinecone index every tenant/namespace shares --
+	// Pinecone's own naming rule (lowercase alphanumeric/hyphens only)
+	// applies. Defaults to "vector-items". Ignored for
+	// type=pgvector/qdrant/weaviate.
+	Index string `json:"index,omitempty"`
+	// APIKey authenticates against a real Pinecone account, read from
+	// PINECONE_API_KEY if unset here -- never write a real key directly
+	// into langgraph.json, same secrets-via-env convention as
+	// RUNNER_TOKEN/POSTGRES_DSN elsewhere. Ignored (and unnecessary) for
+	// Pinecone Local, which doesn't authenticate requests at all.
+	// Ignored for every other type.
+	APIKey string `json:"api_key,omitempty"`
+	// Cloud/Region place a real Pinecone serverless index at creation
+	// time (e.g. "aws"/"us-east-1", Pinecone's own documented example
+	// values, which is also this package's default when both are left
+	// empty). Meaningless for Pinecone Local, which accepts and ignores
+	// any value here. Ignored for every other type.
+	Cloud  string `json:"cloud,omitempty"`
+	Region string `json:"region,omitempty"`
 }
 
 // CronEntry is one entry in langgraph.json's "cron" section.

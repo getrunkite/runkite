@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
 
 # --- Build ---
 build:
@@ -69,7 +69,14 @@ test-weaviate:
 	WEAVIATE_URL="http://localhost:8080" \
 		go test ./internal/vectorstore/weaviate/ -race -count=1 -v
 
-# All backends — SQLite + Postgres + Redis + MongoDB + Qdrant + Weaviate (requires infra-up)
+# Pinecone vector store conformance, against Pinecone Local -- Pinecone's
+# own official in-memory emulator, not a real paid account (requires
+# PINECONE_URL or infra-up)
+test-pinecone:
+	PINECONE_URL="http://localhost:5080" \
+		go test ./internal/vectorstore/pinecone/ -race -count=1 -v
+
+# All backends — SQLite + Postgres + Redis + MongoDB + Qdrant + Weaviate + Pinecone (requires infra-up)
 #
 # -p 1 (serialize package test binaries, not just tests within one
 # package) is required, not just a speed/safety tradeoff: both
@@ -88,6 +95,7 @@ test-all:
 	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
 	WEAVIATE_URL="http://localhost:8080" \
+	PINECONE_URL="http://localhost:5080" \
 		go test ./internal/... ./cmd/... -race -count=1 -p 1
 
 # Verbose version of test-all
@@ -98,6 +106,7 @@ test-all-v:
 	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
 	QDRANT_URL="http://localhost:6333" \
 	WEAVIATE_URL="http://localhost:8080" \
+	PINECONE_URL="http://localhost:5080" \
 		go test ./internal/... ./cmd/... -race -count=1 -v -p 1
 
 # End-to-end: builds the real binary, runs it + the real Python runner as

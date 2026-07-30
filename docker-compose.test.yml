@@ -143,3 +143,31 @@ services:
       retries: 20
     tmpfs:
       - /var/lib/weaviate
+
+  pinecone:
+    # internal/vectorstore/pinecone's backend, tested against Pinecone
+    # Local (Pinecone's own official in-memory emulator -- Pinecone
+    # itself has no other self-hosted option) -- same conformance suite
+    # as pgvector/Qdrant/Weaviate. Port range 5080-5200 (not just
+    # 5080-5090 like Pinecone's own docs example) is load-bearing, not
+    # generous-for-no-reason: confirmed live that a tight range runs out
+    # of per-index ports partway through a full conformance run (10
+    # indexes, one per test, and this package's own tests never delete
+    # them -- see its own test file's doc comment for why deletion
+    # itself is a bigger, unrelated problem here).
+    image: ghcr.io/pinecone-io/pinecone-local:latest
+    environment:
+      PORT: 5080
+      PINECONE_HOST: localhost
+    ports:
+      - "5080-5200:5080-5200"
+    platform: linux/amd64
+    # No healthcheck: confirmed live this image ships nothing to exec a
+    # check with at all -- not even `sh`, `ls`, `wget`, or `curl` exist
+    # in it (a minimal/scratch-style image with just its own binary),
+    # unlike every other test-infra service in this file. `docker
+    # compose up --wait` (see infra-up in the Makefile) falls back to
+    # waiting for "running" state instead of "healthy" here, which is
+    # fine in practice -- this is a lightweight in-memory emulator that
+    # binds its port almost immediately on startup, not a database with
+    # a real spool-up sequence to wait out.
