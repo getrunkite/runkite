@@ -414,6 +414,18 @@ func TestIR005_PatchThread_StaleVersionReturns409(t *testing.T) {
 		"if_match_version": 1,
 	})
 	expectStatus(t, resp2, 409)
+	// Regression guard: the 409 body must say "version mismatch", not
+	// state.ErrConflict's generic default "already exists" -- a thread
+	// that already existed and lost a concurrency race didn't newly
+	// "appear," and a misleading message here would send anyone
+	// debugging a real conflict down the wrong path.
+	body2 := string(readBody(t, resp2))
+	if !strings.Contains(body2, "version mismatch") {
+		t.Fatalf("expected 409 body to mention 'version mismatch', got %s", body2)
+	}
+	if strings.Contains(body2, "already exists") {
+		t.Fatalf("409 body should not say 'already exists' for a version conflict, got %s", body2)
+	}
 
 	// The winning write's change must survive untouched.
 	getResp, _ := http.Get(env.srv.URL + "/threads/t-ver-stale")
