@@ -671,12 +671,13 @@ Live-verified end to end for all four: a real control plane, a real runner proce
 `docker-compose.yml` runs the whole system -- Postgres, Redis, the control plane, and a Python runner -- built from `Dockerfile` and `Dockerfile.runner`:
 
 ```bash
+cp .env.example .env   # fill in POSTGRES_PASSWORD and RUNNER_TOKEN with real values
 docker compose up -d --build
 curl http://localhost:2026/health
 docker compose down -v
 ```
 
-Runner auth is enabled by default in this compose file (`RUNNER_TOKEN_PYTHON_LANGGRAPH`). Set your own token via the `RUNNER_TOKEN` env var before starting, or it falls back to a placeholder -- change it for any real deployment.
+`POSTGRES_PASSWORD` and `RUNNER_TOKEN` are required, on purpose -- there's no built-in fallback, so `docker compose up` fails fast with a clear error if either is unset rather than silently starting with a well-known password or a shared "change-me-in-production" token nobody actually changes. Postgres and Redis also don't publish any port to the host in this file -- only the `runkite`/`runner` services on the same compose network need to reach them by service name.
 
 `docker-compose.dev.yml` is the zero-dependency local stack — control plane + Python runner only (SQLite + in-memory transport, no Postgres/Redis), with source-mounted `examples/` and `python/`:
 

@@ -1,5 +1,14 @@
 # Full-stack Runkite deployment (production-like).
+#
+# Requires real secrets, on purpose: POSTGRES_PASSWORD and RUNNER_TOKEN
+# have no built-in fallback, so `docker compose up` fails fast with a
+# clear error instead of silently starting with a well-known default
+# password or a "change-me-in-production" token that, historically,
+# nobody actually changes. Copy .env.example to .env and fill in real
+# values before running this file -- see .env.example's own comments.
+#
 # Usage:
+#   cp .env.example .env   # then edit .env with real values
 #   docker compose up -d --build
 #   docker compose down -v
 services:
@@ -13,10 +22,14 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: runkite
-      POSTGRES_PASSWORD: runkite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env -- see .env.example}
       POSTGRES_DB: runkite
-    ports:
-      - "5432:5432"
+    # No host port published, deliberately -- only the runkite/runner
+    # services on this compose's own network need to reach Postgres by
+    # service name. Publishing 5432 to the host has no operational
+    # benefit here and is one less thing exposed if the host itself is
+    # reachable from outside. Use `docker compose exec postgres psql
+    # -U runkite` for ad hoc access instead of a host port.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,8 +40,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No host port published -- same reasoning as postgres above.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -43,18 +55,18 @@ services:
       - "2026:2026"
       - "50051:50051"
     environment:
-      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      POSTGRES_DSN: postgres://runkite:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env -- see .env.example}@postgres:5432/runkite?sslmode=disable
       REDIS_URL: redis://redis:6379
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
       # Runner auth (production mode): protects the gRPC bridge and
       # /internal/* routes so only runners with this token can dequeue
-      # jobs, stream events, or fetch connector credentials. Change this
-      # value for a real deployment -- it's a placeholder here so the
-      # compose stack demonstrates production mode by default instead of
-      # silently running in local (trust-everyone) mode.
-      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:-change-me-in-production}
+      # jobs, stream events, or fetch connector credentials. No
+      # fallback default -- a shared, well-known "placeholder" token
+      # that everyone forgets to change is worse than forcing a real
+      # one up front.
+      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env -- see .env.example}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,13 +85,13 @@ services:
     environment:
       RUNKITE_GRPC_URL: runkite:50051
       RUNKITE_HTTP_URL: http://runkite:2026
-      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env -- see .env.example}
       # Same DATABASE_URL as the control plane (master plan: checkpoint
       # direct mode). The runner writes checkpoints straight to Postgres
       # with its own AsyncPostgresSaver tables, so thread state survives
       # runner restarts. Without this, the runner falls back to an
       # in-memory checkpointer (explicitly ephemeral, dev-only).
-      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      POSTGRES_DSN: postgres://runkite:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env -- see .env.example}@postgres:5432/runkite?sslmode=disable
     depends_on:
       runkite:
         condition: service_healthy

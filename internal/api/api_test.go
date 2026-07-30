@@ -57,6 +57,20 @@ func newTestEnv(t *testing.T) *testEnv {
 	return &testEnv{srv: srv, store: store, queue: queue, broker: broker, cancel: cancelBus, apiServer: apiServer}
 }
 
+// registerAgent registers agentID so run-creation tests can dispatch
+// against it -- createRunCtx rejects an unknown agent_id before
+// claiming/creating anything (FUN-01), so any test that creates a run
+// needs its agent_id to actually exist first. Deliberately NOT done
+// automatically inside newTestEnv: several tests assert exact agent
+// counts/listings (e.g. the admin overview), and a blanket
+// registration there would silently inflate those.
+func registerAgent(t *testing.T, env *testEnv, agentID string) {
+	t.Helper()
+	if err := env.store.UpsertAgent(context.Background(), &models.Agent{AgentID: agentID, Name: agentID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // --- JSON helpers ---
 
 func postJSON(url string, body interface{}) (*http.Response, error) {
@@ -574,6 +588,7 @@ func TestAP019_PatchThreadValuesCreatesHistoryEntry(t *testing.T) {
 // regardless of how the client observes it -- not in the HTTP handlers.
 func TestCheckpoint_BackgroundRunPollPattern(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp, _ := postJSON(env.srv.URL+"/threads/bg-thread/runs", map[string]interface{}{"agent_id": "test"})
 	expectStatus(t, resp, 200)
@@ -745,6 +760,7 @@ func TestAP026_ThreadHistoryBefore(t *testing.T) {
 
 func TestAP030_CreateBackgroundRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test-agent")
 
 	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
 		"agent_id": "test-agent",
@@ -762,8 +778,45 @@ func TestAP030_CreateBackgroundRun(t *testing.T) {
 	}
 }
 
+// TestAP030b_TrailingJSONBytesRejected proves a request body isn't just
+// decoded and the rest silently ignored -- a second JSON value (or any
+// other trailing bytes) after a valid one is now a 400, not a quietly
+// accepted no-op.
+func TestAP030b_TrailingJSONBytesRejected(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	// Two back-to-back JSON objects in one body -- the second is
+	// trailing data from readJSON's point of view, not a separate
+	// request.
+	body := `{"agent_id":"test"}{"agent_id":"test"}`
+	resp, err := http.Post(env.srv.URL+"/runs", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, resp, 400)
+}
+
+// TestAP030c_ValidJSONWithTrailingWhitespaceStillAccepted proves the
+// trailing-bytes check isn't so strict it breaks the common, harmless
+// case of a trailing newline (many JSON-producing tools/clients append
+// one) -- json.Decoder already treats insignificant whitespace between
+// tokens as EOF-equivalent, and this must keep doing so.
+func TestAP030c_ValidJSONWithTrailingWhitespaceStillAccepted(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	body := "{\"agent_id\":\"test\"}\n"
+	resp, err := http.Post(env.srv.URL+"/runs", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, resp, 200)
+}
+
 func TestAP031_GetRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	var run models.Run
@@ -788,6 +841,8 @@ func TestAP032_GetRunNotFound(t *testing.T) {
 
 func TestAP033_SearchRuns(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+	registerAgent(t, env, "test2")
 
 	postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test2"})
@@ -804,6 +859,7 @@ func TestAP033_SearchRuns(t *testing.T) {
 
 func TestAP034_DeleteRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Create a run that we can delete (set to terminal status first)
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
@@ -819,6 +875,7 @@ func TestAP034_DeleteRun(t *testing.T) {
 
 func TestAP036_CancelRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	var run models.Run
@@ -840,6 +897,7 @@ func TestAP036_CancelRun(t *testing.T) {
 
 func TestTS001_CreateThreadRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test-agent")
 
 	// Create thread first
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t1"})
@@ -861,6 +919,8 @@ func TestTS001_CreateThreadRun(t *testing.T) {
 
 func TestTS004_ListThreadRuns(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+	registerAgent(t, env, "test2")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t1"})
 	postJSON(env.srv.URL+"/threads/t1/runs", map[string]interface{}{"agent_id": "test"})
@@ -881,6 +941,7 @@ func TestTS004_ListThreadRuns(t *testing.T) {
 
 func TestTS005_GetThreadRunVerifiesThread(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t1"})
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t2"})
@@ -901,6 +962,7 @@ func TestTS005_GetThreadRunVerifiesThread(t *testing.T) {
 
 func TestTS008_CancelThreadRunVerifiesThread(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t1"})
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t2"})
@@ -916,6 +978,8 @@ func TestTS008_CancelThreadRunVerifiesThread(t *testing.T) {
 
 func TestTS009_ConcurrentRunReject409(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+	registerAgent(t, env, "test2")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t1"})
 
@@ -936,6 +1000,7 @@ func TestTS009_ConcurrentRunReject409(t *testing.T) {
 
 func TestIdempotentRun_BackgroundRun_RetrySameRunIDReturnsExisting(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-1"}
 	resp1, _ := postJSON(env.srv.URL+"/runs", body)
@@ -987,6 +1052,7 @@ func TestIdempotentRun_BackgroundRun_RetrySameRunIDReturnsExisting(t *testing.T)
 
 func TestIdempotentRun_DifferentRunIDsCreateSeparateRuns(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test", "run_id": "run-a"})
 	expectStatus(t, resp1, 200)
@@ -1005,6 +1071,7 @@ func TestIdempotentRun_DifferentRunIDsCreateSeparateRuns(t *testing.T) {
 
 func TestIdempotentRun_NoRunIDStillGeneratesServerSideID(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	expectStatus(t, resp, 200)
@@ -1017,6 +1084,7 @@ func TestIdempotentRun_NoRunIDStillGeneratesServerSideID(t *testing.T) {
 
 func TestIdempotentRun_StreamRetry_DoesNotReDispatch(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Simulate a runner so the first /runs/stream call's SSE loop
 	// actually terminates (it blocks on the event channel until a
@@ -1058,6 +1126,7 @@ func TestIdempotentRun_StreamRetry_DoesNotReDispatch(t *testing.T) {
 
 func TestIdempotentRun_WaitRetry_ReturnsSameResultWithoutSecondDispatch(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	var dequeueCount int32
 	go func() {
@@ -1108,6 +1177,7 @@ func TestIdempotentRun_WaitRetry_ReturnsSameResultWithoutSecondDispatch(t *testi
 
 func TestTS011_RunAutoCreatesThread(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Create run on nonexistent thread with if_not_exists=create (default)
 	resp, _ := postJSON(env.srv.URL+"/threads/auto-thread/runs", map[string]interface{}{
@@ -1143,6 +1213,7 @@ func TestTS012_RunRejectNonexistentThread(t *testing.T) {
 
 func TestAP042_StreamRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Simulate a runner by publishing events after a run is created
 	go func() {
@@ -1193,6 +1264,7 @@ func TestAP042_StreamRun(t *testing.T) {
 
 func TestAP040_WaitForRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Simulate a runner
 	go func() {
@@ -1666,6 +1738,7 @@ func TestSDK_StoreGetDotNamespace(t *testing.T) {
 
 func TestAP035_DeleteActiveRunRejects422(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	var run models.Run
@@ -1682,6 +1755,7 @@ func TestAP035_DeleteActiveRunRejects422(t *testing.T) {
 
 func TestAP041_WaitCompletedRunImmediate(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
 	var run models.Run
@@ -1706,6 +1780,7 @@ func TestAP041_WaitCompletedRunImmediate(t *testing.T) {
 
 func TestStreamExistingRun_MidRunReplay(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Create a run in background
 	resp, _ := postJSON(env.srv.URL+"/threads/replay-thread/runs", map[string]interface{}{"agent_id": "test"})
@@ -1758,6 +1833,7 @@ func TestStreamExistingRun_MidRunReplay(t *testing.T) {
 
 func TestWaitExistingRun_MidRunReplay(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Create a run in background
 	resp, _ := postJSON(env.srv.URL+"/threads/wait-replay/runs", map[string]interface{}{"agent_id": "test"})
@@ -1804,6 +1880,7 @@ func TestWaitExistingRun_MidRunReplay(t *testing.T) {
 
 func TestStreamCompletedRun_FullReplay(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	// Create run, publish events, complete it, THEN stream
 	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
@@ -1858,6 +1935,9 @@ func TestSSE_SurvivesMetricsMiddlewareWrapping(t *testing.T) {
 	if err := store.Init(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.UpsertAgent(context.Background(), &models.Agent{AgentID: "test", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	queue := inprocess.NewQueue()
 	broker := inprocess.NewBroker()
 	apiServer := api.NewServer(store, queue, broker, inprocess.NewCancelBus())
@@ -1901,6 +1981,7 @@ func TestSSE_SurvivesMetricsMiddlewareWrapping(t *testing.T) {
 
 func TestTS002_CreateAndStreamThreadRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -1935,6 +2016,7 @@ func TestTS002_CreateAndStreamThreadRun(t *testing.T) {
 
 func TestTS003_CreateAndWaitThreadRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -1970,6 +2052,7 @@ func TestTS003_CreateAndWaitThreadRun(t *testing.T) {
 
 func TestTS006_StreamExistingThreadRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ts6"})
 	resp1, _ := postJSON(env.srv.URL+"/threads/ts6/runs", map[string]interface{}{"agent_id": "test"})
@@ -1994,6 +2077,7 @@ func TestTS006_StreamExistingThreadRun(t *testing.T) {
 
 func TestTS007_WaitExistingThreadRun(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ts7"})
 	resp1, _ := postJSON(env.srv.URL+"/threads/ts7/runs", map[string]interface{}{"agent_id": "test"})
@@ -2021,6 +2105,7 @@ func TestTS007_WaitExistingThreadRun(t *testing.T) {
 // cause, same fix, needs its own coverage since it's a separate function.
 func TestTS_CreateAndWaitPersistsStatusBeforeResponding(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -2062,6 +2147,7 @@ func TestTS_CreateAndWaitPersistsStatusBeforeResponding(t *testing.T) {
 // separate function needing its own coverage.
 func TestTS_CreateAndWaitResetsThreadStatusBeforeResponding(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -2093,6 +2179,7 @@ func TestTS_CreateAndWaitResetsThreadStatusBeforeResponding(t *testing.T) {
 // its claim while still executing -- two concurrent runs on one thread.
 func TestTS_StatusCallbackDoesNotClobberNewerRunClaim(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "clobber-thread"})
 	resp1, _ := postJSON(env.srv.URL+"/threads/clobber-thread/runs", map[string]interface{}{"agent_id": "test"})
@@ -2153,6 +2240,7 @@ func TestTS_StatusCallbackDoesNotClobberNewerRunClaim(t *testing.T) {
 // same thread immediately after /wait returns.
 func TestTS_WaitResetsThreadStatusBeforeResponding(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "wait-thread-reset"})
 	resp1, _ := postJSON(env.srv.URL+"/threads/wait-thread-reset/runs", map[string]interface{}{"agent_id": "test"})
@@ -2211,6 +2299,7 @@ func TestTS_WaitResetsThreadStatusBeforeResponding(t *testing.T) {
 // processed."
 func TestTS_WaitPersistsStatusBeforeResponding(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "wait-persist"})
 	resp1, _ := postJSON(env.srv.URL+"/threads/wait-persist/runs", map[string]interface{}{"agent_id": "test"})
@@ -2256,6 +2345,8 @@ func TestTS_WaitPersistsStatusBeforeResponding(t *testing.T) {
 
 func TestTS010_SequentialRunsSameThread(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+	registerAgent(t, env, "test2")
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ts10"})
 
@@ -2292,6 +2383,9 @@ func TestTS009_RaceRegression(t *testing.T) {
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "race"})
 
 	const N = 20
+	for i := 0; i < N; i++ {
+		registerAgent(t, env, fmt.Sprintf("agent-%d", i))
+	}
 	results := make(chan int, N)
 
 	// Fire N concurrent run-create requests

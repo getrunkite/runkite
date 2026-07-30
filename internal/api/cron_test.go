@@ -16,6 +16,7 @@ import (
 // two dispatches of the SAME schedule land on the SAME thread.
 func TestDispatchScheduledRun_UsesFixedThreadPerSchedule(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "report-agent")
 	ctx := context.Background()
 
 	run1, err := env.apiServer.DispatchScheduledRun(ctx, "daily-report", "report-agent",
@@ -52,6 +53,7 @@ func TestDispatchScheduledRun_UsesFixedThreadPerSchedule(t *testing.T) {
 // it up.
 func TestDispatchScheduledRun_ActuallyEnqueues(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "sync-agent")
 	ctx := context.Background()
 
 	run, err := env.apiServer.DispatchScheduledRun(ctx, "hourly-sync", "sync-agent",
@@ -71,10 +73,17 @@ func TestDispatchScheduledRun_ActuallyEnqueues(t *testing.T) {
 // another's thread.
 func TestDispatchScheduledRun_DifferentSchedulesUseDifferentThreads(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "agent-x")
 	ctx := context.Background()
 
-	run1, _ := env.apiServer.DispatchScheduledRun(ctx, "sched-a", "agent-x", json.RawMessage(`{}`), json.RawMessage(`{}`))
-	run2, _ := env.apiServer.DispatchScheduledRun(ctx, "sched-b", "agent-x", json.RawMessage(`{}`), json.RawMessage(`{}`))
+	run1, err1 := env.apiServer.DispatchScheduledRun(ctx, "sched-a", "agent-x", json.RawMessage(`{}`), json.RawMessage(`{}`))
+	if err1 != nil {
+		t.Fatalf("first dispatch: %v", err1)
+	}
+	run2, err2 := env.apiServer.DispatchScheduledRun(ctx, "sched-b", "agent-x", json.RawMessage(`{}`), json.RawMessage(`{}`))
+	if err2 != nil {
+		t.Fatalf("second dispatch: %v", err2)
+	}
 
 	if run1.ThreadID == run2.ThreadID {
 		t.Fatalf("expected different schedules to use different threads, both got %q", run1.ThreadID)
@@ -87,6 +96,7 @@ func TestDispatchScheduledRun_DifferentSchedulesUseDifferentThreads(t *testing.T
 // rejected (not silently queued to run concurrently on the same thread).
 func TestDispatchScheduledRun_RejectsOverlappingFire(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "agent-x")
 	ctx := context.Background()
 
 	_, err := env.apiServer.DispatchScheduledRun(ctx, "slow-job", "agent-x", json.RawMessage(`{}`), json.RawMessage(`{}`))

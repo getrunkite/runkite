@@ -49,6 +49,7 @@ func waitForHookCount(t *testing.T, sink *testSink, want int) []hooks.Event {
 // right run/thread/agent identifiers.
 func TestHooks_RunStartFiresOnCreate(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "hook-agent")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink, hooks.RunStart)
@@ -72,6 +73,7 @@ func TestHooks_RunStartFiresOnCreate(t *testing.T) {
 // on_run_complete (not on_error/on_interrupt) for a successful run.
 func TestHooks_RunCompleteFiresOnSuccess(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "hook-agent-2")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink) // subscribe to everything
@@ -108,6 +110,7 @@ func TestHooks_RunCompleteFiresOnSuccess(t *testing.T) {
 // not both firing as generic "complete".
 func TestHooks_ErrorAndInterruptMapCorrectly(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "hook-agent-3")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink, hooks.Error, hooks.Interrupt)
@@ -146,6 +149,7 @@ func TestHooks_ErrorAndInterruptMapCorrectly(t *testing.T) {
 // control plane needing to understand any framework-specific message shape.
 func TestHooks_ToolCallFiresFromEventStream(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "tool-agent")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink, hooks.ToolCall)
@@ -177,6 +181,7 @@ func TestHooks_ToolCallFiresFromEventStream(t *testing.T) {
 // cancelRunCore never dispatched any hook at all.
 func TestHooks_CancelFiresInterrupt(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "cancel-hook-agent")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink, hooks.Interrupt)
@@ -205,6 +210,7 @@ func TestHooks_CancelFiresInterrupt(t *testing.T) {
 // same run's completion.
 func TestHooks_CancelThenStatusCallback_FiresExactlyOnce(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "race-hook-agent")
 	sink := &testSink{}
 	d := hooks.NewDispatcher()
 	d.Register(sink, hooks.Interrupt, hooks.RunComplete, hooks.Error)
@@ -239,6 +245,7 @@ func TestHooks_CancelThenStatusCallback_FiresExactlyOnce(t *testing.T) {
 // creation or completion.
 func TestHooks_NoDispatcherIsSafe(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "no-hooks-agent")
 	ctx := context.Background()
 
 	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "no-hooks-agent"})

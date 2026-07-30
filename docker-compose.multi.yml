@@ -36,6 +36,13 @@
 # someone notices `make test-pg`/`test-redis` failing and manually restores it
 # with `make infra-up`. The name below makes that collision structurally
 # impossible instead of relying on everyone remembering `-p runkite-multi`.
+#
+# This is a local dev/test topology (proving multi-instance behavior end
+# to end), not a deployable production template -- but it still requires
+# a real RUNNER_TOKEN (no "change-me-in-production" fallback), the same
+# reasoning as docker-compose.yml: a shared placeholder secret invites
+# copy-pasting it somewhere it matters. Set RUNNER_TOKEN in your shell or
+# a .env file before running this (see .env.example).
 name: runkite-multi
 services:
   postgres:
@@ -48,9 +55,11 @@ services:
     # this stack runs alongside other local projects/compose files that
     # already claim the defaults; only other containers on this compose's
     # own network need these by service name, host access is for ad hoc
-    # debugging only.
+    # debugging only. Bound to 127.0.0.1 specifically (not published on
+    # every interface) so that debugging access doesn't also mean
+    # reachable from outside the machine this is running on.
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - postgres_multi_data:/var/lib/postgresql/data
     healthcheck:
@@ -61,8 +70,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    # See postgres's own comment above -- same reasoning for the
+    # 127.0.0.1 bind.
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -79,7 +90,7 @@ services:
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
-      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:-change-me-in-production}
+      RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
     # hostname: each service gets a distinct one automatically (defaults to
     # the container ID unless overridden below) -- cmd/serve.go now logs it
     # at startup, so replicas are distinguishable in `docker compose logs`
@@ -126,7 +137,7 @@ services:
     environment:
       RUNKITE_GRPC_URL: lb:50051
       RUNKITE_HTTP_URL: http://lb:2026
-      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
       POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
     depends_on:
       - lb
@@ -138,7 +149,7 @@ services:
     environment:
       RUNKITE_GRPC_URL: lb:50051
       RUNKITE_HTTP_URL: http://lb:2026
-      RUNNER_TOKEN: ${RUNNER_TOKEN:-change-me-in-production}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
       POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
     depends_on:
       - lb

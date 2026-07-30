@@ -40,6 +40,7 @@ func withInMemoryTracing(t *testing.T) *tracetest.InMemoryExporter {
 func TestRunSpan_StartedOnCreateEndedOnTerminal(t *testing.T) {
 	exp := withInMemoryTracing(t)
 	env := newTestEnv(t)
+	registerAgent(t, env, "trace_agent")
 	ctx := context.Background()
 
 	resp, _ := postJSON(env.srv.URL+"/threads/otel-thread/runs", map[string]interface{}{"agent_id": "trace_agent"})
@@ -104,6 +105,7 @@ func TestRunSpan_StartedOnCreateEndedOnTerminal(t *testing.T) {
 func TestRunSpan_EndedOnCancel(t *testing.T) {
 	exp := withInMemoryTracing(t)
 	env := newTestEnv(t)
+	registerAgent(t, env, "trace_agent")
 	ctx := context.Background()
 
 	resp, _ := postJSON(env.srv.URL+"/threads/otel-cancel-thread/runs", map[string]interface{}{"agent_id": "trace_agent"})

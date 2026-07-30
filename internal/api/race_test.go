@@ -16,6 +16,7 @@ import (
 // concurrency before this test was added. See internal/state.Store.TryClaimThread.
 func TestTS009_GenuinelyConcurrentRequests(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 	env.store.CreateThread(context.Background(), &models.Thread{ThreadID: "race-1", Status: models.ThreadStatusIdle})
 
 	const n = 20

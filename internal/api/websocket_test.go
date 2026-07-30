@@ -24,6 +24,7 @@ func wsURL(httpURL string) string {
 // the run it started, with no separate SSE request needed.
 func TestWebSocket_RunStartStreamsEventsOnSameConnection(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 	ctx := context.Background()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ws-thread-1"})
@@ -98,6 +99,7 @@ func TestWebSocket_RunStartStreamsEventsOnSameConnection(t *testing.T) {
 // matching the REST cancel endpoint's behavior.
 func TestWebSocket_RunCancel(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 	ctx := context.Background()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ws-thread-2"})
@@ -150,6 +152,7 @@ func TestWebSocket_RunCancel(t *testing.T) {
 // without killing the connection (client can keep sending other commands).
 func TestWebSocket_UnknownMethod(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "test")
 	ctx := context.Background()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ws-thread-3"})

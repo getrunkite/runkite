@@ -273,8 +273,9 @@ func TestLLMCache_DifferentInputIsMiss(t *testing.T) {
 // caching is opt-in per agent, never a surprise default.
 func TestLLMCache_NoConfigNeverCaches(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "uncached-agent")
 	ctx := context.Background()
-	// No bootstrapCachedAgent call -- "uncached-agent" has no metadata at all.
+	// No bootstrapCachedAgent call -- "uncached-agent" has no CACHE metadata at all (it's still a real, registered agent).
 
 	input := map[string]interface{}{"q": "same"}
 	for i := 0; i < 2; i++ {

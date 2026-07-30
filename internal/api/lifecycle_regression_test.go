@@ -83,6 +83,9 @@ func TestEnqueueFailure_RollsBackBusyThread(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	ctx := context.Background()
+	if err := store.UpsertAgent(ctx, &models.Agent{AgentID: "agent", Name: "agent"}); err != nil {
+		t.Fatal(err)
+	}
 	threadID := "enqueue-fail"
 	_ = store.CreateThread(ctx, &models.Thread{
 		ThreadID: threadID, Status: models.ThreadStatusIdle,
@@ -193,6 +196,10 @@ func TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
+	if err := store.UpsertAgent(ctx, &models.Agent{AgentID: "a", Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
 	winnerThread := "winner-thread"
 	loserThread := "loser-thread"
 	sharedRunID := "client-retry-run-id"
@@ -249,6 +256,10 @@ func TestCreateRunCtx_TryClaimRaceReturnsRetrySentinelNotFakeCacheHit(t *testing
 	s, store := newLifecycleServer(t, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
+
+	if err := store.UpsertAgent(ctx, &models.Agent{AgentID: "a", Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
 
 	threadID := "busy-retry-thread"
 	sharedRunID := "in-flight-run-id"

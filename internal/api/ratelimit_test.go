@@ -12,6 +12,8 @@ import (
 // agent's runs are unaffected by another agent's exhausted bucket.
 func TestCreateRun_PerAgentRateLimit(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "limited-agent")
+	registerAgent(t, env, "other-agent")
 	env.apiServer.SetRateLimiter(ratelimit.New(&ratelimit.Config{
 		PerAgent: &ratelimit.Rule{RPS: 0.001, Burst: 1},
 	}))
@@ -36,6 +38,7 @@ func TestCreateRun_PerAgentRateLimit(t *testing.T) {
 // config) never blocks anything.
 func TestCreateRun_NoRateLimiterIsUnlimited(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "unlimited-agent")
 	for i := 0; i < 5; i++ {
 		resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "unlimited-agent"})
 		expectStatus(t, resp, 200)

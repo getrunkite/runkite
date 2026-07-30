@@ -148,6 +148,28 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		req.AgentID = resolved
 	}
 
+	// Fail fast on an unknown agent_id, before claiming/creating anything.
+	// Without this, a typo'd agent_id still got a 200 with a pending run
+	// that only ever failed later, asynchronously, once a runner tried
+	// (and failed) to load a graph that was never registered -- burning a
+	// thread claim, a queue slot, and runner capacity for an error the
+	// caller could have gotten synchronously instead. GetAgent is already
+	// tenant-scoped (see its own implementation), and runs after alias
+	// resolution above so this checks the REAL target, not the alias
+	// name. Applies to every run, including resumes -- a resume still
+	// needs a real, registered agent to dispatch against.
+	if _, agentErr := s.store.GetAgent(ctx, req.AgentID); agentErr != nil {
+		var notFound *state.ErrNotFound
+		if errors.As(agentErr, &notFound) {
+			return nil, nil, agentErr
+		}
+		// A non-not-found error here (DB down, etc.) is a real
+		// infrastructure failure, not proof the agent doesn't exist --
+		// don't reject the run on that basis, let the rest of this
+		// function's own error handling surface the real problem if it
+		// recurs.
+	}
+
 	// Per-agent rate limiting (master plan: "Rate limiting: per-user,
 	// per-agent, per-tenant"). Enforced here rather than in generic HTTP
 	// middleware because agent_id is parsed from the request body, not the

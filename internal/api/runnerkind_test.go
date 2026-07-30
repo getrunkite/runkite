@@ -53,12 +53,14 @@ func TestCreateRun_RoutesToAgentsDeclaredRunnerKind(t *testing.T) {
 	}
 }
 
-// TestCreateRun_DefaultsToPythonLangGraphWhenAgentUnknown proves the
-// fallback still matches every existing deployment's behavior: an agent
-// with no runner_kind metadata (or no agent row at all) is routed to
+// TestCreateRun_DefaultsToPythonLangGraphWhenNoRunnerKindDeclared proves
+// the fallback still matches every existing deployment's behavior: a
+// registered agent that simply doesn't declare a runner_kind (the
+// common case -- most agents never set this) is routed to
 // python-langgraph, unchanged from before this feature existed.
-func TestCreateRun_DefaultsToPythonLangGraphWhenAgentUnknown(t *testing.T) {
+func TestCreateRun_DefaultsToPythonLangGraphWhenNoRunnerKindDeclared(t *testing.T) {
 	env := newTestEnv(t)
+	registerAgent(t, env, "plain_agent")
 	ctx := context.Background()
 
 	resp, err := postJSON(env.srv.URL+"/threads", map[string]interface{}{})
@@ -71,7 +73,7 @@ func TestCreateRun_DefaultsToPythonLangGraphWhenAgentUnknown(t *testing.T) {
 	threadID := thread["thread_id"].(string)
 
 	if _, err := postJSON(env.srv.URL+"/threads/"+threadID+"/runs", map[string]interface{}{
-		"agent_id": "never_registered_agent",
+		"agent_id": "plain_agent",
 		"input":    map[string]interface{}{},
 	}); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -81,4 +83,31 @@ func TestCreateRun_DefaultsToPythonLangGraphWhenAgentUnknown(t *testing.T) {
 	if err != nil || assignment == nil {
 		t.Fatalf("expected a job queued for the default runner_kind=python-langgraph: %v", err)
 	}
+}
+
+// TestCreateRun_UnregisteredAgentRejected proves createRunCtx now fails
+// fast on an unknown agent_id (before this fix, a typo'd agent_id got a
+// 200 with a pending run that only ever failed later, asynchronously,
+// once a runner tried and failed to load a graph that was never
+// registered).
+func TestCreateRun_UnregisteredAgentRejected(t *testing.T) {
+	env := newTestEnv(t)
+
+	resp, err := postJSON(env.srv.URL+"/threads", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	var thread map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&thread)
+	resp.Body.Close()
+	threadID := thread["thread_id"].(string)
+
+	runResp, err := postJSON(env.srv.URL+"/threads/"+threadID+"/runs", map[string]interface{}{
+		"agent_id": "never_registered_agent",
+		"input":    map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	expectStatus(t, runResp, 404)
 }

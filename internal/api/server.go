@@ -832,9 +832,22 @@ func clampSearchLimit(limit, defaultLimit int) int {
 	return limit
 }
 
+// readJSON decodes exactly one JSON value from the request body and
+// rejects anything left over afterward (a second JSON value, or
+// arbitrary trailing bytes) -- a single Decode call on its own silently
+// accepts and ignores trailing data, which could otherwise hide a
+// client bug (or smuggle a second, unparsed payload past whatever
+// logging/validation only looks at the first decoded value).
 func readJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
-	return json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)).Decode(v)
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes))
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("request body must contain exactly one JSON value, found trailing data")
+	}
+	return nil
 }
 
 // ErrA2ADepthExceeded means creating this run would exceed the
