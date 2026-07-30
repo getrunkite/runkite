@@ -277,6 +277,15 @@ func (s *Server) Handler() http.Handler {
 	// comment for the full design.
 	mux.HandleFunc("POST /internal/a2a/runs", s.handleA2ACreateRun)
 
+	// MCP-server support (master plan competitive-parity gap: exposing
+	// Runkite's own agents AS MCP tools, the reverse of the Connectors
+	// feature's MCP-client direction) -- see mcpserver.go's own package
+	// doc comment. Client-facing (normal API key/JWT auth applies, not
+	// the runner-token /internal/* auth), and mounted without a method
+	// prefix since the Streamable HTTP transport uses POST for RPCs, GET
+	// for its optional SSE stream, and DELETE to close a session.
+	mux.Handle("/mcp", s.mcpHTTPHandler())
+
 	// Admin API (master plan: "Admin API + UI"). Gated on "admin"
 	// permission specifically, enforced in auth.Middleware for the whole
 	// /admin-api/ prefix -- see this file's package doc comment for scope.

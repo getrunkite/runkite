@@ -496,6 +496,31 @@ Three things this adds on top of the shared run-creation/wait path:
 - **Parent lookup is cross-tenant under runner trust.** `/internal/a2a/runs` resolves `parent_run_id` with system context (no client tenant), then scopes the child to that parent's tenant. A compromised runner that learns another tenant's run UUID could attach a child there -- same "runner is trusted" boundary as other `/internal/*` routes, stated explicitly rather than implied closed.
 - **Cost aggregation is best-effort, not authoritative.** It's reading a convention out of existing `output` JSON, not a value the control plane verified or a runner is required to produce -- a misbehaving or silent runner reports zero, not an error.
 
+## MCP Server
+
+The reverse direction of Connectors: Connectors let a Runkite *agent* consume external MCP tool servers (MCP-client); this exposes Runkite's *own* configured agents *as* MCP tools, so any MCP-speaking client (Claude Desktop, Cursor, or your own tooling) can call them directly.
+
+```
+POST/GET/DELETE /mcp   Streamable HTTP MCP transport (session-based, per the 2025-03-26/2025-06-18/2025-11-25 spec revisions)
+```
+
+Every configured agent becomes exactly one MCP tool, named after its `agent_id`, using its `description` if set. Calling one dispatches a real run through the exact same `createRunCtx` + wait-for-result path every client-facing create-and-wait endpoint already uses (the same pattern A2A reuses for agent-to-agent calls) and blocks until it finishes -- MCP's `tools/call` is inherently request/response, there's no streaming variant to map Runkite's own SSE/WebSocket paths onto.
+
+```json
+// tools/call arguments
+{
+  "message": "What's the weather in Boston?",   // wrapped as a single user turn -- the common case
+  "input": { "messages": [...] },                 // OR: raw input, for a caller that knows this agent's own shape. Wins if both given.
+  "thread_id": "existing-thread-id"                // optional: continue a conversation instead of starting fresh
+}
+```
+
+The result's text content is the agent's last message; a run that errors or gets interrupted comes back as a **tool-level** error (`isError: true` in the content, not a raw MCP protocol failure) so the calling LLM can actually see what went wrong and self-correct, per the MCP spec's own guidance on tool errors.
+
+Mounted as a normal client-facing route (`/mcp`, not under `/internal/*`), so it goes through the exact same auth middleware (API key/JWT) as every other endpoint -- an MCP client is configured with a Runkite API key exactly the way any other Agent Protocol client would be. A session's tenant is fixed for its lifetime, resolved once at session establishment (the natural behavior for how MCP clients are actually configured in practice -- one static key per configured server entry) -- see `internal/api/mcpserver.go`'s doc comment for why the request context itself, not just the tenant/identity it carries, can't be reused across a session's later calls.
+
+Uses the stateful (session-ID-based) Streamable HTTP transport rather than the newest stateless-only mode, since real-world MCP clients today predominantly still speak the older, session-based protocol revisions -- the official Go SDK (`github.com/modelcontextprotocol/go-sdk`) negotiates the right one automatically per client.
+
 ## Agent Marketplace / Registry
 
 A searchable catalog of agent definitions -- publish, discover, and deploy agent definitions. **Minimal viable registry** scope, chosen deliberately: publish/search/get/version-history via API and Admin UI, no security review workflow, and no automatic clone-and-execute deploy pipeline. A registry entry is metadata plus a `source_ref` -- a git URL, a plain URL, or an inline `langgraph.json` snippet -- pointing at where a human (or their own tooling) goes to actually wire it into a deployment. This is deliberately a catalog, not a package manager's install step: running arbitrary fetched code is a fundamentally different trust/sandboxing problem than a searchable listing, and out of scope here.
