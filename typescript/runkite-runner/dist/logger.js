@@ -11,6 +11,12 @@
 const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 };
 function currentLevel() {
     const raw = (process.env.LOG_LEVEL ?? "info").trim().toLowerCase();
+    // "warning" is accepted as an alias for "warn" -- Go's parseLogLevel
+    // and Python's logging_config already do this (found on review: TS
+    // was the odd one out, silently falling back to "info" for it instead
+    // of matching the other two SDKs).
+    if (raw === "warning")
+        return "warn";
     return raw === "debug" || raw === "warn" || raw === "error" ? raw : "info";
 }
 function isJSON() {

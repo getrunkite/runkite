@@ -71,6 +71,17 @@ test("LOG_LEVEL=warn filters info and debug, keeps warn/error", async () => {
   assert.equal(lines.filter((l) => l.includes("error msg")).length, 1);
 });
 
+test("LOG_LEVEL=warning is accepted as an alias for warn (parity with Go/Python)", async () => {
+  const lines = await captureConsole(() => {
+    withEnv({ LOG_LEVEL: "warning", LOG_FORMAT: undefined }, () => {
+      logger.info("info msg");
+      logger.warn("warn msg");
+    });
+  });
+  assert.equal(lines.filter((l) => l.includes("info msg")).length, 0, "info should be filtered at warning level");
+  assert.equal(lines.filter((l) => l.includes("warn msg")).length, 1);
+});
+
 test("LOG_FORMAT=json produces parseable JSON with level and message fields", async () => {
   const lines = await captureConsole(() => {
     withEnv({ LOG_LEVEL: "debug", LOG_FORMAT: "json" }, () => {
