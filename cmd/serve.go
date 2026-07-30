@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/nats-io/nats.go"
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -45,6 +46,7 @@ import (
 	"github.com/sharanharsoor/runkite/internal/tracing"
 	"github.com/sharanharsoor/runkite/internal/transport"
 	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	natstransport "github.com/sharanharsoor/runkite/internal/transport/nats"
 	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
 	"github.com/sharanharsoor/runkite/internal/vectorstore"
 	pgvector "github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
@@ -578,6 +580,27 @@ func initTransport(ctx context.Context) (transport.JobQueue, transport.EventBrok
 		broker := redistransport.NewBroker(rdb)
 		cancelBus := redistransport.NewCancelBus(rdb)
 		slog.Info("transport: redis", "url", redisURL)
+		return queue, broker, cancelBus
+	}
+
+	if natsURL := os.Getenv("NATS_URL"); natsURL != "" {
+		nc, err := nats.Connect(natsURL)
+		if err != nil {
+			slog.Error("failed to connect to nats", "error", err)
+			os.Exit(1)
+		}
+		queue, err := natstransport.NewQueue(ctx, nc)
+		if err != nil {
+			slog.Error("failed to initialize nats job queue", "error", err)
+			os.Exit(1)
+		}
+		broker, err := natstransport.NewBroker(ctx, nc)
+		if err != nil {
+			slog.Error("failed to initialize nats event broker", "error", err)
+			os.Exit(1)
+		}
+		cancelBus := natstransport.NewCancelBus(nc)
+		slog.Info("transport: nats", "url", natsURL)
 		return queue, broker, cancelBus
 	}
 

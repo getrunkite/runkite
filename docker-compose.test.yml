@@ -144,6 +144,24 @@ services:
     tmpfs:
       - /var/lib/weaviate
 
+  nats:
+    # internal/transport/nats's full JobQueue+EventBroker+CancelBroker
+    # triad -- same conformance suite as Redis's own transport (see
+    # internal/transport/conformance). Config file (not CLI flags) is
+    # needed here specifically for max_payload -- see nats-server.conf's
+    # own comment for why the default is too small for this project's
+    # own large-payload conformance test.
+    image: nats:latest
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    volumes:
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+    ports:
+      - "4222:4222"
+    # No healthcheck: confirmed live this image ships nothing to exec a
+    # check with either -- same situation as the pinecone service below
+    # (not even `sh` or `wget` exist in it). `docker compose up --wait`
+    # falls back to waiting for "running" state, which is fine here too.
+
   pinecone:
     # internal/vectorstore/pinecone's backend, tested against Pinecone
     # Local (Pinecone's own official in-memory emulator -- Pinecone
