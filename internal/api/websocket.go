@@ -14,8 +14,8 @@ import (
 	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
-// GET /threads/{threadID}/websocket -- bidirectional streaming (master plan:
-// "one connection for both commands and events", the chatbot use case).
+// GET /threads/{threadID}/websocket -- bidirectional streaming: one
+// connection for both commands and events, for the chatbot use case.
 //
 // Client -> server frames are the same StreamingCommand JSON already used by
 // POST /threads/{id}/commands ("run.start", "input.respond", "run.cancel").

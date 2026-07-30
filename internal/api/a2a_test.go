@@ -251,9 +251,9 @@ func TestA2A_UnknownParentRun404(t *testing.T) {
 
 // TestA2A_CancelCascadesToDelegatedChildren proves cancelling a run
 // also cancels everything it delegated to, directly or transitively --
-// master plan follow-up: without this, a cancelled parent leaves
-// orphaned child runs still executing with no way for the caller to
-// have stopped them. An unrelated top-level run must be untouched.
+// without this, a cancelled parent leaves orphaned child runs still
+// executing with no way for the caller to have stopped them. An
+// unrelated top-level run must be untouched.
 func TestA2A_CancelCascadesToDelegatedChildren(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()

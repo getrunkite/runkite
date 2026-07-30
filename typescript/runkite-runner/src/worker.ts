@@ -161,7 +161,7 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   const adapter = new LangGraphAdapter(opts.configPath);
   await adapter.load();
 
-  // Runner auth (master plan's "two-tier" model): if the control plane has
+  // Runner auth, two-tier model: if the control plane has
   // RUNNER_TOKEN_<KIND> configured (production mode), this runner must
   // send a matching runner-kind/runner-token pair as gRPC metadata on
   // every call. In local mode this is a no-op -- runners are trusted
@@ -227,8 +227,8 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   }
   const cancelWatcherPromise = watchCancelsLoop();
 
-  // Custom routes, in-runner mode (master plan: "Custom routes"). Same
-  // process, same event loop as the poll loop below -- see customApp.ts's
+  // Custom routes, in-runner mode. Same process, same event loop as the
+  // poll loop below -- see customApp.ts's
   // doc comment for the trade-off that implies. Sidecar mode needs
   // nothing here: it's a separate process the control plane proxies to
   // directly, configured entirely on the Go side.

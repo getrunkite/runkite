@@ -1,5 +1,4 @@
-// Package api: A/B deployment routing via agent aliases (master plan:
-// "Full agent versioning... A/B deployment routing"). A client-facing
+// Package api: A/B deployment routing via agent aliases. A client-facing
 // name resolves to one of several REAL, independently-registered
 // agent_ids at run-creation time, weighted by langgraph.json's
 // "agent_aliases" config -- e.g. rolling a new graph version out to 10%

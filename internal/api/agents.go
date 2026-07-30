@@ -51,9 +51,9 @@ func (s *Server) handleGetAgentSchemas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schema)
 }
 
-// GET /agents/{agentID}/versions -- full agent versioning (master plan:
-// "version history browsing"). Newest first, matching the store's own
-// ordering contract.
+// GET /agents/{agentID}/versions -- full agent versioning, returning every
+// historical snapshot newest first, matching the store's own ordering
+// contract.
 func (s *Server) handleListAgentVersions(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agentID")
 
@@ -65,14 +65,13 @@ func (s *Server) handleListAgentVersions(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, versions)
 }
 
-// POST /agents/{agentID}/versions/{version}/rollback -- full agent
-// versioning (master plan: "rollback to arbitrary past versions").
-// Re-applies an old version's snapshot via the normal UpsertAgent path,
-// which itself creates a NEW version whose content matches the old one
-// -- see models.AgentVersion's doc comment for why this keeps history
-// strictly linear/append-only rather than rewriting or deleting
-// anything. The response is the resulting (new) Agent, whose Version
-// will be current+1, not the target version number.
+// POST /agents/{agentID}/versions/{version}/rollback -- rolls back to an
+// arbitrary past version. Re-applies an old version's snapshot via the
+// normal UpsertAgent path, which itself creates a NEW version whose
+// content matches the old one -- see models.AgentVersion's doc comment
+// for why this keeps history strictly linear/append-only rather than
+// rewriting or deleting anything. The response is the resulting (new)
+// Agent, whose Version will be current+1, not the target version number.
 func (s *Server) handleRollbackAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agentID")
 	versionStr := r.PathValue("version")

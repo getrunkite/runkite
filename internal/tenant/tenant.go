@@ -1,5 +1,5 @@
-// Package tenant implements multi-tenancy (master plan: "workspace/org/team
-// hierarchy with isolated data") as a flat tenant_id scope, threaded through
+// Package tenant implements multi-tenancy -- a flat tenant_id scope (not a
+// full workspace/org/team hierarchy), threaded through
 // context.Context rather than as an explicit parameter on every state.Store
 // method. This is deliberate: retrofitting an explicit tenantID parameter
 // onto ~25 Store interface methods would touch every call site across the

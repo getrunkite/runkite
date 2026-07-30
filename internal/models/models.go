@@ -23,9 +23,9 @@ type Agent struct {
 	Description  string                 `json:"description,omitempty"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 	Capabilities map[string]interface{} `json:"capabilities"`
-	// Version is basic version tracking (master plan: "version number
-	// incremented on update, latest version served by default"). Starts at
-	// 1, increments only when name/description/metadata/capabilities
+	// Version is basic version tracking: incremented on update, with the
+	// latest version served by default. Starts at 1, increments only
+	// when name/description/metadata/capabilities
 	// actually change on an UpsertAgent call -- not on every bootstrap/
 	// restart with an unchanged langgraph.json. Full version history
 	// browsing, rollback, and A/B deployment are post-launch scope.
@@ -33,8 +33,8 @@ type Agent struct {
 }
 
 // AgentVersion is one immutable, historical snapshot of an agent's
-// definition (master plan: "Full agent versioning: version history
-// browsing, rollback to arbitrary past versions"). Written once, at the
+// definition, supporting full agent versioning: version history browsing
+// and rollback to arbitrary past versions. Written once, at the
 // moment UpsertAgent bumps Agent.Version -- never updated afterward,
 // which is what makes it a reliable history rather than another mutable
 // copy of the current row. A rollback (see RollbackAgentVersion) doesn't
@@ -213,8 +213,8 @@ type Run struct {
 	Output      json.RawMessage        `json:"output,omitempty"`
 	Error       string                 `json:"error,omitempty"`
 	// ParentRunID, RootRunID, Depth support Agent-to-Agent (A2A)
-	// delegation (master plan: "agent calls agent via the same Agent
-	// Protocol API"). ParentRunID is nil for a normal, top-level run --
+	// delegation, where an agent calls another agent via the same Agent
+	// Protocol API. ParentRunID is nil for a normal, top-level run --
 	// set only when this run was created via POST /internal/a2a/runs on
 	// behalf of another run. RootRunID is the top of the chain (a run's
 	// own RunID if it has no parent, otherwise copied from the parent),
@@ -350,7 +350,7 @@ type StoreSearchResponse struct {
 }
 
 // --------------------------------------------------------------------------
-// Vector Store (semantic search -- master plan: "Vector/semantic store")
+// Vector Store (semantic search)
 // --------------------------------------------------------------------------
 
 // VectorItem is one embedded item in the vector store. Namespace is a
@@ -418,9 +418,9 @@ type StoreListNamespacesRequest struct {
 	Offset   int      `json:"offset,omitempty"`
 }
 
-// CachedRunResult is a memoized run output (master plan: "LLM response
-// caching: configurable TTL, cache key derivation from input hash").
-// Keyed by a hash of (agent_id, input, config) computed in createRun --
+// CachedRunResult is a memoized run output, part of the LLM response
+// caching layer: a configurable per-agent TTL with the cache key derived
+// from a hash of the input. Keyed by a hash of (agent_id, input, config) computed in createRun --
 // the control plane caches whole-run results, not individual LLM calls
 // (it never sees inside a runner's execution to do the latter without
 // becoming framework-aware).
@@ -432,9 +432,9 @@ type CachedRunResult struct {
 	ExpiresAt time.Time              `json:"expires_at"`
 }
 
-// CronSchedule is one cron-scheduled run definition (master plan: "Cron
-// scheduler: cron-expression scheduling with multi-instance-safe claiming
-// (Postgres claim window), timezone support").
+// CronSchedule is one cron-scheduled run definition: cron-expression
+// scheduling with multi-instance-safe claiming (a Postgres claim window)
+// and timezone support.
 type CronSchedule struct {
 	// TenantID is populated on read (state.Store) so callers that need to
 	// act across every tenant (the scheduler loop, via a system context)
@@ -454,7 +454,7 @@ type CronSchedule struct {
 }
 
 // WebhookDeadLetter records a webhook delivery that failed all retry
-// attempts (master plan: "Webhook delivery ... with retry and dead-letter").
+// attempts, part of webhook delivery's retry-and-dead-letter handling.
 // Persisted so a failed delivery is inspectable/replayable after the fact,
 // not just logged and lost.
 type WebhookDeadLetter struct {
@@ -509,14 +509,13 @@ type StreamingCommandResponse struct {
 // Registry
 // --------------------------------------------------------------------------
 
-// RegistryEntry is a published, discoverable agent DEFINITION (master
-// plan: "Agent marketplace / registry: publish, discover, and deploy
-// agent definitions"). Deliberately a metadata catalog record, not
+// RegistryEntry is a published, discoverable agent DEFINITION for the
+// agent marketplace / registry: publish, discover, and deploy agent
+// definitions. Deliberately a metadata catalog record, not
 // executable code the control plane runs directly -- "minimal viable
 // registry" scope: publish/list/discover/version-history via API +
 // Admin UI, no security review workflow, no automatic
-// clone-and-execute "deploy" pipeline (that's the actual "own product"
-// scope the master plan calls out; running arbitrary fetched code is a
+// clone-and-execute "deploy" pipeline (running arbitrary fetched code is a
 // different, much bigger trust and sandboxing problem than a catalog
 // is). SourceRef is where a human (or their own tooling) goes to
 // actually deploy it -- a git repo, a URL, or an inline langgraph.json

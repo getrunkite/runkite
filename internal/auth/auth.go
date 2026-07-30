@@ -15,7 +15,7 @@ import (
 type AuthResult struct {
 	Identity    string   `json:"identity"`
 	Permissions []string `json:"permissions,omitempty"`
-	// TenantID scopes this caller's data (master plan: "Multi-tenancy").
+	// TenantID scopes this caller's data for multi-tenancy.
 	// Empty means "no tenant claim configured" -- resolves to
 	// tenant.DefaultTenant, not an error; multi-tenancy is opt-in.
 	TenantID string `json:"tenant_id,omitempty"`
@@ -96,8 +96,8 @@ func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerT
 			return
 		}
 
-		// An independent admin credential (master plan: "Admin API +
-		// UI"), if configured, is tried first for /admin-api/* only --
+		// An independent admin credential for the Admin API/UI, if
+		// configured, is tried first for /admin-api/* only --
 		// never for the client-facing surface. This exists because the
 		// primary provider is often a real end-user identity system
 		// (e.g. SSO) issuing short-lived tokens: fine for a browser
@@ -156,8 +156,8 @@ func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerT
 			return
 		}
 
-		// The Admin API/UI (master plan: "Admin API + UI") is a stricter
-		// tier than the rest of the client-facing surface: every method,
+		// The Admin API/UI is a stricter tier than the rest of the
+		// client-facing surface: every method,
 		// including GET, requires "admin" specifically -- viewing the
 		// dashboard is itself an admin action, not something "read"
 		// should imply. Empty permissions still means unrestricted (same

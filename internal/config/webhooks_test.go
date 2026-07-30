@@ -7,8 +7,8 @@ import (
 )
 
 // TestLoadLangGraphJSON_Webhooks proves the "webhooks" section parses into
-// WebhookEntry (master plan: "Webhook delivery ... on run completion,
-// failure, interrupt", generalized to all hook event types).
+// WebhookEntry, covering webhook delivery on run completion, failure, and
+// interrupt, generalized to all hook event types.
 func TestLoadLangGraphJSON_Webhooks(t *testing.T) {
 	dir := t.TempDir()
 	content := `{

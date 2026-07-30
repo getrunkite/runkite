@@ -1,8 +1,8 @@
 // Package adminui embeds the built Admin UI (admin-ui/, a Vite + React +
 // TypeScript SPA) into the runkite binary, so `runkite serve` ships one
 // executable with a working dashboard -- no separate deploy step, no
-// Node.js runtime dependency for end users (master plan: "one
-// executable"). The React source lives in admin-ui/; its Vite config
+// Node.js runtime dependency for end users. The React source lives in
+// admin-ui/; its Vite config
 // builds straight into this package's dist/ subdirectory (see
 // admin-ui/vite.config.ts), which is committed to the repo so `go build`
 // works without ever needing npm -- only UI contributors touching

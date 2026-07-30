@@ -1,7 +1,7 @@
 /**
- * Custom routes, in-runner mode (master plan: "Custom routes"). TypeScript
- * mirror of the Python runner's custom_app.py, adapted to Node's request
- * handler convention instead of ASGI: the exported value must be callable
+ * Custom routes, in-runner mode. TypeScript mirror of the Python runner's
+ * custom_app.py, adapted to Node's request handler convention instead of
+ * ASGI: the exported value must be callable
  * as `(req, res) => void` -- Node's http.RequestListener shape. This
  * covers plain node:http handlers directly and Express apps directly
  * (an Express `app` IS a valid request listener); Koa needs `app.callback()`

@@ -1,10 +1,10 @@
-"""In-runner mode for the master plan's "Custom routes" platform extension.
+"""In-runner mode for the Custom routes platform extension.
 
 Loads a user-defined ASGI app (FastAPI, Starlette, or any other ASGI
 framework) from langgraph.json's "custom_app" section and serves it via
 uvicorn, running as a concurrent asyncio task alongside the runner's own
 gRPC worker loop (see run_worker in worker.py) -- same process, same event
-loop, "similar to dropping a file in your project" per the master plan.
+loop, similar to dropping a file into your project.
 
 The control plane reverse-proxies /custom/* to wherever this ends up
 listening (see internal/config.CustomRoutesEntry / cmd/serve.go's

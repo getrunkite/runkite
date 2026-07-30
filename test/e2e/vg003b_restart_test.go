@@ -14,7 +14,7 @@ import (
 )
 
 // TestVG003b_ResumeSurvivesRunnerRestart is the proof of checkpoint dual
-// mode (master plan): interrupt a run, kill the runner process entirely
+// mode: interrupt a run, kill the runner process entirely
 // (no graceful shutdown -- simulates a crash, zero shared memory with the
 // next process), start a brand new runner process, then verify the
 // checkpoint persisted somewhere external to the runner's own memory.

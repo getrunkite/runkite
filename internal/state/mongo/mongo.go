@@ -147,7 +147,7 @@ func (s *Store) Init(ctx context.Context) error {
 		{"agent_versions", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}, {Key: "version", Value: 1}}, true},
 		{"agent_schemas", bson.D{{Key: "tenant_id", Value: 1}, {Key: "agent_id", Value: 1}}, true},
 		// Same rationale as agents/agent_versions above, for the
-		// registry (master plan: "Agent marketplace / registry").
+		// agent marketplace / registry.
 		{"registry_entries", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, true},
 		{"registry_entry_versions", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}, {Key: "version", Value: 1}}, true},
 		{"threads", bson.D{{Key: "thread_id", Value: 1}}, true},
@@ -383,8 +383,8 @@ func (s *Store) UpsertAgent(ctx context.Context, agent *models.Agent) error {
 			return err
 		}
 
-		// Full agent versioning (master plan: "version history browsing,
-		// rollback to arbitrary past versions") -- one immutable document
+		// Full agent versioning, supporting version history browsing and
+		// rollback to arbitrary past versions -- one immutable document
 		// per version ever served, written only when this call is the one
 		// that actually bumped the version (an unchanged re-registration,
 		// e.g. every control plane restart with an unchanged
@@ -453,7 +453,7 @@ func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int
 }
 
 // --------------------------------------------------------------------------
-// Registry (master plan: "Agent marketplace / registry")
+// Registry: agent marketplace / registry
 // --------------------------------------------------------------------------
 
 type registryEntryDoc struct {

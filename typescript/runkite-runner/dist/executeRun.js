@@ -33,9 +33,10 @@ export function buildRunConfig(assignment) {
 }
 /** Recursively scans a LangGraph.js stream chunk for AIMessage.tool_calls
  * the control plane's on_tool_call hook watches for -- TypeScript mirror
- * of the Python runner's find_new_tool_calls() in worker.py (master plan
- * gap: "neither runner emits that method today"). `seenIds` is mutated
- * in place (dedup state); pass a fresh Set per run.
+ * of the Python runner's find_new_tool_calls() in worker.py. Neither
+ * runner emits that method natively today, so this scan is what surfaces
+ * tool calls instead. `seenIds` is mutated in place (dedup state); pass a
+ * fresh Set per run.
  *
  * Checked in every stream mode, same reasoning as the Python version:
  * "values"/"updates" give complete, already-materialized messages per
@@ -129,8 +130,8 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
         const lgStreamMode = streamMode.length > 0 ? streamMode : ["values"];
         let hasInterrupt = false;
         const seenToolCallIds = new Set();
-        // Factory graph (master plan: LangGraph SDK/ServerRuntime
-        // compatibility) -- built fresh for this run alone, with
+        // Factory graph (for LangGraph SDK/ServerRuntime compatibility) --
+        // built fresh for this run alone, with
         // checkpointer/store attached to THIS instance, not the shared one
         // static graphs use. See factoryGraph.ts for the full rationale.
         // factoryBuild.close() MUST wrap open() as well as the stream loop:

@@ -25,10 +25,9 @@ type Connector struct {
 	// cached token + expiry for client_credentials (shared across requests)
 	cachedToken *CachedToken
 	tokenMu     sync.Mutex
-	// breaker guards the actual network call in oauth2_* token fetches
-	// (master plan: "Circuit breakers: per-connector circuit breakers with
-	// configurable thresholds"). api_key/bearer never touch it -- they
-	// don't make network calls.
+	// breaker guards the actual network call in oauth2_* token fetches --
+	// a per-connector circuit breaker with configurable thresholds.
+	// api_key/bearer never touch it -- they don't make network calls.
 	breaker *CircuitBreaker
 }
 

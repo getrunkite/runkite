@@ -9,7 +9,7 @@ import (
 type APIKeyEntry struct {
 	Name        string   `json:"name"`
 	Permissions []string `json:"permissions,omitempty"`
-	// TenantID scopes this key's data (master plan: "Multi-tenancy").
+	// TenantID scopes this key's data for multi-tenancy.
 	// Empty resolves to tenant.DefaultTenant -- multi-tenancy is opt-in.
 	TenantID string `json:"tenant_id,omitempty"`
 	// Extra carries arbitrary per-key metadata into AuthResult.Extra --

@@ -1,5 +1,5 @@
-// Vector store HTTP surface (master plan: "Vector/semantic store").
-// Mirrors store.go's shape (PUT/DELETE/POST-search over a simple
+// Vector/semantic store HTTP surface. Mirrors store.go's shape
+// (PUT/DELETE/POST-search over a simple
 // resource), and the Store Dual Mode convention: the exact same handlers
 // are mounted again under /internal/vectors/* (see server.go) so a
 // non-Python or POSTGRES_DSN-less runner can reach it with its runner

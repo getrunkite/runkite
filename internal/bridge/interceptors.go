@@ -21,7 +21,7 @@ const (
 
 // authenticateRunner validates the runner-kind/runner-token metadata pair
 // against the configured RunnerTokens. In local mode (no tokens configured)
-// this always succeeds, matching the master plan's zero-friction default.
+// this always succeeds, a deliberate zero-friction default.
 func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) error {
 	if !rt.Enabled() {
 		return nil

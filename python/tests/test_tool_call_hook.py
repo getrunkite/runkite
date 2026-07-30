@@ -1,6 +1,7 @@
-"""Self-check for the on_tool_call producer (master plan gap: the hook's
-infrastructure existed in the Go control plane -- watchRunEventsForToolCallHook
-in internal/api/runs.go -- but "neither runner emits that method today").
+"""Self-check for the on_tool_call producer: the hook's infrastructure
+existed in the Go control plane -- watchRunEventsForToolCallHook
+in internal/api/runs.go -- but neither runner emitted that method until
+find_new_tool_calls was added.
 
 Proves:
 1. find_new_tool_calls extracts tool_calls from AIMessage-shaped objects

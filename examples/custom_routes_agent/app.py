@@ -1,5 +1,5 @@
-"""Custom routes validation app (master plan: "Custom routes", in-runner
-mode). A minimal FastAPI app the Python runner SDK hosts alongside the
+"""Custom routes validation app, in-runner mode. A minimal FastAPI app the
+Python runner SDK hosts alongside the
 agent -- proves a real ASGI app is reachable through the control plane's
 /custom/* reverse proxy with the prefix stripped.
 """

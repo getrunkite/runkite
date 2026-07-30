@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// TestVG001_ReactAgentToolCalls re-validates the master plan's VG-001 kill
-// criterion -- "the bridge can stream events cleanly from a real LangGraph
+// TestVG001_ReactAgentToolCalls re-validates the VG-001 kill criterion --
+// "the bridge can stream events cleanly from a real LangGraph
 // graph without patching LangGraph internals" -- against the real
 // production stack: real Postgres, real Redis, the actual `runkite` binary,
 // and the actual Python runner, not the in-process spike harness this was

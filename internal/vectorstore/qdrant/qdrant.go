@@ -1,6 +1,5 @@
 // Package qdrant implements vectorstore.VectorStore using Qdrant's REST
-// API (master plan: "Vector/semantic store -- pgvector/Qdrant/Weaviate/
-// Pinecone in production"; the project's non-SQL exemplar for vector
+// API -- the project's non-SQL exemplar for vector
 // backends, same role Mongo plays for state.Store -- proof the
 // vectorstore.VectorStore interface is implementable against a real
 // standalone vector database, not just pgvector's SQL extension).

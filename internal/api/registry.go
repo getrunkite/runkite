@@ -1,7 +1,6 @@
-// Package api: Agent marketplace / registry (master plan: "publish,
-// discover, and deploy agent definitions"). "Minimal viable registry"
-// scope, chosen deliberately over the master plan's full "own product"
-// framing: a metadata catalog with publish/search/get/version-history,
+// Package api: Agent marketplace / registry -- publish, discover, and
+// deploy agent definitions. Deliberately scoped to a "minimal viable
+// registry": a metadata catalog with publish/search/get/version-history,
 // no security review workflow, and no automatic clone-and-execute
 // deploy pipeline. A RegistryEntry's source_ref (a git URL, a plain
 // URL, or an inline langgraph.json snippet) is where a human -- or

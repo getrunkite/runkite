@@ -161,8 +161,8 @@ func runEmptyListTests(t *testing.T, factory StoreFactory) {
 }
 
 // --------------------------------------------------------------------------
-// Multi-tenancy isolation (master plan: "Multi-tenancy: workspace/org/team
-// hierarchy with isolated data")
+// Multi-tenancy isolation -- a flat tenant_id scope with isolated data,
+// not a full workspace/org/team hierarchy
 // --------------------------------------------------------------------------
 
 func runTenantIsolationTests(t *testing.T, factory StoreFactory) {
@@ -590,7 +590,7 @@ func runAgentTests(t *testing.T, factory StoreFactory) {
 }
 
 // --------------------------------------------------------------------------
-// Registry (master plan: "Agent marketplace / registry")
+// Registry: agent marketplace / registry
 // --------------------------------------------------------------------------
 
 func runRegistryTests(t *testing.T, factory StoreFactory) {
@@ -1271,8 +1271,8 @@ func runRunTests(t *testing.T, factory StoreFactory) {
 
 		// Round-trip via SearchRuns too -- a real gap found before: some
 		// backends' list-query column sets have drifted from their
-		// single-row-get counterparts (see master plan's "SearchRuns's
-		// SELECT once omitted tenant_id" regression note).
+		// single-row-get counterparts (a regression once let SearchRuns's
+		// SELECT omit tenant_id).
 		results, err := s.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: "t-a2a", Limit: 10})
 		if err != nil {
 			t.Fatalf("SearchRuns: %v", err)
@@ -2298,8 +2298,8 @@ func runCascadeTests(t *testing.T, factory StoreFactory) {
 }
 
 // --------------------------------------------------------------------------
-// Retention (master plan gap: no automatic cleanup existed -- runs and
-// checkpoints grew unbounded until an explicit DELETE /threads/{id})
+// Retention -- before this, no automatic cleanup existed: runs and
+// checkpoints grew unbounded until an explicit DELETE /threads/{id}
 // --------------------------------------------------------------------------
 
 func runRetentionTests(t *testing.T, factory StoreFactory) {

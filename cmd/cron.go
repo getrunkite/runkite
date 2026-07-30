@@ -131,8 +131,8 @@ const cronTickInterval = 15 * time.Second
 // schedule whose next fire time has arrived, atomically claims it
 // (state.Store.TryClaimCronFire) before dispatching -- with multiple
 // control-plane replicas against the same database, exactly one dispatches
-// each fire, not N ("Postgres claim window" in the master plan). Runs
-// until ctx is cancelled.
+// each fire, not N (the "Postgres claim window"). Runs until ctx is
+// cancelled.
 func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Server) {
 	ticker := time.NewTicker(cronTickInterval)
 	defer ticker.Stop()

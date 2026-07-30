@@ -1,6 +1,6 @@
 // Package vectorstore defines the VectorStore interface for semantic
-// search over embeddings (master plan: "Vector/semantic store -- None
-// (disabled) by default, pgvector/Qdrant/Weaviate/Pinecone in production").
+// search over embeddings -- None (disabled) by default,
+// pgvector/Qdrant/Weaviate/Pinecone in production.
 // Disabled by default, same convention as every other opt-in platform
 // feature (llm_cache, rate_limit, webhooks, cron) -- enabled explicitly via
 // langgraph.json's vector_store block, never implicitly just because

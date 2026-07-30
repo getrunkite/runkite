@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// TestVG002_CancelMidExecution re-validates the master plan's VG-002 kill
-// criterion -- cancel mid-execution actually stops the runner and the
+// TestVG002_CancelMidExecution re-validates the VG-002 kill criterion --
+// cancel mid-execution actually stops the runner and the
 // thread doesn't get stuck -- against the real production stack. slow_agent
 // is 3 sequential 2s steps (~6s total); cancelling at ~2s should land
 // during/after step 1, well before natural completion.

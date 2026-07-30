@@ -1,5 +1,5 @@
-"""Agent-to-Agent (A2A) delegation client (master plan: "Agent-to-agent
-(A2A): agent calls agent via the same Agent Protocol API").
+"""Agent-to-Agent (A2A) delegation client: agent calls agent via the same
+Agent Protocol API.
 
 `call_agent` is what a running agent's own node code calls to invoke
 another agent as a sub-task -- it POSTs to the control plane's

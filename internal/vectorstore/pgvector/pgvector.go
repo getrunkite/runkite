@@ -1,6 +1,6 @@
 // Package pgvector implements vectorstore.VectorStore using PostgreSQL's
-// pgvector extension (master plan: "pgvector semantic store", Tier 1 --
-// stable). A dedicated pool/package rather than folding into
+// pgvector extension -- the vector/semantic store's Tier 1, stable
+// backend. A dedicated pool/package rather than folding into
 // internal/state/postgres: the vector extension and its own table are an
 // entirely separate concern from control-plane metadata, opt-in
 // (vector_store must be explicitly configured), and this keeps an existing

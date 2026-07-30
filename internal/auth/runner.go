@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// RunnerTokens implements the master plan's "two-tier" runner authentication:
+// RunnerTokens implements two-tier runner authentication:
 // local mode (no tokens configured -- runner trusted implicitly, zero setup)
 // and production mode (one shared token per runner_kind, so a leaked token
 // cannot impersonate a different runner type). This is a distinct trust

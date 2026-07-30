@@ -185,8 +185,8 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	-- exclusion constraint matching the ON CONFLICT specification".
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_agents_tenant_agent ON agents(tenant_id, agent_id);
 
-	-- Full agent versioning (master plan: "version history browsing,
-	-- rollback to arbitrary past versions") -- one immutable row per
+	-- Full agent versioning, supporting version history browsing and
+	-- rollback to arbitrary past versions -- one immutable row per
 	-- version ever served, written by UpsertAgent itself the moment
 	-- agents.version bumps. Never updated or deleted afterward -- see
 	-- models.AgentVersion's doc comment for why rollback doesn't touch
@@ -216,8 +216,8 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	ALTER TABLE agent_schemas ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_schemas_tenant_agent ON agent_schemas(tenant_id, agent_id);
 
-	-- Agent marketplace / registry (master plan: "publish, discover,
-	-- and deploy agent definitions") -- a metadata catalog, same
+	-- Agent marketplace / registry for publishing, discovering, and
+	-- deploying agent definitions -- a metadata catalog, same
 	-- increment-on-change version pattern as agents/agent_versions
 	-- above, deliberately not storing or executing code.
 	CREATE TABLE IF NOT EXISTS registry_entries (
@@ -372,7 +372,7 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	-- Postgres is the deployment where "multi-instance-safe claiming"
 	-- actually matters (multiple control-plane replicas, same DB) -- this
 	-- table plus TryClaimCronFire's INSERT ... ON CONFLICT DO NOTHING is
-	-- the "Postgres claim window" the master plan calls out by name.
+	-- the "Postgres claim window" referenced by other backends' comments.
 	CREATE TABLE IF NOT EXISTS cron_claims (
 		tenant_id     TEXT NOT NULL DEFAULT 'default',
 		schedule_name TEXT NOT NULL,
@@ -584,7 +584,7 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 }
 
 // --------------------------------------------------------------------------
-// Registry (master plan: "Agent marketplace / registry")
+// Registry: agent marketplace / registry
 // --------------------------------------------------------------------------
 
 // PublishRegistryEntry follows the exact same transaction + RETURNING +

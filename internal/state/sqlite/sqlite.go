@@ -114,8 +114,8 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 		PRIMARY KEY (tenant_id, agent_id)
 	);
 
-	-- Full agent versioning (master plan: "version history browsing,
-	-- rollback to arbitrary past versions") -- one immutable row per
+	-- Full agent versioning, supporting version history browsing and
+	-- rollback to arbitrary past versions -- one immutable row per
 	-- version ever served. Never updated or deleted afterward.
 	CREATE TABLE IF NOT EXISTS agent_versions (
 		tenant_id    TEXT NOT NULL DEFAULT 'default',
@@ -140,8 +140,8 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 		FOREIGN KEY (tenant_id, agent_id) REFERENCES agents(tenant_id, agent_id) ON DELETE CASCADE
 	);
 
-	-- Agent marketplace / registry (master plan: "publish, discover,
-	-- and deploy agent definitions") -- a metadata catalog, same
+	-- Agent marketplace / registry for publishing, discovering, and
+	-- deploying agent definitions -- a metadata catalog, same
 	-- increment-on-change version pattern as agents/agent_versions
 	-- above, deliberately not storing or executing code.
 	CREATE TABLE IF NOT EXISTS registry_entries (
@@ -544,7 +544,7 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 }
 
 // --------------------------------------------------------------------------
-// Registry (master plan: "Agent marketplace / registry")
+// Registry: agent marketplace / registry
 // --------------------------------------------------------------------------
 
 func (s *SQLiteStore) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {

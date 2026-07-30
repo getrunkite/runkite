@@ -1,6 +1,6 @@
-# Standalone TypeScript runner demo (master plan: Runner Protocol is
+# Standalone TypeScript runner demo. The Runner Protocol is
 # language-agnostic -- this proves the TS runner works in Docker, not
-# just via `npx tsx` locally). Fully self-contained: SQLite + in-memory
+# just via `npx tsx` locally. Fully self-contained: SQLite + in-memory
 # transport (both zero-config defaults, see cmd/serve.go's initStore/
 # initTransport), so this needs no postgres/redis. Separate from
 # docker-compose.yml (the Python-focused stack) and on different ports

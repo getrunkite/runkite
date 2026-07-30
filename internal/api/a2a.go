@@ -1,8 +1,7 @@
-// Package api: Agent-to-Agent (A2A) delegation (master plan:
-// "Agent-to-agent (A2A): agent calls agent via the same Agent Protocol
-// API -- native sub-agent delegation. Requires real semantics for auth
-// context propagation between agents, recursion limits, and cost
-// attribution.")
+// Package api: Agent-to-Agent (A2A) delegation -- native sub-agent
+// delegation where an agent calls another agent via the same Agent
+// Protocol API, with real semantics for auth context propagation between
+// agents, recursion limits, and cost attribution.
 //
 // The mechanism is deliberately NOT a new client-facing endpoint --
 // it's the exact same POST /threads/{id}/runs + wait-for-result path
@@ -142,8 +141,8 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // --------------------------------------------------------------------------
-// Cost aggregation (master plan follow-up: "cost attribution via
-// root_run_id" -- a rollup on top of it, not just the raw field).
+// Cost aggregation -- cost attribution via root_run_id, a rollup on top
+// of it, not just the raw field.
 // --------------------------------------------------------------------------
 
 // RunUsage is LLM token/cost usage for one run. Every field is best-

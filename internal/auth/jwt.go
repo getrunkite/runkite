@@ -15,7 +15,7 @@ type JWTConfig struct {
 	Issuer   string `json:"issuer,omitempty"`
 	Audience string `json:"audience,omitempty"`
 	// TenantClaim is the JWT claim name to read the caller's tenant ID
-	// from (master plan: "Multi-tenancy"). Defaults to "tenant_id" if
+	// from, for multi-tenancy. Defaults to "tenant_id" if
 	// unset. A token missing this claim resolves to tenant.DefaultTenant,
 	// not an auth error -- multi-tenancy is opt-in per deployment.
 	TenantClaim string `json:"tenant_claim,omitempty"`

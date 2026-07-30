@@ -1,9 +1,9 @@
 // Package mysql will implement the state.Store interface using MySQL --
-// the second SQL exemplar alongside Postgres/SQLite (master plan:
-// "MySQL stays 'future SQL twin if someone needs it'"), same
-// conformance suite (internal/state/conformance) as every other
-// backend. Built in checkpoints: schema (New/Init/Close) plus Agents
-// CRUD so far; remaining Store methods land before conformance wiring.
+// the second SQL exemplar alongside Postgres/SQLite, kept as a future
+// SQL twin for anyone who needs it, using the same conformance suite
+// (internal/state/conformance) as every other backend. Built in
+// checkpoints: schema (New/Init/Close) plus Agents CRUD so far;
+// remaining Store methods land before conformance wiring.
 //
 // A fresh backend (no pre-multi-tenancy/pre-versioning legacy schema
 // to migrate the way Postgres/SQLite's Init() carries forward), so the
@@ -330,13 +330,12 @@ func (s *Store) Init(ctx context.Context) error {
 			PRIMARY KEY (tenant_id, name)
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
 
-		// Multi-instance-safe claiming (master plan: "cron-expression
-		// scheduling with multi-instance-safe claiming (Postgres claim
-		// window)") -- this table plus TryClaimCronFire's INSERT ...
+		// Multi-instance-safe claiming for cron-expression scheduling --
+		// this table plus TryClaimCronFire's INSERT ...
 		// ON DUPLICATE KEY UPDATE (a no-op update, since the row
 		// existing at all is the signal another instance already
-		// claimed this fire) is the MySQL equivalent of that claim
-		// window.
+		// claimed this fire) is the MySQL equivalent of Postgres's
+		// claim window.
 		`CREATE TABLE IF NOT EXISTS cron_claims (
 			tenant_id     VARCHAR(255) NOT NULL DEFAULT 'default',
 			schedule_name VARCHAR(255) NOT NULL,

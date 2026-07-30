@@ -1,7 +1,7 @@
 /**
- * Checkpoint dual mode (master plan: "Checkpoint Dual Mode"). Direct
- * mirror of the Python runner's checkpoint.py -- see that file's
- * docstring for the full rationale, repeated briefly here:
+ * Checkpoint dual mode. Direct mirror of the Python runner's
+ * checkpoint.py -- see that file's docstring for the full rationale,
+ * repeated briefly here:
  *
  * Direct mode (POSTGRES_DSN set): PostgresSaver from
  * @langchain/langgraph-checkpoint-postgres, LangGraph.js's own native

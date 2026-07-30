@@ -82,9 +82,9 @@ async def run_cancellable(coro, cancel_event: asyncio.Event | None):
 
 
 class FrameworkAdapter(Protocol):
-    """What generic_worker needs from a framework-specific adapter --
-    the whole "adapter shim" the master plan describes: translate
-    between the framework's own execution API and RunAssignment/RunEvent."""
+    """What generic_worker needs from a framework-specific adapter -- an
+    adapter shim that translates between the framework's own execution API
+    and RunAssignment/RunEvent."""
 
     async def load_config(self, config_path: str) -> None:
         """Load agent definitions from langgraph.json (or equivalent)."""

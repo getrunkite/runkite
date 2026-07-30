@@ -24,9 +24,9 @@ type Store interface {
 	GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error)
 	UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error
 	// ListAgentVersions returns every historical snapshot for agentID,
-	// newest first (master plan: "Full agent versioning: version
-	// history browsing"). Written by UpsertAgent itself, once per
-	// actual version bump -- see models.AgentVersion's doc comment.
+	// newest first, supporting full version history browsing. Written
+	// by UpsertAgent itself, once per actual version bump -- see
+	// models.AgentVersion's doc comment.
 	ListAgentVersions(ctx context.Context, agentID string) ([]*models.AgentVersion, error)
 	// GetAgentVersion returns one specific historical snapshot, or
 	// ErrNotFound if that version never existed for this agent.
@@ -156,8 +156,8 @@ type Store interface {
 	// tenant-scoping rule as PruneRuns.
 	PruneExpiredStoreItems(ctx context.Context) (int64, error)
 
-	// --- Registry (master plan: "Agent marketplace / registry: publish,
-	// discover, and deploy agent definitions") ---
+	// --- Registry: an agent marketplace for publishing, discovering,
+	// and deploying agent definitions ---
 	// PublishRegistryEntry creates a new entry or republishes an
 	// existing one, same increment-on-actual-change version semantics
 	// as UpsertAgent (see models.RegistryEntry's doc comment).

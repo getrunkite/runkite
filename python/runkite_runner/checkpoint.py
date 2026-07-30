@@ -1,4 +1,4 @@
-"""Checkpoint dual mode (master plan: "Checkpoint Dual Mode").
+"""Checkpoint dual mode.
 
 Direct mode (default when POSTGRES_DSN is set -- production, shared DB with
 the control plane): the runner holds its own connection and writes
@@ -75,8 +75,7 @@ class CheckpointerManager:
     every loaded graph (overriding whatever checkpointer, if any, the
     graph module itself compiled with) -- so checkpoint mode is a runner
     concern, not something agent authors need to configure in their own
-    graph.py. This matches the master plan's "zero changes to graph code"
-    principle.
+    graph.py. Agent authors get this for free: zero changes to graph code.
     """
 
     def __init__(self):

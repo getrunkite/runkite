@@ -7,8 +7,8 @@ import (
 )
 
 // TestLoadLangGraphJSON_CustomRoutes proves the "custom_routes" section
-// parses (master plan: "Custom routes" -- in-runner and sidecar modes are
-// both just a URL from the control plane's perspective).
+// parses -- in-runner and sidecar modes are both just a URL from the
+// control plane's perspective.
 func TestLoadLangGraphJSON_CustomRoutes(t *testing.T) {
 	dir := t.TempDir()
 	content := `{

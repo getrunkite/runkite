@@ -1,4 +1,4 @@
-// Package hooks implements the master plan's "Event hooks" platform
+// Package hooks implements the "Event hooks" platform
 // extension (on_run_start, on_run_complete, on_tool_call, on_error,
 // on_interrupt), extensible via config (the webhook sink this package
 // ships) or via code (any type implementing Sink, registered directly with

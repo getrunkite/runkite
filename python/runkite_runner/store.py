@@ -7,10 +7,9 @@ control plane's unified key-value store instead of checkpoints:
   `store_items` table straight over psycopg -- same schema, same \\x1F
   namespace encoding as internal/state/postgres/postgres.go. Zero HTTP hop.
   Always operates in the "default" tenant (see _TENANT_ID below) -- this
-  bypasses the control plane's tenant-scoping entirely, exactly the
-  documented trade-off in the master plan's Direct Mode Trust Model
-  section ("direct mode bypasses control-plane authz on checkpoint/store
-  bytes" in multi-tenant deployments). Proxy mode is the recommended
+  bypasses the control plane's tenant-scoping entirely, a known trust-model
+  trade-off: direct mode bypasses control-plane authz on checkpoint/store
+  bytes in multi-tenant deployments. Proxy mode is the recommended
   mitigation for real per-tenant isolation.
 - proxy mode (no POSTGRES_DSN): calls the control plane's /store/* HTTP
   API over httpx. Works against any backend (SQLite, Postgres).

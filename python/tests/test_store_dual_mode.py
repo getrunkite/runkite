@@ -1,6 +1,6 @@
 """Self-check for Store Dual Mode (store.py).
 
-Proves the two acceptance properties the master plan cares about:
+Proves the two acceptance properties that matter for a dual-mode store:
 1. Namespace encoding matches the Go control plane's \\x1F-delimited scheme
    exactly (round-trip + prefix pattern), so direct-mode rows are never
    corrupted or misread relative to what proxy-mode/Go writes.

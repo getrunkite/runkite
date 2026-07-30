@@ -563,7 +563,7 @@ RUNNER_TOKEN_typescript_langgraphjs=<secret>
 - In local mode, the control plane accepts all internal API requests without authentication.
 - In production mode, a runner with `runner_kind=python-langgraph` can only authenticate with the token for `python_langgraph`. A leaked token cannot impersonate a different `runner_kind`.
 - Queue channels/subjects are scoped per `runner_kind`. A runner only sees jobs for its own `runner_kind`.
-- Token rotation is NOT supported in v0. For environments requiring rotation, use an external secrets manager and restart runners. See master plan for details.
+- Token rotation is NOT supported in v0. For environments requiring rotation, use an external secrets manager and restart runners.
 
 ---
 

@@ -75,7 +75,7 @@ func TestLoadRunnerTokensFromEnv_MultipleKinds(t *testing.T) {
 		t.Fatal("typescript token should validate")
 	}
 	// Cross-kind token reuse must fail -- a leaked token for one kind
-	// must not impersonate a different runner_kind (master plan requirement).
+	// must not impersonate a different runner_kind.
 	if rt.Validate("python-langgraph", "tok-ts") {
 		t.Fatal("ts token must not authenticate as python runner")
 	}

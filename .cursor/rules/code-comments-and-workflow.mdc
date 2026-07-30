@@ -18,10 +18,23 @@ context, and `plans/` is gitignored anyway (not visible to them at all).
 Every comment must be self-contained: explain the *why* directly, as if the
 reader has never seen any planning doc, review thread, or issue tracker. If you
 catch yourself typing "item ", "Problem ", "TR-0", "IR-0", "REL-0", "SEC-0",
-"DEP-0", "FUN-0", "API-0", or "CH-0" inside a code comment, stop and rewrite it
-generically. This applies to source comments in Go/Python/TypeScript/Lua and to
-test names/docstrings -- internal doc structure can change; the code comment
-must still make sense on its own five years from now.
+"DEP-0", "FUN-0", "API-0", "CH-0", or "master plan" inside a code comment, stop
+and rewrite it generically. "(master plan: "...")" is the same class of
+violation as "item 16" -- it's a citation to an internal planning doc
+(`plans/master_plan.md`, gitignored, never pushed) that a GitHub reader has no
+access to, even though the quoted text after it is often genuinely useful
+context. Keep that context, drop the citation: fold the quoted description
+directly into the sentence instead of framing it as a reference to something
+external.
+
+- Bad: `// Package tenant implements multi-tenancy (master plan: "workspace/org/team
+  // hierarchy with isolated data") as a flat tenant_id scope...`
+- Good: `// Package tenant implements multi-tenancy -- a flat tenant_id scope
+  // (not a full workspace/org/team hierarchy) threaded through...`
+
+This applies to source comments in Go/Python/TypeScript/Lua and to test
+names/docstrings -- internal doc structure can change; the code comment must
+still make sense on its own five years from now.
 
 # Never push without explicit approval
 

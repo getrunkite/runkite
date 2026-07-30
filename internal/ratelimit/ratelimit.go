@@ -1,5 +1,5 @@
-// Package ratelimit implements the master plan's "Rate limiting: per-user,
-// per-agent, per-tenant, configurable via config" platform extension.
+// Package ratelimit implements a "Rate limiting: per-user, per-agent,
+// per-tenant, configurable via config" platform extension.
 //
 // Token-bucket limiting via golang.org/x/time/rate (already a transitive
 // dependency of this project via grpc -- no new dependency needed). Disabled

@@ -1,6 +1,5 @@
-// Package api: Admin API (master plan: "Admin API + UI -- web dashboard
-// for managing agents, viewing runs/threads, debugging, connector status,
-// metrics, user management").
+// Package api: Admin API -- a web dashboard for managing agents, viewing
+// runs/threads, debugging, connector status, metrics, and user management.
 //
 // Scope, stated plainly: this covers the OPERATIONAL half of that list --
 // agents, threads, runs (with live debugging via the same SSE stream
@@ -174,7 +173,7 @@ func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 // --------------------------------------------------------------------------
-// Registry (tenant_id visible) -- master plan: "Agent marketplace / registry"
+// Registry (tenant_id visible) -- the agent marketplace / registry
 // --------------------------------------------------------------------------
 
 type adminRegistryEntryView struct {

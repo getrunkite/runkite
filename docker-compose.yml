@@ -86,8 +86,8 @@ services:
       RUNKITE_GRPC_URL: runkite:50051
       RUNKITE_HTTP_URL: http://runkite:2026
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env -- see .env.example}
-      # Same DATABASE_URL as the control plane (master plan: checkpoint
-      # direct mode). The runner writes checkpoints straight to Postgres
+      # Same DATABASE_URL as the control plane -- enables checkpoint
+      # direct mode. The runner writes checkpoints straight to Postgres
       # with its own AsyncPostgresSaver tables, so thread state survives
       # runner restarts. Without this, the runner falls back to an
       # in-memory checkpointer (explicitly ephemeral, dev-only).

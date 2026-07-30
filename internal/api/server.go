@@ -118,19 +118,18 @@ func (s *Server) SetHookDispatcher(d *hooks.Dispatcher) {
 	s.hooks = d
 }
 
-// SetCustomRoutesProxy attaches a reverse proxy to be mounted at /custom/*
-// (master plan: "Custom routes"). Called after NewServer when
+// SetCustomRoutesProxy attaches a reverse proxy to be mounted at /custom/*,
+// the platform's user-defined-routes feature. Called after NewServer when
 // custom_routes is configured; nil (the default) means /custom/* 404s.
 func (s *Server) SetCustomRoutesProxy(proxy http.Handler) {
 	s.customProxy = proxy
 }
 
-// SetVectorStore attaches a vector store (master plan: "Vector/semantic
-// store"). Called after NewServer when vector_store is configured; a nil
-// vectors field (the default) means /vectors/* responds 501 Not
-// Implemented instead of silently 404ing -- "this feature isn't turned
-// on" is a different, more actionable signal than "this route doesn't
-// exist".
+// SetVectorStore attaches a vector/semantic store. Called after NewServer
+// when vector_store is configured; a nil vectors field (the default) means
+// /vectors/* responds 501 Not Implemented instead of silently 404ing --
+// "this feature isn't turned on" is a different, more actionable signal
+// than "this route doesn't exist".
 func (s *Server) SetVectorStore(vs vectorstore.VectorStore) {
 	s.vectors = vs
 }
@@ -164,13 +163,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /agents/search", s.handleSearchAgents)
 	mux.HandleFunc("GET /agents/{agentID}", s.handleGetAgent)
 	mux.HandleFunc("GET /agents/{agentID}/schemas", s.handleGetAgentSchemas)
-	// Full agent versioning (master plan: "version history browsing,
-	// rollback to arbitrary past versions").
+	// Full agent versioning: version history browsing and rollback to
+	// arbitrary past versions.
 	mux.HandleFunc("GET /agents/{agentID}/versions", s.handleListAgentVersions)
 	mux.HandleFunc("POST /agents/{agentID}/versions/{version}/rollback", s.handleRollbackAgent)
 
-	// Agent marketplace / registry (master plan: "publish, discover,
-	// and deploy agent definitions") -- see registry.go's package doc.
+	// Agent marketplace / registry -- publish, discover, and deploy agent
+	// definitions; see registry.go's package doc.
 	mux.HandleFunc("PUT /registry/entries/{name}", s.handlePublishRegistryEntry)
 	mux.HandleFunc("GET /registry/entries/{name}", s.handleGetRegistryEntry)
 	mux.HandleFunc("DELETE /registry/entries/{name}", s.handleDeleteRegistryEntry)
@@ -228,8 +227,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /store/items/search", s.handleSearchItems)
 	mux.HandleFunc("POST /store/namespaces", s.handleListNamespaces)
 
-	// Vector Store (master plan: "Vector/semantic store") -- client-facing,
-	// client auth (API key/JWT). 501s if vector_store isn't configured.
+	// Vector Store (semantic search) -- client-facing, client auth (API
+	// key/JWT). 501s if vector_store isn't configured.
 	mux.HandleFunc("PUT /vectors/items", s.handleUpsertVectorItem)
 	mux.HandleFunc("DELETE /vectors/items", s.handleDeleteVectorItem)
 	mux.HandleFunc("POST /vectors/search", s.handleSearchVectors)
@@ -249,11 +248,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /internal/connectors/{name}/mcp", s.handleProxyMCPRequest)
 	mux.HandleFunc("GET /internal/cron", s.handleListCronSchedules)
 
-	// Store, proxy mode (master plan: "Unified Store, Dual Mode") -- same
-	// handlers as the client-facing /store/* routes above, mounted again
-	// under /internal/ so non-Python (or POSTGRES_DSN-less) runners can
-	// reach the store using their runner token instead of a client
-	// credential they may not have.
+	// Store, proxy mode -- same handlers as the client-facing /store/*
+	// routes above, mounted again under /internal/ so non-Python (or
+	// POSTGRES_DSN-less) runners can reach the store using their runner
+	// token instead of a client credential they may not have.
 	mux.HandleFunc("PUT /internal/store/items", s.handlePutItem)
 	mux.HandleFunc("GET /internal/store/items", s.handleGetItem)
 	mux.HandleFunc("DELETE /internal/store/items", s.handleDeleteItem)
@@ -277,18 +275,18 @@ func (s *Server) Handler() http.Handler {
 	// comment for the full design.
 	mux.HandleFunc("POST /internal/a2a/runs", s.handleA2ACreateRun)
 
-	// MCP-server support (master plan competitive-parity gap: exposing
-	// Runkite's own agents AS MCP tools, the reverse of the Connectors
-	// feature's MCP-client direction) -- see mcpserver.go's own package
-	// doc comment. Client-facing (normal API key/JWT auth applies, not
-	// the runner-token /internal/* auth), and mounted without a method
-	// prefix since the Streamable HTTP transport uses POST for RPCs, GET
-	// for its optional SSE stream, and DELETE to close a session.
+	// MCP-server support -- exposes Runkite's own agents AS MCP tools, the
+	// reverse of the Connectors feature's MCP-client direction; see
+	// mcpserver.go's own package doc comment. Client-facing (normal API
+	// key/JWT auth applies, not the runner-token /internal/* auth), and
+	// mounted without a method prefix since the Streamable HTTP transport
+	// uses POST for RPCs, GET for its optional SSE stream, and DELETE to
+	// close a session.
 	mux.Handle("/mcp", s.mcpHTTPHandler())
 
-	// Admin API (master plan: "Admin API + UI"). Gated on "admin"
-	// permission specifically, enforced in auth.Middleware for the whole
-	// /admin-api/ prefix -- see this file's package doc comment for scope.
+	// Admin API. Gated on "admin" permission specifically, enforced in
+	// auth.Middleware for the whole /admin-api/ prefix -- see this file's
+	// package doc comment for scope.
 	mux.HandleFunc("GET /admin-api/overview", s.handleAdminOverview)
 	mux.HandleFunc("GET /admin-api/agents", s.handleAdminListAgents)
 	mux.HandleFunc("GET /admin-api/agents/{agentID}", s.handleAdminGetAgent)
@@ -305,7 +303,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/connectors/{name}", withSystemContext(s.handleGetConnector))
 	mux.HandleFunc("GET /admin-api/cron", withSystemContext(s.handleListCronSchedules))
 	mux.HandleFunc("GET /admin-api/webhooks/dead-letters", withSystemContext(s.handleListWebhookDeadLetters))
-	// Write actions (master plan gap: "Admin UI has no write actions" --
+	// Write actions -- the admin UI otherwise has none of its own;
 	// cancel/delete reuse the exact client-facing handlers, scoped to every
 	// tenant the same way every other /admin-api/* route already is;
 	// redeliver is genuinely new (client-facing API has no equivalent).
@@ -319,8 +317,8 @@ func (s *Server) Handler() http.Handler {
 	// is what actually gates access, via /admin-api/* requiring "admin".
 	mux.Handle("GET /admin/", http.StripPrefix("/admin", adminui.Handler()))
 
-	// Custom routes (master plan: "Custom routes") -- user-defined HTTP
-	// endpoints mounted alongside the Agent Protocol API. In-runner mode
+	// Custom routes -- user-defined HTTP endpoints mounted alongside the
+	// Agent Protocol API. In-runner mode
 	// (the Python runner SDK hosts the user's ASGI app) and sidecar mode
 	// (a separately-run, language-agnostic process) are the exact same
 	// mechanism from here: a reverse proxy to a configured URL. Mounted
@@ -536,9 +534,10 @@ func (s *Server) finishRun(runID, threadID, agentID string, status models.RunSta
 }
 
 // maybeCacheRunResult saves a run's final values to the LLM response cache
-// (master plan: "configurable TTL, cache key derivation from input hash"),
-// if and only if createRun stashed a cache key in the run's metadata (set
-// only when the agent has caching configured -- see createRun). Uses that
+// -- a configurable per-agent TTL with the cache key derived from a hash of
+// the input -- if and only if createRun stashed a cache key in the run's
+// metadata (set only when the agent has caching configured -- see
+// createRun). Uses that
 // stored key verbatim rather than recomputing it from run.Input/run.Config:
 // those come back from the DB post-JSONB-round-trip (Postgres reformats
 // JSON on write), which would silently produce a different hash than the

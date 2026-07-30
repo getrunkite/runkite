@@ -1,6 +1,6 @@
-// Package tracing wires the control plane into OpenTelemetry, giving the
-// master plan's "OTel observability fan-out (Langfuse, Phoenix, Jaeger,
-// Datadog, any OTLP backend)" for free: this package contains almost no
+// Package tracing wires the control plane into OpenTelemetry, giving an
+// OTel observability fan-out (Langfuse, Phoenix, Jaeger, Datadog, any
+// OTLP backend) for free: this package contains almost no
 // custom exporter logic because otlptracegrpc/otlptracehttp already read
 // every standard OTEL_EXPORTER_OTLP_* env var (endpoint, headers for hosted
 // backends' auth tokens, TLS, compression, timeout) per the OTel spec. Any

@@ -1,5 +1,5 @@
-"""Agent-to-Agent (A2A) delegation example (master plan: "Agent-to-agent
-(A2A): agent calls agent via the same Agent Protocol API").
+"""Agent-to-Agent (A2A) delegation example: agent calls agent via the same
+Agent Protocol API.
 
 Two graphs:
 - worker_agent: a plain, deterministic "sub-task" agent (no LLM needed --

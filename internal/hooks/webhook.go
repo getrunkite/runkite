@@ -17,8 +17,8 @@ import (
 	"github.com/sharanharsoor/runkite/internal/models"
 )
 
-// DeadLetterStore persists deliveries that failed every retry attempt
-// (master plan: "Webhook delivery ... with retry and dead-letter"). Satisfied
+// DeadLetterStore persists deliveries that failed every retry attempt,
+// as part of webhook delivery's retry-and-dead-letter handling. Satisfied
 // by state.Store.
 type DeadLetterStore interface {
 	SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error

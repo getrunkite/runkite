@@ -1,9 +1,9 @@
 // Package cors implements CORS header handling for the Agent Protocol
-// HTTP surface (master plan gap: a browser-based frontend on a different
+// HTTP surface: a browser-based frontend on a different
 // origin -- the common case, e.g. a Vite/React dev server on its own
 // port -- cannot reach the control plane at all without this; the
 // browser blocks the request client-side before it ever reaches
-// application logic, which looks nothing like an auth or network error).
+// application logic, which looks nothing like an auth or network error.
 // Opt-in via langgraph.json's "cors" section, same convention as every
 // other platform extension -- disabled (zero overhead, no headers added)
 // unless configured, correct default for server-to-server or

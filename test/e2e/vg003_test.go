@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// TestVG003_HITLInterruptResume re-validates the master plan's VG-003 kill
-// criterion -- interrupt() -> human approval -> Command(resume=...) works
+// TestVG003_HITLInterruptResume re-validates the VG-003 kill criterion --
+// interrupt() -> human approval -> Command(resume=...) works
 // end to end -- against the real production stack (real Postgres for
 // thread/run metadata and checkpoints, real Redis for the event broker,
 // real gRPC bridge). The runner is started with POSTGRES_DSN set, so it

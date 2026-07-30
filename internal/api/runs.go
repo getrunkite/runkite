@@ -134,8 +134,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		req.AgentID = req.AssistantID
 	}
 
-	// A/B deployment routing (master plan: "Full agent versioning...
-	// A/B deployment routing", see alias.go). Resolved BEFORE rate
+	// A/B deployment routing (see alias.go). Resolved BEFORE rate
 	// limiting/agent lookup so everything downstream -- per-agent rate
 	// limits, runner_kind lookup, the actual dispatched assignment --
 	// consistently sees the REAL target agent, not the alias name (a
@@ -170,11 +169,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// recurs.
 	}
 
-	// Per-agent rate limiting (master plan: "Rate limiting: per-user,
-	// per-agent, per-tenant"). Enforced here rather than in generic HTTP
-	// middleware because agent_id is parsed from the request body, not the
-	// URL -- this is the single choke point every run-creation path (REST,
-	// WebSocket, streaming commands) already goes through, so there's
+	// Per-agent rate limiting -- one dimension of the broader per-user,
+	// per-agent, per-tenant limiting scheme. Enforced here rather than in
+	// generic HTTP middleware because agent_id is parsed from the request
+	// body, not the URL -- this is the single choke point every
+	// run-creation path (REST, WebSocket, streaming commands) already goes through, so there's
 	// nowhere for a caller to bypass it. Global/per-user dimensions are a
 	// separate, cheaper HTTP middleware layer (ratelimit.Middleware) that
 	// doesn't need body access.
@@ -220,10 +219,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		}
 	}
 
-	// LLM response caching (master plan: "configurable TTL, cache key
-	// derivation from input hash"). A resume is inherently continuing a
-	// specific prior execution, never a fresh cacheable computation, so
-	// it's excluded regardless of the agent's cache config. A hit
+	// LLM response caching, with a configurable per-agent TTL and a cache
+	// key derived from a hash of the input. A resume is inherently
+	// continuing a specific prior execution, never a fresh cacheable
+	// computation, so it's excluded regardless of the agent's cache config. A hit
 	// short-circuits entirely: no thread claim, no RunAssignment, no
 	// runner dispatch -- callers (all 8 call sites) check for a nil
 	// assignment and skip enqueue. Placed after thread creation above --
@@ -377,7 +376,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "created").Inc()
 	metrics.ActiveRuns.Inc()
 
-	// OTel run span (master plan: "OTel observability fan-out"). No-op with
+	// OTel run span, part of the OTel observability fan-out. No-op with
 	// zero overhead unless OTEL_EXPORTER_OTLP_ENDPOINT is set (see
 	// internal/tracing). Kept open in s.runSpans until StatusCallback closes
 	// it on terminal status -- a run's lifetime spans this request and an
@@ -483,7 +482,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		}
 	}
 
-	// Event hooks (master plan: on_run_start). Fired here rather than after
+	// Event hooks (on_run_start). Fired here rather than after
 	// the caller's separate enqueue call so every one of createRun's 8 call
 	// sites (REST, WebSocket, streaming commands) gets it automatically
 	// instead of needing to remember to fire it themselves; the tradeoff is
@@ -1524,9 +1523,9 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, 
 		return nil, err
 	}
 
-	// A2A cancel cascade (master plan follow-up: cancelling a run must
-	// also cancel anything it delegated to, directly or transitively --
-	// otherwise a cancelled parent leaves orphaned child runs still
+	// A2A cancel cascade: cancelling a run must also cancel anything it
+	// delegated to, directly or transitively -- otherwise a cancelled
+	// parent leaves orphaned child runs still
 	// executing with no way for the caller to have stopped them). Best-
 	// effort: a lookup/cancel failure here must never fail the parent's
 	// own cancel, which already succeeded above.

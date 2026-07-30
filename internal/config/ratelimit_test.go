@@ -7,8 +7,8 @@ import (
 )
 
 // TestLoadLangGraphJSON_RateLimit proves the "rate_limit" section parses
-// into RateLimitEntry, matching the master plan's "per-user, per-agent,
-// per-tenant, configurable via config" -- including that per_tenant parses
+// into RateLimitEntry, covering per-user, per-agent, and per-tenant limits
+// configurable via config -- including that per_tenant parses
 // (even though internal/ratelimit currently treats it as a no-op) so config
 // written today keeps working once multi-tenancy lands.
 func TestLoadLangGraphJSON_RateLimit(t *testing.T) {

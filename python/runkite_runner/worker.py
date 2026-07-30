@@ -189,9 +189,10 @@ def build_run_config(assignment: dict) -> dict:
 
 def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
     """Recursively scan a LangGraph stream chunk for AIMessage.tool_calls
-    the control plane's on_tool_call hook watches for (master plan gap:
-    "neither runner emits that method today"). `seen_ids` is mutated in
-    place (dedup state) -- pass a fresh set per run.
+    the control plane's on_tool_call hook watches for -- neither runner
+    emits that method natively today, so this scan is what surfaces tool
+    calls instead. `seen_ids` is mutated in place (dedup state) -- pass a
+    fresh set per run.
 
     Checked in every stream_mode ("values"/"updates" give complete,
     already-materialized messages per graph step; "messages" streams
@@ -292,8 +293,7 @@ async def execute_run(
 
         async with contextlib.AsyncExitStack() as stack:
             if adapter.is_factory(graph_id):
-                # Factory graph (master plan: LangGraph SDK/ServerRuntime
-                # compatibility) --
+                # Factory graph (for LangGraph SDK/ServerRuntime compatibility) --
                 # built fresh for this run alone, with checkpointer/store
                 # attached to THIS instance, not the shared one static
                 # graphs use. See factory_graph.py for the full rationale.
@@ -430,7 +430,7 @@ async def run_worker(
     adapter = LangGraphAdapter()
     await adapter.load_config(config_path)
 
-    # Runner auth (master plan's "two-tier" model): if the control plane has
+    # Runner auth, two-tier model: if the control plane has
     # RUNNER_TOKEN_<KIND> configured (production mode), this runner must send
     # a matching runner-kind/runner-token pair as gRPC metadata on every
     # call. In local mode (no token set here or on the server), this is a
@@ -438,7 +438,7 @@ async def run_worker(
     runner_token = os.environ.get("RUNNER_TOKEN", "")
     auth_metadata = [("runner-kind", runner_kind), ("runner-token", runner_token)] if runner_token else []
 
-    # Checkpoint dual mode (master plan): direct-mode Postgres when the
+    # Checkpoint dual mode: direct-mode Postgres when the
     # runner has the same DATABASE_URL the control plane uses, so thread
     # state survives runner restarts; falls back to in-memory (explicitly
     # ephemeral) otherwise. See checkpoint.py for the full rationale.
@@ -447,8 +447,7 @@ async def run_worker(
     await checkpointer_manager.start(postgres_dsn, pool_size=concurrency)
     adapter.attach_checkpointer(checkpointer_manager)
 
-    # Store dual mode (master plan: "Unified Store, Dual Mode, Same as
-    # Checkpoints"): same direct/proxy split as checkpoints, but for the
+    # Store dual mode: same direct/proxy split as checkpoints, but for the
     # BaseStore-backed KV store instead of thread checkpoints. Direct mode
     # queries the control plane's own store_items table straight over
     # Postgres; proxy mode calls its /store/* HTTP API. Either way it's the
@@ -532,8 +531,8 @@ async def run_worker(
     # Start the cancel watcher as a background task
     cancel_watcher_task = asyncio.create_task(watch_cancels())
 
-    # Custom routes, in-runner mode (master plan: "Custom routes"). Same
-    # process, same event loop as the poll loop above -- see custom_app.py's
+    # Custom routes, in-runner mode. Same process, same event loop as the
+    # poll loop above -- see custom_app.py's
     # docstring for the trade-off that implies. Sidecar mode needs nothing
     # here at all: it's just a separate process the control plane proxies
     # to directly, configured entirely on the Go side.

@@ -1,4 +1,4 @@
-# Zero-dependency development stack (master plan local DX).
+# Zero-dependency development stack, for local DX.
 # Control plane + Python runner only — no Postgres/Redis.
 # Uses embedded SQLite + in-memory transport.
 #
