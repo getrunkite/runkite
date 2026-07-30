@@ -120,8 +120,7 @@ func TestMCPProxy_AllowedToolCall_ReachesDownstream(t *testing.T) {
 }
 
 // TestMCPProxy_DeniedToolCall_NeverReachesDownstream is the core security
-// property this whole proxy exists for (plans/pending_items.md item 17):
-// a denied tool call must be rejected WITHOUT the downstream server ever
+// property this whole proxy exists for: a denied tool call must be rejected WITHOUT the downstream server ever
 // seeing it -- not just filtered out of an advisory list the caller could
 // choose to ignore.
 func TestMCPProxy_DeniedToolCall_NeverReachesDownstream(t *testing.T) {
@@ -155,7 +154,7 @@ func TestMCPProxy_DeniedToolCall_NeverReachesDownstream(t *testing.T) {
 }
 
 // TestMCPProxy_EmptyToolName_StillGated is a regression test for two
-// successive real bugs found on review (plans/pending_items.md item 17).
+// successive real bugs found on review.
 // Bug 1: the proxy used to special-case a non-empty tool name before
 // checking isAllowed at all, which meant a tools/call with an empty or
 // missing name SKIPPED the allow/deny check entirely and was forwarded

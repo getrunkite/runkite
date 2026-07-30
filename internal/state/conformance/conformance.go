@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -947,8 +948,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	// IR-005 (plans/pending_items.md item 18): optimistic concurrency on
-	// PATCH /threads via a plain version counter, checked atomically in
+	// Optimistic concurrency on PATCH /threads via a plain version counter, checked atomically in
 	// the UPDATE's own WHERE clause -- not a separate read-then-compare,
 	// which would still race under real concurrency.
 	t.Run("IR-005_new_thread_starts_at_version_1", func(t *testing.T) {
@@ -1054,6 +1054,95 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 		if got.Version != 2 {
 			t.Errorf("a rejected conflicting write must not bump the version further, got %d, want 2", got.Version)
+		}
+	})
+
+	// Regression: SearchThreads on Postgres/SQLite selected a narrower
+	// column list than GetThread and silently omitted "version" (decoded
+	// as the Go zero value, 0) -- a client that discovers threads via
+	// search (as opposed to a direct GetThread) and then tries an
+	// if_match_version PATCH off that 0 would 409 every single time.
+	// MySQL/Mongo already included it; this is here so all 4 backends
+	// are asserted identically instead of trusting that by inspection.
+	t.Run("IR-005_search_threads_includes_version", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		thread := &models.Thread{ThreadID: "t-ver-search", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}
+		if err := s.CreateThread(ctx, thread); err != nil {
+			t.Fatalf("CreateThread: %v", err)
+		}
+		if _, err := s.UpdateThread(ctx, "t-ver-search", &models.ThreadPatch{Metadata: map[string]interface{}{"a": "1"}}); err != nil {
+			t.Fatalf("UpdateThread: %v", err)
+		}
+
+		results, err := s.SearchThreads(ctx, &models.ThreadSearchRequest{Limit: 10})
+		if err != nil {
+			t.Fatalf("SearchThreads: %v", err)
+		}
+		var found *models.Thread
+		for _, r := range results {
+			if r.ThreadID == "t-ver-search" {
+				found = r
+			}
+		}
+		if found == nil {
+			t.Fatal("t-ver-search not found in SearchThreads results")
+		}
+		if found.Version != 2 {
+			t.Errorf("SearchThreads Version = %d, want 2 (matching GetThread) -- did this backend's SearchThreads select the version column?", found.Version)
+		}
+	})
+
+	// Regression: an unconditional (no IfMatchVersion) UpdateThread used
+	// to compute its response's Version via an in-memory
+	// existing.Version++ guess instead of reading back the real
+	// post-update value. Two overlapping unconditional writers -- which
+	// by definition don't race-check each other -- would BOTH compute
+	// the same next version in memory despite the DB ending up
+	// incremented twice, so the SECOND writer's response lied about the
+	// actual current version.
+	t.Run("IR-005_unconditional_concurrent_writers_get_accurate_version_not_a_guess", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-ver-accurate", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		const n = 5
+		results := make(chan int, n)
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			i := i
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				got, err := s.UpdateThread(ctx, "t-ver-accurate", &models.ThreadPatch{
+					Metadata: map[string]interface{}{fmt.Sprintf("w%d", i): "1"},
+				})
+				if err != nil {
+					t.Errorf("unconditional UpdateThread should never fail: %v", err)
+					return
+				}
+				results <- got.Version
+			}()
+		}
+		wg.Wait()
+		close(results)
+
+		seen := map[int]int{}
+		for v := range results {
+			seen[v]++
+		}
+		if len(seen) != n {
+			t.Fatalf("expected %d DISTINCT reported versions (2..%d) across %d unconditional writers, got %d distinct values: %v -- a repeated value means at least one response lied about its version", n, n+1, n, len(seen), seen)
+		}
+
+		final, err := s.GetThread(ctx, "t-ver-accurate")
+		if err != nil {
+			t.Fatalf("GetThread: %v", err)
+		}
+		if final.Version != n+1 {
+			t.Errorf("final Version = %d, want %d (1 + %d successful writes)", final.Version, n+1, n)
 		}
 	})
 

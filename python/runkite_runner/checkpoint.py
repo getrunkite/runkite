@@ -28,8 +28,7 @@ connection's internal lock (correct, but not actually parallel).
 connection per operation via that same module's `get_connection` helper,
 so this is a supported usage, not a hack.
 
-Concurrent-startup migration race (found live, plans/pending_items.md item
-16.2a): `AsyncPostgresSaver.setup()` runs `CREATE TABLE IF NOT EXISTS` DDL
+Concurrent-startup migration race (found live): `AsyncPostgresSaver.setup()` runs `CREATE TABLE IF NOT EXISTS` DDL
 for its own `checkpoint_migrations` table, which is not actually race-free
 on a truly fresh database -- the same class of bug this project's own
 `internal/state/postgres/postgres.go` had and fixed with a session advisory

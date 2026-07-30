@@ -30,8 +30,8 @@ import (
 // tracking held in Redis itself (not process memory) -- see the two
 // package-level keys below and reclaimStaleScript's doc comment for why.
 //
-// Previously (superseded, see plans/pending_items.md item 16 for the
-// incident): in-flight tracking (Ack/Nack/ReclaimStale) was a plain Go map
+// Previously (superseded after a confirmed incident): in-flight tracking
+// (Ack/Nack/ReclaimStale) was a plain Go map
 // on this struct, scoped to whichever control-plane process happened to
 // call Dequeue. That's fine for a single instance, but breaks in exactly
 // the multi-instance topology this project's own docker-compose.multi.yml
@@ -100,7 +100,7 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 // runner whose gRPC connection just died (crash, restart) leaves its
 // GetJob call's ctx blocked inside exactly this BRPOP until grpc-go's
 // keepalive detects the dead peer and cancels it -- confirmed live to
-// take ~4-6s (plans/pending_items.md item 20). BRPOP's blocking-command
+// take ~4-6s. BRPOP's blocking-command
 // semantics mean Redis can atomically pop a freshly-pushed item to
 // deliver to a connection at almost the same instant that connection is
 // being torn down for cancellation -- a genuine Redis/network race

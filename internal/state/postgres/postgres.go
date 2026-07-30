@@ -261,9 +261,8 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	);
 	ALTER TABLE threads ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE INDEX IF NOT EXISTS idx_threads_tenant ON threads(tenant_id);
-	-- Optimistic concurrency for PATCH /threads (plans/pending_items.md
-	-- item 18, IR-005): a plain increment-on-write counter, not the
-	-- updated_at timestamp -- comparing a client-round-tripped timestamp
+	-- Optimistic concurrency for PATCH /threads: a plain increment-on-write
+	-- counter, not the updated_at timestamp -- comparing a client-round-tripped timestamp
 	-- for exact equality across four backends with different column
 	-- types and precisions (Postgres microseconds, SQLite text, MySQL,
 	-- Mongo) is a real source of false-positive conflicts; an integer
@@ -1061,14 +1060,31 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 		query += fmt.Sprintf(" AND version = $%d", len(args)+1)
 		args = append(args, *patch.IfMatchVersion)
 	}
-	tag, err := s.pool.Exec(ctx, query, args...)
+	// RETURNING version (not existing.Version++, an in-memory guess) so
+	// the response reflects the row's REAL post-update value even under
+	// concurrent unconditional writers -- two overlapping unconditional
+	// patches both compute existing.Version+1 in memory without seeing
+	// each other's write, so BOTH responses would falsely claim the same
+	// version despite the DB ending up two higher than either started
+	// from.
+	query += " RETURNING version"
+	var newVersion int
+	err = s.pool.QueryRow(ctx, query, args...).Scan(&newVersion)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			if patch.IfMatchVersion != nil {
+				return nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "version mismatch (optimistic concurrency)"}
+			}
+			// Unconditional update matched no row (e.g. tenant mismatch
+			// or a concurrent delete) -- preserve the pre-existing
+			// behavior of returning the in-memory struct rather than
+			// erroring; this path never checked rows-affected before.
+			existing.Version++
+			return existing, nil
+		}
 		return nil, err
 	}
-	if patch.IfMatchVersion != nil && tag.RowsAffected() == 0 {
-		return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
-	}
-	existing.Version++
+	existing.Version = newVersion
 	return existing, nil
 }
 
@@ -1095,7 +1111,7 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads`
 	var args []interface{}
 	var where []string
 	argN := 1
@@ -1137,7 +1153,7 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 	for rows.Next() {
 		var t models.Thread
 		var metaBytes, valsBytes []byte
-		if err := rows.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaBytes, &valsBytes, &t.CreatedAt, &t.UpdatedAt, &t.Version); err != nil {
 			return nil, err
 		}
 		json.Unmarshal(metaBytes, &t.Metadata)

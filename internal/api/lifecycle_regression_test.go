@@ -178,6 +178,109 @@ func TestReadJSON_RejectsOversizedBody(t *testing.T) {
 	}
 }
 
+// TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim is a regression
+// test for an orphan-busy-thread bug: two concurrent create-run requests
+// with the same client-supplied run_id but different thread_ids race on
+// CreateRun's run_id-is-primary-key uniqueness. The loser's OWN thread
+// (which it separately, successfully claimed via TryClaimThread just
+// before losing the CreateRun race) has no run on it and must be released
+// back to idle -- otherwise it stays "busy" forever with nothing left to
+// ever idle it. Forces the race deterministically (pre-inserting the
+// "winning" run on a different thread) instead of relying on goroutine
+// timing, so this can't flake.
+func TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim(t *testing.T) {
+	s, store := newLifecycleServer(t, nil)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	winnerThread := "winner-thread"
+	loserThread := "loser-thread"
+	sharedRunID := "client-retry-run-id"
+	for _, id := range []string{winnerThread, loserThread} {
+		if err := store.CreateThread(ctx, &models.Thread{
+			ThreadID: id, Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Simulate the winner having already inserted its run under the
+	// shared run_id, on a DIFFERENT thread than this call will use.
+	if err := store.CreateRun(ctx, &models.Run{
+		RunID: sharedRunID, ThreadID: winnerThread, AgentID: "a", AssistantID: "a",
+		Status: models.RunStatusPending, Metadata: map[string]interface{}{},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// This call successfully claims loserThread (nothing else holds it),
+	// then loses at CreateRun on the run_id collision.
+	run, assignment, err := s.createRunCtx(ctx, loserThread, &models.RunCreate{AgentID: "a", RunID: sharedRunID})
+	if run != nil || assignment != nil {
+		t.Fatalf("expected nil run/assignment on a retry-race loss, got run=%v assignment=%v", run, assignment)
+	}
+	var raceErr *errRunRetryRace
+	if !errors.As(err, &raceErr) {
+		t.Fatalf("expected errRunRetryRace, got %T: %v", err, err)
+	}
+	if raceErr.run.RunID != sharedRunID || raceErr.run.ThreadID != winnerThread {
+		t.Fatalf("expected the WINNER's run (thread=%s), got thread=%s", winnerThread, raceErr.run.ThreadID)
+	}
+
+	// The critical assertion: loserThread must not be stuck busy forever.
+	th, getErr := store.GetThread(ctx, loserThread)
+	if getErr != nil {
+		t.Fatal(getErr)
+	}
+	if th.Status != models.ThreadStatusIdle {
+		t.Fatalf("loser thread stuck %q after losing the run_id race; want idle (orphan-busy-thread bug)", th.Status)
+	}
+}
+
+// TestCreateRunCtx_TryClaimRaceReturnsRetrySentinelNotFakeCacheHit is a
+// regression test proving the TryClaimThread race fallback returns a
+// distinct errRunRetryRace, NOT the (run, nil, nil) "cache hit" sentinel
+// createRunCtx also uses for genuine LLM cache hits. Conflating the two
+// would make callers (streamRun/waitForRunResult) treat a still-PENDING
+// run as a definitively-complete synthetic success -- see errRunRetryRace's
+// own doc comment for why that's a real correctness bug, not just style.
+func TestCreateRunCtx_TryClaimRaceReturnsRetrySentinelNotFakeCacheHit(t *testing.T) {
+	s, store := newLifecycleServer(t, nil)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	threadID := "busy-retry-thread"
+	sharedRunID := "in-flight-run-id"
+	if err := store.CreateThread(ctx, &models.Thread{
+		ThreadID: threadID, Status: models.ThreadStatusBusy, // already claimed by "the original request"
+		Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The "original request" has claimed the thread but its run is still
+	// genuinely PENDING -- not finished, not safe to render as a success.
+	if err := store.CreateRun(ctx, &models.Run{
+		RunID: sharedRunID, ThreadID: threadID, AgentID: "a", AssistantID: "a",
+		Status: models.RunStatusPending, Metadata: map[string]interface{}{},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	run, assignment, err := s.createRunCtx(ctx, threadID, &models.RunCreate{AgentID: "a", RunID: sharedRunID})
+	if run != nil || assignment != nil {
+		t.Fatalf("expected nil run/assignment (not a cache-hit-style success), got run=%v assignment=%v", run, assignment)
+	}
+	var raceErr *errRunRetryRace
+	if !errors.As(err, &raceErr) {
+		t.Fatalf("expected errRunRetryRace, got %T: %v", err, err)
+	}
+	if raceErr.run.Status != models.RunStatusPending {
+		t.Fatalf("sentinel's own run should carry the REAL (pending) status, got %q", raceErr.run.Status)
+	}
+}
+
 func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {
 	s, store := newLifecycleServer(t, nil)
 	ctx := context.Background()

@@ -37,7 +37,7 @@ import (
 // resume job to deliver to a connection that was being torn down at the
 // same instant, losing the job client-side even though Redis had
 // already removed it from the list server-side. Root-caused live via
-// plans/pending_items.md item 20 -- see that item for the full timeline.
+// targeted instrumentation -- see redis.go's dequeueBlockCap comment for the fix.
 func TestVG003b_ResumeSurvivesRunnerRestart(t *testing.T) {
 	resp := postJSON(t, "/threads", map[string]interface{}{})
 	var thread map[string]interface{}

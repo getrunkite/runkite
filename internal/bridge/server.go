@@ -185,15 +185,15 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 		// First event from a runner proves delivery succeeded -- Renew
 		// (not Ack) the in-flight lease so the reclaimer won't re-enqueue
 		// a job that's actively running. Deliberately NOT a full Ack here
-		// any more (see plans/pending_items.md item 16, Problem 2, found
-		// live): removing the job from in-flight tracking entirely at
-		// this point meant NOTHING watched it for the rest of its
-		// execution -- a runner crash any time after its first event
-		// left the run permanently stuck, confirmed live. Renew keeps it
-		// in-flight; the Heartbeat RPC (called periodically by the
-		// runner for the whole run, not just here once) keeps renewing
-		// it throughout execution. The true, final Ack now only happens
-		// in ReportStatus below, once the run actually completes.
+		// any more (found via a live incident): removing the job from
+		// in-flight tracking entirely at this point meant NOTHING
+		// watched it for the rest of its execution -- a runner crash any
+		// time after its first event left the run permanently stuck,
+		// confirmed live. Renew keeps it in-flight; the Heartbeat RPC
+		// (called periodically by the runner for the whole run, not just
+		// here once) keeps renewing it throughout execution. The true,
+		// final Ack now only happens in ReportStatus below, once the run
+		// actually completes.
 		if !seenFirstEvent[msg.RunId] {
 			_ = s.queue.Renew(stream.Context(), msg.RunId)
 			seenFirstEvent[msg.RunId] = true
@@ -232,10 +232,9 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 }
 
 // Heartbeat is called periodically by the runner while a run is actively
-// executing (plans/pending_items.md item 16, Problem 2) -- extends the
-// job's in-flight lease so the stale-job reaper's "time since last
-// touch" check reflects real liveness for the whole run, not just the
-// window up to the first StreamEvents message. A runner that stops
+// executing -- extends the job's in-flight lease so the stale-job
+// reaper's "time since last touch" check reflects real liveness for the
+// whole run, not just the window up to the first StreamEvents message. A runner that stops
 // heartbeating (crashed, or simply doesn't implement this RPC) falls
 // stale after the reaper's max-age and gets reclaimed by the existing
 // mechanism -- this adds no new reclaim path, just keeps resetting the

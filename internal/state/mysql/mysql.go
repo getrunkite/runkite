@@ -352,8 +352,7 @@ func (s *Store) Init(ctx context.Context) error {
 		}
 	}
 
-	// threads.version (plans/pending_items.md item 18, IR-005): added
-	// after this package's initial release, so -- unlike every other
+	// threads.version: added after this package's initial release, so -- unlike every other
 	// column here -- it genuinely needs the "existing deployment, add a
 	// column in place" migration path this package's own doc comment
 	// says it doesn't need. Confirmed live: an already-initialized test
@@ -767,7 +766,26 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	// See postgres.go's identical UpdateThread for why version = version + 1
 	// (not existing.Version+1 as a bound value) and why the IfMatchVersion
 	// check lives in this same statement's WHERE clause.
-	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ?, version = version + 1 WHERE thread_id = ?`
+	//
+	// version = LAST_INSERT_ID(version + 1), then SELECT LAST_INSERT_ID()
+	// in the SAME transaction (not a separate, non-atomic follow-up
+	// SELECT) reads back the REAL post-update value -- see UpsertAgent's
+	// identical pattern and its own comment for why: a plain UPDATE has
+	// no RETURNING support in MySQL (unlike Postgres/SQLite), and a
+	// follow-up SELECT outside a transaction can observe a DIFFERENT
+	// concurrent writer's value in between, which is exactly the
+	// "existing.Version++ is just a guess" bug this is fixing, moved one
+	// step later rather than actually closed. LAST_INSERT_ID is a
+	// per-CONNECTION session value, so the SELECT must run on the SAME
+	// connection as the UPDATE -- only guaranteed inside one transaction
+	// against a pool with more than one physical connection.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	query := `UPDATE threads SET metadata = ?, values_json = ?, updated_at = ?, version = LAST_INSERT_ID(version + 1) WHERE thread_id = ?`
 	args := []interface{}{meta, vals, existing.UpdatedAt, threadID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -777,21 +795,29 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 		query += ` AND version = ?`
 		args = append(args, *patch.IfMatchVersion)
 	}
-	result, err := s.db.ExecContext(ctx, query, args...)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	if patch.IfMatchVersion != nil {
-		n, raErr := result.RowsAffected()
-		if raErr != nil {
-			return nil, raErr
-		}
-		if n == 0 {
-			return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
-		}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return nil, raErr
 	}
-	existing.Version++
-	return existing, nil
+	if n == 0 {
+		if patch.IfMatchVersion != nil {
+			return nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "version mismatch (optimistic concurrency)"}
+		}
+		// Unconditional update matched no row -- preserve the
+		// pre-existing behavior of returning the in-memory struct
+		// rather than erroring; this path never checked rows-affected
+		// before.
+		existing.Version++
+		return existing, nil
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&existing.Version); err != nil {
+		return nil, fmt.Errorf("mysql: read back computed thread version: %w", err)
+	}
+	return existing, tx.Commit()
 }
 
 func (s *Store) DeleteThread(ctx context.Context, threadID string) error {

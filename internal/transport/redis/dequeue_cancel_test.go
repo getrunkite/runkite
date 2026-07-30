@@ -9,7 +9,7 @@ import (
 )
 
 // TestDequeue_ContextCancelDetectedWithinBlockCap_NotFullTimeout proves the
-// fix for plans/pending_items.md item 20: a live e2e flake found a genuine
+// fix for a bug found by a live e2e flake: a genuine
 // Redis race where a runner's dead gRPC connection left Dequeue blocked
 // inside a single, long BRPOP call for up to the FULL GetJob timeout
 // (~30s in production, matched here with a long timeout to make the old

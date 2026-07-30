@@ -615,7 +615,7 @@ func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
 		info := connectorInfo{Name: name, Type: c.Config.Auth.Type, CircuitBreaker: s.connectors.BreakerState(name)}
 		// Same fix, same reason as handleGetConnector -- the raw
 		// downstream MCP URL was leaking through this endpoint too
-		// (found on review, plans/pending_items.md item 17). Missed the
+		// (found on review). Missed the
 		// first time because only the single-connector GET had a test
 		// asserting on the MCP field; the list endpoint's own test only
 		// checked name/type. Shows the proxy path instead.

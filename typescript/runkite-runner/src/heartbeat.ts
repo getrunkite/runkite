@@ -1,5 +1,5 @@
 /**
- * Runner-side heartbeat loop (plans/pending_items.md item 16, Problem 2).
+ * Runner-side heartbeat loop.
  * TypeScript mirror of the Python runner's heartbeat.py -- see that
  * module's doc comment for the full rationale.
  *

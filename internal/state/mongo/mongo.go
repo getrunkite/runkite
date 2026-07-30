@@ -180,8 +180,7 @@ func (s *Store) Init(ctx context.Context) error {
 		}
 	}
 
-	// threads.version backfill (plans/pending_items.md item 18,
-	// IR-005): added after this package's initial release. Unlike the
+	// threads.version backfill: added after this package's initial release. Unlike the
 	// SQL backends (which need an explicit ALTER TABLE to even have the
 	// column exist), Mongo's schemaless documents just silently lack
 	// the field on any thread created before this -- normalizing them
@@ -868,18 +867,34 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	if patch.IfMatchVersion != nil {
 		filter["version"] = *patch.IfMatchVersion
 	}
-	result, err := s.col("threads").UpdateOne(ctx, filter,
+	// FindOneAndUpdate + ReturnDocument(After) (not UpdateOne + an
+	// in-memory existing.Version++ guess) so the response reflects the
+	// REAL post-update version atomically -- see postgres.go's identical
+	// UpdateThread for why: two overlapping unconditional writers would
+	// otherwise both compute the same falsely-guessed version despite
+	// the document ending up incremented twice.
+	var updated threadDoc
+	err = s.col("threads").FindOneAndUpdate(ctx, filter,
 		bson.M{
 			"$set": bson.M{"metadata": existing.Metadata, "values": existing.Values, "updated_at": existing.UpdatedAt},
 			"$inc": bson.M{"version": 1},
-		})
+		},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updated)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			if patch.IfMatchVersion != nil {
+				return nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "version mismatch (optimistic concurrency)"}
+			}
+			// Unconditional update matched no document -- preserve the
+			// pre-existing behavior of returning the in-memory struct
+			// rather than erroring.
+			existing.Version++
+			return existing, nil
+		}
 		return nil, err
 	}
-	if patch.IfMatchVersion != nil && result.MatchedCount == 0 {
-		return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
-	}
-	existing.Version++
+	existing.Version = updated.Version
 	return existing, nil
 }
 

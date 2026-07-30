@@ -11,7 +11,7 @@ import (
 )
 
 // This file exercises exactly the two failure modes found via live
-// multi-instance testing (plans/pending_items.md item 1/16): in-flight
+// multi-instance testing: in-flight
 // tracking used to be a plain Go map per Queue instance, so it only worked
 // correctly when Dequeue/Ack/ReclaimStale all happened to be called on the
 // SAME instance. Every test here deliberately uses TWO SEPARATE Queue

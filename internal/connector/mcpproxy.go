@@ -10,10 +10,9 @@ import (
 )
 
 // This file makes IsToolAllowed an actual enforcement gate instead of dead
-// code (plans/pending_items.md item 17: "Anyone who configures a
-// connector's tool whitelist today, assuming it actually restricts what a
-// compromised or misbehaving agent can invoke, is trusting something that
-// doesn't do that yet").
+// code -- previously, anyone who configured a connector's tool whitelist,
+// assuming it actually restricted what a compromised or misbehaving agent
+// could invoke, was trusting something that didn't do that yet.
 //
 // Before this file existed, GetSession handed a runner the connector's
 // RAW downstream MCP URL and credentials -- the runner's own MCP client
@@ -117,7 +116,7 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 		// REGARDLESS of the connector's allow/deny configuration -- so
 		// this is checked as its own structural rule, before consulting
 		// the filter at all, not folded into isAllowed. Found live on
-		// review (plans/pending_items.md item 17), the hard way: an
+		// review, the hard way: an
 		// earlier version of this fix just called isAllowed(filter, "")
 		// unconditionally, which is correct FOR isAllowed's OWN
 		// semantics with an allow-list (empty string matches no allow

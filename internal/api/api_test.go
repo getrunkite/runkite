@@ -366,14 +366,20 @@ func TestAP018_PatchThread(t *testing.T) {
 }
 
 // TestIR005_PatchThread_MatchingVersionSucceeds proves the full HTTP path
-// for optimistic concurrency (plans/pending_items.md item 18, IR-005): a
+// for optimistic concurrency: a
 // client that read the thread's current "version" and echoes it back as
 // "if_match_version" gets its patch applied, and the response's own new
 // "version" reflects the bump.
 func TestIR005_PatchThread_MatchingVersionSucceeds(t *testing.T) {
 	env := newTestEnv(t)
 
-	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t-ver"})
+	createResp, _ := postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "t-ver"})
+	expectStatus(t, createResp, 200)
+	var created models.Thread
+	json.Unmarshal(readBody(t, createResp), &created)
+	if created.Version != 1 {
+		t.Fatalf("POST /threads response Version = %d, want 1 immediately (not just on a follow-up GET)", created.Version)
+	}
 
 	resp, _ := patchJSON(env.srv.URL+"/threads/t-ver", map[string]interface{}{
 		"metadata":         map[string]interface{}{"a": "1"},
@@ -912,8 +918,8 @@ func TestTS009_ConcurrentRunReject409(t *testing.T) {
 }
 
 // ============================================================================
-// IR-001: client-supplied run_id makes run creation idempotent against
-// network retries (plans/pending_items.md item 18).
+// Client-supplied run_id makes run creation idempotent against
+// network retries.
 // ============================================================================
 
 func TestIdempotentRun_BackgroundRun_RetrySameRunIDReturnsExisting(t *testing.T) {
@@ -2356,8 +2362,7 @@ func TestConnector_ListConnectors(t *testing.T) {
 }
 
 // TestConnector_ListConnectors_MCPShowsProxyPathNotRawURL is a
-// regression test for a real bypass found on review (plans/pending_items.md
-// item 17): handleGetConnector (the single-connector GET) was fixed to
+// regression test for a real bypass found on review: handleGetConnector (the single-connector GET) was fixed to
 // show the proxy path instead of the raw downstream MCP URL, but
 // handleListConnectors (this one) leaked the raw URL through the same
 // runner-token-reachable trust boundary -- missed the first time because
@@ -2411,8 +2416,7 @@ func TestConnector_SessionAPIKey(t *testing.T) {
 }
 
 // TestConnector_SessionOmitsCredentialsWhenMCPConfigured proves the fix
-// for a real bypass found on review (plans/pending_items.md item 17):
-// the MCP proxy alone wasn't a complete fix while the session response
+// for a real bypass found on review: the MCP proxy alone wasn't a complete fix while the session response
 // ALSO handed out the raw downstream access_token -- a misbehaving or
 // compromised agent could just take that token and call the real server
 // directly, skipping the proxy's tool allow/deny enforcement entirely.
@@ -2488,8 +2492,8 @@ func TestConnector_GetConnectorInfo(t *testing.T) {
 	// The raw downstream MCP URL must NOT be exposed here -- this
 	// endpoint is reachable with just a runner token, so leaking it
 	// would let a misbehaving agent bypass the proxy's tool
-	// allow/deny enforcement by connecting directly (found on review,
-	// plans/pending_items.md item 17). The proxy path is shown instead.
+	// allow/deny enforcement by connecting directly (found on review).
+	// The proxy path is shown instead.
 	if info["mcp"] != "/internal/connectors/sf/mcp" {
 		t.Fatalf("expected the proxy path, not the raw downstream URL, got %v", info["mcp"])
 	}
@@ -2539,8 +2543,8 @@ func TestConnector_PreWarmFromAgentMetadata(t *testing.T) {
 }
 
 // ============================================================================
-// Connector MCP Proxy — makes IsToolAllowed a real enforcement gate
-// (plans/pending_items.md item 17), tested end to end through the actual
+// Connector MCP Proxy — makes IsToolAllowed a real enforcement gate,
+// tested end to end through the actual
 // HTTP handler + a fake downstream MCP server, not just the registry
 // method directly (internal/connector/mcpproxy_test.go covers that).
 // ============================================================================

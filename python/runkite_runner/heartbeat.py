@@ -1,4 +1,4 @@
-"""Runner-side heartbeat loop (plans/pending_items.md item 16, Problem 2).
+"""Runner-side heartbeat loop.
 
 Before this, the control plane only knew a job was alive up to its first
 StreamEvents message -- confirmed live at roughly 15ms after dequeue, via

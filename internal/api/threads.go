@@ -81,9 +81,8 @@ func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 
 // PATCH /threads/{threadID}
 //
-// Optimistic concurrency (plans/pending_items.md item 18, IR-005): a
-// client that includes "if_match_version" in the body (read from a prior
-// GET/PATCH response's own "version" field) gets a 409 instead of a
+// Optimistic concurrency: a client that includes "if_match_version" in the
+// body (read from a prior GET/PATCH response's own "version" field) gets a 409 instead of a
 // silent overwrite if someone else patched the thread first --
 // handleStoreError below already maps state.ErrConflict to 409, and
 // ThreadPatch.IfMatchVersion round-trips straight through readJSON into

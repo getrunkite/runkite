@@ -186,12 +186,23 @@ func (e *ErrNotFound) Error() string {
 	return e.Resource + " not found: " + e.ID
 }
 
-// ErrConflict is returned when a resource already exists (e.g., duplicate thread_id).
+// ErrConflict is returned for any conflicting write a caller should see as
+// HTTP 409 -- both "already exists" (e.g. duplicate thread_id) and other
+// conflict shapes like an optimistic-concurrency version mismatch, which
+// don't fit "already exists" at all (the resource already existed and this
+// write lost a race, it didn't newly appear).
 type ErrConflict struct {
 	Resource string
 	ID       string
+	// Reason overrides the default "already exists" wording when set.
+	// Empty (the common case) keeps the original message unchanged for
+	// every existing caller.
+	Reason string
 }
 
 func (e *ErrConflict) Error() string {
+	if e.Reason != "" {
+		return e.Resource + " " + e.Reason + ": " + e.ID
+	}
 	return e.Resource + " already exists: " + e.ID
 }

@@ -98,12 +98,16 @@ type Thread struct {
 	Status    ThreadStatus           `json:"status"`
 	Values    map[string]interface{} `json:"values,omitempty"`
 	// Version is a plain increment-on-write counter for optimistic
-	// concurrency on PATCH /threads (plans/pending_items.md item 18,
-	// IR-005) -- a client that wants to detect "someone else changed
-	// this since I last read it" round-trips this value back as
-	// ThreadPatch.IfMatchVersion. Starts at 1 on creation, +1 on every
-	// successful UpdateThread. Not the same "version" concept as agent
-	// versioning (models.Agent) -- purely a per-thread write counter.
+	// concurrency on PATCH /threads -- a client that wants to detect
+	// "someone else changed this since I last read it" round-trips this
+	// value back as ThreadPatch.IfMatchVersion. Starts at 1 on creation,
+	// +1 on every successful UpdateThread (metadata/values changes only).
+	// Status transitions via SetThreadStatus/TryClaimThread deliberately
+	// do NOT bump it -- this guards metadata/values edits specifically,
+	// not "any row change" -- so a client polling status alone won't see
+	// spurious version bumps unrelated to what it's trying to protect.
+	// Not the same "version" concept as agent versioning (models.Agent)
+	// -- purely a per-thread write counter.
 	Version int `json:"version"`
 }
 
@@ -228,10 +232,9 @@ type Run struct {
 type RunCreate struct {
 	// RunID lets a client supply its own run ID instead of the server
 	// generating one, specifically to make run creation idempotent
-	// against network retries (plans/pending_items.md item 18, IR-001):
-	// a client that sent a create-run request but never received the
-	// response (timeout, dropped connection) can safely retry with the
-	// SAME RunID -- the retry returns the run that's already there
+	// against network retries: a client that sent a create-run request
+	// but never received the response (timeout, dropped connection) can
+	// safely retry with the SAME RunID -- the retry returns the run that's already there
 	// instead of creating a duplicate. Empty (the common case) means
 	// "generate a fresh server-side ID," unchanged from before this
 	// field existed. Any non-empty string is accepted, no format

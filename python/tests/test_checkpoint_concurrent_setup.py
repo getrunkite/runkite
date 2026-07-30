@@ -1,5 +1,5 @@
-"""Self-check for the concurrent-startup checkpoint migration race
-(plans/pending_items.md item 16.2a): with 2+ runner replicas starting
+"""Self-check for the concurrent-startup checkpoint migration race:
+with 2+ runner replicas starting
 simultaneously against a fresh Postgres, AsyncPostgresSaver.setup()'s own
 CREATE TABLE IF NOT EXISTS DDL is not race-free, and used to crash one of
 them with "duplicate key value violates unique constraint

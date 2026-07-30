@@ -120,8 +120,7 @@ func (r *Registry) GetSession(ctx context.Context, name string, userCtx map[stri
 	}
 
 	// Raw downstream credentials are ONLY included for connectors with no
-	// MCP endpoint configured. Found on review (plans/pending_items.md
-	// item 17): handing out both the proxy path AND the raw access_token
+	// MCP endpoint configured. Found on review: handing out both the proxy path AND the raw access_token
 	// defeated the whole point of the proxy -- a misbehaving or
 	// compromised agent could just take this token and call the
 	// downstream server directly with it, bypassing tool allow/deny

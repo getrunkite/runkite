@@ -1,5 +1,4 @@
-"""Self-check for heartbeat.py's heartbeat_loop (plans/pending_items.md
-item 16, Problem 2): the runner-side periodic call that keeps a job's
+"""Self-check for heartbeat.py's heartbeat_loop: the runner-side periodic call that keeps a job's
 in-flight lease alive for its WHOLE execution, not just the first event.
 
 Proves:

@@ -295,9 +295,8 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	// TR-031: heartbeat extends lease (plans/pending_items.md item 16,
-	// Problem 2) -- Renew must keep a job in-flight (not remove it the
-	// way Ack does), and must be a safe no-op once a job is no longer
+	// TR-031: heartbeat extends lease -- Renew must keep a job in-flight
+	// (not remove it the way Ack does), and must be a safe no-op once a job is no longer
 	// in-flight, so a late/racing heartbeat can't resurrect a finished
 	// or reclaimed job.
 	t.Run("TR-031_renew_keeps_job_inflight_not_removed", func(t *testing.T) {

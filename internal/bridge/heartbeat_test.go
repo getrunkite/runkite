@@ -42,8 +42,8 @@ func (f *fakeStreamEventsServer) SendAndClose(resp *pb.StreamEventsResponse) err
 
 func (f *fakeStreamEventsServer) Context() context.Context { return context.Background() }
 
-// TestStreamEvents_FirstEventRenewsNotAcks proves the fix for
-// plans/pending_items.md item 16, Problem 2: a job's first StreamEvents
+// TestStreamEvents_FirstEventRenewsNotAcks proves the fix for a
+// crash-recovery gap: a job's first StreamEvents
 // message must NOT fully Ack (remove) it from in-flight tracking --
 // otherwise nothing watches the run for the rest of its execution. If
 // this regresses back to a full Ack, Nack below would be a no-op and the

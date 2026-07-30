@@ -325,10 +325,9 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 	if err := addColumnIfMissing(ctx, s.db, "runs", "depth", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	// Optimistic concurrency for PATCH /threads (plans/pending_items.md
-	// item 18, IR-005) -- see postgres.go's identical column for the
-	// full rationale (a plain counter, not the updated_at timestamp,
-	// to avoid cross-backend precision-matching issues).
+	// Optimistic concurrency for PATCH /threads -- see postgres.go's
+	// identical column for the full rationale (a plain counter, not the
+	// updated_at timestamp, to avoid cross-backend precision-matching issues).
 	if err := addColumnIfMissing(ctx, s.db, "threads", "version", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
@@ -997,20 +996,29 @@ func (s *SQLiteStore) UpdateThread(ctx context.Context, threadID string, patch *
 		query += ` AND version = ?`
 		args = append(args, *patch.IfMatchVersion)
 	}
-	result, err := s.db.ExecContext(ctx, query, args...)
+	// RETURNING version (not existing.Version++, an in-memory guess) --
+	// see postgres.go's identical UpdateThread for why: two overlapping
+	// unconditional writers would otherwise both report the same
+	// falsely-computed version despite the DB ending up higher than
+	// either saw.
+	query += " RETURNING version"
+	var newVersion int
+	err = s.db.QueryRowContext(ctx, query, args...).Scan(&newVersion)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			if patch.IfMatchVersion != nil {
+				return nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "version mismatch (optimistic concurrency)"}
+			}
+			// Unconditional update matched no row -- preserve the
+			// pre-existing behavior of returning the in-memory struct
+			// rather than erroring; this path never checked
+			// rows-affected before.
+			existing.Version++
+			return existing, nil
+		}
 		return nil, err
 	}
-	if patch.IfMatchVersion != nil {
-		n, raErr := result.RowsAffected()
-		if raErr != nil {
-			return nil, raErr
-		}
-		if n == 0 {
-			return nil, &state.ErrConflict{Resource: "thread", ID: threadID}
-		}
-	}
-	existing.Version++
+	existing.Version = newVersion
 	return existing, nil
 }
 
@@ -1038,7 +1046,7 @@ func (s *SQLiteStore) SearchThreads(ctx context.Context, req *models.ThreadSearc
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at FROM threads`
+	query := `SELECT tenant_id, thread_id, status, metadata, values_json, created_at, updated_at, version FROM threads`
 	var args []interface{}
 	var where []string
 
@@ -1076,7 +1084,7 @@ func (s *SQLiteStore) SearchThreads(ctx context.Context, req *models.ThreadSearc
 	for rows.Next() {
 		var t models.Thread
 		var metaStr, valsStr, createdStr, updatedStr string
-		if err := rows.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaStr, &valsStr, &createdStr, &updatedStr); err != nil {
+		if err := rows.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaStr, &valsStr, &createdStr, &updatedStr, &t.Version); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(metaStr), &t.Metadata)

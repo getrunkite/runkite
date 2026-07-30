@@ -106,7 +106,7 @@ class RunnerServiceServicer(object):
     def Heartbeat(self, request, context):
         """Heartbeat is called periodically by the runner while a run is
         actively executing, to prove liveness for the WHOLE run, not just
-        delivery (plans/pending_items.md item 16, Problem 2). Without this,
+        delivery. Without this,
         the control plane only knows a job is alive up to its first
         StreamEvents message (~15ms after dequeue in practice) -- a runner
         crash any time after that left the run permanently stuck, confirmed

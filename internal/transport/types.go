@@ -162,9 +162,9 @@ type JobQueue interface {
 
 	// Renew extends an in-flight job's lease (resets its staleness clock)
 	// WITHOUT removing it from tracking, unlike Ack. Backs the runner
-	// heartbeat mechanism (plans/pending_items.md item 16, Problem 2):
-	// a runner calls this periodically for the WHOLE duration of a job's
-	// execution, not just once at the start, so a stale-job reaper's
+	// heartbeat mechanism: a runner calls this periodically for the
+	// WHOLE duration of a job's execution, not just once at the start,
+	// so a stale-job reaper's
 	// "time since last touch" check reflects real liveness throughout
 	// execution instead of just the window between Dequeue and the
 	// first StreamEvents message. Must be a no-op (not an error) if the

@@ -458,9 +458,8 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue) {
 	// resume-after-crash can recover within a normal client retry window.
 	//
 	// This threshold now protects a job's WHOLE execution, not just the
-	// zombie-GetJob window it was originally sized for (see
-	// plans/pending_items.md item 16, Problem 2): the runner's periodic
-	// Heartbeat RPC (bridge/server.go) and StreamEvents' first-event
+	// zombie-GetJob window it was originally sized for: the runner's
+	// periodic Heartbeat RPC (bridge/server.go) and StreamEvents' first-event
 	// Renew both reset the same in-flight clock this reads, at roughly
 	// the same 2s cadence as this ticker. A live runner heartbeating
 	// every ~2s never gets within one missed beat of this 6s cutoff;

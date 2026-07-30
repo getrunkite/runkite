@@ -12,7 +12,7 @@ import (
 )
 
 // TestInit_ConcurrentFreshDatabase is a regression test for a real race
-// found via live multi-instance testing (plans/pending_items.md item 1):
+// found via live multi-instance testing:
 // starting 3 `runkite serve` replicas simultaneously against a genuinely
 // fresh Postgres database (nothing created yet) produced
 // "duplicate key value violates unique constraint \"pg_type_typname_nsp_index\""

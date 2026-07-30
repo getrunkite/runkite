@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -31,9 +32,11 @@ func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCrea
 	return s.createRunCtx(r.Context(), threadID, req)
 }
 
-// findRunForRetry is the entry point for IR-001 idempotency (plans/pending_items.md
-// item 18): every client-facing create-run handler calls this FIRST, before
-// doing anything else, and if it finds a run, delegates to the existing-run
+// findRunForRetry implements client-retriable run creation: a client that
+// supplies its own run_id can safely retry a create-run request (e.g. after
+// a timeout or dropped connection) without risking a duplicate run, because
+// every client-facing create-run handler calls this FIRST, before doing
+// anything else, and if it finds a run, delegates to the existing-run
 // wait/stream/get path instead of creating a new one.
 //
 // Deliberately NOT implemented by reusing createRunCtx's own nil-assignment
@@ -46,6 +49,12 @@ func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCrea
 // hasn't actually finished. Delegating to waitForExistingRun/streamExistingRun
 // instead is correct for any status, because those already branch on
 // isTerminalStatus rather than assuming completion.
+//
+// The narrower race below this pre-check -- a genuinely concurrent retry
+// that arrives after this check but before the original request finishes
+// claiming the thread or inserting the run row -- is handled separately
+// inside createRunCtx via errRunRetryRace, for the exact same "might not be
+// done yet" reason (see errRunRetryRace's own doc comment).
 func (s *Server) findRunForRetry(ctx context.Context, runID string) *models.Run {
 	if runID == "" {
 		return nil
@@ -55,6 +64,44 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string) *models.Run 
 		return nil
 	}
 	return run
+}
+
+// errRunRetryRace signals that a concurrent request already claimed the
+// thread or created the run for a client-supplied run_id this request was
+// also trying to create -- the narrow race window between findRunForRetry's
+// pre-check (above) and this request reaching TryClaimThread/CreateRun
+// inside createRunCtx. Deliberately a DISTINCT type from the (run, nil, nil)
+// "cache hit" convention used elsewhere in createRunCtx: a cache hit is
+// always definitively complete and safe to render as a synthetic success,
+// but the run found here might still be pending/running, so callers must
+// dispatch it through the SAME status-aware retry path (waitForExistingRun /
+// streamExistingRun / a plain write) that findRunForRetry's callers already
+// use, not assume completion. Only ever constructed by createRunCtx and only
+// ever reachable when the caller supplied a client run_id (see
+// dispatchIfRunRetryRace's call sites) -- every other creation path
+// (WebSocket commands, A2A delegation, cron) never sets a client run_id, so
+// this race is structurally impossible for them.
+type errRunRetryRace struct {
+	run *models.Run
+}
+
+func (e *errRunRetryRace) Error() string {
+	return fmt.Sprintf("run %s already exists from a concurrent request", e.run.RunID)
+}
+
+// dispatchIfRunRetryRace checks whether err is errRunRetryRace and, if so,
+// dispatches the found run through respond (typically a closure wrapping
+// writeJSON, streamExistingRun, or waitForExistingRun -- matching whatever
+// this specific handler already does for findRunForRetry's own pre-check)
+// instead of the generic error path. Returns true if it handled the
+// response, in which case the caller must not write anything else.
+func dispatchIfRunRetryRace(err error, respond func(run *models.Run)) bool {
+	var raceErr *errRunRetryRace
+	if errors.As(err, &raceErr) {
+		respond(raceErr.run)
+		return true
+	}
+	return false
 }
 
 // createRunCtx is the context-based core of run creation, shared by every
@@ -182,17 +229,18 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// gap between that pre-check and this line. If req.RunID is set
 		// and a run with that ID exists NOW, this thread being busy is
 		// actually the retry's own earlier attempt still owning it (or
-		// having just finished) -- return that run instead of a
-		// spurious conflict. If it's still not there, this is either a
-		// genuinely different reason the thread is busy, or a true
-		// concurrent double-send racing inside a sub-millisecond window
-		// -- a 409 is the correct, honest answer for that case, not
-		// worth polling/retrying to close (see plans/pending_items.md
-		// item 18 for why this residual window is an accepted trade-off,
-		// not an oversight).
+		// having just finished) -- return that run via errRunRetryRace
+		// instead of a spurious conflict, so the caller dispatches it
+		// through the same status-aware path as any other retry (the
+		// run found here might still be pending, not necessarily done).
+		// If it's still not there, this is either a genuinely different
+		// reason the thread is busy, or a true concurrent double-send
+		// racing inside a sub-millisecond window -- a 409 is the
+		// correct, honest answer for that case, not worth
+		// polling/retrying to close.
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
-				return existing, nil, nil
+				return nil, nil, &errRunRetryRace{run: existing}
 			}
 		}
 		return nil, nil, &state.ErrConflict{Resource: "thread", ID: threadID}
@@ -285,11 +333,19 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// client reused the same run_id across two different thread_ids
 		// -- TryClaimThread's own atomicity already rules out two
 		// requests for the SAME thread_id both reaching this line).
-		// Returning the winner's run is more useful than a raw DB error
-		// the caller can't act on.
+		// Returning the winner's run via errRunRetryRace (not
+		// (existing, nil, nil) -- see its own doc comment) is more
+		// useful than a raw DB error the caller can't act on, AND keeps
+		// err non-nil here so the defer above releases THIS request's
+		// own thread claim: the winning run belongs to a DIFFERENT
+		// thread_id than threadID (the two-different-thread_ids
+		// scenario this comment opens with), so the thread this request
+		// claimed has no run on it and would otherwise stay stuck
+		// "busy" forever with nothing left to ever idle it.
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
-				return existing, nil, nil
+				err = &errRunRetryRace{run: existing}
+				return nil, nil, err
 			}
 		}
 		return nil, nil, err
@@ -689,6 +745,9 @@ func (s *Server) handleCreateBackgroundRun(w http.ResponseWriter, r *http.Reques
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -722,6 +781,9 @@ func (s *Server) handleCreateAndStreamRun(w http.ResponseWriter, r *http.Request
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -748,6 +810,9 @@ func (s *Server) handleCreateAndWaitRun(w http.ResponseWriter, r *http.Request) 
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -847,6 +912,9 @@ func (s *Server) handleCreateThreadRun(w http.ResponseWriter, r *http.Request) {
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -877,6 +945,9 @@ func (s *Server) handleCreateAndStreamThreadRun(w http.ResponseWriter, r *http.R
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -900,6 +971,9 @@ func (s *Server) handleCreateAndWaitThreadRun(w http.ResponseWriter, r *http.Req
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
+		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) }) {
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
