@@ -41,9 +41,7 @@ async def test_concurrent_setup_on_fresh_database(dsn: str, concurrency: int = 5
     await _drop_checkpoint_tables(dsn)
 
     managers = [CheckpointerManager() for _ in range(concurrency)]
-    results = await asyncio.gather(
-        *[m.start(dsn, pool_size=1) for m in managers], return_exceptions=True
-    )
+    results = await asyncio.gather(*[m.start(dsn, pool_size=1) for m in managers], return_exceptions=True)
 
     errors = [r for r in results if isinstance(r, Exception)]
     if errors:

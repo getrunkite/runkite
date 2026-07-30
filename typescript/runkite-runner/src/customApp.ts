@@ -42,7 +42,11 @@ export async function loadRequestHandler(configDir: string, moduleRef: string): 
  * event loop as the worker's poll loop -- a slow custom-route handler can,
  * in principle, delay the runner's own async work. Use sidecar mode
  * instead if a route needs isolation or independent scaling. */
-export function serveCustomApp(handler: CustomAppHandler, host: string, port: number): { server: Server; stop: () => Promise<void> } {
+export function serveCustomApp(
+  handler: CustomAppHandler,
+  host: string,
+  port: number,
+): { server: Server; stop: () => Promise<void> } {
   const server = createServer(handler);
   server.listen(port, host, () => {
     logger.info(`Custom app serving on http://${host}:${port}`);

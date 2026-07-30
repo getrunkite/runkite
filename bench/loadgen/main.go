@@ -208,7 +208,7 @@ func oneCycle(client *http.Client, baseURL, agentID, waitPath string, worker, n 
 	if err != nil {
 		return fmt.Errorf("%s run: %w", waitPath, err)
 	}
-	io.Copy(io.Discard, blockResp.Body)
+	_, _ = io.Copy(io.Discard, blockResp.Body) // draining for connection reuse, not exercising real data
 	blockResp.Body.Close()
 
 	statusResp, err := client.Get(baseURL + "/threads/" + threadID + "/runs/" + run.RunID)

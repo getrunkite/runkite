@@ -134,7 +134,9 @@ func cmdDBReset(args []string) {
 	// SQLite: delete the file and recreate
 	dbPath := envOrDefault("DATABASE_PATH", "./runkite.db")
 	if dbPath != "" && dbPath != ":memory:" {
-		os.Remove(dbPath)
+		if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("failed to remove existing sqlite db before reset", "path", dbPath, "error", err)
+		}
 	}
 	sq, err := sqlitestore.New(dbPath)
 	if err != nil {

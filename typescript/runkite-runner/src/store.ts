@@ -60,7 +60,13 @@ function parseTs(value: unknown): Date {
   return new Date();
 }
 
-function itemFromRow(row: { namespace: string; key: string; value: unknown; created_at: unknown; updated_at: unknown }): Item {
+function itemFromRow(row: {
+  namespace: string;
+  key: string;
+  value: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+}): Item {
   return {
     namespace: stringToNs(row.namespace),
     key: row.key,

@@ -126,7 +126,9 @@ class AutoGenAdapter:
 
         agent = self.agents.get(graph_id)
         if agent is None:
-            await event_callback(make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.agents)}"}))
+            await event_callback(
+                make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.agents)}"})
+            )
             return "error"
 
         await event_callback(make_event("lifecycle", {"event": "running"}))

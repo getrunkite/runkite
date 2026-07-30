@@ -11,7 +11,7 @@ import (
 
 func TestSQLiteStore(t *testing.T) {
 	conformance.RunStoreSuite(t, func(t *testing.T) state.Store {
-		s, err := sqlite.New("")  // in-memory for tests
+		s, err := sqlite.New("") // in-memory for tests
 		if err != nil {
 			t.Fatalf("create sqlite store: %v", err)
 		}

@@ -27,8 +27,7 @@ import logging
 
 import grpc
 
-from . import runner_pb2
-from . import runner_pb2_grpc
+from . import runner_pb2, runner_pb2_grpc
 
 logger = logging.getLogger("runkite.runner")
 
@@ -41,7 +40,7 @@ DEFAULT_HEARTBEAT_INTERVAL_S = 2.0
 
 
 async def heartbeat_loop(
-    stub: "runner_pb2_grpc.RunnerServiceStub",
+    stub: runner_pb2_grpc.RunnerServiceStub,
     run_id: str,
     auth_metadata: list,
     interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S,

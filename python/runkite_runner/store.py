@@ -48,8 +48,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 from langgraph.store.base import (
@@ -216,9 +217,7 @@ class RunkiteStore(BaseStore):
     # -- proxy mode: HTTP calls to the control plane -----------------------
 
     async def _abatch_proxy(self, ops: list[Op]) -> list[Result]:
-        async with httpx.AsyncClient(
-            base_url=self._base_url, headers=self._headers, timeout=10.0
-        ) as client:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
             return [await self._proxy_one(client, op) for op in ops]
 
     async def _proxy_one(self, client: httpx.AsyncClient, op: Op) -> Result:
@@ -323,8 +322,7 @@ class RunkiteStore(BaseStore):
                 if op.refresh_ttl and ttl_minutes is not None:
                     new_expiry = datetime.now(timezone.utc) + _timedelta_minutes(ttl_minutes)
                     await cur.execute(
-                        "UPDATE store_items SET expires_at = %s "
-                        "WHERE tenant_id = %s AND namespace = %s AND key = %s",
+                        "UPDATE store_items SET expires_at = %s WHERE tenant_id = %s AND namespace = %s AND key = %s",
                         (new_expiry, _TENANT_ID, ns, op.key),
                     )
                 return _item_from_row(row[:5])
@@ -336,9 +334,7 @@ class RunkiteStore(BaseStore):
             # to avoid psycopg parameter-type ambiguity from reusing a
             # possibly-None placeholder in both a NULL check and interval
             # math.
-            expires_at = (
-                None if op.ttl is None else datetime.now(timezone.utc) + _timedelta_minutes(op.ttl)
-            )
+            expires_at = None if op.ttl is None else datetime.now(timezone.utc) + _timedelta_minutes(op.ttl)
             async with conn.cursor() as cur:
                 if op.value is None:
                     await cur.execute(

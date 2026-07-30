@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -256,8 +257,15 @@ func (s *Server) handleUpdateThreadState(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update thread values
-	s.store.UpdateThread(r.Context(), threadID, &models.ThreadPatch{Values: merged})
+	// Update thread values. Best-effort: the checkpoint above already
+	// succeeded and is the durable record of this state update, so a
+	// failure here shouldn't fail the whole request -- but it was
+	// previously silently dropped entirely (found via lint gate setup),
+	// leaving the thread's own Values out of sync with its latest
+	// checkpoint with no trace of why. Logged now so that's visible.
+	if _, err := s.store.UpdateThread(r.Context(), threadID, &models.ThreadPatch{Values: merged}); err != nil {
+		slog.Warn("failed to sync thread values after checkpoint save", "thread_id", threadID, "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, models.ThreadUpdateStateResponse{
 		Checkpoint: ts.Checkpoint,

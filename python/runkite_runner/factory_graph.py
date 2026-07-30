@@ -163,7 +163,7 @@ class _MinimalRuntime:
     access_context: str = "threads.create_run"
 
     @property
-    def execution_runtime(self) -> "_MinimalExecutionRuntime":
+    def execution_runtime(self) -> _MinimalExecutionRuntime:
         return _MinimalExecutionRuntime()
 
     def ensure_user(self) -> Any:

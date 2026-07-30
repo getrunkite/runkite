@@ -352,7 +352,9 @@ export async function handleJob(
     if (runId) {
       const failedRunId = runId;
       await new Promise<void>((resolve) => {
-        client.reportStatus({ runId: failedRunId, status: "error", errorMessage: String(err) }, metadata, () => resolve());
+        client.reportStatus({ runId: failedRunId, status: "error", errorMessage: String(err) }, metadata, () =>
+          resolve(),
+        );
       }).catch(() => {});
     }
   }

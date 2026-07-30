@@ -33,10 +33,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from langgraph.graph import END, START, StateGraph  # noqa: E402
-from langgraph.graph.message import add_messages  # noqa: E402
 from typing import Annotated, TypedDict  # noqa: E402
 
+from langgraph.graph import END, START, StateGraph  # noqa: E402
+from langgraph.graph.message import add_messages  # noqa: E402
 from runkite_runner.factory_graph import (  # noqa: E402
     RunFactoryContext,
     classify_graph_export,
@@ -342,7 +342,9 @@ def test_build_run_config_sets_langgraph_auth_user_when_authenticated():
     check("langgraph_auth_user present when authenticated", auth_user is not None)
     check("langgraph_auth_user.identity correct", auth_user.identity == "alice-123")
     check("langgraph_auth_user has BaseUser-protocol dict access too", auth_user["email"] == "alice@example.com")
-    check("user_id shortcut set (LangGraph Platform hosting convention)", config["configurable"]["user_id"] == "alice-123")
+    check(
+        "user_id shortcut set (LangGraph Platform hosting convention)", config["configurable"]["user_id"] == "alice-123"
+    )
     check(
         "user_display_name shortcut set (LangGraph Platform hosting convention)",
         config["configurable"]["user_display_name"] == "Alice",

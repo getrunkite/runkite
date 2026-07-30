@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
 
 # --- Build ---
 build:
@@ -169,6 +169,46 @@ test-adapters:
 # generation, cancel/interrupt handling -- no live control plane needed).
 test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
+
+# --- Lint / format ---
+#
+# One gate per language, run independently so a Python-only or
+# Go-only change doesn't need every toolchain installed locally to
+# check itself -- CI runs all of them together (see .github/workflows/
+# ci.yml), this is the local, incremental version of the same checks.
+
+# golangci-lint is not vendored/pinned in go.mod (it's a standalone
+# tool, not a library dependency) -- `go install` it once yourself:
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+lint-go:
+	@unformatted=$$(gofmt -l $$(git ls-files '*.go')); \
+	if [ -n "$$unformatted" ]; then echo "not gofmt'd:"; echo "$$unformatted"; exit 1; fi
+	go vet ./...
+	golangci-lint run ./...
+
+fmt-go:
+	gofmt -w $$(git ls-files '*.go' | grep -v -E '_pb\.go$$|_grpc\.pb\.go$$')
+
+# ruff installed into python/.venv via python/requirements-dev.txt --
+# see `make python-dev-deps` (or just `python/.venv/bin/pip install -r
+# python/requirements-dev.txt` / `uv pip install ...` directly).
+lint-python:
+	python/.venv/bin/ruff check python/ python/adapters/
+	python/.venv/bin/ruff format --check python/ python/adapters/
+
+fmt-python:
+	python/.venv/bin/ruff check --fix python/ python/adapters/
+	python/.venv/bin/ruff format python/ python/adapters/
+
+lint-ts:
+	cd typescript/runkite-runner && npm run lint && npm run format:check
+
+fmt-ts:
+	cd typescript/runkite-runner && npm run format
+
+lint: lint-go lint-python lint-ts
+
+fmt: fmt-go fmt-python fmt-ts
 
 # --- Protobuf codegen ---
 

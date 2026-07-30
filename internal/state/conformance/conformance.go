@@ -1169,8 +1169,8 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		var succeeded, conflicted int
 		for i := 0; i < n; i++ {
 			err := <-results
-			switch {
-			case err == nil:
+			switch err {
+			case nil:
 				succeeded++
 			default:
 				if _, ok := err.(*state.ErrConflict); !ok {

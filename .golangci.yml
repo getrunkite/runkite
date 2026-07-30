@@ -1,0 +1,101 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # "standard" is golangci-lint's own curated default set (errcheck,
+  # govet, ineffassign, staticcheck, unused) -- a deliberately moderate
+  # starting point for a codebase this size. "all" surfaces hundreds of
+  # style nitpicks on day one that would drown out the checks that
+  # actually catch bugs; add more linters incrementally as the team
+  # gets used to this gate, not all at once.
+  default: standard
+  settings:
+    errcheck:
+      # A deferred Close() failing is almost never actionable (you're
+      # already tearing the resource down) -- the standard, widely-used
+      # exclusion every real-world errcheck config carries. Checking it
+      # everywhere would mean touching ~40 call sites across this
+      # codebase for close to zero practical benefit.
+      #
+      # encoding/json.Unmarshal on data this codebase itself wrote
+      # (reading back a JSONB/TEXT column) is unchecked pervasively
+      # across all 4 state backends today, not just the couple of spots
+      # this lint run happened to flag -- fixing it properly means
+      # auditing every Scan+Unmarshal pair for a real "what does a
+      # corrupt row even mean here" recovery story, which is real,
+      # separate work (see plans/pending_items.md), not something to
+      # paper over inconsistently in only the newest files. Excluded
+      # here rather than fixed piecemeal so this gate doesn't quietly
+      # bless a WORSE pattern (some call sites checked, most not) as
+      # "the standard."
+      exclude-functions:
+        - encoding/json.Unmarshal
+        # flag.NewFlagSet is always constructed with flag.ExitOnError in
+        # this codebase -- in that mode, Parse() calls os.Exit(2)
+        # internally on a parse error and never actually returns one,
+        # so checking its return value here can't do anything a caller
+        # would ever observe.
+        - (*flag.FlagSet).Parse
+        # Writing an HTTP response body/SSE event: if the write fails,
+        # the client's connection is already gone -- there's no
+        # response left to send an error on, and the handler is
+        # returning right after in every one of these call sites. Same
+        # "writing to an output stream nobody recovers from failing"
+        # reasoning covers the CLI's tabwriter output (Fprintln/Flush
+        # to stdout).
+        - (net/http.ResponseWriter).Write
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*encoding/json.Encoder).Encode
+        - (*text/tabwriter.Writer).Flush
+  exclusions:
+    rules:
+      # Generated protobuf/gRPC code -- not hand-written, not worth
+      # linting to this project's own standards.
+      - path: _pb\.go$
+        linters:
+          - staticcheck
+          - unused
+      - path: _grpc\.pb\.go$
+        linters:
+          - staticcheck
+          - unused
+      # Test files and the shared conformance test suites: an unchecked
+      # setup call (s.CreateThread, s.PutItem, resp.Body.Close, ...)
+      # failing here surfaces as the very next assertion failing loudly
+      # -- not a silent production bug -- so requiring every test-setup
+      # line to check+t.Fatal its own error is boilerplate with no
+      # practical payoff. Real assertions in these same files are
+      # unaffected; this only relaxes errcheck, not correctness checks.
+      - path: _test\.go$
+        linters:
+          - errcheck
+      - path: internal/state/conformance/conformance\.go$
+        linters:
+          - errcheck
+      - path: internal/vectorstore/conformance/conformance\.go$
+        linters:
+          - errcheck
+      - path: internal/transport/conformance/conformance\.go$
+        linters:
+          - errcheck
+      # A deferred/best-effort Close() failing is almost never
+      # actionable (you're already tearing the resource down) -- the
+      # standard, widely-used exclusion every real-world errcheck
+      # config carries. A text-matched rule (not exclude-functions,
+      # which needs one entry per exact receiver type/package) catches
+      # every Close() variant across this codebase's several
+      # dependencies (database/sql, pgx, the Mongo driver, go-redis,
+      # coder/websocket, this project's own state.Store/
+      # vectorstore.VectorStore interfaces) with one rule instead of
+      # enumerating each one and missing the next new one.
+      - linters:
+          - errcheck
+        text: "`[A-Za-z0-9_.]*\\.Close\\w*`.? is not checked"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

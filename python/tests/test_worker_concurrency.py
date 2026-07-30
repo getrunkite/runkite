@@ -58,6 +58,7 @@ class _MultiJobFakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.setdefault(evt.run_id, []).append(json.loads(evt.event_json))
+
         return asyncio.ensure_future(_drain())
 
     def WatchCancels(self, request, metadata=None):
@@ -138,10 +139,19 @@ async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
     lock = asyncio.Lock()
     in_flight: set = set()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, controller, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2, in_flight=in_flight,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            controller,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+            in_flight=in_flight,
+        )
+    )
 
     ok = await _wait_until(lambda: len(controller.release_events) == 2)
     check("both jobs entered astream() before either was released", ok)
@@ -168,10 +178,18 @@ async def test_poll_loop_concurrency_1_is_sequential_by_default():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, controller, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=1,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            controller,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=1,
+        )
+    )
 
     ok = await _wait_until(lambda: "s1" in controller.release_events)
     check("first job entered astream()", ok)
@@ -202,10 +220,18 @@ async def test_cancel_isolation_under_concurrency():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, controller, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            controller,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+        )
+    )
 
     ok = await _wait_until(lambda: len(controller.release_events) == 2)
     check("both jobs entered astream()", ok)
@@ -221,7 +247,9 @@ async def test_cancel_isolation_under_concurrency():
         pending_cancels["iso1"].set()
     controller.release_events["iso1"].set()
 
-    ok2 = await _wait_until(lambda: "iso2" in controller.release_events and stub.reported_status.get("iso2") is None, timeout_s=3.0)
+    ok2 = await _wait_until(
+        lambda: "iso2" in controller.release_events and stub.reported_status.get("iso2") is None, timeout_s=3.0
+    )
     if ok2:
         controller.release_events["iso2"].set()
     await _wait_until(lambda: len(stub.reported_status) == 2, timeout_s=4.0)
@@ -243,10 +271,19 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
     lock = asyncio.Lock()
     in_flight: set = set()
 
-    dispatcher_task = asyncio.ensure_future(_poll_loop(
-        stub, controller, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2, in_flight=in_flight,
-    ))
+    dispatcher_task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            controller,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+            in_flight=in_flight,
+        )
+    )
 
     ok = await _wait_until(lambda: "d1" in controller.release_events)
     check("job entered astream() before shutdown", ok)
@@ -256,7 +293,10 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
     with contextlib.suppress(asyncio.CancelledError):
         await dispatcher_task
     job_task = next(iter(in_flight))
-    check("job task was NOT cancelled by the dispatcher's own cancellation", not job_task.cancelled() and not job_task.done())
+    check(
+        "job task was NOT cancelled by the dispatcher's own cancellation",
+        not job_task.cancelled() and not job_task.done(),
+    )
 
     controller.release_events["d1"].set()
     await asyncio.gather(*in_flight, return_exceptions=True)

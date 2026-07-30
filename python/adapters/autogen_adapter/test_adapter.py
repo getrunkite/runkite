@@ -91,7 +91,10 @@ async def test_execute_happy_path_emits_expected_events():
     check("end success emitted last", methods[-1] == "end" and events[-1]["data"]["status"] == "success")
 
     values_event = next(e for e in events if e["method"] == "values")
-    check("reply appended to messages", values_event["data"]["messages"][-1] == {"role": "ai", "content": "fake agent reply"})
+    check(
+        "reply appended to messages",
+        values_event["data"]["messages"][-1] == {"role": "ai", "content": "fake agent reply"},
+    )
 
 
 async def test_extracts_last_human_message_as_input():
@@ -101,10 +104,16 @@ async def test_extracts_last_human_message_as_input():
 
     callback, _ = _collector()
     await adapter.execute(
-        {"run_id": "r2", "graph_id": "my_agent", "input": {"messages": [
-            {"role": "ai", "content": "ignored"},
-            {"role": "user", "content": "the real ask"},
-        ]}},
+        {
+            "run_id": "r2",
+            "graph_id": "my_agent",
+            "input": {
+                "messages": [
+                    {"role": "ai", "content": "ignored"},
+                    {"role": "user", "content": "the real ask"},
+                ]
+            },
+        },
         callback,
         None,
     )
@@ -123,9 +132,16 @@ async def test_agent_exception_reports_error():
     adapter = AutoGenAdapter()
     adapter.agents["my_agent"] = _FakeAssistantAgent(raise_error=True)
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r4", "graph_id": "my_agent", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r4", "graph_id": "my_agent", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
     check("agent exception -> error status", status == "error")
-    check("error event includes the exception message", any(e["method"] == "error" and "agent blew up" in e["data"]["message"] for e in events))
+    check(
+        "error event includes the exception message",
+        any(e["method"] == "error" and "agent blew up" in e["data"]["message"] for e in events),
+    )
 
 
 async def test_concurrent_run_on_shared_agent_is_serialized():
@@ -224,11 +240,18 @@ async def test_cancel_event_interrupts_a_slow_agent():
 
     fire_task = asyncio.ensure_future(_fire_cancel_soon())
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r5", "graph_id": "my_agent", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, cancel_event)
+    status = await adapter.execute(
+        {"run_id": "r5", "graph_id": "my_agent", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        cancel_event,
+    )
     await fire_task
 
     check("cancelled run reports interrupted status, not error", status == "interrupted")
-    check("end interrupted event emitted", any(e["method"] == "end" and e["data"]["status"] == "interrupted" for e in events))
+    check(
+        "end interrupted event emitted",
+        any(e["method"] == "end" and e["data"]["status"] == "interrupted" for e in events),
+    )
     check("no error event emitted for a cancellation", not any(e["method"] == "error" for e in events))
 
 

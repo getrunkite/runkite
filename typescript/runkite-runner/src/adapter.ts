@@ -75,7 +75,9 @@ export class LangGraphAdapter {
       const classified = await classifyGraphExport(exportValue);
       if (classified.kind === "factory") {
         this.factories.set(graphId, classified.factory);
-        logger.info(`Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`);
+        logger.info(
+          `Loaded factory graph: ${graphId} from ${absPath} (params: ${classified.factory.paramNames.join(", ")})`,
+        );
       } else {
         this.graphs.set(graphId, classified.graph);
         logger.info(`Loaded graph: ${graphId} from ${absPath}`);
@@ -107,10 +109,16 @@ export class LangGraphAdapter {
    * `.open()`/`.close()` bracket exactly one run -- callers do
    * `const graph = await adapter.buildFactoryGraph(...).open()` then
    * `await build.close()` in a finally block (see executeRun.ts). */
-  buildFactoryGraph(graphId: string, config: Record<string, unknown>, runContext: RunFactoryContext): FactoryGraphBuild {
+  buildFactoryGraph(
+    graphId: string,
+    config: Record<string, unknown>,
+    runContext: RunFactoryContext,
+  ): FactoryGraphBuild {
     const factory = this.factories.get(graphId);
     if (!factory) {
-      throw new Error(`'${graphId}' is not a factory graph. Available factories: ${[...this.factories.keys()].join(", ")}`);
+      throw new Error(
+        `'${graphId}' is not a factory graph. Available factories: ${[...this.factories.keys()].join(", ")}`,
+      );
     }
     return factory.build(config, runContext, { checkpointerManager: this.checkpointerManager, store: this.store });
   }

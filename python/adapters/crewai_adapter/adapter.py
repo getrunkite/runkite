@@ -127,7 +127,9 @@ class CrewAIAdapter:
 
         crew = self.crews.get(graph_id)
         if crew is None:
-            await event_callback(make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.crews)}"}))
+            await event_callback(
+                make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.crews)}"})
+            )
             return "error"
 
         await event_callback(make_event("lifecycle", {"event": "running"}))

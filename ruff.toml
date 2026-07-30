@@ -1,0 +1,39 @@
+# Runs against python/ and python/adapters/ -- see Makefile's lint
+# target. Applies to both the shared runkite_runner package and every
+# framework adapter (CrewAI/LlamaIndex/AutoGen/plain LangChain).
+
+line-length = 120
+target-version = "py310"
+
+exclude = [
+    ".venv",
+    "**/.venv",
+    "**/__pycache__",
+    "*_pb2.py",
+    "*_pb2_grpc.py",
+]
+
+[lint]
+# A deliberately moderate starting rule set for an existing codebase --
+# same "standard, not everything" reasoning as .golangci.yml's
+# linters.default: standard. E = pycodestyle errors, F = pyflakes
+# (unused imports/vars, undefined names -- the checks that actually
+# catch bugs), I = import sorting, UP = pyupgrade (modern Python
+# idioms), B = flake8-bugbear (common real bug patterns: mutable
+# default args, etc.).
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    # Line length is already covered by line-length above; E501 nags on
+    # a handful of long f-strings/URLs that reformatting would make
+    # LESS readable, not more.
+    "E501",
+]
+
+[lint.per-file-ignores]
+# Generated protobuf/gRPC code -- not hand-written, not worth linting
+# to this project's own standards.
+"*_pb2.py" = ["E", "F", "I", "UP", "B"]
+"*_pb2_grpc.py" = ["E", "F", "I", "UP", "B"]
+
+[format]
+line-ending = "lf"

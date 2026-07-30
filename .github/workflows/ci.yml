@@ -89,6 +89,12 @@ jobs:
       - name: Install Python runner dependencies
         run: pip install -r python/requirements.txt
 
+      - name: Python lint (ruff)
+        run: |
+          pip install -r python/requirements-dev.txt
+          ruff check python/ python/adapters/
+          ruff format --check python/ python/adapters/
+
       - name: Install example custom-app dependencies
         # fastapi is the example custom_routes_agent app's own framework
         # choice, not a runkite_runner dependency (uvicorn alone, already in
@@ -112,6 +118,16 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Gofmt
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then echo "not gofmt'd:"; echo "$unformatted"; exit 1; fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
 
       - name: Start MongoDB (single-node replica set)
         # Started as a plain container here, not a `services:` entry above
@@ -186,10 +202,16 @@ jobs:
           uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf
           PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py
 
-      - name: TypeScript runner unit tests
+      - name: TypeScript runner lint + format check
         working-directory: typescript/runkite-runner
         run: |
           npm install
+          npm run lint
+          npm run format:check
+
+      - name: TypeScript runner unit tests
+        working-directory: typescript/runkite-runner
+        run: |
           npx tsc -p tsconfig.json --noEmit
           npx tsx --test src/*.test.ts
 

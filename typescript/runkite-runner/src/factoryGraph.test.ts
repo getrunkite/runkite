@@ -182,7 +182,10 @@ test("FactoryGraph.build/open calls the factory with only the config it declared
     },
     ["config"],
   );
-  const build = factory.build({ configurable: { run_id: "run-1" } }, runContext(), { checkpointerManager: null, store: null });
+  const build = factory.build({ configurable: { run_id: "run-1" } }, runContext(), {
+    checkpointerManager: null,
+    store: null,
+  });
   const graph = await build.open();
 
   assert.equal((graph as any).__marker, "built");
@@ -198,7 +201,10 @@ test("FactoryGraph.build/open passes a ServerRuntimeStandIn when the factory dec
     },
     ["runtime"],
   );
-  const build = factory.build({}, runContext({ user: { identity: "alice" } }), { checkpointerManager: null, store: null });
+  const build = factory.build({}, runContext({ user: { identity: "alice" } }), {
+    checkpointerManager: null,
+    store: null,
+  });
   await build.open();
 
   assert.ok(capturedRuntime instanceof ServerRuntimeStandIn);
@@ -247,7 +253,10 @@ test("FactoryGraph.build/open passes arguments in the function's OWN declared or
   });
   await build.open();
 
-  assert.ok(capturedArgs[0] instanceof ServerRuntimeStandIn, "first positional arg must be the runtime, since it was declared first");
+  assert.ok(
+    capturedArgs[0] instanceof ServerRuntimeStandIn,
+    "first positional arg must be the runtime, since it was declared first",
+  );
   assert.deepEqual(capturedArgs[1], { marker: "the-config" });
 });
 

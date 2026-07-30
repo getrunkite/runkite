@@ -8,14 +8,22 @@ import { callAgent, A2AError } from "./a2a.js";
  * sufficient -- no extra mocking dependency, same "inspect the actual
  * outgoing request without a live control plane" approach as Python's
  * test_a2a.py uses httpx.MockTransport for. */
-function mockFetchOnce(status: number, body: unknown): { calls: Array<{ url: string; init: RequestInit }>; restore: () => void } {
+function mockFetchOnce(
+  status: number,
+  body: unknown,
+): { calls: Array<{ url: string; init: RequestInit }>; restore: () => void } {
   const original = globalThis.fetch;
   const calls: Array<{ url: string; init: RequestInit }> = [];
   globalThis.fetch = (async (url: any, init: any) => {
     calls.push({ url: String(url), init });
     return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
-  return { calls, restore: () => { globalThis.fetch = original; } };
+  return {
+    calls,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
 }
 
 test("callAgent throws when config has no configurable.run_id", async () => {
@@ -38,10 +46,15 @@ test("callAgent posts to /internal/a2a/runs with the correct body, headers, and 
         langgraph_auth_user: { toDict: () => ({ identity: "alice", email: "alice@example.com" }) },
       },
     };
-    const result = await callAgent(config, "worker_agent", { messages: [{ role: "human", content: "do the thing" }] }, {
-      wait: false,
-      controlPlaneUrl: "http://fake-control-plane:2026",
-    });
+    const result = await callAgent(
+      config,
+      "worker_agent",
+      { messages: [{ role: "human", content: "do the thing" }] },
+      {
+        wait: false,
+        controlPlaneUrl: "http://fake-control-plane:2026",
+      },
+    );
 
     assert.equal(mock.calls.length, 1);
     assert.equal(mock.calls[0].url, "http://fake-control-plane:2026/internal/a2a/runs");
@@ -107,11 +120,16 @@ test("callAgent throws A2AError on a non-2xx response, with the response body in
 test("callAgent includes thread_id and run_config in the request body when provided", async () => {
   const mock = mockFetchOnce(200, { run_id: "child-run" });
   try {
-    await callAgent({ configurable: { run_id: "parent-run" } }, "worker_agent", {}, {
-      wait: false,
-      threadId: "existing-thread",
-      runConfig: { recursion_limit: 5 },
-    });
+    await callAgent(
+      { configurable: { run_id: "parent-run" } },
+      "worker_agent",
+      {},
+      {
+        wait: false,
+        threadId: "existing-thread",
+        runConfig: { recursion_limit: 5 },
+      },
+    );
     const body = JSON.parse(mock.calls[0].init.body as string);
     assert.equal(body.thread_id, "existing-thread");
     assert.deepEqual(body.config, { recursion_limit: 5 });

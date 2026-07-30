@@ -49,7 +49,11 @@ test("RunnerUser flattens a nested legacy extra bag into top-level fields", () =
 });
 
 test("RunnerUser: a top-level field always wins over the same key nested in extra", () => {
-  const user = new RunnerUser({ identity: "alice", email: "top-level@example.com", extra: { email: "nested@example.com" } });
+  const user = new RunnerUser({
+    identity: "alice",
+    email: "top-level@example.com",
+    extra: { email: "nested@example.com" },
+  });
   assert.equal(user.get("email"), "top-level@example.com");
 });
 

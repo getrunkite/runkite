@@ -86,7 +86,9 @@ def _write_config(tmpdir, chain_module_code: str) -> str:
 
 async def test_load_config_and_string_output():
     with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = _write_config(tmpdir, "class _R:\n    async def ainvoke(self, d):\n        return 'plain string reply'\nchain = _R()\n")
+        config_path = _write_config(
+            tmpdir, "class _R:\n    async def ainvoke(self, d):\n        return 'plain string reply'\nchain = _R()\n"
+        )
         adapter = LangChainAdapter()
         await adapter.load_config(config_path)
 
@@ -105,7 +107,10 @@ async def test_load_config_and_string_output():
         check("end success emitted last", methods[-1] == "end" and events[-1]["data"]["status"] == "success")
 
         values_event = next(e for e in events if e["method"] == "values")
-        check("output messages include the reply", values_event["data"]["messages"][-1] == {"role": "ai", "content": "plain string reply"})
+        check(
+            "output messages include the reply",
+            values_event["data"]["messages"][-1] == {"role": "ai", "content": "plain string reply"},
+        )
         check("original input message preserved", values_event["data"]["messages"][0]["content"] == "hi there")
 
 
@@ -116,10 +121,16 @@ async def test_extracts_last_human_message_and_passes_input_key():
 
     callback, events = _collector()
     await adapter.execute(
-        {"run_id": "r2", "graph_id": "chat", "input": {"messages": [
-            {"role": "ai", "content": "earlier reply, must be ignored"},
-            {"role": "user", "content": "the real question"},
-        ]}},
+        {
+            "run_id": "r2",
+            "graph_id": "chat",
+            "input": {
+                "messages": [
+                    {"role": "ai", "content": "earlier reply, must be ignored"},
+                    {"role": "user", "content": "the real question"},
+                ]
+            },
+        },
         callback,
         None,
     )
@@ -131,10 +142,15 @@ async def test_basemessage_output_normalized_to_text():
     adapter.runnables["chat"] = _FakeRunnable(_FakeMessage("reply via .content"))
 
     callback, events = _collector()
-    await adapter.execute({"run_id": "r3", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None)
+    await adapter.execute(
+        {"run_id": "r3", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None
+    )
 
     values_event = next(e for e in events if e["method"] == "values")
-    check("BaseMessage-like result normalized via .content", values_event["data"]["messages"][-1]["content"] == "reply via .content")
+    check(
+        "BaseMessage-like result normalized via .content",
+        values_event["data"]["messages"][-1]["content"] == "reply via .content",
+    )
 
 
 async def test_unknown_graph_id_reports_error_without_crashing():
@@ -149,9 +165,14 @@ async def test_runnable_exception_reports_error_without_crashing():
     adapter = LangChainAdapter()
     adapter.runnables["chat"] = _FakeRunnable(None, raise_error=True)
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r5", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r5", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None
+    )
     check("exception inside chain reports error status", status == "error")
-    check("error event emitted with the exception message", any(e["method"] == "error" and "chain blew up" in e["data"]["message"] for e in events))
+    check(
+        "error event emitted with the exception message",
+        any(e["method"] == "error" and "chain blew up" in e["data"]["message"] for e in events),
+    )
 
 
 async def test_cancel_event_interrupts_a_slow_chain():
@@ -166,11 +187,18 @@ async def test_cancel_event_interrupts_a_slow_chain():
 
     fire_task = asyncio.ensure_future(_fire_cancel_soon())
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r6", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, cancel_event)
+    status = await adapter.execute(
+        {"run_id": "r6", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        cancel_event,
+    )
     await fire_task
 
     check("cancelled run reports interrupted status, not error", status == "interrupted")
-    check("end interrupted event emitted", any(e["method"] == "end" and e["data"]["status"] == "interrupted" for e in events))
+    check(
+        "end interrupted event emitted",
+        any(e["method"] == "end" and e["data"]["status"] == "interrupted" for e in events),
+    )
     check("no error event emitted for a cancellation", not any(e["method"] == "error" for e in events))
 
 

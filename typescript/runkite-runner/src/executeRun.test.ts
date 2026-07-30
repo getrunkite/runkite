@@ -32,12 +32,25 @@ test("executeRun emits lifecycle running, values, and end success for a normal s
     async stream() {
       return asyncGen([
         ["values", { messages: [{ role: "user", content: "hi" }] }],
-        ["values", { messages: [{ role: "user", content: "hi" }, { role: "ai", content: "hello" }] }],
+        [
+          "values",
+          {
+            messages: [
+              { role: "user", content: "hi" },
+              { role: "ai", content: "hello" },
+            ],
+          },
+        ],
       ]);
     },
   };
   const events: RunEvent[] = [];
-  const status = await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(status, "success");
   assert.deepEqual(
@@ -73,7 +86,12 @@ test("executeRun detects __interrupt__ and emits lifecycle interrupted + input.r
     },
   };
   const events: RunEvent[] = [];
-  const status = await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(status, "interrupted");
   assert.deepEqual(
@@ -92,7 +110,12 @@ test("executeRun falls back to ns-based interrupt_id when id is absent", async (
     },
   };
   const events: RunEvent[] = [];
-  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   const requested = events.find((e) => e.method === "input.requested")!;
   assert.equal((requested.data as { interrupt_id: string }).interrupt_id, "approval:xyz");
@@ -123,7 +146,15 @@ test("executeRun stops and reports interrupted when isCancelled() becomes true m
     async stream() {
       return asyncGen([
         ["values", { messages: [{ role: "user", content: "hi" }] }],
-        ["values", { messages: [{ role: "user", content: "hi" }, { role: "ai", content: "should not be emitted" }] }],
+        [
+          "values",
+          {
+            messages: [
+              { role: "user", content: "hi" },
+              { role: "ai", content: "should not be emitted" },
+            ],
+          },
+        ],
       ]);
     },
   };
@@ -154,7 +185,12 @@ test("executeRun emits an error event and returns status error when the graph th
     },
   };
   const events: RunEvent[] = [];
-  const status = await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(status, "error");
   assert.deepEqual(
@@ -166,7 +202,10 @@ test("executeRun emits an error event and returns status error when the graph th
 
 test("executeRun serializes LangChain-message-like objects via toDict/toJSON", async () => {
   class FakeMessage {
-    constructor(private role: string, private content: string) {}
+    constructor(
+      private role: string,
+      private content: string,
+    ) {}
     toDict() {
       return { role: this.role, content: this.content };
     }
@@ -177,7 +216,12 @@ test("executeRun serializes LangChain-message-like objects via toDict/toJSON", a
     },
   };
   const events: RunEvent[] = [];
-  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   const valuesEvent = events.find((e) => e.method === "values")!;
   assert.deepEqual(valuesEvent.data, { messages: [{ role: "ai", content: "hello" }] });
@@ -199,7 +243,12 @@ test("executeRun emits a tool_call event for a new AIMessage.tool_calls entry", 
     },
   };
   const events: RunEvent[] = [];
-  const status = await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(status, "success");
   assert.deepEqual(
@@ -210,7 +259,11 @@ test("executeRun emits a tool_call event for a new AIMessage.tool_calls entry", 
 });
 
 test("executeRun dedupes a tool_call already seen in an earlier chunk (e.g. re-streamed on a later graph step)", async () => {
-  const toolCallMsg = { role: "ai", content: "", tool_calls: [{ id: "call_1", name: "get_weather", args: { city: "SF" } }] };
+  const toolCallMsg = {
+    role: "ai",
+    content: "",
+    tool_calls: [{ id: "call_1", name: "get_weather", args: { city: "SF" } }],
+  };
   const graph: RunnableGraph = {
     async stream() {
       return asyncGen([
@@ -220,10 +273,19 @@ test("executeRun dedupes a tool_call already seen in an earlier chunk (e.g. re-s
     },
   };
   const events: RunEvent[] = [];
-  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   const toolCallEvents = events.filter((e) => e.method === "tool_call");
-  assert.equal(toolCallEvents.length, 1, "expected exactly one tool_call event despite the same id appearing in two chunks");
+  assert.equal(
+    toolCallEvents.length,
+    1,
+    "expected exactly one tool_call event despite the same id appearing in two chunks",
+  );
 });
 
 test("executeRun emits a separate tool_call event per distinct id, and does not recurse past a message that has tool_calls", async () => {
@@ -254,7 +316,12 @@ test("executeRun emits a separate tool_call event per distinct id, and does not 
     },
   };
   const events: RunEvent[] = [];
-  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   const toolCallEvents = events.filter((e) => e.method === "tool_call");
   assert.deepEqual(
@@ -270,7 +337,12 @@ test("executeRun ignores a tool_calls entry with no id (can't be deduped/correla
     },
   };
   const events: RunEvent[] = [];
-  await executeRun(fakeAdapter(graph), assignment(), async (e) => void events.push(e), () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(events.filter((e) => e.method === "tool_call").length, 0);
 });
@@ -298,7 +370,9 @@ test("buildRunConfig omits langgraph_auth_user/user_id/user_display_name when as
 
 test("buildRunConfig sets langgraph_auth_user/user_id/user_display_name from assignment.user", () => {
   const config = buildRunConfig(
-    assignment({ user: { identity: "alice", display_name: "Alice A.", is_authenticated: true, email: "alice@example.com" } }),
+    assignment({
+      user: { identity: "alice", display_name: "Alice A.", is_authenticated: true, email: "alice@example.com" },
+    }),
   );
   assert.ok(config.configurable.langgraph_auth_user instanceof RunnerUser);
   assert.equal(config.configurable.langgraph_auth_user.identity, "alice");
@@ -311,7 +385,11 @@ test("buildRunConfig does not mutate the original assignment.config object", () 
   const originalConfig = { configurable: { recursion_limit: 10 } };
   const a = assignment({ config: originalConfig });
   buildRunConfig(a);
-  assert.deepEqual(originalConfig, { configurable: { recursion_limit: 10 } }, "assignment.config must not be mutated by buildRunConfig");
+  assert.deepEqual(
+    originalConfig,
+    { configurable: { recursion_limit: 10 } },
+    "assignment.config must not be mutated by buildRunConfig",
+  );
 });
 
 // -- Factory graph integration ------------------------------------------
@@ -322,7 +400,10 @@ test("buildRunConfig does not mutate the original assignment.config object", () 
 // whether a graph_id is a factory, builds+opens it before streaming,
 // and closes it afterward regardless of how the run ends.
 
-function fakeFactoryAdapter(graph: RunnableGraph, opts: { onOpen?: () => void; onClose?: () => void } = {}): LangGraphAdapter {
+function fakeFactoryAdapter(
+  graph: RunnableGraph,
+  opts: { onOpen?: () => void; onClose?: () => void } = {},
+): LangGraphAdapter {
   let closed = false;
   return {
     isFactory: () => true,
@@ -354,7 +435,12 @@ test("executeRun builds and opens a factory graph (not getGraph) when adapter.is
   const adapter = fakeFactoryAdapter(graph, { onOpen: () => (opened = true) });
 
   const events: RunEvent[] = [];
-  const status = await executeRun(adapter, assignment(), async (e) => void events.push(e), () => false);
+  const status = await executeRun(
+    adapter,
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
 
   assert.equal(status, "success");
   assert.equal(opened, true);
@@ -371,7 +457,12 @@ test("executeRun closes the factory build after a successful run", async () => {
     },
   };
   const adapter = fakeFactoryAdapter(graph);
-  await executeRun(adapter, assignment(), async () => {}, () => false);
+  await executeRun(
+    adapter,
+    assignment(),
+    async () => {},
+    () => false,
+  );
   assert.equal((adapter as any).__wasClosed(), true);
 });
 
@@ -382,7 +473,12 @@ test("executeRun closes the factory build even when the graph throws mid-stream"
     },
   };
   const adapter = fakeFactoryAdapter(graph);
-  const status = await executeRun(adapter, assignment(), async () => {}, () => false);
+  const status = await executeRun(
+    adapter,
+    assignment(),
+    async () => {},
+    () => false,
+  );
   assert.equal(status, "error");
   assert.equal((adapter as any).__wasClosed(), true, "factory build must be closed even after an error");
 });
@@ -404,7 +500,12 @@ test("executeRun closes the factory build even when open() itself throws", async
     },
   } as unknown as LangGraphAdapter;
 
-  const status = await executeRun(adapter, assignment(), async () => {}, () => false);
+  const status = await executeRun(
+    adapter,
+    assignment(),
+    async () => {},
+    () => false,
+  );
   assert.equal(status, "error");
   assert.equal(closed, true, "factory build must be closed even when open() throws -- otherwise dispose()-ables leak");
 });
@@ -470,7 +571,12 @@ test("executeRun sets configurable.thread_id and run_id on the config passed to 
       return asyncGen([["values", {}]]);
     },
   };
-  await executeRun(fakeAdapter(graph), assignment({ thread_id: "my-thread", run_id: "my-run" }), async () => {}, () => false);
+  await executeRun(
+    fakeAdapter(graph),
+    assignment({ thread_id: "my-thread", run_id: "my-run" }),
+    async () => {},
+    () => false,
+  );
 
   assert.equal(capturedConfig.configurable.thread_id, "my-thread");
   assert.equal(capturedConfig.configurable.run_id, "my-run");

@@ -84,9 +84,7 @@ export class ServerRuntimeStandIn {
    * as Python's `ensure_user()`. */
   ensureUser(): RunnerUser {
     if (!this.user) {
-      throw new Error(
-        "No authenticated user available. Ensure an auth provider is configured on the control plane.",
-      );
+      throw new Error("No authenticated user available. Ensure an auth provider is configured on the control plane.");
     }
     return this.user;
   }
@@ -185,9 +183,7 @@ export function extractParamNames(fn: (...args: any[]) => unknown): string[] {
     .filter((name): name is string => !!name);
 }
 
-export type GraphClassification =
-  | { kind: "static"; graph: RunnableGraph }
-  | { kind: "factory"; factory: FactoryGraph };
+export type GraphClassification = { kind: "static"; graph: RunnableGraph } | { kind: "factory"; factory: FactoryGraph };
 
 /** Unwraps a 0-arg factory's result: a plain graph, a Promise resolving
  * to one, or a StateGraph builder -- same "called once at startup"
@@ -221,7 +217,9 @@ export async function classifyGraphExport(exportValue: unknown): Promise<GraphCl
     return { kind: "static", graph: exportValue };
   }
   if (typeof exportValue !== "function") {
-    throw new TypeError(`graph.ts export must be a StateGraph, a compiled graph, or a callable -- got ${typeof exportValue}`);
+    throw new TypeError(
+      `graph.ts export must be a StateGraph, a compiled graph, or a callable -- got ${typeof exportValue}`,
+    );
   }
 
   const fn = exportValue as (...args: any[]) => unknown;

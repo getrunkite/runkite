@@ -22,9 +22,10 @@ function fakeEmbeddings(): EmbeddingsInterface {
 /** Mocks the global fetch for the duration of one test -- same approach
  * as a2a.test.ts, reassigning the plain global rather than adding a
  * mocking dependency. */
-function mockFetch(
-  handler: (url: string, init: RequestInit) => { status: number; body: unknown },
-): { calls: Array<{ url: string; init: RequestInit }>; restore: () => void } {
+function mockFetch(handler: (url: string, init: RequestInit) => { status: number; body: unknown }): {
+  calls: Array<{ url: string; init: RequestInit }>;
+  restore: () => void;
+} {
   const original = globalThis.fetch;
   const calls: Array<{ url: string; init: RequestInit }> = [];
   globalThis.fetch = (async (url: any, init: any) => {
@@ -32,7 +33,12 @@ function mockFetch(
     const { status, body } = handler(String(url), init);
     return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
-  return { calls, restore: () => { globalThis.fetch = original; } };
+  return {
+    calls,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
 }
 
 test("RunkiteVectorStore requires httpBaseUrl", () => {
@@ -67,7 +73,10 @@ test("addVectors upserts each vector/document pair directly, without re-embeddin
   try {
     const store = new RunkiteVectorStore(fakeEmbeddings(), { namespace: "docs", httpBaseUrl: "http://cp:2026" });
     const ids = await store.addVectors(
-      [[1, 2, 3], [4, 5, 6]],
+      [
+        [1, 2, 3],
+        [4, 5, 6],
+      ],
       [new Document({ pageContent: "hello", id: "doc-1" }), new Document({ pageContent: "world", id: "doc-2" })],
     );
     assert.deepEqual(ids, ["doc-1", "doc-2"]);
@@ -92,7 +101,10 @@ test("addVectors throws when options.ids is shorter than documents (fails loudly
   await assert.rejects(
     () =>
       store.addVectors(
-        [[1, 2, 3], [4, 5, 6]],
+        [
+          [1, 2, 3],
+          [4, 5, 6],
+        ],
         [new Document({ pageContent: "a" }), new Document({ pageContent: "b" })],
         { ids: ["only-one-id"] },
       ),
@@ -158,7 +170,10 @@ test("similaritySearchWithScore returns documents paired with their scores, in t
     const results = await store.similaritySearchWithScore("query", 2);
     assert.deepEqual(
       results.map(([doc, score]) => [doc.id, score]),
-      [["doc-1", 0.9], ["doc-2", 0.5]],
+      [
+        ["doc-1", 0.9],
+        ["doc-2", 0.5],
+      ],
     );
   } finally {
     mock.restore();
@@ -278,7 +293,10 @@ test("fromTexts embeds and adds each text with its corresponding metadata, then 
     assert.ok(store instanceof RunkiteVectorStore);
     assert.equal(mock.calls.length, 2);
     const bodies = mock.calls.map((c) => JSON.parse(c.init.body as string));
-    assert.deepEqual(bodies.map((b) => b.metadata), [{ tag: "a" }, { tag: "b" }]);
+    assert.deepEqual(
+      bodies.map((b) => b.metadata),
+      [{ tag: "a" }, { tag: "b" }],
+    );
   } finally {
     mock.restore();
   }

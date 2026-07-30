@@ -13,11 +13,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fakeClient(
-  onHeartbeat: (req: HeartbeatRequest) => Error | undefined,
-): RunnerServiceClient {
+function fakeClient(onHeartbeat: (req: HeartbeatRequest) => Error | undefined): RunnerServiceClient {
   return {
-    heartbeat(req: HeartbeatRequest, _metadata: Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): void {
+    heartbeat(
+      req: HeartbeatRequest,
+      _metadata: Metadata,
+      callback: (err: Error | null, resp: HeartbeatResponse) => void,
+    ): void {
       const err = onHeartbeat(req);
       callback(err ?? null, { ok: !err });
     },
@@ -36,7 +38,10 @@ test("startHeartbeatLoop calls heartbeat repeatedly with the correct runId", asy
   handle.stop();
 
   assert.ok(calls.length >= 3, `expected at least 3 heartbeats sent in ~230ms at 50ms interval, got ${calls.length}`);
-  assert.ok(calls.every((id) => id === "run-x"), "every heartbeat should carry the correct runId");
+  assert.ok(
+    calls.every((id) => id === "run-x"),
+    "every heartbeat should carry the correct runId",
+  );
 });
 
 test("startHeartbeatLoop stops cleanly on stop() -- no calls land afterward", async () => {

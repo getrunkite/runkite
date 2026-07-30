@@ -100,7 +100,9 @@ class LangChainAdapter:
 
         runnable = self.runnables.get(graph_id)
         if runnable is None:
-            await event_callback(make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.runnables)}"}))
+            await event_callback(
+                make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.runnables)}"})
+            )
             return "error"
 
         await event_callback(make_event("lifecycle", {"event": "running"}))

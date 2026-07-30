@@ -17,7 +17,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import httpx  # noqa: E402
-
 from runkite_runner.a2a import A2AError, call_agent  # noqa: E402
 
 
@@ -78,8 +77,11 @@ async def test_builds_correct_request_body_and_headers():
             }
         }
         result = await call_agent(
-            config, "worker_agent", {"messages": [{"role": "human", "content": "do the thing"}]},
-            wait=False, control_plane_url="http://fake-control-plane:2026",
+            config,
+            "worker_agent",
+            {"messages": [{"role": "human", "content": "do the thing"}]},
+            wait=False,
+            control_plane_url="http://fake-control-plane:2026",
         )
     finally:
         a2a_module.httpx.AsyncClient = original_client
@@ -89,8 +91,10 @@ async def test_builds_correct_request_body_and_headers():
     check("body has correct agent_id", captured["body"]["agent_id"] == "worker_agent")
     check("body has correct parent_run_id (from config)", captured["body"]["parent_run_id"] == "parent-run-123")
     check("body has wait=false", captured["body"]["wait"] is False)
-    check("body forwards on_behalf_of from langgraph_auth_user.to_dict()",
-          captured["body"]["on_behalf_of"] == {"identity": "alice", "email": "alice@example.com"})
+    check(
+        "body forwards on_behalf_of from langgraph_auth_user.to_dict()",
+        captured["body"]["on_behalf_of"] == {"identity": "alice", "email": "alice@example.com"},
+    )
     check("runner auth headers set from RUNNER_TOKEN", captured["headers"].get("x-runner-kind") == "python-langgraph")
     check("runner token header set", captured["headers"].get("x-runner-token") == "test-token")
     check("returns the parsed response", result == {"run_id": "child-run", "status": "pending"})
@@ -105,6 +109,7 @@ async def test_no_user_in_config_omits_on_behalf_of():
 
     transport = httpx.MockTransport(handler)
     import runkite_runner.a2a as a2a_module
+
     original_client = httpx.AsyncClient
     a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=transport, **kw)
 
@@ -123,6 +128,7 @@ async def test_error_response_raises_a2a_error():
 
     transport = httpx.MockTransport(handler)
     import runkite_runner.a2a as a2a_module
+
     original_client = httpx.AsyncClient
     a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=transport, **kw)
 

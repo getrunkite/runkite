@@ -24,7 +24,6 @@ import uuid
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from langchain_core.embeddings import Embeddings  # noqa: E402
-
 from runkite_runner.vectorstore import RunkiteVectorStore  # noqa: E402
 
 
@@ -72,17 +71,24 @@ async def test_dual_mode_interop(http_url: str, postgres_dsn: str):
     # Write via direct, read via proxy.
     await direct.aadd_texts(["jumps over the lazy dog"], ids=["doc2"])
     results = await proxy.asimilarity_search("jumps over the lazy dog", k=1)
-    check("proxy mode reads direct-mode write", len(results) == 1 and results[0].page_content == "jumps over the lazy dog")
+    check(
+        "proxy mode reads direct-mode write", len(results) == 1 and results[0].page_content == "jumps over the lazy dog"
+    )
 
     # A query closer to doc1 should rank it first.
     scored = await proxy.asimilarity_search_with_score("the quick brown fox", k=2)
-    check("similarity_search_with_score ranks the closer match first", scored[0][0].page_content == "the quick brown fox")
+    check(
+        "similarity_search_with_score ranks the closer match first", scored[0][0].page_content == "the quick brown fox"
+    )
     check("scores are descending", scored[0][1] >= scored[1][1])
 
     # Re-embedding the same id overwrites, not duplicates.
     await proxy.aadd_texts(["the quick brown fox, updated"], ids=["doc1"])
     results = await direct.asimilarity_search("the quick brown fox, updated", k=5)
-    check("re-add with same id overwrites, not duplicates", sum(1 for r in results if r.page_content.startswith("the quick brown fox")) == 1)
+    check(
+        "re-add with same id overwrites, not duplicates",
+        sum(1 for r in results if r.page_content.startswith("the quick brown fox")) == 1,
+    )
 
     # Delete via proxy, confirm gone via direct.
     await proxy.adelete(["doc1"])

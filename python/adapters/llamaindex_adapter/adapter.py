@@ -30,14 +30,19 @@ from pathlib import Path
 from typing import Any
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
-
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 
 
 def _to_chat_messages(messages: list) -> list[ChatMessage]:
     """Converts the Runner Protocol's {"role": ..., "content": ...}
     message dicts into LlamaIndex's own ChatMessage type."""
-    role_map = {"human": MessageRole.USER, "user": MessageRole.USER, "ai": MessageRole.ASSISTANT, "assistant": MessageRole.ASSISTANT, "system": MessageRole.SYSTEM}
+    role_map = {
+        "human": MessageRole.USER,
+        "user": MessageRole.USER,
+        "ai": MessageRole.ASSISTANT,
+        "assistant": MessageRole.ASSISTANT,
+        "system": MessageRole.SYSTEM,
+    }
     out = []
     for msg in messages:
         role = msg.get("role") or msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
@@ -101,7 +106,9 @@ class LlamaIndexAdapter:
 
         engine = self.engines.get(graph_id)
         if engine is None:
-            await event_callback(make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.engines)}"}))
+            await event_callback(
+                make_event("error", {"message": f"unknown graph_id: {graph_id!r}. Available: {list(self.engines)}"})
+            )
             return "error"
 
         await event_callback(make_event("lifecycle", {"event": "running"}))
@@ -110,7 +117,9 @@ class LlamaIndexAdapter:
             if not messages:
                 raise ValueError("input.messages is empty -- nothing to respond to")
 
-            last_text = messages[-1].get("content") if isinstance(messages[-1], dict) else getattr(messages[-1], "content", "")
+            last_text = (
+                messages[-1].get("content") if isinstance(messages[-1], dict) else getattr(messages[-1], "content", "")
+            )
             prior_history = _to_chat_messages(messages[:-1])
 
             result = await run_cancellable(engine.achat(last_text, chat_history=prior_history), cancel_event)

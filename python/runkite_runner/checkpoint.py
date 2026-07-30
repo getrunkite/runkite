@@ -132,9 +132,7 @@ class CheckpointerManager:
                 try:
                     await self._checkpointer.setup()
                 finally:
-                    await lock_conn.execute(
-                        "SELECT pg_advisory_unlock(%s)", (_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY,)
-                    )
+                    await lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY,))
             self.mode = "direct-postgres"
             logger.info(f"checkpoint mode: direct (postgres, pool_size={pool_size}) -- state survives runner restarts")
         else:

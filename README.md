@@ -709,7 +709,15 @@ make infra-up       # Start ephemeral Postgres + MySQL + Redis + MongoDB + Qdran
 make infra-down     # Stop test infrastructure
 make vet            # go vet
 make build          # Build the binary
+
+make lint           # gofmt/vet/golangci-lint + ruff + oxlint/prettier, all three SDKs
+make fmt            # Auto-fix formatting for all three SDKs
+make lint-go        # Just Go: gofmt -l + go vet + golangci-lint (go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)
+make lint-python    # Just Python: ruff check + ruff format --check (python/.venv/bin/pip install -r python/requirements-dev.txt)
+make lint-ts        # Just TypeScript: oxlint + prettier --check
 ```
+
+Same three-linter shape enforced in CI (`.github/workflows/ci.yml`) on every push/PR. Config lives in `.golangci.yml` (Go), `ruff.toml` (Python), and `typescript/runkite-runner/.oxlintrc.json` + `.prettierrc.json` (TypeScript) -- each a deliberately moderate starting rule set (golangci-lint's own curated "standard" linters, not "all"; ruff's `E`/`F`/`I`/`UP`/`B` rule groups) rather than maximally strict, so the gate catches real bugs (unused imports, unchecked errors on non-cleanup calls, suspicious constructs) without drowning contributors in day-one style nitpicks.
 
 ## API Reference
 

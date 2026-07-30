@@ -64,7 +64,10 @@ def test_make_event_factory_serializes_pydantic_like_objects():
 
     make_event = make_event_factory("run-456")
     e = make_event("values", {"messages": [FakeMessage()]})
-    check("pydantic-style object serialized via model_dump", e["data"]["messages"][0] == {"role": "ai", "content": "hello"})
+    check(
+        "pydantic-style object serialized via model_dump",
+        e["data"]["messages"][0] == {"role": "ai", "content": "hello"},
+    )
 
 
 class _FakeCall:
@@ -74,6 +77,7 @@ class _FakeCall:
     def __await__(self):
         async def _noop():
             return None
+
         return _noop().__await__()
 
 
@@ -103,6 +107,7 @@ class _FakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.append(json.loads(evt.event_json))
+
         return asyncio.ensure_future(_drain())
 
     def WatchCancels(self, request, metadata=None):
@@ -154,6 +159,7 @@ class _MultiJobFakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.setdefault(evt.run_id, []).append(json.loads(evt.event_json))
+
         return asyncio.ensure_future(_drain())
 
     def WatchCancels(self, request, metadata=None):
@@ -198,9 +204,7 @@ async def _run_one_iteration(stub, adapter):
     pending_cancels: dict = {}
     pre_cancelled: set = set()
     lock = asyncio.Lock()
-    task = asyncio.ensure_future(
-        _poll_loop(stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock)
-    )
+    task = asyncio.ensure_future(_poll_loop(stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock))
     # One GetJob call is enough to dispatch and complete the single
     # assignment; the fake stub then blocks forever on the next
     # GetJob, so cancel the loop task once we've seen a status report.
@@ -249,10 +253,19 @@ async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
     lock = asyncio.Lock()
     in_flight: set = set()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2, in_flight=in_flight,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            adapter,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+            in_flight=in_flight,
+        )
+    )
 
     # Wait until both jobs have actually entered execute() and are
     # blocked on their release Event -- proves they were dispatched
@@ -291,10 +304,18 @@ async def test_poll_loop_concurrency_1_is_sequential_by_default():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=1,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            adapter,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=1,
+        )
+    )
 
     for _ in range(500):
         if "s1" in adapter.release_events:
@@ -337,10 +358,18 @@ async def test_cancel_isolation_under_concurrency():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    task = asyncio.ensure_future(_poll_loop(
-        stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2,
-    ))
+    task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            adapter,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+        )
+    )
 
     for _ in range(500):
         if len(adapter.release_events) == 2:
@@ -381,10 +410,19 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
     lock = asyncio.Lock()
     in_flight: set = set()
 
-    dispatcher_task = asyncio.ensure_future(_poll_loop(
-        stub, adapter, "test-kind", [], pending_cancels, pre_cancelled, lock,
-        concurrency=2, in_flight=in_flight,
-    ))
+    dispatcher_task = asyncio.ensure_future(
+        _poll_loop(
+            stub,
+            adapter,
+            "test-kind",
+            [],
+            pending_cancels,
+            pre_cancelled,
+            lock,
+            concurrency=2,
+            in_flight=in_flight,
+        )
+    )
 
     for _ in range(500):
         if "d1" in adapter.release_events:
@@ -399,7 +437,10 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
     dispatcher_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await dispatcher_task
-    check("job task was NOT cancelled by the dispatcher's own cancellation", not next(iter(in_flight)).cancelled() and not next(iter(in_flight)).done())
+    check(
+        "job task was NOT cancelled by the dispatcher's own cancellation",
+        not next(iter(in_flight)).cancelled() and not next(iter(in_flight)).done(),
+    )
 
     adapter.release_events["d1"].set()
     await asyncio.gather(*in_flight, return_exceptions=True)

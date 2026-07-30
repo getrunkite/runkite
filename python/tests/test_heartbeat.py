@@ -23,7 +23,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import grpc  # noqa: E402
-
 from runkite_runner.heartbeat import heartbeat_loop  # noqa: E402
 
 
@@ -53,7 +52,9 @@ class _FailingThenCountingStub:
         self.calls += 1
         if self.calls == 1:
             raise grpc.aio.AioRpcError(
-                grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), grpc.aio.Metadata(),
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.aio.Metadata(),
+                grpc.aio.Metadata(),
                 details="simulated transient failure",
             )
 

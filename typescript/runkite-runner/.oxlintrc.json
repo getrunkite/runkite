@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc"],
+  "ignorePatterns": ["dist/**"],
+  "overrides": [
+    {
+      "files": ["src/factoryGraph.test.ts"],
+      "rules": {
+        // These test fixtures ARE extractParamNames' subject under
+        // test: `function graph(config, runtime) {}` exists so the
+        // test can assert extractParamNames(graph) returns the real
+        // declared names -- renaming the params to `_config`/`_runtime`
+        // to silence this would make the test assert against names
+        // that no real LangGraph SDK factory would ever have.
+        "no-unused-vars": "off",
+        // eval() here is deliberate, not a security smell: TypeScript
+        // source can't express a bare (parenthesis-free) single-param
+        // arrow function once it's typed, so eval is the only way to
+        // construct that exact runtime shape to test
+        // extractParamListSource's parenthesis-free branch (see the
+        // comment at its one call site).
+        "no-eval": "off"
+      }
+    }
+  ]
+}

@@ -80,9 +80,15 @@ export class RunkiteVectorStore extends VectorStore {
     return "runkite";
   }
 
-  async addVectors(vectors: number[][], documents: DocumentInterface[], options?: { ids?: string[] }): Promise<string[]> {
+  async addVectors(
+    vectors: number[][],
+    documents: DocumentInterface[],
+    options?: { ids?: string[] },
+  ): Promise<string[]> {
     if (vectors.length !== documents.length) {
-      throw new Error(`addVectors: vectors.length (${vectors.length}) must equal documents.length (${documents.length})`);
+      throw new Error(
+        `addVectors: vectors.length (${vectors.length}) must equal documents.length (${documents.length})`,
+      );
     }
     // Fail loudly on a length mismatch, matching Python's
     // zip(ids, texts, metadatas, vectors, strict=True) -- a silently
@@ -90,12 +96,12 @@ export class RunkiteVectorStore extends VectorStore {
     // undefined id, which only surfaces downstream as an opaque control
     // plane 400 rather than a clear error at the call site that caused it.
     if (options?.ids && options.ids.length !== documents.length) {
-      throw new Error(`addVectors: options.ids.length (${options.ids.length}) must equal documents.length (${documents.length})`);
+      throw new Error(
+        `addVectors: options.ids.length (${options.ids.length}) must equal documents.length (${documents.length})`,
+      );
     }
     const ids = options?.ids ?? documents.map((d) => d.id ?? crypto.randomUUID());
-    await Promise.all(
-      documents.map((doc, i) => this.upsert(ids[i], doc.pageContent, doc.metadata ?? {}, vectors[i])),
-    );
+    await Promise.all(documents.map((doc, i) => this.upsert(ids[i], doc.pageContent, doc.metadata ?? {}, vectors[i])));
     return ids;
   }
 
@@ -130,7 +136,12 @@ export class RunkiteVectorStore extends VectorStore {
   // handlers on the Go side, different auth boundary -- see
   // internal/auth/auth.go and store.ts's identical convention.
 
-  private async upsert(id: string, content: string, metadata: Record<string, unknown>, embedding: number[]): Promise<void> {
+  private async upsert(
+    id: string,
+    content: string,
+    metadata: Record<string, unknown>,
+    embedding: number[],
+  ): Promise<void> {
     const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, {
       method: "PUT",
       headers: this.headers,

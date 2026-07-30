@@ -155,7 +155,11 @@ test("pollLoop with concurrency=1 processes jobs strictly one at a time (backwar
     },
   };
 
-  const { client, reportedStatuses } = makeFakeClient([jobResponse("run-1"), jobResponse("run-2"), jobResponse("run-3")]);
+  const { client, reportedStatuses } = makeFakeClient([
+    jobResponse("run-1"),
+    jobResponse("run-2"),
+    jobResponse("run-3"),
+  ]);
   const adapter = fakeAdapter(graph);
   const pendingCancels = new Map<string, CancelState>();
 
@@ -191,7 +195,11 @@ test("pollLoop with concurrency=3 runs multiple jobs' graphs concurrently, not s
     },
   };
 
-  const { client, reportedStatuses } = makeFakeClient([jobResponse("run-1"), jobResponse("run-2"), jobResponse("run-3")]);
+  const { client, reportedStatuses } = makeFakeClient([
+    jobResponse("run-1"),
+    jobResponse("run-2"),
+    jobResponse("run-3"),
+  ]);
   const adapter = fakeAdapter(graph);
   const pendingCancels = new Map<string, CancelState>();
 
@@ -218,7 +226,11 @@ test("pollLoop with concurrency=2 dispatches a 3rd job only once a slot frees up
     },
   };
 
-  const { client, reportedStatuses } = makeFakeClient([jobResponse("run-1"), jobResponse("run-2"), jobResponse("run-3")]);
+  const { client, reportedStatuses } = makeFakeClient([
+    jobResponse("run-1"),
+    jobResponse("run-2"),
+    jobResponse("run-3"),
+  ]);
   const adapter = fakeAdapter(graph);
   const pendingCancels = new Map<string, CancelState>();
 
@@ -259,7 +271,10 @@ test("pollLoop: one job failing (bad graph_id) does not stop the dispatcher from
     },
   } as unknown as LangGraphAdapter;
 
-  const { client, reportedStatuses } = makeFakeClient([jobResponse("run-fail", "missing_graph"), jobResponse("run-ok", "test_graph")]);
+  const { client, reportedStatuses } = makeFakeClient([
+    jobResponse("run-fail", "missing_graph"),
+    jobResponse("run-ok", "test_graph"),
+  ]);
   const pendingCancels = new Map<string, CancelState>();
 
   void pollLoop(client, adapter, "typescript-langgraphjs", new Metadata(), pendingCancels, 1);

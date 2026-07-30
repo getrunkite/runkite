@@ -10,7 +10,6 @@ import asyncio
 import contextlib
 import importlib
 import importlib.util
-import inspect
 import json
 import logging
 import os
@@ -22,8 +21,7 @@ from typing import Any
 import grpc
 
 # Generated protobuf stubs
-from . import runner_pb2
-from . import runner_pb2_grpc
+from . import runner_pb2, runner_pb2_grpc
 from .checkpoint import CheckpointerManager
 from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
@@ -222,7 +220,9 @@ def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
     return found
 
 
-async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callback, cancel_event: asyncio.Event | None = None) -> str:
+async def execute_run(
+    adapter: LangGraphAdapter, assignment: dict, event_callback, cancel_event: asyncio.Event | None = None
+) -> str:
     """Execute a single run and emit events via callback.
 
     Returns the final status: 'success', 'error', or 'interrupted'.
@@ -232,7 +232,16 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
     input_data = assignment.get("input")
     config = build_run_config(assignment)
     stream_modes = assignment.get("stream_modes", ["values"])
-    checkpoint_ref = assignment.get("checkpoint_ref")
+    # assignment.get("checkpoint_ref") -- deliberately not read here.
+    # checkpoint_ref flows all the way from the client-facing API down
+    # to this runner (internal/models.RunCreate -> RunAssignment ->
+    # this dict), but nothing on the runner side ever acts on it: a
+    # client asking to resume from a SPECIFIC past checkpoint (rather
+    # than the thread's latest one) gets no error, just silent
+    # fallback to the checkpointer's normal latest-checkpoint lookup.
+    # A real, documented gap (see plans/pending_items.md), found via
+    # ruff flagging this as an unused local -- not something to paper
+    # over by just deleting the field read without noting why.
     resume_command = assignment.get("resume_command")
 
     seq = 0
@@ -301,6 +310,7 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
             # Handle resume (HITL)
             if resume_command is not None:
                 from langgraph.types import Command
+
                 input_data = Command(resume=resume_command.get("response"))
 
             # Determine stream mode for LangGraph
@@ -313,7 +323,6 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
 
             # Stream the graph
             has_interrupt = False
-            last_values = None
 
             async for chunk in graph.astream(input_data, config=config, stream_mode=lg_stream_mode):
                 # LangGraph returns different shapes based on stream_mode
@@ -324,11 +333,16 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
                     data = chunk
 
                 for tc in find_new_tool_calls(data, seen_tool_call_ids):
-                    await event_callback(make_event("tool_call", {
-                        "name": tc.get("name"),
-                        "args": tc.get("args"),
-                        "id": tc.get("id"),
-                    }))
+                    await event_callback(
+                        make_event(
+                            "tool_call",
+                            {
+                                "name": tc.get("name"),
+                                "args": tc.get("args"),
+                                "id": tc.get("id"),
+                            },
+                        )
+                    )
 
                 # Check for interrupts
                 if isinstance(data, dict) and "__interrupt__" in data:
@@ -337,7 +351,7 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
                     # Emit lifecycle interrupted
                     await event_callback(make_event("lifecycle", {"event": "interrupted"}))
                     # Emit input.requested for each interrupt
-                    for interrupt in (interrupts if isinstance(interrupts, (list, tuple)) else [interrupts]):
+                    for interrupt in interrupts if isinstance(interrupts, (list, tuple)) else [interrupts]:
                         interrupt_id = None
                         interrupt_value = None
                         if isinstance(interrupt, dict):
@@ -350,10 +364,15 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
                             interrupt_id = f"interrupt-{seq}"
                             interrupt_value = interrupt
 
-                        await event_callback(make_event("input.requested", {
-                            "interrupt_id": interrupt_id,
-                            "value": interrupt_value,
-                        }))
+                        await event_callback(
+                            make_event(
+                                "input.requested",
+                                {
+                                    "interrupt_id": interrupt_id,
+                                    "value": interrupt_value,
+                                },
+                            )
+                        )
 
                     # Clean data for the values event
                     clean_data = {k: v for k, v in data.items() if k != "__interrupt__"}
@@ -369,9 +388,6 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
                 # Normal event
                 await event_callback(make_event(mode, data))
 
-                if mode == "values":
-                    last_values = data
-
             if has_interrupt:
                 await event_callback(make_event("end", {"status": "interrupted"}))
                 return "interrupted"
@@ -384,10 +400,15 @@ async def execute_run(adapter: LangGraphAdapter, assignment: dict, event_callbac
         return "interrupted"
     except Exception as e:
         logger.exception(f"Run {run_id} failed: {e}")
-        await event_callback(make_event("error", {
-            "message": str(e),
-            "type": type(e).__name__,
-        }))
+        await event_callback(
+            make_event(
+                "error",
+                {
+                    "message": str(e),
+                    "type": type(e).__name__,
+                },
+            )
+        )
         return "error"
 
 
@@ -448,11 +469,14 @@ async def run_worker(
     # a long time -- long enough to steal a job meant for its replacement
     # and then lose it (the response can never reach a dead client).
     # Matches the server's keepalive.ServerParameters in cmd/serve.go.
-    channel = grpc.aio.insecure_channel(grpc_address, options=[
-        ("grpc.keepalive_time_ms", 2000),
-        ("grpc.keepalive_timeout_ms", 2000),
-        ("grpc.keepalive_permit_without_calls", 1),
-    ])
+    channel = grpc.aio.insecure_channel(
+        grpc_address,
+        options=[
+            ("grpc.keepalive_time_ms", 2000),
+            ("grpc.keepalive_timeout_ms", 2000),
+            ("grpc.keepalive_permit_without_calls", 1),
+        ],
+    )
     stub = runner_pb2_grpc.RunnerServiceStub(channel)
 
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")
@@ -482,9 +506,12 @@ async def run_worker(
         """Subscribe to cancel signals via gRPC server-streaming RPC."""
         while True:
             try:
-                stream = stub.WatchCancels(runner_pb2.WatchCancelsRequest(
-                    runner_kind=runner_kind,
-                ), metadata=auth_metadata)
+                stream = stub.WatchCancels(
+                    runner_pb2.WatchCancelsRequest(
+                        runner_kind=runner_kind,
+                    ),
+                    metadata=auth_metadata,
+                )
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
@@ -514,9 +541,13 @@ async def run_worker(
     custom_app_config = _load_custom_app_config(config_path)
     if custom_app_config is not None:
         app = load_asgi_app(Path(config_path).parent, custom_app_config["module"])
-        custom_app_task = asyncio.create_task(serve_custom_app(
-            app, custom_app_config.get("host", "127.0.0.1"), custom_app_config.get("port", 8100),
-        ))
+        custom_app_task = asyncio.create_task(
+            serve_custom_app(
+                app,
+                custom_app_config.get("host", "127.0.0.1"),
+                custom_app_config.get("port", 8100),
+            )
+        )
 
     # Tracks jobs currently being handled as spawned asyncio.Tasks (see
     # _poll_loop's dispatcher) -- populated/drained by _poll_loop itself,
@@ -527,8 +558,15 @@ async def run_worker(
 
     try:
         await _poll_loop(
-            stub, adapter, runner_kind, auth_metadata, pending_cancels, pre_cancelled, pending_cancels_lock,
-            concurrency=concurrency, in_flight=in_flight_tasks,
+            stub,
+            adapter,
+            runner_kind,
+            auth_metadata,
+            pending_cancels,
+            pre_cancelled,
+            pending_cancels_lock,
+            concurrency=concurrency,
+            in_flight=in_flight_tasks,
         )
     finally:
         cancel_watcher_task.cancel()
@@ -615,10 +653,12 @@ async def _handle_job(
 
         async def send_event(event: dict):
             """Queue an event for streaming to the control plane."""
-            await event_queue.put(runner_pb2.RunEventProto(
-                run_id=run_id,
-                event_json=json.dumps(event),
-            ))
+            await event_queue.put(
+                runner_pb2.RunEventProto(
+                    run_id=run_id,
+                    event_json=json.dumps(event),
+                )
+            )
 
         # Register a cancel event for this run, claiming any
         # pre-arrived cancel signal for it.
@@ -663,11 +703,14 @@ async def _handle_job(
         # Report final status -- must always happen once run_id is known,
         # even if StreamEvents setup failed above (otherwise the run
         # stays "running" forever on the control plane).
-        await stub.ReportStatus(runner_pb2.ReportStatusRequest(
-            run_id=run_id,
-            status=status,
-            error_message="" if status != "error" else "see error event",
-        ), metadata=auth_metadata)
+        await stub.ReportStatus(
+            runner_pb2.ReportStatusRequest(
+                run_id=run_id,
+                status=status,
+                error_message="" if status != "error" else "see error event",
+            ),
+            metadata=auth_metadata,
+        )
 
         logger.info(f"Run completed: run_id={run_id} status={status}")
 
@@ -677,11 +720,14 @@ async def _handle_job(
         logger.exception(f"Worker error handling run_id={run_id}: {e}")
         if run_id is not None:
             with contextlib.suppress(Exception):
-                await stub.ReportStatus(runner_pb2.ReportStatusRequest(
-                    run_id=run_id,
-                    status="error",
-                    error_message=str(e),
-                ), metadata=auth_metadata)
+                await stub.ReportStatus(
+                    runner_pb2.ReportStatusRequest(
+                        run_id=run_id,
+                        status="error",
+                        error_message=str(e),
+                    ),
+                    metadata=auth_metadata,
+                )
 
 
 async def _poll_loop(
@@ -722,10 +768,13 @@ async def _poll_loop(
         await sem.acquire()
         try:
             # Long-poll for a job
-            response = await stub.GetJob(runner_pb2.GetJobRequest(
-                runner_kind=runner_kind,
-                timeout_seconds=30,
-            ), metadata=auth_metadata)
+            response = await stub.GetJob(
+                runner_pb2.GetJobRequest(
+                    runner_kind=runner_kind,
+                    timeout_seconds=30,
+                ),
+                metadata=auth_metadata,
+            )
         except asyncio.CancelledError:
             sem.release()
             raise
@@ -744,15 +793,24 @@ async def _poll_loop(
             sem.release()
             continue  # no job, poll again
 
-        task = asyncio.create_task(_handle_job(
-            stub, adapter, response, auth_metadata, pending_cancels, pre_cancelled, pending_cancels_lock,
-        ))
+        task = asyncio.create_task(
+            _handle_job(
+                stub,
+                adapter,
+                response,
+                auth_metadata,
+                pending_cancels,
+                pre_cancelled,
+                pending_cancels_lock,
+            )
+        )
         in_flight.add(task)
         task.add_done_callback(_on_job_done)
 
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Runkite Python Runner")
     parser.add_argument("--config", default="langgraph.json", help="Path to langgraph.json")
     parser.add_argument(

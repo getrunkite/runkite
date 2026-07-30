@@ -30,7 +30,8 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable
+from typing import Any
 
 import httpx
 from langchain_core.documents import Document
@@ -153,7 +154,7 @@ class RunkiteVectorStore(VectorStore):
         *,
         ids: list[str] | None = None,
         **kwargs: Any,
-    ) -> "RunkiteVectorStore":
+    ) -> RunkiteVectorStore:
         store = cls(embedding, **kwargs)
         store.add_texts(texts, metadatas, ids=ids)
         return store
@@ -192,7 +193,9 @@ class RunkiteVectorStore(VectorStore):
         results = await self._search(embedding, k, kwargs.get("filter"))
         return [_item_to_document(r["item"]) for r in results]
 
-    async def asimilarity_search_with_score(self, query: str, k: int = 4, **kwargs: Any) -> list[tuple[Document, float]]:
+    async def asimilarity_search_with_score(
+        self, query: str, k: int = 4, **kwargs: Any
+    ) -> list[tuple[Document, float]]:
         embedding = self._embedding.embed_query(query)
         results = await self._search(embedding, k, kwargs.get("filter"))
         return [(_item_to_document(r["item"]), r["score"]) for r in results]
@@ -224,7 +227,13 @@ class RunkiteVectorStore(VectorStore):
         async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
             resp = await client.put(
                 "/internal/vectors/items",
-                json={"namespace": self._namespace, "id": doc_id, "content": content, "metadata": metadata, "embedding": embedding},
+                json={
+                    "namespace": self._namespace,
+                    "id": doc_id,
+                    "content": content,
+                    "metadata": metadata,
+                    "embedding": embedding,
+                },
             )
             resp.raise_for_status()
 

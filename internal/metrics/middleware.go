@@ -86,7 +86,6 @@ func (rw *responseWriter) Flush() {
 	}
 }
 
-
 // HTTPMiddleware records request count and duration for every HTTP request
 // except the /metrics endpoint itself.
 func HTTPMiddleware(next http.Handler) http.Handler {

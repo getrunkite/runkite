@@ -18,7 +18,7 @@ func TestFormatStoreExpiresLexOrderMatchesChrono(t *testing.T) {
 
 	a := formatStoreExpires(earlier)
 	b := formatStoreExpires(later)
-	if !(a < b) {
+	if a >= b {
 		t.Fatalf("lex order broken: formatStoreExpires(%v)=%q should be < formatStoreExpires(%v)=%q", earlier, a, later, b)
 	}
 	if len(a) != len(b) {
@@ -41,7 +41,7 @@ func TestFormatStoreExpiresLexOrderMatchesChrono(t *testing.T) {
 	for i, d := range times {
 		ts := base.Add(d)
 		s := formatStoreExpires(ts)
-		if i > 0 && !(prev < s) {
+		if i > 0 && prev >= s {
 			t.Fatalf("lex order broken at step %d: %q (%v) should be < %q (%v)", i, prev, prevT, s, ts)
 		}
 		prev, prevT = s, ts

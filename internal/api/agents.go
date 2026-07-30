@@ -117,15 +117,15 @@ func (s *Server) handleRollbackAgent(w http.ResponseWriter, r *http.Request) {
 
 // assistantView is the SDK-expected response shape for an "assistant".
 type assistantView struct {
-	AssistantID  string                 `json:"assistant_id"`
-	GraphID      string                 `json:"graph_id"`
-	Config       map[string]interface{} `json:"config"`
-	Metadata     map[string]interface{} `json:"metadata"`
-	Name         string                 `json:"name"`
-	Description  string                 `json:"description,omitempty"`
-	Version      int                    `json:"version"`
-	CreatedAt    string                 `json:"created_at,omitempty"`
-	UpdatedAt    string                 `json:"updated_at,omitempty"`
+	AssistantID string                 `json:"assistant_id"`
+	GraphID     string                 `json:"graph_id"`
+	Config      map[string]interface{} `json:"config"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	Version     int                    `json:"version"`
+	CreatedAt   string                 `json:"created_at,omitempty"`
+	UpdatedAt   string                 `json:"updated_at,omitempty"`
 }
 
 func agentToAssistantView(a *models.Agent) assistantView {

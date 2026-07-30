@@ -25,12 +25,12 @@ import json
 import logging
 import os
 import time
-from typing import Any, Awaitable, Callable, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 import grpc
 
-from . import runner_pb2
-from . import runner_pb2_grpc
+from . import runner_pb2, runner_pb2_grpc
 from .heartbeat import heartbeat_loop
 
 logger = logging.getLogger("runkite.runner")
@@ -161,11 +161,14 @@ async def run_worker(
     # Keepalive so the control plane detects a dead/crashed runner
     # quickly -- see worker.py's run_worker for the full rationale
     # (matches cmd/serve.go's keepalive.ServerParameters).
-    channel = grpc.aio.insecure_channel(grpc_address, options=[
-        ("grpc.keepalive_time_ms", 2000),
-        ("grpc.keepalive_timeout_ms", 2000),
-        ("grpc.keepalive_permit_without_calls", 1),
-    ])
+    channel = grpc.aio.insecure_channel(
+        grpc_address,
+        options=[
+            ("grpc.keepalive_time_ms", 2000),
+            ("grpc.keepalive_timeout_ms", 2000),
+            ("grpc.keepalive_permit_without_calls", 1),
+        ],
+    )
     stub = runner_pb2_grpc.RunnerServiceStub(channel)
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")
 
@@ -187,7 +190,9 @@ async def run_worker(
     async def watch_cancels():
         while True:
             try:
-                stream = stub.WatchCancels(runner_pb2.WatchCancelsRequest(runner_kind=runner_kind), metadata=auth_metadata)
+                stream = stub.WatchCancels(
+                    runner_pb2.WatchCancelsRequest(runner_kind=runner_kind), metadata=auth_metadata
+                )
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
@@ -214,9 +219,15 @@ async def run_worker(
 
     try:
         await _poll_loop(
-            stub, adapter, runner_kind, auth_metadata,
-            pending_cancels, pre_cancelled, pending_cancels_lock,
-            concurrency=concurrency, in_flight=in_flight_tasks,
+            stub,
+            adapter,
+            runner_kind,
+            auth_metadata,
+            pending_cancels,
+            pre_cancelled,
+            pending_cancels_lock,
+            concurrency=concurrency,
+            in_flight=in_flight_tasks,
         )
     finally:
         cancel_watcher_task.cancel()
@@ -280,7 +291,10 @@ async def _handle_job(
             await event_queue.put(runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event)))
 
         cancel_event = await register_run(
-            pending_cancels, pre_cancelled, pending_cancels_lock, run_id,
+            pending_cancels,
+            pre_cancelled,
+            pending_cancels_lock,
+            run_id,
         )
 
         # Started as soon as run_id is known, before StreamEvents' first
@@ -321,11 +335,14 @@ async def _handle_job(
 
         # Always report once run_id is known -- StreamEvents setup
         # failures used to skip this and leave the run "running" forever.
-        await stub.ReportStatus(runner_pb2.ReportStatusRequest(
-            run_id=run_id,
-            status=status,
-            error_message="" if status != "error" else "see error event",
-        ), metadata=auth_metadata)
+        await stub.ReportStatus(
+            runner_pb2.ReportStatusRequest(
+                run_id=run_id,
+                status=status,
+                error_message="" if status != "error" else "see error event",
+            ),
+            metadata=auth_metadata,
+        )
 
         logger.info(f"Run completed: run_id={run_id} status={status}")
 
@@ -335,11 +352,14 @@ async def _handle_job(
         logger.exception(f"Worker error handling run_id={run_id}: {e}")
         if run_id is not None:
             try:
-                await stub.ReportStatus(runner_pb2.ReportStatusRequest(
-                    run_id=run_id,
-                    status="error",
-                    error_message=str(e),
-                ), metadata=auth_metadata)
+                await stub.ReportStatus(
+                    runner_pb2.ReportStatusRequest(
+                        run_id=run_id,
+                        status="error",
+                        error_message=str(e),
+                    ),
+                    metadata=auth_metadata,
+                )
             except Exception:
                 pass
 
@@ -373,9 +393,13 @@ async def _poll_loop(
     while True:
         await sem.acquire()
         try:
-            response = await stub.GetJob(runner_pb2.GetJobRequest(
-                runner_kind=runner_kind, timeout_seconds=30,
-            ), metadata=auth_metadata)
+            response = await stub.GetJob(
+                runner_pb2.GetJobRequest(
+                    runner_kind=runner_kind,
+                    timeout_seconds=30,
+                ),
+                metadata=auth_metadata,
+            )
         except asyncio.CancelledError:
             sem.release()
             raise
@@ -394,8 +418,16 @@ async def _poll_loop(
             sem.release()
             continue
 
-        task = asyncio.create_task(_handle_job(
-            stub, adapter, response, auth_metadata, pending_cancels, pre_cancelled, pending_cancels_lock,
-        ))
+        task = asyncio.create_task(
+            _handle_job(
+                stub,
+                adapter,
+                response,
+                auth_metadata,
+                pending_cancels,
+                pre_cancelled,
+                pending_cancels_lock,
+            )
+        )
         in_flight.add(task)
         task.add_done_callback(_on_job_done)

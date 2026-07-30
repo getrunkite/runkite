@@ -23,13 +23,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from typing import Annotated, TypedDict  # noqa: E402
+
 from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
+from langchain_core.tools import tool  # noqa: E402
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from langgraph.graph.message import add_messages  # noqa: E402
 from langgraph.prebuilt import ToolNode  # noqa: E402
-from langchain_core.tools import tool  # noqa: E402
-from typing import Annotated, TypedDict  # noqa: E402
-
 from runkite_runner.worker import execute_run, find_new_tool_calls  # noqa: E402
 
 
@@ -45,7 +45,9 @@ def check(name, cond):
 
 def test_find_new_tool_calls_extracts_from_ai_message():
     seen = set()
-    msg = AIMessage(content="", tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}])
+    msg = AIMessage(
+        content="", tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}]
+    )
     found = find_new_tool_calls({"messages": [msg]}, seen)
     check("finds the one tool call", len(found) == 1)
     check("name extracted", found[0]["name"] == "search")
@@ -90,7 +92,10 @@ class _FakeReActModel:
     def invoke(self, messages, **kwargs):
         has_tool_result = any(isinstance(m, ToolMessage) for m in messages)
         if not has_tool_result:
-            return AIMessage(content="", tool_calls=[{"name": "search", "args": {"query": "hi"}, "id": "call_001", "type": "tool_call"}])
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "search", "args": {"query": "hi"}, "id": "call_001", "type": "tool_call"}],
+            )
         return AIMessage(content="final answer")
 
 
