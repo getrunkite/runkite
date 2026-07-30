@@ -20,9 +20,9 @@ type LangGraphConfig struct {
 	Graphs       map[string]string `json:"graphs"`       // graph_id -> "path:symbol"
 	Dependencies []string          `json:"dependencies"` // relative paths
 	// RunnerKind identifies which runner implementation should execute
-	// every graph declared in THIS file (master plan: the Runner Protocol
-	// is language-agnostic, and a real deployment can mix runners -- some
-	// agents Python, some TypeScript, routed by this field). One config
+	// every graph declared in THIS file -- the Runner Protocol is
+	// language-agnostic, and a real deployment can mix runners, some
+	// agents Python, some TypeScript, routed by this field. One config
 	// file maps to one runner process reading it, so this is file-level,
 	// not per-graph like ConnectorNeeds/LLMCache below. Defaults to
 	// "python-langgraph" when omitted -- every langgraph.json written
@@ -42,7 +42,7 @@ type LangGraphConfig struct {
 	// and RateLimit (see initHooks in cmd/serve.go).
 	Webhooks []WebhookEntry `json:"webhooks,omitempty"`
 	// LLMCache declares, per graph_id, that agent's whole-run result cache
-	// TTL (master plan: "LLM response caching"). Same per-agent,
+	// TTL, for LLM response caching. Same per-agent,
 	// metadata-embedded-at-bootstrap convention as ConnectorNeeds --
 	// absent means caching is off for that agent (never on by default:
 	// an agent with side effects, e.g. "send_email", must never have its
@@ -51,17 +51,16 @@ type LangGraphConfig struct {
 	// CustomRoutes is control-plane-wide, same first-file convention as
 	// Auth/RateLimit/Webhooks (see initCustomRoutesProxy in cmd/serve.go).
 	CustomRoutes *CustomRoutesEntry `json:"custom_routes,omitempty"`
-	// Cron declares scheduled runs (master plan: "Cron scheduler"). Keyed
-	// by schedule name (must be unique across every discovered
-	// langgraph.json, unlike per-agent maps -- schedules from every
-	// config file are bootstrapped together, not just the first one, same
-	// as Graphs).
+	// Cron declares scheduled runs. Keyed by schedule name (must be
+	// unique across every discovered langgraph.json, unlike per-agent
+	// maps -- schedules from every config file are bootstrapped
+	// together, not just the first one, same as Graphs).
 	Cron map[string]CronEntry `json:"cron,omitempty"`
 	// VectorStore is control-plane-wide, same first-file convention as
 	// Auth/RateLimit/Webhooks/CustomRoutes (see initVectorStore in
 	// cmd/serve.go). Disabled entirely when absent -- never implicitly
-	// enabled just because POSTGRES_DSN is set (master plan:
-	// "Vector/semantic store: None (disabled) by default").
+	// enabled just because POSTGRES_DSN is set; the vector/semantic
+	// store is None (disabled) by default.
 	VectorStore *VectorStoreEntry `json:"vector_store,omitempty"`
 	// Cors is control-plane-wide, same first-file convention as
 	// Auth/RateLimit/Webhooks (see initCorsMiddleware in cmd/serve.go).
@@ -97,8 +96,8 @@ type LangGraphConfig struct {
 }
 
 // AgentAliasEntry is one entry in langgraph.json's "agent_aliases"
-// section (master plan: "Full agent versioning... A/B deployment
-// routing"). A client-facing name (the map key in AgentAliases) that
+// section, part of full agent versioning's A/B deployment routing.
+// A client-facing name (the map key in AgentAliases) that
 // probabilistically resolves to one of several REAL registered
 // agent_ids at run-creation time -- e.g. rolling out a new graph
 // version to 10% of traffic while 90% still gets the stable one, both
@@ -112,9 +111,9 @@ type AgentAliasEntry struct {
 	Targets map[string]int `json:"targets"`
 }
 
-// A2AEntry is the "a2a" section of langgraph.json (master plan:
-// "Agent-to-agent (A2A): agent calls agent via the same Agent Protocol
-// API"). Currently just the one knob every deployment needs to
+// A2AEntry is the "a2a" section of langgraph.json, for Agent-to-Agent
+// (A2A) delegation where an agent calls another agent via the same Agent
+// Protocol API. Currently just the one knob every deployment needs to
 // consider: how deep a delegation chain is allowed to go before the
 // control plane refuses to create another sub-run, the guard against a
 // runaway or cyclic A->B->A delegation loop.
@@ -162,27 +161,37 @@ type CorsEntry struct {
 	AllowOrigins []string `json:"allow_origins"`
 }
 
-// VectorStoreEntry is the "vector_store" section of langgraph.json (master
-// plan: "Vector/semantic store"). "pgvector" (Tier 1, SQL-based) and
-// "qdrant" (the non-SQL exemplar, same role Mongo plays for state.Store)
-// are implemented; Weaviate/Pinecone remain Tier 2, not yet built.
+// VectorStoreEntry is the "vector_store" section of langgraph.json, the
+// vector/semantic store config. "pgvector" (Tier 1, SQL-based),
+// "qdrant", and "weaviate" (the non-SQL exemplars, same role Mongo plays
+// for state.Store) are implemented; Pinecone remains Tier 2, not yet
+// built.
 type VectorStoreEntry struct {
-	Type string `json:"type"` // "pgvector" | "qdrant"
+	Type string `json:"type"` // "pgvector" | "qdrant" | "weaviate"
 	// Dimensions fixes the embedding vector's width (pgvector's
 	// vector(N) column / Qdrant's collection vector size are both
-	// fixed-dimension). Defaults to 1536 (OpenAI
+	// fixed-dimension; Weaviate has no such native constraint, so this
+	// package enforces it itself instead -- see internal/vectorstore/
+	// weaviate's own doc comment). Defaults to 1536 (OpenAI
 	// text-embedding-3-small/ada-002's size) when omitted -- every item
 	// upserted must supply exactly this many floats.
 	Dimensions int `json:"dimensions,omitempty"`
-	// URL is Qdrant's REST base URL (e.g. "http://localhost:6333"), read
-	// from QDRANT_URL if unset here -- same env-var-first, config-second
-	// convention as POSTGRES_DSN for pgvector. Ignored for type=pgvector.
+	// URL is Qdrant's or Weaviate's REST base URL (e.g.
+	// "http://localhost:6333" / "http://localhost:8080"), read from
+	// QDRANT_URL / WEAVIATE_URL if unset here -- same env-var-first,
+	// config-second convention as POSTGRES_DSN for pgvector. Ignored for
+	// type=pgvector.
 	URL string `json:"url,omitempty"`
 	// Collection names the Qdrant collection every tenant/namespace
 	// shares (see internal/vectorstore/qdrant's package doc for why one
 	// shared collection, not one per tenant/namespace). Defaults to
-	// "vector_items". Ignored for type=pgvector.
+	// "vector_items". Ignored for type=pgvector/weaviate (see Class).
 	Collection string `json:"collection,omitempty"`
+	// Class names the Weaviate class every tenant/namespace shares --
+	// Weaviate's own naming rule (must start with an uppercase letter)
+	// applies. Defaults to "VectorItems". Ignored for
+	// type=pgvector/qdrant.
+	Class string `json:"class,omitempty"`
 }
 
 // CronEntry is one entry in langgraph.json's "cron" section.
@@ -195,7 +204,7 @@ type CronEntry struct {
 	Enabled    *bool                  `json:"enabled,omitempty"` // nil defaults to true
 }
 
-// CustomRoutesEntry configures the master plan's "Custom routes" platform
+// CustomRoutesEntry configures the "Custom routes" platform
 // extension: user-defined HTTP endpoints mounted at /custom/*. From the
 // control plane's side, in-runner mode (the Python runner SDK hosts the
 // user's ASGI app itself, see python/runkite_runner/custom_app.py) and

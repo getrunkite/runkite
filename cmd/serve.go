@@ -49,6 +49,7 @@ import (
 	"github.com/sharanharsoor/runkite/internal/vectorstore"
 	pgvector "github.com/sharanharsoor/runkite/internal/vectorstore/pgvector"
 	qdrant "github.com/sharanharsoor/runkite/internal/vectorstore/qdrant"
+	weaviatestore "github.com/sharanharsoor/runkite/internal/vectorstore/weaviate"
 )
 
 func cmdDev(args []string) {
@@ -99,8 +100,8 @@ func startServer(opts serverOpts) {
 
 	ctx := context.Background()
 
-	// OTel (master plan: "OTel observability fan-out"). No-op, zero
-	// overhead, and no background connection attempts unless
+	// OTel observability fan-out. No-op, zero overhead, and no
+	// background connection attempts unless
 	// OTEL_EXPORTER_OTLP_ENDPOINT is set -- see internal/tracing.
 	shutdownTracing, err := tracing.Init(ctx)
 	if err != nil {
@@ -159,8 +160,8 @@ func startServer(opts serverOpts) {
 		slog.Info("connector registry loaded", "connectors", reg.List())
 	}
 
-	// Vector store (master plan: "Vector/semantic store"). Disabled
-	// entirely unless a vector_store section is present -- never
+	// Vector/semantic store. Disabled entirely unless a vector_store
+	// section is present -- never
 	// implicitly enabled just because POSTGRES_DSN is set, since an
 	// existing Postgres deployment may not have the pgvector extension
 	// installed or permitted.
@@ -170,49 +171,48 @@ func startServer(opts serverOpts) {
 		// it selected -- no separate log line needed here.
 	}
 
-	// Rate limiting (master plan: "per-user, per-agent, per-tenant,
-	// configurable via config"). Disabled (zero overhead) unless a
-	// rate_limit section is present.
+	// Rate limiting: per-user, per-agent, per-tenant, configurable via
+	// config. Disabled (zero overhead) unless a rate_limit section is
+	// present.
 	rateLimiter := initRateLimiter(opts.configPath)
 	apiServer.SetRateLimiter(rateLimiter)
 	if rateLimiter.Enabled() {
 		slog.Info("rate limiting: enabled")
 	}
 
-	// Agent-to-Agent (A2A) delegation depth limit (master plan:
-	// "Agent-to-agent (A2A)... recursion limits"). Always available at
-	// POST /internal/a2a/runs; this only tunes how deep a chain may go.
+	// Agent-to-Agent (A2A) delegation recursion depth limit. Always
+	// available at POST /internal/a2a/runs; this only tunes how deep a
+	// chain may go.
 	if maxDepth := initA2AMaxDepth(opts.configPath); maxDepth > 0 {
 		apiServer.SetA2AMaxDepth(maxDepth)
 		slog.Info("a2a: max_depth configured", "max_depth", maxDepth)
 	}
 
-	// A/B deployment routing (master plan: "Full agent versioning...
-	// A/B deployment routing"). Disabled (pure pass-through) unless
-	// "agent_aliases" is configured.
+	// A/B deployment routing, built on top of full agent versioning.
+	// Disabled (pure pass-through) unless "agent_aliases" is configured.
 	if aliasCfg := initAgentAliases(opts.configPath); len(aliasCfg) > 0 {
 		apiServer.SetAliasResolver(api.NewAliasResolver(aliasCfg))
 		slog.Info("agent aliases: configured", "count", len(aliasCfg))
 	}
 
-	// Event hooks + webhook delivery (master plan: on_run_start,
-	// on_run_complete, on_tool_call, on_error, on_interrupt).
+	// Event hooks + webhook delivery: on_run_start, on_run_complete,
+	// on_tool_call, on_error, on_interrupt.
 	hookDispatcher := initHooks(opts.configPath, store)
 	apiServer.SetHookDispatcher(hookDispatcher)
 	if hookDispatcher.HasSinks() {
 		slog.Info("event hooks: enabled")
 	}
 
-	// Custom routes (master plan: in-runner + sidecar modes -- both are a
-	// reverse proxy from here, see internal/api's doc comment).
+	// Custom routes: in-runner + sidecar modes -- both are a reverse
+	// proxy from here, see internal/api's doc comment.
 	if proxy, url := initCustomRoutesProxy(opts.configPath); proxy != nil {
 		apiServer.SetCustomRoutesProxy(proxy)
 		slog.Info("custom routes: enabled", "proxy_url", url, "mount", "/custom/*")
 	}
 
-	// Cron scheduler (master plan: "cron-expression scheduling with
-	// multi-instance-safe claiming (Postgres claim window), timezone
-	// support"). Schedules are bootstrapped the same way agents are (every
+	// Cron scheduler: cron-expression scheduling with multi-instance-safe
+	// claiming (Postgres claim window) and timezone support. Schedules
+	// are bootstrapped the same way agents are (every
 	// discovered langgraph.json, not just the first); the scheduler loop
 	// itself runs regardless of whether any are configured -- an empty
 	// ListCronSchedules result is just a no-op poll every 15s.
@@ -242,8 +242,8 @@ func startServer(opts serverOpts) {
 	// gRPC bridge server
 	bridgeServer := bridge.NewServer(queue, broker, cancelBus, apiServer.StatusCallback())
 
-	// Runner auth (master plan's "two-tier" model): local mode (no
-	// RUNNER_TOKEN_* env vars) trusts runners implicitly, zero setup.
+	// Runner auth uses a two-tier model: local mode (no RUNNER_TOKEN_*
+	// env vars) trusts runners implicitly, zero setup.
 	// Production mode requires a valid token per runner_kind on every gRPC
 	// call and on every /internal/* HTTP request. Distinct trust boundary
 	// from the client-facing auth provider above -- that one never covers
@@ -340,8 +340,8 @@ func startServer(opts serverOpts) {
 	}
 	root.Handle("/", authedAPI)
 
-	// CORS (master plan gap: a browser-based frontend on a different
-	// origin can't reach the control plane at all without this -- the
+	// CORS: without this, a browser-based frontend on a different
+	// origin can't reach the control plane at all -- the
 	// browser blocks it client-side before auth or any handler ever
 	// runs). Wraps the whole root, outside auth, so an OPTIONS preflight
 	// (which carries no Authorization header by design) is answered
@@ -525,9 +525,9 @@ func initStore(ctx context.Context) state.Store {
 		return my
 	}
 
-	// MongoDB: the project's non-SQL exemplar backend (master plan:
-	// proof state.Store is genuinely implementable against a document
-	// store, not just SQL -- see internal/state/mongo's package doc).
+	// MongoDB: the project's non-SQL exemplar backend, proving that
+	// state.Store is genuinely implementable against a document store,
+	// not just SQL -- see internal/state/mongo's package doc.
 	if mongoURI := os.Getenv("MONGO_URI"); mongoURI != "" {
 		dbName := envOrDefault("MONGO_DB", "runkite")
 		mg, err := mongostore.New(ctx, mongoURI, dbName)
@@ -900,8 +900,30 @@ func initVectorStore(ctx context.Context, configPath string) vectorstore.VectorS
 		slog.Info("vector store: qdrant", "url", url, "collection", cfg.VectorStore.Collection, "dimensions", dims)
 		return vs
 
+	case "weaviate":
+		url := cfg.VectorStore.URL
+		if url == "" {
+			url = os.Getenv("WEAVIATE_URL")
+		}
+		if url == "" {
+			slog.Error("vector_store: type=weaviate requires vector_store.url or WEAVIATE_URL to be set")
+			return nil
+		}
+		vs, err := weaviatestore.New(url, cfg.VectorStore.Class, dims)
+		if err != nil {
+			slog.Error("vector store: failed to configure weaviate", "error", err)
+			return nil
+		}
+		if err := vs.Init(ctx); err != nil {
+			slog.Error("vector store: failed to initialize weaviate class", "error", err)
+			vs.Close()
+			return nil
+		}
+		slog.Info("vector store: weaviate", "url", url, "class", cfg.VectorStore.Class, "dimensions", dims)
+		return vs
+
 	default:
-		slog.Error("vector_store.type not supported (only \"pgvector\" and \"qdrant\" are implemented)", "type", cfg.VectorStore.Type)
+		slog.Error("vector_store.type not supported (only \"pgvector\", \"qdrant\", and \"weaviate\" are implemented)", "type", cfg.VectorStore.Type)
 		return nil
 	}
 }
