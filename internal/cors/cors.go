@@ -27,16 +27,25 @@ func (c *Config) Enabled() bool {
 	return c != nil && len(c.AllowOrigins) > 0
 }
 
-func (c *Config) allows(origin string) bool {
+// allows reports whether origin is permitted, and whether that match
+// came from an explicit, literal origin string rather than a "*"
+// wildcard entry -- the two need different credential handling, see
+// Middleware.
+func (c *Config) allows(origin string) (allowed bool, explicit bool) {
 	if origin == "" {
-		return false
+		return false, false
 	}
-	for _, allowed := range c.AllowOrigins {
-		if allowed == "*" || allowed == origin {
-			return true
+	for _, entry := range c.AllowOrigins {
+		if entry == origin {
+			return true, true
 		}
 	}
-	return false
+	for _, entry := range c.AllowOrigins {
+		if entry == "*" {
+			return true, false
+		}
+	}
+	return false, false
 }
 
 // Middleware adds CORS headers and answers preflight OPTIONS requests
@@ -51,10 +60,24 @@ func Middleware(cfg *Config, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if cfg.allows(origin) {
+		if allowed, explicit := cfg.allows(origin); allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			// Credentials only for an explicitly-listed origin, never
+			// for a "*" wildcard match. Fixed: this used to reflect the
+			// request's own Origin header verbatim and unconditionally
+			// set Allow-Credentials for ANY origin once "*" was
+			// configured -- which is *worse* than a literal
+			// "Access-Control-Allow-Origin: *" (browsers refuse that
+			// exact combination with credentials), since reflecting the
+			// origin instead of sending the literal "*" string sidesteps
+			// that browser-side protection entirely. "*" still means
+			// "allow any origin" for a non-credentialed (public,
+			// cookie-free) API -- it no longer also means "and trust
+			// every one of them with credentials."
+			if explicit {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
 		}
 
 		if r.Method == http.MethodOptions {

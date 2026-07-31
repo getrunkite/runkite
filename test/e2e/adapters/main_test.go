@@ -115,6 +115,7 @@ func startStack() (cleanup func(), err error) {
 	serveCmd.Env = append(os.Environ(),
 		"POSTGRES_DSN="+os.Getenv("POSTGRES_DSN"),
 		"REDIS_URL="+os.Getenv("REDIS_URL"),
+		"RUNKITE_ALLOW_INSECURE_SERVE=1", // see ../e2e_test.go's startStack for why
 	)
 	serveLog := &syncBuffer{}
 	serveCmd.Stdout = serveLog

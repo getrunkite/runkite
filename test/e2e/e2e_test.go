@@ -141,6 +141,11 @@ func startStack() (cleanup func(), err error) {
 	serveCmd.Env = append(os.Environ(),
 		"POSTGRES_DSN="+os.Getenv("POSTGRES_DSN"),
 		"REDIS_URL="+os.Getenv("REDIS_URL"),
+		// This suite intentionally runs with no auth/runner-tokens
+		// configured (isolating what VG-001/002/003 etc. actually test)
+		// -- checkProductionAdmission (cmd/serve.go) would otherwise
+		// refuse to start `serve` with that posture.
+		"RUNKITE_ALLOW_INSECURE_SERVE=1",
 	)
 	serveLog := &syncBuffer{}
 	serveCmd.Stdout = serveLog

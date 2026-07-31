@@ -86,6 +86,48 @@ func TestMiddleware_WildcardAllowsAnyOrigin(t *testing.T) {
 	}
 }
 
+// TestMiddleware_WildcardNeverSendsCredentials closes a real footgun an
+// external audit found: this middleware used to reflect the request's
+// Origin header verbatim AND unconditionally set
+// Access-Control-Allow-Credentials whenever "*" matched -- worse than a
+// literal "Access-Control-Allow-Origin: *" (which browsers already
+// refuse to honor together with credentials), since reflecting the
+// origin instead of the literal "*" string bypasses that browser-side
+// protection entirely. A "*" config still means "any origin may read
+// this API" (fine for a public, cookie-free deployment) -- it must
+// never also mean "and every one of them may do so with credentials."
+func TestMiddleware_WildcardNeverSendsCredentials(t *testing.T) {
+	handler := cors.Middleware(&cors.Config{AllowOrigins: []string{"*"}},
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/threads", nil)
+	req.Header.Set("Origin", "http://evil.example.com")
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("expected no Allow-Credentials for a wildcard-matched origin, got %q -- this is the exact CORS footgun (any site + credentials)", got)
+	}
+}
+
+// TestMiddleware_ExplicitOriginAlongsideWildcardStillGetsCredentials
+// proves the fix doesn't regress the common "public read + credentialed
+// admin origin" config: an operator can list "*" for broad reachability
+// and still name specific origins that are trusted with credentials.
+func TestMiddleware_ExplicitOriginAlongsideWildcardStillGetsCredentials(t *testing.T) {
+	handler := cors.Middleware(&cors.Config{AllowOrigins: []string{"*", "http://localhost:5173"}},
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/threads", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Errorf("expected Allow-Credentials=true for an explicitly-listed origin even when \"*\" is also configured, got %q", got)
+	}
+}
+
 // TestMiddleware_PreflightAnsweredWithoutReachingHandler proves an
 // OPTIONS preflight (which never carries an Authorization header by
 // design) is answered directly by this middleware -- if it fell through

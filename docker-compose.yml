@@ -67,6 +67,14 @@ services:
       # that everyone forgets to change is worse than forcing a real
       # one up front.
       RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env -- see .env.example}
+      # This stack demonstrates durable-backend + runner-auth wiring on
+      # a local Docker network; it doesn't configure client-facing auth
+      # (see langgraph.json's "auth" section) since that's a deployment
+      # decision, not something to hardcode into an example compose
+      # file. checkProductionAdmission (cmd/serve.go) would otherwise
+      # refuse to start `serve` without it -- add a real "auth" config
+      # and drop this var before exposing this stack beyond localhost.
+      RUNKITE_ALLOW_INSECURE_SERVE: "1"
     depends_on:
       postgres:
         condition: service_healthy

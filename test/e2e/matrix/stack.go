@@ -215,7 +215,13 @@ func startCell(t *testing.T, backend BackendSpec, runner RunnerSpec) *cell {
 	configPath := filepath.Join(repoRoot, runner.ConfigRelPath)
 
 	serveCmd := exec.Command(binPath, "serve", "--config", configPath, "--port", httpPort, "--grpc-port", grpcPort)
-	serveCmd.Env = append(os.Environ(), backendEnv...)
+	// This matrix intentionally runs every cell with no auth/runner-tokens
+	// configured (isolating the framework x backend integration seam it
+	// actually tests) -- checkProductionAdmission (cmd/serve.go) would
+	// otherwise refuse to start `serve` with that posture, and some
+	// cells (sqlite_inprocess) also have no durable/shared backend by
+	// design.
+	serveCmd.Env = append(append(os.Environ(), backendEnv...), "RUNKITE_ALLOW_INSECURE_SERVE=1")
 	serveCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	serveLog := &syncBuffer{}
 	serveCmd.Stdout = serveLog

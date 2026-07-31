@@ -91,6 +91,11 @@ services:
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
       RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
+      # No client-facing auth configured -- this stack's purpose is
+      # proving multi-instance backend/runner-token wiring, not modeling
+      # a full production security posture. See docker-compose.yml's own
+      # comment on this same var.
+      RUNKITE_ALLOW_INSECURE_SERVE: "1"
     # hostname: each service gets a distinct one automatically (defaults to
     # the container ID unless overridden below) -- cmd/serve.go now logs it
     # at startup, so replicas are distinguishable in `docker compose logs`

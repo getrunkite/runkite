@@ -103,8 +103,92 @@ type serverOpts struct {
 	devMode    bool
 }
 
+// checkProductionAdmission fails closed (loud ERROR + os.Exit(1)) when
+// `serve` -- never `dev`, which explicitly opts into the zero-dependency
+// local experience -- would otherwise start with a posture that looks
+// healthy but silently isn't production-safe: a non-durable single-node
+// store, no shared transport, or no way to tell a stranger's request
+// apart from an operator's own.
+//
+// Found in an external audit and confirmed live: `runkite serve` with
+// no env vars at all falls all the way through to SQLite + in-process
+// transport + "runner auth: disabled (local mode)" + a fully open
+// /admin-api/*, logs everything at INFO, and never refuses to start.
+// That's the right default for `dev`; for the command literally named
+// `serve`, a missing env var in a deploy manifest deserves a hard stop,
+// not a quietly-degraded production instance passing its own /readyz.
+//
+// RUNKITE_ALLOW_INSECURE_SERVE=1 is the escape hatch -- a private
+// network, CI, or a deliberate quick demo are all legitimate reasons to
+// run `serve` without every box checked; this only removes the
+// "nobody meant to do this" failure mode, not the ability to do it on
+// purpose. Every e2e/matrix test harness in test/e2e/ sets this env var
+// for exactly that reason -- they intentionally run minimal/local
+// backends and no auth to isolate what they're actually testing.
+func checkProductionAdmission(opts serverOpts) {
+	problems := admissionProblems(opts)
+	if len(problems) == 0 {
+		return
+	}
+
+	slog.Error("refusing to start `serve` with an insecure default posture -- set RUNKITE_ALLOW_INSECURE_SERVE=1 to start anyway (e.g. a private network, CI, or a deliberate quick demo), or use `runkite dev` for the zero-dependency local experience")
+	for _, p := range problems {
+		slog.Error("  - " + p)
+	}
+	os.Exit(1)
+}
+
+// admissionProblems is checkProductionAdmission's pure decision logic,
+// split out so it's unit-testable without exiting the test binary
+// itself (checkProductionAdmission's os.Exit(1) can't be exercised
+// in-process). Returns nil (no problems) for opts.devMode, the
+// RUNKITE_MODE=test / RUNKITE_ALLOW_INSECURE_SERVE=1 bypasses, or a
+// fully-configured serve; otherwise one string per unmet requirement.
+func admissionProblems(opts serverOpts) []string {
+	if opts.devMode {
+		return nil
+	}
+	if envOrDefault("RUNKITE_MODE", "") == "test" || os.Getenv("RUNKITE_ALLOW_INSECURE_SERVE") != "" {
+		return nil
+	}
+
+	var problems []string
+	if os.Getenv("POSTGRES_DSN") == "" && os.Getenv("MYSQL_DSN") == "" && os.Getenv("MONGO_URI") == "" {
+		problems = append(problems, "no durable state backend configured (POSTGRES_DSN, MYSQL_DSN, or MONGO_URI) -- serve would default to a single-node SQLite file with no HA and no multi-replica safety")
+	}
+	if os.Getenv("REDIS_URL") == "" && os.Getenv("NATS_URL") == "" && os.Getenv("KAFKA_URL") == "" {
+		problems = append(problems, "no shared transport configured (REDIS_URL, NATS_URL, or KAFKA_URL) -- serve would default to in-process transport, which cannot coordinate multiple replicas at all")
+	}
+	if !auth.LoadRunnerTokensFromEnv().Enabled() {
+		problems = append(problems, "no RUNNER_TOKEN_* configured -- any process that can reach the gRPC bridge would be trusted as a runner")
+	}
+	if !hasClientFacingAuthConfigured(opts.configPath) {
+		problems = append(problems, `no client-facing auth configured ("auth" in langgraph.json) -- every REST/WebSocket/admin-api endpoint would be open with no credentials required`)
+	}
+	return problems
+}
+
+// hasClientFacingAuthConfigured reports whether either a primary auth
+// provider or admin_keys is configured -- mirrors initAuthProvider's/
+// initAdminAuthProvider's own config lookup rather than calling them
+// directly, since constructing a real auth.Provider here (which
+// checkProductionAdmission runs before any other initialization) would
+// duplicate work startServer already does moments later.
+func hasClientFacingAuthConfigured(configPath string) bool {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return false
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.Auth == nil {
+		return false
+	}
+	return cfg.Auth.Type != "" || len(cfg.Auth.AdminKeys) > 0
+}
+
 func startServer(opts serverOpts) {
 	setupLogging()
+	checkProductionAdmission(opts)
 
 	// Cancelable, not context.Background(): every background loop below
 	// (queue-depth poller, stale-job reclaimer, cron scheduler, retention,

@@ -224,6 +224,14 @@ func (s *Server) handleCreateRunError(w http.ResponseWriter, err error, respond 
 // CreateRun error left the thread stuck busy forever (no future run on
 // that thread could claim it).
 func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
+	// Reject rather than silently ignore -- see ErrCheckpointRefUnsupported's
+	// doc comment. Checked first, before any state lookup/mutation:
+	// this is pure request-shape validation that doesn't need thread or
+	// agent state to evaluate.
+	if req.CheckpointRef != nil {
+		return nil, nil, &ErrCheckpointRefUnsupported{}
+	}
+
 	now := time.Now().UTC()
 	// Client-supplied run_id (retry idempotency, see RunID's own doc
 	// comment) -- the common, empty case still gets a fresh server-side

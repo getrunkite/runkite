@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -305,5 +306,170 @@ func TestAdminListRuns_FiltersByQueryParams(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&runs)
 	if len(runs) != 1 || runs[0]["run_id"] != "r1" {
 		t.Fatalf("expected only r1 (status=success), got %+v", runs)
+	}
+}
+
+// TestAdminGetAgent_SeesCrossTenantAgentAndExposesTenantID proves
+// handleAdminGetAgent (unlike handleAdminListAgents, already covered
+// above) reuses the same system-context, tenant_id-visible convention
+// for a single-agent lookup by ID.
+func TestAdminGetAgent_SeesCrossTenantAgentAndExposesTenantID(t *testing.T) {
+	env := newTestEnv(t)
+	ctxA := tenant.WithContext(context.Background(), "tenant-a")
+	env.store.UpsertAgent(ctxA, &models.Agent{AgentID: "a1", Name: "a1", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}})
+
+	// The default tenant context (no auth configured in newTestEnv)
+	// would normally never see tenant-a's agent -- proving this
+	// requires an actual cross-tenant lookup, not a same-tenant
+	// coincidence.
+	resp, err := http.Get(env.srv.URL + "/admin-api/agents/a1")
+	if err != nil {
+		t.Fatalf("GET /admin-api/agents/a1: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var agent map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&agent)
+	if agent["tenant_id"] != "tenant-a" || agent["agent_id"] != "a1" {
+		t.Errorf("expected agent_id=a1, tenant_id=tenant-a, got %+v", agent)
+	}
+}
+
+// TestAdminGetAgent_NotFoundReturns404 covers the miss path (never
+// exercised anywhere else) through the same handleStoreError mapping
+// every other admin GET-by-ID route relies on.
+func TestAdminGetAgent_NotFoundReturns404(t *testing.T) {
+	env := newTestEnv(t)
+	resp, err := http.Get(env.srv.URL + "/admin-api/agents/never-registered")
+	if err != nil {
+		t.Fatalf("GET /admin-api/agents/never-registered: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+// TestAdminListRegistryEntries_SeesAcrossTenantsAndExposesTenantID
+// proves /admin-api/registry uses system context (every tenant's
+// published entries visible) and the tenant_id-visible view convention,
+// same as every other admin list route.
+func TestAdminListRegistryEntries_SeesAcrossTenantsAndExposesTenantID(t *testing.T) {
+	env := newTestEnv(t)
+	ctxA := tenant.WithContext(context.Background(), "tenant-a")
+	now := time.Now().UTC()
+	if err := env.store.PublishRegistryEntry(ctxA, &models.RegistryEntry{
+		Name: "entry-a", SourceType: "git", SourceRef: "https://example.com/repo",
+		Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("PublishRegistryEntry: %v", err)
+	}
+
+	resp, err := http.Get(env.srv.URL + "/admin-api/registry")
+	if err != nil {
+		t.Fatalf("GET /admin-api/registry: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var entries []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&entries)
+	if len(entries) != 1 || entries[0]["tenant_id"] != "tenant-a" || entries[0]["name"] != "entry-a" {
+		t.Fatalf("expected 1 entry (name=entry-a, tenant_id=tenant-a), got %+v", entries)
+	}
+}
+
+// TestAdminGetThread_SeesCrossTenantThreadAndExposesTenantID proves
+// handleAdminGetThread (unlike handleAdminListThreads, already covered
+// above) reuses the same system-context, tenant_id-visible convention
+// for a single-thread lookup by ID.
+func TestAdminGetThread_SeesCrossTenantThreadAndExposesTenantID(t *testing.T) {
+	env := newTestEnv(t)
+	ctxA := tenant.WithContext(context.Background(), "tenant-a")
+	now := time.Now().UTC()
+	if err := env.store.CreateThread(ctxA, &models.Thread{
+		ThreadID: "thread-a", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	resp, err := http.Get(env.srv.URL + "/admin-api/threads/thread-a")
+	if err != nil {
+		t.Fatalf("GET /admin-api/threads/thread-a: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var thread map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&thread)
+	if thread["tenant_id"] != "tenant-a" || thread["thread_id"] != "thread-a" {
+		t.Errorf("expected thread_id=thread-a, tenant_id=tenant-a, got %+v", thread)
+	}
+}
+
+// TestAdminGetThread_NotFoundReturns404 covers the miss path through
+// the same handleStoreError mapping every other admin GET-by-ID route
+// relies on.
+func TestAdminGetThread_NotFoundReturns404(t *testing.T) {
+	env := newTestEnv(t)
+	resp, err := http.Get(env.srv.URL + "/admin-api/threads/never-created")
+	if err != nil {
+		t.Fatalf("GET /admin-api/threads/never-created: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+// TestAdminStreamRun_WorksAcrossTenants proves handleAdminStreamRun
+// (unlike handleAdminGetRun, already covered above) reuses the
+// client-facing streamExistingRun under system context -- the default
+// (no-tenant) caller in newTestEnv can stream a tenant-a run's events
+// it would never be able to reach via the client-facing
+// /runs/{runID}/stream route. The run is already terminal with no
+// events ever published to the broker, so streamExistingRun's own
+// "append a synthetic end if replay found none" path (see runs.go) is
+// what proves this reached the real streaming code, not just a
+// pass-through that returned early.
+func TestAdminStreamRun_WorksAcrossTenants(t *testing.T) {
+	env := newTestEnv(t)
+	ctxA := tenant.WithContext(context.Background(), "tenant-a")
+	now := time.Now().UTC()
+	env.store.CreateThread(ctxA, &models.Thread{ThreadID: "thread-a", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+	env.store.CreateRun(ctxA, &models.Run{RunID: "run-a", ThreadID: "thread-a", AgentID: "echo_agent", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+
+	resp, err := http.Get(env.srv.URL + "/admin-api/runs/run-a/stream")
+	if err != nil {
+		t.Fatalf("GET /admin-api/runs/run-a/stream: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "event: end") {
+		t.Errorf("expected a synthetic terminal 'end' event for an already-success run with no broker history, got body: %s", body)
+	}
+	if !strings.Contains(string(body), `"status":"success"`) {
+		t.Errorf("expected the synthetic end event to carry the run's real status, got body: %s", body)
+	}
+}
+
+// TestAdminStreamRun_NotFoundReturns404 covers the miss path.
+func TestAdminStreamRun_NotFoundReturns404(t *testing.T) {
+	env := newTestEnv(t)
+	resp, err := http.Get(env.srv.URL + "/admin-api/runs/never-created/stream")
+	if err != nil {
+		t.Fatalf("GET /admin-api/runs/never-created/stream: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }

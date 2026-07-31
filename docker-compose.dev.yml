@@ -18,6 +18,11 @@ services:
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
       DATABASE_PATH: /tmp/runkite.db
+      # This is the intentional zero-dependency local profile (SQLite,
+      # in-process transport, no auth) -- checkProductionAdmission
+      # (cmd/serve.go) would otherwise refuse to start `serve` with
+      # that posture. Never set this for an internet-facing deployment.
+      RUNKITE_ALLOW_INSECURE_SERVE: "1"
     volumes:
       - ./examples:/app/examples:ro
     healthcheck:
