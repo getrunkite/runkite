@@ -72,6 +72,18 @@ var (
 		},
 		[]string{"event_type"},
 	)
+
+	// StatusTransitionErrorsTotal counts fire-and-forget thread/run
+	// status writes that still failed after one retry. A rising rate
+	// usually means threads stuck busy (permanent client 409s) or runs
+	// stuck non-terminal -- alert on this.
+	StatusTransitionErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "runkite_status_transition_errors_total",
+			Help: "Total number of thread/run status transitions that failed after one retry",
+		},
+		[]string{"op"},
+	)
 )
 
 func init() {
@@ -80,6 +92,7 @@ func init() {
 		RunsTotal, RunDuration, ActiveRuns,
 		QueueDepth, ActiveSSEConnections,
 		WebhookQueueDroppedTotal,
+		StatusTransitionErrorsTotal,
 	)
 }
 

@@ -401,7 +401,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	created := false
 	defer func() {
 		if err != nil && !created {
-			_ = s.store.SetThreadStatus(ctx, threadID, models.ThreadStatusIdle)
+			tryStatusTransition("set_thread_status", threadID, "", func() error {
+				return s.store.SetThreadStatus(ctx, threadID, models.ThreadStatusIdle)
+			})
 		}
 	}()
 
@@ -652,9 +654,14 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	if run == nil {
 		return
 	}
-	_ = s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
+	tryStatusTransition("update_run_status", run.ThreadID, run.RunID, func() error {
+		return s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
+	})
 	metrics.ActiveRuns.Dec()
-	_, _ = s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
+	tryStatusTransition("release_thread", run.ThreadID, run.RunID, func() error {
+		_, err := s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
+		return err
+	})
 	// Close after any Subscribe that may have already happened (stream/wait
 	// paths subscribe before enqueue) so tailers and broker state do not leak.
 	_ = s.broker.Close(run.RunID)
@@ -1496,9 +1503,9 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 		finalRun = run
 	}
 	if terminalStatus != "" && !isTerminalStatus(finalRun.Status) {
-		if err := s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatus(terminalStatus), nil, ""); err != nil {
-			slog.Error("wait: failed to persist status derived from event stream", "run_id", run.RunID, "error", err)
-		}
+		tryStatusTransition("update_run_status", finalRun.ThreadID, run.RunID, func() error {
+			return s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatus(terminalStatus), nil, "")
+		})
 		// See waitForExistingRun's identical fix for the full rationale:
 		// the thread's own status must be reset too, not just the run's,
 		// or a fast wait-then-immediately-create-the-next-run on the
@@ -1508,9 +1515,9 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 		if terminalStatus == string(models.RunStatusInterrupted) {
 			threadStatus = models.ThreadStatusInterrupted
 		}
-		if err := s.store.SetThreadStatus(ctx, finalRun.ThreadID, threadStatus); err != nil {
-			slog.Error("wait: failed to reset thread status derived from event stream", "thread_id", finalRun.ThreadID, "error", err)
-		}
+		tryStatusTransition("set_thread_status", finalRun.ThreadID, run.RunID, func() error {
+			return s.store.SetThreadStatus(ctx, finalRun.ThreadID, threadStatus)
+		})
 		finalRun.Status = models.RunStatus(terminalStatus)
 	}
 
@@ -1619,9 +1626,9 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		// output stays nil here (matching StatusCallback's own
 		// UpdateRunStatus call) -- that field is populated elsewhere,
 		// not derived from a "values" event.
-		if err := s.store.UpdateRunStatus(r.Context(), runID, models.RunStatus(terminalStatus), nil, ""); err != nil {
-			slog.Error("wait: failed to persist status derived from event stream", "run_id", runID, "error", err)
-		}
+		tryStatusTransition("update_run_status", finalRun.ThreadID, runID, func() error {
+			return s.store.UpdateRunStatus(r.Context(), runID, models.RunStatus(terminalStatus), nil, "")
+		})
 		// Real gap found in review: persisting the run's status (above)
 		// isn't enough on its own -- TryClaimThread (createRunCtx) still
 		// checks the THREAD's own status, which otherwise stays "busy"
@@ -1638,9 +1645,9 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		if terminalStatus == string(models.RunStatusInterrupted) {
 			threadStatus = models.ThreadStatusInterrupted
 		}
-		if err := s.store.SetThreadStatus(r.Context(), finalRun.ThreadID, threadStatus); err != nil {
-			slog.Error("wait: failed to reset thread status derived from event stream", "thread_id", finalRun.ThreadID, "error", err)
-		}
+		tryStatusTransition("set_thread_status", finalRun.ThreadID, runID, func() error {
+			return s.store.SetThreadStatus(r.Context(), finalRun.ThreadID, threadStatus)
+		})
 		finalRun.Status = models.RunStatus(terminalStatus)
 	}
 
@@ -1763,10 +1770,18 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 		return run, nil
 	}
 
-	_ = s.queue.Cancel(ctx, runID)
-	_ = s.cancel.PublishCancel(ctx, runID)
-	_ = s.store.UpdateRunStatus(ctx, runID, models.RunStatusInterrupted, nil, "")
-	_ = s.store.SetThreadStatus(ctx, run.ThreadID, models.ThreadStatusInterrupted)
+	tryStatusTransition("queue_cancel", run.ThreadID, runID, func() error {
+		return s.queue.Cancel(ctx, runID)
+	})
+	tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error {
+		return s.cancel.PublishCancel(ctx, runID)
+	})
+	tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
+		return s.store.UpdateRunStatus(ctx, runID, models.RunStatusInterrupted, nil, "")
+	})
+	tryStatusTransition("set_thread_status", run.ThreadID, runID, func() error {
+		return s.store.SetThreadStatus(ctx, run.ThreadID, models.ThreadStatusInterrupted)
+	})
 
 	// Finish the run's terminal bookkeeping (OTel span + on_interrupt hook)
 	// here defensively -- cancel is a terminal outcome even if the runner's

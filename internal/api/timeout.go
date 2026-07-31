@@ -48,8 +48,12 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 		// as StatusCallback): system context won the status race across
 		// tenants; writes below must not silently land in "default".
 		runCtx := tenant.WithContext(ctx, run.TenantID)
-		_ = s.queue.Cancel(runCtx, run.RunID)
-		_ = s.cancel.PublishCancel(runCtx, run.RunID)
+		tryStatusTransition("queue_cancel", run.ThreadID, run.RunID, func() error {
+			return s.queue.Cancel(runCtx, run.RunID)
+		})
+		tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
+			return s.cancel.PublishCancel(runCtx, run.RunID)
+		})
 
 		// Metrics normally land in StatusCallback, but a hung/pending run
 		// may never ReportStatus -- record the terminal outcome here so
@@ -58,9 +62,10 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 		metrics.RunsTotal.WithLabelValues(run.AgentID, string(models.RunStatusTimeout)).Inc()
 		metrics.RunDuration.WithLabelValues(run.AgentID).Observe(time.Since(run.CreatedAt).Seconds())
 
-		if _, err := s.store.ReleaseThreadIfNoOtherActive(runCtx, run.ThreadID, run.RunID, models.ThreadStatusIdle); err != nil {
-			slog.Error("run timeout: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
-		}
+		tryStatusTransition("release_thread", run.ThreadID, run.RunID, func() error {
+			_, err := s.store.ReleaseThreadIfNoOtherActive(runCtx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
+			return err
+		})
 
 		_ = s.broker.Close(run.RunID)
 		s.finishRun(run.RunID, run.ThreadID, run.AgentID, models.RunStatusTimeout, errMsg)

@@ -394,8 +394,9 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		}
 		ctx := tenant.WithContext(context.Background(), run.TenantID)
 
-		if err := s.store.UpdateRunStatus(ctx, runID, status, nil, errorMsg); err != nil {
-			slog.Error("status callback: failed to update run status", "run_id", runID, "error", err)
+		if !tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
+			return s.store.UpdateRunStatus(ctx, runID, status, nil, errorMsg)
+		}) {
 			return
 		}
 
@@ -412,10 +413,13 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		if status == models.RunStatusInterrupted {
 			threadStatus = models.ThreadStatusInterrupted
 		}
-		released, err := s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, runID, threadStatus)
-		if err != nil {
-			slog.Error("status callback: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
-		} else if !released {
+		var released bool
+		ok := tryStatusTransition("release_thread", run.ThreadID, runID, func() error {
+			var err error
+			released, err = s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, runID, threadStatus)
+			return err
+		})
+		if ok && !released {
 			slog.Info("status callback: skipping thread release; another run is in-flight or thread already released",
 				"thread_id", run.ThreadID, "completed_run_id", runID)
 		}
