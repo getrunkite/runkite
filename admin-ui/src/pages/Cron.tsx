@@ -1,46 +1,77 @@
+import { Clock } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminCronSchedule } from "../api/types";
-import { EmptyState, ErrorMessage, formatTimestamp, Loading, PageHeader, StatusBadge, Table, Td, Th, Tr } from "../components/ui";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { DataTable } from "../components/data-table";
+import { Badge } from "../components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
+
+const columns: ColumnDef<AdminCronSchedule, unknown>[] = [
+  { accessorKey: "name", header: "Name", cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span> },
+  { accessorKey: "agent_id", header: "Agent" },
+  {
+    accessorKey: "expression",
+    header: "Expression",
+    cell: ({ getValue }) => <span className="font-mono text-xs">{getValue() as string}</span>,
+  },
+  {
+    accessorKey: "timezone",
+    header: "Timezone",
+    cell: ({ getValue }) => <span className="text-muted-foreground">{(getValue() as string) || "UTC"}</span>,
+  },
+  {
+    id: "tenant_id",
+    header: "Tenant",
+    accessorFn: (c) => c.tenant_id ?? "default",
+    cell: ({ getValue }) => <Badge variant="outline">{getValue() as string}</Badge>,
+  },
+  {
+    accessorKey: "enabled",
+    header: "Status",
+    cell: ({ getValue }) => {
+      const enabled = getValue() as boolean;
+      return <Badge variant={enabled ? "success" : "muted"}>{enabled ? "enabled" : "disabled"}</Badge>;
+    },
+  },
+  {
+    accessorKey: "updated_at",
+    header: "Updated",
+    cell: ({ getValue }) => {
+      const iso = getValue() as string;
+      return (
+        <Tooltip>
+          <TooltipTrigger className="text-muted-foreground">{formatRelativeTime(iso)}</TooltipTrigger>
+          <TooltipContent>{formatTimestamp(iso)}</TooltipContent>
+        </Tooltip>
+      );
+    },
+  },
+];
 
 export function Cron() {
   const { data, error, loading } = useApi<AdminCronSchedule[]>("/cron");
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorMessage message={error} />;
-  if (!data || data.length === 0) return <EmptyState message="No cron schedules configured." />;
+  if (error && !data) return <ErrorState message={error} />;
+  if (data && data.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Cron schedules" subtitle="Across every tenant." />
+        <EmptyState icon={Clock} message="No cron schedules configured in langgraph.json." />
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader title="Cron schedules" subtitle="Across every tenant." />
-      <Table>
-        <thead>
-          <tr>
-            <Th>Name</Th>
-            <Th>Agent</Th>
-            <Th>Expression</Th>
-            <Th>Timezone</Th>
-            <Th>Tenant</Th>
-            <Th>Status</Th>
-            <Th>Updated</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((c) => (
-            <Tr key={`${c.tenant_id ?? "default"}:${c.name}`}>
-              <Td>{c.name}</Td>
-              <Td>{c.agent_id}</Td>
-              <Td className="font-mono text-xs">{c.expression}</Td>
-              <Td className="text-slate-400">{c.timezone || "UTC"}</Td>
-              <Td>{c.tenant_id ?? "default"}</Td>
-              <Td>
-                <StatusBadge status={c.enabled ? "idle" : "error"} />
-                <span className="ml-1 text-xs text-slate-400">{c.enabled ? "enabled" : "disabled"}</span>
-              </Td>
-              <Td className="text-slate-400">{formatTimestamp(c.updated_at)}</Td>
-            </Tr>
-          ))}
-        </tbody>
-      </Table>
+      <DataTable
+        columns={columns}
+        data={data ?? []}
+        getRowId={(c) => `${c.tenant_id ?? "default"}:${c.name}`}
+        loading={loading}
+        initialSorting={[{ id: "updated_at", desc: true }]}
+      />
     </div>
   );
 }

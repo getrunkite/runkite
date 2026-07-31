@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Loader2, Send, Webhook as WebhookIcon } from "lucide-react";
+import { toast } from "sonner";
+import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminWebhookDeadLetter } from "../api/types";
-import { Button, EmptyState, ErrorMessage, formatTimestamp, Loading, PageHeader, Table, Td, Th, Tr } from "../components/ui";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { DataTable } from "../components/data-table";
+import { Button } from "../components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 
 interface RedeliverResult {
   delivered: boolean;
@@ -14,80 +20,109 @@ interface RedeliverResult {
 export function Webhooks() {
   const { data, error, loading } = useApi<AdminWebhookDeadLetter[]>("/webhooks/dead-letters");
   const [redelivering, setRedelivering] = useState<string | null>(null);
-  // Per-row feedback (not persisted -- see handleRedeliverWebhook's doc
-  // comment: a successful redelivery doesn't remove the dead letter from
-  // the list, so this is the only signal the UI has to show).
-  const [results, setResults] = useState<Record<string, RedeliverResult | string>>({});
 
   const handleRedeliver = async (id: string) => {
     setRedelivering(id);
-    setResults((prev) => ({ ...prev, [id]: undefined as unknown as RedeliverResult }));
     try {
       const result = await api.post<RedeliverResult>(`/webhooks/dead-letters/${id}/redeliver`);
-      setResults((prev) => ({ ...prev, [id]: result }));
+      if (result.delivered) {
+        toast.success("Webhook redelivered", { description: `Receiver responded with ${result.status_code}.` });
+      } else {
+        toast.error("Redelivery failed", { description: result.error ?? "The receiver rejected the retry." });
+      }
     } catch (err) {
-      setResults((prev) => ({ ...prev, [id]: err instanceof ApiError ? err.message : "Redelivery failed." }));
+      toast.error("Redelivery failed", {
+        description: err instanceof ApiError ? err.message : "Request failed.",
+      });
     } finally {
       setRedelivering(null);
     }
   };
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorMessage message={error} />;
-  if (!data || data.length === 0) return <EmptyState message="No failed webhook deliveries -- nothing to see here." />;
+  const columns: ColumnDef<AdminWebhookDeadLetter, unknown>[] = [
+    {
+      accessorKey: "url",
+      header: "URL",
+      cell: ({ getValue }) => <span className="max-w-48 truncate font-mono text-xs">{getValue() as string}</span>,
+    },
+    { accessorKey: "event_type", header: "Event" },
+    {
+      accessorKey: "run_id",
+      header: "Run",
+      cell: ({ getValue }) => (
+        <Link
+          to={`/admin/runs/${getValue() as string}`}
+          className="font-mono text-xs text-primary hover:underline"
+        >
+          {getValue() as string}
+        </Link>
+      ),
+    },
+    { accessorKey: "attempts", header: "Attempts" },
+    {
+      accessorKey: "error",
+      header: "Error",
+      enableSorting: false,
+      cell: ({ getValue }) => <span className="max-w-56 truncate text-destructive">{getValue() as string}</span>,
+    },
+    {
+      accessorKey: "failed_at",
+      header: "Failed",
+      cell: ({ getValue }) => {
+        const iso = getValue() as string;
+        return (
+          <Tooltip>
+            <TooltipTrigger className="text-muted-foreground">{formatRelativeTime(iso)}</TooltipTrigger>
+            <TooltipContent>{formatTimestamp(iso)}</TooltipContent>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      id: "redeliver",
+      header: "Redeliver",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handleRedeliver(row.original.id)}
+          disabled={redelivering === row.original.id}
+        >
+          {redelivering === row.original.id ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Send className="size-3.5" />
+          )}
+          Redeliver
+        </Button>
+      ),
+    },
+  ];
+
+  if (error && !data) return <ErrorState message={error} />;
+  if (data && data.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Webhook dead-letters" subtitle="Deliveries that exhausted every retry." />
+        <EmptyState icon={WebhookIcon} title="Nothing to see here" message="No failed webhook deliveries." />
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader
         title="Webhook dead-letters"
-        subtitle="Deliveries that exhausted every retry. Redelivery re-POSTs the stored payload unsigned (see the API's doc comment) and doesn't remove the entry below -- it's a manual retry, not a resolution."
+        subtitle="Deliveries that exhausted every retry. Redelivery re-POSTs the stored payload unsigned and doesn't remove the entry below -- it's a manual retry, not a resolution."
       />
-      <Table>
-        <thead>
-          <tr>
-            <Th>URL</Th>
-            <Th>Event</Th>
-            <Th>Run</Th>
-            <Th>Attempts</Th>
-            <Th>Error</Th>
-            <Th>Failed at</Th>
-            <Th>Redeliver</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((dl) => {
-            const result = results[dl.id];
-            return (
-              <Tr key={dl.id}>
-                <Td className="max-w-xs truncate">{dl.url}</Td>
-                <Td>{dl.event_type}</Td>
-                <Td className="font-mono text-xs">
-                  <Link to={`/admin/runs/${dl.run_id}`} className="text-indigo-400 hover:underline">
-                    {dl.run_id}
-                  </Link>
-                </Td>
-                <Td>{dl.attempts}</Td>
-                <Td className="max-w-xs truncate text-red-400">{dl.error}</Td>
-                <Td className="text-slate-400">{formatTimestamp(dl.failed_at)}</Td>
-                <Td>
-                  <div className="flex items-center gap-2">
-                    <Button onClick={() => handleRedeliver(dl.id)} disabled={redelivering === dl.id}>
-                      {redelivering === dl.id ? "Sending..." : "Redeliver"}
-                    </Button>
-                    {typeof result === "string" && <span className="text-xs text-red-400">{result}</span>}
-                    {typeof result === "object" && result?.delivered && (
-                      <span className="text-xs text-emerald-400">Delivered ({result.status_code})</span>
-                    )}
-                    {typeof result === "object" && result && !result.delivered && (
-                      <span className="text-xs text-red-400">{result.error ?? "Failed"}</span>
-                    )}
-                  </div>
-                </Td>
-              </Tr>
-            );
-          })}
-        </tbody>
-      </Table>
+      <DataTable
+        columns={columns}
+        data={data ?? []}
+        getRowId={(dl) => dl.id}
+        loading={loading}
+        initialSorting={[{ id: "failed_at", desc: true }]}
+      />
     </div>
   );
 }

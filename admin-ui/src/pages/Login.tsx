@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
+import { KeyRound, Loader2, Rocket } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 
 export function Login() {
   const { login } = useAuth();
@@ -22,35 +27,52 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950">
-      <div className="w-full max-w-sm rounded-lg border border-slate-800 bg-slate-900 p-8 shadow-xl">
-        <h1 className="mb-1 text-xl font-semibold text-slate-100">Runkite Admin</h1>
-        <p className="mb-6 text-sm text-slate-400">Sign in with an API key or JWT that has the <code className="rounded bg-slate-800 px-1 py-0.5 text-xs">admin</code> permission.</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="token" className="mb-1 block text-sm font-medium text-slate-300">
-              API key / JWT
-            </label>
-            <input
-              id="token"
-              type="password"
-              autoFocus
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
-              placeholder="sk-... or eyJ..."
-            />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
+      {/* Soft radial glow behind the card -- the kind of subtle depth
+          that separates a "designed" auth screen from a bare form. */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          background:
+            "radial-gradient(600px circle at 50% 0%, var(--color-primary), transparent 60%)",
+        }}
+      />
+      <Card className="relative w-full max-w-sm shadow-2xl">
+        <CardHeader className="items-center text-center">
+          <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
+            <Rocket className="size-5" />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting || token.trim() === ""}
-            className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-      </div>
+          <CardTitle className="text-lg">Runkite Admin</CardTitle>
+          <CardDescription>
+            Sign in with an API key or JWT that has the{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">admin</code> permission.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="token">API key / JWT</Label>
+              <div className="relative">
+                <KeyRound className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="token"
+                  type="password"
+                  autoFocus
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="sk-... or eyJ..."
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" disabled={submitting || token.trim() === ""} className="w-full">
+              {submitting && <Loader2 className="size-4 animate-spin" />}
+              {submitting ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

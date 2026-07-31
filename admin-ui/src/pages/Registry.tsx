@@ -1,48 +1,89 @@
+import { Package } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
-import { EmptyState, ErrorMessage, Loading, PageHeader, Table, Td, Th, Tr } from "../components/ui";
+import { EmptyState, ErrorState, PageHeader } from "../components/common";
+import { DataTable } from "../components/data-table";
+import { Badge } from "../components/ui/badge";
+
+const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
+  {
+    accessorKey: "name",
+    header: "Name",
+    cell: ({ getValue }) => <span className="font-mono text-xs font-medium">{getValue() as string}</span>,
+  },
+  {
+    accessorKey: "display_name",
+    header: "Display name",
+    cell: ({ getValue }) => (getValue() as string) || "—",
+  },
+  {
+    accessorKey: "tenant_id",
+    header: "Tenant",
+    cell: ({ getValue }) => <Badge variant="outline">{getValue() as string}</Badge>,
+  },
+  {
+    accessorKey: "author",
+    header: "Author",
+    cell: ({ getValue }) => <span className="text-muted-foreground">{(getValue() as string) || "—"}</span>,
+  },
+  {
+    id: "tags",
+    header: "Tags",
+    accessorFn: (entry) => entry.tags?.join(", ") ?? "",
+    enableSorting: false,
+    cell: ({ row }) =>
+      row.original.tags && row.original.tags.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {row.original.tags.map((tag) => (
+            <Badge key={tag} variant="muted">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
+    id: "source",
+    header: "Source",
+    accessorFn: (entry) => `${entry.source_type}: ${entry.source_ref}`,
+    cell: ({ getValue }) => (
+      <span className="max-w-xs truncate font-mono text-xs text-muted-foreground">{getValue() as string}</span>
+    ),
+  },
+  { accessorKey: "version", header: "Version", cell: ({ getValue }) => `v${getValue() as number}` },
+];
 
 export function Registry() {
   const { data, error, loading } = useApi<AdminRegistryEntry[]>("/registry");
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorMessage message={error} />;
-  if (!data || data.length === 0) return <EmptyState message="No registry entries published yet." />;
+  if (error && !data) return <ErrorState message={error} />;
+  if (data && data.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Registry" subtitle="A metadata catalog for publishing and discovering agent definitions." />
+        <EmptyState
+          icon={Package}
+          title="No registry entries published yet"
+          message="Publish an entry via PUT /registry/entries/{name} to see it here."
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader
         title="Registry"
-        subtitle={`${data.length} published across every tenant. A metadata catalog -- source_ref is where to actually deploy an entry, not something this control plane executes.`}
+        subtitle={
+          data
+            ? `${data.length} published across every tenant. source_ref is where to deploy an entry, not something this control plane executes.`
+            : undefined
+        }
       />
-      <Table>
-        <thead>
-          <tr>
-            <Th>Name</Th>
-            <Th>Display Name</Th>
-            <Th>Tenant</Th>
-            <Th>Author</Th>
-            <Th>Tags</Th>
-            <Th>Source</Th>
-            <Th>Version</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((entry) => (
-            <Tr key={`${entry.tenant_id}:${entry.name}`}>
-              <Td className="font-mono text-xs">{entry.name}</Td>
-              <Td>{entry.display_name || "—"}</Td>
-              <Td>{entry.tenant_id}</Td>
-              <Td>{entry.author || "—"}</Td>
-              <Td className="text-slate-400">{entry.tags?.join(", ") || "—"}</Td>
-              <Td className="max-w-xs truncate text-xs">
-                {entry.source_type}: {entry.source_ref}
-              </Td>
-              <Td>{entry.version}</Td>
-            </Tr>
-          ))}
-        </tbody>
-      </Table>
+      <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
     </div>
   );
 }
