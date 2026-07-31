@@ -465,7 +465,21 @@ func startServer(opts serverOpts) {
 		grpcServer.Stop()
 	}
 
-	if err := shutdownTracing(shutdownCtx); err != nil {
+	// Deliberately a FRESH context here, not shutdownCtx -- by this
+	// point shutdownCtx has already been spent (often almost entirely)
+	// by the HTTP+gRPC drain above, and the connected-runner case is
+	// the COMMON one, not an edge case (see the gRPC comment above:
+	// GracefulStop reliably runs close to the full budget whenever a
+	// runner's long-lived WatchCancels stream is open). Reusing
+	// shutdownCtx here would mean the tracing flush -- the entire
+	// reason a signal handler exists in the first place, see
+	// tracing.Init's own doc comment on why OTel's buffered spans are
+	// silently dropped without an explicit flush -- runs against an
+	// already-expired deadline in the typical case, silently skipping
+	// exactly the export it was added to guarantee.
+	tracingCtx, cancelTracing := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelTracing()
+	if err := shutdownTracing(tracingCtx); err != nil {
 		slog.Error("tracing shutdown error", "error", err)
 	}
 	_ = store.Close()
