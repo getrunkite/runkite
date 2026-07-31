@@ -22,12 +22,34 @@ const reclaimLeaderKey = "rk:reclaim-leader"
 
 // reclaimLeaderTTL must outlast one ReclaimStale call plus a little
 // slack, and expire soon enough that a dead holder doesn't stall
-// recovery. Matched to the 2s reclaim ticker in reclaimStaleJobs.
+// recovery. Longer than the 2s reclaim ticker on purpose: the current
+// leader renews via reclaimLeaderScript each tick (SET with PX when
+// value still equals its holder id), so a live leader keeps the lock
+// continuously. A blind SetNX with TTL > tick left ~1s gaps every
+// cycle (live-confirmed) because the holder couldn't renew against
+// its own unexpired key.
 const reclaimLeaderTTL = 3 * time.Second
 
-// tryAcquireReclaimLeader attempts to become the cluster's reclaim
-// leader for ttl. Returns (true, nil) when this replica should run
-// ReclaimStale this tick. When rdb is nil (no REDIS_URL), returns
+// reclaimLeaderScript atomically acquires or renews the reclaim-leader
+// lease:
+//   - key absent, or value == our holder → SET with PX (acquire/renew), return 1
+//   - value is another holder → leave untouched, return 0
+//
+// KEYS[1] = reclaimLeaderKey
+// ARGV[1] = holder id
+// ARGV[2] = TTL milliseconds
+const reclaimLeaderScript = `
+local cur = redis.call('GET', KEYS[1])
+if cur == false or cur == ARGV[1] then
+  redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+  return 1
+end
+return 0
+`
+
+// tryAcquireReclaimLeader attempts to become (or remain) the cluster's
+// reclaim leader for ttl. Returns (true, nil) when this replica should
+// run ReclaimStale this tick. When rdb is nil (no REDIS_URL), returns
 // (true, nil) so every replica reaps -- same as historical behavior,
 // required for Kafka-without-Redis and in-process single-node.
 func tryAcquireReclaimLeader(ctx context.Context, rdb *goredis.Client, holder string, ttl time.Duration) (bool, error) {
@@ -37,7 +59,11 @@ func tryAcquireReclaimLeader(ctx context.Context, rdb *goredis.Client, holder st
 	if ttl <= 0 {
 		ttl = reclaimLeaderTTL
 	}
-	return rdb.SetNX(ctx, reclaimLeaderKey, holder, ttl).Result()
+	res, err := rdb.Eval(ctx, reclaimLeaderScript, []string{reclaimLeaderKey}, holder, ttl.Milliseconds()).Int()
+	if err != nil {
+		return false, err
+	}
+	return res == 1, nil
 }
 
 // staleReclaimer is implemented by in-process, Redis, NATS, and Kafka queues.
