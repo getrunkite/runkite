@@ -1647,8 +1647,23 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// cancelRun implements the Agent Protocol spec's two query params on
+// POST /runs/{run_id}/cancel (and the thread-scoped equivalent):
+//
+//   - wait (bool, default false): whether the HTTP response itself waits
+//     for the run's post-cancel grace window (see cancelRunSingle) before
+//     returning, instead of backgrounding it. The run's status is set to
+//     "interrupted" synchronously either way -- wait only changes when
+//     the response is sent, not what gets persisted or when.
+//   - action (interrupt|rollback, default interrupt): rollback additionally
+//     deletes the run record after cancelling it (see cancelRunCore's own
+//     doc comment for the one honest limitation: this does NOT delete any
+//     checkpoints, unlike the spec's literal wording).
 func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request, runID string) {
-	updated, err := s.cancelRunCore(r.Context(), runID)
+	wait := r.URL.Query().Get("wait") == "true"
+	rollback := r.URL.Query().Get("action") == "rollback"
+
+	updated, err := s.cancelRunCore(r.Context(), runID, wait, rollback)
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -1661,14 +1676,34 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request, runID string)
 }
 
 // cancelRunCore is the HTTP-independent cancel implementation, shared by the
-// REST DELETE/cancel handler and the WebSocket "run.cancel" command.
-func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, error) {
+// REST DELETE/cancel handler and the WebSocket "run.cancel" command (which
+// always passes wait=false, rollback=false -- today's exact prior behavior,
+// unchanged; wiring the WS command's own body to these same options is a
+// reasonable follow-up, not done here).
+//
+// rollback=true deletes the run row (state.Store.DeleteRun) after
+// cancelling it -- but NOT any checkpoints, despite the Agent Protocol
+// spec's literal "action=rollback ... will cancel the run and delete the
+// run and associated checkpoints afterwards" wording. Checkpoints in this
+// schema are keyed by thread_id, not run_id (SaveCheckpoint's own
+// signature) -- a thread accumulates checkpoints across every run ever
+// executed on it, with no per-run attribution to select just this run's
+// slice for deletion. Worse, in direct mode (the common, recommended
+// checkpoint deployment -- see the Checkpoint Dual Mode docs), checkpoints
+// live entirely in LangGraph's own Postgres tables, invisible to this
+// state.Store's checkpoint table at all -- deleting rows here would be a
+// silent no-op for exactly the deployments most likely to have real
+// checkpoints to delete. Implementing this precisely would need a schema
+// change (tagging every checkpoint with the run_id that created it)
+// across all 4 backends, disproportionate to this fix; documenting the
+// gap honestly here is the deliberate choice over a half-correct delete.
+func (s *Server) cancelRunCore(ctx context.Context, runID string, wait, rollback bool) (*models.Run, error) {
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
 
-	updated, err := s.cancelRunSingle(ctx, run)
+	updated, err := s.cancelRunSingle(ctx, run, wait)
 	if err != nil {
 		return nil, err
 	}
@@ -1681,6 +1716,13 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, 
 	// own cancel, which already succeeded above.
 	s.cascadeCancelDescendants(ctx, run)
 
+	if rollback {
+		if delErr := s.store.DeleteRun(ctx, runID); delErr != nil {
+			slog.Error("cancel rollback: failed to delete run record", "run_id", runID, "error", delErr)
+		}
+		return nil, nil
+	}
+
 	return updated, nil
 }
 
@@ -1691,7 +1733,18 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string) (*models.Run, 
 // cascadeCancelDescendants can apply the same side effects to each
 // descendant without re-triggering a redundant tree lookup per node
 // (cancelRunCore itself already looked up the whole tree once).
-func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run) (*models.Run, error) {
+//
+// wait controls whether the post-cancel grace window (giving the runner
+// a few seconds to emit any final straggler events before the broker is
+// closed) runs synchronously -- delaying whatever eventually calls this
+// -- or in the background, as it always did before the wait query param
+// existed. Callers cancelling A2A descendants (cascadeCancelDescendants)
+// always pass false: a deep delegation tree cancelling sequentially with
+// each hop blocking for the same grace window would make the parent's
+// own cancel latency scale with tree depth, for no benefit -- only the
+// single run the caller actually asked to cancel needs its own response
+// to reflect that wait.
+func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool) (*models.Run, error) {
 	runID := run.RunID
 
 	if isTerminalStatus(run.Status) {
@@ -1710,13 +1763,18 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run) (*models.
 	// means only whichever call arrives first does anything.
 	s.finishRun(runID, run.ThreadID, run.AgentID, models.RunStatusInterrupted, "")
 
-	// Give runner time to emit its own terminal event, then close broker
-	go func() {
+	// Give runner time to emit its own terminal event, then close broker.
+	closeBroker := func() {
 		time.Sleep(5 * time.Second)
 		_ = s.broker.Close(runID)
-	}()
+	}
+	if wait {
+		closeBroker()
+	} else {
+		go closeBroker()
+	}
 
-	slog.Info("run cancelled", "run_id", runID)
+	slog.Info("run cancelled", "run_id", runID, "wait", wait)
 
 	updated, _ := s.store.GetRun(ctx, runID)
 	if updated != nil {
@@ -1767,7 +1825,7 @@ func (s *Server) cascadeCancelDescendants(ctx context.Context, run *models.Run) 
 	for len(queue) > 0 {
 		child := queue[0]
 		queue = queue[1:]
-		if _, err := s.cancelRunSingle(sysCtx, child); err != nil {
+		if _, err := s.cancelRunSingle(sysCtx, child, false); err != nil {
 			slog.Warn("a2a cancel cascade: failed to cancel descendant run", "root_run_id", rootID, "parent_run_id", run.RunID, "child_run_id", child.RunID, "error", err)
 		}
 		queue = append(queue, childrenOf[child.RunID]...)

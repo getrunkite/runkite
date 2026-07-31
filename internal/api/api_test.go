@@ -250,6 +250,63 @@ func TestAP007_GetAgentSchemas(t *testing.T) {
 	}
 }
 
+// TestReportAgentSchema_OverwritesTheBootstrapStub proves a runner can
+// report its own real, introspected schema via PUT
+// /internal/agents/{agentID}/schema, and that GET /agents/{id}/schemas
+// (the client-facing read) reflects exactly what was reported -- not the
+// {"type":"object"} stub every agent starts with at bootstrap (see
+// cmd/serve.go's bootstrapAgents, which the control plane writes since
+// it never loads a runner's graph itself and so has no way to know the
+// real shape up front).
+func TestReportAgentSchema_OverwritesTheBootstrapStub(t *testing.T) {
+	env := newTestEnv(t)
+	seedAgent(t, env, "a1", "chatbot", nil)
+
+	realSchema := map[string]interface{}{
+		"input_schema": map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{"messages": map[string]interface{}{"type": "array"}},
+			"required":   []interface{}{"messages"},
+			"title":      "MyState",
+		},
+		"output_schema": map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{"messages": map[string]interface{}{"type": "array"}},
+			"title":      "MyState",
+		},
+	}
+	resp, _ := putJSON(env.srv.URL+"/internal/agents/a1/schema", realSchema)
+	expectStatus(t, resp, 204)
+
+	resp2, _ := http.Get(env.srv.URL + "/agents/a1/schemas")
+	expectStatus(t, resp2, 200)
+	var schema models.AgentSchema
+	json.Unmarshal(readBody(t, resp2), &schema)
+
+	if schema.AgentID != "a1" {
+		t.Fatalf("expected agent_id=a1, got %s", schema.AgentID)
+	}
+	if schema.InputSchema["title"] != "MyState" {
+		t.Fatalf("expected the reported real schema to overwrite the stub, got %+v", schema.InputSchema)
+	}
+	if _, hasProps := schema.InputSchema["properties"]; !hasProps {
+		t.Fatalf("expected real properties in reported schema, got %+v", schema.InputSchema)
+	}
+}
+
+// TestReportAgentSchema_UnknownAgentIDReturnsCleanNotFound proves a
+// schema report for an agent_id the control plane never registered gets
+// a clean 404 -- not an opaque 500 from agent_schemas' own foreign key
+// on agents (see handleReportAgentSchema's doc comment).
+func TestReportAgentSchema_UnknownAgentIDReturnsCleanNotFound(t *testing.T) {
+	env := newTestEnv(t)
+
+	resp, _ := putJSON(env.srv.URL+"/internal/agents/never-registered/schema", map[string]interface{}{
+		"input_schema": map[string]interface{}{"type": "object"},
+	})
+	expectStatus(t, resp, 404)
+}
+
 // ============================================================================
 // 3.2 Threads (AP-010 .. AP-026)
 // ============================================================================
@@ -889,6 +946,99 @@ func TestAP036_CancelRun(t *testing.T) {
 	if cancelled.Status != models.RunStatusInterrupted {
 		t.Fatalf("expected status=interrupted, got %s", cancelled.Status)
 	}
+}
+
+// TestCancelRun_WaitQueryParamDelaysResponseByGraceWindow proves wait=true
+// (an Agent Protocol spec field that was previously read nowhere at all --
+// see cancelRun's own doc comment) actually changes response timing: the
+// post-cancel grace window (cancelRunSingle's 5s "give the runner time to
+// emit final events" delay) runs synchronously instead of backgrounded, so
+// the HTTP response itself is measurably delayed by roughly that long.
+func TestCancelRun_WaitQueryParamDelaysResponseByGraceWindow(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp1), &run)
+
+	start := time.Now()
+	resp2, err := http.Post(env.srv.URL+"/runs/"+run.RunID+"/cancel?wait=true", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(start)
+	expectStatus(t, resp2, 200)
+
+	if elapsed < 4*time.Second {
+		t.Fatalf("expected wait=true to delay the response by ~5s (the grace window), only took %v", elapsed)
+	}
+
+	var cancelled models.Run
+	json.Unmarshal(readBody(t, resp2), &cancelled)
+	if cancelled.Status != models.RunStatusInterrupted {
+		t.Fatalf("expected status=interrupted, got %s", cancelled.Status)
+	}
+}
+
+// TestCancelRun_WaitFalseDefaultRespondsImmediately is the control for the
+// test above -- without wait=true (or with it explicitly omitted, the
+// spec's documented default), the response must NOT be delayed by the
+// grace window, preserving today's original behavior exactly.
+func TestCancelRun_WaitFalseDefaultRespondsImmediately(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp1), &run)
+
+	start := time.Now()
+	resp2, _ := postJSON(env.srv.URL+"/runs/"+run.RunID+"/cancel", map[string]interface{}{})
+	elapsed := time.Since(start)
+	expectStatus(t, resp2, 200)
+
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected wait=false (default) to respond immediately, took %v", elapsed)
+	}
+}
+
+// TestCancelRun_ActionRollbackDeletesTheRunRecord proves action=rollback
+// (the other previously-unwired Agent Protocol cancel field) actually
+// deletes the run after cancelling it -- a subsequent GET must 404, not
+// return the cancelled run like the default action=interrupt would.
+func TestCancelRun_ActionRollbackDeletesTheRunRecord(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp1), &run)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs/"+run.RunID+"/cancel?action=rollback", map[string]interface{}{})
+	expectStatus(t, resp2, 204)
+
+	resp3, _ := http.Get(env.srv.URL + "/runs/" + run.RunID)
+	expectStatus(t, resp3, 404)
+}
+
+// TestCancelRun_ActionInterruptDefaultKeepsTheRunRecord is the control for
+// the rollback test above -- the default action (interrupt, whether
+// explicit or omitted) must NOT delete the run, matching every existing
+// cancel test's own assumption that a GET afterward still succeeds.
+func TestCancelRun_ActionInterruptDefaultKeepsTheRunRecord(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp1), &run)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs/"+run.RunID+"/cancel?action=interrupt", map[string]interface{}{})
+	expectStatus(t, resp2, 200)
+
+	resp3, _ := http.Get(env.srv.URL + "/runs/" + run.RunID)
+	expectStatus(t, resp3, 200)
 }
 
 // ============================================================================

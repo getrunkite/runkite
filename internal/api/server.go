@@ -246,6 +246,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Internal APIs (for runners)
 	mux.HandleFunc("GET /internal/runs/{runID}/status", s.handleGetRunStatus)
+	mux.HandleFunc("PUT /internal/agents/{agentID}/schema", s.handleReportAgentSchema)
 
 	// Connector Registry (internal, for runners)
 	mux.HandleFunc("GET /internal/connectors", s.handleListConnectors)

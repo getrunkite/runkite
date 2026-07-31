@@ -91,7 +91,11 @@ func (s *Server) dispatchWSCommand(ctx context.Context, r *http.Request, c *webs
 
 	case "run.cancel":
 		runID, _ := cmd.Params["run_id"].(string)
-		run, err := s.cancelRunCore(ctx, runID)
+		// wait/rollback aren't wired into the WS command body -- always
+		// today's original behavior (immediate response, never deletes
+		// the run). Matches the REST handler's own defaults; extending
+		// the WS command shape to accept these is a reasonable follow-up.
+		run, err := s.cancelRunCore(ctx, runID, false, false)
 		wsWriteCommandResult(ctx, c, cmd.ID, "cancel_failed", run, err)
 
 	default:

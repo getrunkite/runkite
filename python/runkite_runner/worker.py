@@ -27,6 +27,7 @@ from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
 from .logging_config import setup_logging
+from .schema_introspect import report_agent_schemas
 from .store import RunkiteStore
 from .tls_utils import grpc_channel_credentials
 
@@ -438,6 +439,14 @@ async def run_worker(
     # no-op -- runners are trusted implicitly.
     runner_token = os.environ.get("RUNNER_TOKEN", "")
     auth_metadata = [("runner-kind", runner_kind), ("runner-token", runner_token)] if runner_token else []
+
+    # Real schema introspection, once at startup: overwrites the
+    # {"type":"object"} stub bootstrapAgents (cmd/serve.go) wrote at
+    # registration time with each STATIC graph's actual input/output/
+    # state/config JSON Schema -- see schema_introspect.py's own doc
+    # comment for why this can only happen here (the control plane never
+    # loads the graph itself) and why factory graphs are skipped.
+    await report_agent_schemas(adapter.graphs, http_address, runner_token, runner_kind)
 
     # Checkpoint dual mode: direct-mode Postgres when the
     # runner has the same DATABASE_URL the control plane uses, so thread

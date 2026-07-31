@@ -51,6 +51,48 @@ func (s *Server) handleGetAgentSchemas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schema)
 }
 
+// PUT /internal/agents/{agentID}/schema -- a runner reports the REAL,
+// introspected schema for a graph it just loaded, overwriting the
+// {"type":"object"} stub bootstrapAgents (cmd/serve.go) writes for
+// every agent at registration time (the control plane never loads a
+// runner's graph itself, so it has no way to know the real shape up
+// front -- only the runner that actually loaded it does). Registered
+// under /internal/ so it gets the same runner-token auth as every
+// other runner-facing endpoint automatically (see isInternalPath in
+// internal/auth/auth.go), no separate auth wiring needed here.
+//
+// Returns a clean 404 for an agent_id the control plane doesn't
+// recognize (e.g. a typo, or a race with bootstrapAgents on a fresh
+// restart) rather than letting the request through to
+// UpsertAgentSchema -- agent_schemas has a foreign key on agents, so an
+// unregistered agent_id would otherwise surface as an opaque 500 from a
+// raw constraint violation. Checked explicitly here rather than
+// pattern-matching the SQL error after the fact, since that would need
+// its own per-backend translation the same way CreateRun's own
+// duplicate-key-to-ErrConflict wrapping did, for a case that's cheap to
+// just check up front instead.
+func (s *Server) handleReportAgentSchema(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agentID")
+
+	if _, err := s.store.GetAgent(r.Context(), agentID); err != nil {
+		handleStoreError(w, err)
+		return
+	}
+
+	var schema models.AgentSchema
+	if err := readJSON(r, &schema); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	schema.AgentID = agentID
+
+	if err := s.store.UpsertAgentSchema(r.Context(), &schema); err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /agents/{agentID}/versions -- full agent versioning, returning every
 // historical snapshot newest first, matching the store's own ordering
 // contract.
