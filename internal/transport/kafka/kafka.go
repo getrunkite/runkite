@@ -440,16 +440,16 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 	})
 }
 
-// Dequeue fetches the next message for runnerKind and commits its
-// offset immediately -- see this package's own doc comment for why
-// that's safe here despite not yet being Acked: the state-topic entry
-// written right after, not Kafka's own committed offset, is what
-// ReclaimStale/Nack actually use to find and re-deliver an unfinished
-// job, so an offset commit "leapfrogging" a still-pending job (Kafka's
-// documented behavior when a later message is committed before an
-// earlier one) never causes that earlier job to be silently lost the
-// way it would in a design relying on Kafka's own offset replay for
-// redelivery.
+// Dequeue fetches the next message for runnerKind, writes a durable
+// state-topic entry for it, and only then commits its offset -- see
+// this package's own doc comment for why that's safe despite not yet
+// being Acked: the state-topic entry, not Kafka's own committed offset,
+// is what ReclaimStale/Nack actually use to find and re-deliver an
+// unfinished job, so an offset commit "leapfrogging" a still-pending
+// job (Kafka's documented behavior when a later message is committed
+// before an earlier one) never causes that earlier job to be silently
+// lost the way it would in a design relying on Kafka's own offset
+// replay for redelivery.
 //
 // Order matters here, and is the opposite of this package's own first
 // draft: the state-topic entry is written BEFORE the offset is
