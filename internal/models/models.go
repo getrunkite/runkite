@@ -122,8 +122,8 @@ type ThreadCreate struct {
 type ThreadPatch struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	Values   map[string]interface{} `json:"values,omitempty"`
-	// IfMatchVersion, if set, makes this PATCH conditional (IR-001-style
-	// optimistic concurrency, see Thread.Version's own doc comment): the
+	// IfMatchVersion, if set, makes this PATCH conditional (optimistic
+	// concurrency, see Thread.Version's own doc comment): the
 	// update only applies if the thread's CURRENT version still equals
 	// this value at write time, checked atomically in the same UPDATE
 	// statement (not a separate read-then-compare, which would still

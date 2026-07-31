@@ -856,7 +856,7 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	}
 	existing.UpdatedAt = time.Now().UTC()
 
-	// Optimistic concurrency (IR-005): the version match lives in the
+	// Optimistic concurrency: the version match lives in the
 	// FILTER (Mongo's equivalent of a SQL WHERE clause), checked
 	// atomically by the same UpdateOne call that applies the change --
 	// not a separate read-then-compare, which would still race. $inc
@@ -1189,7 +1189,7 @@ func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
 		// own retry-race fallback can't find the OTHER tenant's row to
 		// dispatch through) falls all the way back to the API layer as
 		// a raw, unwrapped driver error, surfacing as a generic 500
-		// instead of a clean 409 -- IR-001's own tenant-scoping gap.
+		// instead of a clean 409.
 		return &state.ErrConflict{Resource: "run", ID: run.RunID}
 	}
 	return err

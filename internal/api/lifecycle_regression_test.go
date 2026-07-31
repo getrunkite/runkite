@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sharanharsoor/runkite/internal/config"
 	"github.com/sharanharsoor/runkite/internal/models"
 	"github.com/sharanharsoor/runkite/internal/state"
 	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
@@ -193,13 +194,14 @@ func TestReadJSON_RejectsOversizedBody(t *testing.T) {
 // "winning" run on a different thread) instead of relying on goroutine
 // timing, so this can't flake.
 //
-// Updated for the IR-001 fingerprint check (item 18 tail): this exact
-// scenario -- same run_id, different thread_id -- is precisely the client
-// mistake / run_id collision that check now catches, so the correct
-// outcome changed from silently dispatching the OTHER thread's run via
-// errRunRetryRace to a clear state.ErrConflict. The orphan-busy-thread
-// assertion below (the actual bug this test exists for) is unaffected --
-// the defer that releases the loser's thread claim fires on ANY non-nil
+// Also covers the fingerprint check createRunCtx applies against a
+// run_id retry: this exact scenario -- same run_id, different thread_id
+// -- is precisely the client mistake / run_id collision that check
+// catches, so the correct outcome here is a clear state.ErrConflict, not
+// silently dispatching the OTHER thread's run via errRunRetryRace as if
+// it were a normal retry. The orphan-busy-thread assertion below (the
+// actual bug this test exists for) is unaffected either way -- the
+// defer that releases the loser's thread claim fires on ANY non-nil
 // error, regardless of which one.
 func TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim(t *testing.T) {
 	s, store := newLifecycleServer(t, nil)
@@ -303,8 +305,8 @@ func TestCreateRunCtx_TryClaimRaceReturnsRetrySentinelNotFakeCacheHit(t *testing
 }
 
 // TestHandleCreateRunError_DispatchesRaceAndFallsBackToStoreError is a
-// regression test for item 18a's own follow-up: handleCreateRunError
-// exists specifically so no future create-run handler can forget the
+// regression test proving handleCreateRunError's own contract:
+// it exists specifically so no future create-run handler can forget the
 // retry-race dispatch the way the old two-separate-calls convention
 // could. Proves both halves of that single call directly: an
 // errRunRetryRace gets dispatched through respond (never touching w),
@@ -378,5 +380,63 @@ func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {
 	}
 	if hit {
 		t.Fatal("hit should be false on conflict")
+	}
+}
+
+// TestFingerprintMismatch_MultiTargetAliasRetryNeverFalseConflicts is a
+// regression test for a real bug caught on review: comparing a retry's
+// agent name against a FRESH call to AliasResolver.Resolve would
+// re-roll a weighted-random pick every time (see Resolve's own doc
+// comment) -- a retry landing on a DIFFERENT real target than the
+// original request did would then look like a genuine agent mismatch,
+// turning a legitimate retry of a multi-target alias into a false
+// conflict. The fix compares against the alias NAME recorded on the
+// original run (Metadata's own "requested_alias", set once and never
+// re-rolled) instead of re-resolving.
+//
+// A 50/50 split makes the old, buggy comparison (run.AgentID against a
+// freshly re-resolved target) fail with extremely high probability
+// within a handful of calls if it's still re-rolling -- this runs 30 to
+// make that failure essentially certain if the bug were still present,
+// while the fix itself has no randomness in its own decision at all.
+func TestFingerprintMismatch_MultiTargetAliasRetryNeverFalseConflicts(t *testing.T) {
+	s, _ := newLifecycleServer(t, nil)
+	s.SetAliasResolver(NewAliasResolver(map[string]config.AgentAliasEntry{
+		"my_agent": {Targets: map[string]int{"my_agent_v1": 1, "my_agent_v2": 1}},
+	}))
+
+	// The original request resolved to v1 and recorded that it was
+	// requested through the "my_agent" alias -- exactly what
+	// createRunCtx itself writes to Metadata on a real alias hit.
+	run := &models.Run{
+		RunID: "alias-retry-run", ThreadID: "t1", AgentID: "my_agent_v1",
+		Metadata: map[string]interface{}{"requested_alias": "my_agent"},
+	}
+
+	for i := 0; i < 30; i++ {
+		retry := &models.RunCreate{AgentID: "my_agent"}
+		if reason := s.fingerprintMismatch(run, retry, ""); reason != "" {
+			t.Fatalf("iteration %d: expected a retry through the same alias to never conflict regardless of which real target Resolve happens to pick, got %q", i, reason)
+		}
+	}
+}
+
+// TestFingerprintMismatch_DifferentAliasIsStillAMismatch proves the fix
+// above didn't just make alias comparisons vacuously always pass -- a
+// retry through a GENUINELY different alias name than the original
+// request used is still correctly flagged.
+func TestFingerprintMismatch_DifferentAliasIsStillAMismatch(t *testing.T) {
+	s, _ := newLifecycleServer(t, nil)
+	s.SetAliasResolver(NewAliasResolver(map[string]config.AgentAliasEntry{
+		"my_agent":    {Targets: map[string]int{"my_agent_v1": 1}},
+		"other_alias": {Targets: map[string]int{"my_agent_v1": 1}},
+	}))
+	run := &models.Run{
+		RunID: "alias-retry-run-2", ThreadID: "t1", AgentID: "my_agent_v1",
+		Metadata: map[string]interface{}{"requested_alias": "my_agent"},
+	}
+	reason := s.fingerprintMismatch(run, &models.RunCreate{AgentID: "other_alias"}, "")
+	if reason == "" {
+		t.Fatal("expected a mismatch: the retry named a different alias than the original run recorded, even though both happen to resolve to the same real target")
 	}
 }

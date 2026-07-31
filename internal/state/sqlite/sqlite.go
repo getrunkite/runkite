@@ -1282,7 +1282,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run *models.Run) error {
 		// own retry-race fallback can't find the OTHER tenant's row to
 		// dispatch through) falls all the way back to the API layer as
 		// a raw, unwrapped driver error, surfacing as a generic 500
-		// instead of a clean 409 -- IR-001's own tenant-scoping gap.
+		// instead of a clean 409.
 		return &state.ErrConflict{Resource: "run", ID: run.RunID}
 	}
 	return err

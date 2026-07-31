@@ -30,8 +30,10 @@
 // can rebuild), which is what makes Ack/Renew/Nack/ReclaimStale usable
 // from ANY replica regardless of which one's Fetch call actually
 // received a given message -- the same "shared, not process-local"
-// requirement item 16 imposed on Redis, solved with a Kafka-native
-// mechanism instead of Redis's Lua scripts or NATS's KV bucket.
+// property Redis's own transport needed a real fix for once a
+// load-balanced, multi-replica deployment exposed a process-local map
+// as a genuine bug, solved here with a Kafka-native mechanism instead
+// of Redis's Lua scripts or NATS's KV bucket.
 //
 // Fencing generation is hand-rolled here too, same as NATS (Kafka's own
 // consumer-group generation ID is a group-membership concept tied to

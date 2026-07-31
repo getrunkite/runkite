@@ -1346,7 +1346,7 @@ func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
 		// can't find the OTHER tenant's row to dispatch through) falls
 		// all the way back to the API layer as a raw, unwrapped
 		// *pgconn.PgError, surfacing as a generic 500 instead of a
-		// clean 409 -- IR-001's own tenant-scoping gap.
+		// clean 409.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return &state.ErrConflict{Resource: "run", ID: run.RunID}

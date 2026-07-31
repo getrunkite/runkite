@@ -298,15 +298,15 @@ func runTenantIsolationTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	// IR-001 tenant-scoping gap: run_id is a globally-unique primary key,
-	// but GetRun is tenant-scoped -- so when tenant B's CreateRun collides
-	// with tenant A's existing run_id, tenant B's own createRunCtx-level
-	// retry-race fallback (GetRun in ITS OWN tenant context) can't find
-	// tenant A's row to dispatch through, and the raw duplicate-key
-	// error must still surface as a clean, actionable conflict here at
-	// the store layer -- not a raw driver error the API layer can only
-	// turn into a generic 500.
-	t.Run("IR001_create_run_cross_tenant_run_id_collision_returns_conflict_not_raw_error", func(t *testing.T) {
+	// run_id is a globally-unique primary key, but GetRun is
+	// tenant-scoped -- so when tenant B's CreateRun collides with tenant
+	// A's existing run_id, tenant B's own createRunCtx-level retry-race
+	// fallback (GetRun in ITS OWN tenant context) can't find tenant A's
+	// row to dispatch through, and the raw duplicate-key error must
+	// still surface as a clean, actionable conflict here at the store
+	// layer -- not a raw driver error the API layer can only turn into
+	// a generic 500.
+	t.Run("create_run_cross_tenant_run_id_collision_returns_conflict_not_raw_error", func(t *testing.T) {
 		s := factory(t)
 		now := time.Now().UTC()
 		s.CreateThread(ctxA, &models.Thread{ThreadID: "collision-thread-a", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
@@ -991,7 +991,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 	// Optimistic concurrency on PATCH /threads via a plain version counter, checked atomically in
 	// the UPDATE's own WHERE clause -- not a separate read-then-compare,
 	// which would still race under real concurrency.
-	t.Run("IR-005_new_thread_starts_at_version_1", func(t *testing.T) {
+	t.Run("optimistic_concurrency_new_thread_starts_at_version_1", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1018,7 +1018,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	t.Run("IR-005_unconditional_patch_still_works_and_bumps_version", func(t *testing.T) {
+	t.Run("optimistic_concurrency_unconditional_patch_still_works_and_bumps_version", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1036,7 +1036,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	t.Run("IR-005_matching_version_succeeds", func(t *testing.T) {
+	t.Run("optimistic_concurrency_matching_version_succeeds", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1055,7 +1055,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	t.Run("IR-005_stale_version_returns_conflict_no_silent_data_loss", func(t *testing.T) {
+	t.Run("optimistic_concurrency_stale_version_returns_conflict_no_silent_data_loss", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1104,7 +1104,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 	// if_match_version PATCH off that 0 would 409 every single time.
 	// MySQL/Mongo already included it; this is here so all 4 backends
 	// are asserted identically instead of trusting that by inspection.
-	t.Run("IR-005_search_threads_includes_version", func(t *testing.T) {
+	t.Run("optimistic_concurrency_search_threads_includes_version", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1142,7 +1142,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 	// the same next version in memory despite the DB ending up
 	// incremented twice, so the SECOND writer's response lied about the
 	// actual current version.
-	t.Run("IR-005_unconditional_concurrent_writers_get_accurate_version_not_a_guess", func(t *testing.T) {
+	t.Run("optimistic_concurrency_unconditional_concurrent_writers_get_accurate_version_not_a_guess", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()
@@ -1186,7 +1186,7 @@ func runThreadTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
-	t.Run("IR-005_concurrent_patches_exactly_one_wins", func(t *testing.T) {
+	t.Run("optimistic_concurrency_concurrent_patches_exactly_one_wins", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		now := time.Now().UTC()

@@ -66,8 +66,9 @@ func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCrea
 // a genuine run_id collision -- either way, silently returning the
 // ORIGINAL request's run for a caller that thinks it's creating something
 // different would be a real correctness surprise, not a helpful retry.
-// Returns a *state.ErrConflict (409, same type/handling IR-005's own
-// "version mismatch" reuses) instead, which the caller should route through
+// Returns a *state.ErrConflict (409, the same conflict type this project
+// already uses for a stale optimistic-concurrency version on PATCH
+// /threads) instead, which the caller should route through
 // handleStoreError exactly like any other store error.
 func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.RunCreate, effectiveThreadID string) (*models.Run, error) {
 	if runID == "" {
@@ -90,13 +91,18 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.
 // retry client isn't penalized for omitting something the original request
 // happened to include).
 //
-// AgentID is resolved through the same assistant_id alias and A/B-alias
-// paths createRunCtx itself applies (on a local copy -- this must NOT
-// mutate req, since the caller doesn't yet know whether this is really a
-// retry or a genuinely new run), so a client that renamed a deployment
-// alias between requests isn't flagged as a mismatch: what matters is
-// which REAL agent it resolves to, matching what's actually stored on the
-// found run.
+// AgentID comparison must NOT call AliasResolver.Resolve a second time to
+// get a "real" agent_id to compare against -- Resolve picks weighted-random
+// among an alias's targets on every call (see its own doc comment), so a
+// retry resolving to a DIFFERENT target than the original request did
+// would wrongly look like a mismatch, turning a legitimate retry into a
+// false conflict. Instead: if the request's agent name is a currently
+// configured alias at all (checked via Resolve's own boolean return,
+// discarding the random pick), compare against the alias NAME the
+// original run recorded it was requested through (run.Metadata's own
+// "requested_alias", set once at creation and never re-rolled) rather
+// than re-resolving. A non-alias agent_id still compares directly against
+// run.AgentID as before.
 //
 // Input is compared by decoded JSON structure (unmarshal + reflect.DeepEqual),
 // not raw bytes -- byte-for-byte comparison would false-positive on a
@@ -108,10 +114,12 @@ func (s *Server) fingerprintMismatch(run *models.Run, req *models.RunCreate, eff
 		agentID = req.AssistantID
 	}
 	if agentID != "" {
-		if resolved, wasAlias := s.aliases.Resolve(agentID); wasAlias {
-			agentID = resolved
-		}
-		if run.AgentID != agentID {
+		if _, wasAlias := s.aliases.Resolve(agentID); wasAlias {
+			storedAlias, _ := run.Metadata["requested_alias"].(string)
+			if storedAlias != agentID {
+				return "run_id reused with a different agent"
+			}
+		} else if run.AgentID != agentID {
 			return "run_id reused with a different agent"
 		}
 	}
@@ -187,7 +195,7 @@ func dispatchIfRunRetryRace(err error, respond func(run *models.Run)) bool {
 // response either way, so there's nothing left for a caller to get wrong
 // by forgetting a step.
 //
-// Item 18a's own follow-up note: this exists because the original
+// This exists because the original
 // two-separate-calls pattern (dispatchIfRunRetryRace, THEN
 // handleStoreError only if that returned false) wasn't enforced by the
 // type system -- a future create-run handler that copy-pasted just the
@@ -217,7 +225,7 @@ func (s *Server) handleCreateRunError(w http.ResponseWriter, err error, respond 
 // that thread could claim it).
 func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
 	now := time.Now().UTC()
-	// Client-supplied run_id (IR-001 idempotency, see RunID's own doc
+	// Client-supplied run_id (retry idempotency, see RunID's own doc
 	// comment) -- the common, empty case still gets a fresh server-side
 	// ID exactly as before. The actual "is this a retry of an existing
 	// run" check happens at the HTTP handler level, BEFORE this function

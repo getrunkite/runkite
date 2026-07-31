@@ -11,7 +11,7 @@
 // JobQueue uses one JetStream stream (subjects "rk.jobs.<runner_kind>")
 // with WorkQueuePolicy retention, one durable pull consumer per
 // runner_kind. NATS gives real, native primitives for two of the three
-// "item 16" crash-recovery problems this project had to hand-build for
+// crash-recovery problems this project had to hand-build for
 // Redis: AckWait (a per-message redelivery timer, closing the
 // "ongoing liveness" problem) and InProgress (heartbeat that resets
 // that timer without acking, backing Renew directly). Fencing is the
@@ -417,8 +417,9 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 // across every runner_kind consumer discovered on the stream --
 // mirroring redistransport's own SCAN-based discovery rather than
 // relying on this one process's own in-memory consumers map, which
-// (like Redis's local map before item 16's fix) wouldn't see
-// runner_kinds another replica created consumers for.
+// (matching a real bug Redis's own local map once had before being
+// fixed the same way) wouldn't see runner_kinds another replica
+// created consumers for.
 func (q *Queue) Len(ctx context.Context) (int64, error) {
 	var total int64
 	lister := q.stream.ConsumerNames(ctx)

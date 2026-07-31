@@ -1070,7 +1070,7 @@ func TestIdempotentRun_DifferentRunIDsCreateSeparateRuns(t *testing.T) {
 }
 
 // ============================================================================
-// IR-001 fingerprint check: a client-supplied run_id is only a safe retry
+// Fingerprint check: a client-supplied run_id is only a safe retry
 // when paired with the SAME agent/thread/input every time. Reusing one
 // across a genuinely different request must be a clean 409, not a silent
 // "here's the run from your OTHER request" surprise.
