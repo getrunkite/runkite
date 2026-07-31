@@ -45,11 +45,11 @@ test-mysql:
 	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
 		go test ./internal/state/mysql/ ./cmd/ -race -count=1 -v
 
-# Redis conformance (requires REDIS_URL or infra-up) -- transport triad
-# plus the shared rate-limit Lua backend (internal/ratelimit).
+# Redis conformance (requires REDIS_URL or infra-up) -- transport triad,
+# shared rate-limit Lua backend, and cmd reclaim-leader lock.
 test-redis:
 	REDIS_URL="redis://localhost:6380" \
-		go test ./internal/transport/redis/ ./internal/ratelimit/ -race -count=1 -v
+		go test ./internal/transport/redis/ ./internal/ratelimit/ ./cmd/ -race -count=1 -v
 
 # Mongo conformance (requires MONGO_URI or infra-up). Same shared
 # conformance.RunStoreSuite as Postgres/SQLite -- see

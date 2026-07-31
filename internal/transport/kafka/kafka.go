@@ -43,18 +43,14 @@
 // affinity). Generation lives in the state-topic entry, incremented by
 // ReclaimStale/Nack, the same shape as Redis's own hand-rolled counter.
 //
-// Known, honest trade-off versus Redis/NATS, documented rather than
-// silently accepted: neither the state-topic's read-modify-write (an
-// in-memory fencing check, then a produce) nor two replicas' reaper
-// ticks racing on the exact same stale run_id are atomic the way
-// Redis's Lua scripts or NATS KV's revision-checked Update are -- Kafka
-// alone has no compare-and-swap primitive to close that race with. In
-// the rare case of two replicas reclaiming the identical run_id within
-// the same tick, both could re-produce it, briefly double-dispatching
-// one job. Acceptable here given how narrow the window is (reclaim only
-// fires for jobs already confirmed stale, and reaper ticks are
-// seconds apart in practice) and how large a true distributed lock
-// would be to add just for this, but a real limitation, not zero risk.
+// Known trade-off versus Redis/NATS: Kafka alone has no compare-and-swap
+// for ReclaimStale -- a state-topic produce is last-write-wins, so two
+// replicas' reaper ticks racing the same stale run_id could both
+// re-produce it. Closed for the supported HA posture (KAFKA_URL +
+// REDIS_URL) by a Redis SET NX reclaim-leader lock in cmd/reclaim.go
+// so only one replica's reaper runs per tick. Kafka without Redis
+// remains single-instance / experimental for multi-replica reclaim
+// (events/cancel are process-local there anyway).
 //
 // Known cold-start note: the very first consumer group EVER joined on
 // a Kafka cluster forces the broker to lazily create its own internal
@@ -636,9 +632,10 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 
 // ReclaimStale re-enqueues (re-produces to the job topic, bumping the
 // fencing generation) any job whose state entry hasn't been touched
-// (Dequeue or Renew) in more than maxAge. See this package's own doc
-// comment for the accepted race if two replicas' reaper ticks land on
-// the same stale run_id within the same window.
+// (Dequeue or Renew) in more than maxAge. Cross-replica mutual
+// exclusion is NOT provided here -- use cmd's Redis reclaim-leader
+// lock when REDIS_URL is set. The local re-check before produce only
+// skips work already reflected in this process's materialized view.
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
 	cutoff := nowMillis() - maxAge.Milliseconds()
 
@@ -659,6 +656,13 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 
 	reclaimed := 0
 	for _, s := range stale {
+		// Soft local re-check: another replica's putState may already
+		// have been consumed into our map since the snapshot. Does NOT
+		// close dual-replica races (both can still produce before either
+		// putState lands) -- that is the reclaim-leader lock's job.
+		if cur, ok := q.getState(s.runID); !ok || cur.Canceled || cur.Generation != s.entry.Generation || cur.TouchedAtUnixMilli > cutoff {
+			continue
+		}
 		newGen := s.entry.Generation + 1
 		payload, err := bumpGeneration(s.entry.Job, newGen)
 		if err != nil {
