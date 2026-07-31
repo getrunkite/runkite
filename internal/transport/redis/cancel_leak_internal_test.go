@@ -13,9 +13,11 @@ import (
 // TestCancelBusContextCancelReleasesPubSub is the hard proof that
 // SubscribeCancel releases its Redis subscription when ctx is cancelled
 // without a real cancel message -- the normal-completion path that used
-// to leak forever (see CancelBus.SubscribeCancel's doc comment and
-// TR-024). TR-024 only asserts the return channel does not false-fire;
-// this inspects Redis itself via PUBSUB NUMSUB.
+// to leak forever (see CancelBus.SubscribeCancel's own doc comment and
+// the shared conformance suite's own
+// context_cancellation_releases_subscription_without_false_cancel test,
+// which only asserts the return channel does not false-fire; this test
+// inspects Redis itself via PUBSUB NUMSUB.
 func TestCancelBusContextCancelReleasesPubSub(t *testing.T) {
 	url := os.Getenv("REDIS_URL")
 	if url == "" {

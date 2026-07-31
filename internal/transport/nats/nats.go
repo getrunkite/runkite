@@ -378,8 +378,8 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 // for the same reason Redis's version does anyway: an operator-driven
 // maxAge independent of whatever AckWait a consumer happens to be
 // configured with, and a deterministic, on-demand way to force a
-// reclaim (what the shared conformance suite's TR-034/035/036 rely on)
-// rather than only ever waiting out a real timer.
+// reclaim (what the shared conformance suite's own fencing tests rely
+// on) rather than only ever waiting out a real timer.
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
 	cutoff := nowMillis() - maxAge.Milliseconds()
 	keys, err := q.inflight.Keys(ctx)

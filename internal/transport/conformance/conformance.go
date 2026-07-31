@@ -57,7 +57,7 @@ func makeEvent(runID string, seq int64, method string, data interface{}) *transp
 
 // RunJobQueueSuite runs all conformance tests for a JobQueue implementation.
 func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
-	t.Run("TR-001_single_enqueue_dequeue", func(t *testing.T) {
+	t.Run("single_enqueue_dequeue", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-001", "test-runner", "echo")
@@ -81,7 +81,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-002_FIFO_ordering", func(t *testing.T) {
+	t.Run("FIFO_ordering", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -104,7 +104,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-003_multiple_consumers_no_duplicates", func(t *testing.T) {
+	t.Run("multiple_consumers_no_duplicates", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		n := 20
@@ -148,7 +148,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-004_large_payload", func(t *testing.T) {
+	t.Run("large_payload", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -175,7 +175,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-005_dequeue_timeout_empty_queue", func(t *testing.T) {
+	t.Run("dequeue_timeout_empty_queue", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -194,8 +194,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	// TR-006 maps to test_plan TR-021 (cancel before dequeue / poison).
-	t.Run("TR-006_dequeue_after_cancel", func(t *testing.T) {
+	t.Run("dequeue_after_cancel", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -218,7 +217,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 	})
 
 	// Canceled job must be skipped without starving the next job in the queue.
-	t.Run("TR-006b_cancel_skips_to_next_job", func(t *testing.T) {
+	t.Run("cancel_skips_to_next_job", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -240,7 +239,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-007_queue_length", func(t *testing.T) {
+	t.Run("queue_length", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -268,7 +267,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-008_runner_kind_isolation", func(t *testing.T) {
+	t.Run("runner_kind_isolation", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 
@@ -295,11 +294,11 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	// TR-031: heartbeat extends lease -- Renew must keep a job in-flight
+	// Heartbeat extends lease -- Renew must keep a job in-flight
 	// (not remove it the way Ack does), and must be a safe no-op once a job is no longer
 	// in-flight, so a late/racing heartbeat can't resurrect a finished
 	// or reclaimed job.
-	t.Run("TR-031_renew_keeps_job_inflight_not_removed", func(t *testing.T) {
+	t.Run("renew_keeps_job_inflight_not_removed", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-renew-1", "test-runner", "echo")
@@ -326,7 +325,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-031b_renew_after_ack_is_a_no-op_does_not_resurrect_job", func(t *testing.T) {
+	t.Run("renew_after_ack_is_a_no-op_does_not_resurrect_job", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-renew-2", "test-runner", "echo")
@@ -369,7 +368,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 	// late, after a second runner already took over. These prove the
 	// control plane rejects that stale generation's calls instead of
 	// letting them clobber or duplicate the current attempt.
-	t.Run("TR-034_stale_generation_ack_is_rejected_current_generation_ack_succeeds", func(t *testing.T) {
+	t.Run("stale_generation_ack_is_rejected_current_generation_ack_succeeds", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-fence-1", "test-runner", "echo")
@@ -417,7 +416,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-035_stale_generation_heartbeat_renew_is_rejected", func(t *testing.T) {
+	t.Run("stale_generation_heartbeat_renew_is_rejected", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-fence-2", "test-runner", "echo")
@@ -451,7 +450,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("TR-036_generation_zero_bypasses_fencing_for_pre-fencing_runner_builds", func(t *testing.T) {
+	t.Run("generation_zero_bypasses_fencing_for_pre-fencing_runner_builds", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-fence-3", "test-runner", "echo")
@@ -488,7 +487,7 @@ type staleReclaimer interface {
 
 // RunEventBrokerSuite runs all conformance tests for an EventBroker implementation.
 func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
-	t.Run("TR-010_publish_subscribe", func(t *testing.T) {
+	t.Run("publish_subscribe", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-evt-001"
@@ -524,7 +523,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-011_fan_out_multiple_subscribers", func(t *testing.T) {
+	t.Run("fan_out_multiple_subscribers", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-fanout"
@@ -554,7 +553,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-012_event_ordering", func(t *testing.T) {
+	t.Run("event_ordering", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-order"
@@ -580,7 +579,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-013_no_cross_run_leakage", func(t *testing.T) {
+	t.Run("no_cross_run_leakage", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 
@@ -604,7 +603,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-014_replay_from_seq", func(t *testing.T) {
+	t.Run("replay_from_seq", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-replay"
@@ -627,7 +626,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-015_replay_all", func(t *testing.T) {
+	t.Run("replay_all", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-replay-all"
@@ -646,7 +645,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-016_burst_events", func(t *testing.T) {
+	t.Run("burst_events", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-burst"
@@ -675,7 +674,7 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 
 // RunCancelBrokerSuite runs all conformance tests for a CancelBroker implementation.
 func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
-	t.Run("TR-020_cancel_signal_received", func(t *testing.T) {
+	t.Run("cancel_signal_received", func(t *testing.T) {
 		c := factory()
 		ctx := context.Background()
 		runID := "run-cancel-001"
@@ -697,7 +696,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-022_cancel_completed_run_no_error", func(t *testing.T) {
+	t.Run("cancel_completed_run_no_error", func(t *testing.T) {
 		c := factory()
 		ctx := context.Background()
 
@@ -707,7 +706,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-023_multiple_subscribers_all_receive_cancel", func(t *testing.T) {
+	t.Run("multiple_subscribers_all_receive_cancel", func(t *testing.T) {
 		c := factory()
 		ctx := context.Background()
 		runID := "run-cancel-multi"
@@ -740,8 +739,8 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		}
 	})
 
-	// TR-024/025 are the regression for a real leak found via pprof under
-	// load: every caller passed context.Background() into SubscribeCancel
+	// These two tests are the regression for a real leak found via pprof
+	// under load: every caller passed context.Background() into SubscribeCancel
 	// (internal/bridge/server.go's GetJob), which never cancels -- so a
 	// run that completes normally (never cancelled) leaked its
 	// subscription forever. For the Redis-backed implementation, each
@@ -754,7 +753,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 	// on run completion), and both CancelBroker implementations release
 	// their subscription when that context is done.
 
-	t.Run("TR-024_context_cancellation_releases_subscription_without_false_cancel", func(t *testing.T) {
+	t.Run("context_cancellation_releases_subscription_without_false_cancel", func(t *testing.T) {
 		c := factory()
 		ctx, cancel := context.WithCancel(context.Background())
 		runID := "run-ctx-cancel-001"
@@ -780,7 +779,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		}
 	})
 
-	t.Run("TR-025_context_cancellation_then_real_cancel_is_still_safe", func(t *testing.T) {
+	t.Run("context_cancellation_then_real_cancel_is_still_safe", func(t *testing.T) {
 		// A real cancel racing a ctx cancellation (run finishing right
 		// as a cancel request lands) must not panic or double-close --
 		// exercises both implementations' cleanup path concurrently

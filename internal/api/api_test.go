@@ -59,7 +59,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 // registerAgent registers agentID so run-creation tests can dispatch
 // against it -- createRunCtx rejects an unknown agent_id before
-// claiming/creating anything (FUN-01), so any test that creates a run
+// claiming/creating anything, so any test that creates a run
 // needs its agent_id to actually exist first. Deliberately NOT done
 // automatically inside newTestEnv: several tests assert exact agent
 // counts/listings (e.g. the admin overview), and a blanket

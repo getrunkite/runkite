@@ -88,8 +88,10 @@ existed in the in-process `CancelBus` too (an unbounded `c.subs` map, no Pub/Sub
 involved so lower-cost, but a real unbounded memory leak on the zero-dependency default
 transport) -- fixed identically. `CancelBroker`'s interface doc comment now states the
 contract explicitly (ctx cancellation must release the subscription). Regression tests:
-`TR-024`/`TR-025` in `internal/transport/conformance/conformance.go`, run against both
-implementations; verified both fail against the pre-fix Redis behavior and pass after.
+`context_cancellation_releases_subscription_without_false_cancel`/
+`context_cancellation_then_real_cancel_is_still_safe` in
+`internal/transport/conformance/conformance.go`, run against both implementations;
+verified both fail against the pre-fix Redis behavior and pass after.
 
 ### 1b. Real bug, fixed: run event streams never expired, and a per-dispatch `SCAN` made that expensive
 
@@ -119,7 +121,7 @@ convention, so streams no longer accumulate without bound over a deployment's li
 Regression tests: `TestRedisBroker_StreamExpiresAfterTerminalEvent`,
 `TestRedisBroker_CloseAlsoExpiresStream` (`internal/transport/redis/redis_test.go`).
 
-A follow-up pass caught that `TR-024`/`TR-025` (finding 1a) only prove the *returned
+A follow-up pass caught that those two tests (finding 1a) only prove the *returned
 channel* behaves correctly on ctx cancellation -- not that Redis itself released the
 underlying subscription. Added `TestCancelBusContextCancelReleasesPubSub`
 (`internal/transport/redis/cancel_leak_internal_test.go`) as harder, direct proof: it
