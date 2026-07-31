@@ -384,6 +384,74 @@ func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {
 	}
 }
 
+// failDeleteRunStore wraps a real state.Store but forces DeleteRun to
+// fail -- everything else (including the cancel side effects
+// cancelRunCore performs before ever reaching DeleteRun) goes through to
+// the real store unchanged.
+type failDeleteRunStore struct {
+	state.Store
+	err error
+}
+
+func (f failDeleteRunStore) DeleteRun(ctx context.Context, runID string) error { return f.err }
+
+// TestCancelRun_RollbackDeleteFailure_ReturnsErrorNotSilent204 is a
+// regression test for a real bug caught on review: action=rollback
+// swallowed a DeleteRun failure and still returned nil, nil, which the
+// HTTP handler renders as 204 No Content -- indistinguishable from a
+// successful rollback. A client would believe the run was deleted while
+// a GET could still find it (as "interrupted", since the cancel half
+// genuinely did succeed and isn't undone by the delete failing). The
+// delete failure must surface as an error response instead, the same as
+// a plain DELETE /runs/{id} failing (deleteRunGuarded's own contract).
+func TestCancelRun_RollbackDeleteFailure_ReturnsErrorNotSilent204(t *testing.T) {
+	s, store := newLifecycleServer(t, nil)
+	ctx := context.Background()
+
+	threadID := "rollback-fail-thread"
+	if err := store.CreateThread(ctx, &models.Thread{
+		ThreadID: threadID, Status: models.ThreadStatusBusy,
+		Metadata: map[string]interface{}{}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runID := "rollback-fail-run"
+	if err := store.CreateRun(ctx, &models.Run{
+		RunID: runID, ThreadID: threadID, AgentID: "a1", Status: models.RunStatusPending,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Metadata: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Swap in the failing store AFTER seeding, so cancelRunSingle's own
+	// GetRun/UpdateRunStatus/SetThreadStatus calls (which must succeed
+	// for this test to isolate DeleteRun specifically) still hit the
+	// real store underneath.
+	s.store = failDeleteRunStore{Store: store, err: errors.New("disk full")}
+
+	req := httptest.NewRequest(http.MethodPost, "/runs/"+runID+"/cancel?action=rollback", nil)
+	w := httptest.NewRecorder()
+	s.cancelRun(w, req, runID)
+
+	if w.Code == http.StatusNoContent {
+		t.Fatalf("expected an error response when DeleteRun fails, got a silent 204 (client would wrongly believe the run was deleted)")
+	}
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for a generic DeleteRun error, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The cancel half genuinely succeeded and is not undone by the
+	// delete failing -- confirm the run is still findable, now
+	// interrupted, through the REAL underlying store.
+	run, err := store.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatalf("expected the run to still exist after a failed rollback delete, got error: %v", err)
+	}
+	if run.Status != models.RunStatusInterrupted {
+		t.Fatalf("expected the cancel side effect to have applied despite the delete failure, got status=%s", run.Status)
+	}
+}
+
 // TestFingerprintMismatch_MultiTargetAliasRetryNeverFalseConflicts is a
 // regression test for a real bug caught on review: comparing a retry's
 // agent name against a FRESH call to AliasResolver.Resolve would

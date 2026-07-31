@@ -1717,8 +1717,14 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string, wait, rollback
 	s.cascadeCancelDescendants(ctx, run)
 
 	if rollback {
+		// A DeleteRun failure here must surface as an error response
+		// (same as plain DELETE /runs/{id}, see deleteRunGuarded), not
+		// a silent 204 -- returning nil, nil despite the delete failing
+		// would tell the client the run is gone when a GET can still
+		// find it (as "interrupted", since the cancel half above already
+		// succeeded independently and is not undone by this failure).
 		if delErr := s.store.DeleteRun(ctx, runID); delErr != nil {
-			slog.Error("cancel rollback: failed to delete run record", "run_id", runID, "error", delErr)
+			return nil, delErr
 		}
 		return nil, nil
 	}
