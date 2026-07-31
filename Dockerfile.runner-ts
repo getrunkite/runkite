@@ -3,9 +3,14 @@
 # structure (Python runner): no separate compile step for user agent code,
 # since tsx (esbuild-based) loads a user's graph.ts directly at runtime,
 # same "zero-build-step DX" as Python's importlib-based loading.
+# Runs as non-root (uid 65532); uses the local tsx binary (not npx) so
+# nothing needs to write an npm cache at runtime.
 
 FROM node:22-slim
 WORKDIR /app
+
+RUN groupadd --gid 65532 runkite && \
+    useradd --uid 65532 --gid 65532 --create-home --home-dir /home/runkite runkite
 
 COPY typescript/runkite-runner/package.json typescript/runkite-runner/package-lock.json ./typescript/runkite-runner/
 RUN cd typescript/runkite-runner && npm ci
@@ -13,7 +18,12 @@ RUN cd typescript/runkite-runner && npm ci
 COPY typescript/runkite-runner/ ./typescript/runkite-runner/
 COPY examples/ ./examples/
 
-WORKDIR /app/typescript/runkite-runner
+RUN chown -R runkite:runkite /app /home/runkite
 
-ENTRYPOINT ["npx", "tsx", "src/cli.ts"]
+WORKDIR /app/typescript/runkite-runner
+ENV HOME=/home/runkite
+
+USER runkite
+
+ENTRYPOINT ["./node_modules/.bin/tsx", "src/cli.ts"]
 CMD ["--config", "/app/examples/echo_agent_ts/langgraph.json"]

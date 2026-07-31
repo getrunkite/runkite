@@ -20,6 +20,9 @@ services:
       HTTP_PORT: "2027"
       GRPC_PORT: "50052"
       LANGGRAPH_CONFIG: /app/examples/echo_agent_ts/langgraph.json
+      # Image default is DATABASE_PATH=/tmp/runkite.db (non-root USER cannot
+      # write /runkite.db); set explicitly so this compose file stays clear.
+      DATABASE_PATH: /tmp/runkite.db
       # SQLite + in-process + no auth, intentionally -- see
       # docker-compose.dev.yml's own comment on this same var.
       RUNKITE_ALLOW_INSECURE_SERVE: "1"

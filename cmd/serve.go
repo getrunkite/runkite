@@ -41,6 +41,7 @@ import (
 	"github.com/sharanharsoor/runkite/internal/metrics"
 	"github.com/sharanharsoor/runkite/internal/models"
 	"github.com/sharanharsoor/runkite/internal/ratelimit"
+	"github.com/sharanharsoor/runkite/internal/secureheaders"
 	"github.com/sharanharsoor/runkite/internal/state"
 	mongostore "github.com/sharanharsoor/runkite/internal/state/mongo"
 	mysqlstore "github.com/sharanharsoor/runkite/internal/state/mysql"
@@ -468,6 +469,12 @@ func startServer(opts serverOpts) {
 		slog.Info("cors: enabled", "allow_origins", corsCfg.AllowOrigins)
 	}
 
+	// Security headers (CSP, nosniff, frame deny, …) -- always on, outside
+	// auth, so public paths like /admin/ and /health get them too. See
+	// internal/secureheaders. HSTS deliberately omitted (TLS often
+	// terminates at a reverse proxy).
+	secured := secureheaders.Middleware(corsed)
+
 	// Metrics middleware wraps the entire root (including /metrics routing).
 	// otelhttp is outermost so every request gets a trace context (and
 	// otelhttp uses httpsnoop internally, which dynamically preserves
@@ -475,7 +482,7 @@ func startServer(opts serverOpts) {
 	// WebSocket -- the writer beneath it implements, so it can't reintroduce
 	// the SSE-breaking bug metrics.responseWriter had before its own
 	// Flush()/Unwrap() fix).
-	handler := metrics.HTTPMiddleware(corsed)
+	handler := metrics.HTTPMiddleware(secured)
 	handler = otelhttp.NewHandler(handler, "runkite-http")
 
 	// Start HTTP server
