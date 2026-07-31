@@ -465,7 +465,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // query and that write. Closing it fully would need a single atomic
 // conditional store operation (UPDATE ... WHERE status='busy' AND NOT
 // EXISTS (other active run), mirroring TryClaimThread's own atomic
-// UPDATE) implemented across all three backends plus conformance
+// UPDATE) implemented across all four backends plus conformance
 // coverage -- real effort for a window this narrow doesn't currently
 // justify. Upgrade path if this ever needs closing: add that as a new
 // state.Store method instead of two separate calls.

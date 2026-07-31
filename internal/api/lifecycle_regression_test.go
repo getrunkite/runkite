@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
 	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
 	"github.com/sharanharsoor/runkite/internal/tenant"
 	"github.com/sharanharsoor/runkite/internal/transport"
@@ -191,6 +192,15 @@ func TestReadJSON_RejectsOversizedBody(t *testing.T) {
 // ever idle it. Forces the race deterministically (pre-inserting the
 // "winning" run on a different thread) instead of relying on goroutine
 // timing, so this can't flake.
+//
+// Updated for the IR-001 fingerprint check (item 18 tail): this exact
+// scenario -- same run_id, different thread_id -- is precisely the client
+// mistake / run_id collision that check now catches, so the correct
+// outcome changed from silently dispatching the OTHER thread's run via
+// errRunRetryRace to a clear state.ErrConflict. The orphan-busy-thread
+// assertion below (the actual bug this test exists for) is unaffected --
+// the defer that releases the loser's thread claim fires on ANY non-nil
+// error, regardless of which one.
 func TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim(t *testing.T) {
 	s, store := newLifecycleServer(t, nil)
 	ctx := context.Background()
@@ -227,12 +237,12 @@ func TestCreateRunCtx_CreateRunRaceReleasesLoserThreadClaim(t *testing.T) {
 	if run != nil || assignment != nil {
 		t.Fatalf("expected nil run/assignment on a retry-race loss, got run=%v assignment=%v", run, assignment)
 	}
-	var raceErr *errRunRetryRace
-	if !errors.As(err, &raceErr) {
-		t.Fatalf("expected errRunRetryRace, got %T: %v", err, err)
+	var conflictErr *state.ErrConflict
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("expected *state.ErrConflict (fingerprint mismatch: different thread_id), got %T: %v", err, err)
 	}
-	if raceErr.run.RunID != sharedRunID || raceErr.run.ThreadID != winnerThread {
-		t.Fatalf("expected the WINNER's run (thread=%s), got thread=%s", winnerThread, raceErr.run.ThreadID)
+	if !strings.Contains(conflictErr.Reason, "thread") {
+		t.Fatalf("expected a thread-id mismatch reason, got %q", conflictErr.Reason)
 	}
 
 	// The critical assertion: loserThread must not be stuck busy forever.
@@ -290,6 +300,49 @@ func TestCreateRunCtx_TryClaimRaceReturnsRetrySentinelNotFakeCacheHit(t *testing
 	if raceErr.run.Status != models.RunStatusPending {
 		t.Fatalf("sentinel's own run should carry the REAL (pending) status, got %q", raceErr.run.Status)
 	}
+}
+
+// TestHandleCreateRunError_DispatchesRaceAndFallsBackToStoreError is a
+// regression test for item 18a's own follow-up: handleCreateRunError
+// exists specifically so no future create-run handler can forget the
+// retry-race dispatch the way the old two-separate-calls convention
+// could. Proves both halves of that single call directly: an
+// errRunRetryRace gets dispatched through respond (never touching w),
+// and any OTHER error (e.g. state.ErrConflict) falls through to
+// handleStoreError's own normal status-code mapping.
+func TestHandleCreateRunError_DispatchesRaceAndFallsBackToStoreError(t *testing.T) {
+	s, _ := newLifecycleServer(t, nil)
+
+	t.Run("retry_race_dispatches_through_respond_not_handleStoreError", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		winner := &models.Run{RunID: "winner-run", ThreadID: "t1", Status: models.RunStatusPending}
+		var dispatched *models.Run
+		s.handleCreateRunError(w, &errRunRetryRace{run: winner}, func(existing *models.Run) {
+			dispatched = existing
+		})
+		if dispatched != winner {
+			t.Fatalf("expected respond to be called with the race's own run, got %v", dispatched)
+		}
+		// respond, not writeJSON/writeError, owns the response for this
+		// path -- handleCreateRunError itself must not also write to w.
+		if w.Code != 200 || w.Body.Len() != 0 {
+			t.Fatalf("expected handleCreateRunError to leave the response untouched for a dispatched race, got code=%d body=%q", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("non_race_error_falls_back_to_handleStoreError_mapping", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		respondCalled := false
+		s.handleCreateRunError(w, &state.ErrConflict{Resource: "run", ID: "x"}, func(*models.Run) {
+			respondCalled = true
+		})
+		if respondCalled {
+			t.Fatal("respond must not be called for a non-race error")
+		}
+		if w.Code != http.StatusConflict {
+			t.Fatalf("expected handleStoreError's own 409 mapping for *state.ErrConflict, got %d", w.Code)
+		}
+	})
 }
 
 func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {

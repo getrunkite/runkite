@@ -1069,6 +1069,124 @@ func TestIdempotentRun_DifferentRunIDsCreateSeparateRuns(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// IR-001 fingerprint check: a client-supplied run_id is only a safe retry
+// when paired with the SAME agent/thread/input every time. Reusing one
+// across a genuinely different request must be a clean 409, not a silent
+// "here's the run from your OTHER request" surprise.
+// ============================================================================
+
+func TestIdempotentRun_RunIDReusedWithDifferentAgent_Returns409(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+	registerAgent(t, env, "other")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "test", "run_id": "reused-id"})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "other", "run_id": "reused-id"})
+	expectStatus(t, resp2, 409)
+	body := string(readBody(t, resp2))
+	if !strings.Contains(body, "agent") {
+		t.Fatalf("expected a mismatch reason mentioning agent, got %s", body)
+	}
+}
+
+func TestIdempotentRun_RunIDReusedWithDifferentThread_Returns409(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id", "thread_id": "thread-a",
+	})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id", "thread_id": "thread-b",
+	})
+	expectStatus(t, resp2, 409)
+	body := string(readBody(t, resp2))
+	if !strings.Contains(body, "thread") {
+		t.Fatalf("expected a mismatch reason mentioning thread, got %s", body)
+	}
+}
+
+func TestIdempotentRun_RunIDReusedWithDifferentInput_Returns409(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id", "input": map[string]interface{}{"messages": "hello"},
+	})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id", "input": map[string]interface{}{"messages": "goodbye"},
+	})
+	expectStatus(t, resp2, 409)
+	body := string(readBody(t, resp2))
+	if !strings.Contains(body, "input") {
+		t.Fatalf("expected a mismatch reason mentioning input, got %s", body)
+	}
+}
+
+// TestIdempotentRun_RunIDRetryWithReorderedInput_StillTreatedAsSafeRetry
+// proves the input comparison is semantic (decoded JSON structure), not a
+// raw byte comparison -- two JSON encodings of the identical logical
+// payload with different key order must NOT be flagged as a mismatch.
+func TestIdempotentRun_RunIDRetryWithReorderedInput_StillTreatedAsSafeRetry(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id",
+		"input": json.RawMessage(`{"a":1,"b":2}`),
+	})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id",
+		"input": json.RawMessage(`{"b": 2, "a": 1}`),
+	})
+	expectStatus(t, resp2, 200)
+	var run2 models.Run
+	json.Unmarshal(readBody(t, resp2), &run2)
+	if run2.RunID != "reused-id" {
+		t.Fatalf("expected the original run returned for a reordered-but-equal input retry, got %+v", run2)
+	}
+}
+
+// TestIdempotentRun_RunIDRetryOmittingOptionalFields_StillTreatedAsSafeRetry
+// proves a thinner retry client that omits fields the original request
+// happened to set (e.g. no thread_id) is NOT penalized as a mismatch --
+// only fields the RETRY itself explicitly sets are compared.
+func TestIdempotentRun_RunIDRetryOmittingOptionalFields_StillTreatedAsSafeRetry(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "test")
+
+	resp1, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id", "thread_id": "explicit-thread",
+	})
+	expectStatus(t, resp1, 200)
+	readBody(t, resp1)
+
+	// Retry omits thread_id entirely -- must still be treated as a safe
+	// retry of the SAME run, not a mismatch against "explicit-thread".
+	resp2, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{
+		"agent_id": "test", "run_id": "reused-id",
+	})
+	expectStatus(t, resp2, 200)
+	var run2 models.Run
+	json.Unmarshal(readBody(t, resp2), &run2)
+	if run2.RunID != "reused-id" || run2.ThreadID != "explicit-thread" {
+		t.Fatalf("expected the original run (thread=explicit-thread) returned, got %+v", run2)
+	}
+}
+
 func TestIdempotentRun_NoRunIDStillGeneratesServerSideID(t *testing.T) {
 	env := newTestEnv(t)
 	registerAgent(t, env, "test")

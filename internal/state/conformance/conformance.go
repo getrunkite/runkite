@@ -298,6 +298,46 @@ func runTenantIsolationTests(t *testing.T, factory StoreFactory) {
 		}
 	})
 
+	// IR-001 tenant-scoping gap: run_id is a globally-unique primary key,
+	// but GetRun is tenant-scoped -- so when tenant B's CreateRun collides
+	// with tenant A's existing run_id, tenant B's own createRunCtx-level
+	// retry-race fallback (GetRun in ITS OWN tenant context) can't find
+	// tenant A's row to dispatch through, and the raw duplicate-key
+	// error must still surface as a clean, actionable conflict here at
+	// the store layer -- not a raw driver error the API layer can only
+	// turn into a generic 500.
+	t.Run("IR001_create_run_cross_tenant_run_id_collision_returns_conflict_not_raw_error", func(t *testing.T) {
+		s := factory(t)
+		now := time.Now().UTC()
+		s.CreateThread(ctxA, &models.Thread{ThreadID: "collision-thread-a", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+		s.CreateThread(ctxB, &models.Thread{ThreadID: "collision-thread-b", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+
+		if err := s.CreateRun(ctxA, &models.Run{
+			RunID: "cross-tenant-collision", ThreadID: "collision-thread-a", AgentID: "echo_agent",
+			Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("tenant A's own CreateRun failed: %v", err)
+		}
+
+		err := s.CreateRun(ctxB, &models.Run{
+			RunID: "cross-tenant-collision", ThreadID: "collision-thread-b", AgentID: "echo_agent",
+			Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		})
+		if err == nil {
+			t.Fatal("expected tenant B's CreateRun to fail on the global run_id collision with tenant A's run")
+		}
+		if _, ok := err.(*state.ErrConflict); !ok {
+			t.Fatalf("expected *state.ErrConflict (clean, actionable conflict), got %T: %v", err, err)
+		}
+
+		// Tenant A's own run must be completely unaffected by tenant B's
+		// failed collision attempt.
+		runA, getErr := s.GetRun(ctxA, "cross-tenant-collision")
+		if getErr != nil || runA.ThreadID != "collision-thread-a" {
+			t.Fatalf("tenant A's run corrupted by tenant B's failed CreateRun: run=%+v err=%v", runA, getErr)
+		}
+	})
+
 	t.Run("store_items_same_namespace_key_different_tenants", func(t *testing.T) {
 		s := factory(t)
 		// Both tenants use the exact same namespace/key -- entirely

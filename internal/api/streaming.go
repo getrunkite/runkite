@@ -8,6 +8,7 @@ import (
 
 	"github.com/sharanharsoor/runkite/internal/metrics"
 	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/state"
 	"github.com/sharanharsoor/runkite/internal/transport"
 )
 
@@ -239,6 +240,26 @@ func (s *Server) runStartCommandCore(r *http.Request, threadID string, cmd *mode
 
 // inputRespondCommandCore creates a resume run from an "input.respond"
 // command's params. HTTP-independent, same sharing rationale as above.
+//
+// Item 18 tail (interrupt double-respond race): requires the thread's
+// most recent run to actually be interrupted before proceeding, closing
+// two real gaps a bare "find the latest run" had -- responding when
+// there's genuinely nothing interrupted (the previous version silently
+// carried on with an empty agent_id, which only failed later and
+// confusingly, at agent lookup inside createRunCtx) and a STALE respond
+// (a client retry, or simply a duplicate/late message) arriving after
+// the interrupt it was meant for has already been resolved and the
+// thread moved on to running/idle/success -- previously this created a
+// second, spurious resume run using an old response payload against
+// whatever the thread's CURRENT latest run happened to be, not the
+// interrupt the client actually thinks it's answering.
+//
+// TryClaimThread's own atomicity (inside createRunCtx) already prevents
+// two genuinely CONCURRENT respond calls from both succeeding -- exactly
+// one claims the thread and creates the resume run, the other gets a
+// clean conflict. This check closes the complementary, non-concurrent
+// case: a respond that arrives (whether concurrently or much later)
+// once the interrupt it was answering no longer exists.
 func (s *Server) inputRespondCommandCore(r *http.Request, threadID string, cmd *models.StreamingCommand) (*models.Run, error) {
 	response := cmd.Params["response"]
 	responseJSON, _ := json.Marshal(response)
@@ -248,10 +269,14 @@ func (s *Server) inputRespondCommandCore(r *http.Request, threadID string, cmd *
 		ThreadID: threadID,
 		Limit:    1,
 	})
-	agentID := ""
-	if len(runs) > 0 {
-		agentID = runs[0].AgentID
+	if len(runs) == 0 || runs[0].Status != models.RunStatusInterrupted {
+		return nil, &state.ErrConflict{
+			Resource: "thread",
+			ID:       threadID,
+			Reason:   "has no interrupted run to respond to (already resolved, or nothing was ever interrupted)",
+		}
 	}
+	agentID := runs[0].AgentID
 
 	req := &models.RunCreate{
 		AgentID:       agentID,

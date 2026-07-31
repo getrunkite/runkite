@@ -1275,6 +1275,16 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run *models.Run) error {
 		string(run.Input), string(run.Config),
 		run.CreatedAt.Format(time.RFC3339), run.UpdatedAt.Format(time.RFC3339),
 		nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
+		// run_id is the primary key; wrap into state.ErrConflict, same
+		// idiom CreateThread already uses -- otherwise a cross-tenant
+		// run_id collision (GetRun is tenant-scoped, so createRunCtx's
+		// own retry-race fallback can't find the OTHER tenant's row to
+		// dispatch through) falls all the way back to the API layer as
+		// a raw, unwrapped driver error, surfacing as a generic 500
+		// instead of a clean 409 -- IR-001's own tenant-scoping gap.
+		return &state.ErrConflict{Resource: "run", ID: run.RunID}
+	}
 	return err
 }
 

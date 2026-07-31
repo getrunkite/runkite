@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,16 +55,89 @@ func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCrea
 // that arrives after this check but before the original request finishes
 // claiming the thread or inserting the run row -- is handled separately
 // inside createRunCtx via errRunRetryRace, for the exact same "might not be
-// done yet" reason (see errRunRetryRace's own doc comment).
-func (s *Server) findRunForRetry(ctx context.Context, runID string) *models.Run {
+// done yet" reason (see errRunRetryRace's own doc comment). That path checks
+// the same fingerprint (via fingerprintMismatch, below) for the identical
+// reason this one does.
+//
+// Also validates a fingerprint against the found run -- a client-supplied
+// run_id is only a safe retry if paired with the SAME agent/thread/input
+// every time. A run_id reused with a DIFFERENT one of those is either a
+// client bug (e.g. accidentally reusing an ID across unrelated requests) or
+// a genuine run_id collision -- either way, silently returning the
+// ORIGINAL request's run for a caller that thinks it's creating something
+// different would be a real correctness surprise, not a helpful retry.
+// Returns a *state.ErrConflict (409, same type/handling IR-005's own
+// "version mismatch" reuses) instead, which the caller should route through
+// handleStoreError exactly like any other store error.
+func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.RunCreate, effectiveThreadID string) (*models.Run, error) {
 	if runID == "" {
-		return nil
+		return nil, nil
 	}
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return run
+	if reason := s.fingerprintMismatch(run, req, effectiveThreadID); reason != "" {
+		return nil, &state.ErrConflict{Resource: "run", ID: runID, Reason: reason}
+	}
+	return run, nil
+}
+
+// fingerprintMismatch returns a non-empty conflict reason if run doesn't
+// match the request retrying with the same run_id, or "" if it's a safe
+// retry (including when the request simply didn't specify a given field --
+// only fields the client actually set are compared, so an older/thinner
+// retry client isn't penalized for omitting something the original request
+// happened to include).
+//
+// AgentID is resolved through the same assistant_id alias and A/B-alias
+// paths createRunCtx itself applies (on a local copy -- this must NOT
+// mutate req, since the caller doesn't yet know whether this is really a
+// retry or a genuinely new run), so a client that renamed a deployment
+// alias between requests isn't flagged as a mismatch: what matters is
+// which REAL agent it resolves to, matching what's actually stored on the
+// found run.
+//
+// Input is compared by decoded JSON structure (unmarshal + reflect.DeepEqual),
+// not raw bytes -- byte-for-byte comparison would false-positive on a
+// harmless whitespace/key-order difference between two JSON encoders (e.g.
+// a client re-serializing the same logical payload before retrying).
+func (s *Server) fingerprintMismatch(run *models.Run, req *models.RunCreate, effectiveThreadID string) string {
+	agentID := req.AgentID
+	if agentID == "" {
+		agentID = req.AssistantID
+	}
+	if agentID != "" {
+		if resolved, wasAlias := s.aliases.Resolve(agentID); wasAlias {
+			agentID = resolved
+		}
+		if run.AgentID != agentID {
+			return "run_id reused with a different agent"
+		}
+	}
+	if effectiveThreadID != "" && run.ThreadID != effectiveThreadID {
+		return "run_id reused with a different thread"
+	}
+	if len(req.Input) > 0 && !jsonDeepEqual(run.Input, req.Input) {
+		return "run_id reused with different input"
+	}
+	return ""
+}
+
+// jsonDeepEqual reports whether a and b decode to the same JSON structure,
+// ignoring whitespace/key-order differences a raw byte comparison would
+// treat as different. Malformed JSON on either side compares unequal
+// (conservative: treat "can't tell" as "don't silently allow it through"),
+// not equal.
+func jsonDeepEqual(a, b json.RawMessage) bool {
+	var av, bv interface{}
+	if json.Unmarshal(a, &av) != nil {
+		return false
+	}
+	if json.Unmarshal(b, &bv) != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
 }
 
 // errRunRetryRace signals that a concurrent request already claimed the
@@ -95,6 +169,9 @@ func (e *errRunRetryRace) Error() string {
 // this specific handler already does for findRunForRetry's own pre-check)
 // instead of the generic error path. Returns true if it handled the
 // response, in which case the caller must not write anything else.
+//
+// Prefer handleCreateRunError (below) over calling this directly -- see
+// its own doc comment for why.
 func dispatchIfRunRetryRace(err error, respond func(run *models.Run)) bool {
 	var raceErr *errRunRetryRace
 	if errors.As(err, &raceErr) {
@@ -102,6 +179,31 @@ func dispatchIfRunRetryRace(err error, respond func(run *models.Run)) bool {
 		return true
 	}
 	return false
+}
+
+// handleCreateRunError is the ONE call every client-facing create-run
+// handler makes on a createRunCtx error -- folds dispatchIfRunRetryRace
+// and handleStoreError into a single call, unconditionally writing a
+// response either way, so there's nothing left for a caller to get wrong
+// by forgetting a step.
+//
+// Item 18a's own follow-up note: this exists because the original
+// two-separate-calls pattern (dispatchIfRunRetryRace, THEN
+// handleStoreError only if that returned false) wasn't enforced by the
+// type system -- a future create-run handler that copy-pasted just the
+// handleStoreError half would compile fine and still work most of the
+// time (errRunRetryRace isn't one of handleStoreError's own recognized
+// types, so it falls through to a generic 500 -- a safe failure mode,
+// not a silent wrong success, but a real missed dispatch nonetheless).
+// Collapsing both steps into this one call removes the chance to get it
+// wrong for every future caller, not just today's six, without needing a
+// design review, a lint rule, or trusting anyone to remember a two-step
+// convention.
+func (s *Server) handleCreateRunError(w http.ResponseWriter, err error, respond func(run *models.Run)) {
+	if dispatchIfRunRetryRace(err, respond) {
+		return
+	}
+	handleStoreError(w, err)
 }
 
 // createRunCtx is the context-based core of run creation, shared by every
@@ -261,6 +363,16 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// polling/retrying to close.
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
+				// Same fingerprint check findRunForRetry's own
+				// pre-check applies -- this fallback exists BECAUSE
+				// that pre-check can miss a genuinely concurrent
+				// retry, but "concurrent retry of the SAME request"
+				// and "unrelated request that happens to reuse this
+				// run_id" are still different things, and only the
+				// former should be silently dispatched as the winner.
+				if reason := s.fingerprintMismatch(existing, req, threadID); reason != "" {
+					return nil, nil, &state.ErrConflict{Resource: "run", ID: req.RunID, Reason: reason}
+				}
 				return nil, nil, &errRunRetryRace{run: existing}
 			}
 		}
@@ -350,22 +462,33 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	if err = s.store.CreateRun(ctx, run); err != nil {
 		// run_id is the primary key, so this fails with a unique-
 		// constraint violation if a concurrent request already inserted
-		// the same client-supplied run_id first (only reachable if a
-		// client reused the same run_id across two different thread_ids
-		// -- TryClaimThread's own atomicity already rules out two
-		// requests for the SAME thread_id both reaching this line).
-		// Returning the winner's run via errRunRetryRace (not
-		// (existing, nil, nil) -- see its own doc comment) is more
-		// useful than a raw DB error the caller can't act on, AND keeps
-		// err non-nil here so the defer above releases THIS request's
-		// own thread claim: the winning run belongs to a DIFFERENT
-		// thread_id than threadID (the two-different-thread_ids
-		// scenario this comment opens with), so the thread this request
-		// claimed has no run on it and would otherwise stay stuck
-		// "busy" forever with nothing left to ever idle it.
+		// the same client-supplied run_id first. Only reachable when
+		// that run belongs to a DIFFERENT thread_id than this request's
+		// own threadID -- TryClaimThread's own atomicity already rules
+		// out two requests for the SAME thread_id both reaching this
+		// line, so if the run_id already existed under THIS thread_id,
+		// this request would never have gotten this far in the first
+		// place. That means fingerprintMismatch's thread-id check below
+		// will always find a mismatch here, by construction, which is
+		// the correct outcome, not a bug in the check: "same run_id,
+		// different thread_id" is exactly the client mistake / run_id
+		// collision the fingerprint exists to catch -- a clear
+		// state.ErrConflict is more useful to the caller than a raw DB
+		// error, and keeps err non-nil here so the defer above releases
+		// THIS request's own thread claim (the winning run's own thread
+		// has no run on it and would otherwise stay stuck "busy"
+		// forever with nothing left to ever idle it).
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
-				err = &errRunRetryRace{run: existing}
+				reason := s.fingerprintMismatch(existing, req, threadID)
+				if reason == "" {
+					// Structurally shouldn't happen (see above) --
+					// fall back to the generic race dispatch rather
+					// than a reason-less conflict, just in case.
+					err = &errRunRetryRace{run: existing}
+					return nil, nil, err
+				}
+				err = &state.ErrConflict{Resource: "run", ID: req.RunID, Reason: reason}
 				return nil, nil, err
 			}
 		}
@@ -759,7 +882,19 @@ func (s *Server) handleCreateBackgroundRun(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+
+	// Fingerprint check against req.ThreadID (empty when the client
+	// didn't specify one), NOT the fresh UUID generated below -- an
+	// omitted thread_id means "any thread is fine," so a found retry
+	// shouldn't be flagged as a mismatch just because this call
+	// happened to generate a different fallback UUID than the original
+	// request's own call did.
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, req.ThreadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		writeJSON(w, http.StatusOK, existing)
 		return
 	}
@@ -771,10 +906,7 @@ func (s *Server) handleCreateBackgroundRun(w http.ResponseWriter, r *http.Reques
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) })
 		return
 	}
 
@@ -795,7 +927,12 @@ func (s *Server) handleCreateAndStreamRun(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, req.ThreadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		s.streamExistingRun(w, r, existing.RunID)
 		return
 	}
@@ -807,10 +944,7 @@ func (s *Server) handleCreateAndStreamRun(w http.ResponseWriter, r *http.Request
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) })
 		return
 	}
 
@@ -824,7 +958,12 @@ func (s *Server) handleCreateAndWaitRun(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, req.ThreadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		s.waitForExistingRun(w, r, existing.RunID)
 		return
 	}
@@ -836,10 +975,7 @@ func (s *Server) handleCreateAndWaitRun(w http.ResponseWriter, r *http.Request) 
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) })
 		return
 	}
 
@@ -931,17 +1067,19 @@ func (s *Server) handleCreateThreadRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, threadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		writeJSON(w, http.StatusOK, existing)
 		return
 	}
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { writeJSON(w, http.StatusOK, existing) })
 		return
 	}
 
@@ -964,17 +1102,19 @@ func (s *Server) handleCreateAndStreamThreadRun(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, threadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		s.streamExistingRun(w, r, existing.RunID)
 		return
 	}
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { s.streamExistingRun(w, r, existing.RunID) })
 		return
 	}
 
@@ -990,17 +1130,19 @@ func (s *Server) handleCreateAndWaitThreadRun(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if existing := s.findRunForRetry(r.Context(), req.RunID); existing != nil {
+	existing, retryErr := s.findRunForRetry(r.Context(), req.RunID, &req, threadID)
+	if retryErr != nil {
+		handleStoreError(w, retryErr)
+		return
+	}
+	if existing != nil {
 		s.waitForExistingRun(w, r, existing.RunID)
 		return
 	}
 
 	run, assignment, err := s.createRun(r, threadID, &req)
 	if err != nil {
-		if dispatchIfRunRetryRace(err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) }) {
-			return
-		}
-		handleStoreError(w, err)
+		s.handleCreateRunError(w, err, func(existing *models.Run) { s.waitForExistingRun(w, r, existing.RunID) })
 		return
 	}
 
