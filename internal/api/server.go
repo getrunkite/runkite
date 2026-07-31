@@ -519,7 +519,9 @@ func (s *Server) finishRun(runID, threadID, agentID string, status models.RunSta
 	}
 	span := v.(trace.Span)
 	span.SetAttributes(attribute.String("run.status", string(status)))
-	if status == models.RunStatusError {
+	// timeout is a forced control-plane failure (hung agent), same
+	// observability class as error -- not a successful completion.
+	if status == models.RunStatusError || status == models.RunStatusTimeout {
 		span.SetStatus(codes.Error, errorMsg)
 	} else {
 		span.SetStatus(codes.Ok, "")
@@ -528,7 +530,7 @@ func (s *Server) finishRun(runID, threadID, agentID string, status models.RunSta
 
 	hookType := hooks.RunComplete
 	switch status {
-	case models.RunStatusError:
+	case models.RunStatusError, models.RunStatusTimeout:
 		hookType = hooks.Error
 	case models.RunStatusInterrupted:
 		hookType = hooks.Interrupt

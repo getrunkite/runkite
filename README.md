@@ -1007,6 +1007,23 @@ Each field is independently optional; setting none of them is the same as omitti
 
 **Known limitation**: `checkpoints_keep_last` only prunes runkite's own `thread_checkpoints` table, used in **proxy mode** (the TypeScript runner, or a Python runner without direct DB access). In **direct mode** (the common Python + Postgres production setup), the runner's checkpointer is LangGraph's own `AsyncPostgresSaver`, which manages its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) independent of runkite's `state.Store` -- this retention feature does not clean those up. LangGraph itself doesn't ship a built-in TTL for its own checkpointer tables either; a direct-mode deployment needing this today would run its own periodic `DELETE` against LangGraph's schema directly.
 
+### Run Timeout
+
+Disabled by default -- a hung agent (alive but stuck, e.g. an infinite tool-call loop) stays `pending`/`running` forever unless a client cancels it, until you configure:
+
+```json
+{
+  "run_timeout": {
+    "max_duration": "30m",
+    "interval_seconds": 15
+  }
+}
+```
+
+A background loop runs immediately on startup and then every `interval_seconds` (default 15) and forces any `pending`/`running` run whose `created_at` is older than `max_duration` to status `timeout`. That winner cancels the queue lease, publishes a cancel signal to the runner, releases the thread to `idle` when no other active run owns it, closes the event broker, and fires the same `on_error` hook path as a failed run. Multi-instance safe: N replicas racing the same overdue `run_id` produce exactly one winner (`TryMarkRunTimeout`).
+
+Distinct from crash reclaim (heartbeat lease): reclaim covers a **dead** runner; this covers a **live** one that never finishes. `max_duration` is required for the section to take effect -- absent/empty/invalid disables the sweep entirely. Applies across every tenant (deployment-wide policy).
+
 ### Health & Observability
 ```
 GET    /health                     Returns {"status": "ok"} (unconditional, kept for backward compat)
@@ -1028,7 +1045,7 @@ Point a load balancer's health check (and Kubernetes' own `readinessProbe`) at `
 
 ### Graceful Shutdown
 
-On `SIGTERM`/`SIGINT`, the control plane stops accepting new work and drains what's already in flight instead of exiting immediately: background loops (queue-depth poller, stale-job reclaimer, cron scheduler, retention, store TTL sweep) stop right away since none of them serve a live client request, then the HTTP server stops accepting new connections and lets in-flight requests -- including long-lived SSE run/thread streams and `/runs/wait` -- finish on their own, then the gRPC bridge does the same for in-flight runner RPCs, and finally telemetry is flushed and the store is closed. Live-verified: a `/runs/wait` request that started 2s before `SIGTERM`, for an agent that takes ~6s total, still completes with `"status": "success"` after the signal, rather than being cut off (`test/e2e/graceful_shutdown_test.go`).
+On `SIGTERM`/`SIGINT`, the control plane stops accepting new work and drains what's already in flight instead of exiting immediately: background loops (queue-depth poller, stale-job reclaimer, cron scheduler, retention, run timeout, store TTL sweep) stop right away since none of them serve a live client request, then the HTTP server stops accepting new connections and lets in-flight requests -- including long-lived SSE run/thread streams and `/runs/wait` -- finish on their own, then the gRPC bridge does the same for in-flight runner RPCs, and finally telemetry is flushed and the store is closed. Live-verified: a `/runs/wait` request that started 2s before `SIGTERM`, for an agent that takes ~6s total, still completes with `"status": "success"` after the signal, rather than being cut off (`test/e2e/graceful_shutdown_test.go`).
 
 The whole sequence has a 15s budget. A runner's `WatchCancels` stream is intentionally long-lived (open for the runner's whole lifetime, not per-run) and will not close on its own just because the control plane is shutting down, so the gRPC side of the drain races `GracefulStop()` against that same 15s budget and force-stops any RPCs still open past it -- in practice this means a shutdown with a connected runner reliably takes close to the full 15s, not near-zero, and that's expected rather than a bug. This is why `docker-compose.yml` and `docker-compose.multi.yml` both set `stop_grace_period: 30s` on the control plane service(s): Compose's own default (10s) would send `SIGKILL` before this budget is ever used. A Kubernetes deployment should set `terminationGracePeriodSeconds` to at least 20-30s for the same reason (its own default of 30s already covers this).
 
@@ -1091,7 +1108,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 
 Honest gaps, not hidden ones:
 
-- **`StreamEvents`' non-terminal events are not fenced (a deliberate, narrow, documented trade-off).** `Heartbeat`, `ReportStatus`, and `StreamEvents`' own terminal ("end"/"error") events all reject/drop a stale generation (see "Crash recovery" above) -- but an ordinary progress event within a still-active stream is not checked, since nothing downstream treats a non-terminal event as authoritative the way a run's final status is, and checking every single event (rather than just the one terminal event per run) would add a Redis round-trip per streamed chunk for no real correctness benefit. In practice this only matters for a narrow window -- a reclaimed runner streaming a few more progress events before its own `Heartbeat` catches up and tells it to stop (heartbeats fire every ~2s) -- and the residual risk is cosmetic: a live SSE subscriber could see a stray extra progress event mixed in, not a wrong final outcome. No run deadline/timeout sweep yet either -- `models.RunStatusTimeout` exists but nothing assigns or enforces it, so a genuinely hung agent (not crashed, not reclaimed -- just stuck, e.g. an infinite tool-call loop) has no automatic timeout. The in-process (zero-dependency, single-instance) transport's in-flight tracking is local to that one process by design, not a gap -- there's only one process to track it in.
+- **`StreamEvents`' non-terminal events are not fenced (a deliberate, narrow, documented trade-off).** `Heartbeat`, `ReportStatus`, and `StreamEvents`' own terminal ("end"/"error") events all reject/drop a stale generation (see "Crash recovery" above) -- but an ordinary progress event within a still-active stream is not checked, since nothing downstream treats a non-terminal event as authoritative the way a run's final status is, and checking every single event (rather than just the one terminal event per run) would add a Redis round-trip per streamed chunk for no real correctness benefit. In practice this only matters for a narrow window -- a reclaimed runner streaming a few more progress events before its own `Heartbeat` catches up and tells it to stop (heartbeats fire every ~2s) -- and the residual risk is cosmetic: a live SSE subscriber could see a stray extra progress event mixed in, not a wrong final outcome. Run deadline/timeout is opt-in via `langgraph.json`'s `run_timeout` section (see [Run Timeout](#run-timeout)) -- disabled by default so a deployment that never configured it keeps the historical "runs until cancel/completion" behavior. The in-process (zero-dependency, single-instance) transport's in-flight tracking is local to that one process by design, not a gap -- there's only one process to track it in.
 - **Authorization is coarse-grained.** Permissions are enforced at `read`/`write`/`admin` method-level granularity (see Auth section), not per-resource ACLs.
 - **`db downgrade` isn't implemented.** The schema is a single idempotent migration, not versioned up/down migrations.
 - **OTel tracing covers the control plane, not runner-internal spans.** Neither runner's own LLM calls, tool calls, etc. are wrapped in OTel spans yet -- but the run's real W3C `traceparent` is already propagated to both (`RunAssignment.trace_context`), so a runner-side OTel integration (e.g. wiring LangChain's tracing callback to the same propagator) has what it needs and nests correctly under the same trace the moment it's added.

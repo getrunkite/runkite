@@ -32,6 +32,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("cascade", func(t *testing.T) { runCascadeTests(t, factory) })
 	t.Run("tenant_isolation", func(t *testing.T) { runTenantIsolationTests(t, factory) })
 	t.Run("retention", func(t *testing.T) { runRetentionTests(t, factory) })
+	t.Run("run_timeout", func(t *testing.T) { runTimeoutStoreTests(t, factory) })
 	t.Run("empty_list_results_are_not_nil", func(t *testing.T) { runEmptyListTests(t, factory) })
 }
 
@@ -2558,6 +2559,107 @@ func runRetentionTests(t *testing.T, factory StoreFactory) {
 		remaining, _ := s.ListCheckpoints(ctx, "t-noop", 10, "")
 		if len(remaining) != 1 {
 			t.Errorf("expected the checkpoint to survive a no-op prune, got %d remaining", len(remaining))
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// Run timeout -- ListActiveRunsCreatedBefore + TryMarkRunTimeout
+// --------------------------------------------------------------------------
+
+func runTimeoutStoreTests(t *testing.T, factory StoreFactory) {
+	t.Run("ListActiveRunsCreatedBefore_returns_only_old_pending_or_running", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		cutoff := now.Add(-10 * time.Minute)
+
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-timeout-list", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+
+		old := now.Add(-30 * time.Minute)
+		s.CreateRun(ctx, &models.Run{RunID: "r-old-pending", ThreadID: "t-timeout-list", Status: models.RunStatusPending, CreatedAt: old, UpdatedAt: old})
+		s.CreateRun(ctx, &models.Run{RunID: "r-old-running", ThreadID: "t-timeout-list", Status: models.RunStatusRunning, CreatedAt: old, UpdatedAt: old})
+		s.CreateRun(ctx, &models.Run{RunID: "r-old-success", ThreadID: "t-timeout-list", Status: models.RunStatusSuccess, CreatedAt: old, UpdatedAt: old})
+		s.CreateRun(ctx, &models.Run{RunID: "r-fresh-pending", ThreadID: "t-timeout-list", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now})
+
+		got, err := s.ListActiveRunsCreatedBefore(tenant.SystemContext(ctx), cutoff, 100)
+		if err != nil {
+			t.Fatalf("ListActiveRunsCreatedBefore: %v", err)
+		}
+		ids := map[string]bool{}
+		for _, r := range got {
+			ids[r.RunID] = true
+		}
+		if !ids["r-old-pending"] || !ids["r-old-running"] {
+			t.Fatalf("expected old pending+running, got %+v", ids)
+		}
+		if ids["r-old-success"] {
+			t.Error("terminal runs must not appear in the active overdue list")
+		}
+		if ids["r-fresh-pending"] {
+			t.Error("fresh pending (created_at >= cutoff) must not appear")
+		}
+	})
+
+	t.Run("TryMarkRunTimeout_wins_once_across_concurrent_callers", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-timeout-race", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-timeout-race", ThreadID: "t-timeout-race", Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now})
+
+		var wins int
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ok, err := s.TryMarkRunTimeout(tenant.SystemContext(ctx), "r-timeout-race", "run exceeded max_duration")
+				if err != nil {
+					t.Errorf("TryMarkRunTimeout: %v", err)
+					return
+				}
+				if ok {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("expected exactly 1 winner across concurrent TryMarkRunTimeout, got %d", wins)
+		}
+		run, err := s.GetRun(ctx, "r-timeout-race")
+		if err != nil {
+			t.Fatalf("GetRun: %v", err)
+		}
+		if run.Status != models.RunStatusTimeout {
+			t.Errorf("status = %q, want timeout", run.Status)
+		}
+		if run.Error != "run exceeded max_duration" {
+			t.Errorf("error = %q, want run exceeded max_duration", run.Error)
+		}
+	})
+
+	t.Run("TryMarkRunTimeout_false_when_already_terminal", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-timeout-done", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-timeout-done", ThreadID: "t-timeout-done", Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now})
+
+		ok, err := s.TryMarkRunTimeout(ctx, "r-timeout-done", "should not apply")
+		if err != nil {
+			t.Fatalf("TryMarkRunTimeout: %v", err)
+		}
+		if ok {
+			t.Fatal("expected false for an already-terminal run")
+		}
+		run, _ := s.GetRun(ctx, "r-timeout-done")
+		if run.Status != models.RunStatusSuccess {
+			t.Errorf("status clobbered to %q", run.Status)
 		}
 	})
 }

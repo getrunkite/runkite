@@ -1405,6 +1405,67 @@ func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models
 	return err
 }
 
+func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Time, limit int) ([]*models.Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE status IN ('pending','running') AND created_at < $1`
+	args := []interface{}{before.UTC()}
+	argN := 2
+	if !tenant.IsSystem(ctx) {
+		query += fmt.Sprintf(` AND tenant_id = $%d`, argN)
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	query += fmt.Sprintf(` ORDER BY created_at ASC LIMIT $%d`, argN)
+	args = append(args, limit)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	runs := []*models.Run{}
+	for rows.Next() {
+		var r models.Run
+		var metaBytes, inputBytes, configBytes, outputBytes []byte
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
+			return nil, err
+		}
+		if metaBytes != nil {
+			json.Unmarshal(metaBytes, &r.Metadata)
+		}
+		if inputBytes != nil {
+			r.Input = json.RawMessage(inputBytes)
+		}
+		if configBytes != nil {
+			r.Config = json.RawMessage(configBytes)
+		}
+		if outputBytes != nil {
+			r.Output = json.RawMessage(outputBytes)
+		}
+		r.AssistantID = r.AgentID
+		runs = append(runs, &r)
+	}
+	return runs, rows.Err()
+}
+
+func (s *Store) TryMarkRunTimeout(ctx context.Context, runID string, errMsg string) (bool, error) {
+	now := time.Now().UTC()
+	query := `UPDATE runs SET status = $1, error_msg = $2, updated_at = $3 WHERE run_id = $4 AND status IN ('pending','running')`
+	args := []interface{}{string(models.RunStatusTimeout), errMsg, now, runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $5`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (s *Store) DeleteRun(ctx context.Context, runID string) error {
 	query := `DELETE FROM runs WHERE run_id = $1`
 	args := []interface{}{runID}

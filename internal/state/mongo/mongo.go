@@ -1220,6 +1220,46 @@ func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models
 	return err
 }
 
+func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Time, limit int) ([]*models.Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	filter := tenantFilter(ctx, bson.M{
+		"status":     bson.M{"$in": []string{"pending", "running"}},
+		"created_at": bson.M{"$lt": before.UTC()},
+	})
+	cur, err := s.col("runs").Find(ctx, filter,
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	runs := []*models.Run{}
+	for cur.Next(ctx) {
+		var doc runDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		runs = append(runs, toRun(doc))
+	}
+	return runs, cur.Err()
+}
+
+func (s *Store) TryMarkRunTimeout(ctx context.Context, runID string, errMsg string) (bool, error) {
+	filter := tenantFilter(ctx, bson.M{
+		"run_id": runID,
+		"status": bson.M{"$in": []string{"pending", "running"}},
+	})
+	res, err := s.col("runs").UpdateOne(ctx, filter, bson.M{"$set": bson.M{
+		"status": string(models.RunStatusTimeout), "error_msg": errMsg, "updated_at": time.Now().UTC(),
+	}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount > 0, nil
+}
+
 func (s *Store) DeleteRun(ctx context.Context, runID string) error {
 	res, err := s.col("runs").DeleteOne(ctx, tenantFilter(ctx, bson.M{"run_id": runID}))
 	if err != nil {

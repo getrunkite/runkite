@@ -58,6 +58,25 @@ type Store interface {
 	DeleteRun(ctx context.Context, runID string) error
 	SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([]*models.Run, error)
 
+	// ListActiveRunsCreatedBefore returns pending/running runs whose
+	// created_at is strictly before `before`, oldest first, capped at
+	// limit. Backs the opt-in run-timeout sweep (cmd/run_timeout.go): a
+	// genuinely hung agent (alive but stuck -- not crashed, so the
+	// heartbeat/reclaim path never fires) has no other automatic
+	// terminal transition. Scoped to the caller's tenant unless ctx is
+	// a system context. limit <= 0 defaults to 100. Returns a non-nil
+	// empty slice when nothing matches.
+	ListActiveRunsCreatedBefore(ctx context.Context, before time.Time, limit int) ([]*models.Run, error)
+
+	// TryMarkRunTimeout atomically transitions a run from pending or
+	// running to timeout. Returns true if THIS call won the transition
+	// (so the caller should cancel the queue lease, signal the runner,
+	// release the thread, and finish bookkeeping); false if the run was
+	// already terminal or another replica timed it out first. Multi-
+	// instance safe: N replicas' timeout tickers racing the same overdue
+	// run_id produce exactly one winner.
+	TryMarkRunTimeout(ctx context.Context, runID string, errMsg string) (bool, error)
+
 	// --- Store (key-value) ---
 	// TTL (gap found when a live agent called store.aput(..., ttl=...),
 	// a documented LangGraph BaseStore feature RunkiteStore never

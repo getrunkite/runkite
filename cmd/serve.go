@@ -192,7 +192,7 @@ func startServer(opts serverOpts) {
 
 	// Cancelable, not context.Background(): every background loop below
 	// (queue-depth poller, stale-job reclaimer, cron scheduler, retention,
-	// store TTL sweep) already selects on ctx.Done() to know when to stop
+	// run timeout, store TTL sweep) already selects on ctx.Done() to know when to stop
 	// -- confirmed live before this fix that none of them ever actually
 	// saw that signal, because nothing ever cancelled this context; they
 	// only ever stopped via the process dying under them at os.Exit.
@@ -308,6 +308,15 @@ func startServer(opts serverOpts) {
 	if retentionCfg := initRetentionConfig(opts.configPath); retentionCfg != nil {
 		slog.Info("retention: enabled", "runs_max_age", retentionCfg.runsMaxAge, "checkpoints_keep_last", retentionCfg.checkpointsKeepLast, "cron_claims_max_age", retentionCfg.cronClaimsMaxAge, "interval", retentionCfg.interval)
 		go runRetentionLoop(ctx, store, retentionCfg)
+	}
+
+	// Run timeout sweep (opt-in): forces pending/running runs older than
+	// max_duration to status "timeout". Distinct from crash reclaim --
+	// reclaim covers a dead runner; this covers a live hung one. Absent
+	// "run_timeout" config starts no background loop at all.
+	if timeoutCfg := initRunTimeoutConfig(opts.configPath); timeoutCfg != nil {
+		slog.Info("run_timeout: enabled", "max_duration", timeoutCfg.maxDuration, "interval", timeoutCfg.interval)
+		go runTimeoutLoop(ctx, apiServer, timeoutCfg)
 	}
 
 	// Store item TTL sweep -- unlike the opt-in retention loop above,
@@ -559,7 +568,7 @@ func startServer(opts serverOpts) {
 	}
 
 	// Stop background loops (queue-depth poller, stale-job reclaimer,
-	// cron scheduler, retention, store TTL sweep) immediately -- none of
+	// cron scheduler, retention, run timeout, store TTL sweep) immediately -- none of
 	// them serve a live client request, so there's nothing to drain by
 	// letting them keep ticking during shutdown.
 	cancel()

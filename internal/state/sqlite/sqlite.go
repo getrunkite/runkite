@@ -1348,6 +1348,71 @@ func (s *SQLiteStore) UpdateRunStatus(ctx context.Context, runID string, status 
 	return err
 }
 
+func (s *SQLiteStore) ListActiveRunsCreatedBefore(ctx context.Context, before time.Time, limit int) ([]*models.Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE status IN ('pending','running') AND created_at < ?`
+	args := []interface{}{before.UTC().Format(time.RFC3339)}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY created_at ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	runs := []*models.Run{}
+	for rows.Next() {
+		var r models.Run
+		var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
+		var createdStr, updatedStr string
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
+			return nil, err
+		}
+		r.ParentRunID = nullStringToPtr(parentRunIDStr)
+		r.RootRunID = nullStringToPtr(rootRunIDStr)
+		if metaStr.Valid {
+			json.Unmarshal([]byte(metaStr.String), &r.Metadata)
+		}
+		if inputStr.Valid {
+			r.Input = json.RawMessage(inputStr.String)
+		}
+		if configStr.Valid {
+			r.Config = json.RawMessage(configStr.String)
+		}
+		if outputStr.Valid {
+			r.Output = json.RawMessage(outputStr.String)
+		}
+		r.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+		r.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
+		r.AssistantID = r.AgentID
+		runs = append(runs, &r)
+	}
+	return runs, rows.Err()
+}
+
+func (s *SQLiteStore) TryMarkRunTimeout(ctx context.Context, runID string, errMsg string) (bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	query := `UPDATE runs SET status = ?, error_msg = ?, updated_at = ? WHERE run_id = ? AND status IN ('pending','running')`
+	args := []interface{}{string(models.RunStatusTimeout), errMsg, now, runID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	n, _ := result.RowsAffected()
+	return n > 0, nil
+}
+
 func (s *SQLiteStore) DeleteRun(ctx context.Context, runID string) error {
 	query := `DELETE FROM runs WHERE run_id = ?`
 	args := []interface{}{runID}

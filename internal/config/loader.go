@@ -80,6 +80,14 @@ type LangGraphConfig struct {
 	// unbounded storage growth with no way to bound it short of manual
 	// deletion). Opt-in, same convention as everything else here.
 	Retention *RetentionEntry `json:"retention,omitempty"`
+	// RunTimeout is control-plane-wide, same first-file convention as
+	// Retention (see initRunTimeoutConfig in cmd/run_timeout.go).
+	// Absent means no automatic run deadline -- a hung agent (alive but
+	// stuck in an infinite tool loop) stays pending/running forever
+	// unless a client cancels it. Distinct from crash reclaim (heartbeat
+	// lease): reclaim covers a dead runner; this covers a live one that
+	// never finishes.
+	RunTimeout *RunTimeoutEntry `json:"run_timeout,omitempty"`
 	// A2A is control-plane-wide, same first-file convention as
 	// Auth/RateLimit/Webhooks (see initA2AConfig in cmd/serve.go).
 	// Absent means the default max depth (see A2AEntry.MaxDepth)
@@ -125,6 +133,18 @@ type A2AEntry struct {
 	// small enough that a cyclic delegation bug fails fast instead of
 	// silently consuming resources.
 	MaxDepth int `json:"max_depth,omitempty"`
+}
+
+// RunTimeoutEntry is the "run_timeout" section of langgraph.json.
+type RunTimeoutEntry struct {
+	// MaxDuration is how long a run may stay pending or running before
+	// the control plane forces it to status "timeout". Go duration
+	// string (e.g. "30m", "2h"). Required for the section to take
+	// effect -- absent/empty/invalid disables the sweep entirely.
+	MaxDuration string `json:"max_duration,omitempty"`
+	// IntervalSeconds controls how often the background sweep looks
+	// for overdue runs. Defaults to 15 if omitted or <= 0.
+	IntervalSeconds int `json:"interval_seconds,omitempty"`
 }
 
 // RetentionEntry is the "retention" section of langgraph.json.
