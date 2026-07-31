@@ -45,7 +45,12 @@ Tvio+kkvGKlRILAgbGm5lkIc1a1xnLCV0qjh/z5uz59smWBr+ljj9mZ1
 -----END PRIVATE KEY-----
 `;
 
-const ENV_KEYS = ["RUNKITE_TLS_CA_FILE", "RUNKITE_TLS_CLIENT_CERT_FILE", "RUNKITE_TLS_CLIENT_KEY_FILE"] as const;
+const ENV_KEYS = [
+  "RUNKITE_TLS_CA_FILE",
+  "RUNKITE_TLS_CLIENT_CERT_FILE",
+  "RUNKITE_TLS_CLIENT_KEY_FILE",
+  "RUNKITE_GRPC_TLS",
+] as const;
 
 function withEnv(vars: Partial<Record<(typeof ENV_KEYS)[number], string>>, fn: () => void): void {
   const prev: Record<string, string | undefined> = {};
@@ -124,4 +129,45 @@ test("missing CA file throws instead of silently disabling TLS", () => {
     assert.throws(() => grpcChannelCredentials());
     assert.throws(() => httpDispatcher());
   });
+});
+
+// RUNKITE_GRPC_TLS=1 alone (no CA file) enables gRPC TLS using the
+// system trust store -- the "publicly-trusted cert, no custom CA
+// needed" path gRPC has no URL-scheme signal for the way HTTP's
+// https:// does. Must NOT leak into httpDispatcher(): HTTP needs no
+// equivalent flag at all.
+test("RUNKITE_GRPC_TLS=1 alone enables gRPC TLS (system trust) without affecting HTTP", () => {
+  withEnv({ RUNKITE_GRPC_TLS: "1" }, () => {
+    assert.notEqual(grpcChannelCredentials(), undefined);
+    assert.equal(httpDispatcher(), undefined);
+  });
+});
+
+test("RUNKITE_GRPC_TLS accepts common truthy spellings and rejects others", () => {
+  for (const [value, wantEnabled] of [
+    ["1", true],
+    ["true", true],
+    ["True", true],
+    ["yes", true],
+    ["0", false],
+    ["false", false],
+    ["", false],
+  ] as const) {
+    withEnv({ RUNKITE_GRPC_TLS: value }, () => {
+      const enabled = grpcChannelCredentials() !== undefined;
+      assert.equal(enabled, wantEnabled, `RUNKITE_GRPC_TLS=${JSON.stringify(value)} -> enabled=${wantEnabled}`);
+    });
+  }
+});
+
+test("RUNKITE_TLS_CA_FILE set takes precedence over RUNKITE_GRPC_TLS (no conflict)", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "runkite-tls-test-"));
+  try {
+    const ca = tempCertFile(dir, "ca.pem");
+    withEnv({ RUNKITE_TLS_CA_FILE: ca, RUNKITE_GRPC_TLS: "1" }, () => {
+      assert.doesNotThrow(() => grpcChannelCredentials());
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

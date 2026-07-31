@@ -2,9 +2,14 @@ import { type ChannelCredentials } from "@grpc/grpc-js";
 import { Agent } from "undici";
 /**
  * Returns TLS channel credentials for createRunnerClient, or undefined
- * if RUNKITE_TLS_CA_FILE is unset -- callers should fall back to
- * credentials.createInsecure() in that case, preserving today's default
- * plaintext behavior exactly.
+ * if neither RUNKITE_TLS_CA_FILE nor RUNKITE_GRPC_TLS is set -- callers
+ * should fall back to credentials.createInsecure() in that case,
+ * preserving today's default plaintext behavior exactly.
+ *
+ * rootCerts is undefined (system trust store, via createSsl's own
+ * fallback chain) when RUNKITE_TLS_CA_FILE is unset but
+ * RUNKITE_GRPC_TLS is -- see this module's own doc comment for why
+ * that combination needs to exist at all.
  */
 export declare function grpcChannelCredentials(): ChannelCredentials | undefined;
 /**

@@ -3,20 +3,35 @@
  * control plane -- both the gRPC bridge (proto.ts's createRunnerClient)
  * and the proxy-mode HTTP calls (store.ts, vectorstore.ts, a2a.ts).
  * Direct TypeScript/undici port of the Python runner's tls_utils.py --
- * same three env vars, same semantics, same defaults.
+ * same env vars, same semantics, same defaults.
  *
  * - RUNKITE_TLS_CA_FILE: verify the control plane's server certificate
- *   against this CA instead of (or in addition to) the system trust
- *   store. Required for a self-signed or internal-CA-signed control
- *   plane cert; a publicly-trusted cert needs nothing set at all --
- *   plain credentials.createSsl()/https:// URLs already verify against
- *   the system trust store on their own.
+ *   against this CA instead of the system trust store (it REPLACES the
+ *   system store for that verification, not "in addition to" -- the
+ *   same behavior credentials.createSsl and undici's own Agent
+ *   `connect.ca` both already have). Required for a self-signed or
+ *   internal-CA-signed control plane cert.
+ * - RUNKITE_GRPC_TLS: enables gRPC TLS using the system trust store
+ *   when RUNKITE_TLS_CA_FILE is NOT set -- the gRPC equivalent of what
+ *   an https:// URL already gives HTTP for free. gRPC has no URL
+ *   scheme to carry that signal the way HTTP's http:// vs https:// does,
+ *   so without this there would be no way to ask for "TLS, but a
+ *   publicly-trusted cert, no custom CA needed" on the gRPC side at all
+ *   -- only "plaintext" or "TLS with a specific custom CA". Passes
+ *   `null` for rootCerts to credentials.createSsl, which falls back
+ *   through gRPC's own bundled default roots to Node's own system trust
+ *   store (see @grpc/grpc-js's own createSsl source). Ignored
+ *   (redundant, not a conflict) when RUNKITE_TLS_CA_FILE is also set.
+ *   HTTP proxy-mode calls need no equivalent: fetch already defaults to
+ *   system-trust verification for any https:// base URL with nothing
+ *   extra set.
  * - RUNKITE_TLS_CLIENT_CERT_FILE / RUNKITE_TLS_CLIENT_KEY_FILE: this
  *   runner's own client certificate for mTLS, when the control plane
  *   requires one (TLS_CLIENT_CA_FILE / GRPC_TLS_CLIENT_CA_FILE on the
- *   Go side -- see cmd/tls.go).
+ *   Go side -- see cmd/tls.go). Independent of which trust store is in
+ *   use above -- mTLS and server-cert verification are orthogonal.
  *
- * All three are optional and off by default -- unset envs mean exactly
+ * All are optional and off by default -- unset envs mean exactly
  * today's plaintext gRPC / whatever the httpBaseUrl's own scheme already
  * implies for HTTP, matching every other env-var-driven piece of this
  * runner's config (RUNNER_TOKEN, RUNKITE_GRPC_URL, etc).
@@ -27,20 +42,28 @@ import { Agent } from "undici";
 function readIfSet(path) {
     return path ? readFileSync(path) : undefined;
 }
+function isTruthyEnv(value) {
+    return /^(1|true|yes)$/i.test((value ?? "").trim());
+}
 /**
  * Returns TLS channel credentials for createRunnerClient, or undefined
- * if RUNKITE_TLS_CA_FILE is unset -- callers should fall back to
- * credentials.createInsecure() in that case, preserving today's default
- * plaintext behavior exactly.
+ * if neither RUNKITE_TLS_CA_FILE nor RUNKITE_GRPC_TLS is set -- callers
+ * should fall back to credentials.createInsecure() in that case,
+ * preserving today's default plaintext behavior exactly.
+ *
+ * rootCerts is undefined (system trust store, via createSsl's own
+ * fallback chain) when RUNKITE_TLS_CA_FILE is unset but
+ * RUNKITE_GRPC_TLS is -- see this module's own doc comment for why
+ * that combination needs to exist at all.
  */
 export function grpcChannelCredentials() {
     const caFile = process.env.RUNKITE_TLS_CA_FILE;
-    if (!caFile)
+    if (!caFile && !isTruthyEnv(process.env.RUNKITE_GRPC_TLS))
         return undefined;
-    const rootCerts = readFileSync(caFile);
+    const rootCerts = readIfSet(caFile);
     const clientKey = readIfSet(process.env.RUNKITE_TLS_CLIENT_KEY_FILE);
     const clientCert = readIfSet(process.env.RUNKITE_TLS_CLIENT_CERT_FILE);
-    return credentials.createSsl(rootCerts, clientKey ?? null, clientCert ?? null);
+    return credentials.createSsl(rootCerts ?? null, clientKey ?? null, clientCert ?? null);
 }
 /**
  * Returns an undici Agent configured for TLS verification/mTLS against

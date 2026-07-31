@@ -248,10 +248,11 @@ Every network hop in this project is plaintext until you configure otherwise -- 
 
 | Env var | Effect |
 |---|---|
-| `RUNKITE_TLS_CA_FILE` | Verifies the control plane's server certificate against this CA -- required for a self-signed or internal-CA-signed cert; a publicly-trusted cert needs nothing set. Enables TLS on both the gRPC channel and the proxy-mode HTTP calls (store/vector-store/A2A) at once, since a real deployment signs both with the same CA and a runner only ever talks to one control plane. |
-| `RUNKITE_TLS_CLIENT_CERT_FILE` / `RUNKITE_TLS_CLIENT_KEY_FILE` | This runner's own client certificate for mTLS, when the control plane requires one. |
+| `RUNKITE_TLS_CA_FILE` | Verifies the control plane's server certificate against this CA, **replacing** the system trust store for that verification (not in addition to it) -- required for a self-signed or internal-CA-signed cert. Enables TLS on both the gRPC channel and the proxy-mode HTTP calls (store/vector-store/A2A) at once, since a real deployment signs both with the same CA and a runner only ever talks to one control plane. |
+| `RUNKITE_GRPC_TLS` | Enables gRPC TLS using the **system** trust store when `RUNKITE_TLS_CA_FILE` is *not* set -- the gRPC-side equivalent of what an `https://` URL already gives HTTP for free. gRPC has no URL scheme to carry an "I want TLS" signal the way `http://` vs `https://` does, so without this there's no way to ask for "TLS against a publicly-trusted cert, no custom CA needed" on the gRPC side -- only plaintext or TLS-with-a-specific-custom-CA. HTTP needs no equivalent flag: `https://` in `--http-address` is already that signal, and `httpx`/`fetch` both verify against the system trust store by default. |
+| `RUNKITE_TLS_CLIENT_CERT_FILE` / `RUNKITE_TLS_CLIENT_KEY_FILE` | This runner's own client certificate for mTLS, when the control plane requires one -- independent of which trust store is in use above. |
 
-Live-verified end to end with self-signed certificates: HTTPS-only (server cert, no mTLS) rejects a plain-HTTP request and accepts HTTPS; mTLS on the HTTP API rejects a request with no client cert or an untrusted one and accepts a CA-signed one; a real Python runner completed a full run over an mTLS gRPC channel plus HTTPS proxy-mode store calls; a real TypeScript runner did the same with mTLS on *both* the gRPC bridge and the HTTP API simultaneously.
+Live-verified end to end with self-signed certificates: HTTPS-only (server cert, no mTLS) rejects a plain-HTTP request and accepts HTTPS; mTLS on the HTTP API rejects a request with no client cert or an untrusted one and accepts a CA-signed one; a real Python runner completed a full run over an mTLS gRPC channel plus HTTPS proxy-mode store calls; a real TypeScript runner did the same with mTLS on *both* the gRPC bridge and the HTTP API simultaneously; both runners, given `RUNKITE_GRPC_TLS=1` and no CA file, attempted a genuine system-trust TLS handshake against a self-signed server cert and correctly rejected it (`CERTIFICATE_VERIFY_FAILED: self signed certificate` / `self-signed certificate`) -- exactly the outcome a real publicly-trusted-cert deployment would need to *not* see.
 
 ```bash
 # Control plane: HTTPS + mTLS on both HTTP and gRPC
@@ -263,6 +264,11 @@ GRPC_TLS_CERT_FILE=server-cert.pem GRPC_TLS_KEY_FILE=server-key.pem GRPC_TLS_CLI
 RUNKITE_TLS_CA_FILE=server-cert.pem \
 RUNKITE_TLS_CLIENT_CERT_FILE=client-cert.pem RUNKITE_TLS_CLIENT_KEY_FILE=client-key.pem \
 python -m runkite_runner.worker --config examples/echo_agent/langgraph.json --grpc-address localhost:50051 --http-address https://localhost:2026
+
+# Runner against a control plane with a PUBLICLY-TRUSTED cert (e.g. Let's Encrypt):
+# no RUNKITE_TLS_CA_FILE needed for HTTP (https:// already verifies via system trust);
+# RUNKITE_GRPC_TLS=1 gives gRPC the same system-trust behavior.
+RUNKITE_GRPC_TLS=1 python -m runkite_runner.worker --config examples/echo_agent/langgraph.json --grpc-address controlplane.example.com:50051 --http-address https://controlplane.example.com
 ```
 
 ## Multi-tenancy

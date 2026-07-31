@@ -10,6 +10,11 @@ Proves:
 3. Client cert + key together are picked up for mTLS on both surfaces.
 4. A client cert without a key (or vice versa) is not treated as usable
    mTLS material for httpx's own (cert_file, key_file) tuple form.
+5. RUNKITE_GRPC_TLS=1 alone (no CA file) enables gRPC TLS using the
+   system trust store -- the "publicly-trusted cert, no custom CA
+   needed" path gRPC has no URL-scheme signal for the way HTTP's
+   https:// does -- without leaking into httpx_tls_kwargs() (HTTP needs
+   no equivalent flag at all).
 
 Usage:
     python/.venv/bin/python python/tests/test_tls_utils.py
@@ -40,9 +45,14 @@ def check(name, cond):
 
 
 class _EnvSandbox:
-    """Clears and restores the 3 RUNKITE_TLS_* env vars around a test."""
+    """Clears and restores the RUNKITE_TLS_*/RUNKITE_GRPC_TLS env vars around a test."""
 
-    KEYS = ("RUNKITE_TLS_CA_FILE", "RUNKITE_TLS_CLIENT_CERT_FILE", "RUNKITE_TLS_CLIENT_KEY_FILE")
+    KEYS = (
+        "RUNKITE_TLS_CA_FILE",
+        "RUNKITE_TLS_CLIENT_CERT_FILE",
+        "RUNKITE_TLS_CLIENT_KEY_FILE",
+        "RUNKITE_GRPC_TLS",
+    )
 
     def __enter__(self):
         self._saved = {k: os.environ.pop(k, None) for k in self.KEYS}
@@ -123,11 +133,39 @@ def test_client_cert_without_key_is_not_used_for_httpx_tuple_form():
         check("httpx_tls_kwargs() falls back to a bare cert string without a key", kwargs.get("cert") == cert.name)
 
 
+def test_grpc_tls_flag_alone_enables_system_trust_grpc_without_affecting_http():
+    with _EnvSandbox():
+        os.environ["RUNKITE_GRPC_TLS"] = "1"
+        creds = tls_utils.grpc_channel_credentials()
+        check("RUNKITE_GRPC_TLS=1 alone enables gRPC TLS (system trust store)", creds is not None)
+        check(
+            "RUNKITE_GRPC_TLS has no effect on HTTP (no CA/https:// signal there)", tls_utils.httpx_tls_kwargs() == {}
+        )
+
+
+def test_grpc_tls_flag_accepts_common_truthy_spellings_and_rejects_others():
+    for value, want_enabled in [
+        ("1", True),
+        ("true", True),
+        ("True", True),
+        ("yes", True),
+        ("0", False),
+        ("false", False),
+        ("", False),
+    ]:
+        with _EnvSandbox():
+            os.environ["RUNKITE_GRPC_TLS"] = value
+            got_enabled = tls_utils.grpc_channel_credentials() is not None
+            check(f"RUNKITE_GRPC_TLS={value!r} -> enabled={want_enabled}", got_enabled == want_enabled)
+
+
 def main():
     test_unset_means_no_tls()
     test_ca_file_alone_enables_tls_without_client_cert()
     test_client_cert_and_key_together_enable_mtls()
     test_client_cert_without_key_is_not_used_for_httpx_tuple_form()
+    test_grpc_tls_flag_alone_enables_system_trust_grpc_without_affecting_http()
+    test_grpc_tls_flag_accepts_common_truthy_spellings_and_rejects_others()
     print("\nAll checks passed.")
 
 
