@@ -1140,6 +1140,35 @@ func (s *SQLiteStore) TryClaimThread(ctx context.Context, threadID string) (bool
 	return n > 0, nil
 }
 
+// ReleaseThreadIfNoOtherActive is a single conditional UPDATE -- the
+// inverse of TryClaimThread -- so a late StatusCallback cannot idle a
+// thread that a newer run already claimed.
+func (s *SQLiteStore) ReleaseThreadIfNoOtherActive(ctx context.Context, threadID, excludeRunID string, status models.ThreadStatus) (bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	query := `UPDATE threads SET status = ?, updated_at = ?
+		WHERE thread_id = ? AND status = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM runs r
+			WHERE r.thread_id = threads.thread_id
+			  AND r.status IN ('pending','running')
+			  AND r.run_id <> ?
+		)`
+	args := []interface{}{string(status), now, threadID, string(models.ThreadStatusBusy), excludeRunID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // --------------------------------------------------------------------------
 // Checkpoints
 // --------------------------------------------------------------------------

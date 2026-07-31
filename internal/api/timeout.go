@@ -58,10 +58,8 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 		metrics.RunsTotal.WithLabelValues(run.AgentID, string(models.RunStatusTimeout)).Inc()
 		metrics.RunDuration.WithLabelValues(run.AgentID).Observe(time.Since(run.CreatedAt).Seconds())
 
-		if !threadHasOtherActiveRun(runCtx, s.store, run.ThreadID, run.RunID) {
-			if err := s.store.SetThreadStatus(runCtx, run.ThreadID, models.ThreadStatusIdle); err != nil {
-				slog.Error("run timeout: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
-			}
+		if _, err := s.store.ReleaseThreadIfNoOtherActive(runCtx, run.ThreadID, run.RunID, models.ThreadStatusIdle); err != nil {
+			slog.Error("run timeout: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
 		}
 
 		_ = s.broker.Close(run.RunID)

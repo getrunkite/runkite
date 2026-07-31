@@ -974,6 +974,37 @@ func (s *Store) TryClaimThread(ctx context.Context, threadID string) (bool, erro
 	return res.ModifiedCount > 0, nil
 }
 
+// ReleaseThreadIfNoOtherActive checks for other active runs then
+// conditionally updates the thread inside one transaction -- the Mongo
+// equivalent of SQL's UPDATE ... WHERE NOT EXISTS.
+func (s *Store) ReleaseThreadIfNoOtherActive(ctx context.Context, threadID, excludeRunID string, status models.ThreadStatus) (bool, error) {
+	var released bool
+	err := s.withTransaction(ctx, func(sessCtx context.Context) error {
+		filter := tenantFilter(sessCtx, bson.M{
+			"thread_id": threadID,
+			"status":    bson.M{"$in": []string{"pending", "running"}},
+			"run_id":    bson.M{"$ne": excludeRunID},
+		})
+		n, err := s.col("runs").CountDocuments(sessCtx, filter)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			released = false
+			return nil
+		}
+		res, err := s.col("threads").UpdateOne(sessCtx,
+			tenantFilter(sessCtx, bson.M{"thread_id": threadID, "status": string(models.ThreadStatusBusy)}),
+			bson.M{"$set": bson.M{"status": string(status), "updated_at": time.Now().UTC()}})
+		if err != nil {
+			return err
+		}
+		released = res.ModifiedCount > 0
+		return nil
+	})
+	return released, err
+}
+
 // --------------------------------------------------------------------------
 // Checkpoints
 // --------------------------------------------------------------------------

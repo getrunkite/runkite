@@ -124,7 +124,11 @@ func TestEnqueueFailure_RollsBackBusyThread(t *testing.T) {
 	}
 }
 
-func TestThreadHasOtherActiveRun_NotMaskedByCacheHits(t *testing.T) {
+// TestReleaseThreadIfNoOtherActive_NotMaskedByCacheHits proves the
+// atomic release predicate looks at pending/running status, not a
+// newest-N flood of cache-hit success rows (the bug that made the old
+// SearchRuns helper miss an older pending run and idle a busy thread).
+func TestReleaseThreadIfNoOtherActive_NotMaskedByCacheHits(t *testing.T) {
 	_, store := newLifecycleServer(t, nil)
 	ctx := context.Background()
 	threadID := "active-behind-hits"
@@ -142,8 +146,6 @@ func TestThreadHasOtherActiveRun_NotMaskedByCacheHits(t *testing.T) {
 	if err := store.CreateRun(ctx, pending); err != nil {
 		t.Fatal(err)
 	}
-	// Flood newer success rows the way cache hits do -- unfiltered
-	// newest-50 search used to miss the older pending run.
 	for i := 0; i < 60; i++ {
 		r := &models.Run{
 			RunID: fmt.Sprintf("hit-%d", i), ThreadID: threadID, AgentID: "a", AssistantID: "a",
@@ -155,11 +157,19 @@ func TestThreadHasOtherActiveRun_NotMaskedByCacheHits(t *testing.T) {
 		}
 	}
 
-	if !threadHasOtherActiveRun(ctx, store, threadID, "exclude-none") {
-		t.Fatal("pending run hidden behind cache-hit successes")
+	released, err := store.ReleaseThreadIfNoOtherActive(ctx, threadID, "exclude-none", models.ThreadStatusIdle)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if threadHasOtherActiveRun(ctx, store, threadID, "pending-1") {
-		t.Fatal("excluding the only pending run should report no other active")
+	if released {
+		t.Fatal("must not release while pending-1 is still active behind cache-hit successes")
+	}
+	released, err = store.ReleaseThreadIfNoOtherActive(ctx, threadID, "pending-1", models.ThreadStatusIdle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !released {
+		t.Fatal("excluding the only pending run should allow release")
 	}
 }
 

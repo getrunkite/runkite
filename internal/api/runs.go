@@ -654,9 +654,7 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	}
 	_ = s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
 	metrics.ActiveRuns.Dec()
-	if !threadHasOtherActiveRun(ctx, s.store, run.ThreadID, run.RunID) {
-		_ = s.store.SetThreadStatus(ctx, run.ThreadID, models.ThreadStatusIdle)
-	}
+	_, _ = s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
 	// Close after any Subscribe that may have already happened (stream/wait
 	// paths subscribe before enqueue) so tailers and broker state do not leak.
 	_ = s.broker.Close(run.RunID)

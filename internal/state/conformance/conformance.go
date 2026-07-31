@@ -33,6 +33,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("tenant_isolation", func(t *testing.T) { runTenantIsolationTests(t, factory) })
 	t.Run("retention", func(t *testing.T) { runRetentionTests(t, factory) })
 	t.Run("run_timeout", func(t *testing.T) { runTimeoutStoreTests(t, factory) })
+	t.Run("thread_claim_release", func(t *testing.T) { runThreadClaimReleaseTests(t, factory) })
 	t.Run("empty_list_results_are_not_nil", func(t *testing.T) { runEmptyListTests(t, factory) })
 }
 
@@ -2660,6 +2661,155 @@ func runTimeoutStoreTests(t *testing.T, factory StoreFactory) {
 		run, _ := s.GetRun(ctx, "r-timeout-done")
 		if run.Status != models.RunStatusSuccess {
 			t.Errorf("status clobbered to %q", run.Status)
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// Thread claim / release -- TryClaimThread + ReleaseThreadIfNoOtherActive
+// --------------------------------------------------------------------------
+
+func runThreadClaimReleaseTests(t *testing.T, factory StoreFactory) {
+	t.Run("TryClaimThread_exactly_one_winner", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-claim", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		var wins int
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ok, err := s.TryClaimThread(ctx, "t-claim")
+				if err != nil {
+					t.Errorf("TryClaimThread: %v", err)
+					return
+				}
+				if ok {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("expected exactly 1 claim winner, got %d", wins)
+		}
+	})
+
+	t.Run("ReleaseThread_idles_when_only_excluded_run_was_active", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-rel-solo", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-solo", ThreadID: "t-rel-solo", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now})
+
+		ok, err := s.ReleaseThreadIfNoOtherActive(ctx, "t-rel-solo", "r-solo", models.ThreadStatusIdle)
+		if err != nil {
+			t.Fatalf("ReleaseThreadIfNoOtherActive: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected release to apply when excluded run is the only active one")
+		}
+		th, _ := s.GetThread(ctx, "t-rel-solo")
+		if th.Status != models.ThreadStatusIdle {
+			t.Errorf("status = %q, want idle", th.Status)
+		}
+	})
+
+	t.Run("ReleaseThread_skips_when_other_pending_exists", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-rel-other", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-old", ThreadID: "t-rel-other", Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-new", ThreadID: "t-rel-other", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now})
+
+		ok, err := s.ReleaseThreadIfNoOtherActive(ctx, "t-rel-other", "r-old", models.ThreadStatusIdle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Fatal("must not release while r-new is still pending")
+		}
+		th, _ := s.GetThread(ctx, "t-rel-other")
+		if th.Status != models.ThreadStatusBusy {
+			t.Errorf("status = %q, want busy", th.Status)
+		}
+	})
+
+	t.Run("ReleaseThread_skips_when_other_running_exists", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-rel-run", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-a", ThreadID: "t-rel-run", Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-b", ThreadID: "t-rel-run", Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now})
+
+		ok, err := s.ReleaseThreadIfNoOtherActive(ctx, "t-rel-run", "r-a", models.ThreadStatusIdle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Fatal("must not release while r-b is still running")
+		}
+	})
+
+	t.Run("ReleaseThread_race_with_claim_never_leaves_idle_with_pending", func(t *testing.T) {
+		// Strongest proof: concurrent ReleaseThreadIfNoOtherActive vs
+		// TryClaimThread+CreateRun must never end idle-with-a-pending-run
+		// (the clobber StatusCallback used to allow).
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-race-rel", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now})
+		s.CreateRun(ctx, &models.Run{RunID: "r-done", ThreadID: "t-race-rel", Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now})
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, _ = s.ReleaseThreadIfNoOtherActive(ctx, "t-race-rel", "r-done", models.ThreadStatusIdle)
+		}()
+		go func() {
+			defer wg.Done()
+			claimed, err := s.TryClaimThread(ctx, "t-race-rel")
+			if err != nil || !claimed {
+				// Release may have won first and idled -- claim from idle.
+				claimed, err = s.TryClaimThread(ctx, "t-race-rel")
+				if err != nil || !claimed {
+					return
+				}
+			}
+			_ = s.CreateRun(ctx, &models.Run{
+				RunID: "r-newer", ThreadID: "t-race-rel", Status: models.RunStatusPending,
+				CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			})
+		}()
+		wg.Wait()
+
+		th, err := s.GetThread(ctx, "t-race-rel")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pending := models.RunStatusPending
+		runs, err := s.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: "t-race-rel", Status: &pending, Limit: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hasPending := false
+		for _, r := range runs {
+			if r.RunID == "r-newer" {
+				hasPending = true
+				break
+			}
+		}
+		if hasPending && th.Status == models.ThreadStatusIdle {
+			t.Fatal("thread idle while r-newer is still pending -- release clobbered a newer claim")
 		}
 	})
 }

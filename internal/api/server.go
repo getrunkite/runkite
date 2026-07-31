@@ -405,21 +405,18 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		metrics.RunsTotal.WithLabelValues(run.AgentID, string(status)).Inc()
 		metrics.RunDuration.WithLabelValues(run.AgentID).Observe(time.Since(run.CreatedAt).Seconds())
 		// Only release the thread if no OTHER in-flight run owns it.
-		// /wait may already have set idle and a subsequent create claimed
-		// busy for a newer run; a late ReportStatus for THIS (older) run
-		// must not clobber that -- otherwise two runs can execute on the
-		// same thread (the new one thinks it holds the claim while we
-		// silently flip the thread back to idle).
-		if !threadHasOtherActiveRun(ctx, s.store, run.ThreadID, runID) {
-			threadStatus := models.ThreadStatusIdle
-			if status == models.RunStatusInterrupted {
-				threadStatus = models.ThreadStatusInterrupted
-			}
-			if err := s.store.SetThreadStatus(ctx, run.ThreadID, threadStatus); err != nil {
-				slog.Error("status callback: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
-			}
-		} else {
-			slog.Info("status callback: skipping thread release; another run is in-flight",
+		// Atomic ReleaseThreadIfNoOtherActive closes the old check-then-act
+		// race where SearchRuns + SetThreadStatus could idle a thread a
+		// newer run had already claimed via TryClaimThread.
+		threadStatus := models.ThreadStatusIdle
+		if status == models.RunStatusInterrupted {
+			threadStatus = models.ThreadStatusInterrupted
+		}
+		released, err := s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, runID, threadStatus)
+		if err != nil {
+			slog.Error("status callback: failed to reset thread status", "thread_id", run.ThreadID, "error", err)
+		} else if !released {
+			slog.Info("status callback: skipping thread release; another run is in-flight or thread already released",
 				"thread_id", run.ThreadID, "completed_run_id", runID)
 		}
 
@@ -455,50 +452,6 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 
 		s.finishRun(runID, run.ThreadID, run.AgentID, status, errorMsg)
 	}
-}
-
-// threadHasOtherActiveRun reports whether threadID has a pending/running
-// run other than excludeRunID. Used by StatusCallback so a late
-// ReportStatus for a completed run cannot release a thread that a newer
-// run has already claimed (see /wait's early SetThreadStatus + fast
-// follow-up create).
-//
-// ponytail: this check-then-act (SearchRuns, then a separate
-// SetThreadStatus write) is not atomic -- structurally the same class of
-// race TryClaimThread's own doc comment calls out ("checking status
-// first and writing busy second... is a TOCTOU race, confirmed
-// empirically"), just with a far narrower window: a third create-run
-// request would need to land in the few-millisecond gap between this
-// query and that write. Closing it fully would need a single atomic
-// conditional store operation (UPDATE ... WHERE status='busy' AND NOT
-// EXISTS (other active run), mirroring TryClaimThread's own atomic
-// UPDATE) implemented across all four backends plus conformance
-// coverage -- real effort for a window this narrow doesn't currently
-// justify. Upgrade path if this ever needs closing: add that as a new
-// state.Store method instead of two separate calls.
-func threadHasOtherActiveRun(ctx context.Context, store state.Store, threadID, excludeRunID string) bool {
-	// Filter by status -- an unfiltered newest-N search hides older
-	// pending/running runs behind a flood of cache-hit success rows on a
-	// hot thread (real bug: StatusCallback then idled a busy thread).
-	for _, st := range []models.RunStatus{models.RunStatusPending, models.RunStatusRunning} {
-		st := st
-		runs, err := store.SearchRuns(ctx, &models.RunSearchRequest{
-			ThreadID: threadID,
-			Status:   &st,
-			Limit:    5,
-		})
-		if err != nil {
-			// Fail closed: skip the release rather than risk clobbering a
-			// newer claim when we can't tell.
-			return true
-		}
-		for _, r := range runs {
-			if r.RunID != excludeRunID {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // finishRun performs the once-per-run terminal bookkeeping shared by

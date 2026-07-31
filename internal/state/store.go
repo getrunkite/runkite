@@ -46,6 +46,16 @@ type Store interface {
 	// false, without error, if the thread was already busy.
 	TryClaimThread(ctx context.Context, threadID string) (bool, error)
 
+	// ReleaseThreadIfNoOtherActive atomically sets the thread's status
+	// (typically idle or interrupted) only when the thread is currently
+	// busy AND no pending/running run exists on it other than
+	// excludeRunID. Closes the check-then-act race where SearchRuns +
+	// SetThreadStatus could idle a thread a newer run had already
+	// claimed. Returns (true, nil) if the UPDATE applied; (false, nil)
+	// if skipped (another active run, or thread not busy). Does not
+	// bump Thread.Version (same as SetThreadStatus/TryClaimThread).
+	ReleaseThreadIfNoOtherActive(ctx context.Context, threadID, excludeRunID string, status models.ThreadStatus) (bool, error)
+
 	// --- Checkpoints ---
 	SaveCheckpoint(ctx context.Context, threadID string, state *models.ThreadState) error
 	GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error)

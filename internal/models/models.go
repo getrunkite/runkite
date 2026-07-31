@@ -102,8 +102,9 @@ type Thread struct {
 	// "someone else changed this since I last read it" round-trips this
 	// value back as ThreadPatch.IfMatchVersion. Starts at 1 on creation,
 	// +1 on every successful UpdateThread (metadata/values changes only).
-	// Status transitions via SetThreadStatus/TryClaimThread deliberately
-	// do NOT bump it -- this guards metadata/values edits specifically,
+	// Status transitions via SetThreadStatus/TryClaimThread/
+	// ReleaseThreadIfNoOtherActive deliberately do NOT bump it -- this
+	// guards metadata/values edits specifically,
 	// not "any row change" -- so a client polling status alone won't see
 	// spurious version bumps unrelated to what it's trying to protect.
 	// Not the same "version" concept as agent versioning (models.Agent)
