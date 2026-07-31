@@ -60,3 +60,31 @@ func TestInitRateLimiter_AutoMemoryWhenNoRedis(t *testing.T) {
 		t.Fatalf("BackendName = %q, want memory", l.BackendName())
 	}
 }
+
+func TestRateLimitBackendChoice(t *testing.T) {
+	cases := []struct {
+		name         string
+		backend      string
+		hasRedis     bool
+		wantRedis    bool
+		wantMissing  bool
+		wantUnknown  string
+	}{
+		{name: "explicit redis with client", backend: "redis", hasRedis: true, wantRedis: true},
+		{name: "explicit redis without client", backend: "redis", hasRedis: false, wantMissing: true},
+		{name: "explicit memory ignores redis", backend: "memory", hasRedis: true, wantRedis: false},
+		{name: "auto with redis", backend: "", hasRedis: true, wantRedis: true},
+		{name: "auto without redis", backend: "", hasRedis: false, wantRedis: false},
+		{name: "unknown falls back to memory", backend: "postgres", hasRedis: true, wantRedis: false, wantUnknown: "postgres"},
+		{name: "case insensitive redis", backend: "Redis", hasRedis: true, wantRedis: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			useRedis, missing, unknown := rateLimitBackendChoice(tc.backend, tc.hasRedis)
+			if useRedis != tc.wantRedis || missing != tc.wantMissing || unknown != tc.wantUnknown {
+				t.Fatalf("got (useRedis=%v missing=%v unknown=%q), want (%v %v %q)",
+					useRedis, missing, unknown, tc.wantRedis, tc.wantMissing, tc.wantUnknown)
+			}
+		})
+	}
+}

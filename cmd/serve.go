@@ -1183,27 +1183,41 @@ func initRateLimiter(configPath string, rdb *goredis.Client) *ratelimit.Limiter 
 		PerTenant: toRule(cfg.RateLimit.PerTenant),
 	}
 
-	useRedis := false
-	switch rlCfg.Backend {
-	case "redis":
-		if rdb == nil {
-			slog.Error("rate_limit.backend=redis requires REDIS_URL")
-			os.Exit(1)
-		}
-		useRedis = true
-	case "memory":
-		useRedis = false
-	case "":
-		useRedis = rdb != nil
-	default:
-		slog.Error("rate_limit: unknown backend, falling back to memory", "backend", rlCfg.Backend)
-		useRedis = false
+	useRedis, missingRedis, unknown := rateLimitBackendChoice(rlCfg.Backend, rdb != nil)
+	if missingRedis {
+		slog.Error("rate_limit.backend=redis requires REDIS_URL")
+		os.Exit(1)
+	}
+	if unknown != "" {
+		slog.Error("rate_limit: unknown backend, falling back to memory", "backend", unknown)
 	}
 
 	if useRedis {
 		return ratelimit.NewRedis(rlCfg, rdb)
 	}
 	return ratelimit.New(rlCfg)
+}
+
+// rateLimitBackendChoice is initRateLimiter's pure decision logic for
+// which store to use -- split out so the "backend=redis without REDIS_URL
+// must fail" path is unit-testable without os.Exit (same pattern as
+// admissionProblems). Returns useRedis, missingRedis (caller should exit),
+// and unknown (non-empty backend name when unrecognized).
+func rateLimitBackendChoice(backend string, hasRedis bool) (useRedis bool, missingRedis bool, unknown string) {
+	b := strings.ToLower(strings.TrimSpace(backend))
+	switch b {
+	case "redis":
+		if !hasRedis {
+			return false, true, ""
+		}
+		return true, false, ""
+	case "memory":
+		return false, false, ""
+	case "":
+		return hasRedis, false, ""
+	default:
+		return false, false, b
+	}
 }
 
 // defaultVectorDimensions is OpenAI's text-embedding-3-small/ada-002
