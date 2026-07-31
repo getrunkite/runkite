@@ -113,7 +113,13 @@ type Store interface {
 
 	// --- Webhook dead-letter (event hooks / webhook delivery) ---
 	SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error
+	// ListWebhookDeadLetters returns newest-first dead letters, scoped
+	// to the caller's tenant unless ctx is a system context
+	// (tenant.SystemContext), in which case it lists across every tenant.
 	ListWebhookDeadLetters(ctx context.Context, limit int) ([]*models.WebhookDeadLetter, error)
+	// PruneWebhookDeadLetters deletes dead letters whose failed_at is
+	// older than olderThan. Same tenant-scoping rule as ListWebhookDeadLetters.
+	PruneWebhookDeadLetters(ctx context.Context, olderThan time.Time) (int64, error)
 
 	// --- Run cache (LLM response caching) ---
 	// GetCachedRunResult returns ErrNotFound for a missing OR expired

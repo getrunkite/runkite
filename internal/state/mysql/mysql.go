@@ -290,6 +290,7 @@ func (s *Store) Init(ctx context.Context) error {
 
 		`CREATE TABLE IF NOT EXISTS webhook_dead_letters (
 			id         VARCHAR(255) NOT NULL,
+			tenant_id  VARCHAR(255) NOT NULL DEFAULT 'default',
 			url        TEXT NOT NULL,
 			event_type VARCHAR(255) NOT NULL,
 			run_id     VARCHAR(255) NOT NULL,
@@ -359,6 +360,9 @@ func (s *Store) Init(ctx context.Context) error {
 	// addColumnIfMissing's own doc comment for why MySQL needs a real
 	// existence check here instead of an IF NOT EXISTS clause.
 	if err := s.addColumnIfMissing(ctx, "threads", "version", "INT NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("mysql: init schema: %w", err)
+	}
+	if err := s.addColumnIfMissing(ctx, "webhook_dead_letters", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"); err != nil {
 		return fmt.Errorf("mysql: init schema: %w", err)
 	}
 	return nil
@@ -1629,15 +1633,11 @@ func (s *Store) PruneExpiredStoreItems(ctx context.Context) (int64, error) {
 // Webhook dead-letters
 // --------------------------------------------------------------------------
 
-// Not tenant-scoped -- webhook_dead_letters carries no tenant_id column,
-// same as every other backend's schema for this table. A dead letter is
-// an operator-facing "delivery failed, here's why" record, not
-// per-tenant application data.
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO webhook_dead_letters (id, url, event_type, run_id, payload, error, attempts, failed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, dl.ID, dl.URL, dl.EventType, dl.RunID, nullableJSON(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
+		INSERT INTO webhook_dead_letters (id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, dl.ID, tenant.FromContext(ctx), dl.URL, dl.EventType, dl.RunID, nullableJSON(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
 	return err
 }
 
@@ -1645,10 +1645,16 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, url, event_type, run_id, payload, error, attempts, failed_at
-		FROM webhook_dead_letters ORDER BY failed_at DESC LIMIT ?
-	`, limit)
+	query := `SELECT id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at
+		FROM webhook_dead_letters`
+	args := []interface{}{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY failed_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1658,7 +1664,7 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 	for rows.Next() {
 		var dl models.WebhookDeadLetter
 		var payloadBytes []byte
-		if err := rows.Scan(&dl.ID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
+		if err := rows.Scan(&dl.ID, &dl.TenantID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
 			return nil, err
 		}
 		if payloadBytes != nil {
@@ -1667,6 +1673,20 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 		out = append(out, &dl)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) PruneWebhookDeadLetters(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM webhook_dead_letters WHERE failed_at < ?`
+	args := []interface{}{olderThan.UTC()}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --------------------------------------------------------------------------

@@ -632,7 +632,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// to silently forget at a new call site.
 	s.hooks.Dispatch(hooks.Event{
 		Type: hooks.RunStart, RunID: runID, ThreadID: threadID, AgentID: req.AgentID,
-		Timestamp: now,
+		TenantID: tenant.FromContext(ctx), Timestamp: now,
 	})
 
 	// on_tool_call needs to observe the run's live event stream, which
@@ -640,7 +640,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// terminal outcome). Skipped entirely when nothing is listening for
 	// hooks, so this costs nothing in the common (hooks-disabled) case.
 	if s.hooks.HasSinks() {
-		go s.watchRunEventsForToolCallHook(runID, threadID, req.AgentID)
+		go s.watchRunEventsForToolCallHook(runID, threadID, req.AgentID, tenant.FromContext(ctx))
 	}
 
 	return run, assignment, nil
@@ -665,7 +665,11 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	// Close after any Subscribe that may have already happened (stream/wait
 	// paths subscribe before enqueue) so tailers and broker state do not leak.
 	_ = s.broker.Close(run.RunID)
-	s.finishRun(run.RunID, run.ThreadID, run.AgentID, models.RunStatusError, "enqueue failed")
+	tid := run.TenantID
+	if tid == "" {
+		tid = tenant.FromContext(ctx)
+	}
+	s.finishRun(run.RunID, run.ThreadID, run.AgentID, tid, models.RunStatusError, "enqueue failed")
 }
 
 // DispatchScheduledRun creates and enqueues a run with no HTTP request
@@ -696,7 +700,7 @@ func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID
 // calls itself -- staying framework-agnostic -- it just watches for a
 // RunEvent whose method is literally "tool_call", which a framework-aware
 // runner can choose to emit alongside its normal values/updates events.
-func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID string) {
+func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantID string) {
 	ch, err := s.broker.Subscribe(context.Background(), runID)
 	if err != nil {
 		return
@@ -719,7 +723,7 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID string) 
 			var data map[string]interface{}
 			json.Unmarshal(event.Data, &data)
 			s.hooks.Dispatch(hooks.Event{
-				Type: hooks.ToolCall, RunID: runID, ThreadID: threadID, AgentID: agentID,
+				Type: hooks.ToolCall, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
 				Data: data, Timestamp: time.Now().UTC(),
 			})
 		case <-timer.C:
@@ -786,9 +790,10 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	s.saveRunCheckpoint(ctx, threadID, cached.Output)
 	_, _ = s.store.UpdateThread(ctx, threadID, &models.ThreadPatch{Values: cached.Output})
 
-	s.hooks.Dispatch(hooks.Event{Type: hooks.RunStart, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, Timestamp: now})
+	tid := tenant.FromContext(ctx)
+	s.hooks.Dispatch(hooks.Event{Type: hooks.RunStart, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, TenantID: tid, Timestamp: now})
 	s.hooks.Dispatch(hooks.Event{
-		Type: hooks.RunComplete, RunID: runID, ThreadID: threadID, AgentID: req.AgentID,
+		Type: hooks.RunComplete, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, TenantID: tid,
 		Data: map[string]interface{}{"status": "success", "cache_hit": true}, Timestamp: time.Now().UTC(),
 	})
 
@@ -1788,7 +1793,7 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 	// own StatusCallback never arrives (runner already dead, etc). Safe if
 	// StatusCallback ALSO fires later: finishRun's LoadAndDelete guard
 	// means only whichever call arrives first does anything.
-	s.finishRun(runID, run.ThreadID, run.AgentID, models.RunStatusInterrupted, "")
+	s.finishRun(runID, run.ThreadID, run.AgentID, run.TenantID, models.RunStatusInterrupted, "")
 
 	// Give runner time to emit its own terminal event, then close broker.
 	closeBroker := func() {

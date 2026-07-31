@@ -98,7 +98,7 @@ func TestWebhookSink_RetriesThenDeadLettersOnPersistentFailure(t *testing.T) {
 	sink := NewWebhookSink(WebhookConfig{URL: srv.URL}, dl)
 
 	start := time.Now()
-	sink.Handle(context.Background(), Event{Type: RunComplete, RunID: "r3"})
+	sink.Handle(context.Background(), Event{Type: RunComplete, RunID: "r3", TenantID: "tenant-x"})
 	elapsed := time.Since(start)
 
 	if atomic.LoadInt32(&calls) != maxDeliveryAttempts {
@@ -115,6 +115,9 @@ func TestWebhookSink_RetriesThenDeadLettersOnPersistentFailure(t *testing.T) {
 	saved := dl.saved[0]
 	if saved.RunID != "r3" || saved.Attempts != maxDeliveryAttempts || saved.URL != srv.URL {
 		t.Errorf("dead letter fields wrong: %+v", saved)
+	}
+	if saved.TenantID != "tenant-x" {
+		t.Errorf("TenantID = %q, want tenant-x", saved.TenantID)
 	}
 }
 

@@ -165,6 +165,7 @@ func (s *Store) Init(ctx context.Context) error {
 		{"store_items", bson.D{{Key: "tenant_id", Value: 1}, {Key: "namespace", Value: 1}, {Key: "key", Value: 1}}, true},
 		{"webhook_dead_letters", bson.D{{Key: "id", Value: 1}}, true},
 		{"webhook_dead_letters", bson.D{{Key: "failed_at", Value: -1}}, false},
+		{"webhook_dead_letters", bson.D{{Key: "tenant_id", Value: 1}, {Key: "failed_at", Value: -1}}, false},
 		{"run_cache", bson.D{{Key: "tenant_id", Value: 1}, {Key: "cache_key", Value: 1}}, true},
 		{"run_cache", bson.D{{Key: "expires_at", Value: 1}}, false},
 		{"cron_schedules", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, true},
@@ -1604,6 +1605,7 @@ func sortStrings(s []string) {
 
 type webhookDeadLetterDoc struct {
 	ID        string      `bson:"id"`
+	TenantID  string      `bson:"tenant_id"`
 	URL       string      `bson:"url"`
 	EventType string      `bson:"event_type"`
 	RunID     string      `bson:"run_id"`
@@ -1615,7 +1617,7 @@ type webhookDeadLetterDoc struct {
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
 	_, err := s.col("webhook_dead_letters").InsertOne(ctx, webhookDeadLetterDoc{
-		ID: dl.ID, URL: dl.URL, EventType: dl.EventType, RunID: dl.RunID,
+		ID: dl.ID, TenantID: tenant.FromContext(ctx), URL: dl.URL, EventType: dl.EventType, RunID: dl.RunID,
 		Payload: jsonToBSON(dl.Payload), Error: dl.Error, Attempts: dl.Attempts, FailedAt: dl.FailedAt,
 	})
 	return err
@@ -1625,7 +1627,8 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 	if limit <= 0 {
 		limit = 50
 	}
-	cur, err := s.col("webhook_dead_letters").Find(ctx, bson.M{},
+	filter := tenantFilter(ctx, bson.M{})
+	cur, err := s.col("webhook_dead_letters").Find(ctx, filter,
 		options.Find().SetSort(bson.D{{Key: "failed_at", Value: -1}}).SetLimit(int64(limit)))
 	if err != nil {
 		return nil, err
@@ -1639,11 +1642,20 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 			return nil, err
 		}
 		out = append(out, &models.WebhookDeadLetter{
-			ID: doc.ID, URL: doc.URL, EventType: doc.EventType, RunID: doc.RunID,
+			ID: doc.ID, TenantID: doc.TenantID, URL: doc.URL, EventType: doc.EventType, RunID: doc.RunID,
 			Payload: bsonToJSON(doc.Payload), Error: doc.Error, Attempts: doc.Attempts, FailedAt: doc.FailedAt,
 		})
 	}
 	return out, cur.Err()
+}
+
+func (s *Store) PruneWebhookDeadLetters(ctx context.Context, olderThan time.Time) (int64, error) {
+	filter := tenantFilter(ctx, bson.M{"failed_at": bson.M{"$lt": olderThan.UTC()}})
+	res, err := s.col("webhook_dead_letters").DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // --------------------------------------------------------------------------

@@ -327,6 +327,7 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 
 	CREATE TABLE IF NOT EXISTS webhook_dead_letters (
 		id         TEXT PRIMARY KEY,
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
 		url        TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		run_id     TEXT NOT NULL,
@@ -335,6 +336,7 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 		attempts   INTEGER NOT NULL DEFAULT 0,
 		failed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	);
+	ALTER TABLE webhook_dead_letters ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE INDEX IF NOT EXISTS idx_dead_letters_failed_at ON webhook_dead_letters(failed_at DESC);
 
 	-- Composite PK so two tenants can cache the same logical input under
@@ -1911,9 +1913,9 @@ func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespa
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO webhook_dead_letters (id, url, event_type, run_id, payload, error, attempts, failed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, dl.ID, dl.URL, dl.EventType, dl.RunID, []byte(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
+		INSERT INTO webhook_dead_letters (id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, dl.ID, tenant.FromContext(ctx), dl.URL, dl.EventType, dl.RunID, []byte(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt)
 	return err
 }
 
@@ -1921,10 +1923,17 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, url, event_type, run_id, payload, error, attempts, failed_at
-		FROM webhook_dead_letters ORDER BY failed_at DESC LIMIT $1
-	`, limit)
+	query := `SELECT id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at
+		FROM webhook_dead_letters`
+	args := []interface{}{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = $1`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	argN := len(args) + 1
+	query += fmt.Sprintf(` ORDER BY failed_at DESC LIMIT $%d`, argN)
+	args = append(args, limit)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1934,13 +1943,27 @@ func (s *Store) ListWebhookDeadLetters(ctx context.Context, limit int) ([]*model
 	for rows.Next() {
 		var dl models.WebhookDeadLetter
 		var payloadBytes []byte
-		if err := rows.Scan(&dl.ID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
+		if err := rows.Scan(&dl.ID, &dl.TenantID, &dl.URL, &dl.EventType, &dl.RunID, &payloadBytes, &dl.Error, &dl.Attempts, &dl.FailedAt); err != nil {
 			return nil, err
 		}
 		dl.Payload = json.RawMessage(payloadBytes)
 		out = append(out, &dl)
 	}
 	return out, nil
+}
+
+func (s *Store) PruneWebhookDeadLetters(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM webhook_dead_letters WHERE failed_at < $1`
+	args := []interface{}{olderThan.UTC()}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = $2`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // --------------------------------------------------------------------------

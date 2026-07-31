@@ -68,7 +68,7 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 		})
 
 		_ = s.broker.Close(run.RunID)
-		s.finishRun(run.RunID, run.ThreadID, run.AgentID, models.RunStatusTimeout, errMsg)
+		s.finishRun(run.RunID, run.ThreadID, run.AgentID, run.TenantID, models.RunStatusTimeout, errMsg)
 
 		// Stop anything this run delegated to -- same cascade as an
 		// explicit client cancel, so a timed-out parent doesn't leave

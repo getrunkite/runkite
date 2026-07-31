@@ -166,6 +166,10 @@ type RetentionEntry struct {
 	// optional -- a deployment with no cron schedules configured never
 	// needs this.
 	CronClaimsMaxAge string `json:"cron_claims_max_age,omitempty"`
+	// WebhookDeadLettersMaxAge prunes webhook_dead_letters rows whose
+	// failed_at is older than this. Same Go duration string format as
+	// RunsMaxAge; independently optional.
+	WebhookDeadLettersMaxAge string `json:"webhook_dead_letters_max_age,omitempty"`
 	// IntervalMinutes controls how often the background prune loop
 	// runs. Defaults to 60 (once per hour) if any field above is set
 	// but this is omitted.

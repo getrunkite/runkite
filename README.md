@@ -1003,6 +1003,7 @@ Disabled by default -- runs and checkpoints persist forever until an explicit `D
     "runs_max_age": "720h",
     "checkpoints_keep_last": 50,
     "cron_claims_max_age": "168h",
+    "webhook_dead_letters_max_age": "168h",
     "interval_minutes": 60
   }
 }
@@ -1012,6 +1013,7 @@ A background loop (same pattern as the cron scheduler) runs immediately on start
 - `runs_max_age` -- deletes TERMINAL runs (`success`/`error`/`interrupted`/`timeout`; `pending`/`running` are never touched regardless of age) whose `updated_at` is older than this duration.
 - `checkpoints_keep_last` -- keeps only this many most recent checkpoints per thread in runkite's own `thread_checkpoints` table, deleting older ones. Never touches a thread's current-state snapshot (`threads.values_json`), only its history.
 - `cron_claims_max_age` -- deletes old rows from the cron scheduler's fire-dedup table.
+- `webhook_dead_letters_max_age` -- deletes webhook dead-letter rows whose `failed_at` is older than this duration.
 
 Each field is independently optional; setting none of them is the same as omitting `retention` entirely. Applies across every tenant (a deployment-wide policy, not something an individual caller sets).
 

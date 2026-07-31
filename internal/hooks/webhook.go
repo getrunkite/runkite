@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/sharanharsoor/runkite/internal/tenant"
 )
 
 // DeadLetterStore persists deliveries that failed every retry attempt,
@@ -79,8 +80,13 @@ func (w *WebhookSink) Handle(ctx context.Context, event Event) {
 	if w.deadLetter == nil {
 		return
 	}
+	tid := event.TenantID
+	if tid == "" {
+		tid = tenant.DefaultTenant
+	}
 	dl := &models.WebhookDeadLetter{
 		ID:        uuid.New().String(),
+		TenantID:  tid,
 		URL:       w.cfg.URL,
 		EventType: string(event.Type),
 		RunID:     event.RunID,
@@ -89,10 +95,12 @@ func (w *WebhookSink) Handle(ctx context.Context, event Event) {
 		Attempts:  maxDeliveryAttempts,
 		FailedAt:  time.Now().UTC(),
 	}
-	// Deliberately not ctx -- ctx may already be cancelled (e.g. request
-	// context from whatever triggered the event); persisting a dead letter
-	// should still happen.
-	if err := w.deadLetter.SaveWebhookDeadLetter(context.Background(), dl); err != nil {
+	// Deliberately not the caller's ctx -- it may already be cancelled
+	// (e.g. request context from whatever triggered the event); persisting
+	// a dead letter should still happen. Tenant is threaded via
+	// WithContext so Save sees the same tenant as the originating run.
+	saveCtx := tenant.WithContext(context.Background(), tid)
+	if err := w.deadLetter.SaveWebhookDeadLetter(saveCtx, dl); err != nil {
 		slog.Error("webhook: failed to persist dead letter", "url", w.cfg.URL, "error", err)
 	}
 }

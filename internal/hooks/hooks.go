@@ -31,6 +31,7 @@ type Event struct {
 	RunID     string                 `json:"run_id"`
 	ThreadID  string                 `json:"thread_id"`
 	AgentID   string                 `json:"agent_id"`
+	TenantID  string                 `json:"tenant_id,omitempty"`
 	Data      map[string]interface{} `json:"data,omitempty"`
 	Timestamp time.Time              `json:"timestamp"`
 }

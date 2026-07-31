@@ -41,6 +41,11 @@ export function Webhooks() {
 
   const columns: ColumnDef<AdminWebhookDeadLetter, unknown>[] = [
     {
+      accessorKey: "tenant_id",
+      header: "Tenant",
+      cell: ({ getValue }) => <span className="font-mono text-xs">{getValue() as string}</span>,
+    },
+    {
       accessorKey: "url",
       header: "URL",
       cell: ({ getValue }) => <span className="max-w-48 truncate font-mono text-xs">{getValue() as string}</span>,

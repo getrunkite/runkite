@@ -96,6 +96,7 @@ export interface AdminCronSchedule {
 
 export interface AdminWebhookDeadLetter {
   id: string;
+  tenant_id: string;
   url: string;
   event_type: string;
   run_id: string;

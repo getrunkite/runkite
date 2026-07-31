@@ -2031,6 +2031,70 @@ func runWebhookDeadLetterTests(t *testing.T, factory StoreFactory) {
 			t.Errorf("expected no dead letters, got %d", len(got))
 		}
 	})
+
+	t.Run("list_scoped_to_tenant_unless_system_context", func(t *testing.T) {
+		s := factory(t)
+		ctxA := tenant.WithContext(context.Background(), "tenant-a")
+		ctxB := tenant.WithContext(context.Background(), "tenant-b")
+		now := time.Now().UTC()
+		if err := s.SaveWebhookDeadLetter(ctxA, &models.WebhookDeadLetter{
+			ID: "dl-a", URL: "u", EventType: "error", RunID: "r-a",
+			Payload: json.RawMessage(`{}`), FailedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveWebhookDeadLetter(ctxB, &models.WebhookDeadLetter{
+			ID: "dl-b", URL: "u", EventType: "error", RunID: "r-b",
+			Payload: json.RawMessage(`{}`), FailedAt: now.Add(time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		gotA, err := s.ListWebhookDeadLetters(ctxA, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(gotA) != 1 || gotA[0].ID != "dl-a" || gotA[0].TenantID != "tenant-a" {
+			t.Fatalf("tenant-a list = %+v, want only dl-a", gotA)
+		}
+
+		sys, err := s.ListWebhookDeadLetters(tenant.SystemContext(context.Background()), 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(sys) < 2 {
+			t.Fatalf("system list got %d, want >= 2", len(sys))
+		}
+	})
+
+	t.Run("PruneWebhookDeadLetters_deletes_old_only", func(t *testing.T) {
+		s := factory(t)
+		ctx := tenant.WithContext(context.Background(), "tenant-prune-dl")
+		old := time.Now().UTC().Add(-48 * time.Hour)
+		fresh := time.Now().UTC()
+		s.SaveWebhookDeadLetter(ctx, &models.WebhookDeadLetter{
+			ID: "dl-old", URL: "u", EventType: "error", RunID: "r",
+			Payload: json.RawMessage(`{}`), FailedAt: old,
+		})
+		s.SaveWebhookDeadLetter(ctx, &models.WebhookDeadLetter{
+			ID: "dl-fresh", URL: "u", EventType: "error", RunID: "r",
+			Payload: json.RawMessage(`{}`), FailedAt: fresh,
+		})
+		n, err := s.PruneWebhookDeadLetters(tenant.SystemContext(ctx), time.Now().UTC().Add(-24*time.Hour))
+		if err != nil {
+			t.Fatalf("PruneWebhookDeadLetters: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("pruned %d, want 1", n)
+		}
+		got, err := s.ListWebhookDeadLetters(ctx, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0].ID != "dl-fresh" {
+			t.Fatalf("after prune: %+v", got)
+		}
+	})
 }
 
 // --------------------------------------------------------------------------

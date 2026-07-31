@@ -454,7 +454,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		// Close the event broker so SSE/wait consumers know the run is done
 		_ = s.broker.Close(runID)
 
-		s.finishRun(runID, run.ThreadID, run.AgentID, status, errorMsg)
+		s.finishRun(runID, run.ThreadID, run.AgentID, run.TenantID, status, errorMsg)
 	}
 }
 
@@ -469,7 +469,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // on_error/on_interrupt hook); the second arrival finds nothing and no-ops.
 // Without this, a cancelled-then-later-self-reported run would fire its
 // terminal webhook twice.
-func (s *Server) finishRun(runID, threadID, agentID string, status models.RunStatus, errorMsg string) {
+func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) {
 	v, ok := s.runSpans.LoadAndDelete(runID)
 	if !ok {
 		return
@@ -493,7 +493,7 @@ func (s *Server) finishRun(runID, threadID, agentID string, status models.RunSta
 		hookType = hooks.Interrupt
 	}
 	s.hooks.Dispatch(hooks.Event{
-		Type: hookType, RunID: runID, ThreadID: threadID, AgentID: agentID,
+		Type: hookType, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
 		Data:      map[string]interface{}{"status": string(status), "error": errorMsg},
 		Timestamp: time.Now().UTC(),
 	})

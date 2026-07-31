@@ -233,6 +233,7 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 
 	CREATE TABLE IF NOT EXISTS webhook_dead_letters (
 		id         TEXT PRIMARY KEY,
+		tenant_id  TEXT NOT NULL DEFAULT 'default',
 		url        TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		run_id     TEXT NOT NULL,
@@ -302,7 +303,7 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 	// regardless, so isolation holds either way; only the extra defense
 	// of a DB-level composite uniqueness constraint is unavailable on
 	// upgraded (as opposed to freshly created) SQLite files.
-	for _, table := range []string{"agents", "agent_schemas", "threads", "runs", "thread_checkpoints", "store_items", "run_cache", "cron_schedules", "cron_claims"} {
+	for _, table := range []string{"agents", "agent_schemas", "threads", "runs", "thread_checkpoints", "store_items", "run_cache", "cron_schedules", "cron_claims", "webhook_dead_letters"} {
 		if err := addColumnIfMissing(ctx, s.db, table, "tenant_id", "TEXT NOT NULL DEFAULT 'default'"); err != nil {
 			return err
 		}
@@ -1876,9 +1877,9 @@ func (s *SQLiteStore) ListNamespaces(ctx context.Context, req *models.StoreListN
 
 func (s *SQLiteStore) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO webhook_dead_letters (id, url, event_type, run_id, payload, error, attempts, failed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, dl.ID, dl.URL, dl.EventType, dl.RunID, string(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt.UTC().Format(time.RFC3339))
+		INSERT INTO webhook_dead_letters (id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, dl.ID, tenant.FromContext(ctx), dl.URL, dl.EventType, dl.RunID, string(dl.Payload), dl.Error, dl.Attempts, dl.FailedAt.UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -1886,10 +1887,16 @@ func (s *SQLiteStore) ListWebhookDeadLetters(ctx context.Context, limit int) ([]
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, url, event_type, run_id, payload, error, attempts, failed_at
-		FROM webhook_dead_letters ORDER BY failed_at DESC LIMIT ?
-	`, limit)
+	query := `SELECT id, tenant_id, url, event_type, run_id, payload, error, attempts, failed_at
+		FROM webhook_dead_letters`
+	args := []interface{}{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY failed_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1899,7 +1906,7 @@ func (s *SQLiteStore) ListWebhookDeadLetters(ctx context.Context, limit int) ([]
 	for rows.Next() {
 		var dl models.WebhookDeadLetter
 		var payloadStr, failedAtStr string
-		if err := rows.Scan(&dl.ID, &dl.URL, &dl.EventType, &dl.RunID, &payloadStr, &dl.Error, &dl.Attempts, &failedAtStr); err != nil {
+		if err := rows.Scan(&dl.ID, &dl.TenantID, &dl.URL, &dl.EventType, &dl.RunID, &payloadStr, &dl.Error, &dl.Attempts, &failedAtStr); err != nil {
 			return nil, err
 		}
 		dl.Payload = json.RawMessage(payloadStr)
@@ -1907,6 +1914,20 @@ func (s *SQLiteStore) ListWebhookDeadLetters(ctx context.Context, limit int) ([]
 		out = append(out, &dl)
 	}
 	return out, nil
+}
+
+func (s *SQLiteStore) PruneWebhookDeadLetters(ctx context.Context, olderThan time.Time) (int64, error) {
+	query := `DELETE FROM webhook_dead_letters WHERE failed_at < ?`
+	args := []interface{}{olderThan.UTC().Format(time.RFC3339)}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --------------------------------------------------------------------------

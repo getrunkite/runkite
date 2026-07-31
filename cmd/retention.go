@@ -11,23 +11,24 @@ import (
 )
 
 // retentionConfig is the resolved, ready-to-use form of config.RetentionEntry
-// -- durations already parsed, all three prune dimensions resolved to
+// -- durations already parsed, all prune dimensions resolved to
 // "on or off" so runRetentionLoop never re-parses config.
 type retentionConfig struct {
-	runsMaxAge          time.Duration // zero means run pruning is off
-	checkpointsKeepLast int           // <= 0 means checkpoint pruning is off
-	cronClaimsMaxAge    time.Duration // zero means cron-claim pruning is off
-	interval            time.Duration
+	runsMaxAge               time.Duration // zero means run pruning is off
+	checkpointsKeepLast      int           // <= 0 means checkpoint pruning is off
+	cronClaimsMaxAge         time.Duration // zero means cron-claim pruning is off
+	webhookDeadLettersMaxAge time.Duration // zero means webhook DLQ pruning is off
+	interval                 time.Duration
 }
 
 // initRetentionConfig reads the "retention" section from the first
 // discovered langgraph.json (same control-plane-wide/first-file convention
 // as initAuthProvider/initRateLimiter/initHooks/initCorsConfig). Returns
-// nil when unconfigured, or configured but all three dimensions (runs,
-// checkpoints, cron claims) are off -- the caller then skips starting the
-// background loop entirely, matching this project's
-// disabled-by-default-until-configured convention for every platform
-// extension.
+// nil when unconfigured, or configured but all prune dimensions (runs,
+// checkpoints, cron claims, webhook dead letters) are off -- the caller
+// then skips starting the background loop entirely, matching this
+// project's disabled-by-default-until-configured convention for every
+// platform extension.
 func initRetentionConfig(configPath string) *retentionConfig {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
@@ -55,7 +56,15 @@ func initRetentionConfig(configPath string) *retentionConfig {
 			rc.cronClaimsMaxAge = d
 		}
 	}
-	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 {
+	if cfg.Retention.WebhookDeadLettersMaxAge != "" {
+		d, parseErr := time.ParseDuration(cfg.Retention.WebhookDeadLettersMaxAge)
+		if parseErr != nil {
+			slog.Error("retention: invalid webhook_dead_letters_max_age, DLQ pruning disabled", "value", cfg.Retention.WebhookDeadLettersMaxAge, "error", parseErr)
+		} else {
+			rc.webhookDeadLettersMaxAge = d
+		}
+	}
+	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 && rc.webhookDeadLettersMaxAge <= 0 {
 		return nil
 	}
 
@@ -122,6 +131,15 @@ func runRetentionTick(ctx context.Context, store state.Store, rc *retentionConfi
 			slog.Error("retention: PruneCronClaims failed", "error", err)
 		} else if n > 0 {
 			slog.Info("retention: pruned old cron claims", "count", n, "older_than", cutoff)
+		}
+	}
+	if rc.webhookDeadLettersMaxAge > 0 {
+		cutoff := time.Now().UTC().Add(-rc.webhookDeadLettersMaxAge)
+		n, err := store.PruneWebhookDeadLetters(sysCtx, cutoff)
+		if err != nil {
+			slog.Error("retention: PruneWebhookDeadLetters failed", "error", err)
+		} else if n > 0 {
+			slog.Info("retention: pruned old webhook dead letters", "count", n, "older_than", cutoff)
 		}
 	}
 }

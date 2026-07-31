@@ -457,9 +457,12 @@ type CronSchedule struct {
 // WebhookDeadLetter records a webhook delivery that failed all retry
 // attempts, part of webhook delivery's retry-and-dead-letter handling.
 // Persisted so a failed delivery is inspectable/replayable after the fact,
-// not just logged and lost.
+// not just logged and lost. TenantID scopes the row so a tenant-scoped
+// list cannot see another tenant's payloads; admin (system context) still
+// lists across every tenant.
 type WebhookDeadLetter struct {
 	ID        string          `json:"id"`
+	TenantID  string          `json:"tenant_id"`
 	URL       string          `json:"url"`
 	EventType string          `json:"event_type"`
 	RunID     string          `json:"run_id"`
