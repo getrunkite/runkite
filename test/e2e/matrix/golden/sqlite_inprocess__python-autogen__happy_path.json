@@ -1,0 +1,9 @@
+{
+  "event_types": [
+    "metadata",
+    "lifecycle",
+    "values",
+    "end"
+  ],
+  "final_status": "success"
+}

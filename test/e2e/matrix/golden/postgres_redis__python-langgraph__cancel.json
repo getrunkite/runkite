@@ -1,0 +1,7 @@
+{
+  "event_types": [
+    "cancel_requested",
+    "recovery_run_succeeded"
+  ],
+  "final_status": "interrupted"
+}

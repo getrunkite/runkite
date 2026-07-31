@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
 
 # --- Build ---
 build:
@@ -143,6 +143,37 @@ test-e2e:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
 		go test ./test/e2e/... -v -timeout 120s -count=1
+
+# Cross-framework x backend test matrix (plans/pending_items.md item 6):
+# every framework runner (python-langgraph, typescript-langgraphjs,
+# python-langchain/-crewai/-llamaindex/-autogen) against every backend
+# combination (SQLite+in-process, Postgres+Redis, MySQL+in-process,
+# Mongo+Redis), each running the scenarios that framework's example
+# agents support, diffed against golden fixtures in test/e2e/matrix/golden/.
+# ~32 real subprocess-pair start/stop cycles -- deliberately its own
+# target, not folded into test-e2e's 120s budget, since this is meant
+# for nightly/on-demand runs (see test/e2e/matrix's package doc), not
+# every PR. Requires infra-up (SQLite+in-process cells run regardless).
+test-matrix:
+	RUNKITE_RUN_MATRIX=1 \
+	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
+	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
+	REDIS_URL="redis://localhost:6380" \
+	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
+		go test ./test/e2e/matrix/... -v -timeout 1200s -count=1
+
+# Re-records every golden fixture in test/e2e/matrix/golden/ instead of
+# diffing against them -- run after intentionally changing expected
+# behavior, then review the resulting git diff like any other code
+# change before committing the new fixtures.
+test-matrix-record:
+	RUNKITE_RUN_MATRIX=1 \
+	RUNKITE_GOLDEN_RECORD=1 \
+	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
+	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
+	REDIS_URL="redis://localhost:6380" \
+	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
+		go test ./test/e2e/matrix/... -v -timeout 1200s -count=1
 
 # Python runner unit tests (namespace encoding / factory-graph
 # classification / etc. always; dual-mode interop tests skip unless
