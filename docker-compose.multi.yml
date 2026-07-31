@@ -101,6 +101,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Longer than Compose's own 10s default: the server's graceful
+    # shutdown drains in-flight HTTP/SSE and gRPC work with its own 15s
+    # budget (see cmd/serve.go) before exiting on its own; without this
+    # override Compose would SIGKILL the process mid-drain well before
+    # that budget is ever used. Matters more here than in
+    # docker-compose.yml: `docker compose stop`/`down` on this file
+    # stops all 3 replicas together, so an undersized grace period would
+    # cut every in-flight request across the whole cluster short at once.
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
       interval: 5s

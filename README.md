@@ -965,6 +965,14 @@ GET    /metrics                    Prometheus metrics (outside auth)
 
 Metrics exposed: `runkite_http_requests_total`, `runkite_http_request_duration_seconds`, `runkite_runs_total`, `runkite_run_duration_seconds`, `runkite_active_runs`, `runkite_queue_depth`, `runkite_active_sse_connections`. HTTP path labels are normalized (UUIDs and resource IDs become `{id}`) to keep cardinality bounded.
 
+### Graceful Shutdown
+
+On `SIGTERM`/`SIGINT`, the control plane stops accepting new work and drains what's already in flight instead of exiting immediately: background loops (queue-depth poller, stale-job reclaimer, cron scheduler, retention, store TTL sweep) stop right away since none of them serve a live client request, then the HTTP server stops accepting new connections and lets in-flight requests -- including long-lived SSE run/thread streams and `/runs/wait` -- finish on their own, then the gRPC bridge does the same for in-flight runner RPCs, and finally telemetry is flushed and the store is closed. Live-verified: a `/runs/wait` request that started 2s before `SIGTERM`, for an agent that takes ~6s total, still completes with `"status": "success"` after the signal, rather than being cut off (`test/e2e/graceful_shutdown_test.go`).
+
+The whole sequence has a 15s budget. A runner's `WatchCancels` stream is intentionally long-lived (open for the runner's whole lifetime, not per-run) and will not close on its own just because the control plane is shutting down, so the gRPC side of the drain races `GracefulStop()` against that same 15s budget and force-stops any RPCs still open past it -- in practice this means a shutdown with a connected runner reliably takes close to the full 15s, not near-zero, and that's expected rather than a bug. This is why `docker-compose.yml` and `docker-compose.multi.yml` both set `stop_grace_period: 30s` on the control plane service(s): Compose's own default (10s) would send `SIGKILL` before this budget is ever used. A Kubernetes deployment should set `terminationGracePeriodSeconds` to at least 20-30s for the same reason (its own default of 30s already covers this).
+
+`ReadHeaderTimeout` (10s) and `IdleTimeout` (120s) are set on the HTTP server to close slow-header (Slowloris-style) connections and stale keep-alives; `ReadTimeout`/`WriteTimeout` are deliberately left unset, since either would silently kill a legitimately long-lived SSE/WebSocket/long-poll connection well before this project's own use cases (a multi-minute agent run streamed live) are done with it.
+
 ### Logging
 
 `LOG_LEVEL` (`debug`|`info`|`warn`|`error`, default `info`) and `LOG_FORMAT` (`text`|`json`, default `text`) are the same two env vars, with the same values, on the control plane binary and both runners -- set them once in your process manager / container env and every component picks them up consistently.

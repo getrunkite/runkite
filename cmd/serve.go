@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -104,7 +105,18 @@ type serverOpts struct {
 func startServer(opts serverOpts) {
 	setupLogging()
 
-	ctx := context.Background()
+	// Cancelable, not context.Background(): every background loop below
+	// (queue-depth poller, stale-job reclaimer, cron scheduler, retention,
+	// store TTL sweep) already selects on ctx.Done() to know when to stop
+	// -- confirmed live before this fix that none of them ever actually
+	// saw that signal, because nothing ever cancelled this context; they
+	// only ever stopped via the process dying under them at os.Exit.
+	// cancel() is called explicitly in the shutdown sequence at the
+	// bottom of this function, not deferred -- this function used to
+	// never return normally at all (a bare blocking ListenAndServe call,
+	// or os.Exit from the old signal handler), so a defer here would
+	// never have run either.
+	ctx, cancel := context.WithCancel(context.Background())
 
 	// OTel observability fan-out. No-op, zero overhead, and no
 	// background connection attempts unless
@@ -114,34 +126,11 @@ func startServer(opts serverOpts) {
 		slog.Error("failed to initialize tracing", "error", err)
 		os.Exit(1)
 	}
-	// `defer shutdownTracing(ctx)` alone is not enough: http.ListenAndServe
-	// below blocks forever and this function only returns on error (which
-	// itself calls os.Exit -- skipping every defer). In practice this
-	// process is stopped via SIGTERM/SIGINT (Ctrl+C, `docker stop`, k8s pod
-	// termination), which by default kills the process without running any
-	// deferred functions at all. Without an explicit signal handler, the
-	// OTel batch span processor's buffered-but-not-yet-exported spans
-	// (default 5s export interval) are silently dropped on every single
-	// restart -- confirmed empirically: spans exported fine when the
-	// interval happened to elapse before a manual kill, and vanished
-	// when it didn't. Shutdown() forces a final flush before exiting.
 	// --- State store ---
 	store := initStore(ctx)
-	defer store.Close()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		slog.Info("shutting down, flushing telemetry and closing store")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdownTracing(shutdownCtx); err != nil {
-			slog.Error("tracing shutdown error", "error", err)
-		}
-		_ = store.Close()
-		os.Exit(0)
-	}()
 
 	// --- Transport layer ---
 	queue, broker, cancelBus := initTransport(ctx)
@@ -295,11 +284,11 @@ func startServer(opts serverOpts) {
 	)
 	pb.RegisterRunnerServiceServer(grpcServer, bridgeServer)
 
+	grpcErrCh := make(chan error, 1)
 	go func() {
 		slog.Info("gRPC bridge listening", "port", opts.grpcPort)
-		if err := grpcServer.Serve(lis); err != nil {
-			slog.Error("gRPC server failed", "error", err)
-			os.Exit(1)
+		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			grpcErrCh <- err
 		}
 	}()
 
@@ -387,10 +376,100 @@ func startServer(opts serverOpts) {
 	fmt.Printf("  Health:      http://localhost:%s/health\n", opts.httpPort)
 	fmt.Printf("  Metrics:     http://localhost:%s/metrics\n\n", opts.httpPort)
 
-	if err := http.ListenAndServe(":"+opts.httpPort, handler); err != nil {
-		slog.Error("HTTP server failed", "error", err)
-		os.Exit(1)
+	// ReadHeaderTimeout (not the full ReadTimeout/WriteTimeout) is the
+	// one server-level timeout safe to set unconditionally here:
+	// ReadTimeout bounds an entire request's read (including the body),
+	// and WriteTimeout bounds the entire response write -- both would
+	// silently kill this project's own legitimately long-lived
+	// connections (SSE run/thread streams that stay open for a whole
+	// run's duration, WebSocket, GetJob-style long-polls proxied through
+	// custom routes) if set to anything short enough to matter as a
+	// hardening measure. ReadHeaderTimeout only bounds the time to read
+	// the request line + headers, before any of that starts -- it closes
+	// the classic Slowloris-style slow-header attack without touching
+	// any of those long-lived cases at all. IdleTimeout bounds how long
+	// a kept-alive connection can sit between requests, which similarly
+	// never applies to an actively-streaming one.
+	srv := &http.Server{
+		Addr:              ":" + opts.httpPort,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
+
+	httpErrCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			httpErrCh <- err
+		}
+	}()
+
+	select {
+	case sig := <-sigCh:
+		slog.Info("shutdown signal received, draining", "signal", sig.String())
+	case err := <-httpErrCh:
+		slog.Error("HTTP server failed", "error", err)
+	case err := <-grpcErrCh:
+		slog.Error("gRPC server failed", "error", err)
+	}
+
+	// Stop background loops (queue-depth poller, stale-job reclaimer,
+	// cron scheduler, retention, store TTL sweep) immediately -- none of
+	// them serve a live client request, so there's nothing to drain by
+	// letting them keep ticking during shutdown.
+	cancel()
+
+	// 15s total, shared across the HTTP drain below AND the gRPC drain
+	// after it -- deliberately under Kubernetes's 30s default
+	// terminationGracePeriodSeconds (SIGKILL follows after that), but
+	// still longer than Docker Compose's own 10s default
+	// stop_grace_period, which is why docker-compose.yml and
+	// docker-compose.multi.yml both set stop_grace_period explicitly on
+	// this service -- without that override Compose would SIGKILL
+	// mid-drain before this budget is ever used.
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelShutdown()
+
+	// HTTP first: stops accepting new connections and waits for
+	// in-flight ones (including long-lived SSE/WebSocket) to finish on
+	// their own, up to shutdownCtx's own deadline -- a real, deliberate
+	// trade-off for a client mid-stream when that deadline is hit: the
+	// connection is forcibly closed rather than the process hanging
+	// indefinitely waiting for it (e.g. a truly stuck client, or a run
+	// that legitimately takes longer than any reasonable shutdown grace
+	// period). Before gRPC: a runner's in-flight GetJob long-poll or
+	// StreamEvents call doesn't depend on the HTTP server at all, so
+	// ordering between the two here doesn't matter for correctness, only
+	// for which one's own drain gets more of the shared deadline first.
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("HTTP server shutdown did not complete cleanly", "error", err)
+	}
+
+	// GracefulStop blocks until every in-flight RPC finishes, with NO
+	// timeout of its own -- a runner's own GetJob long-poll (up to ~30s
+	// by design, see the keepalive comment above) or a StreamEvents call
+	// for a long-running agent could otherwise hold this open far longer
+	// than shutdownCtx's own budget. Racing it against that same
+	// deadline and falling back to Stop() (forceful: aborts every
+	// in-flight RPC immediately) is the standard grpc-go pattern for a
+	// bounded graceful shutdown.
+	grpcStopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(grpcStopped)
+	}()
+	select {
+	case <-grpcStopped:
+	case <-shutdownCtx.Done():
+		slog.Warn("gRPC graceful stop did not complete in time, forcing")
+		grpcServer.Stop()
+	}
+
+	if err := shutdownTracing(shutdownCtx); err != nil {
+		slog.Error("tracing shutdown error", "error", err)
+	}
+	_ = store.Close()
+	slog.Info("shutdown complete")
 }
 
 // pollQueueDepth periodically samples the job queue length into the
