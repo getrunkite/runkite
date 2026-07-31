@@ -1,0 +1,17 @@
+Runkite control plane installed as {{ include "runkite.fullname" . }}.
+
+1. Confirm pods are ready:
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Port-forward the API (ClusterIP Service by default):
+   kubectl port-forward svc/{{ include "runkite.fullname" . }} {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }}
+   curl -sS http://127.0.0.1:{{ .Values.service.httpPort }}/readyz
+
+3. Runners (if enabled) reach gRPC at:
+   {{ include "runkite.fullname" . }}:{{ .Values.service.grpcPort }}
+
+{{- if .Values.ingressMcp.enabled }}
+
+MCP Ingress is enabled with upstream-hash-by=$remote_addr. Clients must
+hit the same host for the full session lifetime (see chart README).
+{{- end }}

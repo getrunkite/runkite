@@ -825,6 +825,10 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 Full-stack compose uses Postgres/Redis on 5432/6379; stop local services on those ports first, or override via a compose override file.
 
+### Kubernetes (Helm)
+
+`deploy/helm/runkite` is a minimal chart for the same multi-replica shape as `docker-compose.multi.yml`: control-plane Deployment (N replicas, `/livez` + `/readyz` probes, PDB), Service (HTTP + gRPC), ConfigMap/Secret, optional Python runner, and an optional `/mcp` Ingress with client-IP consistent hashing. Postgres and Redis are **not** bundled — point `secrets.postgresDsn` / `secrets.redisUrl` (or `secrets.existingSecret`) at infrastructure you already run. See [`deploy/helm/runkite/README.md`](deploy/helm/runkite/README.md).
+
 ### Test infrastructure
 
 `docker-compose.test.yml` starts ephemeral, tmpfs-backed Postgres + MySQL + Redis + MongoDB + Qdrant + Weaviate + [Pinecone Local](https://docs.pinecone.io/guides/operations/local-development) + NATS + Kafka for running the conformance test suite (see Development below), on non-standard ports (5433/3307/6380/27018/6333/8080/5080-5200) specifically to avoid colliding with the full-stack compose above or any local services -- NATS and Kafka are the exceptions, left on their standard ports (4222 / 9092) since nothing else in this project's compose files uses them:

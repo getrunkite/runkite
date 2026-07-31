@@ -1,5 +1,5 @@
-# Go
-runkite
+# Go (root binary only -- not deploy/helm/runkite or other paths)
+/runkite
 *.db
 *.db-shm
 *.db-wal

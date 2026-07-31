@@ -1,0 +1,127 @@
+# Minimal production-shaped defaults. Postgres + Redis are NOT bundled --
+# point postgresDsn / redisUrl (or an existingSecret) at infrastructure you
+# already run. Multi-replica requires Redis (shared queue/broker/cancel/
+# rate-limits); in-process transport is single-replica only.
+
+replicaCount: 2
+
+image:
+  # Build from the repo root Dockerfile, or push to your registry and set
+  # repository/tag. No public image is published by this project yet.
+  repository: runkite
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false
+
+# Longer than the control plane's own 15s drain budget so kubelet does
+# not SIGKILL mid-graceful-shutdown (see docker-compose.multi.yml).
+terminationGracePeriodSeconds: 30
+
+service:
+  type: ClusterIP
+  httpPort: 2026
+  grpcPort: 50051
+
+# Optional HTTP Ingress. /mcp needs sticky routing (session state is
+# in-process) -- use a dedicated Ingress with upstream-hash-by=$remote_addr
+# (ingress-nginx) rather than round-robin. See ingressMcp below.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: runkite.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Separate Ingress for /mcp with client-IP consistent hashing. Disable
+# when your external LB already sticks /mcp the same way nginx-multi.conf
+# does (hash $remote_addr consistent).
+ingressMcp:
+  enabled: false
+  className: ""
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+  hosts:
+    - host: runkite.local
+      paths:
+        - path: /mcp
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  # Keep at least one control-plane pod during voluntary disruptions when
+  # replicaCount >= 2. Ignored when replicaCount is 1.
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Non-secret control-plane settings (ConfigMap).
+config:
+  httpPort: "2026"
+  grpcPort: "50051"
+  # Path inside the image. The stock Dockerfile copies examples/ to /app/examples.
+  langgraphConfig: /app/examples/all_agents/langgraph.json
+  # Extra plain env vars (string map). Prefer secrets for credentials.
+  extraEnv: {}
+
+# Secret material. Prefer existingSecret in real deployments; the inline
+# fields exist so `helm install --set` smoke tests stay one-shot.
+secrets:
+  # Name of an existing Secret whose keys include POSTGRES_DSN, REDIS_URL,
+  # and RUNNER_TOKEN_PYTHON_LANGGRAPH. When set, the chart does not create
+  # its own Secret.
+  existingSecret: ""
+  postgresDsn: ""
+  redisUrl: ""
+  # Shared with runners as RUNNER_TOKEN; control plane expects
+  # RUNNER_TOKEN_PYTHON_LANGGRAPH (same value).
+  runnerToken: ""
+
+# Optional Python runner Deployment (Dockerfile.runner). Talks to the
+# control-plane Service over cluster DNS for gRPC + HTTP.
+runner:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: runkite-runner
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources: {}
+  # Extra env for the runner pod (e.g. OPENAI_API_KEY via valueFrom).
+  extraEnv: {}
