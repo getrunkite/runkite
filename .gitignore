@@ -35,3 +35,8 @@ htmlcov/
 # Internal design diaries / dogfooding notes -- not for the public tree.
 # Contains product-migration narrative that must not ship.
 plans/
+
+# External audit reports: itemized lists of exactly what's insecure/
+# broken right now, useful while triaging but a real disclosure-timing
+# risk to publish before the findings are actually fixed.
+CODE_REVIEW_ANALYSIS*.md
