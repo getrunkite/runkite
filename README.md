@@ -165,6 +165,8 @@ Flags for `dev` / `serve`:
 
 `webhooks` is opt-in and control-plane-wide, same first-file convention as `auth`/`rate_limit`. Each entry gets an HTTP POST for every event type it subscribes to (omit `events` to subscribe to all): `run_start`, `run_complete`, `tool_call`, `error`, `interrupt`. The body is the event JSON (`type`, `run_id`, `thread_id`, `agent_id`, `data`, `timestamp`); if `secret` is set, requests carry `X-Runkite-Signature: sha256=<hmac>` over the raw body for verification. Delivery retries up to 3 times with exponential backoff (500ms, 1s); a delivery that still fails is persisted as a dead letter, inspectable at `GET /internal/webhooks/dead-letters`. `tool_call` only fires if a runner emits a RunEvent with `method: "tool_call"` -- the control plane doesn't parse LangGraph/LangChain message shapes to detect tool calls itself (staying framework-agnostic); this is a hook a framework-aware runner can choose to populate. Firing exactly once per run for `run_complete`/`error`/`interrupt` is guaranteed even when both a cancel and the runner's own status report race for the same run.
 
+Dispatch itself runs on a small bounded worker pool (20 workers, a queue depth of 500), not one goroutine per sink per event -- a burst of run completions, each fanning out to every configured sink, each of which can itself hold a delivery attempt open for up to ~30s while retrying an unreachable endpoint, would otherwise grow goroutines/sockets without limit. Still fully non-blocking for the caller either way: if the pool and its queue are both saturated, the event is dropped (logged, and counted in `runkite_webhook_queue_dropped_total`) rather than delaying run execution or growing the queue without bound. One real, documented trade-off from sharing a pool across every sink: a genuinely slow or hung endpoint can occupy enough workers to delay (not silently lose -- the retry/dead-letter path is unaffected once a job is actually picked up) a different, healthy sink's delivery. A well-sized pool makes this rare, not impossible.
+
 Event hooks are also usable directly from Go code by embedding runkite as a library: any type implementing `hooks.Sink` can be registered on the `*hooks.Dispatcher` via `apiServer.SetHookDispatcher`, independent of the webhook config above.
 
 `rate_limit` is opt-in and control-plane-wide (read from the first discovered `langgraph.json`, same convention as `auth`); any subset of `global`/`per_user`/`per_agent`/`per_tenant` may be set, unconfigured dimensions are unlimited. Each is a token bucket: `rps` is the sustained rate, `burst` is how many requests can arrive back-to-back before limiting kicks in. `global`/`per_user`/`per_tenant` are enforced at the HTTP layer (per-user keyed on the authenticated identity, per-tenant keyed on `tenant_id` -- see Multi-tenancy -- both unlimited when no auth provider is configured, since there's no identity/tenant to key on); `per_agent` is enforced in the shared run-creation path, so it applies uniformly across REST, WebSocket, and streaming-command run starts. Exceeding a limit returns `429` with a `Retry-After` header.
@@ -221,10 +223,13 @@ Example (webhook sidecar):
     "type": "webhook",
     "url": "http://localhost:8090/auth",
     "timeout_ms": 5000,
-    "cache_ttl_seconds": 300
+    "cache_ttl_seconds": 300,
+    "cache_max_entries": 10000
   }
 }
 ```
+
+`cache_ttl_seconds > 0` caches a result per (credential, method, path) combination -- for a REST API whose paths embed resource IDs (`/threads/{id}/runs/{id}`), that's effectively one entry per distinct resource a caller has ever touched, not one per caller, so the cache is a size-bounded, TTL-evicting LRU rather than a plain map (`cache_max_entries`, default 10000) -- otherwise it would grow for the lifetime of a long-running control plane under completely normal traffic, not just under abuse.
 
 ## Multi-tenancy
 

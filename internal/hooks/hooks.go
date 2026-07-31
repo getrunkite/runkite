@@ -7,8 +7,11 @@ package hooks
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/sharanharsoor/runkite/internal/metrics"
 )
 
 // EventType identifies which lifecycle moment fired a hook.
@@ -44,20 +47,99 @@ type registeredSink struct {
 	events map[EventType]bool // nil/empty means "all event types"
 }
 
+type dispatchJob struct {
+	sink  Sink
+	event Event
+}
+
+// Default pool sizing: webhook events fire only on lifecycle
+// transitions (a handful per run at most: run_start, run_complete,
+// maybe tool_call/interrupt/error), not per-request, so this
+// comfortably covers realistic sustained load on a single replica while
+// still bounding worst-case goroutine/socket usage to a known ceiling --
+// see Dispatcher's own doc comment for what unbounded looked like
+// before this existed.
+const (
+	defaultWebhookWorkers   = 20
+	defaultWebhookQueueSize = 500
+)
+
 // Dispatcher fans an Event out to every registered Sink whose subscription
-// matches the event's type. Dispatch is fire-and-forget: each sink runs on
-// its own goroutine so a slow or failing sink (e.g. an unreachable webhook
-// URL, retried with backoff) never blocks run execution or the caller.
+// matches the event's type, via a small bounded worker pool rather than
+// one goroutine per sink per event. The pool exists specifically to
+// bound worst-case resource use: a burst of run completions (e.g. many
+// concurrent runs finishing around the same time), each fanning out to
+// N configured webhook sinks, each of which can itself hold a goroutine
+// open for up to ~30s while retrying with backoff against an unreachable
+// endpoint (WebhookSink.Handle) -- unbounded goroutine-per-dispatch grows
+// without limit under that combination, which is a real resource-
+// exhaustion risk for a production deployment, not a purely theoretical
+// one.
+//
+// Dispatch itself stays non-blocking either way (preserving the
+// original "hooks never delay run execution" contract): if every worker
+// is busy AND the queue is already full, the job is dropped -- logged
+// and counted in runkite_webhook_queue_dropped_total -- rather than
+// blocking the caller (which would mean a webhook sink slowness starts
+// delaying run completion itself) or growing the queue without bound
+// (reintroducing the exact resource-exhaustion risk this exists to
+// close). This does trade one new, narrower risk for the old unbounded
+// one: because delivery attempts for every sink share this one pool, a
+// genuinely slow or hung endpoint can occupy enough workers to delay
+// (not silently lose -- WebhookSink's own retry+dead-letter path is
+// unaffected once a job IS picked up) another, healthy sink's delivery.
+// A well-sized pool makes this rare in practice; it is not eliminated.
 type Dispatcher struct {
 	mu    sync.RWMutex
 	sinks []registeredSink
+
+	jobs chan dispatchJob
+	wg   sync.WaitGroup // tracks worker goroutines, for Close to wait on
 }
 
-// NewDispatcher returns an empty Dispatcher. Dispatching to an empty
-// Dispatcher (or a nil one -- see the nil-receiver methods below) is a
-// no-op, so "no hooks configured" has zero overhead beyond the check.
-func NewDispatcher() *Dispatcher {
-	return &Dispatcher{}
+// Option configures a Dispatcher at construction time.
+type Option func(*dispatcherConfig)
+
+type dispatcherConfig struct {
+	workers   int
+	queueSize int
+}
+
+// WithWorkerPool overrides the default worker count and queue depth.
+// Mainly for tests that want to force queue-full behavior deterministically;
+// production callers can use the default via plain NewDispatcher().
+func WithWorkerPool(workers, queueSize int) Option {
+	return func(c *dispatcherConfig) {
+		c.workers = workers
+		c.queueSize = queueSize
+	}
+}
+
+// NewDispatcher returns an empty Dispatcher backed by a bounded worker
+// pool (defaultWebhookWorkers workers, defaultWebhookQueueSize queue
+// depth, unless overridden via WithWorkerPool). Dispatching to an empty
+// Dispatcher (or a nil one -- see the nil-receiver methods below) still
+// costs nothing beyond the nil/empty-sinks check; the pool's own workers
+// sit idle blocked on an empty channel until something is registered and
+// dispatched.
+func NewDispatcher(opts ...Option) *Dispatcher {
+	cfg := dispatcherConfig{workers: defaultWebhookWorkers, queueSize: defaultWebhookQueueSize}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	d := &Dispatcher{jobs: make(chan dispatchJob, cfg.queueSize)}
+	d.wg.Add(cfg.workers)
+	for i := 0; i < cfg.workers; i++ {
+		go d.worker()
+	}
+	return d
+}
+
+func (d *Dispatcher) worker() {
+	defer d.wg.Done()
+	for job := range d.jobs {
+		job.sink.Handle(context.Background(), job.event)
+	}
 }
 
 // Register adds sink, called for every event in events (or every event
@@ -87,7 +169,12 @@ func (d *Dispatcher) Dispatch(event Event) {
 		if len(rs.events) > 0 && !rs.events[event.Type] {
 			continue
 		}
-		go rs.sink.Handle(context.Background(), event)
+		select {
+		case d.jobs <- dispatchJob{sink: rs.sink, event: event}:
+		default:
+			slog.Warn("webhook dispatch queue full, dropping event", "event_type", event.Type, "run_id", event.RunID)
+			metrics.WebhookQueueDroppedTotal.WithLabelValues(string(event.Type)).Inc()
+		}
 	}
 }
 
@@ -102,4 +189,48 @@ func (d *Dispatcher) HasSinks() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return len(d.sinks) > 0
+}
+
+// Close stops the worker pool for graceful shutdown: closes the job
+// queue (so every worker finishes whatever job it's currently running,
+// then drains whatever was already queued behind it, then exits its
+// range loop) and waits up to ctx's deadline for all of them to actually
+// exit. Without this, the pool's workers previously ran for the whole
+// process lifetime with no shutdown hook at all -- fine for the
+// background loops elsewhere in this codebase that intentionally just
+// die with the process (nothing there is externally-visible, in-flight
+// work), but wrong here: a webhook delivery already queued or in
+// progress when SIGTERM arrives would otherwise be silently abandoned
+// mid-flight instead of getting the same "let it finish or run out of
+// budget" treatment cmd/serve.go's own HTTP/gRPC drain gives every other
+// kind of in-flight work.
+//
+// Returns ctx.Err() if the deadline is hit before every worker exits --
+// same "best effort within a bounded budget, not a guarantee" contract
+// as srv.Shutdown/grpcServer.GracefulStop in cmd/serve.go's own shutdown
+// sequence; any delivery attempt still running past that point is
+// abandoned when the process actually exits afterward, exactly as it
+// always was before this existed.
+//
+// Register/Dispatch must not be called after Close (closing an
+// already-closed or in-use channel panics) -- in practice this is only
+// ever called once, as the very last step of graceful shutdown, by
+// which point nothing dispatches new events anymore. Safe to call on a
+// nil Dispatcher (no-op, matching Dispatch/HasSinks).
+func (d *Dispatcher) Close(ctx context.Context) error {
+	if d == nil {
+		return nil
+	}
+	close(d.jobs)
+	done := make(chan struct{})
+	go func() {
+		d.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

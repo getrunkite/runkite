@@ -465,6 +465,22 @@ func startServer(opts serverOpts) {
 		grpcServer.Stop()
 	}
 
+	// A fresh, separate 5s budget -- same reasoning as tracing's own
+	// fresh context just below: shutdownCtx is already spent by the
+	// HTTP+gRPC drain above in the common case, and a webhook delivery
+	// already queued or in flight when the signal arrived (e.g. from a
+	// run that completed during the drain window) deserves the same
+	// "let it finish or run out of budget" treatment the rest of this
+	// sequence gives every other kind of in-flight work -- see
+	// hooks.Dispatcher.Close's own doc comment for what happened before
+	// this existed (queued/in-flight deliveries simply died with the
+	// process, no different from a hard kill).
+	hookCloseCtx, cancelHookClose := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := hookDispatcher.Close(hookCloseCtx); err != nil {
+		slog.Warn("webhook dispatcher did not drain in time", "error", err)
+	}
+	cancelHookClose()
+
 	// Deliberately a FRESH context here, not shutdownCtx -- by this
 	// point shutdownCtx has already been spent (often almost entirely)
 	// by the HTTP+gRPC drain above, and the connected-runner case is

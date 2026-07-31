@@ -56,6 +56,22 @@ var (
 		Name: "runkite_active_sse_connections",
 		Help: "Number of active SSE streaming connections",
 	})
+
+	// WebhookQueueDroppedTotal counts events dropped by the bounded
+	// webhook dispatch worker pool because its queue was full -- see
+	// internal/hooks.Dispatcher's own doc comment for why dropping
+	// (rather than blocking the caller or growing unbounded) is the
+	// deliberate overflow policy. Should stay at 0 in normal operation;
+	// a nonzero rate means the worker pool is undersized for the
+	// sustained webhook event rate, or a subscribed endpoint is slow/down
+	// and backing up delivery attempts for everyone sharing the pool.
+	WebhookQueueDroppedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "runkite_webhook_queue_dropped_total",
+			Help: "Total number of webhook dispatch jobs dropped because the bounded worker pool's queue was full",
+		},
+		[]string{"event_type"},
+	)
 )
 
 func init() {
@@ -63,6 +79,7 @@ func init() {
 		HTTPRequestsTotal, HTTPRequestDuration,
 		RunsTotal, RunDuration, ActiveRuns,
 		QueueDepth, ActiveSSEConnections,
+		WebhookQueueDroppedTotal,
 	)
 }
 

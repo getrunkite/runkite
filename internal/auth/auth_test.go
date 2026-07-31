@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -989,6 +990,47 @@ func TestWebhook_CacheKeyIncludesPath(t *testing.T) {
 	_, err := p.Authenticate(denyReq)
 	if err == nil {
 		t.Fatal("expected path-specific deny, cache reused prior allow")
+	}
+}
+
+// TestWebhook_CacheIsSizeBounded proves the fix for the real unbounded-
+// growth gap: cacheKeyFor includes the request path, so a REST API whose
+// paths embed resource IDs (e.g. /threads/{id}) previously grew the
+// cache by one entry per unique path ever seen from any caller, forever
+// (see WebhookProvider.cache's own doc comment). Requesting far more
+// distinct paths than CacheMaxEntries must not grow the cache past that
+// bound -- the oldest entries must be evicted, not retained alongside
+// the new ones.
+func TestWebhook_CacheIsSizeBounded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"allow": true,
+			"user":  map[string]interface{}{"identity": "user"},
+		})
+	}))
+	defer srv.Close()
+
+	const maxEntries = 10
+	p := auth.NewWebhookProvider(auth.WebhookConfig{
+		URL:             srv.URL,
+		TimeoutMs:       5000,
+		CacheTTLSeconds: 300,
+		CacheMaxEntries: maxEntries,
+	})
+
+	// Simulates a real REST API pattern: same caller, but a distinct
+	// resource ID baked into the path on every request -- exactly the
+	// access pattern that made the old plain map grow without bound.
+	for i := 0; i < maxEntries*5; i++ {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/threads/%d/runs/%d", i, i), nil)
+		req.Header.Set("Authorization", "Bearer same-caller")
+		if _, err := p.Authenticate(req); err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+	}
+
+	if n := p.CacheLen(); n > maxEntries {
+		t.Fatalf("expected cache size bounded at %d entries, got %d", maxEntries, n)
 	}
 }
 
