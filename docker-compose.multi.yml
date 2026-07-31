@@ -24,8 +24,9 @@
 #   - Killing one replica mid-run: its in-flight run's lease is reaped by a
 #     surviving replica, not left stuck (CH-004)
 #   - Rate limits are shared across replicas, not per-instance (RL-002/RL-003
-#     policy) -- state.Store-backed rate limiting is required for this, not
-#     an in-memory-per-process limiter
+#     policy) -- requires rate_limit with Redis backend (auto-selected when
+#     REDIS_URL is set; see internal/ratelimit), not an in-memory-per-process
+#     limiter
 #
 # `name:` below pins the Compose project name explicitly -- without it,
 # Compose defaults to the directory name, which is the SAME default

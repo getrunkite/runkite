@@ -7,15 +7,14 @@ import (
 )
 
 // TestLoadLangGraphJSON_RateLimit proves the "rate_limit" section parses
-// into RateLimitEntry, covering per-user, per-agent, and per-tenant limits
-// configurable via config -- including that per_tenant parses
-// (even though internal/ratelimit currently treats it as a no-op) so config
-// written today keeps working once multi-tenancy lands.
+// into RateLimitEntry, covering per-user, per-agent, per-tenant, and the
+// optional backend selector.
 func TestLoadLangGraphJSON_RateLimit(t *testing.T) {
 	dir := t.TempDir()
 	content := `{
 		"graphs": {"echo": "graph.py:graph"},
 		"rate_limit": {
+			"backend": "redis",
 			"global": {"rps": 100, "burst": 200},
 			"per_user": {"rps": 10, "burst": 20},
 			"per_agent": {"rps": 5, "burst": 10},
@@ -33,6 +32,9 @@ func TestLoadLangGraphJSON_RateLimit(t *testing.T) {
 	}
 	if cfg.RateLimit == nil {
 		t.Fatal("expected RateLimit to be parsed, got nil")
+	}
+	if cfg.RateLimit.Backend != "redis" {
+		t.Errorf("Backend = %q, want redis", cfg.RateLimit.Backend)
 	}
 	if cfg.RateLimit.Global == nil || cfg.RateLimit.Global.RPS != 100 || cfg.RateLimit.Global.Burst != 200 {
 		t.Errorf("Global = %+v, want {RPS:100 Burst:200}", cfg.RateLimit.Global)

@@ -137,6 +137,7 @@ Flags for `dev` / `serve`:
     "salesforce": { "config_ref": "./connectors/salesforce.yaml" }
   },
   "rate_limit": {
+    "backend": "redis",
     "global": { "rps": 100, "burst": 200 },
     "per_user": { "rps": 10, "burst": 20 },
     "per_agent": { "rps": 5, "burst": 10 }
@@ -170,6 +171,13 @@ Dispatch itself runs on a small bounded worker pool (20 workers, a queue depth o
 Event hooks are also usable directly from Go code by embedding runkite as a library: any type implementing `hooks.Sink` can be registered on the `*hooks.Dispatcher` via `apiServer.SetHookDispatcher`, independent of the webhook config above.
 
 `rate_limit` is opt-in and control-plane-wide (read from the first discovered `langgraph.json`, same convention as `auth`); any subset of `global`/`per_user`/`per_agent`/`per_tenant` may be set, unconfigured dimensions are unlimited. Each is a token bucket: `rps` is the sustained rate, `burst` is how many requests can arrive back-to-back before limiting kicks in. `global`/`per_user`/`per_tenant` are enforced at the HTTP layer (per-user keyed on the authenticated identity, per-tenant keyed on `tenant_id` -- see Multi-tenancy -- both unlimited when no auth provider is configured, since there's no identity/tenant to key on); `per_agent` is enforced in the shared run-creation path, so it applies uniformly across REST, WebSocket, and streaming-command run starts. Exceeding a limit returns `429` with a `Retry-After` header.
+
+`backend` selects where the buckets live:
+- `"redis"` -- shared Lua token buckets on `REDIS_URL`, so N control-plane replicas share one ceiling (required for real multi-instance rate limiting). Fails startup if `REDIS_URL` is unset.
+- `"memory"` -- process-local buckets (the historical default). Explicit opt-out of sharing even when Redis is present.
+- omit -- auto: uses Redis when `REDIS_URL` is set, otherwise memory.
+
+Redis keys are `rk:rl:{scope}:{id}` (same `rk:*` prefix as the Redis transport). A Redis eval error fails open (allows the request and logs) rather than turning an infra blip into a 429 storm; `/readyz` already surfaces Redis unavailability separately.
 
 `cron` schedules runs on a standard 5-field cron expression (`minute hour day-of-month month day-of-week`), keyed by a schedule name that must be unique across every discovered `langgraph.json` (schedules are bootstrapped from every file, not just the first -- the same convention as `graphs`, not the control-plane-wide `auth`/`rate_limit`/`webhooks`/`custom_routes` singletons). `timezone` is an IANA name (e.g. `America/New_York`); omit it for UTC. `enabled` defaults to `true`; set it to `false` to keep a schedule registered but dormant. Every fire creates a run on a fixed thread `cron:<schedule-name>` -- the same thread every time, so a schedule's run history is browsable as one continuous thread via `GET /threads/cron:<schedule-name>/history` like any other -- and is enqueued exactly like a client-triggered run, so `llm_cache`, rate limiting, event hooks, and everything else in this list apply to it unchanged. If a previous fire's run is still in flight when the next one comes due, the new one is rejected the same way any overlapping run on a busy thread would be (no concurrent runs stack up on one schedule).
 
@@ -1109,6 +1117,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 Honest gaps, not hidden ones:
 
 - **`StreamEvents`' non-terminal events are not fenced (a deliberate, narrow, documented trade-off).** `Heartbeat`, `ReportStatus`, and `StreamEvents`' own terminal ("end"/"error") events all reject/drop a stale generation (see "Crash recovery" above) -- but an ordinary progress event within a still-active stream is not checked, since nothing downstream treats a non-terminal event as authoritative the way a run's final status is, and checking every single event (rather than just the one terminal event per run) would add a Redis round-trip per streamed chunk for no real correctness benefit. In practice this only matters for a narrow window -- a reclaimed runner streaming a few more progress events before its own `Heartbeat` catches up and tells it to stop (heartbeats fire every ~2s) -- and the residual risk is cosmetic: a live SSE subscriber could see a stray extra progress event mixed in, not a wrong final outcome. Run deadline/timeout is opt-in via `langgraph.json`'s `run_timeout` section (see [Run Timeout](#run-timeout)) -- disabled by default so a deployment that never configured it keeps the historical "runs until cancel/completion" behavior. The in-process (zero-dependency, single-instance) transport's in-flight tracking is local to that one process by design, not a gap -- there's only one process to track it in.
+- **Rate limits are per-process unless `backend` is redis (or auto-selected via `REDIS_URL`).** With the memory backend, N replicas each enforce their own copy of the configured ceiling (up to N× the intended limit under load balancing). Set `"backend": "redis"` (or omit `backend` while running with `REDIS_URL`) for a shared cluster-wide ceiling -- see the `rate_limit` section above.
 - **Authorization is coarse-grained.** Permissions are enforced at `read`/`write`/`admin` method-level granularity (see Auth section), not per-resource ACLs.
 - **`db downgrade` isn't implemented.** The schema is a single idempotent migration, not versioned up/down migrations.
 - **OTel tracing covers the control plane, not runner-internal spans.** Neither runner's own LLM calls, tool calls, etc. are wrapped in OTel spans yet -- but the run's real W3C `traceparent` is already propagated to both (`RunAssignment.trace_context`), so a runner-side OTel integration (e.g. wiring LangChain's tracing callback to the same propagator) has what it needs and nests correctly under the same trace the moment it's added.

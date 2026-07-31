@@ -1,17 +1,16 @@
-// Package ratelimit implements a "Rate limiting: per-user, per-agent,
-// per-tenant, configurable via config" platform extension.
+// Package ratelimit implements per-user, per-agent, and per-tenant rate
+// limiting, configurable via langgraph.json's "rate_limit" section.
 //
-// Token-bucket limiting via golang.org/x/time/rate (already a transitive
-// dependency of this project via grpc -- no new dependency needed). Disabled
-// entirely (zero overhead) unless a rate_limit section is configured.
+// Two backends:
+//   - memory (default): process-local token buckets via golang.org/x/time/rate
+//   - redis: shared Lua token buckets on REDIS_URL, so N control-plane
+//     replicas share one ceiling instead of each enforcing its own copy
+//
+// Disabled entirely (zero overhead) unless a rate_limit section is configured.
 package ratelimit
 
 import (
 	"net/http"
-	"sync"
-	"time"
-
-	"golang.org/x/time/rate"
 
 	"github.com/sharanharsoor/runkite/internal/auth"
 	"github.com/sharanharsoor/runkite/internal/tenant"
@@ -29,6 +28,10 @@ type Rule struct {
 // "rate_limit" section (see internal/config.RateLimitEntry). Any subset of
 // dimensions may be configured; unconfigured dimensions are unlimited.
 //
+// Backend selects the store: "memory" (process-local, default), "redis"
+// (shared across replicas via REDIS_URL), or "" (auto: redis when a
+// client is supplied at construction, otherwise memory).
+//
 // PerTenant is keyed by tenant.FromContext -- which resolves to
 // tenant.DefaultTenant when multi-tenancy isn't configured, meaning a
 // per_tenant rule on a single-tenant deployment behaves identically to a
@@ -36,6 +39,7 @@ type Rule struct {
 // limit once auth is configured to supply real tenant IDs (see the
 // Multi-tenancy section of the README).
 type Config struct {
+	Backend   string // "memory", "redis", or "" (auto)
 	Global    *Rule
 	PerUser   *Rule
 	PerAgent  *Rule
@@ -57,36 +61,35 @@ func (e *ErrRateLimited) Error() string {
 	return "rate limit exceeded (" + e.Scope + ")"
 }
 
-// idleEvictAfter bounds memory growth: a per-user or per-agent bucket not
-// touched for this long is evicted. Distinct callers seen once (or agents
-// deleted long ago) don't accumulate in memory forever.
-const idleEvictAfter = 10 * time.Minute
-
-type bucket struct {
-	limiter  *rate.Limiter
-	lastUsed time.Time
+// backend is the storage behind Allow* checks. memoryBackend is
+// process-local; redisBackend shares one ceiling across replicas.
+type backend interface {
+	Allow(key string, rule Rule) bool
 }
 
 // Limiter enforces a Config's rules using per-scope token buckets.
 type Limiter struct {
-	cfg    *Config
-	global *rate.Limiter
-
-	mu        sync.Mutex
-	perUser   map[string]*bucket
-	perAgent  map[string]*bucket
-	perTenant map[string]*bucket
+	cfg *Config
+	be  backend
 }
 
-// New builds a Limiter from cfg. cfg may be nil (limiter is then always a
-// pass-through, matching "disabled by default").
+// New builds a process-local (memory) Limiter from cfg. cfg may be nil
+// (limiter is then always a pass-through, matching "disabled by default").
 func New(cfg *Config) *Limiter {
-	l := &Limiter{cfg: cfg, perUser: map[string]*bucket{}, perAgent: map[string]*bucket{}, perTenant: map[string]*bucket{}}
-	if cfg != nil && cfg.Global != nil {
-		l.global = rate.NewLimiter(rate.Limit(cfg.Global.RPS), cfg.Global.Burst)
-	}
+	l := &Limiter{cfg: cfg}
 	if cfg.enabled() {
-		go l.evictLoop()
+		l.be = newMemoryBackend()
+	}
+	return l
+}
+
+// NewRedis builds a Limiter whose buckets live in Redis (shared across
+// every replica using the same REDIS_URL). rdb must be non-nil and already
+// pinged by the caller. cfg must be enabled (at least one dimension set).
+func NewRedis(cfg *Config, rdb RedisClient) *Limiter {
+	l := &Limiter{cfg: cfg}
+	if cfg.enabled() {
+		l.be = newRedisBackend(rdb)
 	}
 	return l
 }
@@ -97,76 +100,53 @@ func (l *Limiter) Enabled() bool {
 	return l != nil && l.cfg.enabled()
 }
 
+// BackendName reports which store is in use ("memory", "redis", or ""
+// when disabled). Useful for startup logs.
+func (l *Limiter) BackendName() string {
+	if l == nil || !l.cfg.enabled() {
+		return ""
+	}
+	switch l.be.(type) {
+	case *redisBackend:
+		return "redis"
+	default:
+		return "memory"
+	}
+}
+
 // AllowGlobal checks (and, if allowed, consumes) the global bucket.
 func (l *Limiter) AllowGlobal() bool {
-	if l == nil || l.global == nil {
+	if l == nil || l.cfg == nil || l.cfg.Global == nil || l.be == nil {
 		return true
 	}
-	return l.global.Allow()
+	return l.be.Allow("global", *l.cfg.Global)
 }
 
 // AllowUser checks the per-user bucket for identity. An empty identity (no
 // auth provider configured, so there's no user to key on) is unlimited for
 // this dimension -- global still applies.
 func (l *Limiter) AllowUser(identity string) bool {
-	if l == nil || l.cfg == nil || l.cfg.PerUser == nil || identity == "" {
+	if l == nil || l.cfg == nil || l.cfg.PerUser == nil || l.be == nil || identity == "" {
 		return true
 	}
-	return l.allow(l.perUser, identity, l.cfg.PerUser)
+	return l.be.Allow("user:"+identity, *l.cfg.PerUser)
 }
 
 // AllowAgent checks the per-agent bucket for agentID.
 func (l *Limiter) AllowAgent(agentID string) bool {
-	if l == nil || l.cfg == nil || l.cfg.PerAgent == nil || agentID == "" {
+	if l == nil || l.cfg == nil || l.cfg.PerAgent == nil || l.be == nil || agentID == "" {
 		return true
 	}
-	return l.allow(l.perAgent, agentID, l.cfg.PerAgent)
+	return l.be.Allow("agent:"+agentID, *l.cfg.PerAgent)
 }
 
 // AllowTenant checks the per-tenant bucket for tenantID (see
 // tenant.FromContext -- always non-empty, "default" when unconfigured).
 func (l *Limiter) AllowTenant(tenantID string) bool {
-	if l == nil || l.cfg == nil || l.cfg.PerTenant == nil || tenantID == "" {
+	if l == nil || l.cfg == nil || l.cfg.PerTenant == nil || l.be == nil || tenantID == "" {
 		return true
 	}
-	return l.allow(l.perTenant, tenantID, l.cfg.PerTenant)
-}
-
-func (l *Limiter) allow(m map[string]*bucket, key string, rule *Rule) bool {
-	l.mu.Lock()
-	b, ok := m[key]
-	if !ok {
-		b = &bucket{limiter: rate.NewLimiter(rate.Limit(rule.RPS), rule.Burst)}
-		m[key] = b
-	}
-	b.lastUsed = time.Now()
-	l.mu.Unlock()
-	return b.limiter.Allow()
-}
-
-func (l *Limiter) evictLoop() {
-	ticker := time.NewTicker(idleEvictAfter)
-	defer ticker.Stop()
-	for range ticker.C {
-		cutoff := time.Now().Add(-idleEvictAfter)
-		l.mu.Lock()
-		for k, b := range l.perUser {
-			if b.lastUsed.Before(cutoff) {
-				delete(l.perUser, k)
-			}
-		}
-		for k, b := range l.perAgent {
-			if b.lastUsed.Before(cutoff) {
-				delete(l.perAgent, k)
-			}
-		}
-		for k, b := range l.perTenant {
-			if b.lastUsed.Before(cutoff) {
-				delete(l.perTenant, k)
-			}
-		}
-		l.mu.Unlock()
-	}
+	return l.be.Allow("tenant:"+tenantID, *l.cfg.PerTenant)
 }
 
 // Middleware enforces the global, per-user, and per-tenant dimensions.

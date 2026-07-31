@@ -218,7 +218,11 @@ func startServer(opts serverOpts) {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	// --- Transport layer ---
-	queue, broker, cancelBus := initTransport(ctx)
+	// One shared Redis client when REDIS_URL is set: transport (queue/
+	// broker/cancelbus) and the optional redis rate-limit backend both
+	// reuse it rather than opening a second connection pool.
+	rdb := initRedis(ctx)
+	queue, broker, cancelBus := initTransport(ctx, rdb)
 
 	// runkite_queue_depth is a gauge, not something incremented at call
 	// sites -- it must be polled periodically to reflect current state.
@@ -253,11 +257,11 @@ func startServer(opts serverOpts) {
 
 	// Rate limiting: per-user, per-agent, per-tenant, configurable via
 	// config. Disabled (zero overhead) unless a rate_limit section is
-	// present.
-	rateLimiter := initRateLimiter(opts.configPath)
+	// present. Uses rdb when backend is redis / auto-selected.
+	rateLimiter := initRateLimiter(opts.configPath, rdb)
 	apiServer.SetRateLimiter(rateLimiter)
 	if rateLimiter.Enabled() {
-		slog.Info("rate limiting: enabled")
+		slog.Info("rate limiting: enabled", "backend", rateLimiter.BackendName())
 	}
 
 	// Agent-to-Agent (A2A) delegation recursion depth limit. Always
@@ -829,12 +833,34 @@ func initStore(ctx context.Context) state.Store {
 	return sq
 }
 
-func initTransport(ctx context.Context) (transport.JobQueue, transport.EventBroker, transport.CancelBroker) {
+// initRedis returns a shared go-redis client when REDIS_URL is set, or
+// nil otherwise. Pinged at construction so a bad URL fails loud at
+// startup rather than on the first Allow/Enqueue. Callers (transport,
+// rate limiter) must not Close it for the process lifetime.
+func initRedis(ctx context.Context) *goredis.Client {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		return nil
+	}
+	opts, err := goredis.ParseURL(redisURL)
+	if err != nil {
+		slog.Error("failed to parse REDIS_URL", "error", err)
+		os.Exit(1)
+	}
+	rdb := goredis.NewClient(opts)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
+	}
+	return rdb
+}
+
+func initTransport(ctx context.Context, rdb *goredis.Client) (transport.JobQueue, transport.EventBroker, transport.CancelBroker) {
 	// Kafka is a JobQueue-only backend (see internal/transport/kafka's
 	// own package doc for why) -- KAFKA_URL only ever picks the queue,
 	// paired with Redis's own EventBroker/CancelBroker when REDIS_URL
 	// is also set, or the in-process ones otherwise. Checked before the
-	// REDIS_URL branch below so "both set" means "Kafka queue, Redis
+	// Redis-only branch below so "both set" means "Kafka queue, Redis
 	// broker/cancelbus," not "Redis for everything."
 	if kafkaURL := os.Getenv("KAFKA_URL"); kafkaURL != "" {
 		var kafkaOpts []kafkatransport.Option
@@ -857,42 +883,21 @@ func initTransport(ctx context.Context) (transport.JobQueue, transport.EventBrok
 			slog.Error("failed to initialize kafka job queue", "error", err)
 			os.Exit(1)
 		}
-		if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
-			opts, err := goredis.ParseURL(redisURL)
-			if err != nil {
-				slog.Error("failed to parse REDIS_URL", "error", err)
-				os.Exit(1)
-			}
-			rdb := goredis.NewClient(opts)
-			if err := rdb.Ping(ctx).Err(); err != nil {
-				slog.Error("failed to connect to redis", "error", err)
-				os.Exit(1)
-			}
+		if rdb != nil {
 			broker := redistransport.NewBroker(rdb)
 			cancelBus := redistransport.NewCancelBus(rdb)
-			slog.Info("transport: kafka queue + redis broker/cancelbus", "kafka_url", kafkaURL, "redis_url", redisURL)
+			slog.Info("transport: kafka queue + redis broker/cancelbus", "kafka_url", kafkaURL, "redis_url", os.Getenv("REDIS_URL"))
 			return queue, broker, cancelBus
 		}
 		slog.Info("transport: kafka queue + in-process broker/cancelbus", "kafka_url", kafkaURL)
 		return queue, inprocess.NewBroker(), inprocess.NewCancelBus()
 	}
 
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL != "" {
-		opts, err := goredis.ParseURL(redisURL)
-		if err != nil {
-			slog.Error("failed to parse REDIS_URL", "error", err)
-			os.Exit(1)
-		}
-		rdb := goredis.NewClient(opts)
-		if err := rdb.Ping(ctx).Err(); err != nil {
-			slog.Error("failed to connect to redis", "error", err)
-			os.Exit(1)
-		}
+	if rdb != nil {
 		queue := redistransport.NewQueue(rdb)
 		broker := redistransport.NewBroker(rdb)
 		cancelBus := redistransport.NewCancelBus(rdb)
-		slog.Info("transport: redis", "url", redisURL)
+		slog.Info("transport: redis", "url", os.Getenv("REDIS_URL"))
 		return queue, broker, cancelBus
 	}
 
@@ -1146,7 +1151,16 @@ func initA2AMaxDepth(configPath string) int {
 // initAuthProvider. Always returns a non-nil Limiter -- ratelimit.Limiter's
 // methods are nil-safe and a Config-less Limiter is a pure pass-through, so
 // callers never need to nil-check.
-func initRateLimiter(configPath string) *ratelimit.Limiter {
+//
+// Backend selection (cfg.RateLimit.Backend):
+//   - "redis" -- shared Lua token buckets on rdb; exits if rdb is nil
+//   - "memory" -- process-local buckets (explicit opt-out of sharing)
+//   - "" (omit) -- auto: redis when rdb != nil, otherwise memory
+//
+// Auto exists so a multi-replica compose with REDIS_URL + rate_limit gets
+// a shared ceiling without an extra config knob; set "backend":"memory"
+// to keep the old per-process behavior even when Redis is present.
+func initRateLimiter(configPath string, rdb *goredis.Client) *ratelimit.Limiter {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
 		return ratelimit.New(nil)
@@ -1161,12 +1175,35 @@ func initRateLimiter(configPath string) *ratelimit.Limiter {
 		}
 		return &ratelimit.Rule{RPS: r.RPS, Burst: r.Burst}
 	}
-	return ratelimit.New(&ratelimit.Config{
+	rlCfg := &ratelimit.Config{
+		Backend:   strings.ToLower(strings.TrimSpace(cfg.RateLimit.Backend)),
 		Global:    toRule(cfg.RateLimit.Global),
 		PerUser:   toRule(cfg.RateLimit.PerUser),
 		PerAgent:  toRule(cfg.RateLimit.PerAgent),
 		PerTenant: toRule(cfg.RateLimit.PerTenant),
-	})
+	}
+
+	useRedis := false
+	switch rlCfg.Backend {
+	case "redis":
+		if rdb == nil {
+			slog.Error("rate_limit.backend=redis requires REDIS_URL")
+			os.Exit(1)
+		}
+		useRedis = true
+	case "memory":
+		useRedis = false
+	case "":
+		useRedis = rdb != nil
+	default:
+		slog.Error("rate_limit: unknown backend, falling back to memory", "backend", rlCfg.Backend)
+		useRedis = false
+	}
+
+	if useRedis {
+		return ratelimit.NewRedis(rlCfg, rdb)
+	}
+	return ratelimit.New(rlCfg)
 }
 
 // defaultVectorDimensions is OpenAI's text-embedding-3-small/ada-002

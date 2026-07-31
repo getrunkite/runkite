@@ -272,10 +272,14 @@ type WebhookEntry struct {
 	Events []string `json:"events,omitempty"` // event type names (run_start, run_complete, tool_call, error, interrupt); empty means all
 }
 
-// RateLimitEntry is the "rate_limit" section of langgraph.json (master
-// plan: "per-user, per-agent, per-tenant, configurable via config"). Any
+// RateLimitEntry is the "rate_limit" section of langgraph.json. Any
 // subset of dimensions may be set; the rest are unlimited.
 type RateLimitEntry struct {
+	// Backend selects the store: "memory" (process-local token buckets),
+	// "redis" (shared via REDIS_URL across replicas), or omit for auto
+	// (redis when REDIS_URL is set, otherwise memory). See
+	// internal/ratelimit and initRateLimiter in cmd/serve.go.
+	Backend   string         `json:"backend,omitempty"`
 	Global    *RateLimitRule `json:"global,omitempty"`
 	PerUser   *RateLimitRule `json:"per_user,omitempty"`
 	PerAgent  *RateLimitRule `json:"per_agent,omitempty"`

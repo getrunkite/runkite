@@ -170,26 +170,25 @@ func TestEvictLoop_RemovesIdleEntries(t *testing.T) {
 	l := New(&Config{PerUser: &Rule{RPS: 100, Burst: 100}})
 	l.AllowUser("stale-user")
 
-	l.mu.Lock()
-	if _, ok := l.perUser["stale-user"]; !ok {
-		l.mu.Unlock()
+	mb, ok := l.be.(*memoryBackend)
+	if !ok {
+		t.Fatal("expected memory backend")
+	}
+	mb.mu.Lock()
+	if _, ok := mb.buckets["user:stale-user"]; !ok {
+		mb.mu.Unlock()
 		t.Fatal("expected bucket to exist after use")
 	}
 	// Simulate the bucket having gone idle long enough to be evicted,
 	// without waiting out the real 10-minute interval.
-	l.perUser["stale-user"].lastUsed = time.Now().Add(-idleEvictAfter - time.Second)
-	l.mu.Unlock()
+	mb.buckets["user:stale-user"].lastUsed = time.Now().Add(-idleEvictAfter - time.Second)
+	mb.mu.Unlock()
 
-	// Run one eviction pass directly rather than waiting for the ticker.
-	l.mu.Lock()
-	cutoff := time.Now().Add(-idleEvictAfter)
-	for k, b := range l.perUser {
-		if b.lastUsed.Before(cutoff) {
-			delete(l.perUser, k)
-		}
-	}
-	_, stillThere := l.perUser["stale-user"]
-	l.mu.Unlock()
+	mb.evictIdle(time.Now().Add(-idleEvictAfter))
+
+	mb.mu.Lock()
+	_, stillThere := mb.buckets["user:stale-user"]
+	mb.mu.Unlock()
 
 	if stillThere {
 		t.Fatal("expected idle bucket to be evicted")
