@@ -63,12 +63,12 @@ func TestInitRateLimiter_AutoMemoryWhenNoRedis(t *testing.T) {
 
 func TestRateLimitBackendChoice(t *testing.T) {
 	cases := []struct {
-		name         string
-		backend      string
-		hasRedis     bool
-		wantRedis    bool
-		wantMissing  bool
-		wantUnknown  string
+		name        string
+		backend     string
+		hasRedis    bool
+		wantRedis   bool
+		wantMissing bool
+		wantUnknown string
 	}{
 		{name: "explicit redis with client", backend: "redis", hasRedis: true, wantRedis: true},
 		{name: "explicit redis without client", backend: "redis", hasRedis: false, wantMissing: true},
