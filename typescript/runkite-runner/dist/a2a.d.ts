@@ -1,29 +1,3 @@
-/**
- * Agent-to-Agent (A2A) delegation client: agent calls agent via the same
- * Agent Protocol API. TypeScript mirror of the Python runner's a2a.py --
- * see that file's docstring for the full rationale; repeated briefly here:
- *
- * `callAgent` is what a running agent's own node code calls to invoke
- * another agent as a sub-task -- it POSTs to the control plane's
- * `/internal/a2a/runs` endpoint (see internal/api/a2a.go for the full
- * server-side design: auth propagation, recursion limits, cost
- * attribution via root_run_id).
- *
- * Deliberately takes the graph node's own `config`, not separate run_id/
- * user parameters -- every value this needs (the current run_id to set
- * as parent_run_id, the authenticated user to forward as on_behalf_of)
- * is already there, set in executeRun.ts's buildRunConfig for every run.
- * A node function just calls
- * `await callAgent(config, "other_agent", { messages: [...] })`.
- *
- * Operational note (same as Python): with `wait: true` (the default),
- * the parent run's worker slot stays occupied until the child finishes.
- * A runner process with the default `--concurrency 1` therefore
- * deadlocks on nested A2A -- the child job cannot be dequeued until the
- * parent frees its slot. Use `--concurrency >= 2` (or another runner
- * replica of the same runner_kind, or `wait: false` + polling the
- * child run yourself) for any graph that delegates synchronously.
- */
 export declare class A2AError extends Error {
 }
 export interface CallAgentOptions {

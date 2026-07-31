@@ -37,6 +37,7 @@ export declare class RunkiteStore extends BaseStore {
     private pool;
     private baseUrl;
     private headers;
+    private readonly dispatcher;
     private static readonly TENANT_ID;
     constructor(opts: {
         postgresDsn?: string;

@@ -38,6 +38,7 @@
 import { VectorStore } from "@langchain/core/vectorstores";
 import { Document, type DocumentInterface } from "@langchain/core/documents";
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
+import { httpDispatcher, type FetchInit } from "./tls.js";
 
 export interface RunkiteVectorStoreOptions {
   namespace: string;
@@ -61,6 +62,8 @@ export class RunkiteVectorStore extends VectorStore {
   private readonly namespace: string;
   private readonly baseUrl: string;
   private readonly headers: Record<string, string>;
+  // See store.ts's identical field for the full rationale.
+  private readonly dispatcher = httpDispatcher();
 
   constructor(embeddings: EmbeddingsInterface, opts: RunkiteVectorStoreOptions) {
     super(embeddings, opts);
@@ -142,20 +145,24 @@ export class RunkiteVectorStore extends VectorStore {
     metadata: Record<string, unknown>,
     embedding: number[],
   ): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, {
+    const opts: FetchInit = {
       method: "PUT",
       headers: this.headers,
       body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
-    });
+      dispatcher: this.dispatcher,
+    };
+    const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, opts);
     if (!resp.ok) throw new Error(`upsert vector item failed: ${resp.status} ${await resp.text()}`);
   }
 
   private async deleteOne(id: string): Promise<void> {
-    const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, {
+    const opts: FetchInit = {
       method: "DELETE",
       headers: this.headers,
       body: JSON.stringify({ namespace: this.namespace, id }),
-    });
+      dispatcher: this.dispatcher,
+    };
+    const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, opts);
     if (!resp.ok) throw new Error(`delete vector item failed: ${resp.status} ${await resp.text()}`);
   }
 
@@ -164,11 +171,13 @@ export class RunkiteVectorStore extends VectorStore {
     topK: number,
     filter?: Record<string, unknown>,
   ): Promise<Array<{ item: VectorItemJson; score: number }>> {
-    const resp = await fetch(`${this.baseUrl}/internal/vectors/search`, {
+    const opts: FetchInit = {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),
-    });
+      dispatcher: this.dispatcher,
+    };
+    const resp = await fetch(`${this.baseUrl}/internal/vectors/search`, opts);
     if (!resp.ok) throw new Error(`search vectors failed: ${resp.status} ${await resp.text()}`);
     const body = (await resp.json()) as { results?: Array<{ item: VectorItemJson; score: number }> };
     return body.results ?? [];

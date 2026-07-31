@@ -163,7 +163,8 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_a2a.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_heartbeat.py && \
-		PYTHONPATH=python python/.venv/bin/python python/tests/test_logging_config.py; \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_logging_config.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_tls_utils.py; \
 	else \
 		PYTHONPATH=python python3 python/tests/test_store_dual_mode.py && \
 		PYTHONPATH=python python3 python/tests/test_store_pool.py && \
@@ -178,7 +179,8 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py && \
 		PYTHONPATH=python python3 python/tests/test_a2a.py && \
 		PYTHONPATH=python python3 python/tests/test_heartbeat.py && \
-		PYTHONPATH=python python3 python/tests/test_logging_config.py; \
+		PYTHONPATH=python python3 python/tests/test_logging_config.py && \
+		PYTHONPATH=python python3 python/tests/test_tls_utils.py; \
 	fi
 
 # CrewAI/LlamaIndex adapters each need their own isolated venv (heavy,

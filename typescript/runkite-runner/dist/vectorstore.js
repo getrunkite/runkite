@@ -37,6 +37,7 @@
  */
 import { VectorStore } from "@langchain/core/vectorstores";
 import { Document } from "@langchain/core/documents";
+import { httpDispatcher } from "./tls.js";
 function itemToDocument(item) {
     return new Document({ pageContent: item.content ?? "", metadata: item.metadata ?? {}, id: item.id });
 }
@@ -44,6 +45,8 @@ export class RunkiteVectorStore extends VectorStore {
     namespace;
     baseUrl;
     headers;
+    // See store.ts's identical field for the full rationale.
+    dispatcher = httpDispatcher();
     constructor(embeddings, opts) {
         super(embeddings, opts);
         if (!opts.httpBaseUrl) {
@@ -101,29 +104,35 @@ export class RunkiteVectorStore extends VectorStore {
     // handlers on the Go side, different auth boundary -- see
     // internal/auth/auth.go and store.ts's identical convention.
     async upsert(id, content, metadata, embedding) {
-        const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, {
+        const opts = {
             method: "PUT",
             headers: this.headers,
             body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
-        });
+            dispatcher: this.dispatcher,
+        };
+        const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, opts);
         if (!resp.ok)
             throw new Error(`upsert vector item failed: ${resp.status} ${await resp.text()}`);
     }
     async deleteOne(id) {
-        const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, {
+        const opts = {
             method: "DELETE",
             headers: this.headers,
             body: JSON.stringify({ namespace: this.namespace, id }),
-        });
+            dispatcher: this.dispatcher,
+        };
+        const resp = await fetch(`${this.baseUrl}/internal/vectors/items`, opts);
         if (!resp.ok)
             throw new Error(`delete vector item failed: ${resp.status} ${await resp.text()}`);
     }
     async search(embedding, topK, filter) {
-        const resp = await fetch(`${this.baseUrl}/internal/vectors/search`, {
+        const opts = {
             method: "POST",
             headers: this.headers,
             body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),
-        });
+            dispatcher: this.dispatcher,
+        };
+        const resp = await fetch(`${this.baseUrl}/internal/vectors/search`, opts);
         if (!resp.ok)
             throw new Error(`search vectors failed: ${resp.status} ${await resp.text()}`);
         const body = (await resp.json());

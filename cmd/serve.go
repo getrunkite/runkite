@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/nats-io/nats.go"
@@ -270,7 +271,23 @@ func startServer(opts serverOpts) {
 	// enough to matter for a real interrupt-restart-resume cycle, which
 	// can complete in well under 5s. Must match the client's
 	// grpc.keepalive_time_ms in worker.py.
-	grpcServer := grpc.NewServer(
+	// TLS/mTLS for the gRPC bridge: off by default (plaintext, same as
+	// always) unless GRPC_TLS_CERT_FILE/GRPC_TLS_KEY_FILE are set.
+	// GRPC_TLS_CLIENT_CA_FILE additionally requires and verifies a
+	// runner's own client certificate (mTLS) -- a second, independent
+	// trust boundary from RUNNER_TOKEN_* above: a stolen/guessed bearer
+	// token no longer suffices on its own to open a gRPC connection at
+	// all when this is set, since the TLS handshake itself now rejects
+	// any client that can't present a certificate signed by this CA,
+	// before the token interceptor ever runs.
+	grpcTLSConfig, err := serverTLSConfig(
+		os.Getenv("GRPC_TLS_CERT_FILE"), os.Getenv("GRPC_TLS_KEY_FILE"), os.Getenv("GRPC_TLS_CLIENT_CA_FILE"),
+	)
+	if err != nil {
+		slog.Error("invalid gRPC TLS configuration", "error", err)
+		os.Exit(1)
+	}
+	grpcOpts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    2 * time.Second,
 			Timeout: 2 * time.Second,
@@ -281,7 +298,14 @@ func startServer(opts serverOpts) {
 		}),
 		grpc.ChainUnaryInterceptor(bridge.UnaryAuthInterceptor(runnerTokens)),
 		grpc.ChainStreamInterceptor(bridge.StreamAuthInterceptor(runnerTokens)),
-	)
+	}
+	if grpcTLSConfig != nil {
+		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(grpcTLSConfig)))
+		slog.Info("gRPC bridge: TLS enabled", "mtls", grpcTLSConfig.ClientCAs != nil)
+	} else {
+		slog.Info("gRPC bridge: TLS disabled (plaintext)")
+	}
+	grpcServer := grpc.NewServer(grpcOpts...)
 	pb.RegisterRunnerServiceServer(grpcServer, bridgeServer)
 
 	grpcErrCh := make(chan error, 1)
@@ -365,16 +389,38 @@ func startServer(opts serverOpts) {
 	hostname, _ := os.Hostname()
 	slog.Info("control plane starting", "http_port", opts.httpPort, "grpc_port", opts.grpcPort, "hostname", hostname)
 
+	// TLS/mTLS for the client-facing HTTP API: off by default (plain
+	// HTTP, same as always) unless TLS_CERT_FILE/TLS_KEY_FILE are set.
+	// TLS_CLIENT_CA_FILE additionally requires and verifies a client
+	// certificate (mTLS) -- independent of whatever client-facing auth
+	// provider is configured above; the two compose (a request still
+	// needs both a valid client cert AND a valid credential the auth
+	// provider accepts, if both are configured). Loaded here, before
+	// the startup banner below, purely so the banner can print the
+	// right scheme (https vs http) -- ListenAndServeTLS itself isn't
+	// called until the goroutine further down.
+	httpTLSConfig, err := serverTLSConfig(
+		os.Getenv("TLS_CERT_FILE"), os.Getenv("TLS_KEY_FILE"), os.Getenv("TLS_CLIENT_CA_FILE"),
+	)
+	if err != nil {
+		slog.Error("invalid HTTP TLS configuration", "error", err)
+		os.Exit(1)
+	}
+	scheme := "http"
+	if httpTLSConfig != nil {
+		scheme = "https"
+	}
+
 	if opts.devMode {
 		fmt.Printf("\n  Runkite Control Plane (dev)\n")
 	} else {
 		fmt.Printf("\n  Runkite Control Plane\n")
 	}
-	fmt.Printf("  HTTP API:    http://localhost:%s\n", opts.httpPort)
+	fmt.Printf("  HTTP API:    %s://localhost:%s\n", scheme, opts.httpPort)
 	fmt.Printf("  gRPC bridge: localhost:%s\n", opts.grpcPort)
-	fmt.Printf("  Admin UI:    http://localhost:%s/admin/\n", opts.httpPort)
-	fmt.Printf("  Health:      http://localhost:%s/health\n", opts.httpPort)
-	fmt.Printf("  Metrics:     http://localhost:%s/metrics\n\n", opts.httpPort)
+	fmt.Printf("  Admin UI:    %s://localhost:%s/admin/\n", scheme, opts.httpPort)
+	fmt.Printf("  Health:      %s://localhost:%s/health\n", scheme, opts.httpPort)
+	fmt.Printf("  Metrics:     %s://localhost:%s/metrics\n\n", scheme, opts.httpPort)
 
 	// ReadHeaderTimeout (not the full ReadTimeout/WriteTimeout) is the
 	// one server-level timeout safe to set unconditionally here:
@@ -395,12 +441,27 @@ func startServer(opts serverOpts) {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		TLSConfig:         httpTLSConfig,
 	}
 
 	httpErrCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			httpErrCh <- err
+		// Empty cert/key filenames here are correct, not a bug: when
+		// httpTLSConfig is non-nil, its own Certificates field (loaded
+		// by serverTLSConfig) is already populated, and
+		// ListenAndServeTLS's own doc comment confirms filenames are
+		// only required when TLSConfig.Certificates/GetCertificate
+		// are NOT already set.
+		var serveErr error
+		if httpTLSConfig != nil {
+			slog.Info("HTTP API: TLS enabled", "mtls", httpTLSConfig.ClientCAs != nil)
+			serveErr = srv.ListenAndServeTLS("", "")
+		} else {
+			slog.Info("HTTP API: TLS disabled (plaintext)")
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			httpErrCh <- serveErr
 		}
 	}()
 

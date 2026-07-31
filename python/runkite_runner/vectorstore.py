@@ -38,6 +38,8 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
+from .tls_utils import httpx_tls_kwargs
+
 # Direct mode has no per-request tenant identity (a raw DB connection, not
 # an authenticated HTTP call) -- see store.py's identical note. Must match
 # internal/tenant.DefaultTenant on the Go side exactly.
@@ -224,7 +226,9 @@ class RunkiteVectorStore(VectorStore):
         return await self._search_proxy(embedding, k, filter_)
 
     async def _upsert_proxy(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
-        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+        ) as client:
             resp = await client.put(
                 "/internal/vectors/items",
                 json={
@@ -238,14 +242,18 @@ class RunkiteVectorStore(VectorStore):
             resp.raise_for_status()
 
     async def _delete_proxy(self, doc_id: str) -> None:
-        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+        ) as client:
             resp = await client.request(
                 "DELETE", "/internal/vectors/items", json={"namespace": self._namespace, "id": doc_id}
             )
             resp.raise_for_status()
 
     async def _search_proxy(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
-        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+        ) as client:
             resp = await client.post(
                 "/internal/vectors/search",
                 json={"namespace": self._namespace, "embedding": embedding, "top_k": k, "filter": filter_ or {}},

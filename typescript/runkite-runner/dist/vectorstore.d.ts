@@ -47,6 +47,7 @@ export declare class RunkiteVectorStore extends VectorStore {
     private readonly namespace;
     private readonly baseUrl;
     private readonly headers;
+    private readonly dispatcher;
     constructor(embeddings: EmbeddingsInterface, opts: RunkiteVectorStoreOptions);
     _vectorstoreType(): string;
     addVectors(vectors: number[][], documents: DocumentInterface[], options?: {

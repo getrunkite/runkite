@@ -32,6 +32,7 @@ import type {
   SearchOperation,
 } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
+import { httpDispatcher, type FetchInit } from "./tls.js";
 
 export const NS_DELIM = "\x1f";
 
@@ -96,6 +97,11 @@ export class RunkiteStore extends BaseStore {
   private pool: pg.Pool | null = null;
   private baseUrl: string | null = null;
   private headers: Record<string, string> = {};
+  // Constructed once (not per-call): mirrors tls.ts's own doc comment --
+  // undefined when RUNKITE_TLS_CA_FILE is unset, meaning "no dispatcher
+  // option," which is fetch's own default behavior (plain http:// or
+  // https:// with a publicly-trusted cert).
+  private readonly dispatcher = httpDispatcher();
 
   // Direct mode has no per-request tenant identity to work with (it's a
   // raw DB connection, not an authenticated HTTP call) -- see the module
@@ -213,7 +219,8 @@ export class RunkiteStore extends BaseStore {
     // boundary -- see internal/auth/auth.go.
     if (isGetOp(op)) {
       const url = `${this.baseUrl}/internal/store/items?namespace=${encodeURIComponent(op.namespace.join(","))}&key=${encodeURIComponent(op.key)}`;
-      const resp = await fetch(url, { headers: this.headers });
+      const opts: FetchInit = { headers: this.headers, dispatcher: this.dispatcher };
+      const resp = await fetch(url, opts);
       if (resp.status === 404) return null;
       if (!resp.ok) throw new Error(`GET store item failed: ${resp.status} ${await resp.text()}`);
       return itemFromJson(await resp.json());
@@ -221,25 +228,29 @@ export class RunkiteStore extends BaseStore {
 
     if (isPutOp(op)) {
       if (op.value === null) {
-        const resp = await fetch(`${this.baseUrl}/internal/store/items`, {
+        const opts: FetchInit = {
           method: "DELETE",
           headers: { ...this.headers, "Content-Type": "application/json" },
           body: JSON.stringify({ namespace: op.namespace, key: op.key }),
-        });
+          dispatcher: this.dispatcher,
+        };
+        const resp = await fetch(`${this.baseUrl}/internal/store/items`, opts);
         if (!resp.ok) throw new Error(`DELETE store item failed: ${resp.status} ${await resp.text()}`);
       } else {
-        const resp = await fetch(`${this.baseUrl}/internal/store/items`, {
+        const opts: FetchInit = {
           method: "PUT",
           headers: { ...this.headers, "Content-Type": "application/json" },
           body: JSON.stringify({ namespace: op.namespace, key: op.key, value: op.value }),
-        });
+          dispatcher: this.dispatcher,
+        };
+        const resp = await fetch(`${this.baseUrl}/internal/store/items`, opts);
         if (!resp.ok) throw new Error(`PUT store item failed: ${resp.status} ${await resp.text()}`);
       }
       return undefined;
     }
 
     if (isSearchOp(op)) {
-      const resp = await fetch(`${this.baseUrl}/internal/store/items/search`, {
+      const opts: FetchInit = {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,7 +259,9 @@ export class RunkiteStore extends BaseStore {
           limit: op.limit,
           offset: op.offset,
         }),
-      });
+        dispatcher: this.dispatcher,
+      };
+      const resp = await fetch(`${this.baseUrl}/internal/store/items/search`, opts);
       if (!resp.ok) throw new Error(`search store items failed: ${resp.status} ${await resp.text()}`);
       const body = (await resp.json()) as { items?: unknown[] };
       return (body.items ?? []).map((i) => itemFromJson(i) as SearchItem);
@@ -257,7 +270,7 @@ export class RunkiteStore extends BaseStore {
     if (isListNamespacesOp(op)) {
       const prefix = op.matchConditions?.find((c) => c.matchType === "prefix")?.path as string[] | undefined;
       const suffix = op.matchConditions?.find((c) => c.matchType === "suffix")?.path as string[] | undefined;
-      const resp = await fetch(`${this.baseUrl}/internal/store/namespaces`, {
+      const opts: FetchInit = {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -267,7 +280,9 @@ export class RunkiteStore extends BaseStore {
           limit: op.limit,
           offset: op.offset,
         }),
-      });
+        dispatcher: this.dispatcher,
+      };
+      const resp = await fetch(`${this.baseUrl}/internal/store/namespaces`, opts);
       if (!resp.ok) throw new Error(`list namespaces failed: ${resp.status} ${await resp.text()}`);
       const body = (await resp.json()) as string[][] | null;
       return body ?? [];

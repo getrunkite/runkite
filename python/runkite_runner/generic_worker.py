@@ -32,6 +32,7 @@ import grpc
 
 from . import runner_pb2, runner_pb2_grpc
 from .heartbeat import heartbeat_loop
+from .tls_utils import grpc_channel_credentials
 
 logger = logging.getLogger("runkite.runner")
 
@@ -161,14 +162,18 @@ async def run_worker(
     # Keepalive so the control plane detects a dead/crashed runner
     # quickly -- see worker.py's run_worker for the full rationale
     # (matches cmd/serve.go's keepalive.ServerParameters).
-    channel = grpc.aio.insecure_channel(
-        grpc_address,
-        options=[
-            ("grpc.keepalive_time_ms", 2000),
-            ("grpc.keepalive_timeout_ms", 2000),
-            ("grpc.keepalive_permit_without_calls", 1),
-        ],
-    )
+    grpc_options = [
+        ("grpc.keepalive_time_ms", 2000),
+        ("grpc.keepalive_timeout_ms", 2000),
+        ("grpc.keepalive_permit_without_calls", 1),
+    ]
+    # TLS opt-in via RUNKITE_TLS_CA_FILE -- see tls_utils and worker.py's
+    # own run_worker for the identical rationale.
+    tls_creds = grpc_channel_credentials()
+    if tls_creds is not None:
+        channel = grpc.aio.secure_channel(grpc_address, tls_creds, options=grpc_options)
+    else:
+        channel = grpc.aio.insecure_channel(grpc_address, options=grpc_options)
     stub = runner_pb2_grpc.RunnerServiceStub(channel)
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")
 

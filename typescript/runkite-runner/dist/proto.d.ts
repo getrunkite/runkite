@@ -85,5 +85,10 @@ export interface RunnerServiceClient extends Client {
     watchCancels(req: WatchCancelsRequest, metadata: import("@grpc/grpc-js").Metadata): import("@grpc/grpc-js").ClientReadableStream<CancelSignal>;
     heartbeat(req: HeartbeatRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): void;
 }
-/** Creates a RunnerService client against grpcAddress (insecure, matching the Python/Go runners -- gRPC transport security is out of scope, same as the rest of the Runner Protocol). */
+/**
+ * Creates a RunnerService client against grpcAddress. TLS is opt-in via
+ * RUNKITE_TLS_CA_FILE (see tls.ts's own doc comment) -- unset means
+ * exactly the original plaintext createInsecure(), matching the Python
+ * runner's identical worker.py/generic_worker.py fallback.
+ */
 export declare function createRunnerClient(grpcAddress: string): RunnerServiceClient;

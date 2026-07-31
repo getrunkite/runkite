@@ -16,6 +16,7 @@ import { executeRun } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { createRunnerClient, } from "./proto.js";
+import { grpcChannelCredentials } from "./tls.js";
 /**
  * Minimal counting semaphore for bounding concurrent job dispatch.
  * Node has no asyncio.Semaphore equivalent built in, and this is the
@@ -158,7 +159,14 @@ export async function runWorker(opts) {
     });
     adapter.attachStore(store);
     logger.info(`Store mode: ${store.mode}`);
-    logger.info(`Connecting to control plane at ${opts.grpcAddress}`);
+    // grpcChannelCredentials() (not just "did TLS env vars get read") is
+    // the actual signal createRunnerClient itself uses to decide
+    // insecure vs TLS -- checking the same function here (rather than
+    // re-reading RUNKITE_TLS_CA_FILE directly) can't drift from what the
+    // client connection actually does. Matches the Python runner's
+    // identical "(TLS)" suffix in worker.py's run_worker.
+    const tlsSuffix = grpcChannelCredentials() ? " (TLS)" : "";
+    logger.info(`Connecting to control plane at ${opts.grpcAddress}${tlsSuffix}`);
     const client = createRunnerClient(opts.grpcAddress);
     // Track cancel state by run_id. watchCancelsLoop flips these; execute_run
     // polls isCancelled() for the currently-running job.

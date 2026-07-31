@@ -24,6 +24,7 @@
  * replica of the same runner_kind, or `wait: false` + polling the
  * child run yourself) for any graph that delegates synchronously.
  */
+import { httpDispatcher } from "./tls.js";
 export class A2AError extends Error {
 }
 /**
@@ -84,7 +85,12 @@ export async function callAgent(config, agentId, input, opts = {}) {
         headers["X-Runner-Kind"] = "typescript-langgraphjs";
         headers["X-Runner-Token"] = runnerToken;
     }
-    const fetchOpts = { method: "POST", headers, body: JSON.stringify(body) };
+    const fetchOpts = {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        dispatcher: httpDispatcher(),
+    };
     if (opts.timeoutMs != null)
         fetchOpts.signal = AbortSignal.timeout(opts.timeoutMs);
     const resp = await fetch(`${baseUrl}/internal/a2a/runs`, fetchOpts);

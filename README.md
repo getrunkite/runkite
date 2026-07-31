@@ -231,6 +231,40 @@ Example (webhook sidecar):
 
 `cache_ttl_seconds > 0` caches a result per (credential, method, path) combination -- for a REST API whose paths embed resource IDs (`/threads/{id}/runs/{id}`), that's effectively one entry per distinct resource a caller has ever touched, not one per caller, so the cache is a size-bounded, TTL-evicting LRU rather than a plain map (`cache_max_entries`, default 10000) -- otherwise it would grow for the lifetime of a long-running control plane under completely normal traffic, not just under abuse.
 
+## TLS / mTLS
+
+Every network hop in this project is plaintext until you configure otherwise -- HTTP, the gRPC bridge, and both runners' calls back to the control plane's HTTP API. TLS is opt-in and env-var-driven, off by default, same convention as `POSTGRES_DSN`/`REDIS_URL`/`RUNNER_TOKEN_*`, not a `langgraph.json` field -- this is deployment infrastructure, not agent config.
+
+**Control plane** (`cmd/serve.go`):
+
+| Env var | Effect |
+|---|---|
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | Enables HTTPS on the client-facing HTTP API. Both must be set together. |
+| `TLS_CLIENT_CA_FILE` | Additionally requires and verifies a client certificate on every HTTP request (mTLS) -- a second, independent trust boundary from whatever `auth` provider is configured; the two compose. |
+| `GRPC_TLS_CERT_FILE` / `GRPC_TLS_KEY_FILE` | Enables TLS on the gRPC bridge. |
+| `GRPC_TLS_CLIENT_CA_FILE` | Requires and verifies a runner's client certificate (mTLS) -- a stolen/guessed `RUNNER_TOKEN` no longer suffices on its own to open a connection at all; the TLS handshake itself rejects an uncertified client before the token interceptor ever runs. |
+
+**Runners** (Python and TypeScript, identical env vars and semantics on both):
+
+| Env var | Effect |
+|---|---|
+| `RUNKITE_TLS_CA_FILE` | Verifies the control plane's server certificate against this CA -- required for a self-signed or internal-CA-signed cert; a publicly-trusted cert needs nothing set. Enables TLS on both the gRPC channel and the proxy-mode HTTP calls (store/vector-store/A2A) at once, since a real deployment signs both with the same CA and a runner only ever talks to one control plane. |
+| `RUNKITE_TLS_CLIENT_CERT_FILE` / `RUNKITE_TLS_CLIENT_KEY_FILE` | This runner's own client certificate for mTLS, when the control plane requires one. |
+
+Live-verified end to end with self-signed certificates: HTTPS-only (server cert, no mTLS) rejects a plain-HTTP request and accepts HTTPS; mTLS on the HTTP API rejects a request with no client cert or an untrusted one and accepts a CA-signed one; a real Python runner completed a full run over an mTLS gRPC channel plus HTTPS proxy-mode store calls; a real TypeScript runner did the same with mTLS on *both* the gRPC bridge and the HTTP API simultaneously.
+
+```bash
+# Control plane: HTTPS + mTLS on both HTTP and gRPC
+TLS_CERT_FILE=server-cert.pem TLS_KEY_FILE=server-key.pem TLS_CLIENT_CA_FILE=ca-cert.pem \
+GRPC_TLS_CERT_FILE=server-cert.pem GRPC_TLS_KEY_FILE=server-key.pem GRPC_TLS_CLIENT_CA_FILE=ca-cert.pem \
+./runkite serve --config examples/echo_agent/langgraph.json
+
+# Runner: trusts the CA, presents its own client cert for mTLS
+RUNKITE_TLS_CA_FILE=server-cert.pem \
+RUNKITE_TLS_CLIENT_CERT_FILE=client-cert.pem RUNKITE_TLS_CLIENT_KEY_FILE=client-key.pem \
+python -m runkite_runner.worker --config examples/echo_agent/langgraph.json --grpc-address localhost:50051 --http-address https://localhost:2026
+```
+
 ## Multi-tenancy
 
 Flat tenant scoping -- a full workspace/org/team hierarchy with isolated data was considered, but a flat `tenant_id` is the actual scope built; a hierarchy can be layered on top later via a naming convention without a schema change, and wasn't needed to satisfy anything else already built, including `rate_limit.per_tenant`. Opt-in and fully additive: with no `auth` configured (or a provider that doesn't supply a tenant), every request resolves to an implicit `default` tenant -- exactly today's single-tenant behavior, unchanged.

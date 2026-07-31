@@ -29,6 +29,8 @@ from typing import Any
 
 import httpx
 
+from .tls_utils import httpx_tls_kwargs
+
 
 class A2AError(Exception):
     """Raised when the control plane rejects a delegation call --
@@ -124,7 +126,7 @@ async def call_agent(
         headers["X-Runner-Kind"] = "python-langgraph"
         headers["X-Runner-Token"] = runner_token
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
         resp = await client.post(f"{base_url}/internal/a2a/runs", json=body, headers=headers)
         if resp.status_code >= 400:
             raise A2AError(f"call_agent({agent_id!r}) failed: {resp.status_code} {resp.text}")

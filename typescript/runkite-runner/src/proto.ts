@@ -11,6 +11,7 @@ import { loadSync } from "@grpc/proto-loader";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { grpcChannelCredentials } from "./tls.js";
 
 // proto/runner.proto is the same file Go/Python load. Prefer a copy
 // shipped next to this package (npm install / packaged bin), then fall
@@ -141,9 +142,15 @@ export interface RunnerServiceClient extends Client {
   ): void;
 }
 
-/** Creates a RunnerService client against grpcAddress (insecure, matching the Python/Go runners -- gRPC transport security is out of scope, same as the rest of the Runner Protocol). */
+/**
+ * Creates a RunnerService client against grpcAddress. TLS is opt-in via
+ * RUNKITE_TLS_CA_FILE (see tls.ts's own doc comment) -- unset means
+ * exactly the original plaintext createInsecure(), matching the Python
+ * runner's identical worker.py/generic_worker.py fallback.
+ */
 export function createRunnerClient(grpcAddress: string): RunnerServiceClient {
-  return new RunnerServiceCtor(grpcAddress, credentials.createInsecure(), {
+  const creds = grpcChannelCredentials() ?? credentials.createInsecure();
+  return new RunnerServiceCtor(grpcAddress, creds, {
     // Matches cmd/serve.go's keepalive.ServerParameters and the Python
     // runner's grpc.keepalive_time_ms -- detects a dead/crashed control
     // plane connection quickly instead of relying on TCP-level detection.

@@ -28,6 +28,7 @@ from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify
 from .heartbeat import heartbeat_loop
 from .logging_config import setup_logging
 from .store import RunkiteStore
+from .tls_utils import grpc_channel_credentials
 
 logger = logging.getLogger("runkite.runner")
 
@@ -461,21 +462,27 @@ async def run_worker(
     adapter.attach_store(store)
     logger.info(f"Store mode: {store.mode}")
 
-    logger.info(f"Connecting to control plane at {grpc_address}")
     # Keepalive so the control plane detects a dead/crashed runner quickly
     # instead of relying on TCP-level detection, which can leave a
     # crashed runner's in-flight GetJob long-poll "zombie" server-side for
     # a long time -- long enough to steal a job meant for its replacement
     # and then lose it (the response can never reach a dead client).
     # Matches the server's keepalive.ServerParameters in cmd/serve.go.
-    channel = grpc.aio.insecure_channel(
-        grpc_address,
-        options=[
-            ("grpc.keepalive_time_ms", 2000),
-            ("grpc.keepalive_timeout_ms", 2000),
-            ("grpc.keepalive_permit_without_calls", 1),
-        ],
-    )
+    grpc_options = [
+        ("grpc.keepalive_time_ms", 2000),
+        ("grpc.keepalive_timeout_ms", 2000),
+        ("grpc.keepalive_permit_without_calls", 1),
+    ]
+    # TLS is opt-in via RUNKITE_TLS_CA_FILE (see tls_utils' own doc
+    # comment) -- unset means exactly today's insecure_channel, matching
+    # the control plane's own plaintext-by-default convention.
+    tls_creds = grpc_channel_credentials()
+    if tls_creds is not None:
+        logger.info(f"Connecting to control plane at {grpc_address} (TLS)")
+        channel = grpc.aio.secure_channel(grpc_address, tls_creds, options=grpc_options)
+    else:
+        logger.info(f"Connecting to control plane at {grpc_address}")
+        channel = grpc.aio.insecure_channel(grpc_address, options=grpc_options)
     stub = runner_pb2_grpc.RunnerServiceStub(channel)
 
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")

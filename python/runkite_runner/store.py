@@ -64,6 +64,8 @@ from langgraph.store.base import (
     SearchOp,
 )
 
+from .tls_utils import httpx_tls_kwargs
+
 _NS_DELIM = "\x1f"
 
 # Direct mode has no per-request tenant identity to work with (it's a raw
@@ -216,7 +218,9 @@ class RunkiteStore(BaseStore):
     # -- proxy mode: HTTP calls to the control plane -----------------------
 
     async def _abatch_proxy(self, ops: list[Op]) -> list[Result]:
-        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+        ) as client:
             return [await self._proxy_one(client, op) for op in ops]
 
     async def _proxy_one(self, client: httpx.AsyncClient, op: Op) -> Result:
