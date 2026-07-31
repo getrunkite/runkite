@@ -1,7 +1,7 @@
 // Package redistransport implements the transport.JobQueue, transport.EventBroker,
 // and transport.CancelBroker interfaces using Redis.
 //
-// JobQueue uses Redis Lists (LPUSH/BRPOP) per runner_kind.
+// JobQueue uses Redis Lists (LPUSH/BLMOVE) per runner_kind.
 // EventBroker uses Redis Streams (XADD/XREAD) per run_id — every subscriber
 // tails the stream directly via a blocking XREAD goroutine, so delivery works
 // identically whether publisher and subscriber are in the same process or on
@@ -87,6 +87,14 @@ const inflightDataKey = "rk:inflight:data"
 // that ever increments it (via HINCRBY, atomic).
 const inflightGenKey = "rk:inflight:generation"
 
+// inflightPendingKey is the staging list for Dequeue's atomic claim:
+// BLMOVE moves a job here from rk:queue:{kind} in one Redis command so
+// a crash can never leave the job neither on the ready queue nor in
+// inflight tracking. promoteScript then LREM+HSET/ZADD/HSET into the
+// durable inflight keys; drainPendingScript (run from ReclaimStale)
+// promotes any orphan left here if the process died between those steps.
+const inflightPendingKey = "rk:inflight:pending"
+
 // nowMillis is a var (not a plain time.Now call) so tests can freeze/
 // control it without sleeping in wall-clock time -- see redis_test.go's
 // use of this for exercising ReclaimStale's cutoff boundary precisely.
@@ -108,29 +116,107 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 	return q.rdb.LPush(ctx, queueKey(job.RunnerKind), data).Err()
 }
 
-// dequeueBlockCap bounds a single BRPOP call's blocking duration,
+// dequeueBlockCap bounds a single BLMOVE call's blocking duration,
 // regardless of how much of the overall Dequeue timeout remains. This
 // matters for a reason beyond "don't block too long on one call": a
 // runner whose gRPC connection just died (crash, restart) leaves its
-// GetJob call's ctx blocked inside exactly this BRPOP until grpc-go's
+// GetJob call's ctx blocked inside exactly this BLMOVE until grpc-go's
 // keepalive detects the dead peer and cancels it -- confirmed live to
-// take ~4-6s. BRPOP's blocking-command
-// semantics mean Redis can atomically pop a freshly-pushed item to
-// deliver to a connection at almost the same instant that connection is
-// being torn down for cancellation -- a genuine Redis/network race
-// (not a Go channel, which never loses a value this way) where the item
-// is removed from the list server-side but never actually received
-// client-side, because the connection closed mid-delivery. Confirmed
-// live via a real flake: a resume request's newly-enqueued job vanished
-// this exact way, at the same millisecond a zombie GetJob's 30s-long
-// single BRPOP call got cancelled. Capping each call to this shorter
-// duration doesn't make the race impossible (it can still happen on any
-// individual call), but shrinks a zombie's vulnerable window from up to
-// the full GetJob timeout (~30s) down to this cap, and the explicit
-// ctx.Err() check below means a cancelled context is noticed within one
-// cap-sized tick instead of only when BRPOP itself eventually surfaces
-// the cancellation.
+// take ~4-6s. BLMOVE's blocking-command semantics mean Redis can
+// atomically move a freshly-pushed item at almost the same instant that
+// connection is being torn down for cancellation -- a genuine
+// Redis/network race where the client never sees the reply. Unlike the
+// old BRPOP path (job left the queue with nowhere to go), BLMOVE leaves
+// the job on rk:inflight:pending, so drainPendingScript / the next
+// Dequeue's promote recovers it. Capping each call still shrinks a
+// zombie's vulnerable window and lets ctx.Err() be noticed within one
+// cap-sized tick.
 const dequeueBlockCap = 2 * time.Second
+
+// promoteScript moves one exact pending payload into durable inflight
+// tracking (data/zset/generation). Atomic on the Redis side so a crash
+// mid-promote leaves the job either still on pending (drain recovers)
+// or fully recorded. If drain already promoted the same payload,
+// HEXISTS short-circuits to success so Dequeue can still return the job.
+//
+// Returns {status, run_id, generation} where status is 1=in-flight
+// (caller should return the job) or 0=discarded (canceled / gone).
+//
+// KEYS: pending, data, zset, gen, canceled
+// ARGV: payload, score_millis
+const promoteScript = `
+local pending = KEYS[1]
+local data_key = KEYS[2]
+local zset_key = KEYS[3]
+local gen_key = KEYS[4]
+local canceled_key = KEYS[5]
+local payload = ARGV[1]
+local score = ARGV[2]
+
+local ok, job = pcall(cjson.decode, payload)
+if not ok or type(job) ~= 'table' or not job.run_id then
+  redis.call('LREM', pending, 1, payload)
+  return {0, '', 0}
+end
+
+local run_id = job.run_id
+local gen = tonumber(job.generation) or 0
+local removed = redis.call('LREM', pending, 1, payload)
+if removed == 0 then
+  if redis.call('HEXISTS', data_key, run_id) == 1 then
+    local current = tonumber(redis.call('HGET', gen_key, run_id)) or gen
+    return {1, run_id, current}
+  end
+  return {0, run_id, 0}
+end
+
+if redis.call('SISMEMBER', canceled_key, run_id) == 1 then
+  return {0, run_id, 0}
+end
+
+redis.call('HSET', data_key, run_id, payload)
+redis.call('ZADD', zset_key, score, run_id)
+redis.call('HSET', gen_key, run_id, gen)
+return {1, run_id, gen}
+`
+
+// drainPendingScript promotes every orphan on rk:inflight:pending into
+// durable inflight (or drops canceled ones). Called from ReclaimStale so
+// a crash between BLMOVE and promoteScript cannot silently lose a job
+// forever -- at worst it sits on pending until the next reaper tick
+// (~2s) and then becomes a normal in-flight lease.
+//
+// KEYS: pending, data, zset, gen, canceled
+// ARGV: score_millis
+const drainPendingScript = `
+local pending = KEYS[1]
+local data_key = KEYS[2]
+local zset_key = KEYS[3]
+local gen_key = KEYS[4]
+local canceled_key = KEYS[5]
+local score = ARGV[1]
+
+local promoted = 0
+while true do
+  local payload = redis.call('LPOP', pending)
+  if not payload then
+    break
+  end
+  local ok, job = pcall(cjson.decode, payload)
+  if not ok or type(job) ~= 'table' or not job.run_id then
+    -- drop corrupt payload
+  elseif redis.call('SISMEMBER', canceled_key, job.run_id) == 1 then
+    -- discard canceled
+  else
+    local gen = tonumber(job.generation) or 0
+    redis.call('HSET', data_key, job.run_id, payload)
+    redis.call('ZADD', zset_key, score, job.run_id)
+    redis.call('HSET', gen_key, job.run_id, gen)
+    promoted = promoted + 1
+  end
+end
+return promoted
+`
 
 func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*transport.RunAssignment, error) {
 	deadline := time.Now().Add(timeout)
@@ -145,7 +231,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			return nil, nil
 		}
 
-		// BRPOP timeout is integer seconds in Redis. Sub-second values get
+		// BLMOVE timeout is integer seconds in Redis. Sub-second values get
 		// truncated to 0 which means "block forever." Clamp to 1s minimum
 		// to avoid that; the slight over-block is harmless. Also capped at
 		// dequeueBlockCap -- see its own doc comment for why.
@@ -157,10 +243,11 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			blockTime = time.Second
 		}
 
-		result, err := q.rdb.BRPop(ctx, blockTime, key).Result()
+		// Atomic claim: job moves queue → pending in one Redis command.
+		// Never "popped into the void" the way BRPOP + separate HSET was.
+		payload, err := q.rdb.BLMove(ctx, key, inflightPendingKey, "RIGHT", "LEFT", blockTime).Result()
 		if err != nil {
 			if err == redis.Nil {
-				// Timeout — check if our actual deadline has passed
 				if time.Now().After(deadline) {
 					return nil, nil
 				}
@@ -168,48 +255,60 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			}
 			return nil, err
 		}
-		if len(result) < 2 {
-			return nil, nil
-		}
 
 		var job transport.RunAssignment
-		if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
+		if err := json.Unmarshal([]byte(payload), &job); err != nil {
+			// Drop corrupt payload from pending so it can't loop forever.
+			_ = q.rdb.LRem(ctx, inflightPendingKey, 1, payload).Err()
 			continue
 		}
 
-		canceled, _ := q.rdb.SIsMember(ctx, canceledSetKey, job.RunID).Result()
-		if canceled {
-			continue
-		}
-
-		// Record in-flight state in Redis itself (not a local map) so any
-		// replica's Ack/ReclaimStale can see it -- see this type's own doc
-		// comment. One small, deliberately-accepted residual risk (a
-		// "ponytail" ceiling, not an oversight): if this process crashes in
-		// the gap between BRPop succeeding and this pipeline completing,
-		// the job is popped from the queue but never recorded in-flight, so
-		// it's lost the same way the old design lost it for a job's ENTIRE
-		// execution time. That window here is a single Redis round-trip
-		// (single-digit milliseconds), not minutes -- a large, worthwhile
-		// improvement even though it isn't a mathematically perfect
-		// zero-gap guarantee. Closing the gap fully would need BRPOPLPUSH/
-		// LMOVE's atomic pop-and-transfer semantics instead of BRPOP, a
-		// larger change than this fix warrants on its own.
-		// job.Generation here comes from Go's own structured JSON
-		// unmarshal above, which resolves the top-level "generation"
-		// field unambiguously regardless of anything else the payload
-		// contains -- unlike inflightGenKey's own doc comment describes
-		// for the Lua side, there's no string-search risk here at all.
-		if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-			pipe.HSet(ctx, inflightDataKey, job.RunID, result[1])
-			pipe.ZAdd(ctx, inflightZSetKey, redis.Z{Score: float64(nowMillis()), Member: job.RunID})
-			pipe.HSet(ctx, inflightGenKey, job.RunID, job.Generation)
-			return nil
-		}); err != nil {
+		status, err := q.promotePending(ctx, payload)
+		if err != nil {
 			return nil, err
+		}
+		if status == 0 {
+			// Canceled or already drained-and-discarded -- try again.
+			continue
 		}
 		return &job, nil
 	}
+}
+
+// promotePending runs promoteScript. Returns 1 if the job is now in
+// durable inflight tracking, 0 if discarded (canceled / gone).
+func (q *Queue) promotePending(ctx context.Context, payload string) (int64, error) {
+	result, err := q.rdb.Eval(ctx, promoteScript,
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledSetKey},
+		payload, nowMillis(),
+	).Slice()
+	if err != nil {
+		return 0, err
+	}
+	if len(result) < 1 {
+		return 0, fmt.Errorf("unexpected promote script result: %#v", result)
+	}
+	switch v := result[0].(type) {
+	case int64:
+		return v, nil
+	default:
+		return 0, fmt.Errorf("unexpected promote status type %T", result[0])
+	}
+}
+
+func (q *Queue) drainPending(ctx context.Context) (int, error) {
+	result, err := q.rdb.Eval(ctx, drainPendingScript,
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledSetKey},
+		nowMillis(),
+	).Result()
+	if err != nil {
+		return 0, err
+	}
+	n, ok := result.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected drain script result type %T", result)
+	}
+	return int(n), nil
 }
 
 // fencingCheck is shared Lua logic (via a comment, not a callable Lua
@@ -426,8 +525,12 @@ return reclaimed
 
 // ReclaimStale re-enqueues jobs dequeued more than maxAge ago without Ack.
 // Safe to call concurrently from multiple control-plane replicas -- see
-// reclaimStaleScript's own doc comment for why.
+// reclaimStaleScript's own doc comment for why. Also drains any orphan
+// payloads left on rk:inflight:pending (crash between BLMOVE and promote).
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+	if _, err := q.drainPending(ctx); err != nil {
+		return 0, err
+	}
 	cutoff := nowMillis() - maxAge.Milliseconds()
 	result, err := q.rdb.Eval(ctx, reclaimStaleScript,
 		[]string{inflightZSetKey, inflightDataKey, canceledSetKey, inflightGenKey},
