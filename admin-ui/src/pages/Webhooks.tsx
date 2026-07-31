@@ -105,29 +105,25 @@ export function Webhooks() {
     },
   ];
 
-  if (error && !data) return <ErrorState message={error} />;
-  if (data && data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Webhook dead-letters" subtitle="Deliveries that exhausted every retry." />
-        <EmptyState icon={WebhookIcon} title="Nothing to see here" message="No failed webhook deliveries." />
-      </div>
-    );
-  }
-
   return (
     <div>
       <PageHeader
         title="Webhook dead-letters"
         subtitle="Deliveries that exhausted every retry. Redelivery re-POSTs the stored payload unsigned and doesn't remove the entry below -- it's a manual retry, not a resolution."
       />
-      <DataTable
-        columns={columns}
-        data={data ?? []}
-        getRowId={(dl) => dl.id}
-        loading={loading}
-        initialSorting={[{ id: "failed_at", desc: true }]}
-      />
+      {error && !data && <ErrorState message={error} />}
+      {data && data.length === 0 && (
+        <EmptyState icon={WebhookIcon} title="Nothing to see here" message="No failed webhook deliveries." />
+      )}
+      {(data === null || (data && data.length > 0)) && (
+        <DataTable
+          columns={columns}
+          data={data ?? []}
+          getRowId={(dl) => dl.id}
+          loading={loading}
+          initialSorting={[{ id: "failed_at", desc: true }]}
+        />
+      )}
     </div>
   );
 }

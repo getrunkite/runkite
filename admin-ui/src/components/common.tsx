@@ -40,10 +40,12 @@ export function EmptyState({
   title = "Nothing here yet",
   message,
   icon: Icon = Inbox,
+  action,
 }: {
   title?: string;
   message: string;
   icon?: typeof Inbox;
+  action?: ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
@@ -52,8 +54,9 @@ export function EmptyState({
       </div>
       <div>
         <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{message}</p>
       </div>
+      {action && <div className="mt-1">{action}</div>}
     </div>
   );
 }

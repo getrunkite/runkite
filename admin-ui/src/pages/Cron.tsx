@@ -52,26 +52,22 @@ const columns: ColumnDef<AdminCronSchedule, unknown>[] = [
 export function Cron() {
   const { data, error, loading } = useApi<AdminCronSchedule[]>("/cron");
 
-  if (error && !data) return <ErrorState message={error} />;
-  if (data && data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Cron schedules" subtitle="Across every tenant." />
-        <EmptyState icon={Clock} message="No cron schedules configured in langgraph.json." />
-      </div>
-    );
-  }
-
   return (
     <div>
       <PageHeader title="Cron schedules" subtitle="Across every tenant." />
-      <DataTable
-        columns={columns}
-        data={data ?? []}
-        getRowId={(c) => `${c.tenant_id ?? "default"}:${c.name}`}
-        loading={loading}
-        initialSorting={[{ id: "updated_at", desc: true }]}
-      />
+      {error && !data && <ErrorState message={error} />}
+      {data && data.length === 0 && (
+        <EmptyState icon={Clock} message="No cron schedules configured in langgraph.json." />
+      )}
+      {(data === null || (data && data.length > 0)) && (
+        <DataTable
+          columns={columns}
+          data={data ?? []}
+          getRowId={(c) => `${c.tenant_id ?? "default"}:${c.name}`}
+          loading={loading}
+          initialSorting={[{ id: "updated_at", desc: true }]}
+        />
+      )}
     </div>
   );
 }

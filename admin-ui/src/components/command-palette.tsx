@@ -28,7 +28,7 @@ import {
  * needing their own. */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, authRequired } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   function go(to: string) {
@@ -62,15 +62,17 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             {theme === "dark" ? <Sun /> : <Moon />}
             Switch to {theme === "dark" ? "light" : "dark"} theme
           </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              onOpenChange(false);
-              logout();
-            }}
-          >
-            <LogOut />
-            Sign out
-          </CommandItem>
+          {authRequired && (
+            <CommandItem
+              onSelect={() => {
+                onOpenChange(false);
+                logout();
+              }}
+            >
+              <LogOut />
+              Sign out
+            </CommandItem>
+          )}
         </CommandGroup>
       </CommandList>
     </CommandDialog>

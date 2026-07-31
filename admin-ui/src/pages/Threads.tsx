@@ -51,30 +51,29 @@ export function Threads() {
   const { data, error, loading } = useApi<AdminThread[]>("/threads");
   const navigate = useNavigate();
 
-  if (error && !data) return <ErrorState message={error} />;
-  if (data && data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Threads" subtitle="Across every tenant." />
-        <EmptyState icon={MessagesSquare} message="No threads yet -- one is created the moment a client starts a conversation." />
-      </div>
-    );
-  }
-
   return (
     <div>
       <PageHeader
         title="Threads"
-        subtitle={data ? `${data.length} across every tenant. Click any column to sort.` : undefined}
+        subtitle={data ? `${data.length} across every tenant. Click any column to sort.` : "Across every tenant."}
       />
-      <DataTable
-        columns={columns}
-        data={data ?? []}
-        getRowId={(t) => t.thread_id}
-        onRowClick={(t) => navigate(`/admin/threads/${t.thread_id}`)}
-        loading={loading}
-        initialSorting={[{ id: "updated_at", desc: true }]}
-      />
+      {error && !data && <ErrorState message={error} />}
+      {data && data.length === 0 && (
+        <EmptyState
+          icon={MessagesSquare}
+          message="No threads yet -- one is created the moment a client starts a conversation."
+        />
+      )}
+      {(data === null || (data && data.length > 0)) && (
+        <DataTable
+          columns={columns}
+          data={data ?? []}
+          getRowId={(t) => t.thread_id}
+          onRowClick={(t) => navigate(`/admin/threads/${t.thread_id}`)}
+          loading={loading}
+          initialSorting={[{ id: "updated_at", desc: true }]}
+        />
+      )}
     </div>
   );
 }

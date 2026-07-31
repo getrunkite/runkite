@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Bot, Clock, MessagesSquare, Plug, Workflow } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { useApi } from "../api/useApi";
@@ -8,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Skeleton } from "../components/ui/skeleton";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../components/ui/chart";
 import { statusMeta } from "../lib/status";
+import { cn } from "../lib/utils";
 
 const POLL_MS = 5000;
 const HISTORY_LIMIT = 60; // 5 minutes at a 5s poll
@@ -18,12 +20,12 @@ interface HistoryPoint {
   total_threads: number;
 }
 
-const STAT_CARDS: { key: keyof AdminOverview; label: string; icon: typeof Bot }[] = [
-  { key: "total_agents", label: "Agents", icon: Bot },
-  { key: "total_threads", label: "Threads", icon: MessagesSquare },
-  { key: "total_runs", label: "Runs", icon: Workflow },
-  { key: "connector_count", label: "Connectors", icon: Plug },
-  { key: "cron_schedule_count", label: "Cron schedules", icon: Clock },
+const STAT_CARDS: { key: keyof AdminOverview; label: string; icon: typeof Bot; to: string }[] = [
+  { key: "total_agents", label: "Agents", icon: Bot, to: "/admin/agents" },
+  { key: "total_threads", label: "Threads", icon: MessagesSquare, to: "/admin/threads" },
+  { key: "total_runs", label: "Runs", icon: Workflow, to: "/admin/runs" },
+  { key: "connector_count", label: "Connectors", icon: Plug, to: "/admin/connectors" },
+  { key: "cron_schedule_count", label: "Cron schedules", icon: Clock, to: "/admin/cron" },
 ];
 
 // Tailwind's `--color-chart-N` tokens from index.css, wired through the
@@ -78,6 +80,7 @@ export function Overview() {
             label={stat.label}
             value={data?.[stat.key] as number | undefined}
             icon={stat.icon}
+            to={stat.to}
             delta={stat.key === "total_runs" ? runsDelta : null}
           />
         ))}
@@ -177,35 +180,45 @@ function StatCard({
   label,
   value,
   icon: Icon,
+  to,
   delta,
 }: {
   label: string;
   value?: number;
   icon: typeof Bot;
+  to: string;
   delta?: number | null;
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          {value === undefined ? (
-            <Skeleton className="mt-2 h-8 w-16" />
-          ) : (
-            <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">{value.toLocaleString()}</p>
-          )}
-          {delta != null && delta !== 0 && (
-            <p className={`mt-1 text-xs font-medium ${delta > 0 ? "text-success" : "text-muted-foreground"}`}>
-              {delta > 0 ? "+" : ""}
-              {delta} since last check
-            </p>
-          )}
-        </div>
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-4" />
-        </div>
-      </CardContent>
-    </Card>
+    <Link
+      to={to}
+      className={cn(
+        "group block rounded-xl outline-none",
+        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+      )}
+    >
+      <Card className="h-full transition-colors group-hover:border-primary/40">
+        <CardContent className="flex items-start justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">{label}</p>
+            {value === undefined ? (
+              <Skeleton className="mt-2 h-8 w-16" />
+            ) : (
+              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">{value.toLocaleString()}</p>
+            )}
+            {delta != null && delta !== 0 && (
+              <p className={`mt-1 text-xs font-medium ${delta > 0 ? "text-success" : "text-muted-foreground"}`}>
+                {delta > 0 ? "+" : ""}
+                {delta} since last check
+              </p>
+            )}
+          </div>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Icon className="size-4" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 

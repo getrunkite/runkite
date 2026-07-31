@@ -32,20 +32,16 @@ const columns: ColumnDef<AdminConnector, unknown>[] = [
 export function Connectors() {
   const { data, error, loading } = useApi<AdminConnector[]>("/connectors");
 
-  if (error && !data) return <ErrorState message={error} />;
-  if (data && data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Connectors" subtitle="OAuth/MCP sessions runners pre-warm for their declared agents." />
-        <EmptyState icon={Plug} message="No connectors configured in langgraph.json." />
-      </div>
-    );
-  }
-
   return (
     <div>
       <PageHeader title="Connectors" subtitle="OAuth/MCP sessions runners pre-warm for their declared agents." />
-      <DataTable columns={columns} data={data ?? []} getRowId={(c) => c.name} loading={loading} />
+      {error && !data && <ErrorState message={error} />}
+      {data && data.length === 0 && (
+        <EmptyState icon={Plug} message="No connectors configured in langgraph.json." />
+      )}
+      {(data === null || (data && data.length > 0)) && (
+        <DataTable columns={columns} data={data ?? []} getRowId={(c) => c.name} loading={loading} />
+      )}
     </div>
   );
 }

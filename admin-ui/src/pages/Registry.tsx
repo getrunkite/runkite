@@ -59,20 +59,6 @@ const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
 export function Registry() {
   const { data, error, loading } = useApi<AdminRegistryEntry[]>("/registry");
 
-  if (error && !data) return <ErrorState message={error} />;
-  if (data && data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Registry" subtitle="A metadata catalog for publishing and discovering agent definitions." />
-        <EmptyState
-          icon={Package}
-          title="No registry entries published yet"
-          message="Publish an entry via PUT /registry/entries/{name} to see it here."
-        />
-      </div>
-    );
-  }
-
   return (
     <div>
       <PageHeader
@@ -80,10 +66,20 @@ export function Registry() {
         subtitle={
           data
             ? `${data.length} published across every tenant. source_ref is where to deploy an entry, not something this control plane executes.`
-            : undefined
+            : "A metadata catalog for publishing and discovering agent definitions."
         }
       />
-      <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
+      {error && !data && <ErrorState message={error} />}
+      {data && data.length === 0 && (
+        <EmptyState
+          icon={Package}
+          title="No registry entries published yet"
+          message="Publish an entry via PUT /registry/entries/{name} to see it here."
+        />
+      )}
+      {(data === null || (data && data.length > 0)) && (
+        <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
+      )}
     </div>
   );
 }

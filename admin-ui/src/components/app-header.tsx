@@ -1,36 +1,75 @@
-import { useLocation } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { Menu, Search } from "lucide-react";
 import { NAV_GROUPS } from "./app-sidebar";
 import { ModeToggle } from "./mode-toggle";
 import { Button } from "./ui/button";
 
-function currentLabel(pathname: string): { section?: string; page: string } {
+function currentCrumb(pathname: string): { section?: string; sectionTo?: string; page: string } {
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
       const base = item.to.replace(/\/$/, "");
-      if (pathname === item.to || pathname === base || (!item.end && pathname.startsWith(base + "/"))) {
+      if (pathname === item.to || pathname === base) {
         return { section: group.label || undefined, page: item.label };
+      }
+      if (!item.end && pathname.startsWith(base + "/")) {
+        return {
+          section: item.label,
+          sectionTo: item.to,
+          page: `${item.label} detail`,
+        };
       }
     }
   }
-  // Detail routes (e.g. /admin/threads/:id) fall through to a generic
-  // label derived from whichever resource segment they're nested under.
   const parts = pathname.split("/").filter(Boolean);
   const resource = parts[1];
   const match = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.to.includes(`/${resource}`));
-  return { section: "Resources", page: match ? `${match.label} detail` : "Runkite Admin" };
+  return {
+    section: match?.label,
+    sectionTo: match?.to,
+    page: match ? `${match.label} detail` : "Runkite Admin",
+  };
 }
 
-export function AppHeader({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
+function shortcutLabel(): string {
+  if (typeof navigator === "undefined") return "⌘K";
+  const platform = navigator.platform || "";
+  const ua = navigator.userAgent || "";
+  if (/Mac|iPhone|iPad|iPod/i.test(platform) || /Mac OS/i.test(ua)) return "⌘K";
+  return "Ctrl+K";
+}
+
+export function AppHeader({
+  onOpenCommandPalette,
+  onOpenMobileNav,
+}: {
+  onOpenCommandPalette: () => void;
+  onOpenMobileNav: () => void;
+}) {
   const { pathname } = useLocation();
-  const { section, page } = currentLabel(pathname);
+  const { section, sectionTo, page } = currentCrumb(pathname);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border/60 bg-background/80 px-6 backdrop-blur-sm">
-      <div className="flex items-center gap-1.5 text-sm">
-        {section && <span className="text-muted-foreground">{section}</span>}
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background/80 px-4 backdrop-blur-sm sm:gap-4 sm:px-6">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden"
+        onClick={onOpenMobileNav}
+        aria-label="Open navigation"
+      >
+        <Menu className="size-4" />
+      </Button>
+
+      <div className="flex min-w-0 items-center gap-1.5 text-sm">
+        {section && sectionTo ? (
+          <Link to={sectionTo} className="truncate text-muted-foreground hover:text-foreground">
+            {section}
+          </Link>
+        ) : (
+          section && <span className="truncate text-muted-foreground">{section}</span>
+        )}
         {section && <span className="text-muted-foreground/40">/</span>}
-        <span className="font-medium">{page}</span>
+        <span className="truncate font-medium">{page}</span>
       </div>
 
       <div className="ml-auto flex items-center gap-2">
@@ -43,10 +82,10 @@ export function AppHeader({ onOpenCommandPalette }: { onOpenCommandPalette: () =
           <Search className="size-3.5" />
           Search
           <kbd className="ml-2 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">
-            ⌘K
+            {shortcutLabel()}
           </kbd>
         </Button>
-        <Button variant="ghost" size="icon" onClick={onOpenCommandPalette} className="sm:hidden">
+        <Button variant="ghost" size="icon" onClick={onOpenCommandPalette} className="sm:hidden" aria-label="Search">
           <Search className="size-4" />
         </Button>
         <ModeToggle />

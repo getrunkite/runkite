@@ -31,7 +31,7 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
     accessorKey: "thread_id",
     header: "Thread",
     cell: ({ row }) =>
-      row.original.thread_id && (
+      row.original.thread_id ? (
         <Link
           to={`/admin/threads/${row.original.thread_id}`}
           onClick={(e) => e.stopPropagation()}
@@ -39,6 +39,8 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
         >
           {row.original.thread_id}
         </Link>
+      ) : (
+        <span className="text-muted-foreground">—</span>
       ),
   },
   {
@@ -92,7 +94,24 @@ export function Runs() {
       </div>
 
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && <EmptyState icon={Workflow} message="No runs match this filter." />}
+      {data && data.length === 0 && (
+        <EmptyState
+          icon={Workflow}
+          title={status === "all" ? "No runs yet" : "No matching runs"}
+          message={
+            status === "all"
+              ? "Runs appear here as clients create them across every tenant."
+              : `No runs with status “${status}”. Try another filter.`
+          }
+          action={
+            status !== "all" ? (
+              <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setStatus("all")}>
+                Clear status filter
+              </button>
+            ) : undefined
+          }
+        />
+      )}
       {(data === null || (data && data.length > 0)) && (
         <DataTable
           columns={columns}

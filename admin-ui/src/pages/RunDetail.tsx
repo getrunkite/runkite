@@ -90,7 +90,15 @@ export function RunDetail() {
     <div>
       <PageHeader
         title="Run"
-        subtitle={<code className="font-mono text-xs">{run.data.run_id}</code>}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link to="/admin/runs" className="text-primary hover:underline">
+              ← Runs
+            </Link>
+            <span className="text-muted-foreground/40">·</span>
+            <code className="font-mono text-xs">{run.data.run_id}</code>
+          </span>
+        }
         actions={
           !isTerminal && (
             <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -137,10 +145,12 @@ export function RunDetail() {
               <Badge variant="outline">{run.data.tenant_id}</Badge>
             </DetailRow>
             <DetailRow label="Thread">
-              {run.data.thread_id && (
+              {run.data.thread_id ? (
                 <Link to={`/admin/threads/${run.data.thread_id}`} className="font-mono text-xs text-primary hover:underline">
                   {run.data.thread_id}
                 </Link>
+              ) : (
+                <span className="text-muted-foreground">—</span>
               )}
             </DetailRow>
             <DetailRow label="Created">{formatTimestamp(run.data.created_at)}</DetailRow>

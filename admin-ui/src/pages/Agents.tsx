@@ -63,7 +63,15 @@ export function Agents() {
           {data && data.length === 0 ? (
             <EmptyState icon={Bot} title="No agents registered" message="Agents appear here once a langgraph.json is bootstrapped." />
           ) : filtered && filtered.length === 0 ? (
-            <EmptyState title="No matches" message={`Nothing matches "${query}".`} />
+            <EmptyState
+              title="No matches"
+              message={`Nothing matches "${query}".`}
+              action={
+                <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setQuery("")}>
+                  Clear filter
+                </button>
+              }
+            />
           ) : (
             <DataTable
               columns={columns}

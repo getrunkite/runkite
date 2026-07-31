@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminRun, AdminThread } from "../api/types";
-import { ErrorState, formatTimestamp, PageHeader, StatusBadge, TableSkeleton } from "../components/common";
+import { EmptyState, ErrorState, formatTimestamp, PageHeader, StatusBadge, TableSkeleton } from "../components/common";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -53,7 +53,15 @@ export function ThreadDetail() {
     <div>
       <PageHeader
         title="Thread"
-        subtitle={<code className="font-mono text-xs">{thread.data.thread_id}</code>}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link to="/admin/threads" className="text-primary hover:underline">
+              ← Threads
+            </Link>
+            <span className="text-muted-foreground/40">·</span>
+            <code className="font-mono text-xs">{thread.data.thread_id}</code>
+          </span>
+        }
         actions={
           <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <DialogTrigger asChild>
@@ -121,7 +129,7 @@ export function ThreadDetail() {
         <CardContent>
           {runs.error && <ErrorState message={runs.error} />}
           {runs.data && runs.data.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">No runs yet.</p>
+            <EmptyState title="No runs yet" message="Runs on this thread will show up here once a client starts one." />
           )}
           {(runs.loading || (runs.data && runs.data.length > 0)) && (
             <Table>
