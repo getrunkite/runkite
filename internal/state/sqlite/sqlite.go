@@ -417,6 +417,16 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+// Ping verifies the database file is still reachable/openable. Mostly a
+// formality for SQLite (an embedded file, not a network service that can
+// go down independently of this process) but kept for interface
+// symmetry with the network-backed stores, and it does catch a real
+// failure mode: the file being deleted or its directory becoming
+// unwritable out from under a running process.
+func (s *SQLiteStore) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 // --------------------------------------------------------------------------
 // Agents
 // --------------------------------------------------------------------------

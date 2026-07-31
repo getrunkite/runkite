@@ -21,7 +21,7 @@ services:
       GRPC_PORT: "50052"
       LANGGRAPH_CONFIG: /app/examples/echo_agent_ts/langgraph.json
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2027/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2027/readyz"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -437,6 +437,19 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 	return total, lister.Err()
 }
 
+// Ping verifies the NATS connection is actually up by round-tripping a
+// real PING/PONG -- not just checking the client's own cached connection
+// state, since the client's background reconnect logic could be mid-
+// retry without having flipped that state yet. The broker/cancelbus
+// halves of this same package share this one *nats.Conn, so this single
+// check covers all three transport.* interfaces this package implements
+// (unlike Redis, which needs Ping on Broker/CancelBus too because it can
+// be paired with a different queue backend -- see redis.Broker.Ping).
+func (q *Queue) Ping(ctx context.Context) error {
+	_, err := q.nc.RTT()
+	return err
+}
+
 // --------------------------------------------------------------------------
 // EventBroker
 // --------------------------------------------------------------------------

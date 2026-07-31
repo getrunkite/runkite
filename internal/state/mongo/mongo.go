@@ -202,6 +202,11 @@ func (s *Store) Close() error {
 	return s.client.Disconnect(context.Background())
 }
 
+// Ping verifies the client can still reach the Mongo deployment right now.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.client.Ping(ctx, nil)
+}
+
 // TruncateAll removes all documents from all collections. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
 	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",

@@ -110,8 +110,15 @@ services:
     # stops all 3 replicas together, so an undersized grace period would
     # cut every in-flight request across the whole cluster short at once.
     stop_grace_period: 30s
+    # /readyz: the load balancer's own `depends_on: condition:
+    # service_healthy` (below, on `lb`) should mean "this replica can
+    # actually reach Postgres/Redis," not just "its HTTP server is
+    # bound" -- matters more here than in docker-compose.yml since a
+    # replica whose own dependency connection died independently of the
+    # other two should stop receiving traffic without the whole stack
+    # needing to fail.
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/readyz"]
       interval: 5s
       timeout: 3s
       retries: 5

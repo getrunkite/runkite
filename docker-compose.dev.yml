@@ -21,7 +21,7 @@ services:
     volumes:
       - ./examples:/app/examples:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/readyz"]
       interval: 5s
       timeout: 3s
       retries: 5

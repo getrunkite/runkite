@@ -959,11 +959,22 @@ Each field is independently optional; setting none of them is the same as omitti
 
 ### Health & Observability
 ```
-GET    /health                     Returns {"status": "ok"}
+GET    /health                     Returns {"status": "ok"} (unconditional, kept for backward compat)
+GET    /livez                      Same as /health, under the Kubernetes-conventional name
+GET    /readyz                     Actually checks store + transport connectivity -- see below
 GET    /metrics                    Prometheus metrics (outside auth)
 ```
 
 Metrics exposed: `runkite_http_requests_total`, `runkite_http_request_duration_seconds`, `runkite_runs_total`, `runkite_run_duration_seconds`, `runkite_active_runs`, `runkite_queue_depth`, `runkite_active_sse_connections`. HTTP path labels are normalized (UUIDs and resource IDs become `{id}`) to keep cardinality bounded.
+
+`/livez` and `/health` deliberately never fail just because a downstream dependency is unreachable -- restarting this process doesn't bring Postgres back, so a liveness check that reflects dependency health only turns a transient DB outage into a pointless restart-crash-loop. `/readyz` is the one that actually round-trips the state store and job queue (`state.Store.Ping` / `transport.JobQueue.Ping`), and also the event/cancel broker when that's a genuinely separate connection from the queue's own (only the Kafka-queue + Redis-broker/cancelbus combination, since every other pairing shares one connection already covered by the queue check). Returns `503` with a per-dependency `checks` object identifying exactly which one failed, `200` otherwise:
+
+```bash
+curl http://localhost:2026/readyz
+# {"status":"ready","checks":{"store":"ok","queue":"ok","event_broker":"ok","cancel_broker":"ok"}}
+```
+
+Point a load balancer's health check (and Kubernetes' own `readinessProbe`) at `/readyz`, not `/health` -- that's the actual point of the distinction: stop routing traffic to a replica whose database connection died, without also killing/restarting a replica that's otherwise perfectly healthy. `docker-compose.yml` and `docker-compose.multi.yml` both do this already.
 
 ### Graceful Shutdown
 

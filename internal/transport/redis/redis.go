@@ -456,6 +456,12 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 	return total, iter.Err()
 }
 
+// Ping is a plain PING, deliberately not the SCAN-based Len above --
+// O(1) regardless of keyspace size, safe to call on every readiness probe.
+func (q *Queue) Ping(ctx context.Context) error {
+	return q.rdb.Ping(ctx).Err()
+}
+
 // --------------------------------------------------------------------------
 // EventBroker
 // --------------------------------------------------------------------------
@@ -479,6 +485,18 @@ func NewBroker(rdb *redis.Client) *Broker {
 		rdb:     rdb,
 		tailers: make(map[string]map[uint64]context.CancelFunc),
 	}
+}
+
+// Ping verifies Redis is reachable. transport.EventBroker itself has no
+// Ping method (in-process and NATS brokers share their queue's own
+// already-checked connection, so requiring every implementation to add
+// one would be pure boilerplate for them) -- GET /readyz instead type-
+// asserts for this optional method, which only Redis needs: it's the
+// one broker that can be paired with a DIFFERENT queue backend
+// (KAFKA_URL + REDIS_URL, see cmd/serve.go's initTransport), so its own
+// connection genuinely needs its own check.
+func (b *Broker) Ping(ctx context.Context) error {
+	return b.rdb.Ping(ctx).Err()
 }
 
 func streamKey(runID string) string { return "rk:events:" + runID }
@@ -706,6 +724,12 @@ type CancelBus struct {
 // NewCancelBus creates a new Redis-backed cancel broker.
 func NewCancelBus(rdb *redis.Client) *CancelBus {
 	return &CancelBus{rdb: rdb}
+}
+
+// Ping verifies Redis is reachable -- see Broker.Ping's doc comment for
+// why this optional method exists only on the Redis implementation.
+func (c *CancelBus) Ping(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
 }
 
 func cancelChannel(runID string) string { return "rk:cancel:" + runID }

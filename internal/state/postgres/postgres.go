@@ -436,6 +436,11 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// Ping verifies the pool can still reach Postgres right now.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
 // TruncateAll removes all rows from all tables. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
 	// webhook_dead_letters, run_cache, and agent_versions have no FK to

@@ -729,6 +729,21 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+// Ping verifies the Kafka cluster is reachable right now by dialing a
+// broker and reading the controller's own metadata -- a cheap
+// connectivity check, deliberately not the partition/offset walk Len
+// does above (that's proportional to job-topic count and meant for an
+// occasional gauge poll, not every readiness probe).
+func (q *Queue) Ping(ctx context.Context) error {
+	conn, err := kafka.DialContext(ctx, "tcp", q.brokers[0])
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Controller()
+	return err
+}
+
 // Close releases this Queue's own background resources (the state
 // tailer and every runner_kind reader) -- for graceful shutdown/tests,
 // not part of transport.JobQueue itself.

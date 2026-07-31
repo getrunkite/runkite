@@ -368,6 +368,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// Ping verifies the connection pool can still reach MySQL right now.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 // TruncateAll clears every table -- used by conformance test wiring for
 // a clean slate between subtests (see RunStoreSuite's factory pattern
 // in internal/state/conformance, and Postgres/Mongo's own TruncateAll).

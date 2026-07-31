@@ -78,8 +78,13 @@ services:
     # override Compose would SIGKILL the process mid-drain well before
     # that budget is ever used.
     stop_grace_period: 30s
+    # /readyz (not /health): actually verifies Postgres/Redis are
+    # reachable, not just that the HTTP server is bound -- runner's own
+    # `depends_on: condition: service_healthy` below should mean "the
+    # control plane can actually accept work," not merely "its process
+    # started."
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/readyz"]
       interval: 5s
       timeout: 3s
       retries: 5

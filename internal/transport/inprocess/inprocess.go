@@ -172,6 +172,14 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+// Ping always succeeds -- there is no external dependency to be down.
+// This is exactly why the in-process transport exists (zero-dependency,
+// single-instance mode); a readiness check has nothing meaningful to
+// verify here beyond the process itself already being alive.
+func (q *Queue) Ping(ctx context.Context) error {
+	return nil
+}
+
 // ReclaimStale re-enqueues jobs that were dequeued more than maxAge ago
 // without being Ack'd. This recovers jobs stolen by a dead runner's
 // zombie GetJob long-poll (or any crash between Dequeue and first event).

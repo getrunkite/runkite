@@ -174,6 +174,16 @@ type Store interface {
 	// --- Lifecycle ---
 	Init(ctx context.Context) error // Create tables / run migrations
 	Close() error
+
+	// Ping verifies the store can actually reach its backing database
+	// right now -- a real round trip, not just "was the connection pool
+	// constructed successfully at startup." Backs GET /readyz: a
+	// replica whose Postgres/MySQL/Mongo has since become unreachable
+	// (network partition, DB restart, credentials rotated out from
+	// under it) should stop receiving new traffic from a load balancer
+	// even though its own process is still very much alive -- which is
+	// exactly the distinction a liveness check alone can't make.
+	Ping(ctx context.Context) error
 }
 
 // ErrNotFound is returned when a requested resource does not exist.

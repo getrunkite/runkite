@@ -199,7 +199,7 @@ func isPublicPath(method, path string) bool {
 		return false
 	}
 	switch path {
-	case "/health", "/health/":
+	case "/health", "/health/", "/livez", "/livez/", "/readyz", "/readyz/":
 		return true
 	case "/admin":
 		return true

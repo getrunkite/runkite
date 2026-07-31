@@ -156,8 +156,14 @@ func (s *Server) enqueue(ctx context.Context, assignment *transport.RunAssignmen
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// Health
+	// Health -- see handleHealth/handleLivez/handleReadyz's own doc
+	// comments for why there are three of these: /health is kept
+	// exactly as it always was (backward compat), /livez is the same
+	// cheap check under the Kubernetes-conventional name, /readyz is
+	// the new one that actually verifies dependency connectivity.
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /livez", s.handleLivez)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
 
 	// Agents (AP-001..007)
 	mux.HandleFunc("POST /agents/search", s.handleSearchAgents)
@@ -806,8 +812,91 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 
 // --- Shared helpers ---
 
+// handleHealth predates the /livez + /readyz split below and is kept
+// exactly as-is (unconditional 200, no dependency checks) for backward
+// compatibility with anything already pointed at it -- notably every
+// existing Docker Compose file's own healthcheck before this change.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleLivez answers "is this process alive at all" -- deliberately as
+// cheap as handleHealth (no dependency checks): a liveness probe's job
+// is to catch a genuinely wedged process (deadlock, infinite loop) so an
+// orchestrator can restart it, and checking a downstream DB/queue here
+// would make a transient dependency outage look like THIS process is
+// broken, triggering a pointless restart-crash-loop that fixes nothing
+// (restarting the control plane doesn't bring Postgres back). That
+// distinction is exactly what /readyz below exists for instead.
+func (s *Server) handleLivez(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// pinger is implemented by transport.EventBroker/CancelBroker only
+// optionally (the interfaces themselves don't require it -- see
+// redis.Broker.Ping's doc comment for why only Redis's implementations
+// need their own check).
+type pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// handleReadyz answers "can this replica actually serve a request right
+// now" by round-tripping every backend dependency it has -- the
+// distinction a load balancer needs to stop routing traffic to a
+// replica whose Postgres/Redis/Kafka has become unreachable, even
+// though the process itself (per /livez) is still perfectly alive.
+// Bounded to 3s total so one hung dependency fails this probe fast
+// instead of hanging until the caller's own probe timeout.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	checks := map[string]string{}
+	ready := true
+
+	if err := s.store.Ping(ctx); err != nil {
+		checks["store"] = err.Error()
+		ready = false
+	} else {
+		checks["store"] = "ok"
+	}
+
+	if err := s.queue.Ping(ctx); err != nil {
+		checks["queue"] = err.Error()
+		ready = false
+	} else {
+		checks["queue"] = "ok"
+	}
+
+	// Broker/cancel bus: only checked if this backend combination
+	// actually gives them a connection distinct from the queue's own
+	// (see pinger's doc comment) -- e.g. in-process and NATS have
+	// nothing extra to check here, since Ping above already covers
+	// their one shared connection.
+	if p, ok := s.broker.(pinger); ok {
+		if err := p.Ping(ctx); err != nil {
+			checks["event_broker"] = err.Error()
+			ready = false
+		} else {
+			checks["event_broker"] = "ok"
+		}
+	}
+	if p, ok := s.cancel.(pinger); ok {
+		if err := p.Ping(ctx); err != nil {
+			checks["cancel_broker"] = err.Error()
+			ready = false
+		} else {
+			checks["cancel_broker"] = "ok"
+		}
+	}
+
+	status := http.StatusOK
+	statusText := "ready"
+	if !ready {
+		status = http.StatusServiceUnavailable
+		statusText = "not ready"
+	}
+	writeJSON(w, status, map[string]interface{}{"status": statusText, "checks": checks})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

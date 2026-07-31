@@ -227,6 +227,15 @@ type JobQueue interface {
 
 	// Len returns the number of jobs currently in the queue.
 	Len(ctx context.Context) (int64, error)
+
+	// Ping verifies the underlying broker (Redis, NATS, Kafka) is
+	// actually reachable right now -- a real round trip, not just "the
+	// client was constructed without error at startup." Backs GET
+	// /readyz: unlike Len (which for Redis is SCAN-based and
+	// deliberately kept off any hot path -- see cmd/serve.go's
+	// pollQueueDepth), Ping is meant to be cheap enough to call on
+	// every readiness probe.
+	Ping(ctx context.Context) error
 }
 
 // EventBroker handles publishing and subscribing to run events.
