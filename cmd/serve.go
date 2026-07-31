@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -573,7 +574,22 @@ func initTransport(ctx context.Context) (transport.JobQueue, transport.EventBrok
 	// REDIS_URL branch below so "both set" means "Kafka queue, Redis
 	// broker/cancelbus," not "Redis for everything."
 	if kafkaURL := os.Getenv("KAFKA_URL"); kafkaURL != "" {
-		queue, err := kafkatransport.NewQueue(ctx, strings.Split(kafkaURL, ","))
+		var kafkaOpts []kafkatransport.Option
+		// KAFKA_JOB_PARTITIONS: see kafkatransport.WithJobPartitions's
+		// own doc comment for why this matters -- the default (1) means
+		// only one control-plane replica ever actively dequeues a given
+		// runner_kind at a time. Set consistently across every replica
+		// sharing this Kafka cluster; only affects a job topic's
+		// partition count the first time it's created.
+		if partitionsStr := os.Getenv("KAFKA_JOB_PARTITIONS"); partitionsStr != "" {
+			n, err := strconv.Atoi(partitionsStr)
+			if err != nil || n <= 0 {
+				slog.Error("invalid KAFKA_JOB_PARTITIONS, must be a positive integer", "value", partitionsStr)
+				os.Exit(1)
+			}
+			kafkaOpts = append(kafkaOpts, kafkatransport.WithJobPartitions(n))
+		}
+		queue, err := kafkatransport.NewQueue(ctx, strings.Split(kafkaURL, ","), kafkaOpts...)
 		if err != nil {
 			slog.Error("failed to initialize kafka job queue", "error", err)
 			os.Exit(1)

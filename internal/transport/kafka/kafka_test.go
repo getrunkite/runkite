@@ -72,3 +72,46 @@ func TestKafkaJobQueue(t *testing.T) {
 		return q
 	})
 }
+
+// TestLen_SumsAcrossAllPartitionsNotJustPartitionZero is a permanent
+// regression test for a live-found bug: Len's first implementation
+// deduplicated conn.ReadPartitions' results by topic name and always
+// read partition 0 specifically, so a job topic created with
+// WithJobPartitions(n > 1) (see that option's own doc comment) would
+// silently undercount -- any lag sitting on partitions 1..n-1 was never
+// added to the total. Reproduced here directly: a namespace using 4
+// job-topic partitions, 8 jobs enqueued (round-robined by run_id hash
+// across all 4 partitions, not concentrated on one), Len must report 8,
+// not whatever fraction happened to land on partition 0 alone.
+func TestLen_SumsAcrossAllPartitionsNotJustPartitionZero(t *testing.T) {
+	brokers := getKafkaBrokers(t)
+	ctx := context.Background()
+	namespace := fmt.Sprintf("test-multipart-%d", time.Now().UnixNano())
+
+	q, err := kafkatransport.NewQueueWithNamespace(ctx, brokers, namespace, kafkatransport.WithJobPartitions(4))
+	if err != nil {
+		t.Fatalf("NewQueueWithNamespace: %v", err)
+	}
+	t.Cleanup(func() { q.Close() })
+
+	const n = 8
+	for i := 0; i < n; i++ {
+		job := &transport.RunAssignment{
+			RunID:      fmt.Sprintf("run-%d", i),
+			ThreadID:   fmt.Sprintf("thread-%d", i),
+			RunnerKind: "test-runner",
+			GraphID:    "echo",
+		}
+		if err := q.Enqueue(ctx, job); err != nil {
+			t.Fatalf("Enqueue %d: %v", i, err)
+		}
+	}
+
+	got, err := q.Len(ctx)
+	if err != nil {
+		t.Fatalf("Len: %v", err)
+	}
+	if got != n {
+		t.Errorf("Len = %d, want %d (bug: undercounts if any enqueued job landed on a partition other than 0)", got, n)
+	}
+}

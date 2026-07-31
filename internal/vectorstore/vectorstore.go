@@ -15,8 +15,7 @@ import (
 )
 
 // VectorStore is the persistence + similarity-search interface every
-// backend (pgvector today; Qdrant/Weaviate/Pinecone are Tier 2, not yet
-// built) implements.
+// backend (pgvector, Qdrant, Weaviate, Pinecone) implements.
 type VectorStore interface {
 	// Upsert embeds/re-embeds an item under (namespace, id). Overwrites
 	// content/embedding/metadata on a repeat call with the same id --

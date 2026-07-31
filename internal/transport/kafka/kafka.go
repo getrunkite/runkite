@@ -96,11 +96,29 @@ const defaultNamespace = "rk"
 // own raised limit would otherwise still get stuck unreadable here.
 const readerMaxBytes = 8 << 20
 
+// defaultJobPartitions is how many partitions a job topic gets unless
+// overridden via WithJobPartitions. Kept at 1 by default deliberately,
+// not as an oversight: with 1 partition, Kafka's own consumer-group
+// protocol only ever assigns it to ONE member at a time, so only one
+// control-plane replica actually dequeues jobs of a given runner_kind
+// at once -- other replicas' own GetJob calls simply see an empty
+// queue (not an error, and not a correctness gap: Ack/Renew/Nack still
+// work from any replica via the shared state topic) until Kafka
+// rebalances the partition to them, e.g. if the currently-assigned
+// replica dies. This is an honest, real throughput/availability
+// ceiling for Dequeue specifically at the default, raised via
+// WithJobPartitions when multi-replica dequeue concurrency for one
+// runner_kind actually matters -- see that function's own doc comment.
+const defaultJobPartitions = 1
+
 // consumerGroupID derives a stable, Kafka-safe consumer group id from a
 // namespace and runner_kind -- every control-plane replica configured
-// with the same Kafka cluster and namespace joins the SAME group for a
-// given runner_kind, so Kafka itself load-balances partitions across
-// replicas the normal way.
+// with the same Kafka cluster, namespace, and runner_kind joins the
+// SAME group, so multiple replicas CAN dequeue the same runner_kind
+// concurrently the normal Kafka way -- but only up to as many
+// partitions as that job topic actually has (see
+// defaultJobPartitions's own doc comment for the very real default-1
+// ceiling this implies).
 //
 // Namespacing this (not just the topic name) matters: confirmed live,
 // reusing a bare "runner_kind"-only group id across two independent
@@ -144,9 +162,10 @@ var nowMillis = func() int64 { return time.Now().UnixMilli() }
 // hint, the compacted state topic as the authoritative in-flight
 // record).
 type Queue struct {
-	brokers   []string
-	namespace string
-	writer    *kafka.Writer
+	brokers       []string
+	namespace     string
+	jobPartitions int
+	writer        *kafka.Writer
 
 	mu      sync.Mutex
 	readers map[string]*kafka.Reader // runner_kind -> consumer-group reader
@@ -157,15 +176,36 @@ type Queue struct {
 	stopTailing context.CancelFunc
 }
 
+// Option configures a Queue at construction time.
+type Option func(*Queue)
+
+// WithJobPartitions overrides defaultJobPartitions (1) for every job
+// topic this Queue creates. Only affects topics created for the first
+// time -- an already-existing topic's own partition count is set once,
+// at creation, by whichever replica happened to create it first; this
+// has no effect against a topic another, earlier-started replica
+// already created with a different count. Set consistently across every
+// replica sharing a Kafka cluster (e.g. via one shared environment
+// variable, as cmd/serve.go's own KAFKA_JOB_PARTITIONS wiring does) to
+// avoid that ambiguity in practice.
+func WithJobPartitions(n int) Option {
+	return func(q *Queue) {
+		if n > 0 {
+			q.jobPartitions = n
+		}
+	}
+}
+
 func (q *Queue) jobTopic(runnerKind string) string { return q.namespace + ".jobs." + runnerKind }
 func (q *Queue) stateTopic() string                { return q.namespace + ".state" }
 
 // NewQueue creates a Kafka-backed job queue under the default topic
 // namespace ("rk") -- see NewQueueWithNamespace for why a caller (only
 // this package's own tests, in practice) would ever need a different
-// one.
-func NewQueue(ctx context.Context, brokers []string) (*Queue, error) {
-	return NewQueueWithNamespace(ctx, brokers, defaultNamespace)
+// one. opts is most commonly just WithJobPartitions -- see its own doc
+// comment.
+func NewQueue(ctx context.Context, brokers []string, opts ...Option) (*Queue, error) {
+	return NewQueueWithNamespace(ctx, brokers, defaultNamespace, opts...)
 }
 
 // NewQueueWithNamespace is NewQueue with an explicit topic namespace
@@ -187,13 +227,14 @@ func NewQueue(ctx context.Context, brokers []string) (*Queue, error) {
 // brand-new namespace's own empty topic makes this effectively
 // instant; the wait only matters for a replica joining after real
 // traffic exists.
-func NewQueueWithNamespace(ctx context.Context, brokers []string, namespace string) (*Queue, error) {
+func NewQueueWithNamespace(ctx context.Context, brokers []string, namespace string, opts ...Option) (*Queue, error) {
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
 	q := &Queue{
-		brokers:   brokers,
-		namespace: namespace,
+		brokers:       brokers,
+		namespace:     namespace,
+		jobPartitions: defaultJobPartitions,
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(brokers...),
 			Balancer:               &kafka.Hash{},
@@ -208,6 +249,9 @@ func NewQueueWithNamespace(ctx context.Context, brokers []string, namespace stri
 		},
 		readers: make(map[string]*kafka.Reader),
 		state:   make(map[string]stateEntry),
+	}
+	for _, opt := range opts {
+		opt(q)
 	}
 
 	if err := ensureTopic(ctx, brokers, q.stateTopic(), 1, map[string]string{
@@ -365,7 +409,7 @@ func (q *Queue) readerFor(ctx context.Context, runnerKind string) (*kafka.Reader
 	if r, ok := q.readers[runnerKind]; ok {
 		return r, nil
 	}
-	if err := ensureTopic(ctx, q.brokers, q.jobTopic(runnerKind), 1, nil); err != nil {
+	if err := ensureTopic(ctx, q.brokers, q.jobTopic(runnerKind), q.jobPartitions, nil); err != nil {
 		return nil, fmt.Errorf("kafkatransport: ensure job topic for runner_kind %q: %w", runnerKind, err)
 	}
 	r := kafka.NewReader(kafka.ReaderConfig{
@@ -382,7 +426,7 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 	if entry, ok := q.getState(job.RunID); ok && entry.Canceled {
 		return nil
 	}
-	if err := ensureTopic(ctx, q.brokers, q.jobTopic(job.RunnerKind), 1, nil); err != nil {
+	if err := ensureTopic(ctx, q.brokers, q.jobTopic(job.RunnerKind), q.jobPartitions, nil); err != nil {
 		return fmt.Errorf("kafkatransport: ensure job topic: %w", err)
 	}
 	data, err := json.Marshal(job)
@@ -406,6 +450,24 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 // earlier one) never causes that earlier job to be silently lost the
 // way it would in a design relying on Kafka's own offset replay for
 // redelivery.
+//
+// Order matters here, and is the opposite of this package's own first
+// draft: the state-topic entry is written BEFORE the offset is
+// committed, not after. Committing first (the original order) had a
+// real, live-confirmable gap -- if the process died, or putState's own
+// produce call failed, in the window between a successful commit and a
+// successful putState, the job would be neither Kafka-redeliverable
+// (its offset is already committed, so a fresh consumer resumes past
+// it) nor reclaimable (no state-topic entry exists for ReclaimStale to
+// find), silently lost for good. Writing state first and only
+// committing once that succeeds means a crash or failure in that same
+// window instead leaves the offset uncommitted -- a fresh consumer
+// session (this process restarting, or a new replica taking over the
+// partition) will fetch this exact message again, which is a
+// duplicate-delivery risk, not a lost-job risk. Between the two, this
+// package treats "occasionally redelivered" as the acceptable failure
+// mode and "silently dropped" as the one to actively design out, same
+// as the rest of this package's own crash-recovery reasoning.
 //
 // Unlike Redis's/NATS's own Dequeue, this deliberately does NOT cap and
 // re-issue each FetchMessage call on a short internal timer while
@@ -446,16 +508,22 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			return nil, err
 		}
 
-		if err := reader.CommitMessages(context.Background(), msg); err != nil {
-			return nil, fmt.Errorf("kafkatransport: commit offset: %w", err)
-		}
-
 		var job transport.RunAssignment
 		if err := json.Unmarshal(msg.Value, &job); err != nil {
-			continue // malformed payload, already committed past -- skip it
+			// Malformed payload: can never be processed regardless of
+			// how many times it's redelivered, so commit past it now
+			// rather than leaving every future Dequeue stuck refetching
+			// the same unparseable message forever.
+			if commitErr := reader.CommitMessages(context.Background(), msg); commitErr != nil {
+				return nil, fmt.Errorf("kafkatransport: commit past malformed payload: %w", commitErr)
+			}
+			continue
 		}
 
 		if entry, ok := q.getState(job.RunID); ok && entry.Canceled {
+			if err := reader.CommitMessages(context.Background(), msg); err != nil {
+				return nil, fmt.Errorf("kafkatransport: commit past canceled job: %w", err)
+			}
 			continue
 		}
 
@@ -467,6 +535,11 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 		if job.Generation == 0 {
 			job.Generation = 1
 		}
+		// putState before CommitMessages -- see this function's own
+		// doc comment for why the order is load-bearing. Not committing
+		// on a putState failure is deliberate: it leaves this message
+		// redeliverable to a future consumer session instead of losing
+		// it outright.
 		if err := q.putState(ctx, job.RunID, &stateEntry{
 			RunnerKind:         runnerKind,
 			Generation:         job.Generation,
@@ -474,6 +547,9 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			Job:                msg.Value,
 		}); err != nil {
 			return nil, fmt.Errorf("kafkatransport: record inflight state: %w", err)
+		}
+		if err := reader.CommitMessages(context.Background(), msg); err != nil {
+			return nil, fmt.Errorf("kafkatransport: commit offset: %w", err)
 		}
 		return &job, nil
 	}
@@ -618,26 +694,29 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	defer conn.Close()
+	// ReadPartitions returns one entry PER PARTITION, not one per topic
+	// -- a multi-partition job topic (see WithJobPartitions) appears
+	// here multiple times, once per Partition index, and every one of
+	// them needs its own lag counted, not just whichever happens to be
+	// first in the returned list.
 	partitions, err := conn.ReadPartitions()
 	if err != nil {
 		return 0, err
 	}
 
 	prefix := q.namespace + ".jobs."
-	seen := map[string]bool{}
 	var total int64
 	for _, p := range partitions {
-		if !strings.HasPrefix(p.Topic, prefix) || seen[p.Topic] {
+		if !strings.HasPrefix(p.Topic, prefix) {
 			continue
 		}
-		seen[p.Topic] = true
 		kind := strings.TrimPrefix(p.Topic, prefix)
 
-		last, err := readLastOffset(ctx, q.brokers, p.Topic, 0)
+		last, err := readLastOffset(ctx, q.brokers, p.Topic, p.ID)
 		if err != nil {
 			continue
 		}
-		committed, err := readCommittedOffset(ctx, q.brokers, p.Topic, consumerGroupID(q.namespace, kind), 0)
+		committed, err := readCommittedOffset(ctx, q.brokers, p.Topic, consumerGroupID(q.namespace, kind), p.ID)
 		if err != nil {
 			continue
 		}

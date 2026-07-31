@@ -1,7 +1,6 @@
 // Package weaviate implements vectorstore.VectorStore using Weaviate's
-// REST + GraphQL APIs. Closes one of the two remaining "Tier 2, not yet
-// built" vector backends alongside Pinecone -- see
-// internal/vectorstore/qdrant's package doc for the shared design
+// REST + GraphQL APIs -- see internal/vectorstore/qdrant's package doc
+// for the shared design
 // principles (one shared class for every tenant/namespace, deterministic
 // UUID v5 object IDs, plain HTTP rather than a generated client) this
 // package follows too.
@@ -20,12 +19,23 @@
 // new metadata key. The trade-off: Search's Filter (exact-match over
 // Metadata) can't be pushed down into Weaviate's own "where" clause the
 // way tenant_id/namespace are, since Weaviate can't query inside a
-// JSON-encoded string field. Handled by over-fetching a larger candidate
-// set (still tenant/namespace-scoped server-side, and still returned in
-// nearVector's own similarity order) and applying the metadata filter in
-// Go before truncating to TopK -- exact and correct, just not as
-// index-efficient as a native filter would be for a very large namespace
-// with a metadata filter applied.
+// JSON-encoded string field. Handled by paging through nearVector's own
+// tenant/namespace-scoped, similarity-ordered results (via GraphQL's
+// offset) and applying the metadata filter in Go to each page, advancing
+// until TopK matches are found or the corpus is exhausted -- exact, not
+// a fixed-window over-fetch: a single-page over-fetch (this package's
+// first implementation) is confirmed live to silently return an empty
+// result when a matching item exists outside that window's own
+// similarity ranking (e.g. TopK=1 with a filter matching only a distant
+// vector, and >20x TopK closer non-matching ones). Paging until
+// exhausted fixes that at the cost of more round trips for a filter that
+// matches rarely in a large namespace -- capped at
+// weaviateQueryMaxResults total scanned (10000, Weaviate's own default
+// QUERY_MAXIMUM_RESULTS server-side offset+limit ceiling), beyond which
+// this is honestly no longer exact, a real Weaviate-imposed limit on
+// nearVector+offset pagination itself, not something this package can
+// work around without a different, non-similarity-ordered pagination
+// strategy.
 package weaviate
 
 import (
@@ -55,12 +65,15 @@ func objectID(tenantID, namespace, id string) string {
 	return uuid.NewSHA1(objectNamespace, []byte(tenantID+"\x00"+namespace+"\x00"+id)).String()
 }
 
-// overFetchMultiplier and overFetchMax bound the "fetch a broader
-// candidate set, then filter client-side" strategy Search uses when a
-// metadata Filter is given -- see this package's own doc comment.
+// pageSize is how many nearVector hits Search fetches per page when a
+// metadata Filter needs paging through to stay exact -- see this
+// package's own doc comment. weaviateQueryMaxResults is Weaviate's own
+// default server-side cap on offset+limit for a single Get query
+// (QUERY_MAXIMUM_RESULTS); paging stops there regardless of whether
+// TopK matches have been found yet.
 const (
-	overFetchMultiplier = 20
-	overFetchMax        = 500
+	pageSize                = 100
+	weaviateQueryMaxResults = 10000
 )
 
 // Store implements vectorstore.VectorStore against a Weaviate instance.
@@ -280,8 +293,8 @@ type graphQLResponse struct {
 // Search's ordering relies on Weaviate's GraphQL Get already returning
 // nearVector hits sorted by similarity (closest first) -- Go only ever
 // filters that sequence down (client-side metadata filter) and
-// truncates it (TopK), never re-sorts it, so an over-fetched batch's
-// relative order is preserved through to the final TopK results.
+// truncates it (TopK), never re-sorts it, so a page's relative order is
+// preserved through to the final TopK results.
 func (s *Store) Search(ctx context.Context, req *models.VectorSearchRequest) ([]*models.VectorSearchResult, error) {
 	if len(req.Embedding) != s.dimensions {
 		return nil, fmt.Errorf("weaviate: query embedding has %d dimensions, store configured for %d", len(req.Embedding), s.dimensions)
@@ -290,29 +303,76 @@ func (s *Store) Search(ctx context.Context, req *models.VectorSearchRequest) ([]
 	if topK <= 0 {
 		topK = 10
 	}
-	limit := topK
-	if len(req.Filter) > 0 {
-		limit = topK * overFetchMultiplier
-		if limit > overFetchMax {
-			limit = overFetchMax
-		}
-	}
 
 	vectorJSON, err := json.Marshal(req.Embedding)
 	if err != nil {
 		return nil, fmt.Errorf("weaviate: marshal query embedding: %w", err)
 	}
-	// %q escapes tenantID/req.Namespace the same way encoding/json would
-	// for a string (quotes, backslashes, control chars) -- GraphQL and
-	// JSON string-literal escaping are close enough for this that a
-	// value containing a stray quote stays inside the string literal
-	// rather than breaking out of it, without needing a full GraphQL
-	// query-builder dependency for four interpolated values.
+	tenantID := tenant.FromContext(ctx)
+
+	// Non-nil so a no-results search JSON-encodes to [] rather than
+	// null -- SDK clients call .map() on it unconditionally (same
+	// contract as Qdrant's and internal/state/conformance's
+	// empty_list_results_are_not_nil).
+	results := []*models.VectorSearchResult{}
+
+	if len(req.Filter) == 0 {
+		hits, err := s.fetchHits(ctx, vectorJSON, tenantID, req.Namespace, topK, 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, hit := range hits {
+			results = append(results, hitToResult(hit, req.Namespace, decodeMetadata(hit.MetadataJSON)))
+		}
+		return results, nil
+	}
+
+	// A metadata Filter can't be pushed into Weaviate's own where clause
+	// (see this package's own doc comment) -- page through nearVector's
+	// similarity-ordered results instead, filtering each page in Go,
+	// until topK matches are found or the corpus is exhausted. See
+	// weaviateQueryMaxResults's own doc comment for the one real,
+	// Weaviate-imposed bound on how far this can page.
+	for offset := 0; offset < weaviateQueryMaxResults; offset += pageSize {
+		limit := pageSize
+		if offset+limit > weaviateQueryMaxResults {
+			limit = weaviateQueryMaxResults - offset
+		}
+		hits, err := s.fetchHits(ctx, vectorJSON, tenantID, req.Namespace, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, hit := range hits {
+			metadata := decodeMetadata(hit.MetadataJSON)
+			if !matchesFilter(metadata, req.Filter) {
+				continue
+			}
+			results = append(results, hitToResult(hit, req.Namespace, metadata))
+			if len(results) >= topK {
+				return results, nil
+			}
+		}
+		if len(hits) < limit {
+			break // fewer than requested -- corpus exhausted
+		}
+	}
+	return results, nil
+}
+
+// fetchHits runs one page of the nearVector query. %q escapes
+// tenantID/namespace the same way encoding/json would for a string
+// (quotes, backslashes, control chars) -- GraphQL and JSON
+// string-literal escaping are close enough for this that a value
+// containing a stray quote stays inside the string literal rather than
+// breaking out of it, without needing a full GraphQL query-builder
+// dependency for these interpolated values.
+func (s *Store) fetchHits(ctx context.Context, vectorJSON []byte, tenantID, namespace string, limit, offset int) ([]graphQLHit, error) {
 	query := fmt.Sprintf(`{
 		Get {
 			%s(
 				nearVector: {vector: %s}
 				limit: %d
+				offset: %d
 				where: {
 					operator: And
 					operands: [
@@ -329,43 +389,36 @@ func (s *Store) Search(ctx context.Context, req *models.VectorSearchRequest) ([]
 				_additional { distance }
 			}
 		}
-	}`, s.class, string(vectorJSON), limit, tenant.FromContext(ctx), req.Namespace)
+	}`, s.class, string(vectorJSON), limit, offset, tenantID, namespace)
 
 	resp, err := s.graphQL(ctx, query)
 	if err != nil {
 		return nil, err
 	}
+	return resp.Data.Get[s.class], nil
+}
 
-	// Non-nil so a no-results search JSON-encodes to [] rather than
-	// null -- SDK clients call .map() on it unconditionally (same
-	// contract as Qdrant's and internal/state/conformance's
-	// empty_list_results_are_not_nil).
-	results := []*models.VectorSearchResult{}
-	for _, hit := range resp.Data.Get[s.class] {
-		metadata := map[string]interface{}{}
-		if hit.MetadataJSON != "" {
-			_ = json.Unmarshal([]byte(hit.MetadataJSON), &metadata)
-		}
-		if !matchesFilter(metadata, req.Filter) {
-			continue
-		}
-		item := &models.VectorItem{
-			Namespace: req.Namespace,
-			ID:        hit.ItemID,
-			Content:   hit.Content,
-			Metadata:  metadata,
-			CreatedAt: parseTime(hit.CreatedAt),
-			UpdatedAt: parseTime(hit.UpdatedAt),
-		}
-		// Weaviate's cosine distance is 1 - cosine_sim(a, b); this
-		// store's own contract (matching Qdrant's) is the similarity
-		// itself, not the distance, so it's converted back here.
-		results = append(results, &models.VectorSearchResult{Item: item, Score: 1 - hit.Additional.Distance})
-		if len(results) >= topK {
-			break
-		}
+func decodeMetadata(metadataJSON string) map[string]interface{} {
+	metadata := map[string]interface{}{}
+	if metadataJSON != "" {
+		_ = json.Unmarshal([]byte(metadataJSON), &metadata)
 	}
-	return results, nil
+	return metadata
+}
+
+func hitToResult(hit graphQLHit, namespace string, metadata map[string]interface{}) *models.VectorSearchResult {
+	item := &models.VectorItem{
+		Namespace: namespace,
+		ID:        hit.ItemID,
+		Content:   hit.Content,
+		Metadata:  metadata,
+		CreatedAt: parseTime(hit.CreatedAt),
+		UpdatedAt: parseTime(hit.UpdatedAt),
+	}
+	// Weaviate's cosine distance is 1 - cosine_sim(a, b); this store's
+	// own contract (matching Qdrant's) is the similarity itself, not
+	// the distance, so it's converted back here.
+	return &models.VectorSearchResult{Item: item, Score: 1 - hit.Additional.Distance}
 }
 
 func matchesFilter(metadata, filter map[string]interface{}) bool {
