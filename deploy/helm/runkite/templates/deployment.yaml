@@ -51,6 +51,12 @@ spec:
                 name: {{ include "runkite.fullname" . }}
             - secretRef:
                 name: {{ include "runkite.secretName" . }}
+          {{- if .Values.config.langgraphJson }}
+          volumeMounts:
+            - name: langgraph-config
+              mountPath: /etc/runkite
+              readOnly: true
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /livez
@@ -69,6 +75,12 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.config.langgraphJson }}
+      volumes:
+        - name: langgraph-config
+          configMap:
+            name: {{ include "runkite.fullname" . }}-langgraph
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

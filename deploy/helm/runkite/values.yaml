@@ -73,9 +73,14 @@ ingressMcp:
           pathType: Prefix
   tls: []
 
+# Leave empty unless autoscaling.enabled=true -- HPA CPU metrics need
+# requests.cpu set or the autoscaler has nothing to compute against.
 resources: {}
 
 autoscaling:
+  # Requires resources.requests.cpu (and usually memory) on the control-
+  # plane container; enabling with resources: {} creates an HPA that
+  # never scales.
   enabled: false
   minReplicas: 2
   maxReplicas: 10
@@ -95,23 +100,58 @@ affinity: {}
 config:
   httpPort: "2026"
   grpcPort: "50051"
-  # Path inside the image. The stock Dockerfile copies examples/ to /app/examples.
-  langgraphConfig: /app/examples/all_agents/langgraph.json
+  # Path passed as LANGGRAPH_CONFIG. When langgraphJson below is non-empty
+  # (the default), the chart mounts that file here. When langgraphJson is
+  # "", this path is expected to already exist inside the image and MUST
+  # include an "auth" section -- otherwise `serve` refuses to start
+  # (production admission check).
+  langgraphConfig: /etc/runkite/langgraph.json
+  # Inline langgraph.json mounted into every control-plane pod. Uses
+  # ${RUNKITE_API_KEY} so the credential lives in the Secret, not in this
+  # ConfigMap (see internal/config expandEnvVars). Override with your
+  # real graphs; set to "" only if the image already bakes a config with
+  # auth at config.langgraphConfig.
+  langgraphJson: |
+    {
+      "graphs": {
+        "echo_agent": "/app/examples/echo_agent/graph.py:graph"
+      },
+      "dependencies": [
+        "/app/examples/echo_agent"
+      ],
+      "auth": {
+        "type": "api_key",
+        "keys": {
+          "${RUNKITE_API_KEY}": {
+            "name": "operator",
+            "permissions": ["read", "write", "admin"],
+            "tenant_id": "default"
+          }
+        }
+      }
+    }
   # Extra plain env vars (string map). Prefer secrets for credentials.
+  # Do not set RUNKITE_ALLOW_INSECURE_SERVE here for production -- supply
+  # auth via langgraphJson (or a baked image) instead.
   extraEnv: {}
 
 # Secret material. Prefer existingSecret in real deployments; the inline
 # fields exist so `helm install --set` smoke tests stay one-shot.
 secrets:
   # Name of an existing Secret whose keys include POSTGRES_DSN, REDIS_URL,
-  # and RUNNER_TOKEN_PYTHON_LANGGRAPH. When set, the chart does not create
-  # its own Secret.
+  # RUNNER_TOKEN_PYTHON_LANGGRAPH, RUNNER_TOKEN, and (when using the
+  # default langgraphJson) RUNKITE_API_KEY. When set, the chart does not
+  # create its own Secret.
   existingSecret: ""
   postgresDsn: ""
   redisUrl: ""
   # Shared with runners as RUNNER_TOKEN; control plane expects
   # RUNNER_TOKEN_PYTHON_LANGGRAPH (same value).
   runnerToken: ""
+  # Substituted into the default langgraphJson as ${RUNKITE_API_KEY}.
+  # Required for the stock quick-start; unused if your langgraphJson
+  # does not reference that env var.
+  apiKey: ""
 
 # Optional Python runner Deployment (Dockerfile.runner). Talks to the
 # control-plane Service over cluster DNS for gRPC + HTTP.

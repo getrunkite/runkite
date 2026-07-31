@@ -7,9 +7,23 @@ Runkite control plane installed as {{ include "runkite.fullname" . }}.
    kubectl port-forward svc/{{ include "runkite.fullname" . }} {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }}
    curl -sS http://127.0.0.1:{{ .Values.service.httpPort }}/readyz
 
-3. Runners (if enabled) reach gRPC at:
+3. Call the API / Admin UI with the key from secrets.apiKey (or the
+   RUNKITE_API_KEY entry in your existingSecret):
+   curl -sS -H "Authorization: Bearer <api-key>" http://127.0.0.1:{{ .Values.service.httpPort }}/agents
+
+4. Runners (if enabled) reach gRPC at:
    {{ include "runkite.fullname" . }}:{{ .Values.service.grpcPort }}
 
+{{- if .Values.config.langgraphJson }}
+
+langgraph.json is mounted from ConfigMap {{ include "runkite.fullname" . }}-langgraph
+at {{ .Values.config.langgraphConfig }} (auth via ${RUNKITE_API_KEY}).
+{{- else }}
+
+WARNING: config.langgraphJson is empty -- the image path
+{{ .Values.config.langgraphConfig }} must already include an "auth"
+section or pods will crash-loop on admission.
+{{- end }}
 {{- if .Values.ingressMcp.enabled }}
 
 MCP Ingress is enabled with upstream-hash-by=$remote_addr. Clients must

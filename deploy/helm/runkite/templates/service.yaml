@@ -16,6 +16,8 @@ spec:
       port: {{ .Values.service.grpcPort }}
       targetPort: grpc
       protocol: TCP
-      appProtocol: kubernetes
+      # Cleartext gRPC is HTTP/2 without TLS; "grpc" is not a K8s
+      # well-known appProtocol value.
+      appProtocol: kubernetes.io/h2c
   selector:
     {{- include "runkite.selectorLabels" . | nindent 4 }}

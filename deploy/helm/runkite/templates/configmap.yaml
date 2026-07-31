@@ -11,3 +11,15 @@ data:
   {{- range $k, $v := .Values.config.extraEnv }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}
+{{- if .Values.config.langgraphJson }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "runkite.fullname" . }}-langgraph
+  labels:
+    {{- include "runkite.labels" . | nindent 4 }}
+data:
+  langgraph.json: |
+{{ .Values.config.langgraphJson | nindent 4 }}
+{{- end }}

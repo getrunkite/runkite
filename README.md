@@ -827,7 +827,9 @@ Full-stack compose uses Postgres/Redis on 5432/6379; stop local services on thos
 
 ### Kubernetes (Helm)
 
-`deploy/helm/runkite` is a minimal chart for the same multi-replica shape as `docker-compose.multi.yml`: control-plane Deployment (N replicas, `/livez` + `/readyz` probes, PDB), Service (HTTP + gRPC), ConfigMap/Secret, optional Python runner, and an optional `/mcp` Ingress with client-IP consistent hashing. Postgres and Redis are **not** bundled — point `secrets.postgresDsn` / `secrets.redisUrl` (or `secrets.existingSecret`) at infrastructure you already run. See [`deploy/helm/runkite/README.md`](deploy/helm/runkite/README.md).
+`deploy/helm/runkite` is a minimal chart for the same multi-replica shape as `docker-compose.multi.yml`: control-plane Deployment (N replicas, `/livez` + `/readyz` probes, PDB), Service (HTTP + gRPC), ConfigMap/Secret, optional Python runner, and an optional `/mcp` Ingress with client-IP consistent hashing. Postgres and Redis are **not** bundled — point `secrets.postgresDsn` / `secrets.redisUrl` (or `secrets.existingSecret`) at infrastructure you already run.
+
+`serve`'s production admission check still requires client-facing auth: the chart mounts a default `langgraph.json` (via ConfigMap) with `auth.type=api_key` and substitutes `${RUNKITE_API_KEY}` from `secrets.apiKey`, so you do not need to rebuild the image just to boot. See [`deploy/helm/runkite/README.md`](deploy/helm/runkite/README.md).
 
 ### Test infrastructure
 
