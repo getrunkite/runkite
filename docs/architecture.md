@@ -2,7 +2,7 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 >
-> Visuals (also in the root README Architecture section): [how it fits together](assets/ecosystem.png) · [one run end-to-end](assets/lifecycle.gif).
+> Visuals (also in the root README Architecture section): [how it fits together](assets/ecosystem.png) · [one run on the HA profile](assets/run-path.png).
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP / SSE / WebSocket surface

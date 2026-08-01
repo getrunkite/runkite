@@ -67,13 +67,13 @@ sequenceDiagram
   <img src="docs/assets/ecosystem.png" alt="How Runkite fits together: clients to control plane to runners, with pluggable state, transport, and vector backends" width="920" />
 </p>
 
-<p align="center"><b>Where things sit</b> — request path on top; state / transport / vectors plug in under the plane</p>
+<p align="center"><b>Catalog of parts</b> — request path on top; state / transport / vectors plug in under the plane</p>
 
 <p align="center">
-  <img src="docs/assets/lifecycle.gif" alt="Animated walkthrough of a single run from client create through runner execution to live client output" width="920" />
+  <img src="docs/assets/run-path.png" alt="One LangGraph run on a multi-replica control plane with Postgres state and Redis queue and events" width="920" />
 </p>
 
-<p align="center"><b>One run</b> — create → enqueue → GetJob → StreamEvents → live SSE / WebSocket</p>
+<p align="center"><b>One run on the HA profile</b> — client → LB → CP replica → Postgres + Redis → LangGraph runner → SSE / WebSocket</p>
 
 Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 
