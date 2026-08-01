@@ -89,7 +89,7 @@ sequenceDiagram
 
 ### Agent Protocol vs Runner Protocol
 
-Your mental model is right: **creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
+**Creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
 
 **Runner Protocol is not that standard.** It is Runkite’s own internal contract ([`runner-protocol/PROTOCOL.md`](runner-protocol/PROTOCOL.md), gRPC in [`proto/runner.proto`](proto/runner.proto)): how the plane hands work to a worker process and how the worker streams events back. Clients never see it. Rough shape:
 
