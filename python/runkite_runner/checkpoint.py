@@ -3,8 +3,9 @@
 Direct mode (default when POSTGRES_DSN is set -- production, shared DB with
 the control plane): the runner holds its own connection and writes
 checkpoints with LangGraph's native AsyncPostgresSaver. Zero added latency,
-survives runner restarts, matches what the control plane's own Postgres
-state store already uses.
+survives runner restarts. Correct only when the control plane also uses
+POSTGRES_DSN against the same database; MySQL/Mongo/SQLite control planes
+must unset POSTGRES_DSN on the runner (see README Checkpoint dual mode).
 
 Local mode (no POSTGRES_DSN -- zero-dependency dev default): falls back to
 LangGraph's in-memory MemorySaver. This is honestly ephemeral -- state does
@@ -133,7 +134,13 @@ class CheckpointerManager:
                 finally:
                     await lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_CHECKPOINT_SETUP_ADVISORY_LOCK_KEY,))
             self.mode = "direct-postgres"
-            logger.info(f"checkpoint mode: direct (postgres, pool_size={pool_size}) -- state survives runner restarts")
+            logger.info(
+                "checkpoint mode: direct (postgres, pool_size=%s) -- LangGraph tables on "
+                "POSTGRES_DSN; requires the control plane to use the same Postgres database "
+                "(Supported profile). If the control plane is MySQL/Mongo/SQLite, unset "
+                "POSTGRES_DSN on this runner and set RUNKITE_HTTP_URL for store proxy mode.",
+                pool_size,
+            )
         else:
             from langgraph.checkpoint.memory import MemorySaver
 

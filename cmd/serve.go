@@ -229,6 +229,7 @@ func startServer(opts serverOpts) {
 	}
 	// --- State store ---
 	store := initStore(ctx)
+	warnCheckpointDualMode()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -330,6 +331,13 @@ func startServer(opts serverOpts) {
 	// background loop at all.
 	if retentionCfg := initRetentionConfig(opts.configPath); retentionCfg != nil {
 		slog.Info("retention: enabled", "runs_max_age", retentionCfg.runsMaxAge, "checkpoints_keep_last", retentionCfg.checkpointsKeepLast, "cron_claims_max_age", retentionCfg.cronClaimsMaxAge, "interval", retentionCfg.interval)
+		if retentionCfg.checkpointsKeepLast > 0 {
+			// LangGraph's AsyncPostgresSaver / PostgresSaver tables are a
+			// separate schema from thread_checkpoints -- pruning the
+			// latter never touches the former (see README Checkpoint
+			// dual mode / Retention).
+			slog.Warn("retention: checkpoints_keep_last only prunes runkite thread_checkpoints (proxy-mode history); LangGraph direct-mode tables (checkpoints/checkpoint_blobs/checkpoint_writes) are not touched")
+		}
 		go runRetentionLoop(ctx, store, retentionCfg)
 	}
 
@@ -747,6 +755,35 @@ func runStoreTTLSweep(ctx context.Context, store state.Store) {
 }
 
 // --- Shared helpers ---
+
+// warnCheckpointDualMode logs when the control-plane state backend is
+// not Postgres. Runner POSTGRES_DSN enables LangGraph direct-mode
+// checkpoints (and direct store_items access) against Postgres -- a
+// separate database from MySQL/Mongo/SQLite control planes. Operators
+// who leave POSTGRES_DSN set on runners in that topology get a silent
+// split: agent state in one DB, control-plane metadata in another.
+func warnCheckpointDualMode() {
+	if msg := checkpointDualModeWarning(); msg != "" {
+		slog.Warn(msg)
+	}
+}
+
+// checkpointDualModeWarning returns the warn text for the active state
+// backend selection, or "" when Postgres is in use (Supported direct-
+// mode pairing). Extracted for tests without slog capture.
+func checkpointDualModeWarning() string {
+	if os.Getenv("POSTGRES_DSN") != "" {
+		return ""
+	}
+	backend := "sqlite"
+	switch {
+	case os.Getenv("MYSQL_DSN") != "":
+		backend = "mysql"
+	case os.Getenv("MONGO_URI") != "":
+		backend = "mongodb"
+	}
+	return "state store is " + backend + ": runner POSTGRES_DSN enables LangGraph direct-mode checkpoints/store against Postgres, which is a different database from this control plane. For " + backend + " control planes, unset POSTGRES_DSN on runners and set RUNKITE_HTTP_URL for store proxy mode; durable LangGraph checkpoints require a Postgres control plane (Supported profile). See README Checkpoint dual mode."
+}
 
 func initStore(ctx context.Context) state.Store {
 	postgresDSN := os.Getenv("POSTGRES_DSN")

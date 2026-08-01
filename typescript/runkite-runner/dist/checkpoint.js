@@ -26,7 +26,10 @@ export class CheckpointerManager {
             this.closeFn = async () => {
                 await saver.end();
             };
-            logger.info("checkpoint mode: direct (postgres) -- state survives runner restarts");
+            logger.info("checkpoint mode: direct (postgres) -- LangGraph tables on POSTGRES_DSN; " +
+                "requires the control plane to use the same Postgres database (Supported profile). " +
+                "If the control plane is MySQL/Mongo/SQLite, unset POSTGRES_DSN on this runner and " +
+                "set RUNKITE_HTTP_URL for store proxy mode.");
         }
         else {
             const { MemorySaver } = await import("@langchain/langgraph");

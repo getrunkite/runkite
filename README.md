@@ -709,10 +709,21 @@ Two further live-confirmed characteristics, not bugs: **cold start.** A brand-ne
 
 ### Checkpoint dual mode
 
-The Python runner checkpoints agent state -- separately from the control plane's own thread/run metadata above:
+Agent graph checkpoints and control-plane run/thread metadata are **intentionally different stores** -- not two writers fighting the same row. Confusion here is an ops footgun, not a split-brain bug.
 
-- **Direct mode** (when `POSTGRES_DSN` is set for the runner, same DB as the control plane): uses LangGraph's own `AsyncPostgresSaver`, writing to its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) alongside but separate from the control plane's tables. Thread state survives a runner restart -- verified by killing a runner mid-HITL-interrupt and resuming against a completely fresh process.
-- **In-memory fallback** (no `POSTGRES_DSN`): LangGraph's `MemorySaver`. Explicitly ephemeral -- fine for local dev, does not survive a runner restart.
+| Layer | Where it lives | Who writes it |
+|-------|----------------|---------------|
+| Control-plane runs/threads/`thread_checkpoints` | State backend (Postgres / MySQL / Mongo / SQLite) | Control plane |
+| LangGraph graph checkpoints | LangGraph's own Postgres tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) | Runner, **only** in direct mode |
+
+**Runner modes** (Python `AsyncPostgresSaver` / TypeScript `PostgresSaver`):
+
+- **Direct mode** (`POSTGRES_DSN` set on the runner): writes LangGraph's tables on that Postgres. Correct only when the control plane also uses `POSTGRES_DSN` against **the same database** (Supported profile). Thread state survives a runner restart -- verified by killing a runner mid-HITL-interrupt and resuming against a fresh process.
+- **In-memory fallback** (no `POSTGRES_DSN`): LangGraph's `MemorySaver`. Explicitly ephemeral -- fine for local/dev; does **not** survive a runner restart. The Python/TS runners do **not** HTTP-proxy LangGraph checkpoints to the control plane; without `POSTGRES_DSN` there is no durable graph checkpoint path.
+
+**MySQL / Mongo / SQLite control planes:** unset `POSTGRES_DSN` on runners (so you do not silently write LangGraph state to a separate Postgres) and set `RUNKITE_HTTP_URL` for **store** proxy mode. Durable LangGraph checkpoints require the Supported Postgres control plane. `serve` logs a startup warning when the state backend is not Postgres; runners log the same requirement when direct mode starts.
+
+**Retention:** `retention.checkpoints_keep_last` prunes only runkite's `thread_checkpoints` table (proxy-mode history). It never touches LangGraph's direct-mode tables -- see Retention below. `serve` warns when that retention knob is enabled.
 
 **Crash recovery covers a job's WHOLE execution, not just its start.** The control plane tracks every dequeued job as in-flight, and an unacked job past a short max-age (6s) is automatically reclaimed and redelivered to a live runner. This closes two windows, not one: the "zombie GetJob" case (a runner dying between `GetJob` and actually starting work -- via gRPC keepalive detecting the dead connection in ~4s plus a same-instant `ctx.Err()` check in `GetJob`), and a runner dying *during* execution, at any point, via a periodic **Heartbeat** RPC the runner calls every ~2s for the whole duration of a run, extending the same in-flight lease. Both are the same underlying mechanism (a Redis-backed lease with a reclaim reaper), not two separate systems -- the runner just keeps resetting the clock throughout execution instead of only once at the start.
 
