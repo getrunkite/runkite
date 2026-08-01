@@ -17,13 +17,30 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
   Open at <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
 </p>
 
+<p align="center">
+  <img src="docs/assets/ecosystem.svg" alt="Runkite ecosystem map: clients, multi-replica control plane, runners, and pluggable state/transport/vector backends" width="920" />
+</p>
+
+<p align="center">
+  <b>Ecosystem map</b> — solid boxes are shipped in-tree; dashed <code>+ …</code> boxes are extension points<br/>
+  State · transport · vectors · frameworks — swap via env, or bring another backend behind the same interfaces
+</p>
+
+<p align="center">
+  <img src="docs/assets/lifecycle.gif" alt="Animated run lifecycle: client to control plane to runner to streamed events" width="920" />
+</p>
+
+<p align="center">
+  <b>Run lifecycle</b> — create run → enqueue → GetJob / RunAssignment → StreamEvents → live HTTP/SSE/WebSocket back to the client
+</p>
+
 ---
 
 ## Why Runkite
 
 | | |
 |---|---|
-| **Agent Protocol, in Go** | HTTP/SSE, auth, streaming, job dispatch, persistence, connectors — one static binary |
+| **Agent Protocol, in Go** | HTTP / SSE / WebSocket, auth, streaming, job dispatch, persistence, connectors — one static binary |
 | **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js over the same gRPC Runner Protocol |
 | **Ops without a second deploy** | React Admin UI embedded via `embed.FS` — no Node runtime for end users |
 | **Honest backends** | **Supported:** Postgres + Redis HA. **Also wired:** SQLite, MySQL, MongoDB, NATS, Kafka, pgvector / Qdrant / Weaviate / Pinecone — with documented tiers, not equal claims |
@@ -31,27 +48,45 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph clients [Clients]
-    SDK[SDK / Studio / Custom UI]
-  end
-  SDK -->|Agent Protocol HTTP/SSE| CP[Runkite Control Plane]
-  CP -->|gRPC Runner Protocol| R[Runners]
-  CP --- S[(State)]
-  CP --- T[(Transport)]
+flowchart LR
+  classDef client fill:#1e3a8a,stroke:#60a5fa,color:#e2e8f0
+  classDef cp fill:#1d4ed8,stroke:#93c5fd,color:#f8fafc
+  classDef runner fill:#0f766e,stroke:#5eead4,color:#ecfdf5
+  classDef store fill:#334155,stroke:#94a3b8,color:#e2e8f0
+
+  C[Clients<br/>HTTP · SSE · WS]:::client
+  CP[Control plane<br/>1..N replicas]:::cp
+  R[Runners<br/>Python · TypeScript]:::runner
+  S[(State)]:::store
+  T[(Transport)]:::store
+  V[(Vectors)]:::store
+
+  C -->|Agent Protocol| CP
+  CP -->|gRPC Runner Protocol| R
+  CP --- S
+  CP --- T
+  CP --- V
 ```
 
 ```mermaid
 sequenceDiagram
-  participant C as Client
-  participant CP as Control Plane
-  participant R as Runner
+  box rgb(30,58,138) Client
+    participant C as Client
+  end
+  box rgb(29,78,216) Control plane
+    participant CP as Control Plane
+  end
+  box rgb(15,118,110) Runner
+    participant R as Runner
+  end
   C->>CP: Create thread + run
   R->>CP: GetJob
   CP-->>R: RunAssignment
   R->>CP: StreamEvents
-  CP-->>C: SSE
+  CP-->>C: SSE / WebSocket
 ```
+
+Full backend tiers and HA notes: [docs/architecture.md](docs/architecture.md). Visual map: [`docs/assets/ecosystem.svg`](docs/assets/ecosystem.svg).
 
 ## Quick start
 
