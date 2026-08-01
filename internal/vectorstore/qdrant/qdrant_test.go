@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/vectorstore"
-	"github.com/sharanharsoor/runkite/internal/vectorstore/conformance"
-	"github.com/sharanharsoor/runkite/internal/vectorstore/qdrant"
+	"github.com/getrunkite/runkite/internal/vectorstore"
+	"github.com/getrunkite/runkite/internal/vectorstore/conformance"
+	"github.com/getrunkite/runkite/internal/vectorstore/qdrant"
 )
 
 const testDimensions = 3

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // TestAgentSchema_UpsertAndGet covers UpsertAgentSchema/GetAgentSchema --

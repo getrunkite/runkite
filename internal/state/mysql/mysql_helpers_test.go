@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state/mysql"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state/mysql"
 )
 
 // Shared test helpers for this package's supplementary (non-conformance)

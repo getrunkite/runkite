@@ -10,8 +10,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // withInMemoryTracing installs a real (always-sampling) TracerProvider

@@ -7,9 +7,9 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/transport/conformance"
-	natstransport "github.com/sharanharsoor/runkite/internal/transport/nats"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport/conformance"
+	natstransport "github.com/getrunkite/runkite/internal/transport/nats"
 )
 
 func getNatsConn(t *testing.T) *nats.Conn {

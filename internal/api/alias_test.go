@@ -3,8 +3,8 @@ package api_test
 import (
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/config"
 )
 
 func TestAliasResolver_NonAliasPassesThrough(t *testing.T) {

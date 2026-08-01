@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/config"
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // TestAlias_RunCreationResolvesToRealTarget proves a run created

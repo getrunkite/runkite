@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/config"
 )
 
 // runTimeoutConfig is the resolved form of config.RunTimeoutEntry --

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // postCommand posts a StreamingCommand to /threads/{threadID}/commands and

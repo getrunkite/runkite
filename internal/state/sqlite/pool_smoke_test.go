@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // These were written while MaxOpenConns was briefly 8 (see sqlite.go's

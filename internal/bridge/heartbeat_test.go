@@ -10,9 +10,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "github.com/sharanharsoor/runkite/internal/bridge/runnerpb"
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
 // fakeStreamEventsServer is a minimal fake for the generated

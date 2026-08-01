@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // parseNamespaceParam parses the namespace query parameter. The LangGraph SDK

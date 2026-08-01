@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // Concurrency races against a live MySQL container -- the shared

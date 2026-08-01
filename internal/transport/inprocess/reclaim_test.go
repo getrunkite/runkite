@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
 func TestReclaimStale_ReenqueuesUnackedJob(t *testing.T) {

@@ -36,8 +36,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // withSystemContext wraps a handler that already reads r.Context() (every

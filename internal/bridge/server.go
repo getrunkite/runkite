@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/sharanharsoor/runkite/internal/bridge/runnerpb"
-	"github.com/sharanharsoor/runkite/internal/transport"
+	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // Server implements the RunnerService gRPC server.

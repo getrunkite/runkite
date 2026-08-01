@@ -83,7 +83,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 const defaultNamespace = "rk"

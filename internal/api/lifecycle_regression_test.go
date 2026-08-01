@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/config"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state"
-	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
-	"github.com/sharanharsoor/runkite/internal/tenant"
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	"github.com/getrunkite/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
+	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
+	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
 // failQueue always rejects Enqueue -- used to prove rollbackCreatedRun

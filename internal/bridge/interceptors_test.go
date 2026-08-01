@@ -13,9 +13,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
-	pb "github.com/sharanharsoor/runkite/internal/bridge/runnerpb"
-	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	"github.com/getrunkite/runkite/internal/auth"
+	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
 func withEnv(t *testing.T, kv map[string]string) {

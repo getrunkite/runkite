@@ -50,9 +50,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // Store implements state.Store with a MongoDB database.

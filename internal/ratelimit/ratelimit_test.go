@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 func TestDisabled_NoConfigIsAlwaysUnlimited(t *testing.T) {

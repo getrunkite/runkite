@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/state/conformance"
-	"github.com/sharanharsoor/runkite/internal/state/mysql"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/conformance"
+	"github.com/getrunkite/runkite/internal/state/mysql"
 )
 
 // TestMySQLStore runs the full shared conformance suite (internal/state/

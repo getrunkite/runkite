@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 func TestTimeoutOverdueRuns_MarksOldActiveRuns(t *testing.T) {

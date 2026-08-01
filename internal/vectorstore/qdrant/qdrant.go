@@ -32,8 +32,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // pointNamespace is a fixed, arbitrary UUID used as the "namespace" for

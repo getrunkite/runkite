@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/metrics"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // TimeoutOverdueRuns finds pending/running runs whose created_at is older

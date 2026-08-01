@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // TestUserContext_WireFlattenExtra is the regression for the auth→tools

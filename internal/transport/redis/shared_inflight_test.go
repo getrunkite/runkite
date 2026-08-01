@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
+	"github.com/getrunkite/runkite/internal/transport"
+	redistransport "github.com/getrunkite/runkite/internal/transport/redis"
 )
 
 // This file exercises exactly the two failure modes found via live

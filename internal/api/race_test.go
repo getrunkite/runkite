@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // TS-009 regression test: the busy-check and the busy-write for concurrent

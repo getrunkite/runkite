@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/sharanharsoor/runkite/internal/state/postgres"
+	"github.com/getrunkite/runkite/internal/state/postgres"
 )
 
 // TestInit_ConcurrentFreshDatabase is a regression test for a real race

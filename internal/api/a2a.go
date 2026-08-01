@@ -50,10 +50,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
-	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // A2ARunRequest is the body for POST /internal/a2a/runs.

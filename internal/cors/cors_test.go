@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/cors"
+	"github.com/getrunkite/runkite/internal/cors"
 )
 
 func TestMiddleware_DisabledIsNoop(t *testing.T) {

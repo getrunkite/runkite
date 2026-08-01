@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	natstransport "github.com/sharanharsoor/runkite/internal/transport/nats"
+	"github.com/getrunkite/runkite/internal/transport"
+	natstransport "github.com/getrunkite/runkite/internal/transport/nats"
 )
 
 // TestNATSQueue_AckFromDifferentConnectionThanDequeue is the NATS

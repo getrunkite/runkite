@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	mysqlstore "github.com/sharanharsoor/runkite/internal/state/mysql"
-	pgstore "github.com/sharanharsoor/runkite/internal/state/postgres"
-	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
+	mysqlstore "github.com/getrunkite/runkite/internal/state/mysql"
+	pgstore "github.com/getrunkite/runkite/internal/state/postgres"
+	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
 )
 
 // initStore calls os.Exit(1) on a connection failure, so these tests

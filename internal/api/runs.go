@@ -16,15 +16,15 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
-	"github.com/sharanharsoor/runkite/internal/hooks"
-	"github.com/sharanharsoor/runkite/internal/metrics"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/ratelimit"
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/tenant"
-	"github.com/sharanharsoor/runkite/internal/tracing"
-	"github.com/sharanharsoor/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/hooks"
+	"github.com/getrunkite/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/ratelimit"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/tracing"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // --- Shared run creation logic ---

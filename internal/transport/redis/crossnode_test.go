@@ -8,8 +8,8 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
+	"github.com/getrunkite/runkite/internal/transport"
+	redistransport "github.com/getrunkite/runkite/internal/transport/redis"
 )
 
 // Verifies the package's own claim: "the production transport for multi-node

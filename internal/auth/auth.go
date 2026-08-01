@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // AuthResult is the output of a successful authentication.

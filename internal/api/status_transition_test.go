@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/metrics"
 )
 
 func counterValue(t *testing.T, op string) float64 {

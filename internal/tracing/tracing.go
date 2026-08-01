@@ -29,7 +29,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/sharanharsoor/runkite"
+const tracerName = "github.com/getrunkite/runkite"
 
 // Init configures the global TracerProvider from standard OTEL_* env vars.
 // Returns a shutdown func to flush/close on exit (always non-nil, always

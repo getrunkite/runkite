@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/state/conformance"
-	runkiteMongo "github.com/sharanharsoor/runkite/internal/state/mongo"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/conformance"
+	runkiteMongo "github.com/getrunkite/runkite/internal/state/mongo"
 )
 
 func TestMongoStore(t *testing.T) {

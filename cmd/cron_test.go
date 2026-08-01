@@ -7,7 +7,7 @@ import (
 
 	cronlib "github.com/robfig/cron/v3"
 
-	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
+	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
 )
 
 func mustParse(t *testing.T, expr string) cronlib.Schedule {

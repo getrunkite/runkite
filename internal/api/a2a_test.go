@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 func upsertA2AAgent(t *testing.T, env *testEnv, ctx context.Context, agentID string) {

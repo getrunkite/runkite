@@ -11,7 +11,7 @@ Runkite is a Go control plane implementing the Agent Protocol spec, with Python 
 ## Development setup
 
 ```bash
-git clone https://github.com/sharanharsoor/runkite
+git clone https://github.com/getrunkite/runkite
 cd runkite
 make build
 ```

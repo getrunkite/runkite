@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/state/mysql"
+	"github.com/getrunkite/runkite/internal/state/mysql"
 )
 
 // Live schema smoke test for checkpoint 1. Skips when MySQL isn't up

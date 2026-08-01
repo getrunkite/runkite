@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"os"
 
-	mysqlstore "github.com/sharanharsoor/runkite/internal/state/mysql"
-	pgstore "github.com/sharanharsoor/runkite/internal/state/postgres"
-	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
+	mysqlstore "github.com/getrunkite/runkite/internal/state/mysql"
+	pgstore "github.com/getrunkite/runkite/internal/state/postgres"
+	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
 )
 
 func cmdDBUpgrade(args []string) {

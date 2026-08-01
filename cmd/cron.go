@@ -9,11 +9,11 @@ import (
 
 	cronlib "github.com/robfig/cron/v3"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/config"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // bootstrapCronSchedules reads the "cron" section from every discovered

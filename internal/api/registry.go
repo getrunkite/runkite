@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // PUT /registry/entries/{name} -- publish a new entry or a new version

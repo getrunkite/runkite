@@ -14,7 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/auth"
 )
 
 // ============================================================================

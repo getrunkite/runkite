@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/connector"
 )
 
 // TestLoadConnectorConfigs_RealYAML guards against a regression where

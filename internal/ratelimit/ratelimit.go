@@ -12,8 +12,8 @@ package ratelimit
 import (
 	"net/http"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // Rule configures one token bucket: RPS is the sustained rate, Burst is the

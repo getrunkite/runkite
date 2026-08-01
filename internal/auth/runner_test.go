@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/auth"
 )
 
 func withEnv(t *testing.T, kv map[string]string) {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	redistransport "github.com/sharanharsoor/runkite/internal/transport/redis"
+	redistransport "github.com/getrunkite/runkite/internal/transport/redis"
 )
 
 // TestDequeue_ContextCancelDetectedWithinBlockCap_NotFullTimeout proves the

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state"
-	runkiteMongo "github.com/sharanharsoor/runkite/internal/state/mongo"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
+	runkiteMongo "github.com/getrunkite/runkite/internal/state/mongo"
 )
 
 // TestMongoStore_ConcurrentUpsertAgentDoesNotFailOrDuplicateVersion is a

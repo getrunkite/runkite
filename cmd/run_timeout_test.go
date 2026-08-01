@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/api"
-	"github.com/sharanharsoor/runkite/internal/models"
-	sqlitestore "github.com/sharanharsoor/runkite/internal/state/sqlite"
-	"github.com/sharanharsoor/runkite/internal/transport/inprocess"
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/models"
+	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
 func TestInitRunTimeoutConfig_Unconfigured(t *testing.T) {

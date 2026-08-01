@@ -10,9 +10,9 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/transport/conformance"
-	kafkatransport "github.com/sharanharsoor/runkite/internal/transport/kafka"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/transport/conformance"
+	kafkatransport "github.com/getrunkite/runkite/internal/transport/kafka"
 )
 
 // TestMain pays this package's own documented "very first consumer

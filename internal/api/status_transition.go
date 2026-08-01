@@ -3,7 +3,7 @@ package api
 import (
 	"log/slog"
 
-	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/metrics"
 )
 
 // tryStatusTransition runs a thread/run status side effect once, retries

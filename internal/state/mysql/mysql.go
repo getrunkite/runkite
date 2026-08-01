@@ -52,9 +52,9 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // mysqlDuplicateKeyError is MySQL's ER_DUP_ENTRY code (1062), the

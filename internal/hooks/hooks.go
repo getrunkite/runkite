@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/metrics"
 )
 
 // EventType identifies which lifecycle moment fired a hook.

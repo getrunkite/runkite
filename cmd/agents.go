@@ -6,7 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/sharanharsoor/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/config"
 )
 
 func cmdAgentsList(args []string) {

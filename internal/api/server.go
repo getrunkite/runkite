@@ -20,16 +20,16 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/sharanharsoor/runkite/internal/adminui"
-	"github.com/sharanharsoor/runkite/internal/connector"
-	"github.com/sharanharsoor/runkite/internal/hooks"
-	"github.com/sharanharsoor/runkite/internal/metrics"
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/ratelimit"
-	"github.com/sharanharsoor/runkite/internal/state"
-	"github.com/sharanharsoor/runkite/internal/tenant"
-	"github.com/sharanharsoor/runkite/internal/transport"
-	"github.com/sharanharsoor/runkite/internal/vectorstore"
+	"github.com/getrunkite/runkite/internal/adminui"
+	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/hooks"
+	"github.com/getrunkite/runkite/internal/metrics"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/ratelimit"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/transport"
+	"github.com/getrunkite/runkite/internal/vectorstore"
 )
 
 // Server is the HTTP API server for the Agent Protocol.

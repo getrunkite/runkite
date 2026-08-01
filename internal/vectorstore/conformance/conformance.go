@@ -11,9 +11,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/models"
-	"github.com/sharanharsoor/runkite/internal/tenant"
-	"github.com/sharanharsoor/runkite/internal/vectorstore"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/vectorstore"
 )
 
 // StoreFactory creates a fresh (or freshly-truncated) VectorStore for

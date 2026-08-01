@@ -11,7 +11,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/sharanharsoor/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/config"
 )
 
 // AliasResolver picks a real agent_id for a configured alias name,

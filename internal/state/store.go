@@ -12,7 +12,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 // Store is the persistence interface for all control plane metadata.

@@ -6,7 +6,7 @@ If you find a security vulnerability in Runkite, please **do not open a public G
 
 Instead, report it privately using one of these channels:
 
-1. **[GitHub Security Advisories](https://github.com/sharanharsoor/runkite/security/advisories/new)** (preferred) -- lets you report privately and track the fix with maintainers before any public disclosure.
+1. **[GitHub Security Advisories](https://github.com/getrunkite/runkite/security/advisories/new)** (preferred) -- lets you report privately and track the fix with maintainers before any public disclosure.
 2. **Email**: [sharanharsoor@gmail.com](mailto:sharanharsoor@gmail.com) if you'd rather not use GitHub.
 
 Please include:

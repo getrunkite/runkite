@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/sharanharsoor/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/models"
 )
 
 func doDelete(t *testing.T, url string) *http.Response {
