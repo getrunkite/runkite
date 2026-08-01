@@ -225,9 +225,10 @@ func runCountTests(t *testing.T, factory StoreFactory) {
 
 		for i := 0; i < 12; i++ {
 			st := models.RunStatusSuccess
-			if i%4 == 0 {
+			switch i % 4 {
+			case 0:
 				st = models.RunStatusPending
-			} else if i%4 == 1 {
+			case 1:
 				st = models.RunStatusError
 			}
 			tid := fmt.Sprintf("th-a-%d", i%10)
