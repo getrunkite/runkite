@@ -247,6 +247,7 @@ In `langgraph.json`:
 {
   "auth": {
     "type": "api_key",
+    "strict_permissions": true,
     "keys": {
       "sk-my-secret-key-1": {"name": "client-1", "permissions": ["read", "write"]},
       "sk-my-secret-key-2": {"name": "client-2", "permissions": ["read"]}

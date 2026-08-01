@@ -187,6 +187,21 @@ func hasClientFacingAuthConfigured(configPath string) bool {
 	return cfg.Auth.Type != "" || len(cfg.Auth.AdminKeys) > 0
 }
 
+// authStrictPermissions reads auth.strict_permissions from the first
+// discovered langgraph.json (same first-file convention as
+// initAuthProvider). False when unset or unconfigured.
+func authStrictPermissions(configPath string) bool {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return false
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.Auth == nil {
+		return false
+	}
+	return cfg.Auth.StrictPermissions
+}
+
 func startServer(opts serverOpts) {
 	setupLogging()
 	checkProductionAdmission(opts)
@@ -424,8 +439,12 @@ func startServer(opts serverOpts) {
 	// separately inside createRun, see internal/ratelimit's doc comment.
 	authProvider := initAuthProvider(opts.configPath)
 	adminAuthProvider := initAdminAuthProvider(opts.configPath)
+	authOpts := auth.MiddlewareOpts{StrictPermissions: authStrictPermissions(opts.configPath)}
+	if authOpts.StrictPermissions {
+		slog.Info("auth: strict_permissions enabled (empty permissions deny)")
+	}
 	rateLimited := ratelimit.Middleware(rateLimiter, apiServer.Handler())
-	authedAPI := auth.Middleware(authProvider, adminAuthProvider, runnerTokens, rateLimited)
+	authedAPI := auth.MiddlewareWithOpts(authProvider, adminAuthProvider, runnerTokens, authOpts, rateLimited)
 
 	// Top-level mux: /metrics (no auth) + everything else (auth'd API).
 	// Register both /metrics and /metrics/: the catch-all "/" below would

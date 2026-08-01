@@ -424,6 +424,83 @@ func TestAuthz_AdminPathUnrestrictedWithEmptyPermissions(t *testing.T) {
 	}
 }
 
+// TestAuthz_StrictEmptyPermissionsDenied is the fail-closed mode
+// (auth.strict_permissions): authenticating with no app-level
+// permissions must 403, not grant unrestricted access.
+func TestAuthz_StrictEmptyPermissionsDenied(t *testing.T) {
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"no-perms-key": {Name: "NoPerms"},
+	})
+	called := false
+	handler := auth.MiddlewareWithOpts(p, nil, nil, auth.MiddlewareOpts{StrictPermissions: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(200)
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/threads", nil)
+	req.Header.Set("Authorization", "Bearer no-perms-key")
+	handler.ServeHTTP(rec, req)
+
+	if called || rec.Code != 403 {
+		t.Fatalf("expected strict mode to 403 empty permissions, called=%v code=%d", called, rec.Code)
+	}
+}
+
+func TestAuthz_StrictEmptyPermissionsDeniedOnAdminPath(t *testing.T) {
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"no-perms-key": {Name: "NoPerms"},
+	})
+	called := false
+	handler := auth.MiddlewareWithOpts(p, nil, nil, auth.MiddlewareOpts{StrictPermissions: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(200)
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/admin-api/overview", nil)
+	req.Header.Set("Authorization", "Bearer no-perms-key")
+	handler.ServeHTTP(rec, req)
+
+	if called || rec.Code != 403 {
+		t.Fatalf("expected strict mode to 403 empty permissions on /admin-api/*, called=%v code=%d", called, rec.Code)
+	}
+}
+
+func TestAuthz_StrictAllowsExplicitPermissions(t *testing.T) {
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"reader-key": {Name: "Reader", Permissions: []string{"read"}},
+		"writer-key": {Name: "Writer", Permissions: []string{"write"}},
+		"admin-key":  {Name: "Admin", Permissions: []string{"admin"}},
+	})
+	handler := auth.MiddlewareWithOpts(p, nil, nil, auth.MiddlewareOpts{StrictPermissions: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	cases := []struct {
+		key    string
+		method string
+		path   string
+		want   int
+	}{
+		{"reader-key", "GET", "/threads", 200},
+		{"reader-key", "POST", "/threads", 403},
+		{"writer-key", "POST", "/threads", 200},
+		{"admin-key", "DELETE", "/threads/abc", 200},
+		{"admin-key", "GET", "/admin-api/overview", 200},
+		{"writer-key", "GET", "/admin-api/overview", 403},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("Authorization", "Bearer "+tc.key)
+		handler.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Fatalf("%s %s with %s: want %d, got %d", tc.method, tc.path, tc.key, tc.want, rec.Code)
+		}
+	}
+}
+
 func TestAuthz_NoProviderIsUnaffected(t *testing.T) {
 	// No auth configured at all (local dev mode) -- authorization must not
 	// kick in regardless of method.
@@ -1462,6 +1539,40 @@ func TestJWT_AppPermissionsClaimStillEnforced(t *testing.T) {
 	}
 }
 
+// TestAuthz_StrictForeignPermissionsFilteredToEmptyDenied proves that
+// when an IdP only emits foreign permission strings (filtered out by
+// filterAppPermissions), strict mode treats the resulting empty list as
+// deny -- not the non-strict "empty = unrestricted" convention.
+func TestAuthz_StrictForeignPermissionsFilteredToEmptyDenied(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwksSrv := testJWKS(t, &key.PublicKey)
+	p, err := auth.NewJWTProvider(auth.JWTConfig{JWKSURL: jwksSrv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub":         "user-foreign",
+		"permissions": []string{"read:messages", "openid"},
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+	token.Header["kid"] = "test-key-1"
+	signed, _ := token.SignedString(key)
+
+	handler := auth.MiddlewareWithOpts(p, nil, nil, auth.MiddlewareOpts{StrictPermissions: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/threads", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("expected strict mode to 403 foreign-only permissions, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestJWT_ScopeClaimIgnoredByDefault is the regression for a real bug
 // found integrating a production SSO provider (Keycloak): its token's
 // "scope" claim held standard OIDC values ("openid profile email"), not
@@ -1472,7 +1583,8 @@ func TestJWT_AppPermissionsClaimStillEnforced(t *testing.T) {
 // "profile"/"email" never match "write". Left unset (the default),
 // permissions must end up empty, which authorized() correctly treats as
 // unrestricted -- the right behavior for an IdP that carries no app-level
-// RBAC in the token at all.
+// RBAC in the token at all (enable auth.strict_permissions to fail closed
+// instead).
 func TestJWT_ScopeClaimIgnoredByDefault(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

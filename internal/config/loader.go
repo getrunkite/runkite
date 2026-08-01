@@ -317,6 +317,13 @@ type AuthEntry struct {
 	WebhookURL         string                      `json:"url,omitempty"`
 	WebhookTimeout     int                         `json:"timeout_ms,omitempty"`
 	WebhookCacheTTL    int                         `json:"cache_ttl_seconds,omitempty"`
+	// StrictPermissions fail-closes authorization when a credential
+	// authenticates with an empty app-level permissions list (nil, [],
+	// or only foreign IdP scopes that filterAppPermissions drops).
+	// Default false keeps the backward-compatible "empty = unrestricted"
+	// convention; production SSO/api_key deployments that want every
+	// caller to carry explicit read/write/admin should set this true.
+	StrictPermissions bool `json:"strict_permissions,omitempty"`
 	// AdminKeys defines an independent credential set accepted ONLY for
 	// /admin-api/*, regardless of Type above (map: key string -> a
 	// display name for it, shown nowhere but useful in audit logging).

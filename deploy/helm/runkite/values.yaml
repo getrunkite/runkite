@@ -121,6 +121,7 @@ config:
       ],
       "auth": {
         "type": "api_key",
+        "strict_permissions": true,
         "keys": {
           "${RUNKITE_API_KEY}": {
             "name": "operator",

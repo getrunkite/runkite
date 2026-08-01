@@ -57,19 +57,32 @@ const (
 	HeaderRunnerToken = "X-Runner-Token"
 )
 
+// MiddlewareOpts configures optional authorization behavior for Middleware.
+type MiddlewareOpts struct {
+	// StrictPermissions rejects authenticated callers whose app-level
+	// permissions list is empty (see authorized). Default false preserves
+	// the backward-compatible "empty = unrestricted" convention.
+	StrictPermissions bool
+}
+
 // Middleware returns an http.Handler that enforces auth before delegating to
-// next. client auth (provider), admin auth (adminProvider), and runner auth
-// (runnerTokens) are three separate trust boundaries: provider protects the
-// client-facing Agent Protocol surface, adminProvider is an optional,
-// independent credential accepted ONLY for /admin-api/* (see its own doc
-// comment below for why a deployment would configure one), and
-// runnerTokens protects /internal/* (connector credentials, run status)
-// which client auth always bypasses. Pass nil/disabled for any of the
-// three that aren't configured -- adminProvider and a disabled
-// runnerTokens are both common (local mode, or a deployment happy to gate
-// /admin-api/* via the primary provider's own "admin" permission, the
-// pre-existing behavior).
+// next with default (non-strict) permission semantics. See MiddlewareWithOpts.
 func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerTokens, next http.Handler) http.Handler {
+	return MiddlewareWithOpts(provider, adminProvider, runnerTokens, MiddlewareOpts{}, next)
+}
+
+// MiddlewareWithOpts is Middleware plus MiddlewareOpts. client auth
+// (provider), admin auth (adminProvider), and runner auth (runnerTokens)
+// are three separate trust boundaries: provider protects the client-facing
+// Agent Protocol surface, adminProvider is an optional, independent
+// credential accepted ONLY for /admin-api/* (see its own doc comment below
+// for why a deployment would configure one), and runnerTokens protects
+// /internal/* (connector credentials, run status) which client auth always
+// bypasses. Pass nil/disabled for any of the three that aren't configured
+// -- adminProvider and a disabled runnerTokens are both common (local mode,
+// or a deployment happy to gate /admin-api/* via the primary provider's own
+// "admin" permission, the pre-existing behavior).
+func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens *RunnerTokens, opts MiddlewareOpts, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
@@ -160,18 +173,17 @@ func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerT
 		// client-facing surface: every method,
 		// including GET, requires "admin" specifically -- viewing the
 		// dashboard is itself an admin action, not something "read"
-		// should imply. Empty permissions still means unrestricted (same
-		// backward-compatible convention as everywhere else), so an
-		// existing deployment authenticating without configuring
-		// fine-grained permissions keeps working unchanged.
+		// should imply. With StrictPermissions off, empty permissions
+		// still means unrestricted (backward compatible). With it on,
+		// empty means denied -- admin must be explicit.
 		if isAdminAPIPath(path) {
-			if len(result.Permissions) > 0 && !hasPermission(result.Permissions, "admin") {
+			if !authorizedAdmin(result, opts.StrictPermissions) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]string{"message": "insufficient permissions (requires 'admin')"})
 				return
 			}
-		} else if !authorized(result, r.Method) {
+		} else if !authorized(result, r.Method, opts.StrictPermissions) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{
@@ -234,19 +246,37 @@ func requiredPermission(method string) string {
 // authorized checks whether an authenticated caller may perform the given
 // HTTP method.
 //
-// An EMPTY permissions list means "unrestricted" (backward compatible --
-// authenticating without configuring fine-grained permissions keeps
-// today's all-access behavior; you only get restricted access by
-// explicitly granting a limited list). A NON-EMPTY list is treated as a
-// real allow-list: the caller must hold the specific permission the
-// request requires.
+// With strict=false (default), an EMPTY permissions list means
+// "unrestricted" (backward compatible -- authenticating without
+// configuring fine-grained permissions keeps today's all-access behavior;
+// you only get restricted access by explicitly granting a limited list).
+// With strict=true, empty means denied: every caller must carry an
+// explicit read/write/admin allow-list (auth.strict_permissions).
 //
-// "write" implies "read" (a writer can GET). "admin" implies everything.
-func authorized(result *AuthResult, method string) bool {
-	if result == nil || len(result.Permissions) == 0 {
-		return true
+// A NON-EMPTY list is always a real allow-list: the caller must hold the
+// specific permission the request requires. "write" implies "read"
+// (a writer can GET). "admin" implies everything.
+func authorized(result *AuthResult, method string, strict bool) bool {
+	if result == nil {
+		return !strict
+	}
+	if len(result.Permissions) == 0 {
+		return !strict
 	}
 	return hasPermission(result.Permissions, requiredPermission(method))
+}
+
+// authorizedAdmin is the /admin-api/* gate: requires "admin" when
+// permissions are non-empty, and with strict=true also rejects empty
+// (no implicit unrestricted admin).
+func authorizedAdmin(result *AuthResult, strict bool) bool {
+	if result == nil {
+		return !strict
+	}
+	if len(result.Permissions) == 0 {
+		return !strict
+	}
+	return hasPermission(result.Permissions, "admin")
 }
 
 // hasPermission reports whether permissions grants required. "admin"
@@ -281,9 +311,10 @@ func appPermission(p string) bool {
 }
 
 // filterAppPermissions keeps only read/write/admin. Unknown values are
-// dropped so IdP-native claim vocabularies collapse to empty (=
-// unrestricted), matching the correct behavior for an identity
-// provider that isn't doing runkite-level RBAC.
+// dropped so IdP-native claim vocabularies collapse to empty. With
+// StrictPermissions off that empty list means unrestricted; with it on
+// empty means deny -- either way the foreign vocabulary never becomes a
+// bogus restrictive allow-list of strings authorized() does not understand.
 func filterAppPermissions(perms []string) []string {
 	if len(perms) == 0 {
 		return nil
