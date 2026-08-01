@@ -24,7 +24,7 @@ jobs:
         run: python3 scripts/openapi/check.py
 
       - name: Attach OpenAPI specs to the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             spec/openapi.json
