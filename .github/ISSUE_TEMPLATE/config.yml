@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/getrunkite/runkite/blob/main/SECURITY.md
+    about: Report security issues privately via SECURITY.md — do not file a public issue.

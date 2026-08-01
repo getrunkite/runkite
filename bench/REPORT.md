@@ -458,7 +458,7 @@ that band isn't a meaningful backend-choice signal on its own.
 
 All three run the Python runner in **proxy mode** for checkpoints/store here (SQLite because
 the control plane owns the file exclusively; MongoDB and MySQL because there's no direct-mode
-checkpointer for either yet -- see README's Retention/Runners sections), which is the fairer
+checkpointer for either yet -- see docs/deployment.md Retention and docs/runners.md), which is the fairer
 comparison: this isolates the *state backend's* own read/write cost from any transport
 differences, and both MongoDB and MySQL hold up well against the SQLite baseline they're most
 naturally compared to.
@@ -581,7 +581,7 @@ verified both fail against the pre-fix code and pass after.
 
 Same methodology as the Python runner's own comparison rows (`examples/echo_agent_ts`,
 concurrency=100, proxy mode for checkpoint/store since the TS runner has no direct-mode
-option at all -- see README's Runners section). Five runs total, deliberately alternating
+option at all -- see docs/runners.md). Five runs total, deliberately alternating
 which config went first, specifically to test an obvious confound before trusting the
 comparison at all:
 

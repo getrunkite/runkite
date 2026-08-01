@@ -44,7 +44,7 @@ Longer walkthrough: [`docs/quickstart.md`](quickstart.md) §6.
 Point any HTTP client (curl, generated OpenAPI client, custom wrapper) at the control plane. Minimal create → run → stream:
 
 ```bash
-# needs a running control plane + runner (see README Quick Start)
+# needs a running control plane + runner (see root README Quick Start or docs/quickstart.md)
 BASE=http://localhost:2026
 
 THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \

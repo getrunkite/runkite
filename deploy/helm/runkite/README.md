@@ -10,7 +10,8 @@ Minimal Kubernetes packaging for a multi-replica Runkite control plane
 - Helm 3.8+
 - **Postgres** and **Redis** reachable from the cluster (not installed by
   this chart). That pair is Runkite's **Supported** production profile
-  (see the main README's Backend support tiers). Redis is required for
+  (see [Backend support tiers](../../../README.md#backend-support-tiers)
+  or [`docs/architecture.md`](../../../docs/architecture.md#backend-support-tiers)). Redis is required for
   multi-replica; without it the in-process transport only works for
   `replicaCount: 1`.
 - Container images built from this repo's `Dockerfile` and

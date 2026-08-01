@@ -6,7 +6,7 @@ Runkite is a Go control plane implementing the Agent Protocol spec, with Python 
 
 - **License**: Runkite is licensed under [BUSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-07-27). By submitting a contribution, you agree it's licensed under the same terms as the rest of the project.
 - **Small, focused PRs** are much easier to review than large ones. If you're planning a big change (a new backend, a new runner language), consider opening an issue first to discuss the approach.
-- **Read the README first.** It documents design rationale, known limitations, and trade-offs in detail -- most "why does it work this way?" questions are already answered there.
+- **Read the [README](README.md) and [`docs/`](docs/README.md) first.** Deep design rationale, dual-mode notes, and known limitations live in `docs/` (especially [`architecture.md`](docs/architecture.md), [`runners.md`](docs/runners.md), [`limitations.md`](docs/limitations.md)) -- most "why does it work this way?" questions are already answered there.
 
 ## Development setup
 
@@ -58,7 +58,7 @@ Same pattern for a new vector store backend (`internal/vectorstore/vectorstore.g
 
 The Runner Protocol (gRPC, `proto/runner.proto`) is the only contract a new runner needs to implement -- the control plane has zero language-specific code. `typescript/runkite-runner` is the reference example of a from-scratch runner in a second language; `python/runkite_runner` is the original.
 
-At minimum, a new runner needs: `GetJob`/`ReportStatus`/`StreamEvents`/`WatchCancels` gRPC calls, the `RunAssignment`/`RunEvent` JSON shapes (see README's "Runner Protocol" section), and either direct-mode or proxy-mode checkpoint/store access (proxy mode -- calling the control plane's own HTTP API -- is the simpler starting point; see README's Checkpoint/Store dual-mode sections).
+At minimum, a new runner needs: `GetJob`/`ReportStatus`/`StreamEvents`/`WatchCancels` gRPC calls, the `RunAssignment`/`RunEvent` JSON shapes (see [`runner-protocol/PROTOCOL.md`](runner-protocol/PROTOCOL.md) and [`docs/runners.md`](docs/runners.md)), and either direct-mode or proxy-mode checkpoint/store access (proxy mode -- calling the control plane's own HTTP API -- is the simpler starting point; see Checkpoint/Store dual mode in [`docs/architecture.md`](docs/architecture.md)).
 
 ## Adding a new framework adapter (Python)
 

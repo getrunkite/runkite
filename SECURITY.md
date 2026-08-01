@@ -29,7 +29,7 @@ Areas of particular interest for security review:
 
 - Auth providers (`internal/auth/`): JWT/API-key/webhook validation, permission checks, admin-key handling.
 - Multi-tenancy isolation (`internal/tenant/`) -- a bug here could leak data across tenants.
-- The Runner Protocol's trust model (`internal/bridge/`) -- runner-token validation, and the documented trade-offs of direct-mode DB access (see the README's "Runners" section).
+- The Runner Protocol's trust model (`internal/bridge/`) -- runner-token validation, and the documented trade-offs of direct-mode DB access (see [`docs/runners.md`](docs/runners.md)).
 - Webhook signature verification and connector credential handling (`internal/hooks/`, `internal/connector/`).
 
-Known, already-documented limitations (coarse-grained authorization, single-control-plane-node crash recovery, etc.) are listed in the README's "Known Limitations" section -- please check there first in case what you found is already a stated trade-off rather than a new bug.
+Known, already-documented limitations (coarse-grained authorization, single-control-plane-node crash recovery, etc.) are listed in [`docs/limitations.md`](docs/limitations.md) -- please check there first in case what you found is already a stated trade-off rather than a new bug.
