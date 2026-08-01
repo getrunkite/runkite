@@ -164,5 +164,5 @@ runner:
     tag: latest
     pullPolicy: IfNotPresent
   resources: {}
-  # Extra env for the runner pod (e.g. OPENAI_API_KEY via valueFrom).
+  # Extra env for the runner pod (e.g. an LLM API key via valueFrom).
   extraEnv: {}
