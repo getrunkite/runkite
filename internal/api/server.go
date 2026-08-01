@@ -47,18 +47,24 @@ type Server struct {
 	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
-	// until StatusCallback closes it out. ponytail: if the control plane
-	// restarts mid-run, that run's span is never End()'d and is dropped
-	// with the process -- a missing trace segment, not corrupted data.
-	// Deliberately still process-local (unlike the job queue's in-flight
-	// tracking, moved into Redis itself -- see internal/transport/redis's
-	// Queue doc comment -- after being found to cause actual duplicate/
-	// lost job execution): losing a trace segment on crash is a much
-	// lower-severity gap than losing or duplicating a run, so this one is
-	// an accepted trade-off, not an oversight. No cleanup goroutine
-	// needed: every run that reaches a terminal status (including via the
-	// reclaim/redelivery path) removes its own entry.
+	// until finishRun closes it out. Process-local on purpose: if the
+	// control plane restarts mid-run, that run's span is never End()'d
+	// and is dropped with the process -- a missing trace segment, not
+	// corrupted data. Losing a trace segment on crash (or when
+	// StatusCallback lands on a different replica than createRun) is an
+	// accepted observability trade-off; terminal webhooks must NOT be
+	// gated on this map -- see finishRun / finishedRuns.
 	runSpans sync.Map // run_id -> trace.Span
+
+	// finishedRuns dedupes terminal webhook dispatch within one process
+	// (cancel + late StatusCallback racing the same replica). It is
+	// deliberately process-local: under multi-replica LB, create and
+	// ReportStatus often land on different processes, so a span-only
+	// gate would drop most run_complete hooks (~1/N of deliveries with
+	// N replicas -- confirmed live in a 3-CP soak). Cross-replica
+	// cancel+status can therefore deliver the terminal webhook twice;
+	// receivers should key idempotency on run_id.
+	finishedRuns sync.Map // run_id -> struct{}
 }
 
 // NewServer creates the HTTP API server.
@@ -458,32 +464,37 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 	}
 }
 
-// finishRun performs the once-per-run terminal bookkeeping shared by
-// StatusCallback (runner reported its own final status) and cancelRunCore
-// (control plane forced a cancellation) -- both are legitimate ways for a
-// run to reach a terminal state, and both can observe it independently
-// (a cancelled run's runner may still report its own final status
-// afterwards). s.runSpans.LoadAndDelete is the single idempotency guard
-// for the whole function: whichever caller arrives first does the work
-// (ending the OTel span + dispatching exactly one on_run_complete/
-// on_error/on_interrupt hook); the second arrival finds nothing and no-ops.
-// Without this, a cancelled-then-later-self-reported run would fire its
-// terminal webhook twice.
+// finishRun performs terminal bookkeeping shared by StatusCallback
+// (runner reported its own final status) and cancelRunCore / run-timeout
+// (control plane forced a terminal status). Both are legitimate ways for
+// a run to finish, and both can observe it independently (a cancelled
+// run's runner may still ReportStatus afterwards).
+//
+// OTel: end the local span if createRun happened in this process
+// (runSpans is process-local; a miss is normal under multi-replica LB).
+//
+// Webhooks: always dispatch the terminal hook, deduped per process via
+// finishedRuns so cancel+StatusCallback on the same replica still fire
+// exactly once. Do not gate dispatch on runSpans -- that dropped ~2/3 of
+// run_complete deliveries in a 3-replica soak when ReportStatus hit a
+// different replica than create.
 func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) {
-	v, ok := s.runSpans.LoadAndDelete(runID)
-	if !ok {
+	if v, ok := s.runSpans.LoadAndDelete(runID); ok {
+		span := v.(trace.Span)
+		span.SetAttributes(attribute.String("run.status", string(status)))
+		// timeout is a forced control-plane failure (hung agent), same
+		// observability class as error -- not a successful completion.
+		if status == models.RunStatusError || status == models.RunStatusTimeout {
+			span.SetStatus(codes.Error, errorMsg)
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+		span.End()
+	}
+
+	if _, already := s.finishedRuns.LoadOrStore(runID, struct{}{}); already {
 		return
 	}
-	span := v.(trace.Span)
-	span.SetAttributes(attribute.String("run.status", string(status)))
-	// timeout is a forced control-plane failure (hung agent), same
-	// observability class as error -- not a successful completion.
-	if status == models.RunStatusError || status == models.RunStatusTimeout {
-		span.SetStatus(codes.Error, errorMsg)
-	} else {
-		span.SetStatus(codes.Ok, "")
-	}
-	span.End()
 
 	hookType := hooks.RunComplete
 	switch status {

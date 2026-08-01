@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sharanharsoor/runkite/internal/api"
 	"github.com/sharanharsoor/runkite/internal/hooks"
 	"github.com/sharanharsoor/runkite/internal/models"
 	"github.com/sharanharsoor/runkite/internal/transport"
@@ -69,6 +70,65 @@ func TestHooks_RunStartFiresOnCreate(t *testing.T) {
 	}
 	if events[0].RunID != run.RunID || events[0].ThreadID != "hook-thread" || events[0].AgentID != "hook-agent" {
 		t.Errorf("hook event fields wrong: %+v", events[0])
+	}
+}
+
+// TestHooks_TerminalHookFiresWhenStatusLandsOnDifferentReplica is the
+// multi-CP soak regression: createRun stores the OTel span only on the
+// replica that handled POST /runs; ReportStatus often hits another
+// replica via the LB. Terminal webhooks must still fire there -- they
+// used to be gated on the process-local span map and silently dropped
+// (~2/3 missing run_complete with 3 replicas).
+func TestHooks_TerminalHookFiresWhenStatusLandsOnDifferentReplica(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "hook-multi-cp")
+
+	sink := &testSink{}
+	d := hooks.NewDispatcher()
+	d.Register(sink)
+
+	other := api.NewServer(env.store, env.queue, env.broker, env.cancel)
+	other.SetHookDispatcher(d)
+
+	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "hook-multi-cp"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp), &run)
+	env.queue.Dequeue(context.Background(), "python-langgraph", 2*time.Second)
+
+	other.StatusCallback()(run.RunID, "success", "")
+
+	events := waitForHookCount(t, sink, 1)
+	if events[0].Type != hooks.RunComplete || events[0].RunID != run.RunID {
+		t.Fatalf("expected RunComplete on the status replica, got %+v", events)
+	}
+}
+
+// TestHooks_TerminalHookDedupedOnSameReplica keeps cancel/status races on
+// one process at exactly one terminal webhook (finishedRuns guard).
+func TestHooks_TerminalHookDedupedOnSameReplica(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "hook-dedupe")
+	sink := &testSink{}
+	d := hooks.NewDispatcher()
+	d.Register(sink, hooks.RunComplete)
+	env.apiServer.SetHookDispatcher(d)
+	ctx := context.Background()
+
+	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "hook-dedupe"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp), &run)
+	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
+
+	env.apiServer.StatusCallback()(run.RunID, "success", "")
+	env.apiServer.StatusCallback()(run.RunID, "success", "")
+
+	events := waitForHookCount(t, sink, 1)
+	time.Sleep(50 * time.Millisecond)
+	if got := len(sink.snapshot()); got != 1 {
+		t.Fatalf("expected exactly 1 RunComplete after double StatusCallback, got %d: %+v", got, sink.snapshot())
+	}
+	if events[0].RunID != run.RunID {
+		t.Fatalf("wrong run_id: %+v", events[0])
 	}
 }
 
