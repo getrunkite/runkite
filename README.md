@@ -51,31 +51,57 @@ flowchart LR
   CP --- V
 ```
 
-```mermaid
-sequenceDiagram
-  participant C as Client
-  participant CP as Control Plane
-  participant R as Runner
-  C->>CP: Create thread + run
-  R->>CP: GetJob
-  CP-->>R: RunAssignment
-  R->>CP: StreamEvents
-  CP-->>C: SSE / WebSocket
-```
-
 <p align="center">
   <img src="docs/assets/ecosystem.png" alt="How Runkite fits together: clients to control plane to runners, with pluggable state, transport, and vector backends" width="920" />
 </p>
 
 <p align="center"><b>Catalog of parts</b> — request path on top; state / transport / vectors plug in under the plane</p>
 
-<p align="center">
-  <img src="docs/assets/run-path.png" alt="One LangGraph run on a multi-replica control plane with Postgres state and Redis queue and events" width="920" />
-</p>
+### One run on the HA profile
 
-<p align="center"><b>One run on the HA profile</b> — follow steps 1→8; Agent Protocol is client↔plane, Runner Protocol is plane↔runners (gRPC)</p>
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Client / SDK
+  participant LB as Load balancer
+  participant CP as CP replica
+  participant PG as Postgres
+  participant RD as Redis
+  participant R as LangGraph runner
 
-**Agent Protocol vs Runner Protocol:** clients never talk to runners. They speak **Agent Protocol** (HTTP/SSE/WebSocket) to the control plane. The plane stores state, queues work, and speaks a separate **Runner Protocol** (gRPC: `GetJob` / `RunAssignment` / `StreamEvents`) to runners. Same idea as a public API vs an internal worker API.
+  Note over C,CP: Agent Protocol (HTTP / SSE / WebSocket)
+  C->>LB: POST create thread + run
+  LB->>CP: route to a replica
+  CP->>PG: persist thread + run
+  CP->>RD: enqueue job
+
+  Note over CP,R: Runner Protocol (gRPC) — Runkite-defined
+  R->>CP: GetJob
+  CP->>RD: dequeue
+  CP-->>R: RunAssignment (graph_id, input, config…)
+  Note over R: Runner loads the graph and runs the agent / LLM turn
+  R->>CP: StreamEvents
+  CP->>RD: publish events (multi-replica fan-out)
+
+  Note over C,CP: Agent Protocol again
+  CP-->>C: SSE / WebSocket live output
+```
+
+### Agent Protocol vs Runner Protocol
+
+Your mental model is right: **creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
+
+**Runner Protocol is not that standard.** It is Runkite’s own internal contract ([`runner-protocol/PROTOCOL.md`](runner-protocol/PROTOCOL.md), gRPC in [`proto/runner.proto`](proto/runner.proto)): how the plane hands work to a worker process and how the worker streams events back. Clients never see it. Rough shape:
+
+| Step | Who → whom | What |
+|------|------------|------|
+| `GetJob` | Runner → plane | Long-poll for the next assignment |
+| `RunAssignment` | Plane → runner | `run_id`, `thread_id`, `graph_id`, `input`, `config`, auth context… |
+| Execute | Runner only | Load LangGraph / CrewAI / … and run the agent (LLM calls live here) |
+| `StreamEvents` | Runner → plane | Progress / messages / values / end |
+| Cancel / HITL | Plane ↔ runner | Side channels on the same protocol |
+
+So: Agent Protocol = “what the product client speaks.” Runner Protocol = “what our workers speak.” The plane translates between them, owns Postgres/Redis, and never imports LangGraph itself.
 
 Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 

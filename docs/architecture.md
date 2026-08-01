@@ -2,7 +2,7 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 >
-> Visuals (also in the root README Architecture section): [how it fits together](assets/ecosystem.png) · [one run on the HA profile](assets/run-path.png).
+> Visuals (also in the root README Architecture section): [how it fits together](assets/ecosystem.png) · Mermaid “one run on the HA profile” sequence (Agent Protocol vs Runner Protocol).
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP / SSE / WebSocket surface
