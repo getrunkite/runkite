@@ -54,12 +54,10 @@ func withSystemContext(next http.HandlerFunc) http.HandlerFunc {
 // Overview
 // --------------------------------------------------------------------------
 
-// AdminOverview is the dashboard's summary view. Counts are derived from
-// the same Search* methods as the list views (capped at a generous limit,
-// not a real SQL COUNT) -- ponytail: fine for the scale a single admin
-// dashboard is used at; a deployment with enough rows for this cap to
-// matter would want a real COUNT query added to state.Store instead of
-// fetching-then-counting.
+// AdminOverview is the dashboard's summary view. Totals and by-status
+// breakdowns come from store COUNT / GROUP BY aggregates (not
+// fetch-then-len of a Search* page), so a soak that creates tens of
+// thousands of rows still reports honest numbers.
 type AdminOverview struct {
 	TotalAgents       int            `json:"total_agents"`
 	TotalThreads      int            `json:"total_threads"`
@@ -70,36 +68,46 @@ type AdminOverview struct {
 	CronScheduleCount int            `json:"cron_schedule_count"`
 }
 
+// overviewSampleLimit is the soft page size for Admin list handlers
+// (Agents/Threads/Runs/Registry). Overview itself no longer uses this;
+// those list tables still silently truncate past this many rows until
+// they grow real pagination.
 const overviewSampleLimit = 1000
+
+func sumStatusCounts(byStatus map[string]int) int {
+	total := 0
+	for _, n := range byStatus {
+		total += n
+	}
+	return total
+}
 
 // GET /admin-api/overview
 func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
 
-	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{Limit: overviewSampleLimit})
+	totalAgents, err := s.store.CountAgents(ctx)
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
 
-	threads, err := s.store.SearchThreads(ctx, &models.ThreadSearchRequest{Limit: overviewSampleLimit})
+	threadsByStatus, err := s.store.CountThreadsByStatus(ctx)
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
-	threadsByStatus := map[string]int{}
-	for _, t := range threads {
-		threadsByStatus[string(t.Status)]++
+	if threadsByStatus == nil {
+		threadsByStatus = map[string]int{}
 	}
 
-	runs, err := s.store.SearchRuns(ctx, &models.RunSearchRequest{Limit: overviewSampleLimit})
+	runsByStatus, err := s.store.CountRunsByStatus(ctx)
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
-	runsByStatus := map[string]int{}
-	for _, run := range runs {
-		runsByStatus[string(run.Status)]++
+	if runsByStatus == nil {
+		runsByStatus = map[string]int{}
 	}
 
 	connectorCount := 0
@@ -114,10 +122,10 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, AdminOverview{
-		TotalAgents:       len(agents),
-		TotalThreads:      len(threads),
+		TotalAgents:       totalAgents,
+		TotalThreads:      sumStatusCounts(threadsByStatus),
 		ThreadsByStatus:   threadsByStatus,
-		TotalRuns:         len(runs),
+		TotalRuns:         sumStatusCounts(runsByStatus),
 		RunsByStatus:      runsByStatus,
 		ConnectorCount:    connectorCount,
 		CronScheduleCount: len(cronSchedules),

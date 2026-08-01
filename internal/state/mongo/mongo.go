@@ -741,6 +741,14 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 	return agents, cur.Err()
 }
 
+func (s *Store) CountAgents(ctx context.Context) (int, error) {
+	n, err := s.col("agents").CountDocuments(ctx, tenantFilter(ctx, bson.M{}))
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
 type agentSchemaDoc struct {
 	TenantID     string      `bson:"tenant_id"`
 	AgentID      string      `bson:"agent_id"`
@@ -957,6 +965,34 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		threads = append(threads, toThread(doc))
 	}
 	return threads, cur.Err()
+}
+
+func (s *Store) CountThreadsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "threads")
+}
+
+func (s *Store) countByStatus(ctx context.Context, collection string) (map[string]int, error) {
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: tenantFilter(ctx, bson.M{})}},
+		{{Key: "$group", Value: bson.M{"_id": "$status", "n": bson.M{"$sum": 1}}}},
+	}
+	cur, err := s.col(collection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	out := map[string]int{}
+	for cur.Next(ctx) {
+		var row struct {
+			ID string `bson:"_id"`
+			N  int    `bson:"n"`
+		}
+		if err := cur.Decode(&row); err != nil {
+			return nil, err
+		}
+		out[row.ID] = row.N
+	}
+	return out, cur.Err()
 }
 
 func (s *Store) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
@@ -1341,6 +1377,10 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		runs = append(runs, toRun(doc))
 	}
 	return runs, cur.Err()
+}
+
+func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "runs")
 }
 
 // pruneableRunStatuses matches api.isTerminalStatus's definition

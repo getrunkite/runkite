@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,66 @@ func TestAdminOverview_AggregatesAcrossTenants(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&overview)
 	if overview.TotalAgents != 2 {
 		t.Errorf("expected 2 agents across both tenants, got %d", overview.TotalAgents)
+	}
+}
+
+// TestAdminOverview_CountsPastFormerSampleLimit is a regression for the
+// fetch-then-len overview bug: Search* with Limit 1000 made totals freeze
+// at 1000 under soak load. Overview must keep reporting honest COUNT
+// aggregates past that former page size.
+func TestAdminOverview_CountsPastFormerSampleLimit(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := tenant.WithContext(context.Background(), "overview-soak")
+	now := time.Now().UTC()
+	const n = 1001
+
+	for i := 0; i < n; i++ {
+		tid := "t-" + strconv.Itoa(i)
+		if err := env.store.CreateThread(ctx, &models.Thread{
+			ThreadID: tid, Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("CreateThread %d: %v", i, err)
+		}
+		if err := env.store.CreateRun(ctx, &models.Run{
+			RunID: "r-" + strconv.Itoa(i), ThreadID: tid, AgentID: "echo",
+			Status: models.RunStatusSuccess, Metadata: map[string]interface{}{},
+			CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("CreateRun %d: %v", i, err)
+		}
+	}
+
+	resp, err := http.Get(env.srv.URL + "/admin-api/overview")
+	if err != nil {
+		t.Fatalf("GET /admin-api/overview: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	var overview struct {
+		TotalThreads    int            `json:"total_threads"`
+		TotalRuns       int            `json:"total_runs"`
+		ThreadsByStatus map[string]int `json:"threads_by_status"`
+		RunsByStatus    map[string]int `json:"runs_by_status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&overview); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if overview.TotalThreads != n {
+		t.Errorf("total_threads = %d, want %d (must not freeze at former Search* sample of 1000)", overview.TotalThreads, n)
+	}
+	if overview.TotalRuns != n {
+		t.Errorf("total_runs = %d, want %d", overview.TotalRuns, n)
+	}
+	if overview.ThreadsByStatus["idle"] != n {
+		t.Errorf("threads_by_status.idle = %d, want %d; map=%v", overview.ThreadsByStatus["idle"], n, overview.ThreadsByStatus)
+	}
+	if overview.RunsByStatus["success"] != n {
+		t.Errorf("runs_by_status.success = %d, want %d; map=%v", overview.RunsByStatus["success"], n, overview.RunsByStatus)
 	}
 }
 

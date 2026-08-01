@@ -35,6 +35,121 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("run_timeout", func(t *testing.T) { runTimeoutStoreTests(t, factory) })
 	t.Run("thread_claim_release", func(t *testing.T) { runThreadClaimReleaseTests(t, factory) })
 	t.Run("empty_list_results_are_not_nil", func(t *testing.T) { runEmptyListTests(t, factory) })
+	t.Run("counts", func(t *testing.T) { runCountTests(t, factory) })
+}
+
+// --------------------------------------------------------------------------
+// Count* aggregates (Admin overview). Must match inserted cardinality and
+// respect tenant vs SystemContext scoping -- not a capped Search* sample.
+// --------------------------------------------------------------------------
+
+func runCountTests(t *testing.T, factory StoreFactory) {
+	t.Run("CountAgents_threads_runs_by_status", func(t *testing.T) {
+		s := factory(t)
+		ctxA := tenant.WithContext(context.Background(), "count-a")
+		ctxB := tenant.WithContext(context.Background(), "count-b")
+		sys := tenant.SystemContext(context.Background())
+		now := time.Now().UTC()
+
+		if err := s.UpsertAgent(ctxA, &models.Agent{AgentID: "ag-a1", Name: "a1", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}}); err != nil {
+			t.Fatalf("UpsertAgent a1: %v", err)
+		}
+		if err := s.UpsertAgent(ctxA, &models.Agent{AgentID: "ag-a2", Name: "a2", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}}); err != nil {
+			t.Fatalf("UpsertAgent a2: %v", err)
+		}
+		if err := s.UpsertAgent(ctxB, &models.Agent{AgentID: "ag-b1", Name: "b1", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}}); err != nil {
+			t.Fatalf("UpsertAgent b1: %v", err)
+		}
+
+		nA, err := s.CountAgents(ctxA)
+		if err != nil {
+			t.Fatalf("CountAgents tenant-a: %v", err)
+		}
+		if nA != 2 {
+			t.Errorf("CountAgents(tenant-a) = %d, want 2", nA)
+		}
+		nSys, err := s.CountAgents(sys)
+		if err != nil {
+			t.Fatalf("CountAgents system: %v", err)
+		}
+		if nSys < 3 {
+			t.Errorf("CountAgents(system) = %d, want >= 3", nSys)
+		}
+
+		for i := 0; i < 10; i++ {
+			status := models.ThreadStatusIdle
+			if i%3 == 0 {
+				status = models.ThreadStatusBusy
+			}
+			if err := s.CreateThread(ctxA, &models.Thread{
+				ThreadID: fmt.Sprintf("th-a-%d", i), Status: status,
+				Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("CreateThread: %v", err)
+			}
+		}
+		if err := s.CreateThread(ctxB, &models.Thread{
+			ThreadID: "th-b-0", Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("CreateThread b: %v", err)
+		}
+
+		byThreadA, err := s.CountThreadsByStatus(ctxA)
+		if err != nil {
+			t.Fatalf("CountThreadsByStatus a: %v", err)
+		}
+		if sumMap(byThreadA) != 10 {
+			t.Errorf("CountThreadsByStatus(tenant-a) sum = %d, want 10; map=%v", sumMap(byThreadA), byThreadA)
+		}
+		if byThreadA[string(models.ThreadStatusBusy)] != 4 { // i=0,3,6,9
+			t.Errorf("busy threads = %d, want 4; map=%v", byThreadA[string(models.ThreadStatusBusy)], byThreadA)
+		}
+		byThreadSys, err := s.CountThreadsByStatus(sys)
+		if err != nil {
+			t.Fatalf("CountThreadsByStatus system: %v", err)
+		}
+		if sumMap(byThreadSys) < 11 {
+			t.Errorf("CountThreadsByStatus(system) sum = %d, want >= 11", sumMap(byThreadSys))
+		}
+
+		for i := 0; i < 12; i++ {
+			st := models.RunStatusSuccess
+			if i%4 == 0 {
+				st = models.RunStatusPending
+			} else if i%4 == 1 {
+				st = models.RunStatusError
+			}
+			tid := fmt.Sprintf("th-a-%d", i%10)
+			if err := s.CreateRun(ctxA, &models.Run{
+				RunID: fmt.Sprintf("run-a-%d", i), ThreadID: tid, AgentID: "ag-a1",
+				Status: st, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("CreateRun: %v", err)
+			}
+		}
+		byRunA, err := s.CountRunsByStatus(ctxA)
+		if err != nil {
+			t.Fatalf("CountRunsByStatus a: %v", err)
+		}
+		if sumMap(byRunA) != 12 {
+			t.Errorf("CountRunsByStatus(tenant-a) sum = %d, want 12; map=%v", sumMap(byRunA), byRunA)
+		}
+		if byRunA[string(models.RunStatusPending)] != 3 { // 0,4,8
+			t.Errorf("pending runs = %d, want 3; map=%v", byRunA[string(models.RunStatusPending)], byRunA)
+		}
+		if byRunA[string(models.RunStatusError)] != 3 { // 1,5,9
+			t.Errorf("error runs = %d, want 3; map=%v", byRunA[string(models.RunStatusError)], byRunA)
+		}
+	})
+}
+
+func sumMap(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
 }
 
 // --------------------------------------------------------------------------

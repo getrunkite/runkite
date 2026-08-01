@@ -587,6 +587,20 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 	return agents, rows.Err()
 }
 
+func (s *Store) CountAgents(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM agents`
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *Store) GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error) {
 	query := `SELECT agent_id, input_schema, output_schema, state_schema, config_schema FROM agent_schemas WHERE agent_id = ?`
 	args := []interface{}{agentID}
@@ -897,6 +911,35 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		threads = append(threads, t)
 	}
 	return threads, rows.Err()
+}
+
+func (s *Store) CountThreadsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "threads")
+}
+
+func (s *Store) countByStatus(ctx context.Context, table string) (map[string]int, error) {
+	query := `SELECT status, COUNT(*) FROM ` + table
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` GROUP BY status`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
@@ -1211,6 +1254,10 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		runs = append(runs, r)
 	}
 	return runs, rows.Err()
+}
+
+func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "runs")
 }
 
 func scanRun(row rowScanner) (*models.Run, error) {

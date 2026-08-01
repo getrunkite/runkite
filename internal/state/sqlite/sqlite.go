@@ -876,6 +876,20 @@ func (s *SQLiteStore) SearchAgents(ctx context.Context, req *models.AgentSearchR
 	return agents, nil
 }
 
+func (s *SQLiteStore) CountAgents(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM agents`
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *SQLiteStore) UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error {
 	input, _ := json.Marshal(schema.InputSchema)
 	output, _ := json.Marshal(schema.OutputSchema)
@@ -1105,6 +1119,35 @@ func (s *SQLiteStore) SearchThreads(ctx context.Context, req *models.ThreadSearc
 		threads = append(threads, &t)
 	}
 	return threads, nil
+}
+
+func (s *SQLiteStore) CountThreadsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "threads")
+}
+
+func (s *SQLiteStore) countByStatus(ctx context.Context, table string) (map[string]int, error) {
+	query := `SELECT status, COUNT(*) FROM ` + table
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` GROUP BY status`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
@@ -1621,6 +1664,10 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		runs = append(runs, &r)
 	}
 	return runs, nil
+}
+
+func (s *SQLiteStore) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "runs")
 }
 
 // --------------------------------------------------------------------------

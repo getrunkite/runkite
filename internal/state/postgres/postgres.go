@@ -928,6 +928,20 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 	return agents, nil
 }
 
+func (s *Store) CountAgents(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM agents`
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = $1`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *Store) UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error {
 	input, _ := json.Marshal(schema.InputSchema)
 	output, _ := json.Marshal(schema.OutputSchema)
@@ -1168,6 +1182,35 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		threads = append(threads, &t)
 	}
 	return threads, nil
+}
+
+func (s *Store) CountThreadsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "threads")
+}
+
+func (s *Store) countByStatus(ctx context.Context, table string) (map[string]int, error) {
+	query := fmt.Sprintf(`SELECT status, COUNT(*) FROM %s`, table)
+	var args []interface{}
+	if !tenant.IsSystem(ctx) {
+		query += ` WHERE tenant_id = $1`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` GROUP BY status`
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error {
@@ -1672,6 +1715,10 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		runs = append(runs, &r)
 	}
 	return runs, nil
+}
+
+func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countByStatus(ctx, "runs")
 }
 
 // --------------------------------------------------------------------------

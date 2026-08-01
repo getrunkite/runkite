@@ -20,6 +20,11 @@ type Store interface {
 	// --- Agents ---
 	GetAgent(ctx context.Context, agentID string) (*models.Agent, error)
 	SearchAgents(ctx context.Context, req *models.AgentSearchRequest) ([]*models.Agent, error)
+	// CountAgents returns the number of agents visible under ctx
+	// (tenant-scoped, or every tenant when ctx is SystemContext). Used
+	// by the Admin overview so totals are real COUNT aggregates, not
+	// len(SearchAgents) capped by a list page size.
+	CountAgents(ctx context.Context) (int, error)
 	UpsertAgent(ctx context.Context, agent *models.Agent) error
 	GetAgentSchema(ctx context.Context, agentID string) (*models.AgentSchema, error)
 	UpsertAgentSchema(ctx context.Context, schema *models.AgentSchema) error
@@ -38,6 +43,10 @@ type Store interface {
 	UpdateThread(ctx context.Context, threadID string, patch *models.ThreadPatch) (*models.Thread, error)
 	DeleteThread(ctx context.Context, threadID string) error
 	SearchThreads(ctx context.Context, req *models.ThreadSearchRequest) ([]*models.Thread, error)
+	// CountThreadsByStatus returns per-status counts for threads
+	// visible under ctx (system = all tenants). Empty statuses are
+	// omitted; total threads is the sum of the map values.
+	CountThreadsByStatus(ctx context.Context) (map[string]int, error)
 	SetThreadStatus(ctx context.Context, threadID string, status models.ThreadStatus) error
 
 	// TryClaimThread atomically transitions a thread from any non-busy status
@@ -67,6 +76,10 @@ type Store interface {
 	UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error
 	DeleteRun(ctx context.Context, runID string) error
 	SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([]*models.Run, error)
+	// CountRunsByStatus returns per-status counts for runs visible
+	// under ctx (system = all tenants). Empty statuses are omitted;
+	// total runs is the sum of the map values.
+	CountRunsByStatus(ctx context.Context) (map[string]int, error)
 
 	// ListActiveRunsCreatedBefore returns pending/running runs whose
 	// created_at is strictly before `before`, oldest first, capped at
