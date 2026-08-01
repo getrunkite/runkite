@@ -1,5 +1,7 @@
 // Package models defines the data types for the Agent Protocol spec.
-// Types match the schemas in spec/openapi.json (Agent Protocol v0.1.6).
+// Types match the schemas in spec/openapi.json (Agent Protocol v0.1.6
+// plus Runkite extensions). Admin and runner-only shapes live in
+// spec/openapi-admin.json and spec/openapi-internal.json.
 package models
 
 import (

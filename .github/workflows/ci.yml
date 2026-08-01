@@ -119,6 +119,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: OpenAPI spec check
+        run: python3 scripts/openapi/check.py
+
       - name: Gofmt
         run: |
           unformatted=$(gofmt -l $(git ls-files '*.go'))

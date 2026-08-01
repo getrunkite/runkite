@@ -1,0 +1,849 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Runkite Internal (Runner) API",
+    "version": "0.1.0",
+    "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers."
+  },
+  "tags": [
+    {
+      "name": "Runner",
+      "description": "Endpoints consumed by runner processes."
+    },
+    {
+      "name": "Store",
+      "description": "Proxy-mode store access for runners."
+    },
+    {
+      "name": "Vectors",
+      "description": "Proxy-mode vector store access for runners."
+    }
+  ],
+  "security": [
+    {
+      "RunnerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "RunnerAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Runner-Token",
+        "description": "Runner authentication token. Must also include X-Runner-Kind header."
+      }
+    },
+    "schemas": {
+      "A2ARunRequest": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "parent_run_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
+          "config": {
+            "type": "object"
+          },
+          "parent_run_id": {
+            "type": "string"
+          },
+          "on_behalf_of": {
+            "type": "object",
+            "description": "Auth context propagation for the sub-run."
+          },
+          "wait": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "title": "A2ARunRequest"
+      },
+      "AgentSchema": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "input_schema",
+          "output_schema"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "state_schema": {
+            "type": "object"
+          },
+          "config_schema": {
+            "type": "object"
+          }
+        },
+        "title": "AgentSchema"
+      },
+      "ConnectorInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mcp": {
+            "type": "string"
+          },
+          "circuit_breaker_state": {
+            "type": "string"
+          }
+        },
+        "title": "ConnectorInfo"
+      },
+      "ConnectorDetail": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mcp": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "object"
+          },
+          "tools": {
+            "type": "object"
+          },
+          "circuit_breaker_state": {
+            "type": "string"
+          }
+        },
+        "title": "ConnectorDetail"
+      },
+      "CronSchedule": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "CronSchedule"
+      },
+      "WebhookDeadLetter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "failed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "WebhookDeadLetter"
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "title": "Run"
+      },
+      "RunWaitResponse": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/Run"
+          },
+          "values": {
+            "type": "object"
+          }
+        },
+        "title": "RunWaitResponse"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "title": "ErrorResponse"
+      }
+    }
+  },
+  "paths": {
+    "/internal/runs/{run_id}/status": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Get Run Status",
+        "operationId": "get_run_status",
+        "parameters": [
+          {
+            "description": "Run ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/agents/{agent_id}/schema": {
+      "put": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Report Agent Schema",
+        "operationId": "report_agent_schema",
+        "parameters": [
+          {
+            "description": "Agent ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/internal/connectors": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "List Connectors",
+        "operationId": "list_connectors",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectorInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/connectors/{name}": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Get Connector",
+        "operationId": "get_connector",
+        "parameters": [
+          {
+            "description": "Connector name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/connectors/{name}/session": {
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Get Connector Session",
+        "operationId": "get_connector_session",
+        "parameters": [
+          {
+            "description": "Connector name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_context": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/connectors/{name}/mcp": {
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Proxy MCP Request",
+        "description": "Proxy one JSON-RPC request to a connector's downstream MCP server, enforcing tool allow/deny lists.",
+        "operationId": "proxy_mcp_request",
+        "parameters": [
+          {
+            "description": "Connector name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/cron": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "List Cron Schedules",
+        "operationId": "list_cron_schedules",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CronSchedule"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/store/items": {
+      "put": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Put Store Item (internal)",
+        "operationId": "internal_put_item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Get Store Item (internal)",
+        "operationId": "internal_get_item",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Delete Store Item (internal)",
+        "operationId": "internal_delete_item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/internal/store/items/search": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Search Store Items (internal)",
+        "operationId": "internal_search_items",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/store/namespaces": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "List Namespaces (internal)",
+        "operationId": "internal_list_namespaces",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/vectors/items": {
+      "put": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Upsert Vector Item (internal)",
+        "operationId": "internal_upsert_vector",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Delete Vector Item (internal)",
+        "operationId": "internal_delete_vector",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/internal/vectors/search": {
+      "post": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Search Vectors (internal)",
+        "operationId": "internal_search_vectors",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/webhooks/dead-letters": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "List Dead Letters",
+        "operationId": "list_dead_letters",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeadLetter"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/a2a/runs": {
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Create A2A Delegated Run",
+        "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.",
+        "operationId": "create_a2a_run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2ARunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (depth exceeded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

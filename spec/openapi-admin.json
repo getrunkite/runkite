@@ -1,0 +1,1021 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Runkite Admin API",
+    "version": "0.1.0",
+    "description": "Cross-tenant administrative API for the Runkite control plane. Requires admin permission."
+  },
+  "tags": [
+    {
+      "name": "Admin",
+      "description": "Administrative endpoints for managing the Runkite deployment."
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    },
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin key (auth.admin_keys) or primary auth credential with admin permission."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Admin API key via X-API-Key (alternative to Bearer)."
+      }
+    },
+    "schemas": {
+      "AdminOverview": {
+        "type": "object",
+        "properties": {
+          "total_agents": {
+            "type": "integer"
+          },
+          "total_threads": {
+            "type": "integer"
+          },
+          "threads_by_status": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "total_runs": {
+            "type": "integer"
+          },
+          "runs_by_status": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "connector_count": {
+            "type": "integer"
+          },
+          "cron_schedule_count": {
+            "type": "integer"
+          }
+        },
+        "title": "AdminOverview"
+      },
+      "AdminAgentView": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "capabilities": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "title": "AdminAgentView"
+      },
+      "AdminThreadView": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "title": "AdminThreadView"
+      },
+      "AdminRunView": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "title": "AdminRunView"
+      },
+      "AdminRegistryEntryView": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "title": "AdminRegistryEntryView"
+      },
+      "RedeliverWebhookResponse": {
+        "type": "object",
+        "properties": {
+          "delivered": {
+            "type": "boolean"
+          },
+          "status_code": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "title": "RedeliverWebhookResponse"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "title": "ErrorResponse"
+      },
+      "ConnectorInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mcp": {
+            "type": "string"
+          },
+          "circuit_breaker_state": {
+            "type": "string"
+          }
+        },
+        "title": "ConnectorInfo"
+      },
+      "CronSchedule": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "CronSchedule"
+      },
+      "WebhookDeadLetter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "failed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "WebhookDeadLetter"
+      }
+    }
+  },
+  "paths": {
+    "/admin-api/overview": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Overview",
+        "operationId": "admin_overview",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/agents": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List All Agents",
+        "operationId": "admin_list_agents",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAgentView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/agents/{agent_id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Agent (admin)",
+        "operationId": "admin_get_agent",
+        "parameters": [
+          {
+            "description": "Agent ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgentView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/registry": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Registry Entries",
+        "operationId": "admin_list_registry",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminRegistryEntryView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/registry/{name}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Registry Entry (admin)",
+        "operationId": "admin_get_registry_entry",
+        "parameters": [
+          {
+            "description": "Registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRegistryEntryView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/registry/{name}/versions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Registry Versions (admin)",
+        "operationId": "admin_list_registry_versions",
+        "parameters": [
+          {
+            "description": "Registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/threads": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List All Threads",
+        "operationId": "admin_list_threads",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminThreadView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/threads/{thread_id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Thread (admin)",
+        "operationId": "admin_get_thread",
+        "parameters": [
+          {
+            "description": "Thread ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminThreadView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete Thread (admin)",
+        "operationId": "admin_delete_thread",
+        "parameters": [
+          {
+            "description": "Thread ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/threads/{thread_id}/runs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Thread Runs (admin)",
+        "operationId": "admin_list_thread_runs",
+        "parameters": [
+          {
+            "description": "Thread ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminRunView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/runs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List All Runs",
+        "operationId": "admin_list_runs",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminRunView"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Run (admin)",
+        "operationId": "admin_get_run",
+        "parameters": [
+          {
+            "description": "Run ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRunView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/runs/{run_id}/stream": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Stream Run (admin)",
+        "operationId": "admin_stream_run",
+        "parameters": [
+          {
+            "description": "Run ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Cancel Run (admin)",
+        "operationId": "admin_cancel_run",
+        "parameters": [
+          {
+            "description": "Run ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/connectors": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Connectors (admin)",
+        "operationId": "admin_list_connectors",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectorInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/connectors/{name}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Connector (admin)",
+        "operationId": "admin_get_connector",
+        "parameters": [
+          {
+            "description": "Registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/cron": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Cron Schedules (admin)",
+        "operationId": "admin_list_cron",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CronSchedule"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/webhooks/dead-letters": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Dead Letters",
+        "operationId": "admin_list_dead_letters",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeadLetter"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/webhooks/dead-letters/{id}/redeliver": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Redeliver Dead Letter",
+        "operationId": "admin_redeliver_dead_letter",
+        "parameters": [
+          {
+            "description": "Dead letter ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeliverWebhookResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

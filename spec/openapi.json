@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent Protocol",
-    "version": "0.1.6"
+    "version": "0.1.6",
+    "description": "Agent Protocol v0.1.6 plus Runkite platform extensions. Path parameter names in this document use snake_case (e.g. {agent_id}); Go net/http mux uses camelCase (e.g. {agentID}). Wire paths are identical."
   },
   "tags": [
     {
@@ -28,12 +29,38 @@
     {
       "name": "Store",
       "description": "Store is an API for managing persistent key-value store (long-term memory) that is available from any thread."
+    },
+    {
+      "name": "Assistants",
+      "description": "LangGraph SDK compatibility endpoints (/assistants/*)."
+    },
+    {
+      "name": "Registry",
+      "description": "Agent marketplace / registry: publish, discover, version agent definitions."
+    },
+    {
+      "name": "Vectors",
+      "description": "Semantic vector store for embeddings-based retrieval."
+    },
+    {
+      "name": "Health",
+      "description": "Liveness, readiness, and legacy health probes."
+    },
+    {
+      "name": "Cost",
+      "description": "A2A delegation cost attribution."
+    },
+    {
+      "name": "Platform",
+      "description": "Infrastructure: MCP server, custom routes, metrics, pprof, admin UI."
     }
   ],
   "paths": {
     "/agents/search": {
       "post": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Search Agents",
         "description": "List Agents available in this service.",
         "operationId": "search_agents",
@@ -112,7 +139,9 @@
     },
     "/agents/{agent_id}": {
       "get": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Get Agent",
         "description": "Get an agent by ID.",
         "operationId": "get_agent",
@@ -155,7 +184,9 @@
     },
     "/agents/{agent_id}/schemas": {
       "get": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Get Agent Schemas",
         "description": "Get an agent's schemas by ID.",
         "operationId": "get_agent_schemas",
@@ -208,7 +239,9 @@
     },
     "/threads": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Create Thread",
         "description": "Create a thread.",
         "operationId": "create_thread",
@@ -258,7 +291,9 @@
     },
     "/threads/search": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Search Threads",
         "description": "Search for threads.\n\nThis endpoint also functions as the endpoint to list all threads.",
         "operationId": "search_threads",
@@ -302,7 +337,9 @@
     },
     "/threads/{thread_id}/history": {
       "get": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Get Thread History",
         "description": "Get all past states for a thread.",
         "operationId": "get_thread_history",
@@ -374,11 +411,79 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Search Thread History",
+        "description": "Search thread history with a request body (limit, before checkpoint).",
+        "operationId": "search_thread_history",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadHistoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThreadState"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/threads/{thread_id}/copy": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Copy Thread",
         "description": "Create a new thread with a copy of the state and checkpoints from an existing thread.",
         "operationId": "copy_thread",
@@ -432,7 +537,9 @@
     },
     "/threads/{thread_id}": {
       "get": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Get Thread",
         "description": "Get a thread by ID.",
         "operationId": "get_thread",
@@ -484,7 +591,9 @@
         }
       },
       "delete": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Delete Thread",
         "description": "Delete a thread by ID.",
         "operationId": "delete_thread",
@@ -529,7 +638,9 @@
         }
       },
       "patch": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Patch Thread",
         "description": "Update a thread.",
         "operationId": "patch_thread",
@@ -593,7 +704,9 @@
     },
     "/runs/search": {
       "post": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Search Runs",
         "description": "List runs for a thread, agent or status",
         "operationId": "search_runs",
@@ -646,7 +759,9 @@
     },
     "/runs/{run_id}": {
       "get": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Get Run",
         "description": "Get a run by ID.",
         "operationId": "get_run",
@@ -698,7 +813,9 @@
         }
       },
       "delete": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Delete Run",
         "description": "Delete a run by ID.",
         "operationId": "delete_run",
@@ -745,7 +862,9 @@
     },
     "/runs/{run_id}/wait": {
       "get": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Wait for Run output",
         "description": "Wait for a run to finish, return the final output. If the run already finished, returns its final output immediately.",
         "operationId": "wait_run",
@@ -799,7 +918,9 @@
     },
     "/runs/{run_id}/stream": {
       "get": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Stream output from Run",
         "description": "Join the output stream of an existing run. This endpoint streams output in real-time from a run similar to the /threads/__THREAD_ID__/runs/stream endpoint. Only output produced after this endpoint is called will be streamed.",
         "operationId": "stream_run",
@@ -851,7 +972,9 @@
     },
     "/runs/{run_id}/cancel": {
       "post": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Cancel Run",
         "operationId": "cancel_run",
         "parameters": [
@@ -878,11 +1001,14 @@
             "in": "query"
           },
           {
-            "description": "Action to take when cancelling the run. Possible values are `interrupt` or `rollback`. `interrupt` will simply cancel the run. `rollback` will cancel the run and delete the run and associated checkpoints afterwards.",
+            "description": "interrupt: cancel only. rollback: cancel and delete the run record (does not delete checkpoints — see operation description).",
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["interrupt", "rollback"],
+              "enum": [
+                "interrupt",
+                "rollback"
+              ],
               "title": "Action",
               "default": "interrupt"
             },
@@ -891,8 +1017,18 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Cancelled; returns the updated run when available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
           "204": {
-            "description": "Success"
+            "description": "Cancelled; no run body to return (e.g. already terminal / deleted)."
           },
           "404": {
             "description": "Not Found",
@@ -914,12 +1050,15 @@
               }
             }
           }
-        }
+        },
+        "description": "Cancel a background run. `wait` controls whether the HTTP response waits for the post-cancel grace window; `action=interrupt` (default) cancels only; `action=rollback` also deletes the run record. Checkpoints are NOT deleted on rollback — they are keyed by thread_id with no per-run attribution, and in direct mode live in LangGraph's own tables outside this control plane's state store."
       }
     },
     "/runs": {
       "post": {
-        "tags": ["Background Runs"],
+        "tags": [
+          "Background Runs"
+        ],
         "summary": "Create Background Run",
         "description": "Create a run in a new thread, return the run ID immediately. Don't wait for the final run output.",
         "operationId": "create_run",
@@ -979,7 +1118,9 @@
     },
     "/runs/stream": {
       "post": {
-        "tags": ["Runs"],
+        "tags": [
+          "Runs"
+        ],
         "summary": "Create Run, Stream Output",
         "description": "Create a run in a new thread, stream the output.",
         "operationId": "create_and_stream_run",
@@ -1040,7 +1181,9 @@
     },
     "/runs/wait": {
       "post": {
-        "tags": ["Runs"],
+        "tags": [
+          "Runs"
+        ],
         "summary": "Create Run, Wait for Output",
         "description": "Create a run in a new thread. Wait for the final output and then return it.",
         "operationId": "create_and_wait_run",
@@ -1100,7 +1243,9 @@
     },
     "/threads/{thread_id}/stream": {
       "post": {
-        "tags": ["Streaming"],
+        "tags": [
+          "Streaming"
+        ],
         "summary": "Open Thread SSE Stream",
         "description": "Open a connection-scoped Server-Sent Events stream for a thread. The request body selects channels, namespace prefixes, optional namespace depth, and an optional sequence number to replay buffered events after. Closing the HTTP connection unsubscribes from this stream.",
         "operationId": "open_thread_sse_stream",
@@ -1162,56 +1307,13 @@
             }
           }
         }
-      },
-      "get": {
-        "tags": ["Streaming"],
-        "summary": "Open Thread WebSocket Stream",
-        "description": "Upgrade to a WebSocket connection for a thread. After the connection is upgraded, clients send streaming protocol commands in-band and receive command responses plus unsolicited events on the same connection. Use `subscription.subscribe`, `subscription.unsubscribe`, and `subscription.reconnect` to manage event filters on the WebSocket.",
-        "operationId": "open_thread_websocket_stream",
-        "parameters": [
-          {
-            "description": "The ID of the thread to open over WebSocket.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Thread Id",
-              "description": "The ID of the thread to open over WebSocket."
-            },
-            "name": "thread_id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "101": {
-            "description": "Switching Protocols. The connection is upgraded to WebSocket and uses the streaming protocol message framing."
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/threads/{thread_id}/commands": {
       "post": {
-        "tags": ["Streaming"],
+        "tags": [
+          "Streaming"
+        ],
         "summary": "Send Thread Streaming Command",
         "description": "Send a streaming protocol command to a thread over HTTP. This endpoint is the request/response companion to the SSE event stream and supports commands such as `run.start`, `input.respond`, `input.inject`, `state.get`, `state.listCheckpoints`, and `state.fork`.",
         "operationId": "send_thread_streaming_command",
@@ -1275,7 +1377,9 @@
     },
     "/store/items": {
       "put": {
-        "tags": ["Store"],
+        "tags": [
+          "Store"
+        ],
         "summary": "Insert or Update Item",
         "operationId": "put_item",
         "requestBody": {
@@ -1305,7 +1409,9 @@
         }
       },
       "delete": {
-        "tags": ["Store"],
+        "tags": [
+          "Store"
+        ],
         "summary": "Delete Store Item",
         "operationId": "delete_item",
         "requestBody": {
@@ -1345,7 +1451,9 @@
         }
       },
       "get": {
-        "tags": ["Store"],
+        "tags": [
+          "Store"
+        ],
         "summary": "Get Store Item",
         "operationId": "get_item",
         "parameters": [
@@ -1415,7 +1523,9 @@
     },
     "/store/items/search": {
       "post": {
-        "tags": ["Store"],
+        "tags": [
+          "Store"
+        ],
         "summary": "Search Store Items",
         "operationId": "search_items",
         "requestBody": {
@@ -1454,7 +1564,9 @@
     },
     "/store/namespaces": {
       "post": {
-        "tags": ["Store"],
+        "tags": [
+          "Store"
+        ],
         "summary": "List namespaces",
         "operationId": "list_namespaces",
         "requestBody": {
@@ -1480,6 +1592,1721 @@
           },
           "422": {
             "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/websocket": {
+      "get": {
+        "tags": [
+          "Streaming"
+        ],
+        "summary": "Open Thread WebSocket Stream",
+        "description": "Upgrade to a WebSocket connection for a thread. After the connection is upgraded, clients send streaming protocol commands in-band and receive command responses plus unsolicited events on the same connection.",
+        "operationId": "open_thread_websocket_stream",
+        "parameters": [
+          {
+            "description": "The ID of the thread to open over WebSocket.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread to open over WebSocket."
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching Protocols. The connection is upgraded to WebSocket and uses the streaming protocol message framing."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Create Thread Run",
+        "operationId": "create_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "List Thread Runs",
+        "operationId": "list_thread_runs",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Run"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/stream": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Create Thread Run, Stream Output",
+        "operationId": "create_and_stream_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunStream"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/wait": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Create Thread Run, Wait for Output",
+        "operationId": "create_and_wait_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWaitResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Get Thread Run",
+        "operationId": "get_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Delete Thread Run",
+        "operationId": "delete_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/{run_id}/stream": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Stream Thread Run Output",
+        "operationId": "stream_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/{run_id}/wait": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Wait for Thread Run Output",
+        "operationId": "wait_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWaitResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Cancel Thread Run",
+        "description": "Cancel a run on a thread. Query params match POST /runs/{run_id}/cancel: `wait` controls whether the HTTP response waits for the post-cancel grace window; `action=interrupt` (default) cancels only; `action=rollback` also deletes the run record. Checkpoints are NOT deleted on rollback — they are keyed by thread_id with no per-run attribution, and in direct mode live in LangGraph's own tables outside this control plane's state store.",
+        "operationId": "cancel_thread_run",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "If true, wait for the post-cancel grace window before responding."
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interrupt",
+                "rollback"
+              ],
+              "default": "interrupt"
+            },
+            "description": "interrupt: cancel only. rollback: cancel and delete the run record (does not delete checkpoints — see operation description)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled; returns the updated run when available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Cancelled; no run body to return (e.g. already terminal / deleted)."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/state": {
+      "get": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Get Thread State",
+        "operationId": "get_thread_state",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Update Thread State",
+        "operationId": "update_thread_state",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object"
+                  },
+                  "as_node": {
+                    "type": "string"
+                  },
+                  "checkpoint_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadUpdateStateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/versions": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List Agent Versions",
+        "operationId": "list_agent_versions",
+        "parameters": [
+          {
+            "description": "The ID of the agent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentVersion"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/versions/{version}/rollback": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Rollback Agent to Version",
+        "operationId": "rollback_agent_version",
+        "parameters": [
+          {
+            "description": "The ID of the agent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          },
+          {
+            "description": "The version number.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            },
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistants/search": {
+      "post": {
+        "tags": [
+          "Assistants"
+        ],
+        "summary": "Search Assistants",
+        "description": "LangGraph SDK compatibility alias for POST /agents/search. Returns Assistant views.",
+        "operationId": "search_assistants",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 10
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "default": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Assistant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registry/entries/{name}": {
+      "put": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Publish Registry Entry",
+        "operationId": "publish_registry_entry",
+        "parameters": [
+          {
+            "description": "The registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistryEntry"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Get Registry Entry",
+        "operationId": "get_registry_entry",
+        "parameters": [
+          {
+            "description": "The registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryEntry"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Delete Registry Entry",
+        "operationId": "delete_registry_entry",
+        "parameters": [
+          {
+            "description": "The registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registry/search": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Search Registry",
+        "operationId": "search_registry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrySearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistryEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registry/entries/{name}/versions": {
+      "get": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "List Registry Entry Versions",
+        "operationId": "list_registry_entry_versions",
+        "parameters": [
+          {
+            "description": "The registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistryEntryVersion"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registry/entries/{name}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "Get Registry Entry Version",
+        "operationId": "get_registry_entry_version",
+        "parameters": [
+          {
+            "description": "The registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "description": "The version number.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            },
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryEntryVersion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vectors/items": {
+      "put": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Upsert Vector Item",
+        "operationId": "upsert_vector_item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VectorUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Delete Vector Item",
+        "operationId": "delete_vector_item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VectorDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vectors/search": {
+      "post": {
+        "tags": [
+          "Vectors"
+        ],
+        "summary": "Search Vectors",
+        "operationId": "search_vectors",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VectorSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VectorSearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/livez": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Liveness Probe",
+        "operationId": "liveness_probe",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness Probe",
+        "description": "Verifies connectivity to all backend dependencies (store, queue, broker). Returns 503 if any check fails.",
+        "operationId": "readiness_probe",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/cost": {
+      "get": {
+        "tags": [
+          "Cost"
+        ],
+        "summary": "Get Run Cost Summary",
+        "description": "Aggregate token usage and cost across an entire A2A delegation tree. Any run in the tree resolves to the same root and the same rollup.",
+        "operationId": "get_run_cost",
+        "parameters": [
+          {
+            "description": "The ID of the run.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id",
+              "format": "uuid"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCostSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Prometheus Metrics",
+        "description": "Prometheus-format metrics endpoint. Served outside auth middleware.",
+        "operationId": "get_metrics",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics/": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Prometheus Metrics (trailing slash)",
+        "operationId": "get_metrics_slash",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "MCP SSE Stream",
+        "description": "MCP Streamable HTTP transport — optional Server-Sent Events stream for server-initiated notifications.",
+        "operationId": "mcp_sse",
+        "responses": {
+          "200": {
+            "description": "SSE stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "MCP JSON-RPC Request",
+        "description": "MCP Streamable HTTP transport — POST for JSON-RPC requests to Runkite's MCP server surface (agents exposed as MCP tools).",
+        "operationId": "mcp_rpc",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "MCP Session Close",
+        "description": "MCP Streamable HTTP transport — DELETE to close an MCP session.",
+        "operationId": "mcp_close",
+        "responses": {
+          "204": {
+            "description": "Session closed"
+          }
+        }
+      }
+    },
+    "/custom/": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Custom Routes (proxy)",
+        "description": "Reverse-proxy prefix for user-defined HTTP endpoints. All methods are proxied; GET is representative. 404 if custom_routes is not configured.",
+        "operationId": "custom_routes_proxy",
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Admin UI",
+        "description": "Serves the embedded React admin dashboard. Public at the HTTP layer; the dashboard's own login screen gates access via /admin-api/*.",
+        "operationId": "admin_ui",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTML page",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/debug/pprof/": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "pprof Index",
+        "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+        "operationId": "pprof_index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profile data"
+          }
+        }
+      }
+    },
+    "/debug/pprof/cmdline": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "pprof Cmdline",
+        "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+        "operationId": "pprof_cmdline",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profile data"
+          }
+        }
+      }
+    },
+    "/debug/pprof/profile": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "pprof CPU Profile",
+        "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+        "operationId": "pprof_profile",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profile data"
+          }
+        }
+      }
+    },
+    "/debug/pprof/symbol": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "pprof Symbol Lookup",
+        "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+        "operationId": "pprof_symbol",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profile data"
+          }
+        }
+      }
+    },
+    "/debug/pprof/trace": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "pprof Execution Trace",
+        "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+        "operationId": "pprof_trace",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profile data"
+          }
+        }
+      }
+    },
+    "/assistants/{agent_id}": {
+      "get": {
+        "tags": [
+          "Assistants"
+        ],
+        "summary": "Get Assistant",
+        "description": "LangGraph SDK compatibility alias for GET /agents/{agent_id}.",
+        "operationId": "get_assistant",
+        "parameters": [
+          {
+            "description": "The ID of the agent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assistant"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistants/{agent_id}/schemas": {
+      "get": {
+        "tags": [
+          "Assistants"
+        ],
+        "summary": "Get Assistant Schemas",
+        "description": "LangGraph SDK compatibility alias for GET /agents/{agent_id}/schemas.",
+        "operationId": "get_assistant_schemas",
+        "parameters": [
+          {
+            "description": "The ID of the agent.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1536,7 +3363,11 @@
           }
         },
         "type": "object",
-        "required": ["agent_id", "name", "capabilities"],
+        "required": [
+          "agent_id",
+          "name",
+          "capabilities"
+        ],
         "title": "Agent"
       },
       "AgentSchema": {
@@ -1568,7 +3399,11 @@
           }
         },
         "type": "object",
-        "required": ["agent_id", "input_schema", "output_schema"],
+        "required": [
+          "agent_id",
+          "input_schema",
+          "output_schema"
+        ],
         "title": "AgentSchema",
         "description": "Defines the structure and properties of an agent."
       },
@@ -1606,7 +3441,9 @@
       },
       "EventStreamRequest": {
         "type": "object",
-        "required": ["channels"],
+        "required": [
+          "channels"
+        ],
         "properties": {
           "channels": {
             "type": "array",
@@ -1640,7 +3477,10 @@
       },
       "StreamingCommand": {
         "type": "object",
-        "required": ["id", "method"],
+        "required": [
+          "id",
+          "method"
+        ],
         "properties": {
           "id": {
             "type": "integer",
@@ -1663,7 +3503,11 @@
       },
       "StreamingSuccessResponse": {
         "type": "object",
-        "required": ["type", "id", "result"],
+        "required": [
+          "type",
+          "id",
+          "result"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -1696,7 +3540,12 @@
       },
       "StreamingErrorResponse": {
         "type": "object",
-        "required": ["type", "id", "error", "message"],
+        "required": [
+          "type",
+          "id",
+          "error",
+          "message"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -1748,7 +3597,11 @@
       },
       "StreamingEvent": {
         "type": "object",
-        "required": ["type", "method", "params"],
+        "required": [
+          "type",
+          "method",
+          "params"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -1779,13 +3632,24 @@
       },
       "RunStatus": {
         "type": "string",
-        "enum": ["pending", "error", "success", "timeout", "interrupted"],
+        "enum": [
+          "pending",
+          "error",
+          "success",
+          "timeout",
+          "interrupted"
+        ],
         "title": "Status",
         "description": "The status of the run. One of 'pending', 'error', 'success', 'timeout', 'interrupted'."
       },
       "StreamMode": {
         "type": "string",
-        "enum": ["values", "messages", "updates", "custom"]
+        "enum": [
+          "values",
+          "messages",
+          "updates",
+          "custom"
+        ]
       },
       "RunWaitResponse": {
         "type": "object",
@@ -1892,23 +3756,40 @@
           },
           "on_completion": {
             "type": "string",
-            "enum": ["delete", "keep"],
+            "enum": [
+              "delete",
+              "keep"
+            ],
             "title": "On Completion",
             "description": "Whether to delete or keep the thread when run completes. Must be one of 'delete' or 'keep'. Defaults to 'delete' when thread_id not provided, otherwise 'keep'."
           },
           "on_disconnect": {
             "type": "string",
-            "enum": ["cancel", "continue"],
+            "enum": [
+              "cancel",
+              "continue"
+            ],
             "title": "On Disconnect",
             "description": "The disconnect mode to use. Must be one of 'cancel' or 'continue'.",
             "default": "cancel"
           },
           "if_not_exists": {
             "type": "string",
-            "enum": ["create", "reject"],
+            "enum": [
+              "create",
+              "reject"
+            ],
             "title": "If Not Exists",
             "description": "How to handle missing thread. Must be either 'reject' (raise error if missing), or 'create' (create new thread).",
             "default": "reject"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Client-supplied run ID for idempotent creation."
+          },
+          "assistant_id": {
+            "type": "string",
+            "description": "SDK compat alias for agent_id."
           }
         },
         "type": "object",
@@ -1979,6 +3860,24 @@
               },
               "status": {
                 "$ref": "#/components/schemas/RunStatus"
+              },
+              "parent_run_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Parent run in an A2A delegation chain."
+              },
+              "root_run_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Root of the delegation tree."
+              },
+              "depth": {
+                "type": "integer",
+                "description": "Delegation depth (0 for top-level runs)."
+              },
+              "assistant_id": {
+                "type": "string",
+                "description": "SDK compat: mirrors agent_id."
               }
             },
             "type": "object",
@@ -2138,7 +4037,9 @@
         },
         "type": "object",
         "additionalProperties": true,
-        "required": ["checkpoint_id"],
+        "required": [
+          "checkpoint_id"
+        ],
         "title": "ThreadCheckpoint",
         "description": "Structured identifier for a thread checkpoint, ie. an entry in the thread's history."
       },
@@ -2169,7 +4070,10 @@
           }
         },
         "type": "object",
-        "required": ["checkpoint", "values"],
+        "required": [
+          "checkpoint",
+          "values"
+        ],
         "title": "ThreadState"
       },
       "ThreadCreate": {
@@ -2187,7 +4091,10 @@
           },
           "if_exists": {
             "type": "string",
-            "enum": ["raise", "do_nothing"],
+            "enum": [
+              "raise",
+              "do_nothing"
+            ],
             "title": "If Exists",
             "description": "How to handle duplicate creation. Must be either 'raise' (raise error if duplicate), or 'do_nothing' (return existing thread).",
             "default": "raise"
@@ -2199,7 +4106,12 @@
       },
       "ThreadStatus": {
         "type": "string",
-        "enum": ["idle", "busy", "interrupted", "error"],
+        "enum": [
+          "idle",
+          "busy",
+          "interrupted",
+          "error"
+        ],
         "title": "Status",
         "description": "The status of the thread. One of 'idle', 'busy', 'interrupted', 'error'."
       },
@@ -2227,6 +4139,11 @@
             },
             "title": "Messages",
             "description": "Messages to combine with current thread messages."
+          },
+          "if_match_version": {
+            "type": "integer",
+            "title": "If Match Version",
+            "description": "Optimistic concurrency: update only if the thread's current version equals this value."
           }
         },
         "type": "object",
@@ -2235,7 +4152,11 @@
       },
       "StorePutRequest": {
         "type": "object",
-        "required": ["namespace", "key", "value"],
+        "required": [
+          "namespace",
+          "key",
+          "value"
+        ],
         "properties": {
           "namespace": {
             "type": "array",
@@ -2261,7 +4182,9 @@
       },
       "StoreDeleteRequest": {
         "type": "object",
-        "required": ["key"],
+        "required": [
+          "key"
+        ],
         "properties": {
           "namespace": {
             "type": "array",
@@ -2284,7 +4207,10 @@
         "type": "object",
         "properties": {
           "namespace_prefix": {
-            "type": ["array", "null"],
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
@@ -2292,7 +4218,10 @@
             "description": "List of strings representing the namespace prefix."
           },
           "filter": {
-            "type": ["object", "null"],
+            "type": [
+              "object",
+              "null"
+            ],
             "additionalProperties": true,
             "title": "Filter",
             "description": "Optional dictionary of key-value pairs to filter results."
@@ -2353,7 +4282,13 @@
       },
       "Item": {
         "type": "object",
-        "required": ["namespace", "key", "value", "created_at", "updated_at"],
+        "required": [
+          "namespace",
+          "key",
+          "value",
+          "created_at",
+          "updated_at"
+        ],
         "properties": {
           "namespace": {
             "type": "array",
@@ -2415,7 +4350,10 @@
                           "type": "object"
                         }
                       },
-                      "required": ["text", "type"],
+                      "required": [
+                        "text",
+                        "type"
+                      ],
                       "title": "MessageTextBlock"
                     },
                     {
@@ -2428,7 +4366,9 @@
                           "type": "object"
                         }
                       },
-                      "required": ["type"],
+                      "required": [
+                        "type"
+                      ],
                       "additionalProperties": true,
                       "title": "MessageAnyBlock"
                     }
@@ -2449,12 +4389,17 @@
             "description": "The metadata of the message."
           }
         },
-        "required": ["role", "content"],
+        "required": [
+          "role",
+          "content"
+        ],
         "additionalProperties": true
       },
       "SearchItemsResponse": {
         "type": "object",
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "properties": {
           "items": {
             "type": "array",
@@ -2490,6 +4435,460 @@
             "description": "A dictionary of additional information about the error."
           }
         }
+      },
+      "AgentVersion": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "version",
+          "name",
+          "capabilities",
+          "created_at"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "capabilities": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "AgentVersion",
+        "description": "One immutable snapshot of an agent definition at a specific version."
+      },
+      "Assistant": {
+        "type": "object",
+        "required": [
+          "assistant_id",
+          "graph_id",
+          "config",
+          "metadata",
+          "name",
+          "version"
+        ],
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "Same as agent_id."
+          },
+          "graph_id": {
+            "type": "string"
+          },
+          "config": {
+            "type": "object"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "Assistant",
+        "description": "LangGraph SDK compatibility view of an agent."
+      },
+      "GraphSchema": {
+        "type": "object",
+        "required": [
+          "graph_id",
+          "input_schema",
+          "output_schema"
+        ],
+        "properties": {
+          "graph_id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "state_schema": {
+            "type": "object"
+          },
+          "config_schema": {
+            "type": "object"
+          }
+        },
+        "title": "GraphSchema",
+        "description": "LangGraph SDK graph schema view."
+      },
+      "RegistryEntry": {
+        "type": "object",
+        "required": [
+          "name",
+          "source_type",
+          "source_ref",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "git",
+              "url",
+              "inline"
+            ]
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "RegistryEntry"
+      },
+      "RegistryEntryVersion": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "source_type",
+          "source_ref",
+          "created_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "RegistryEntryVersion"
+      },
+      "RegistrySearchRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Substring match, case-insensitive."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entry must have ALL listed tags."
+          },
+          "author": {
+            "type": "string",
+            "description": "Exact match."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10,
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0
+          }
+        },
+        "title": "RegistrySearchRequest"
+      },
+      "ThreadUpdateStateResponse": {
+        "type": "object",
+        "required": [
+          "checkpoint"
+        ],
+        "properties": {
+          "checkpoint": {
+            "$ref": "#/components/schemas/ThreadCheckpoint"
+          }
+        },
+        "title": "ThreadUpdateStateResponse"
+      },
+      "ThreadHistoryRequest": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "default": 10
+          },
+          "before": {
+            "type": "object",
+            "description": "Checkpoint to paginate before."
+          }
+        },
+        "title": "ThreadHistoryRequest"
+      },
+      "VectorUpsertRequest": {
+        "type": "object",
+        "required": [
+          "namespace",
+          "id",
+          "embedding"
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "title": "VectorUpsertRequest"
+      },
+      "VectorDeleteRequest": {
+        "type": "object",
+        "required": [
+          "namespace",
+          "id"
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "title": "VectorDeleteRequest"
+      },
+      "VectorSearchRequest": {
+        "type": "object",
+        "required": [
+          "namespace",
+          "embedding"
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "top_k": {
+            "type": "integer",
+            "default": 10
+          },
+          "filter": {
+            "type": "object"
+          }
+        },
+        "title": "VectorSearchRequest"
+      },
+      "VectorSearchResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "object",
+                  "properties": {
+                    "namespace": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "type": "object"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "score": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "title": "VectorSearchResponse"
+      },
+      "RunCostSummary": {
+        "type": "object",
+        "required": [
+          "root_run_id",
+          "run_count",
+          "usage",
+          "runs"
+        ],
+        "properties": {
+          "root_run_id": {
+            "type": "string"
+          },
+          "run_count": {
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/RunUsage"
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunCostDetail"
+            }
+          }
+        },
+        "title": "RunCostSummary"
+      },
+      "RunUsage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          },
+          "cost_usd": {
+            "type": "number"
+          }
+        },
+        "title": "RunUsage"
+      },
+      "RunCostDetail": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "agent_id",
+          "depth",
+          "usage"
+        ],
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/RunUsage"
+          }
+        },
+        "title": "RunCostDetail"
       }
     },
     "responses": {
@@ -2541,6 +4940,27 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "JWT (auth.type=jwt) or opaque API key (auth.type=api_key) presented as Authorization: Bearer <token>."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Opaque API key via X-API-Key header (auth.type=api_key). Accepted as an alternative to Authorization: Bearer."
+      }
     }
-  }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    },
+    {
+      "ApiKeyAuth": []
+    }
+  ]
 }

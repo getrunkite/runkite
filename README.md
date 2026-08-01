@@ -898,6 +898,18 @@ make lint-ts        # Just TypeScript: oxlint + prettier --check
 
 PR CI (`.github/workflows/ci.yml`) runs unit/conformance/lint/Tier-0 e2e on every push. The framework × backend matrix (`.github/workflows/matrix.yml`) runs on a nightly schedule and `workflow_dispatch` -- same `make test-matrix` target, not folded into the PR budget. Same three-linter shape enforced in CI on every push/PR. Config lives in `.golangci.yml` (Go), `ruff.toml` (Python), and `typescript/runkite-runner/.oxlintrc.json` + `.prettierrc.json` (TypeScript) -- each a deliberately moderate starting rule set (golangci-lint's own curated "standard" linters, not "all"; ruff's `E`/`F`/`I`/`UP`/`B` rule groups) rather than maximally strict, so the gate catches real bugs (unused imports, unchecked errors on non-cleanup calls, suspicious constructs) without drowning contributors in day-one style nitpicks.
 
+## OpenAPI Specifications
+
+Machine-readable API specs live in [`spec/`](spec/README.md):
+
+| File | Surface |
+|---|---|
+| [`spec/openapi.json`](spec/openapi.json) | Public client API (Agent Protocol v0.1.6 + Runkite extensions) |
+| [`spec/openapi-admin.json`](spec/openapi-admin.json) | Admin API (`/admin-api/*`) |
+| [`spec/openapi-internal.json`](spec/openapi-internal.json) | Internal runner API (`/internal/*`) |
+
+SDK authors should use `spec/openapi.json`. Regenerate with `make openapi`; verify completeness with `make openapi-check` (also runs in CI).
+
 ## API Reference
 
 ### Agents
