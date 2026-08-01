@@ -38,7 +38,7 @@ def _last_human_text(messages: list) -> str:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):
-                # OpenAI-style content blocks: [{"type": "text", "text": "..."}]
+                # Chat-API content blocks: [{"type": "text", "text": "..."}]
                 parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
                 return " ".join(parts)
     return ""

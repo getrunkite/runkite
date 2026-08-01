@@ -16,6 +16,8 @@ node_modules/
 .vscode/*
 !.vscode/extensions.json
 .idea
+# Cursor IDE project rules — local only, not part of the product tree
+.cursor/
 
 # Python
 __pycache__/

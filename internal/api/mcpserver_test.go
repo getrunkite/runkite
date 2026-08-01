@@ -19,7 +19,7 @@ import (
 // mcpConnect connects an MCP client to env's /mcp endpoint, optionally
 // setting an Authorization header on every request (nil for none) --
 // the same headerRoundTripper pattern any real MCP client config (e.g.
-// Claude Desktop's static per-server API key) would need.
+// a static per-server API key) would need.
 func mcpConnect(t *testing.T, baseURL string, headers map[string]string) *mcp.ClientSession {
 	t.Helper()
 	httpClient := &http.Client{Transport: &headerRoundTripper{headers: headers, base: http.DefaultTransport}}

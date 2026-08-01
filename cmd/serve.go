@@ -1247,9 +1247,8 @@ func rateLimitBackendChoice(backend string, hasRedis bool) (useRedis bool, missi
 	}
 }
 
-// defaultVectorDimensions is OpenAI's text-embedding-3-small/ada-002
-// output size -- the most common embedding size in the wild, used when
-// vector_store.dimensions is omitted.
+// defaultVectorDimensions is a common text-embedding width (1536), used
+// when vector_store.dimensions is omitted.
 const defaultVectorDimensions = 1536
 
 // initVectorStore reads the "vector_store" section from the first

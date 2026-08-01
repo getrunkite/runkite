@@ -12,7 +12,7 @@ for a working (offline, no API key needed) example.
 Same reasoning as `crewai_adapter`'s README -- an independent, heavy
 dependency tree that must never be installed into the shared
 `python/.venv`. `llama-index-core` (not the full `llama-index` meta-package)
-is used specifically to avoid pulling in an OpenAI dependency by default.
+is used specifically to avoid pulling in a cloud LLM SDK by default.
 
 ## Setup
 

@@ -1,8 +1,8 @@
 // Package api: MCP-server support -- the reverse direction of the
 // Connectors feature. Connectors let a Runkite AGENT consume external
 // MCP tool servers (MCP-client direction); this file exposes Runkite's
-// OWN configured agents AS MCP tools, so an external MCP client (Claude
-// Desktop, Cursor, or any other MCP-speaking application) can call them
+// OWN configured agents AS MCP tools, so an external MCP client (an IDE,
+// desktop app, or any other MCP-speaking application) can call them
 // directly.
 //
 // Mounted as a normal client-facing route (POST/GET/DELETE /mcp, not
@@ -85,8 +85,8 @@ var mcpToolInputSchema = map[string]any{
 // session. This does mean a session's tenant is fixed for its lifetime
 // -- the natural, expected behavior for how MCP clients are actually
 // configured in practice (one static API key per configured MCP server
-// entry, e.g. in Claude Desktop's config), not a limitation being worked
-// around.
+// entry, e.g. in a typical desktop MCP client's config), not a limitation
+// being worked around.
 func (s *Server) newMCPServer(ctx context.Context) (*mcp.Server, error) {
 	// Limit 1000: every configured agent becomes a tool, and this is a
 	// SINGLE page, not paginated against SearchAgents -- a tenant with
@@ -223,9 +223,9 @@ func extractMCPResponseText(values map[string]interface{}) string {
 // mcpHTTPHandler serves the Streamable HTTP MCP transport at /mcp,
 // backward-compatible across every MCP protocol revision the SDK
 // supports (2024-11-05 through 2026-07-28) rather than the newest
-// stateless-only mode, since real-world MCP clients (Claude Desktop,
-// Cursor, etc.) predominantly still speak the older, session-based
-// protocol -- see this file's own package doc comment for why /mcp is
+// stateless-only mode, since real-world MCP clients (IDEs, desktop apps)
+// predominantly still speak the older, session-based protocol -- see
+// this file's own package doc comment for why /mcp is
 // mounted as a normal client-facing route rather than under /internal/*.
 //
 // Wrapped in mcpSessionOwner's own middleware -- see its doc comment

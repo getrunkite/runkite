@@ -174,7 +174,7 @@ type RunCostDetail struct {
 // Runner Protocol change: it reads whatever a run's own Output JSON
 // already contains. If a runner's output happens to include a
 // top-level "usage" object -- the same shape most LLM APIs already
-// return (OpenAI/Anthropic-style prompt_tokens/completion_tokens/
+// return (common LLM API-style prompt_tokens/completion_tokens/
 // total_tokens), plus an optional cost_usd -- it's picked up and summed
 // across the tree. This ships real value against what agents already
 // emit today; a future Runner Protocol version could make usage

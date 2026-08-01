@@ -2,7 +2,7 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
-The reverse direction of Connectors: Connectors let a Runkite *agent* consume external MCP tool servers (MCP-client); this exposes Runkite's *own* configured agents *as* MCP tools, so any MCP-speaking client (Claude Desktop, Cursor, or your own tooling) can call them directly.
+The reverse direction of Connectors: Connectors let a Runkite *agent* consume external MCP tool servers (MCP-client); this exposes Runkite's *own* configured agents *as* MCP tools, so any MCP-speaking client (IDEs, desktop apps, or your own tooling) can call them directly.
 
 ```
 POST/GET/DELETE /mcp   Streamable HTTP MCP transport (session-based, per the 2025-03-26/2025-06-18/2025-11-25 spec revisions)

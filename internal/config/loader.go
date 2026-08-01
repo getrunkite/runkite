@@ -209,7 +209,7 @@ type VectorStoreEntry struct {
 	// index dimension are all fixed-dimension; Weaviate has no such
 	// native constraint, so that package enforces it itself instead --
 	// see internal/vectorstore/weaviate's own doc comment). Defaults to
-	// 1536 (OpenAI text-embedding-3-small/ada-002's size) when omitted
+	// 1536 (a common text-embedding width) when omitted
 	// -- every item upserted must supply exactly this many floats.
 	Dimensions int `json:"dimensions,omitempty"`
 	// URL is Qdrant's, Weaviate's, or Pinecone's REST base URL (e.g.
