@@ -6,6 +6,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRun } from "../api/types";
 import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
 import { DataTable } from "../components/data-table";
+import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -70,16 +71,25 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
 
 export function Runs() {
   const [status, setStatus] = useState("all");
-  const path = status === "all" ? "/runs" : `/runs?status=${encodeURIComponent(status)}`;
-  const { data, error, loading } = useApi<AdminRun[]>(path, [status], 8000);
+  const [offset, setOffset] = useState(0);
+  const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE), offset: String(offset) });
+  if (status !== "all") params.set("status", status);
+  const path = `/runs?${params.toString()}`;
+  const { data, error, loading } = useApi<AdminRun[]>(path, [status, offset], 8000);
   const navigate = useNavigate();
 
   return (
     <div>
-      <PageHeader title="Runs" subtitle="Across every tenant. Auto-refreshes every 8s. Click any column to sort." />
+      <PageHeader title="Runs" subtitle="Across every tenant. Auto-refreshes every 8s. Click any column to sort the current page." />
 
       <div className="mb-4 flex items-center gap-3">
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={status}
+          onValueChange={(v) => {
+            setStatus(v);
+            setOffset(0);
+          }}
+        >
           <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
@@ -94,7 +104,7 @@ export function Runs() {
       </div>
 
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && (
+      {data && data.length === 0 && offset === 0 && (
         <EmptyState
           icon={Workflow}
           title={status === "all" ? "No runs yet" : "No matching runs"}
@@ -105,22 +115,32 @@ export function Runs() {
           }
           action={
             status !== "all" ? (
-              <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setStatus("all")}>
+              <button
+                type="button"
+                className="text-sm font-medium text-primary hover:underline"
+                onClick={() => {
+                  setStatus("all");
+                  setOffset(0);
+                }}
+              >
                 Clear status filter
               </button>
             ) : undefined
           }
         />
       )}
-      {(data === null || (data && data.length > 0)) && (
-        <DataTable
-          columns={columns}
-          data={data ?? []}
-          getRowId={(r) => r.run_id}
-          onRowClick={(r) => navigate(`/admin/runs/${r.run_id}`)}
-          loading={loading}
-          initialSorting={[{ id: "updated_at", desc: true }]}
-        />
+      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+        <>
+          <DataTable
+            columns={columns}
+            data={data ?? []}
+            getRowId={(r) => r.run_id}
+            onRowClick={(r) => navigate(`/admin/runs/${r.run_id}`)}
+            loading={loading}
+            initialSorting={[{ id: "updated_at", desc: true }]}
+          />
+          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+        </>
       )}
     </div>
   );

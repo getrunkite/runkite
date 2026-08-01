@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sharanharsoor/runkite/internal/models"
@@ -68,11 +69,32 @@ type AdminOverview struct {
 	CronScheduleCount int            `json:"cron_schedule_count"`
 }
 
-// overviewSampleLimit is the soft page size for Admin list handlers
-// (Agents/Threads/Runs/Registry). Overview itself no longer uses this;
-// those list tables still silently truncate past this many rows until
-// they grow real pagination.
-const overviewSampleLimit = 1000
+// Admin list endpoints (Agents/Threads/Runs/Registry) take ?limit=&offset=
+// like Agent Protocol search: bare JSON array; has-more when len == limit.
+const (
+	adminListDefaultLimit = 50
+	adminListMaxLimit     = 200
+)
+
+// adminListPaging reads ?limit=&offset= for Admin list handlers.
+// Invalid/missing values fall back to defaults; offset below 0 becomes 0.
+func adminListPaging(r *http.Request) (limit, offset int) {
+	limit = adminListDefaultLimit
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > adminListMaxLimit {
+		limit = adminListMaxLimit
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	return limit, offset
+}
 
 func sumStatusCounts(byStatus map[string]int) int {
 	total := 0
@@ -145,10 +167,11 @@ func toAdminAgentView(a *models.Agent) adminAgentView {
 	return adminAgentView{Agent: a, TenantID: a.TenantID}
 }
 
-// GET /admin-api/agents
+// GET /admin-api/agents?limit=&offset=
 func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{Limit: overviewSampleLimit})
+	limit, offset := adminListPaging(r)
+	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{Limit: limit, Offset: offset})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -193,10 +216,11 @@ func toAdminRegistryEntryView(e *models.RegistryEntry) adminRegistryEntryView {
 	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID}
 }
 
-// GET /admin-api/registry
+// GET /admin-api/registry?limit=&offset=
 func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	entries, err := s.store.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: overviewSampleLimit})
+	limit, offset := adminListPaging(r)
+	entries, err := s.store.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: limit, Offset: offset})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -271,10 +295,11 @@ func toAdminThreadView(t *models.Thread) adminThreadView {
 	return adminThreadView{Thread: t, TenantID: t.TenantID}
 }
 
-// GET /admin-api/threads
+// GET /admin-api/threads?limit=&offset=&status=
 func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	req := models.ThreadSearchRequest{Limit: overviewSampleLimit}
+	limit, offset := adminListPaging(r)
+	req := models.ThreadSearchRequest{Limit: limit, Offset: offset}
 	if status := r.URL.Query().Get("status"); status != "" {
 		st := models.ThreadStatus(status)
 		req.Status = &st
@@ -315,12 +340,14 @@ func toAdminRunView(run *models.Run) adminRunView {
 	return adminRunView{Run: run, TenantID: run.TenantID}
 }
 
-// GET /admin-api/threads/{threadID}/runs -- same data as the client-facing
-// list, but with tenant_id visible (models.Run hides it via json:"-").
+// GET /admin-api/threads/{threadID}/runs?limit=&offset= -- same data as the
+// client-facing list, but with tenant_id visible (models.Run hides it via
+// json:"-").
 func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
 	threadID := r.PathValue("threadID")
-	runs, err := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: threadID, Limit: 100})
+	limit, offset := adminListPaging(r)
+	runs, err := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: threadID, Limit: limit, Offset: offset})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -332,11 +359,13 @@ func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, views)
 }
 
-// GET /admin-api/runs -- optional ?status=&agent_id=&thread_id= filters.
+// GET /admin-api/runs?limit=&offset= -- optional ?status=&agent_id=&thread_id= filters.
 func (s *Server) handleAdminListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
+	limit, offset := adminListPaging(r)
 	req := models.RunSearchRequest{
-		Limit:    overviewSampleLimit,
+		Limit:    limit,
+		Offset:   offset,
 		AgentID:  r.URL.Query().Get("agent_id"),
 		ThreadID: r.URL.Query().Get("thread_id"),
 	}
@@ -404,7 +433,8 @@ const redeliverTimeout = 10 * time.Second
 func (s *Server) handleRedeliverWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	dls, err := s.store.ListWebhookDeadLetters(r.Context(), overviewSampleLimit)
+	// ListWebhookDeadLetters has no Get-by-ID; scan a generous page.
+	dls, err := s.store.ListWebhookDeadLetters(r.Context(), 1000)
 	if err != nil {
 		handleStoreError(w, err)
 		return

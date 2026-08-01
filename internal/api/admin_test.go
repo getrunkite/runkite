@@ -370,6 +370,69 @@ func TestAdminListRuns_FiltersByQueryParams(t *testing.T) {
 	}
 }
 
+// TestAdminList_LimitOffsetPaging proves Admin list endpoints page with
+// ?limit=&offset= (bare array; has-more when len == limit) instead of
+// silently truncating at a hard 1000-row sample.
+func TestAdminList_LimitOffsetPaging(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		id := "t-" + strconv.Itoa(i)
+		env.store.CreateThread(ctx, &models.Thread{
+			ThreadID: id, Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now,
+		})
+	}
+
+	page1, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2&offset=0")
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	defer page1.Body.Close()
+	var first []map[string]interface{}
+	json.NewDecoder(page1.Body).Decode(&first)
+	if len(first) != 2 {
+		t.Fatalf("expected page size 2, got %d: %+v", len(first), first)
+	}
+
+	page2, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2&offset=2")
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	defer page2.Body.Close()
+	var second []map[string]interface{}
+	json.NewDecoder(page2.Body).Decode(&second)
+	if len(second) != 2 {
+		t.Fatalf("expected second page size 2, got %d: %+v", len(second), second)
+	}
+	seen := map[string]bool{}
+	for _, th := range first {
+		seen[th["thread_id"].(string)] = true
+	}
+	for _, th := range second {
+		id := th["thread_id"].(string)
+		if seen[id] {
+			t.Fatalf("expected offset pages to be disjoint, %q appeared in both", id)
+		}
+	}
+
+	// Cap: limit above adminListMaxLimit (200) must not error; just clamp.
+	capped, err := http.Get(env.srv.URL + "/admin-api/threads?limit=9999&offset=0")
+	if err != nil {
+		t.Fatalf("capped: %v", err)
+	}
+	defer capped.Body.Close()
+	if capped.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for oversized limit, got %d", capped.StatusCode)
+	}
+	var all []map[string]interface{}
+	json.NewDecoder(capped.Body).Decode(&all)
+	if len(all) != 5 {
+		t.Fatalf("expected all 5 threads under clamped limit, got %d", len(all))
+	}
+}
+
 // TestAdminGetAgent_SeesCrossTenantAgentAndExposesTenantID proves
 // handleAdminGetAgent (unlike handleAdminListAgents, already covered
 // above) reuses the same system-context, tenant_id-visible convention

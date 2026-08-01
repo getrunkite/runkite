@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MessagesSquare } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -5,6 +6,7 @@ import { useApi } from "../api/useApi";
 import type { AdminThread } from "../api/types";
 import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
 import { DataTable } from "../components/data-table";
+import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 
@@ -48,31 +50,33 @@ const columns: ColumnDef<AdminThread, unknown>[] = [
 ];
 
 export function Threads() {
-  const { data, error, loading } = useApi<AdminThread[]>("/threads");
+  const [offset, setOffset] = useState(0);
+  const path = `/threads?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
+  const { data, error, loading } = useApi<AdminThread[]>(path, [offset]);
   const navigate = useNavigate();
 
   return (
     <div>
-      <PageHeader
-        title="Threads"
-        subtitle={data ? `${data.length} across every tenant. Click any column to sort.` : "Across every tenant."}
-      />
+      <PageHeader title="Threads" subtitle="Across every tenant. Click any column to sort the current page." />
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && (
+      {data && data.length === 0 && offset === 0 && (
         <EmptyState
           icon={MessagesSquare}
           message="No threads yet -- one is created the moment a client starts a conversation."
         />
       )}
-      {(data === null || (data && data.length > 0)) && (
-        <DataTable
-          columns={columns}
-          data={data ?? []}
-          getRowId={(t) => t.thread_id}
-          onRowClick={(t) => navigate(`/admin/threads/${t.thread_id}`)}
-          loading={loading}
-          initialSorting={[{ id: "updated_at", desc: true }]}
-        />
+      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+        <>
+          <DataTable
+            columns={columns}
+            data={data ?? []}
+            getRowId={(t) => t.thread_id}
+            onRowClick={(t) => navigate(`/admin/threads/${t.thread_id}`)}
+            loading={loading}
+            initialSorting={[{ id: "updated_at", desc: true }]}
+          />
+          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+        </>
       )}
     </div>
   );

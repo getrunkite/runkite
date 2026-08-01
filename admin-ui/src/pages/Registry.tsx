@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Package } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
 import { EmptyState, ErrorState, PageHeader } from "../components/common";
 import { DataTable } from "../components/data-table";
+import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 
 const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
@@ -57,28 +59,29 @@ const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
 ];
 
 export function Registry() {
-  const { data, error, loading } = useApi<AdminRegistryEntry[]>("/registry");
+  const [offset, setOffset] = useState(0);
+  const path = `/registry?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
+  const { data, error, loading } = useApi<AdminRegistryEntry[]>(path, [offset]);
 
   return (
     <div>
       <PageHeader
         title="Registry"
-        subtitle={
-          data
-            ? `${data.length} published across every tenant. source_ref is where to deploy an entry, not something this control plane executes.`
-            : "A metadata catalog for publishing and discovering agent definitions."
-        }
+        subtitle="A metadata catalog for publishing and discovering agent definitions across every tenant."
       />
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && (
+      {data && data.length === 0 && offset === 0 && (
         <EmptyState
           icon={Package}
           title="No registry entries published yet"
           message="Publish an entry via PUT /registry/entries/{name} to see it here."
         />
       )}
-      {(data === null || (data && data.length > 0)) && (
-        <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
+      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+        <>
+          <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
+          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+        </>
       )}
     </div>
   );

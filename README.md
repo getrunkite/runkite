@@ -332,15 +332,15 @@ The static UI shell (`GET /admin/*`) is always public at the HTTP layer, same as
 
 ```
 GET /admin-api/overview                     Summary counts (agents/threads/runs, by status) across every tenant -- real COUNT/GROUP BY aggregates, not a capped Search* sample
-GET /admin-api/agents                       List agents (tenant_id visible)
+GET /admin-api/agents                       List agents (tenant_id visible; ?limit=&offset=, default 50, max 200)
 GET /admin-api/agents/{id}                  Agent detail
-GET /admin-api/registry                     List registry entries (tenant_id visible)
+GET /admin-api/registry                     List registry entries (tenant_id visible; ?limit=&offset=)
 GET /admin-api/registry/{name}              Registry entry detail (?tenant_id= disambiguates a cross-tenant name collision)
 GET /admin-api/registry/{name}/versions     Registry entry version history (same ?tenant_id=; omitted merges every tenant's history)
-GET /admin-api/threads                      List threads (tenant_id visible; ?status= filter)
+GET /admin-api/threads                      List threads (tenant_id visible; ?status=; ?limit=&offset=)
 GET /admin-api/threads/{id}                 Thread detail
-GET /admin-api/threads/{id}/runs            Runs on a thread
-GET /admin-api/runs                         List runs (tenant_id visible; ?status=/?agent_id=/?thread_id= filters)
+GET /admin-api/threads/{id}/runs            Runs on a thread (?limit=&offset=)
+GET /admin-api/runs                         List runs (tenant_id visible; ?status=/?agent_id=/?thread_id=; ?limit=&offset=)
 GET /admin-api/runs/{id}                    Run detail
 GET /admin-api/runs/{id}/stream             Live/replayed SSE event log for a run (same mechanics as the client-facing stream)
 GET /admin-api/connectors                   Connector status, including circuit breaker state

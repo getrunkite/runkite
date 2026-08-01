@@ -5,6 +5,7 @@ import { useApi } from "../api/useApi";
 import type { AdminAgent } from "../api/types";
 import { EmptyState, ErrorState, PageHeader } from "../components/common";
 import { DataTable } from "../components/data-table";
+import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 
@@ -32,7 +33,9 @@ const columns: ColumnDef<AdminAgent, unknown>[] = [
 ];
 
 export function Agents() {
-  const { data, error, loading } = useApi<AdminAgent[]>("/agents");
+  const [offset, setOffset] = useState(0);
+  const path = `/agents?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
+  const { data, error, loading } = useApi<AdminAgent[]>(path, [offset]);
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -44,7 +47,7 @@ export function Agents() {
 
   return (
     <div>
-      <PageHeader title="Agents" subtitle={data ? `${data.length} registered across every tenant.` : undefined} />
+      <PageHeader title="Agents" subtitle="Registered across every tenant. Filter applies to the current page." />
 
       {error && !data && <ErrorState message={error} />}
 
@@ -60,7 +63,7 @@ export function Agents() {
             />
           </div>
 
-          {data && data.length === 0 ? (
+          {data && data.length === 0 && offset === 0 ? (
             <EmptyState icon={Bot} title="No agents registered" message="Agents appear here once a langgraph.json is bootstrapped." />
           ) : filtered && filtered.length === 0 ? (
             <EmptyState
@@ -73,13 +76,16 @@ export function Agents() {
               }
             />
           ) : (
-            <DataTable
-              columns={columns}
-              data={filtered ?? []}
-              getRowId={(a) => `${a.tenant_id}:${a.agent_id}`}
-              loading={loading}
-              initialSorting={[{ id: "agent_id", desc: false }]}
-            />
+            <>
+              <DataTable
+                columns={columns}
+                data={filtered ?? []}
+                getRowId={(a) => `${a.tenant_id}:${a.agent_id}`}
+                loading={loading}
+                initialSorting={[{ id: "agent_id", desc: false }]}
+              />
+              <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+            </>
           )}
         </>
       )}
