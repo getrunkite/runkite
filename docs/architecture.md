@@ -2,7 +2,7 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 >
-> Visuals: [ecosystem map](assets/ecosystem.svg) (shipped backends vs extension points) · [run lifecycle](assets/lifecycle.gif) (client → control plane → runner → stream).
+> Visuals: [ecosystem map](assets/ecosystem.png) (shipped backends vs extension points) · [run lifecycle](assets/lifecycle.gif) (client → control plane → runner → stream).
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP / SSE / WebSocket surface

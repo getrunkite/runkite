@@ -18,7 +18,7 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 </p>
 
 <p align="center">
-  <img src="docs/assets/ecosystem.svg" alt="Runkite ecosystem map: clients, multi-replica control plane, runners, and pluggable state/transport/vector backends" width="920" />
+  <img src="docs/assets/ecosystem.png" alt="Runkite ecosystem map: clients, multi-replica control plane, runners, and pluggable state, transport, and vector backends" width="920" />
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 </p>
 
 <p align="center">
-  <img src="docs/assets/lifecycle.gif" alt="Animated run lifecycle: client to control plane to runner to streamed events" width="920" />
+  <img src="docs/assets/lifecycle.gif" alt="Animated run lifecycle from client through control plane and runner back as a live stream" width="920" />
 </p>
 
 <p align="center">
@@ -49,10 +49,10 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 
 ```mermaid
 flowchart LR
-  classDef client fill:#1e3a8a,stroke:#60a5fa,color:#e2e8f0
-  classDef cp fill:#1d4ed8,stroke:#93c5fd,color:#f8fafc
-  classDef runner fill:#0f766e,stroke:#5eead4,color:#ecfdf5
-  classDef store fill:#334155,stroke:#94a3b8,color:#e2e8f0
+  classDef client fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  classDef cp fill:#BFDBFE,stroke:#1D4ED8,color:#1E3A8A
+  classDef runner fill:#CCFBF1,stroke:#0F766E,color:#134E4A
+  classDef store fill:#F1F5F9,stroke:#64748B,color:#334155
 
   C[Clients<br/>HTTP · SSE · WS]:::client
   CP[Control plane<br/>1..N replicas]:::cp
@@ -70,15 +70,9 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-  box rgb(30,58,138) Client
-    participant C as Client
-  end
-  box rgb(29,78,216) Control plane
-    participant CP as Control Plane
-  end
-  box rgb(15,118,110) Runner
-    participant R as Runner
-  end
+  participant C as Client
+  participant CP as Control Plane
+  participant R as Runner
   C->>CP: Create thread + run
   R->>CP: GetJob
   CP-->>R: RunAssignment
@@ -86,7 +80,7 @@ sequenceDiagram
   CP-->>C: SSE / WebSocket
 ```
 
-Full backend tiers and HA notes: [docs/architecture.md](docs/architecture.md). Visual map: [`docs/assets/ecosystem.svg`](docs/assets/ecosystem.svg).
+Full backend tiers and HA notes: [docs/architecture.md](docs/architecture.md). Visual map: [`docs/assets/ecosystem.png`](docs/assets/ecosystem.png).
 
 ## Quick start
 
