@@ -73,7 +73,9 @@ sequenceDiagram
   <img src="docs/assets/run-path.png" alt="One LangGraph run on a multi-replica control plane with Postgres state and Redis queue and events" width="920" />
 </p>
 
-<p align="center"><b>One run on the HA profile</b> — client → LB → CP replica → Postgres + Redis → LangGraph runner → SSE / WebSocket</p>
+<p align="center"><b>One run on the HA profile</b> — follow steps 1→8; Agent Protocol is client↔plane, Runner Protocol is plane↔runners (gRPC)</p>
+
+**Agent Protocol vs Runner Protocol:** clients never talk to runners. They speak **Agent Protocol** (HTTP/SSE/WebSocket) to the control plane. The plane stores state, queues work, and speaks a separate **Runner Protocol** (gRPC: `GetJob` / `RunAssignment` / `StreamEvents`) to runners. Same idea as a public API vs an internal worker API.
 
 Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 
