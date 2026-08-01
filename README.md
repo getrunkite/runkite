@@ -98,6 +98,8 @@ async for event in client.runs.stream(
 
 For a more detailed, step-by-step walkthrough (writing a custom agent, HITL, auth, connectors, enabling Postgres/Redis, production compose), see [`docs/quickstart.md`](docs/quickstart.md).
 
+Client access (LangGraph SDK, raw OpenAPI/curl, and the deferred first-party SDK plan): [`docs/client-sdk.md`](docs/client-sdk.md).
+
 ## CLI Reference
 
 ```
@@ -908,7 +910,20 @@ Machine-readable API specs live in [`spec/`](spec/README.md):
 | [`spec/openapi-admin.json`](spec/openapi-admin.json) | Admin API (`/admin-api/*`) |
 | [`spec/openapi-internal.json`](spec/openapi-internal.json) | Internal runner API (`/internal/*`) |
 
-SDK authors should use `spec/openapi.json`. Regenerate with `make openapi`; verify completeness with `make openapi-check` (also runs in CI).
+**Call the API today** with the [LangGraph SDK](https://github.com/langchain-ai/langgraph) (`pip install langgraph-sdk`) or any Agent Protocol / OpenAPI client against `spec/openapi.json`. There is no separate `pip install runkite` client yet — see [`docs/client-sdk.md`](docs/client-sdk.md) for the roadmap (thin first-party SDK only if traction warrants it). Tagged GitHub Releases attach the three JSON specs as downloadable artifacts.
+
+Quick create → run → stream (control plane + runner already up; `dev` often has no client auth):
+
+```bash
+BASE=http://localhost:2026
+THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"hello"}]}}'
+```
+
+Regenerate with `make openapi`; verify completeness with `make openapi-check` (also runs in CI).
 
 ## API Reference
 

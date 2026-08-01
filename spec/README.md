@@ -45,3 +45,8 @@ Go's `net/http` mux uses camelCase path parameters (`{agentID}`, `{threadID}`, `
 ### Internal API (`openapi-internal.json`)
 
 - **RunnerAuth** — `X-Runner-Kind` + `X-Runner-Token` headers. Configured via `RUNNER_TOKEN_*` environment variables. Disabled in local/dev mode.
+
+## Clients & releases
+
+- How to call Runkite today (LangGraph SDK, curl) and when we might ship a first-party client package: [`docs/client-sdk.md`](../docs/client-sdk.md).
+- On each `v*` git tag, `.github/workflows/release-openapi.yml` attaches these three JSON files to the GitHub Release.
