@@ -311,6 +311,40 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		}
 	}
 
+	// Sync pre-flight gates (before_run). Must run BEFORE "ensure thread
+	// exists" as well as before cache/claim/CreateRun: otherwise a deny
+	// with if_not_exists=create (the default) would still auto-create an
+	// idle thread row for a brand-new thread_id, accumulating empty
+	// threads under a deny-everything gate. ThreadID/AgentID/input are
+	// already known from the request, so the gate loses no information.
+	// Observational run_start webhooks still fire later via Dispatch
+	// after the run row exists. Fail-closed on timeout/error (see
+	// hooks.CheckBeforeRun). 30s is a hard ceiling for the whole gate
+	// chain; each HTTP gate also has its own shorter client timeout.
+	{
+		preflightCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		data := map[string]interface{}{}
+		if len(req.Input) > 0 {
+			var input any
+			if json.Unmarshal(req.Input, &input) == nil {
+				data["input"] = input
+			}
+		}
+		if pfErr := s.hooks.CheckBeforeRun(preflightCtx, hooks.Event{
+			Type:      hooks.BeforeRun,
+			RunID:     runID,
+			ThreadID:  threadID,
+			AgentID:   req.AgentID,
+			TenantID:  tenant.FromContext(ctx),
+			Data:      data,
+			Timestamp: now,
+		}); pfErr != nil {
+			cancel()
+			return nil, nil, pfErr
+		}
+		cancel()
+	}
+
 	// Ensure thread exists (create if requested)
 	_, err = s.store.GetThread(ctx, threadID)
 	if err != nil {

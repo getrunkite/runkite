@@ -956,6 +956,11 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	case errors.As(err, &checkpointRefUnsupported):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
+		var denied *hooks.ErrDenied
+		if errors.As(err, &denied) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		slog.Error("store error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}

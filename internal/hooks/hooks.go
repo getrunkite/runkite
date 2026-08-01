@@ -1,8 +1,13 @@
-// Package hooks implements the "Event hooks" platform
-// extension (on_run_start, on_run_complete, on_tool_call, on_error,
-// on_interrupt), extensible via config (the webhook sink this package
-// ships) or via code (any type implementing Sink, registered directly with
-// a Dispatcher by anyone embedding runkite as a library).
+// Package hooks implements platform event hooks:
+//
+//   - Observational (async): run_start, run_complete, tool_call, error,
+//     interrupt — Sink + Dispatch; never delays run creation.
+//   - Pre-flight (sync): before_run — Gate + CheckBeforeRun; can deny a
+//     run before thread auto-create, claim, or run row (fail-closed on
+//     timeout/error).
+//
+// Config-driven: webhook sinks and preflight_hooks in langgraph.json.
+// Library embedders can Register / RegisterGate directly on a Dispatcher.
 package hooks
 
 import (
@@ -23,6 +28,7 @@ const (
 	ToolCall    EventType = "tool_call"
 	Error       EventType = "error"
 	Interrupt   EventType = "interrupt"
+	BeforeRun   EventType = "before_run" // sync pre-flight only (Gate), not Dispatch/Sink
 )
 
 // Event is what gets dispatched to every registered Sink.
@@ -93,6 +99,7 @@ const (
 type Dispatcher struct {
 	mu    sync.RWMutex
 	sinks []registeredSink
+	gates []registeredGate // sync pre-flight; see CheckBeforeRun
 
 	jobs chan dispatchJob
 	wg   sync.WaitGroup // tracks worker goroutines, for Close to wait on

@@ -1427,11 +1427,12 @@ func initCustomRoutesProxy(configPath string) (http.Handler, string) {
 	return http.StripPrefix("/custom", proxy), target.String()
 }
 
-// initHooks reads the "webhooks" section from the first discovered
-// langgraph.json (same control-plane-wide/first-file convention as
-// initAuthProvider/initRateLimiter) and registers a WebhookSink per entry.
-// Always returns a non-nil Dispatcher -- Dispatch/HasSinks are nil-safe and
-// an empty Dispatcher is a pure no-op, so callers never need to nil-check.
+// initHooks reads the "webhooks" and "preflight_hooks" sections from the
+// first discovered langgraph.json (same control-plane-wide/first-file
+// convention as initAuthProvider/initRateLimiter). Webhooks are async
+// observational sinks; preflight_hooks are sync gates that can deny run
+// creation. Always returns a non-nil Dispatcher -- Dispatch/HasSinks/
+// CheckBeforeRun are nil-safe and an empty Dispatcher is a pure no-op.
 func initHooks(configPath string, store state.Store) *hooks.Dispatcher {
 	d := hooks.NewDispatcher()
 	paths := config.FindLangGraphJSON(configPath)
@@ -1450,6 +1451,17 @@ func initHooks(configPath string, store state.Store) *hooks.Dispatcher {
 		sink := hooks.NewWebhookSink(hooks.WebhookConfig{URL: wh.URL, Secret: wh.Secret}, store)
 		d.Register(sink, events...)
 		slog.Info("webhook registered", "url", wh.URL, "events", wh.Events)
+	}
+	for _, pf := range cfg.PreflightHooks {
+		timeout := hooks.DefaultPreflightTimeout
+		if pf.TimeoutMS > 0 {
+			timeout = time.Duration(pf.TimeoutMS) * time.Millisecond
+		}
+		gate := hooks.NewWebhookGate(hooks.WebhookGateConfig{
+			URL: pf.URL, Secret: pf.Secret, Timeout: timeout,
+		})
+		d.RegisterGate(gate)
+		slog.Info("preflight hook registered", "url", pf.URL, "timeout", timeout)
 	}
 	return d
 }

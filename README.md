@@ -147,6 +147,9 @@ Flags for `dev` / `serve`:
   "webhooks": [
     { "url": "https://example.com/hook", "secret": "whsec_...", "events": ["run_complete", "error", "interrupt"] }
   ],
+  "preflight_hooks": [
+    { "url": "https://guardrails.example/check", "secret": "whsec_...", "timeout_ms": 2000 }
+  ],
   "llm_cache": {
     "my_agent": { "ttl_seconds": 3600 }
   },
@@ -171,6 +174,10 @@ Flags for `dev` / `serve`:
 Dispatch itself runs on a small bounded worker pool (20 workers, a queue depth of 500), not one goroutine per sink per event -- a burst of run completions, each fanning out to every configured sink, each of which can itself hold a delivery attempt open for up to ~30s while retrying an unreachable endpoint, would otherwise grow goroutines/sockets without limit. Still fully non-blocking for the caller either way: if the pool and its queue are both saturated, the event is dropped (logged, and counted in `runkite_webhook_queue_dropped_total`) rather than delaying run execution or growing the queue without bound. One real, documented trade-off from sharing a pool across every sink: a genuinely slow or hung endpoint can occupy enough workers to delay (not silently lose -- the retry/dead-letter path is unaffected once a job is actually picked up) a different, healthy sink's delivery. A well-sized pool makes this rare, not impossible.
 
 Event hooks are also usable directly from Go code by embedding runkite as a library: any type implementing `hooks.Sink` can be registered on the `*hooks.Dispatcher` via `apiServer.SetHookDispatcher`, independent of the webhook config above.
+
+`preflight_hooks` are **synchronous** gates that can **allow or deny** a run **before** any thread auto-create, thread claim, or run row (Promptfoo-style guardrails). They are separate from `webhooks` on purpose: observational webhooks must never delay or block run creation; preflight hooks exist specifically to block. Same first-file / control-plane-wide convention as `webhooks`.
+
+Each entry POSTs a `before_run` event JSON (`type`, `run_id`, `thread_id`, `agent_id`, `tenant_id`, `data.input`, `timestamp`) to `url`, with the same optional `X-Runkite-Signature` HMAC as webhooks. The gate must respond `2xx` with `{"allow": true}` or `{"allow": false, "reason": "..."}`. Deny, non-2xx, timeout, or malformed JSON → **fail closed** (`403` to the client; no thread auto-created for a new `thread_id`, no run persisted, no `run_start` webhook). `timeout_ms` defaults to `2000`. Multiple entries all must allow (first deny wins). Library embedders can `RegisterGate` any `hooks.Gate` implementation on the same Dispatcher.
 
 `rate_limit` is opt-in and control-plane-wide (read from the first discovered `langgraph.json`, same convention as `auth`); any subset of `global`/`per_user`/`per_agent`/`per_tenant` may be set, unconfigured dimensions are unlimited. Each is a token bucket: `rps` is the sustained rate, `burst` is how many requests can arrive back-to-back before limiting kicks in. `global`/`per_user`/`per_tenant` are enforced at the HTTP layer (per-user keyed on the authenticated identity, per-tenant keyed on `tenant_id` -- see Multi-tenancy -- both unlimited when no auth provider is configured, since there's no identity/tenant to key on); `per_agent` is enforced in the shared run-creation path, so it applies uniformly across REST, WebSocket, and streaming-command run starts. Exceeding a limit returns `429` with a `Retry-After` header.
 
@@ -1044,6 +1051,8 @@ Each command gets an ack (`{"type": "success", "id": 1, "result": {"run_id": "..
 ```
 GET    /internal/webhooks/dead-letters   List webhook deliveries that exhausted retries (query param: limit)
 ```
+
+Observational lifecycle webhooks (`webhooks` in config) cannot reject runs. Sync deny-before-create guardrails use `preflight_hooks` — see the `preflight_hooks` section under Configuration above.
 
 ### Custom Routes
 ```

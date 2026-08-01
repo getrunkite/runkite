@@ -39,8 +39,14 @@ type LangGraphConfig struct {
 	// same convention as Auth.
 	RateLimit *RateLimitEntry `json:"rate_limit,omitempty"`
 	// Webhooks is control-plane-wide, same first-file convention as Auth
-	// and RateLimit (see initHooks in cmd/serve.go).
+	// and RateLimit (see initHooks in cmd/serve.go). Observational only
+	// (async); cannot reject runs. For sync deny-before-create guardrails,
+	// use PreflightHooks.
 	Webhooks []WebhookEntry `json:"webhooks,omitempty"`
+	// PreflightHooks is control-plane-wide, same first-file convention as
+	// Webhooks. Each entry is a synchronous HTTP gate consulted before a
+	// run is claimed/created; deny or timeout fails closed (403).
+	PreflightHooks []PreflightHookEntry `json:"preflight_hooks,omitempty"`
 	// LLMCache declares, per graph_id, that agent's whole-run result cache
 	// TTL, for LLM response caching. Same per-agent,
 	// metadata-embedded-at-bootstrap convention as ConnectorNeeds --
@@ -267,13 +273,21 @@ type CacheEntry struct {
 	TTLSeconds int `json:"ttl_seconds"`
 }
 
-// WebhookEntry is one entry in langgraph.json's "webhooks" array (master
-// plan: "Webhook delivery: on run completion, failure, interrupt -- with
-// retry and dead-letter", generalized to all event hook types).
+// WebhookEntry is one entry in langgraph.json's "webhooks" array —
+// async observational delivery on lifecycle events, with retry and
+// dead-letter (see internal/hooks.WebhookSink).
 type WebhookEntry struct {
 	URL    string   `json:"url"`
 	Secret string   `json:"secret,omitempty"` // HMAC-SHA256 signing secret, sent as X-Runkite-Signature
 	Events []string `json:"events,omitempty"` // event type names (run_start, run_complete, tool_call, error, interrupt); empty means all
+}
+
+// PreflightHookEntry is one entry in langgraph.json's "preflight_hooks"
+// array — a sync HTTP gate that can allow or deny run creation.
+type PreflightHookEntry struct {
+	URL       string `json:"url"`
+	Secret    string `json:"secret,omitempty"`     // HMAC-SHA256; same X-Runkite-Signature as webhooks
+	TimeoutMS int    `json:"timeout_ms,omitempty"` // per-request timeout; default 2000
 }
 
 // RateLimitEntry is the "rate_limit" section of langgraph.json. Any

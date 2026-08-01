@@ -57,3 +57,28 @@ func TestLoadLangGraphJSON_NoWebhooksIsEmpty(t *testing.T) {
 		t.Errorf("expected no webhooks when section absent, got %+v", cfg.Webhooks)
 	}
 }
+
+func TestLoadLangGraphJSON_PreflightHooks(t *testing.T) {
+	dir := t.TempDir()
+	content := `{
+		"graphs": {"echo": "graph.py:graph"},
+		"preflight_hooks": [
+			{"url": "https://guard.example/check", "secret": "s", "timeout_ms": 1500}
+		]
+	}`
+	path := filepath.Join(dir, "langgraph.json")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadLangGraphJSON(path)
+	if err != nil {
+		t.Fatalf("LoadLangGraphJSON: %v", err)
+	}
+	if len(cfg.PreflightHooks) != 1 {
+		t.Fatalf("expected 1 preflight hook, got %d", len(cfg.PreflightHooks))
+	}
+	pf := cfg.PreflightHooks[0]
+	if pf.URL != "https://guard.example/check" || pf.Secret != "s" || pf.TimeoutMS != 1500 {
+		t.Errorf("preflight fields wrong: %+v", pf)
+	}
+}
