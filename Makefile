@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-python test-ts test-adapters up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-python test-ts test-adapters smoke-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts
 
 # --- Build ---
 build:
@@ -353,3 +353,15 @@ infra-up:
 # Stop and remove test infrastructure
 infra-down:
 	docker compose -f docker-compose.test.yml down -v
+
+# Multi-control-plane topology (3 CP replicas + nginx + 2 runners).
+# Requires RUNNER_TOKEN in the environment or .env (see .env.example).
+# smoke-multi leaves the stack up so you can open http://localhost:2026/admin/
+multi-up:
+	docker compose -f docker-compose.multi.yml up -d --build
+
+multi-down:
+	docker compose -f docker-compose.multi.yml down -v
+
+smoke-multi:
+	@bash scripts/smoke-multi.sh
