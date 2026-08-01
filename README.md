@@ -122,7 +122,7 @@ runkite version         Print version info
 
 A web dashboard for operational visibility across every tenant: overview counts, agents, registry, threads, runs (live/replayed SSE), connectors, cron, and webhook dead-letters.
 
-![Admin UI overview](docs/assets/admin-overview.png)
+![Admin UI walkthrough](docs/assets/admin-walkthrough.gif)
 
 ```
 runkite serve --config langgraph.json

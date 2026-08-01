@@ -55,6 +55,7 @@ make test-kafka     # Kafka JobQueue conformance (requires infra-up; ~3min, see 
 make test-all       # All backends (requires infra-up)
 make test-e2e       # Tier-0 black-box E2E (Python + LangChain adapter; requires infra-up)
 make test-matrix    # Framework × backend golden matrix (~32 cells; nightly CI / workflow_dispatch)
+make test-protocol-fixtures  # Runner Protocol examples/*.json schema + lifecycle invariants
 make test-python    # Python runner unit tests
 make test-ts        # TypeScript runner unit tests
 make test-adapters  # CrewAI/LlamaIndex/AutoGen adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
