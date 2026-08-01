@@ -1,7 +1,6 @@
-// Package matrix is the automated version of item 6 in
-// plans/pending_items.md: "independent example agents for every
-// framework, running... across every DB combination, so control-plane
-// visibility is proven, not assumed from adapter code." See spec.go's
+// Package matrix runs independent example agents for every framework
+// across every DB/transport combination, so control-plane visibility is
+// proven end-to-end, not assumed from adapter unit tests. See spec.go's
 // doc comment for why this is a bounded matrix (4 backend combinations
 // x 6 framework runners x the scenarios each framework's example agents
 // actually support) rather than a full cross-product -- backend
@@ -12,10 +11,10 @@
 // Gated behind RUNKITE_RUN_MATRIX=1 (see TestMain) -- 32 real
 // subprocess-pair start/stop cycles is deliberately not something
 // `make test-e2e` or a default `go test ./...` should pay for on every
-// run; it's meant for `make test-matrix` (nightly-scale, per the
-// original recommendation's Tier-0-PR/Tier-1-nightly split). Individual
-// backend cells still skip gracefully (not fail) if their required env
-// var isn't set, same convention as every other conformance suite here.
+// run; it's meant for `make test-matrix` / the nightly Matrix workflow.
+// Individual backend cells still skip gracefully (not fail) if their
+// required env var isn't set, same convention as every other
+// conformance suite here.
 package matrix
 
 import (

@@ -15,12 +15,11 @@ import (
 // "the same kind of thing happened, in the same order, ending the same
 // way" across every backend a scenario runs against, which is the
 // actual compatibility claim worth making. It is NOT a substitute for
-// the runner-protocol/examples/*.json fixture format (item 19's
-// original ask) or PROTOCOL.md's richer per-method/per-namespace shape
-// diff -- this is deliberately the lighter matrix-scale version of that
-// same idea, scoped to what's cheap to keep golden across 30+ cells
-// without becoming so brittle that every fake-LLM wording tweak breaks
-// the whole matrix.
+// the runner-protocol/examples/*.json fixture format or PROTOCOL.md's
+// richer per-method/per-namespace shape diff -- this is deliberately
+// the lighter matrix-scale version of that same idea, scoped to what's
+// cheap to keep golden across 30+ cells without becoming so brittle
+// that every fake-LLM wording tweak breaks the whole matrix.
 type NormalizedRun struct {
 	EventTypes  []string `json:"event_types"`
 	FinalStatus string   `json:"final_status"`

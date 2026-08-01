@@ -764,11 +764,12 @@ func initStore(ctx context.Context) state.Store {
 		return pg
 	}
 
-	// MySQL: the second SQL exemplar alongside Postgres/SQLite (master
-	// plan: "MySQL stays 'future SQL twin if someone needs it'" -- see
-	// internal/state/mysql's package doc). Checked after POSTGRES_DSN,
-	// same precedence convention as MONGO_URI below, so setting
-	// multiple backend env vars at once is deterministic, not a race.
+	// MySQL: the second SQL exemplar alongside Postgres/SQLite -- a
+	// drop-in SQL twin when a deployment needs MySQL rather than
+	// Postgres (see internal/state/mysql's package doc). Checked after
+	// POSTGRES_DSN, same precedence convention as MONGO_URI below, so
+	// setting multiple backend env vars at once is deterministic, not a
+	// race.
 	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
 		my, err := mysqlstore.New(ctx, mysqlDSN)
 		if err != nil {

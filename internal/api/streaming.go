@@ -241,18 +241,18 @@ func (s *Server) runStartCommandCore(r *http.Request, threadID string, cmd *mode
 // inputRespondCommandCore creates a resume run from an "input.respond"
 // command's params. HTTP-independent, same sharing rationale as above.
 //
-// Item 18 tail (interrupt double-respond race): requires the thread's
-// most recent run to actually be interrupted before proceeding, closing
-// two real gaps a bare "find the latest run" had -- responding when
-// there's genuinely nothing interrupted (the previous version silently
-// carried on with an empty agent_id, which only failed later and
-// confusingly, at agent lookup inside createRunCtx) and a STALE respond
-// (a client retry, or simply a duplicate/late message) arriving after
-// the interrupt it was meant for has already been resolved and the
-// thread moved on to running/idle/success -- previously this created a
-// second, spurious resume run using an old response payload against
-// whatever the thread's CURRENT latest run happened to be, not the
-// interrupt the client actually thinks it's answering.
+// Interrupt double-respond guard: requires the thread's most recent run
+// to actually be interrupted before proceeding, closing two real gaps a
+// bare "find the latest run" had -- responding when there's genuinely
+// nothing interrupted (the previous version silently carried on with an
+// empty agent_id, which only failed later and confusingly, at agent
+// lookup inside createRunCtx) and a STALE respond (a client retry, or
+// simply a duplicate/late message) arriving after the interrupt it was
+// meant for has already been resolved and the thread moved on to
+// running/idle/success -- previously this created a second, spurious
+// resume run using an old response payload against whatever the
+// thread's CURRENT latest run happened to be, not the interrupt the
+// client actually thinks it's answering.
 //
 // TryClaimThread's own atomicity (inside createRunCtx) already prevents
 // two genuinely CONCURRENT respond calls from both succeeding -- exactly

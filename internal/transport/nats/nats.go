@@ -29,15 +29,15 @@
 //
 // A JetStream KV bucket ("RUNKITE_INFLIGHT") tracks, per run_id, the
 // reply subject and generation of whichever delivery is currently
-// in-flight -- the same "shared, not process-local" requirement item
-// 16's Problem 1 fix imposed on Redis, and for the same reason: the
-// control-plane replica that later needs to Ack/Renew/Nack a job is not
-// necessarily the same one whose Fetch call originally received it (no
-// session affinity across a load-balanced gRPC bridge). A NATS reply
-// subject is just a string, so any replica holding it can publish
-// directly to it (the same raw "+ACK"/"-NAK"/"+WPI"/"+TERM" bytes
-// jetstream.Msg.Ack/Nak/InProgress/Term publish internally) without
-// needing the original in-process Msg handle that received it.
+// in-flight -- the same "shared, not process-local" requirement the
+// Redis transport uses for multi-replica reclaim, and for the same
+// reason: the control-plane replica that later needs to Ack/Renew/Nack
+// a job is not necessarily the same one whose Fetch call originally
+// received it (no session affinity across a load-balanced gRPC bridge).
+// A NATS reply subject is just a string, so any replica holding it can
+// publish directly to it (the same raw "+ACK"/"-NAK"/"+WPI"/"+TERM"
+// bytes jetstream.Msg.Ack/Nak/InProgress/Term publish internally)
+// without needing the original in-process Msg handle that received it.
 package natstransport
 
 import (

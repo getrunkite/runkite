@@ -89,10 +89,10 @@ func TestInputRespond_ResumesInterruptedRun_Succeeds(t *testing.T) {
 	}
 }
 
-// TestInputRespond_NothingInterrupted_ReturnsCleanConflict is the item-18-tail
-// regression: responding on a thread that was never interrupted (fresh
-// thread, zero runs) must fail cleanly, not silently proceed with an
-// empty agent_id that only fails later, confusingly, at agent lookup.
+// TestInputRespond_NothingInterrupted_ReturnsCleanConflict: responding
+// on a thread that was never interrupted (fresh thread, zero runs) must
+// fail cleanly, not silently proceed with an empty agent_id that only
+// fails later, confusingly, at agent lookup.
 func TestInputRespond_NothingInterrupted_ReturnsCleanConflict(t *testing.T) {
 	env := newTestEnv(t)
 	registerAgent(t, env, "test")
@@ -106,12 +106,12 @@ func TestInputRespond_NothingInterrupted_ReturnsCleanConflict(t *testing.T) {
 	}
 }
 
-// TestInputRespond_RetryAfterAlreadyResumed_ReturnsCleanConflict is the
-// item-18-tail regression for a STALE respond: once the interrupt has
-// already been answered (thread now has a pending/running resume, no
-// longer interrupted), a duplicate/late respond -- e.g. a client retry
-// after a dropped connection -- must not create a second, spurious
-// resume run reusing the old response against whatever run is now latest.
+// TestInputRespond_RetryAfterAlreadyResumed_ReturnsCleanConflict covers
+// a STALE respond: once the interrupt has already been answered (thread
+// now has a pending/running resume, no longer interrupted), a
+// duplicate/late respond -- e.g. a client retry after a dropped
+// connection -- must not create a second, spurious resume run reusing
+// the old response against whatever run is now latest.
 func TestInputRespond_RetryAfterAlreadyResumed_ReturnsCleanConflict(t *testing.T) {
 	env := newTestEnv(t)
 	registerAgent(t, env, "test")
