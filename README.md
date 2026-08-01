@@ -17,23 +17,6 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
   Open at <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
 </p>
 
-<p align="center">
-  <img src="docs/assets/ecosystem.png" alt="Runkite ecosystem map: clients, multi-replica control plane, runners, and pluggable state, transport, and vector backends" width="920" />
-</p>
-
-<p align="center">
-  <b>Ecosystem map</b> — solid boxes are shipped in-tree; dashed <code>+ …</code> boxes are extension points<br/>
-  State · transport · vectors · frameworks — swap via env, or bring another backend behind the same interfaces
-</p>
-
-<p align="center">
-  <img src="docs/assets/lifecycle.gif" alt="Animated run lifecycle from client through control plane and runner back as a live stream" width="920" />
-</p>
-
-<p align="center">
-  <b>Run lifecycle</b> — create run → enqueue → GetJob / RunAssignment → StreamEvents → live HTTP/SSE/WebSocket back to the client
-</p>
-
 ---
 
 ## Why Runkite
@@ -80,7 +63,19 @@ sequenceDiagram
   CP-->>C: SSE / WebSocket
 ```
 
-Full backend tiers and HA notes: [docs/architecture.md](docs/architecture.md). Visual map: [`docs/assets/ecosystem.png`](docs/assets/ecosystem.png).
+<p align="center">
+  <img src="docs/assets/ecosystem.png" alt="How Runkite fits together: clients to control plane to runners, with pluggable state, transport, and vector backends" width="920" />
+</p>
+
+<p align="center"><b>Where things sit</b> — request path on top; state / transport / vectors plug in under the plane</p>
+
+<p align="center">
+  <img src="docs/assets/lifecycle.gif" alt="Animated walkthrough of a single run from client create through runner execution to live client output" width="920" />
+</p>
+
+<p align="center"><b>One run</b> — create → enqueue → GetJob → StreamEvents → live SSE / WebSocket</p>
+
+Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
