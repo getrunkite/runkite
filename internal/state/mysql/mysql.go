@@ -344,6 +344,12 @@ func (s *Store) Init(ctx context.Context) error {
 			claimed_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 			PRIMARY KEY (tenant_id, schedule_name, fire_time)
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS terminal_hook_claims (
+			run_id     VARCHAR(255) NOT NULL,
+			claimed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			PRIMARY KEY (run_id)
+		) ENGINE=InnoDB CHARSET=utf8mb4`,
 	}
 
 	for _, stmt := range statements {
@@ -421,7 +427,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"store_items", "runs", "thread_checkpoints", "threads",
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
-		"webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
+		"webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {
 		if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE "+tbl); err != nil {
@@ -1258,6 +1264,30 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 
 func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
+}
+
+func (s *Store) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `
+		INSERT IGNORE INTO terminal_hook_claims (run_id, claimed_at) VALUES (?, ?)
+	`, runID, time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *Store) PruneTerminalHookClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM terminal_hook_claims WHERE claimed_at < ?
+	`, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func scanRun(row rowScanner) (*models.Run, error) {

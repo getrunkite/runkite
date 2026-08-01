@@ -80,6 +80,22 @@ type Store interface {
 	// under ctx (system = all tenants). Empty statuses are omitted;
 	// total runs is the sum of the map values.
 	CountRunsByStatus(ctx context.Context) (map[string]int, error)
+	// TryClaimTerminalHook atomically claims the right to dispatch the
+	// terminal webhook (run_complete/error/interrupt) for runID so
+	// exactly one control-plane replica fires it when cancel and
+	// ReportStatus race across an LB. Returns false, without error, if
+	// another replica (or an earlier call) already claimed it. run_id is
+	// globally unique (UUID); no tenant scoping. Failures from the
+	// underlying store are returned to the caller -- api.finishRun
+	// fail-opens (still dispatches) on error so a blip cannot silence
+	// every terminal webhook. api.finishRun only calls this when
+	// hooks.HasSinks() is true so unconfigured deployments pay nothing.
+	TryClaimTerminalHook(ctx context.Context, runID string) (bool, error)
+
+	// PruneTerminalHookClaims deletes terminal_hook_claims rows whose
+	// claimed_at is older than olderThan. Not tenant-scoped (the table
+	// keys only on run_id). Opt-in via retention.terminal_hook_claims_max_age.
+	PruneTerminalHookClaims(ctx context.Context, olderThan time.Time) (int64, error)
 
 	// ListActiveRunsCreatedBefore returns pending/running runs whose
 	// created_at is strictly before `before`, oldest first, capped at

@@ -56,14 +56,9 @@ type Server struct {
 	// gated on this map -- see finishRun / finishedRuns.
 	runSpans sync.Map // run_id -> trace.Span
 
-	// finishedRuns dedupes terminal webhook dispatch within one process
-	// (cancel + late StatusCallback racing the same replica). It is
-	// deliberately process-local: under multi-replica LB, create and
-	// ReportStatus often land on different processes, so a span-only
-	// gate would drop most run_complete hooks (~1/N of deliveries with
-	// N replicas -- confirmed live in a 3-CP soak). Cross-replica
-	// cancel+status can therefore deliver the terminal webhook twice;
-	// receivers should key idempotency on run_id.
+	// finishedRuns is a process-local fast path that skips a second DB
+	// claim when cancel and StatusCallback race on the same replica.
+	// Cross-replica exactly-once is state.Store.TryClaimTerminalHook.
 	finishedRuns sync.Map // run_id -> struct{}
 }
 
@@ -473,11 +468,15 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // OTel: end the local span if createRun happened in this process
 // (runSpans is process-local; a miss is normal under multi-replica LB).
 //
-// Webhooks: always dispatch the terminal hook, deduped per process via
-// finishedRuns so cancel+StatusCallback on the same replica still fire
-// exactly once. Do not gate dispatch on runSpans -- that dropped ~2/3 of
-// run_complete deliveries in a 3-replica soak when ReportStatus hit a
-// different replica than create.
+// Webhooks: dispatch the terminal hook exactly once across replicas via
+// TryClaimTerminalHook (shared DB). Do not gate on runSpans -- that
+// dropped ~2/3 of run_complete deliveries in a 3-replica soak when
+// ReportStatus hit a different replica than create. finishedRuns skips
+// a redundant claim when cancel+status race on the same process. The
+// claim write is skipped entirely when no sinks are registered
+// (HasSinks) -- zero cost when webhooks are unconfigured. A claim-store
+// error fail-opens (still dispatches) so a DB blip cannot silence every
+// terminal webhook.
 func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) {
 	if v, ok := s.runSpans.LoadAndDelete(runID); ok {
 		span := v.(trace.Span)
@@ -493,6 +492,17 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 	}
 
 	if _, already := s.finishedRuns.LoadOrStore(runID, struct{}{}); already {
+		return
+	}
+
+	if !s.hooks.HasSinks() {
+		return
+	}
+
+	won, err := s.store.TryClaimTerminalHook(context.Background(), runID)
+	if err != nil {
+		slog.Error("terminal webhook claim failed; dispatching anyway", "run_id", runID, "error", err)
+	} else if !won {
 		return
 	}
 

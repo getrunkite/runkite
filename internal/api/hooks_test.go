@@ -103,8 +103,45 @@ func TestHooks_TerminalHookFiresWhenStatusLandsOnDifferentReplica(t *testing.T) 
 	}
 }
 
+// TestHooks_TerminalHookExactlyOnceAcrossReplicas proves two control-plane
+// processes sharing one store (cancel on replica A, StatusCallback on
+// replica B) dispatch exactly one terminal webhook via TryClaimTerminalHook.
+func TestHooks_TerminalHookExactlyOnceAcrossReplicas(t *testing.T) {
+	env := newTestEnv(t)
+	registerAgent(t, env, "hook-claim")
+
+	sink := &testSink{}
+	d := hooks.NewDispatcher()
+	d.Register(sink, hooks.RunComplete)
+
+	a := api.NewServer(env.store, env.queue, env.broker, env.cancel)
+	b := api.NewServer(env.store, env.queue, env.broker, env.cancel)
+	a.SetHookDispatcher(d)
+	b.SetHookDispatcher(d)
+
+	resp, _ := postJSON(env.srv.URL+"/runs", map[string]interface{}{"agent_id": "hook-claim"})
+	var run models.Run
+	json.Unmarshal(readBody(t, resp), &run)
+	env.queue.Dequeue(context.Background(), "python-langgraph", 2*time.Second)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); a.StatusCallback()(run.RunID, "success", "") }()
+	go func() { defer wg.Done(); b.StatusCallback()(run.RunID, "success", "") }()
+	wg.Wait()
+
+	events := waitForHookCount(t, sink, 1)
+	time.Sleep(50 * time.Millisecond)
+	if got := len(sink.snapshot()); got != 1 {
+		t.Fatalf("expected exactly 1 RunComplete across two replicas, got %d: %+v", got, sink.snapshot())
+	}
+	if events[0].RunID != run.RunID {
+		t.Fatalf("wrong run_id: %+v", events[0])
+	}
+}
+
 // TestHooks_TerminalHookDedupedOnSameReplica keeps cancel/status races on
-// one process at exactly one terminal webhook (finishedRuns guard).
+// one process at exactly one terminal webhook (finishedRuns + claim).
 func TestHooks_TerminalHookDedupedOnSameReplica(t *testing.T) {
 	env := newTestEnv(t)
 	registerAgent(t, env, "hook-dedupe")
@@ -380,7 +417,8 @@ func TestPreflight_AllowProceeds(t *testing.T) {
 
 // TestHooks_NoDispatcherIsSafe proves the default (no SetHookDispatcher
 // call, matching production with no webhooks configured) never breaks run
-// creation or completion.
+// creation or completion, and does not write terminal_hook_claims -- zero
+// cost when unconfigured.
 func TestHooks_NoDispatcherIsSafe(t *testing.T) {
 	env := newTestEnv(t)
 	registerAgent(t, env, "no-hooks-agent")
@@ -392,4 +430,12 @@ func TestHooks_NoDispatcherIsSafe(t *testing.T) {
 	json.Unmarshal(readBody(t, resp), &run)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
 	env.apiServer.StatusCallback()(run.RunID, "success", "")
+
+	won, err := env.store.TryClaimTerminalHook(ctx, run.RunID)
+	if err != nil {
+		t.Fatalf("TryClaimTerminalHook: %v", err)
+	}
+	if !won {
+		t.Fatal("expected claim to still be free after a no-sinks finishRun (no row should have been written)")
+	}
 }

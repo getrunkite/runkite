@@ -384,6 +384,11 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	);
 	ALTER TABLE cron_claims ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE UNIQUE INDEX IF NOT EXISTS ux_cron_claims_tenant_sched_fire ON cron_claims(tenant_id, schedule_name, fire_time);
+
+	CREATE TABLE IF NOT EXISTS terminal_hook_claims (
+		run_id     TEXT PRIMARY KEY,
+		claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
 	`
 	// Executed as separate statements (not one conn.Exec(ctx, schema) call)
 	// deliberately -- a second real race found via the same live
@@ -456,7 +461,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -1719,6 +1724,27 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 
 func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
+}
+
+func (s *Store) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO terminal_hook_claims (run_id, claimed_at) VALUES ($1, $2)
+		ON CONFLICT (run_id) DO NOTHING
+	`, runID, time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *Store) PruneTerminalHookClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM terminal_hook_claims WHERE claimed_at < $1
+	`, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // --------------------------------------------------------------------------

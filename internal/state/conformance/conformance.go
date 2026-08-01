@@ -36,6 +36,116 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("thread_claim_release", func(t *testing.T) { runThreadClaimReleaseTests(t, factory) })
 	t.Run("empty_list_results_are_not_nil", func(t *testing.T) { runEmptyListTests(t, factory) })
 	t.Run("counts", func(t *testing.T) { runCountTests(t, factory) })
+	t.Run("terminal_hook_claims", func(t *testing.T) { runTerminalHookClaimTests(t, factory) })
+}
+
+// --------------------------------------------------------------------------
+// TryClaimTerminalHook -- cross-replica terminal webhook exactly-once.
+// --------------------------------------------------------------------------
+
+func runTerminalHookClaimTests(t *testing.T, factory StoreFactory) {
+	t.Run("first_claim_wins_second_loses", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		won, err := s.TryClaimTerminalHook(ctx, "run-hook-1")
+		if err != nil {
+			t.Fatalf("TryClaimTerminalHook: %v", err)
+		}
+		if !won {
+			t.Fatal("expected the first claim to win")
+		}
+
+		wonAgain, err := s.TryClaimTerminalHook(ctx, "run-hook-1")
+		if err != nil {
+			t.Fatalf("TryClaimTerminalHook (second): %v", err)
+		}
+		if wonAgain {
+			t.Fatal("expected the second claim for the same run_id to lose")
+		}
+	})
+
+	t.Run("independent_per_run_id", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		wonA, errA := s.TryClaimTerminalHook(ctx, "run-hook-a")
+		wonB, errB := s.TryClaimTerminalHook(ctx, "run-hook-b")
+		if errA != nil || errB != nil || !wonA || !wonB {
+			t.Fatalf("expected independent run_ids to each win: wonA=%v errA=%v wonB=%v errB=%v", wonA, errA, wonB, errB)
+		}
+	})
+
+	t.Run("concurrent_claims_exactly_one_winner", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		var wins int
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ok, err := s.TryClaimTerminalHook(ctx, "run-hook-race")
+				if err != nil {
+					t.Errorf("TryClaimTerminalHook: %v", err)
+					return
+				}
+				if ok {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("expected exactly 1 claim winner, got %d", wins)
+		}
+	})
+
+	t.Run("PruneTerminalHookClaims_deletes_old_only", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+
+		if _, err := s.TryClaimTerminalHook(ctx, "run-hook-prune-a"); err != nil {
+			t.Fatalf("TryClaimTerminalHook a: %v", err)
+		}
+		if _, err := s.TryClaimTerminalHook(ctx, "run-hook-prune-b"); err != nil {
+			t.Fatalf("TryClaimTerminalHook b: %v", err)
+		}
+
+		// claimed_at is written as now; a cutoff in the future deletes both.
+		n, err := s.PruneTerminalHookClaims(ctx, time.Now().UTC().Add(time.Minute))
+		if err != nil {
+			t.Fatalf("PruneTerminalHookClaims: %v", err)
+		}
+		if n != 2 {
+			t.Fatalf("expected 2 claims pruned, got %d", n)
+		}
+
+		wonA, err := s.TryClaimTerminalHook(ctx, "run-hook-prune-a")
+		if err != nil || !wonA {
+			t.Fatalf("expected re-claim after prune: won=%v err=%v", wonA, err)
+		}
+
+		// A cutoff in the past must leave the fresh claim alone.
+		n, err = s.PruneTerminalHookClaims(ctx, time.Now().UTC().Add(-time.Hour))
+		if err != nil {
+			t.Fatalf("PruneTerminalHookClaims (past cutoff): %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("expected 0 claims pruned with past cutoff, got %d", n)
+		}
+		wonAgain, err := s.TryClaimTerminalHook(ctx, "run-hook-prune-a")
+		if err != nil {
+			t.Fatalf("TryClaimTerminalHook after past-cutoff prune: %v", err)
+		}
+		if wonAgain {
+			t.Fatal("expected the unpruned claim to still reject a duplicate")
+		}
+	})
 }
 
 // --------------------------------------------------------------------------

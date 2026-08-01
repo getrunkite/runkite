@@ -285,6 +285,13 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 		claimed_at    TEXT NOT NULL,
 		PRIMARY KEY (tenant_id, schedule_name, fire_time)
 	);
+
+	-- Exactly-once terminal webhook claim across control-plane replicas
+	-- sharing this DB (see state.Store.TryClaimTerminalHook).
+	CREATE TABLE IF NOT EXISTS terminal_hook_claims (
+		run_id     TEXT PRIMARY KEY,
+		claimed_at TEXT NOT NULL
+	);
 	`
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err
@@ -1668,6 +1675,30 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 
 func (s *SQLiteStore) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
+}
+
+func (s *SQLiteStore) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO terminal_hook_claims (run_id, claimed_at) VALUES (?, ?)
+	`, runID, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *SQLiteStore) PruneTerminalHookClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM terminal_hook_claims WHERE claimed_at < ?
+	`, olderThan.UTC().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --------------------------------------------------------------------------

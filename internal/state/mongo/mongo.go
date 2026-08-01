@@ -170,6 +170,7 @@ func (s *Store) Init(ctx context.Context) error {
 		{"run_cache", bson.D{{Key: "expires_at", Value: 1}}, false},
 		{"cron_schedules", bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, true},
 		{"cron_claims", bson.D{{Key: "tenant_id", Value: 1}, {Key: "schedule_name", Value: 1}, {Key: "fire_time", Value: 1}}, true},
+		{"terminal_hook_claims", bson.D{{Key: "run_id", Value: 1}}, true},
 	}
 	for _, i := range indexes {
 		opts := options.Index()
@@ -212,7 +213,7 @@ func (s *Store) Ping(ctx context.Context) error {
 func (s *Store) TruncateAll(ctx context.Context) error {
 	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
-		"registry_entries", "registry_entry_versions"} {
+		"terminal_hook_claims", "registry_entries", "registry_entry_versions"} {
 		if _, err := s.col(c).DeleteMany(ctx, bson.D{}); err != nil {
 			return err
 		}
@@ -1381,6 +1382,29 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 
 func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
+}
+
+func (s *Store) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
+	_, err := s.col("terminal_hook_claims").InsertOne(ctx, bson.M{
+		"run_id": runID, "claimed_at": time.Now().UTC(),
+	})
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) PruneTerminalHookClaims(ctx context.Context, olderThan time.Time) (int64, error) {
+	res, err := s.col("terminal_hook_claims").DeleteMany(ctx, bson.M{
+		"claimed_at": bson.M{"$lt": olderThan},
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // pruneableRunStatuses matches api.isTerminalStatus's definition

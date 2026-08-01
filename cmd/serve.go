@@ -330,7 +330,7 @@ func startServer(opts serverOpts) {
 	// other platform extension: absent "retention" config starts no
 	// background loop at all.
 	if retentionCfg := initRetentionConfig(opts.configPath); retentionCfg != nil {
-		slog.Info("retention: enabled", "runs_max_age", retentionCfg.runsMaxAge, "checkpoints_keep_last", retentionCfg.checkpointsKeepLast, "cron_claims_max_age", retentionCfg.cronClaimsMaxAge, "interval", retentionCfg.interval)
+		slog.Info("retention: enabled", "runs_max_age", retentionCfg.runsMaxAge, "checkpoints_keep_last", retentionCfg.checkpointsKeepLast, "cron_claims_max_age", retentionCfg.cronClaimsMaxAge, "terminal_hook_claims_max_age", retentionCfg.terminalHookClaimsMaxAge, "interval", retentionCfg.interval)
 		if retentionCfg.checkpointsKeepLast > 0 {
 			// LangGraph's AsyncPostgresSaver / PostgresSaver tables are a
 			// separate schema from thread_checkpoints -- pruning the

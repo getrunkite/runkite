@@ -33,7 +33,7 @@ func TestInitRetentionConfig_BothDimensionsConfigured(t *testing.T) {
 	dir := t.TempDir()
 	path := writeLangGraphJSON(t, dir, `{
 		"graphs": {"echo": "graph.py:graph"},
-		"retention": {"runs_max_age": "720h", "checkpoints_keep_last": 10, "cron_claims_max_age": "168h", "webhook_dead_letters_max_age": "72h", "interval_minutes": 5}
+		"retention": {"runs_max_age": "720h", "checkpoints_keep_last": 10, "cron_claims_max_age": "168h", "terminal_hook_claims_max_age": "96h", "webhook_dead_letters_max_age": "72h", "interval_minutes": 5}
 	}`)
 
 	rc := initRetentionConfig(path)
@@ -49,11 +49,29 @@ func TestInitRetentionConfig_BothDimensionsConfigured(t *testing.T) {
 	if rc.cronClaimsMaxAge != 168*time.Hour {
 		t.Errorf("cronClaimsMaxAge = %v, want 168h", rc.cronClaimsMaxAge)
 	}
+	if rc.terminalHookClaimsMaxAge != 96*time.Hour {
+		t.Errorf("terminalHookClaimsMaxAge = %v, want 96h", rc.terminalHookClaimsMaxAge)
+	}
 	if rc.webhookDeadLettersMaxAge != 72*time.Hour {
 		t.Errorf("webhookDeadLettersMaxAge = %v, want 72h", rc.webhookDeadLettersMaxAge)
 	}
 	if rc.interval != 5*time.Minute {
 		t.Errorf("interval = %v, want 5m", rc.interval)
+	}
+}
+
+func TestInitRetentionConfig_TerminalHookClaimsOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"retention": {"terminal_hook_claims_max_age": "48h"}
+	}`)
+	rc := initRetentionConfig(path)
+	if rc == nil {
+		t.Fatal("expected non-nil retentionConfig when only terminal_hook_claims_max_age is set")
+	}
+	if rc.terminalHookClaimsMaxAge != 48*time.Hour {
+		t.Errorf("terminalHookClaimsMaxAge = %v, want 48h", rc.terminalHookClaimsMaxAge)
 	}
 }
 

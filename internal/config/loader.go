@@ -172,6 +172,12 @@ type RetentionEntry struct {
 	// optional -- a deployment with no cron schedules configured never
 	// needs this.
 	CronClaimsMaxAge string `json:"cron_claims_max_age,omitempty"`
+	// TerminalHookClaimsMaxAge prunes terminal_hook_claims rows (the
+	// multi-replica terminal-webhook exactly-once table) with claimed_at
+	// older than this. Same Go duration string format as RunsMaxAge;
+	// independently optional -- a deployment with no webhooks configured
+	// never writes this table (finishRun gates on HasSinks).
+	TerminalHookClaimsMaxAge string `json:"terminal_hook_claims_max_age,omitempty"`
 	// WebhookDeadLettersMaxAge prunes webhook_dead_letters rows whose
 	// failed_at is older than this. Same Go duration string format as
 	// RunsMaxAge; independently optional.

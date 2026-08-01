@@ -17,6 +17,7 @@ type retentionConfig struct {
 	runsMaxAge               time.Duration // zero means run pruning is off
 	checkpointsKeepLast      int           // <= 0 means checkpoint pruning is off
 	cronClaimsMaxAge         time.Duration // zero means cron-claim pruning is off
+	terminalHookClaimsMaxAge time.Duration // zero means terminal-hook-claim pruning is off
 	webhookDeadLettersMaxAge time.Duration // zero means webhook DLQ pruning is off
 	interval                 time.Duration
 }
@@ -25,10 +26,10 @@ type retentionConfig struct {
 // discovered langgraph.json (same control-plane-wide/first-file convention
 // as initAuthProvider/initRateLimiter/initHooks/initCorsConfig). Returns
 // nil when unconfigured, or configured but all prune dimensions (runs,
-// checkpoints, cron claims, webhook dead letters) are off -- the caller
-// then skips starting the background loop entirely, matching this
-// project's disabled-by-default-until-configured convention for every
-// platform extension.
+// checkpoints, cron claims, terminal-hook claims, webhook dead letters)
+// are off -- the caller then skips starting the background loop entirely,
+// matching this project's disabled-by-default-until-configured convention
+// for every platform extension.
 func initRetentionConfig(configPath string) *retentionConfig {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
@@ -56,6 +57,14 @@ func initRetentionConfig(configPath string) *retentionConfig {
 			rc.cronClaimsMaxAge = d
 		}
 	}
+	if cfg.Retention.TerminalHookClaimsMaxAge != "" {
+		d, parseErr := time.ParseDuration(cfg.Retention.TerminalHookClaimsMaxAge)
+		if parseErr != nil {
+			slog.Error("retention: invalid terminal_hook_claims_max_age, terminal-hook-claim pruning disabled", "value", cfg.Retention.TerminalHookClaimsMaxAge, "error", parseErr)
+		} else {
+			rc.terminalHookClaimsMaxAge = d
+		}
+	}
 	if cfg.Retention.WebhookDeadLettersMaxAge != "" {
 		d, parseErr := time.ParseDuration(cfg.Retention.WebhookDeadLettersMaxAge)
 		if parseErr != nil {
@@ -64,7 +73,7 @@ func initRetentionConfig(configPath string) *retentionConfig {
 			rc.webhookDeadLettersMaxAge = d
 		}
 	}
-	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 && rc.webhookDeadLettersMaxAge <= 0 {
+	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 && rc.terminalHookClaimsMaxAge <= 0 && rc.webhookDeadLettersMaxAge <= 0 {
 		return nil
 	}
 
@@ -131,6 +140,15 @@ func runRetentionTick(ctx context.Context, store state.Store, rc *retentionConfi
 			slog.Error("retention: PruneCronClaims failed", "error", err)
 		} else if n > 0 {
 			slog.Info("retention: pruned old cron claims", "count", n, "older_than", cutoff)
+		}
+	}
+	if rc.terminalHookClaimsMaxAge > 0 {
+		cutoff := time.Now().UTC().Add(-rc.terminalHookClaimsMaxAge)
+		n, err := store.PruneTerminalHookClaims(sysCtx, cutoff)
+		if err != nil {
+			slog.Error("retention: PruneTerminalHookClaims failed", "error", err)
+		} else if n > 0 {
+			slog.Info("retention: pruned old terminal hook claims", "count", n, "older_than", cutoff)
 		}
 	}
 	if rc.webhookDeadLettersMaxAge > 0 {
