@@ -1,0 +1,114 @@
+# Cross-framework × backend matrix (test/e2e/matrix).
+# Intentionally NOT on every PR -- ~32 real control-plane + runner
+# subprocess pairs, 20+ minutes. PR CI stays on .github/workflows/ci.yml
+# (unit + conformance + Tier-0 e2e). Run on demand via workflow_dispatch
+# or nightly; locally: `make infra-up && make test-matrix`.
+name: Matrix
+
+on:
+  schedule:
+    # 06:00 UTC daily -- off-peak for most contributors, after midnight US.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: runkite
+          POSTGRES_PASSWORD: runkite
+          POSTGRES_DB: runkite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U runkite -d runkite_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: runkite
+          MYSQL_USER: runkite
+          MYSQL_PASSWORD: runkite
+          MYSQL_DATABASE: runkite_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uroot -prunkite"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Start MongoDB (single-node replica set)
+        # Same rationale as ci.yml -- Actions services: cannot override
+        # mongod --replSet, and Mongo transactions require a replica set.
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
+          timeout 60 bash -c 'until docker exec mongo mongosh --quiet --eval "db.runCommand(\"ping\").ok" 2>/dev/null | grep -q 1; do sleep 1; done'
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
+          timeout 60 bash -c 'until docker exec mongo mongosh --quiet --eval "rs.status().ok" 2>/dev/null | grep -q 1; do sleep 1; done'
+
+      - name: Python shared venv (langgraph + langchain runners)
+        # Matrix launchPythonModule requires python/.venv/bin/python
+        # (no PATH fallback -- unlike test/e2e/e2e_test.go).
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install -r python/requirements.txt
+
+      - name: Adapter isolated venvs (CrewAI / LlamaIndex / AutoGen)
+        run: |
+          pip install uv
+          uv venv --python 3.12 python/adapters/crewai_adapter/.venv
+          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf
+
+          uv venv --python 3.12 python/adapters/llamaindex_adapter/.venv
+          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf
+
+          uv venv --python 3.12 python/adapters/autogen_adapter/.venv
+          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf
+
+      - name: TypeScript runner dependencies
+        working-directory: typescript/runkite-runner
+        run: npm ci || npm install
+
+      - name: Framework × backend matrix
+        # MATRIX_* overrides use Actions service ports (5432/3306/6379/27017).
+        # make test-matrix defaults are docker-compose.test.yml host ports.
+        env:
+          MATRIX_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          MATRIX_MYSQL_DSN: "runkite:runkite@tcp(127.0.0.1:3306)/runkite_test?parseTime=true"
+          MATRIX_REDIS_URL: redis://localhost:6379
+          MATRIX_MONGO_URI: "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true"
+        run: make test-matrix

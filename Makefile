@@ -140,27 +140,40 @@ test-all-v:
 # import any internal package -- specifically so it catches bugs that only
 # exist in the fully-wired stack (e.g. middleware composition, Docker
 # packaging) rather than in any single component tested in isolation.
+# Tier-0 e2e only -- excludes ./test/e2e/matrix (gated by RUNKITE_RUN_MATRIX
+# and `make test-matrix` / nightly Matrix workflow).
 test-e2e:
 	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
 	REDIS_URL="redis://localhost:6380" \
-		go test ./test/e2e/... -v -timeout 120s -count=1
+		go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
-# Cross-framework x backend test matrix (plans/pending_items.md item 6):
-# every framework runner (python-langgraph, typescript-langgraphjs,
-# python-langchain/-crewai/-llamaindex/-autogen) against every backend
-# combination (SQLite+in-process, Postgres+Redis, MySQL+in-process,
-# Mongo+Redis), each running the scenarios that framework's example
-# agents support, diffed against golden fixtures in test/e2e/matrix/golden/.
+# Cross-framework × backend test matrix: every framework runner
+# (python-langgraph, typescript-langgraphjs, python-langchain/-crewai/
+# -llamaindex/-autogen) against every backend combination
+# (SQLite+in-process, Postgres+Redis, MySQL+in-process, Mongo+Redis),
+# each running the scenarios that framework's example agents support,
+# diffed against golden fixtures in test/e2e/matrix/golden/.
 # ~32 real subprocess-pair start/stop cycles -- deliberately its own
-# target, not folded into test-e2e's 120s budget, since this is meant
-# for nightly/on-demand runs (see test/e2e/matrix's package doc), not
-# every PR. Requires infra-up (SQLite+in-process cells run regardless).
+# target, not folded into test-e2e's 120s budget. Nightly /
+# workflow_dispatch in .github/workflows/matrix.yml; locally
+# `make infra-up && make test-matrix` (needs python/.venv, adapter
+# venvs, and typescript/runkite-runner node_modules). SQLite+in-process
+# cells run without infra; other cells skip if their MATRIX_* / DSN
+# env is unset.
+#
+# MATRIX_* defaults match docker-compose.test.yml host ports. CI
+# overrides them to Actions service ports (5432/3306/6379/27017).
+MATRIX_POSTGRES_DSN ?= postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable
+MATRIX_MYSQL_DSN ?= runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true
+MATRIX_REDIS_URL ?= redis://localhost:6380
+MATRIX_MONGO_URI ?= mongodb://localhost:27018/?replicaSet=rs0&directConnection=true
+
 test-matrix:
 	RUNKITE_RUN_MATRIX=1 \
-	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
-	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
-	REDIS_URL="redis://localhost:6380" \
-	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
+	POSTGRES_DSN="$(MATRIX_POSTGRES_DSN)" \
+	MYSQL_DSN="$(MATRIX_MYSQL_DSN)" \
+	REDIS_URL="$(MATRIX_REDIS_URL)" \
+	MONGO_URI="$(MATRIX_MONGO_URI)" \
 		go test ./test/e2e/matrix/... -v -timeout 1200s -count=1
 
 # Re-records every golden fixture in test/e2e/matrix/golden/ instead of
@@ -170,10 +183,10 @@ test-matrix:
 test-matrix-record:
 	RUNKITE_RUN_MATRIX=1 \
 	RUNKITE_GOLDEN_RECORD=1 \
-	POSTGRES_DSN="postgres://runkite:runkite@localhost:5433/runkite_test?sslmode=disable" \
-	MYSQL_DSN="runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true" \
-	REDIS_URL="redis://localhost:6380" \
-	MONGO_URI="mongodb://localhost:27018/?replicaSet=rs0&directConnection=true" \
+	POSTGRES_DSN="$(MATRIX_POSTGRES_DSN)" \
+	MYSQL_DSN="$(MATRIX_MYSQL_DSN)" \
+	REDIS_URL="$(MATRIX_REDIS_URL)" \
+	MONGO_URI="$(MATRIX_MONGO_URI)" \
 		go test ./test/e2e/matrix/... -v -timeout 1200s -count=1
 
 # Python runner unit tests (namespace encoding / factory-graph

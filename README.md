@@ -784,7 +784,7 @@ docker compose -f docker-compose.ts.yml up --build
 
 Kept separate rather than merged into the main compose file because a single control-plane instance's `LANGGRAPH_CONFIG` binds to one `runner_kind` at a time (see `internal/config/loader.go`'s `RunnerKind` field) -- mixing Python and TS agents in one deployment means auto-discovering multiple `langgraph.json` files (leaving `LANGGRAPH_CONFIG` unset), not something this demo needed to prove the image itself works.
 
-Live-verified end to end against a real control plane -- manually, the same way cron's multi-instance claim was verified live rather than in CI (spinning up a full multi-process stack per test run isn't worth paying on every commit): the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. `make test-e2e`'s automated suite is still Python-only; the TypeScript equivalents above are manual-verification-only, not regression-guarded in CI.
+Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).
 
 ### Framework Adapters
 
@@ -815,7 +815,7 @@ PYTHONPATH=<repo>/python:<repo>/python/adapters \
   --config langgraph.json --grpc-address localhost:50051
 ```
 
-Live-verified end to end for all four: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex/AutoGen unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex/AutoGen's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal, not just the unit-level fakes. CrewAI/LlamaIndex/AutoGen don't have the equivalent e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
+Live-verified end to end for all four: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex/AutoGen unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex/AutoGen's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, PR-CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal. Happy-path coverage for CrewAI/LlamaIndex/AutoGen (and LangChain/LangGraph/TS) across every state+transport cell is the nightly `make test-matrix` / Matrix workflow. CrewAI/LlamaIndex/AutoGen don't have the equivalent PR-CI e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
 
 ## Docker
 
@@ -868,7 +868,8 @@ make test-redis     # Redis conformance (requires infra-up)
 make test-mongo     # MongoDB conformance (requires infra-up)
 make test-kafka     # Kafka JobQueue conformance (requires infra-up; ~3min, see Kafka transport section for why)
 make test-all       # All backends (requires infra-up)
-make test-e2e       # Black-box E2E: real binary + real runner + PG/Redis (requires infra-up)
+make test-e2e       # Tier-0 black-box E2E (Python + LangChain adapter; requires infra-up)
+make test-matrix    # Framework × backend golden matrix (~32 cells; nightly CI / workflow_dispatch)
 make test-python    # Python runner unit tests
 make test-ts        # TypeScript runner unit tests
 make test-adapters  # CrewAI/LlamaIndex/AutoGen adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
@@ -884,7 +885,7 @@ make lint-python    # Just Python: ruff check + ruff format --check (python/.ven
 make lint-ts        # Just TypeScript: oxlint + prettier --check
 ```
 
-Same three-linter shape enforced in CI (`.github/workflows/ci.yml`) on every push/PR. Config lives in `.golangci.yml` (Go), `ruff.toml` (Python), and `typescript/runkite-runner/.oxlintrc.json` + `.prettierrc.json` (TypeScript) -- each a deliberately moderate starting rule set (golangci-lint's own curated "standard" linters, not "all"; ruff's `E`/`F`/`I`/`UP`/`B` rule groups) rather than maximally strict, so the gate catches real bugs (unused imports, unchecked errors on non-cleanup calls, suspicious constructs) without drowning contributors in day-one style nitpicks.
+PR CI (`.github/workflows/ci.yml`) runs unit/conformance/lint/Tier-0 e2e on every push. The framework × backend matrix (`.github/workflows/matrix.yml`) runs on a nightly schedule and `workflow_dispatch` -- same `make test-matrix` target, not folded into the PR budget. Same three-linter shape enforced in CI on every push/PR. Config lives in `.golangci.yml` (Go), `ruff.toml` (Python), and `typescript/runkite-runner/.oxlintrc.json` + `.prettierrc.json` (TypeScript) -- each a deliberately moderate starting rule set (golangci-lint's own curated "standard" linters, not "all"; ruff's `E`/`F`/`I`/`UP`/`B` rule groups) rather than maximally strict, so the gate catches real bugs (unused imports, unchecked errors on non-cleanup calls, suspicious constructs) without drowning contributors in day-one style nitpicks.
 
 ## API Reference
 

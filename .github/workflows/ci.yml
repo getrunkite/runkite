@@ -231,11 +231,11 @@ jobs:
           git diff --exit-code -- dist/
 
       - name: E2E (real binary + real Python/LangChain-adapter runners + real Postgres/Redis)
-        # ./test/e2e/... recurses into test/e2e/adapters too -- the
-        # LangChain adapter's own end-to-end coverage (real control
-        # plane + real langchain_adapter runner subprocess + cancel via
-        # a real gRPC signal), not just unit tests against fakes.
+        # Tier-0 only: ./test/e2e + ./test/e2e/adapters (LangChain e2e
+        # cancel path). The framework × backend matrix lives in
+        # ./test/e2e/matrix and runs nightly / on demand via
+        # .github/workflows/matrix.yml (`make test-matrix`), not on every PR.
         env:
           POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
-        run: go test ./test/e2e/... -v -timeout 120s -count=1
+        run: go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
