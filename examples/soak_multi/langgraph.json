@@ -1,0 +1,46 @@
+{
+  "graphs": {
+    "echo_agent": "../echo_agent/graph.py:graph",
+    "slow_agent": "../slow_agent/graph.py:graph",
+    "llm_sim_agent": "../llm_sim_agent/graph.py:graph",
+    "store_agent": "../store_agent/graph.py:graph"
+  },
+  "dependencies": [
+    "../echo_agent",
+    "../slow_agent",
+    "../llm_sim_agent",
+    "../store_agent"
+  ],
+  "llm_cache": {
+    "echo_agent": {"ttl_seconds": 3600}
+  },
+  "connectors": {
+    "soak_demo": {
+      "auth": {
+        "type": "api_key",
+        "api_key": "soak-demo-key-not-secret"
+      }
+    }
+  },
+  "webhooks": [
+    {
+      "url": "http://host.docker.internal:9099/hook",
+      "secret": "soak-webhook-secret",
+      "events": ["run_start", "run_complete", "error", "interrupt"]
+    }
+  ],
+  "preflight_hooks": [
+    {
+      "url": "http://host.docker.internal:9099/preflight",
+      "secret": "soak-webhook-secret",
+      "timeout_ms": 1000
+    }
+  ],
+  "cron": {
+    "soak-minute-echo": {
+      "agent_id": "echo_agent",
+      "expression": "* * * * *",
+      "input": {"messages": [{"role": "human", "content": "soak cron tick"}]}
+    }
+  }
+}

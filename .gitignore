@@ -40,3 +40,6 @@ plans/
 # broken right now, useful while triaging but a real disclosure-timing
 # risk to publish before the findings are actually fixed.
 CODE_REVIEW_ANALYSIS*.md
+
+# Soak run artifacts (logs, metrics snapshots, REPORT.md)
+bench/soak/out/*/

@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-python test-ts test-adapters smoke-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-python test-ts test-adapters smoke-multi soak-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -373,3 +373,9 @@ multi-down:
 
 smoke-multi:
 	@bash scripts/smoke-multi.sh
+
+# 30-minute laptop soak: 3 CP + 2 runners + webhooks/preflight + Py/JS clients.
+# Override duration: SOAK_DURATION=120 make soak-multi
+# Watch: http://localhost:2026/admin/
+soak-multi:
+	@bash bench/soak/run.sh
