@@ -16,8 +16,8 @@ A Go control plane implementing the [Agent Protocol](https://github.com/langchai
               |                           |
               |  +-------+  +---------+   |
               |  | State |  |Transport|   |
-              |  |SQLite/|  |InMem/   |   |
-              |  |Postgres| |Redis    |   |
+              |  |Postgres| | Redis   |   |
+              |  |(SQLite)| |(in-mem) |   |
               |  +-------+  +---------+   |
               |                           |
               |  +-------+  +---------+   |
@@ -391,7 +391,7 @@ See `examples/echo_agent_ts/factoryGraph.ts` for a minimal working example, and 
 
 ## Vector Store
 
-Semantic search over embeddings, backed by **pgvector** (Tier 1, SQL-based), **Qdrant**, **Weaviate**, or **Pinecone** (the non-SQL exemplars, same role Mongo plays for the state store -- proof the `VectorStore` interface is implementable against a real standalone vector database, not just a Postgres extension). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
+Semantic search over embeddings, backed by **pgvector** (**Supported** when the state backend is Postgres -- see [Backend support tiers](#backend-support-tiers)), **Qdrant**, **Weaviate**, or **Pinecone** (**Compatible** non-SQL exemplars, same role Mongo plays for the state store -- proof the `VectorStore` interface is implementable against a real standalone vector database, not just a Postgres extension). Disabled entirely by default, same opt-in convention as `llm_cache`/`rate_limit`/`webhooks`/`cron` -- never implicitly enabled just because `POSTGRES_DSN` is set, since an existing Postgres deployment may not have the pgvector extension installed or permitted.
 
 ```json
 {
@@ -645,8 +645,8 @@ Versioning follows the exact same convention as agent versioning above: publishi
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP/SSE surface
-- State persistence (SQLite default; Postgres, MySQL, or MongoDB opt-in)
-- Transport layer (in-memory default, Redis opt-in)
+- State persistence (SQLite default; Postgres Supported; MySQL/Mongo Compatible)
+- Transport layer (in-memory default; Redis Supported; NATS Compatible; Kafka Experimental / Compatible-with-Redis)
 - Auth engine (JWT, API key, webhook, plus a separate runner-token tier for the gRPC bridge)
 - Connector/MCP registry
 - Prometheus metrics (`/metrics`)
@@ -658,17 +658,34 @@ Versioning follows the exact same convention as agent versioning above: publishi
 - Stream events back (values, updates, messages, lifecycle)
 - Support interrupt/resume for HITL
 
-**State backends**:
-| Concern | Default | Production |
-|---------|---------|------------|
-| Metadata (agents/threads/runs) | Embedded SQLite | Postgres, MySQL, or MongoDB |
-| Job queue + event broker | In-memory | Redis or NATS (JetStream) for both; Kafka for the queue only, paired with Redis or in-process for the broker/cancelbus |
+### Backend support tiers
 
-Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`, and/or `NATS_URL`. No code changes, no config files. MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar backend -- proof `state.Store` is genuinely implementable against a document store, and a template for community-contributed backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. One caveat: the Python/TypeScript runners' own direct-mode checkpointer (`AsyncPostgresSaver`/its JS equivalent) only exists for Postgres -- MongoDB-, MySQL-, and SQLite-backed control planes' runners all use **proxy mode** for checkpoints/store (see below); Postgres is the only backend with a direct-mode option at all. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db reset` via `MYSQL_DSN`; DynamoDB remains a documented possible future driver, not built at all.
+Not every pluggable backend is equally battle-tested for multi-replica production. Conformance suites prove the interfaces; tiers tell you what we recommend you run.
 
-### NATS transport (JetStream)
+| Tier | Meaning |
+|------|---------|
+| **Supported** | Production profile: multi-replica HA, Helm defaults, primary CI/matrix focus. Residual gaps, if any, are documented and small. |
+| **Compatible** | Passes the same conformance suite and is wired into `serve`, but has known semantic gaps vs Supported, thinner soak evidence, and/or ops caveats. Fine for real use when you accept those gaps. |
+| **Experimental** | Works for single-instance / specialized setups; multi-replica or HA behavior has residual races or incomplete primitives. Do not treat as an equal HA alternative to Supported. |
 
-`internal/transport/nats` is the second full transport implementation, checked with the exact same `internal/transport/conformance` suite Redis's own transport is (JobQueue, EventBroker, and CancelBroker, all three -- Kafka, added later, deliberately only implements JobQueue; see its own package doc for why NATS specifically earns the full triad and Kafka doesn't). Wired the same way as Redis: set `NATS_URL` (e.g. `nats://localhost:4222`), no code changes.
+**Recommended production profile:** `POSTGRES_DSN` + `REDIS_URL` (state + full transport triad + shared rate limits + Kafka reclaim leader when Kafka is also used). That is what [`deploy/helm/runkite`](deploy/helm/runkite) and `docker-compose.multi.yml` assume.
+
+| Concern | Supported | Compatible | Experimental |
+|---------|-----------|------------|--------------|
+| **State** (agents/threads/runs/store/cron) | **Postgres** | SQLite (local/dev, single process), MySQL, MongoDB (replica set required) | — |
+| **Transport** (queue + event broker + cancel) | **Redis** (full triad) | NATS/JetStream (full triad; `EventBroker.Close` is a no-op vs Redis), in-process (single replica only) | Kafka **queue-only** without Redis (no cluster reclaim lock) |
+| **Mixed transport** | — | Kafka queue **+ Redis** broker/cancel + Redis reclaim-leader lease | — |
+| **Vector store** | **pgvector** (on Supported Postgres) | Qdrant, Weaviate (filter pagination bound), Pinecone | — |
+
+Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`, `NATS_URL`, and/or `KAFKA_URL`. No code changes. Details and residual-risk notes for each driver live in the sections below (NATS Close gap, Kafka partitions/reclaim, Mongo replica-set requirement, Weaviate filter ceiling, checkpoint direct-mode Postgres-only, etc.).
+
+**Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the Helm/multi-compose topology without extra caveats. MySQL/Mongo/NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
+
+MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `state.Store` is implementable against a document store, and a template for community backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db reset` via `MYSQL_DSN`; DynamoDB remains a documented possible future driver, not built at all.
+
+### NATS transport (JetStream) — Compatible
+
+`internal/transport/nats` is the second full transport implementation (**Compatible** tier -- see [Backend support tiers](#backend-support-tiers)), checked with the exact same `internal/transport/conformance` suite Redis's own transport is (JobQueue, EventBroker, and CancelBroker, all three -- Kafka, added later, deliberately only implements JobQueue; see its own package doc for why NATS specifically earns the full triad and Kafka doesn't). Wired the same way as Redis: set `NATS_URL` (e.g. `nats://localhost:4222`), no code changes.
 
 The queue side genuinely differs from Redis's, not just in wire format: NATS JetStream gives two of this project's own three crash-recovery problems natively -- `AckWait` (a per-message redelivery timer, closing the same gap Redis's hand-built lease-and-reaper closes) and `InProgress` (a heartbeat call that resets that timer without acking, backing `Renew` directly). Fencing is the one piece NOT native, confirmed against a real, still-open NATS issue ([nats-server#4786](https://github.com/nats-io/nats-server/issues/4786)): JetStream currently accepts an ack arriving after a message has already been redelivered to a different consumer -- the exact "stale runner's late report clobbers the current attempt" gap Redis needed generation fencing for. Closed the same way conceptually, but for free where Redis needed a hand-rolled counter: a message's own `NumDelivered` (1 on first delivery, incremented natively by the server on every redelivery) *is* this backend's fencing generation. Shared, cross-replica in-flight tracking (the same requirement Redis's own item-16 fix imposed) is a JetStream KV bucket holding each in-flight run's reply subject -- a NATS reply subject is just a string, so any control-plane replica holding it can publish an ack/nak/in-progress signal directly, without needing the original connection that received the message.
 
@@ -676,9 +693,9 @@ Passes all 26 conformance tests, but not on the first attempt -- two real, live-
 
 Known, honest gap versus Redis: `EventBroker.Close` is a documented no-op here, not an "immediately closed channel for a late subscriber" marker the way Redis's `closedKey` gives -- a `Subscribe` call after a run's already-terminal event returns an open channel that silently never receives anything, rather than a channel a caller can distinguish as already-done via a receive-with-ok check. Every current caller already has its own independent terminal-status check against the run's stored state, so this doesn't strand anything in practice, but a future caller relying solely on this channel's own closure to detect "already done" would be wrong to assume parity with Redis here.
 
-### Kafka transport (JobQueue only)
+### Kafka transport (JobQueue only) — Compatible with Redis; Experimental without
 
-`internal/transport/kafka` is a third `JobQueue` implementation -- deliberately JobQueue-only, not the full triad Redis/NATS give: Kafka has no pub/sub primitive suited to `EventBroker`'s fan-out-plus-replay shape or `CancelBroker`'s fire-and-forget signal, and bolting one on top of Kafka's own log model would mean reinventing a second, unrelated technology rather than using Kafka for what it's good at. Set `KAFKA_URL` (e.g. `localhost:9092`, comma-separated for multiple brokers) to pick Kafka for the queue; pair it with `REDIS_URL` for `EventBroker`/`CancelBroker` (both set = Kafka queue + Redis broker/cancelbus), or leave `REDIS_URL` unset to fall back to the in-process broker/cancelbus (single-instance only, same caveat the in-process transport always carries).
+`internal/transport/kafka` is a third `JobQueue` implementation -- deliberately JobQueue-only, not the full triad Redis/NATS give: Kafka has no pub/sub primitive suited to `EventBroker`'s fan-out-plus-replay shape or `CancelBroker`'s fire-and-forget signal, and bolting one on top of Kafka's own log model would mean reinventing a second, unrelated technology rather than using Kafka for what it's good at. Set `KAFKA_URL` (e.g. `localhost:9092`, comma-separated for multiple brokers) to pick Kafka for the queue; pair it with `REDIS_URL` for `EventBroker`/`CancelBroker` (both set = Kafka queue + Redis broker/cancelbus -- **Compatible** HA posture), or leave `REDIS_URL` unset to fall back to the in-process broker/cancelbus (**Experimental** for multi-replica; single-instance only, same caveat the in-process transport always carries). See [Backend support tiers](#backend-support-tiers).
 
 Kafka's own redelivery model is fundamentally different from Redis's and NATS's: it only tracks one committed offset per partition, and committing offset N implicitly commits everything below it too (a documented `segmentio/kafka-go` behavior) -- there's no way to redeliver one specific message out of a partition's sequence via Kafka's own offset mechanism alone. Rather than force a per-message lease onto that model, this backend treats Kafka's own offset commit as a cheap "how far can a fresh consumer skip on restart" hint, not the authoritative record of whether a job is done -- `Dequeue` writes a durable state-topic entry for the job **before** committing its offset (see below for why the order matters), and a separate, single-partition, log-compacted topic (`<namespace>.state`) is the actual source of truth for what's in-flight, its fencing generation, and its full payload for re-delivery. Every control-plane replica tails that compacted topic from its own beginning at startup and keeps an in-memory materialized view (the log is the source of truth, the map is a derived, disposable index any replica can rebuild) -- what makes Ack/Renew/Nack/ReclaimStale usable from any replica regardless of which one's Fetch call actually received a given message, the same "shared, not process-local" requirement Redis's own item-16 fix imposed. Fencing generation is hand-rolled here too, same reasoning as NATS's own writeup: Kafka's consumer-group generation ID is a group-membership/rebalance concept, not a per-message counter, and using it directly would require staying on the exact connection that fetched a message -- generation instead lives in the state-topic entry, bumped by `ReclaimStale`/`Nack` via a real `json.Unmarshal`/`Marshal` round trip (not string surgery the way Redis's own Lua-side bump needed).
 
