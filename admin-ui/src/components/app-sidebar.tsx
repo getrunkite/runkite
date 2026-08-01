@@ -7,7 +7,6 @@ import {
   MessagesSquare,
   Package,
   Plug,
-  Rocket,
   Webhook as WebhookIcon,
   Workflow,
 } from "lucide-react";
@@ -93,9 +92,13 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 export function SidebarBrand() {
   return (
     <div className="flex h-14 items-center gap-2 px-4">
-      <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Rocket className="size-4" />
-      </div>
+      <img
+        src={`${import.meta.env.BASE_URL}logo.svg`}
+        alt=""
+        width={28}
+        height={28}
+        className="size-7 rounded-md"
+      />
       <span className="text-sm font-semibold tracking-tight">Runkite</span>
       <span className="ml-auto rounded-full border border-sidebar-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
         Admin

@@ -96,9 +96,19 @@ func TestDispatch_BoundedPoolDropsRatherThanUnboundedGoroutines(t *testing.T) {
 	sink := &blockingSink{unblock: make(chan struct{}), started: make(chan struct{}, 3)}
 	d.Register(sink)
 
+	// Wait until the single worker has actually started r1 before
+	// filling the queue. Otherwise r1 can still be sitting in the
+	// depth-1 channel when r2 arrives, so both r2 and r3 get dropped
+	// (CI flake: "expected the queued 2nd job to run").
+	d.Dispatch(Event{Type: RunStart, RunID: "r1"})
+	select {
+	case <-sink.started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected the worker to pick up the first job")
+	}
+
 	done := make(chan struct{})
 	go func() {
-		d.Dispatch(Event{Type: RunStart, RunID: "r1"}) // picked up by the 1 worker
 		d.Dispatch(Event{Type: RunStart, RunID: "r2"}) // fills the queue (depth 1)
 		d.Dispatch(Event{Type: RunStart, RunID: "r3"}) // queue full -- must be dropped, not block
 		close(done)
@@ -110,13 +120,7 @@ func TestDispatch_BoundedPoolDropsRatherThanUnboundedGoroutines(t *testing.T) {
 		t.Fatal("Dispatch blocked instead of dropping the 3rd job when the pool+queue were saturated")
 	}
 
-	// Exactly one Handle call should have actually started (the worker
-	// picked up r1); r2 is queued but not yet running, r3 was dropped.
-	select {
-	case <-sink.started:
-	case <-time.After(1 * time.Second):
-		t.Fatal("expected the worker to pick up the first job")
-	}
+	// Worker is still blocked on r1; r2 is queued, not running.
 	select {
 	case <-sink.started:
 		t.Fatal("expected only 1 job running concurrently with a 1-worker pool, got a 2nd")

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#2563EB"/>
+  <!-- Stylized kite / paper plane mark for Runkite -->
+  <path d="M8 16.5L24 8L18.5 24L15 18.5L8 16.5Z" fill="white"/>
+  <path d="M15 18.5L18.5 24L16.2 19.8L15 18.5Z" fill="#93C5FD"/>
+  <path d="M15 18.5L24 8L16.5 17.2L15 18.5Z" fill="#BFDBFE" opacity="0.9"/>
+</svg>

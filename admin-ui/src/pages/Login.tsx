@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { KeyRound, Loader2, Rocket } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Button } from "../components/ui/button";
@@ -39,9 +39,13 @@ export function Login() {
       />
       <Card className="relative w-full max-w-sm shadow-2xl">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
-            <Rocket className="size-5" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.svg`}
+            alt=""
+            width={44}
+            height={44}
+            className="mb-2 size-11 rounded-xl shadow-lg shadow-primary/30"
+          />
           <CardTitle className="text-lg">Runkite Admin</CardTitle>
           <CardDescription>
             Sign in with an API key or JWT that has the{" "}
