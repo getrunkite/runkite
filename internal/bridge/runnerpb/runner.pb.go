@@ -618,7 +618,7 @@ const file_runner_proto_rawDesc = "" +
 	"\fStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n" +
 	"\fReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a'.runkite.runner.v0.ReportStatusResponse\x12Y\n" +
 	"\fWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x12V\n" +
-	"\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB;Z9github.com/getrunkite/runkite/internal/bridge/runnerpbb\x06proto3"
+	"\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB8Z6github.com/getrunkite/runkite/internal/bridge/runnerpbb\x06proto3"
 
 var (
 	file_runner_proto_rawDescOnce sync.Once

@@ -1219,7 +1219,8 @@ Honest gaps, not hidden ones:
 
 ## License
 
-Runkite is licensed under the [Business Source License 1.1](LICENSE). You
+Runkite is licensed under the [Business Source License 1.1](LICENSE).
+Licensor / copyright: **Sharan Harsoor** (see `LICENSE` Parameters). You
 can use, modify, and self-host it (including in production, including
 commercially within your own org) free of charge. The one restriction:
 you may not offer Runkite itself as a hosted/managed service to third
