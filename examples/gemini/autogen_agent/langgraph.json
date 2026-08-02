@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_autogen": "./agent.py:agent"
+  },
+  "dependencies": [".", ".."],
+  "runner_kind": "python-autogen"
+}

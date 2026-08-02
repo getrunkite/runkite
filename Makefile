@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-python test-ts test-adapters smoke-multi soak-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-python test-ts test-adapters smoke-multi soak-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -42,6 +42,12 @@ test-protocol-execute:
 	else \
 		PYTHONPATH=python python3 python/tests/test_protocol_execute_goldens.py; \
 	fi
+
+# Live Gemini N×N (requires .env.llm with GOOGLE_API_KEY; gitignored).
+# Artifacts → bench/llm/out/ (also gitignored). See bench/llm/README.md.
+test-llm-matrix:
+	@test -f .env.llm || (echo "missing .env.llm — copy .env.llm.example and add GOOGLE_API_KEY"; exit 1)
+	set -a && . ./.env.llm && set +a && python3 bench/llm/run_matrix.py
 
 # Postgres conformance (requires POSTGRES_DSN or infra-up)
 test-pg:

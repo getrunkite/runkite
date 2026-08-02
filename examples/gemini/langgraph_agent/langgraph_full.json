@@ -1,0 +1,9 @@
+{
+  "graphs": {
+    "gemini_langgraph": "./graph.py:graph",
+    "slow_agent": "../../slow_agent/graph.py:graph",
+    "approval_agent": "../../approval_agent/graph.py:graph"
+  },
+  "dependencies": [".", "..", "../../slow_agent", "../../approval_agent"],
+  "runner_kind": "python-langgraph"
+}

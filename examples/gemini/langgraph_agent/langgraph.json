@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_langgraph": "./graph.py:graph"
+  },
+  "dependencies": [".", ".."],
+  "runner_kind": "python-langgraph"
+}

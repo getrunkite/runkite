@@ -32,6 +32,16 @@ htmlcov/
 
 # Local env
 .env
+
+# Local secrets / LLM keys -- NEVER commit. Prefer .env.llm for Gemini
+# and related provider keys used by bench/llm and examples/gemini_*.
+.env.*
+!.env.example
+!.env.llm.example
+
+# Local LLM matrix / experiment artifacts (may contain prompts/responses)
+bench/llm/out/
+plans/llm/
 .venv/
 
 # Internal design diaries / dogfooding notes -- not for the public tree.
@@ -45,3 +55,4 @@ CODE_REVIEW_ANALYSIS*.md
 
 # Soak run artifacts (logs, metrics snapshots, REPORT.md)
 bench/soak/out/*/
+examples/gemini/**/node_modules/

@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_llamaindex": "./chat_engine.py:chat_engine"
+  },
+  "dependencies": [".", ".."],
+  "runner_kind": "python-llamaindex"
+}

@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_langgraphjs": "./graph.ts:graph"
+  },
+  "dependencies": ["."],
+  "runner_kind": "typescript-langgraphjs"
+}

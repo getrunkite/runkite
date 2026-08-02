@@ -1,0 +1,10 @@
+{
+  "name": "runkite-gemini-langgraphjs-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/google-genai": "^0.2.0",
+    "@langchain/langgraph": "^0.2.0"
+  }
+}

@@ -199,6 +199,7 @@ Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `
 | [`vector_agent`](examples/vector_agent/) | Vector store |
 | [`factory_agent`](examples/factory_agent/) | Per-request factory graphs |
 | [`cron_agent`](examples/cron_agent/) · [`store_agent`](examples/store_agent/) · [`custom_routes_agent`](examples/custom_routes_agent/) | Cron, store, custom routes |
+| [`gemini/`](examples/gemini/) | Real Gemini agents for every claimed runner (needs `.env.llm`) |
 
 ## Development
 
@@ -209,6 +210,7 @@ make test-e2e                # Tier-0 black-box E2E
 make test-matrix             # Framework × backend goldens (nightly CI)
 make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
 make test-protocol-execute   # execute_run → expected_events goldens (Python)
+make test-llm-matrix         # live Gemini N×N (requires gitignored .env.llm)
 make infra-up && make build && make lint
 ```
 
