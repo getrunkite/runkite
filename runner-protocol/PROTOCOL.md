@@ -675,6 +675,10 @@ Conformance is validated by running the runner against the golden test fixtures 
 
 The runner is tested with a mock agent that produces deterministic output for each fixture.
 
+Gates in this repo:
+- `make test-protocol-fixtures` — schema + lifecycle invariants on the JSON examples (Go)
+- `make test-protocol-execute` — live `execute_run` with a scripted mock graph, diffed against `expected_events` (Python; also wired into `make test-python`)
+
 ---
 
 ## 15. Versioning

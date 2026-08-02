@@ -207,7 +207,8 @@ make test                    # SQLite + in-memory + protocol fixtures
 make test-all                # All backends (needs infra-up)
 make test-e2e                # Tier-0 black-box E2E
 make test-matrix             # Framework × backend goldens (nightly CI)
-make test-protocol-fixtures  # runner-protocol/examples invariants
+make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
+make test-protocol-execute   # execute_run → expected_events goldens (Python)
 make infra-up && make build && make lint
 ```
 

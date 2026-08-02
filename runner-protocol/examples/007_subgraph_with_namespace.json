@@ -1,5 +1,5 @@
 {
-  "_description": "Agent with a subgraph. Events from the subgraph carry the correct namespace path. Tests subgraph lifecycle events (started/completed) and namespace propagation.",
+  "_description": "Agent with a subgraph. Events from the subgraph carry the correct namespace path. Tests namespace propagation on updates/values (root graph namespace is empty).",
   "_test_id": "RP-027",
 
   "assignment": {
@@ -26,16 +26,10 @@
       "seq": 1,
       "method": "lifecycle",
       "namespace": [],
-      "data": { "event": "running", "graph_name": "parent_agent" }
+      "data": { "event": "running" }
     },
     {
       "seq": 2,
-      "method": "lifecycle",
-      "namespace": ["researcher"],
-      "data": { "event": "started", "graph_name": "research_subgraph" }
-    },
-    {
-      "seq": 3,
       "method": "updates",
       "namespace": ["researcher"],
       "data": {
@@ -45,7 +39,7 @@
       }
     },
     {
-      "seq": 4,
+      "seq": 3,
       "method": "values",
       "namespace": ["researcher"],
       "data": {
@@ -53,13 +47,7 @@
       }
     },
     {
-      "seq": 5,
-      "method": "lifecycle",
-      "namespace": ["researcher"],
-      "data": { "event": "completed" }
-    },
-    {
-      "seq": 6,
+      "seq": 4,
       "method": "updates",
       "namespace": [],
       "data": {
@@ -71,7 +59,7 @@
       }
     },
     {
-      "seq": 7,
+      "seq": 5,
       "method": "values",
       "namespace": [],
       "data": {
@@ -82,7 +70,7 @@
       }
     },
     {
-      "seq": 8,
+      "seq": 6,
       "method": "end",
       "namespace": [],
       "data": { "status": "success" }

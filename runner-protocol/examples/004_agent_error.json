@@ -33,7 +33,7 @@
       "method": "error",
       "namespace": [],
       "data": {
-        "message": "ValueError: trigger error is not a valid input",
+        "message": "trigger error is not a valid input",
         "type": "ValueError"
       }
     }

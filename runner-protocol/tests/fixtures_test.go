@@ -1,10 +1,10 @@
 // Package tests validates committed Runner Protocol example fixtures against
 // the JSON schemas and a small set of lifecycle invariants.
 //
-// This is the PR-gate slice of protocol conformance: it ensures the golden
-// examples under examples/ stay well-formed and consistent with schemas/.
-// It does not execute a runner or diff live event streams (that richer
-// harness is separate work).
+// This is the schema/lifecycle PR-gate slice of protocol conformance: it
+// ensures the golden examples under examples/ stay well-formed. The
+// execute half (live execute_run → diff expected_events) lives in
+// python/tests/test_protocol_execute_goldens.py (make test-protocol-execute).
 package tests
 
 import (

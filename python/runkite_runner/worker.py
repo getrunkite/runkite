@@ -315,10 +315,12 @@ async def execute_run(
 
                 input_data = Command(resume=resume_command.get("response"))
 
-            # Determine stream mode for LangGraph
+            # Determine stream mode for LangGraph. "custom" is included so
+            # agents that write via get_stream_writer() reach the client;
+            # without it those chunks are dropped at the astream call.
             lg_stream_mode = []
             for mode in stream_modes:
-                if mode in ("values", "updates", "messages"):
+                if mode in ("values", "updates", "messages", "custom"):
                     lg_stream_mode.append(mode)
             if not lg_stream_mode:
                 lg_stream_mode = ["values"]
@@ -327,9 +329,24 @@ async def execute_run(
             has_interrupt = False
 
             async for chunk in graph.astream(input_data, config=config, stream_mode=lg_stream_mode):
-                # LangGraph returns different shapes based on stream_mode
-                if isinstance(chunk, tuple) and len(chunk) == 2:
-                    mode, data = chunk
+                # LangGraph chunk shapes:
+                #   data
+                #   (mode, data)                         -- multi stream_mode
+                #   (namespace, data)                    -- subgraphs=True, one mode
+                #   (namespace, mode, data)              -- subgraphs=True, multi mode
+                # Namespace is a tuple of strings (empty for the root graph).
+                namespace: list = []
+                if isinstance(chunk, tuple) and len(chunk) == 3:
+                    ns, mode, data = chunk
+                    namespace = list(ns) if ns else []
+                elif isinstance(chunk, tuple) and len(chunk) == 2:
+                    first, second = chunk
+                    if isinstance(first, (tuple, list)) and not isinstance(first, (str, bytes)):
+                        namespace = list(first)
+                        mode = lg_stream_mode[0] if len(lg_stream_mode) == 1 else "values"
+                        data = second
+                    else:
+                        mode, data = first, second
                 else:
                     mode = lg_stream_mode[0] if len(lg_stream_mode) == 1 else "values"
                     data = chunk
@@ -343,6 +360,7 @@ async def execute_run(
                                 "args": tc.get("args"),
                                 "id": tc.get("id"),
                             },
+                            namespace=namespace,
                         )
                     )
 
@@ -351,45 +369,62 @@ async def execute_run(
                     has_interrupt = True
                     interrupts = data["__interrupt__"]
                     # Emit lifecycle interrupted
-                    await event_callback(make_event("lifecycle", {"event": "interrupted"}))
+                    await event_callback(make_event("lifecycle", {"event": "interrupted"}, namespace=namespace))
                     # Emit input.requested for each interrupt
                     for interrupt in interrupts if isinstance(interrupts, (list, tuple)) else [interrupts]:
                         interrupt_id = None
                         interrupt_value = None
+                        interrupt_description = None
                         if isinstance(interrupt, dict):
                             interrupt_id = interrupt.get("id", f"interrupt-{seq}")
                             interrupt_value = interrupt.get("value")
+                            interrupt_description = interrupt.get("description")
                         elif hasattr(interrupt, "id"):
                             interrupt_id = interrupt.id
                             interrupt_value = getattr(interrupt, "value", None)
+                            interrupt_description = getattr(interrupt, "description", None)
                         else:
                             interrupt_id = f"interrupt-{seq}"
                             interrupt_value = interrupt
 
-                        await event_callback(
-                            make_event(
-                                "input.requested",
-                                {
-                                    "interrupt_id": interrupt_id,
-                                    "value": interrupt_value,
-                                },
-                            )
-                        )
+                        req: dict[str, Any] = {
+                            "interrupt_id": interrupt_id,
+                            "value": interrupt_value,
+                        }
+                        if interrupt_description is not None:
+                            req["description"] = interrupt_description
+                        await event_callback(make_event("input.requested", req, namespace=namespace))
 
                     # Clean data for the values event
                     clean_data = {k: v for k, v in data.items() if k != "__interrupt__"}
                     if clean_data:
-                        await event_callback(make_event(mode, clean_data))
+                        await event_callback(make_event(mode, clean_data, namespace=namespace))
+                    if cancel_event is not None and cancel_event.is_set():
+                        await event_callback(make_event("end", {"status": "interrupted"}))
+                        return "interrupted"
                     continue
 
-                # Check for cancellation
+                # Named custom channels become method "custom:<name>" so
+                # clients can subscribe without inspecting every custom
+                # payload; bare custom chunks stay method "custom".
+                method = mode
+                if mode == "custom" and isinstance(data, dict) and data.get("name"):
+                    method = f"custom:{data['name']}"
+
+                await event_callback(make_event(method, data, namespace=namespace))
+
+                # Cancel is checked after emitting the chunk that was in
+                # flight: a signal arriving mid-chunk still lets that
+                # chunk reach the client, then we terminate. Checking only
+                # before emit (or only when another chunk arrives) dropped
+                # cancels that landed after the agent's last stream item.
                 if cancel_event is not None and cancel_event.is_set():
                     await event_callback(make_event("end", {"status": "interrupted"}))
                     return "interrupted"
 
-                # Normal event
-                await event_callback(make_event(mode, data))
-
+            if cancel_event is not None and cancel_event.is_set():
+                await event_callback(make_event("end", {"status": "interrupted"}))
+                return "interrupted"
             if has_interrupt:
                 await event_callback(make_event("end", {"status": "interrupted"}))
                 return "interrupted"
