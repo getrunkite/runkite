@@ -40,12 +40,24 @@ func TestLangChainAdapter_RunsToCompletion(t *testing.T) {
 		t.Fatalf("expected run to succeed, got %v\n--- runner log ---\n%s", finalRun, currentRunnerLog())
 	}
 
-	var threadState map[string]interface{}
-	getJSON(t, "/threads/"+threadID, &threadState)
-	values, _ := threadState["values"].(map[string]interface{})
-	messages, _ := values["messages"].([]interface{})
+	// Poll for thread.values (not only run status). StatusCallback writes
+	// values before flipping status, but keep a short wait so a slow store
+	// write cannot flake this assertion under CI load.
+	var values map[string]interface{}
+	var messages []interface{}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var threadState map[string]interface{}
+		getJSON(t, "/threads/"+threadID, &threadState)
+		values, _ = threadState["values"].(map[string]interface{})
+		messages, _ = values["messages"].([]interface{})
+		if len(messages) == 2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if len(messages) != 2 {
-		t.Fatalf("expected 2 messages (human + ai reply) in thread values, got %v", values)
+		t.Fatalf("expected 2 messages (human + ai reply) in thread values, got %v\n--- runner log ---\n%s", values, currentRunnerLog())
 	}
 	lastMsg, _ := messages[1].(map[string]interface{})
 	if content, _ := lastMsg["content"].(string); content == "" {

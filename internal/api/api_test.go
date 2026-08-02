@@ -696,6 +696,17 @@ func TestCheckpoint_BackgroundRunPollPattern(t *testing.T) {
 	if ts.Values["messages"] == nil {
 		t.Fatalf("expected thread.state.values to be populated, got %+v", ts.Values)
 	}
+
+	// GET /threads/{id} (the create+poll client's next hop after seeing
+	// run status success) must already have values -- StatusCallback
+	// writes them before flipping the run status.
+	respThread, _ := http.Get(env.srv.URL + "/threads/bg-thread")
+	expectStatus(t, respThread, 200)
+	var thread models.Thread
+	json.Unmarshal(readBody(t, respThread), &thread)
+	if thread.Values["messages"] == nil {
+		t.Fatalf("expected GET /threads values populated after success, got %+v", thread.Values)
+	}
 }
 
 func TestAP024_ThreadHistory(t *testing.T) {

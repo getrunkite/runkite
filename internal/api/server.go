@@ -398,10 +398,40 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		}
 		ctx := tenant.WithContext(context.Background(), run.TenantID)
 
+		// Persist checkpoint + thread.values BEFORE advertising a terminal
+		// run status. Clients that poll create+GET /runs until success then
+		// immediately GET /threads/{id} must not observe success with empty
+		// values -- that race was a real CI flake in the LangChain adapter
+		// e2e (status flipped first; values write landed a moment later).
+		// Still unconditional for every run (not only wait/stream handlers):
+		// fire-and-forget create + poll is a first-class Agent Protocol path.
+		var cachedVals map[string]interface{}
+		if events, replayErr := s.broker.Replay(ctx, runID, 0); replayErr == nil {
+			for i := len(events) - 1; i >= 0; i-- {
+				if events[i].Method == "values" {
+					var vals map[string]interface{}
+					if json.Unmarshal(events[i].Data, &vals) == nil && len(vals) > 0 {
+						cachedVals = vals
+						s.saveRunCheckpoint(ctx, run.ThreadID, vals)
+						if _, err := s.store.UpdateThread(ctx, run.ThreadID, &models.ThreadPatch{Values: vals}); err != nil {
+							slog.Error("status callback: failed to update thread values", "thread_id", run.ThreadID, "error", err)
+						}
+					}
+					break
+				}
+			}
+		} else {
+			slog.Error("status callback: failed to replay events for checkpoint", "run_id", runID, "error", replayErr)
+		}
+
 		if !tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
 			return s.store.UpdateRunStatus(ctx, runID, status, nil, errorMsg)
 		}) {
 			return
+		}
+
+		if status == models.RunStatusSuccess && cachedVals != nil {
+			s.maybeCacheRunResult(ctx, run, cachedVals)
 		}
 
 		// Record run completion metrics
@@ -426,33 +456,6 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 		if ok && !released {
 			slog.Info("status callback: skipping thread release; another run is in-flight or thread already released",
 				"thread_id", run.ThreadID, "completed_run_id", runID)
-		}
-
-		// Persist a checkpoint from the run's last "values" event and update
-		// thread.values. This must happen here -- unconditionally, for every
-		// run -- rather than only inside the HTTP wait/stream handlers, so
-		// that checkpoint history and GET /threads/{id}/state work
-		// regardless of how the client observed the run (fire-and-forget
-		// create + poll is a first-class Agent Protocol pattern, not just
-		// create-and-wait/create-and-stream).
-		if events, replayErr := s.broker.Replay(ctx, runID, 0); replayErr == nil {
-			for i := len(events) - 1; i >= 0; i-- {
-				if events[i].Method == "values" {
-					var vals map[string]interface{}
-					if json.Unmarshal(events[i].Data, &vals) == nil && len(vals) > 0 {
-						s.saveRunCheckpoint(ctx, run.ThreadID, vals)
-						if _, err := s.store.UpdateThread(ctx, run.ThreadID, &models.ThreadPatch{Values: vals}); err != nil {
-							slog.Error("status callback: failed to update thread values", "thread_id", run.ThreadID, "error", err)
-						}
-						if status == models.RunStatusSuccess {
-							s.maybeCacheRunResult(ctx, run, vals)
-						}
-					}
-					break
-				}
-			}
-		} else {
-			slog.Error("status callback: failed to replay events for checkpoint", "run_id", runID, "error", replayErr)
 		}
 
 		// Close the event broker so SSE/wait consumers know the run is done
