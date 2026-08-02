@@ -68,14 +68,12 @@ func TestMCPSessionOwner_MiddlewareTracksNewSessionFromResponseHeader(t *testing
 	}
 }
 
-// TestMCPSessionOwner_MiddlewareAllowsUnknownSessionThrough proves an
-// Mcp-Session-Id the middleware has never seen (e.g. this process just
-// restarted, or the SDK's own routing will reject it anyway) is passed
-// through rather than rejected outright -- this middleware's job is
-// catching a MISMATCH against a KNOWN owner, not acting as its own
-// session-existence check (the SDK's own "session not found" already
-// covers that).
-func TestMCPSessionOwner_MiddlewareAllowsUnknownSessionThrough(t *testing.T) {
+// TestMCPSessionOwner_MiddlewareRejectsUnknownSession proves an
+// Mcp-Session-Id the middleware has never seen (guessed, leaked after
+// restart, or swept) is rejected at the ownership layer -- pass-through
+// used to reopen cross-tenant hijack when the SDK session was still
+// alive after the ownership record was gone.
+func TestMCPSessionOwner_MiddlewareRejectsUnknownSession(t *testing.T) {
 	o := newMCPSessionOwner(mcpSessionTTL, mcpSessionSweepInterval)
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,11 +87,11 @@ func TestMCPSessionOwner_MiddlewareAllowsUnknownSessionThrough(t *testing.T) {
 	rec := httptest.NewRecorder()
 	o.middleware(next).ServeHTTP(rec, req)
 
-	if !called {
-		t.Fatal("expected an unrecognized session ID to be passed through to the wrapped handler")
+	if called {
+		t.Fatal("expected an unrecognized session ID to be rejected before the wrapped handler")
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
 
@@ -208,9 +206,11 @@ func TestMCPSDKSessionTimeout_ClosesBeforeHijackWindowReopens(t *testing.T) {
 		t.Fatal("expected the ownership record to have been swept by now -- test's own wait is too short")
 	}
 
-	// A mismatched caller presenting the now-unowned session ID must
-	// NOT get a successful dispatch under tenant-a's now-abandoned
-	// session -- the SDK's own session must already be closed too.
+	// After ownership is swept, any caller presenting that session ID
+	// must get 403 at the ownership layer (unknown/expired) -- not a
+	// 200 dispatch under the abandoned SDK session. SDK SessionTimeout
+	// still closes the underlying session for resource cleanup; the
+	// security boundary is reject-unknown here.
 	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
 	req, _ := http.NewRequest(http.MethodPost, srv.URL, body)
 	req.Header.Set("X-Test-Caller", "tenant-b")
@@ -222,9 +222,8 @@ func TestMCPSDKSessionTimeout_ClosesBeforeHijackWindowReopens(t *testing.T) {
 		t.Fatalf("post-expiry request: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
-		t.Fatal("expected the SDK's own session to already be closed by now (not a 200 dispatch under " +
-			"the original tenant's abandoned session)")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for swept/unknown session ID, got %d", resp.StatusCode)
 	}
 }
 

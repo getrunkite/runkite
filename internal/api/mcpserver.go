@@ -277,13 +277,11 @@ const (
 	// live-confirmed gap: leaving this at the SDK's own default (zero
 	// = idle sessions never close) meant a session could still be
 	// alive and answering requests long after mcpSessionOwner's own
-	// ownership record for it had been swept at mcpSessionTTL. Once
-	// that happens, an unrecognized (evicted) session ID is
-	// deliberately treated as "pass through, let the SDK's routing
-	// decide" (see the middleware's own doc comment on why an unknown
-	// ID isn't outright rejected) -- which reopens the exact
-	// cross-tenant hijack window this middleware exists to close,
-	// just after mcpSessionTTL of activity instead of never.
+	// ownership record for it had been swept at mcpSessionTTL.
+	// Ownership middleware now rejects unknown session IDs outright
+	// (so a swept record cannot reopen a cross-tenant hijack), but
+	// the SDK session must still close first so we do not keep idle
+	// SDK state around after the ownership map has forgotten it.
 	//
 	// The margin below mcpSessionTTL (a full sweep interval, not just
 	// one tick less) matters too: an ownership record idle for exactly
@@ -351,6 +349,13 @@ func mcpCallerKey(ctx context.Context) string {
 // HTTP layer, not inside a tool handler, because a tool handler only
 // ever sees the caller who created the session (see newMCPServer's own
 // doc comment for why), never the CURRENT request's actual caller.
+//
+// A non-empty Mcp-Session-Id that is not in the ownership map is
+// rejected (403). Pass-through on unknown IDs used to reopen the
+// cross-tenant hijack window after a sweep/restart whenever the SDK
+// session was still alive; rejecting unknown IDs closes that edge.
+// Brand-new sessions omit the request header (initialize), so they
+// still reach the SDK and get recorded from the response header.
 func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller := mcpCallerKey(r.Context())
@@ -360,20 +365,25 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 			o.mu.Lock()
 			entry, exists := o.sessions[sessionID]
 			o.mu.Unlock()
-			if exists && entry.caller != caller {
+			if !exists {
+				writeError(w, http.StatusForbidden, "mcp session unknown or expired")
+				return
+			}
+			if entry.caller != caller {
 				writeError(w, http.StatusForbidden, "mcp session belongs to a different caller")
 				return
 			}
 		}
 
-		next.ServeHTTP(w, r)
+		// Capture the session ID as the SDK sets it on the response.
+		// Some Streamable HTTP write paths set the header then write
+		// the body in ways where a post-hoc Header().Get on the
+		// original ResponseWriter can miss it under load; snapshot on
+		// Write/WriteHeader so ownership always records.
+		cw := &mcpSessionHeaderCapture{ResponseWriter: w}
+		next.ServeHTTP(cw, r)
 
-		// A brand-new session's ID is only known AFTER the wrapped
-		// handler runs -- the SDK assigns it and sets this same
-		// response header on the "initialize" call. Record ownership
-		// then; for an existing session's later request, this just
-		// refreshes lastSeen for the sweep below.
-		if newID := w.Header().Get(mcpSessionIDHeader); newID != "" {
+		if newID := cw.sessionID(); newID != "" {
 			o.mu.Lock()
 			o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
 			o.mu.Unlock()
@@ -395,6 +405,51 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 			o.mu.Unlock()
 		}
 	})
+}
+
+// mcpSessionHeaderCapture records Mcp-Session-Id when the handler sets
+// it, including write paths that flush headers before the outer
+// middleware reads w.Header() again.
+type mcpSessionHeaderCapture struct {
+	http.ResponseWriter
+	captured string
+}
+
+func (c *mcpSessionHeaderCapture) snap() {
+	if c.captured != "" {
+		return
+	}
+	if id := c.ResponseWriter.Header().Get(mcpSessionIDHeader); id != "" {
+		c.captured = id
+	}
+}
+
+func (c *mcpSessionHeaderCapture) WriteHeader(statusCode int) {
+	c.snap()
+	c.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (c *mcpSessionHeaderCapture) Write(b []byte) (int, error) {
+	c.snap()
+	return c.ResponseWriter.Write(b)
+}
+
+func (c *mcpSessionHeaderCapture) sessionID() string {
+	c.snap()
+	return c.captured
+}
+
+// Flush keeps Streamable HTTP SSE working when the underlying writer
+// supports it -- wrapping ResponseWriter otherwise strips http.Flusher.
+func (c *mcpSessionHeaderCapture) Flush() {
+	c.snap()
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (c *mcpSessionHeaderCapture) Unwrap() http.ResponseWriter {
+	return c.ResponseWriter
 }
 
 // sweepOnce evicts ownership records untouched since before cutoff,
