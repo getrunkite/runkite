@@ -270,8 +270,16 @@ type CronEntry struct {
 // sidecar mode (a user-run, language-agnostic process) are the exact same
 // mechanism -- a reverse proxy to a URL. URL is where either kind of
 // process is expected to be listening.
+// CustomRoutesEntry mounts a product-owned HTTP app beside the Agent
+// Protocol API. The control plane reverse-proxies Mount/* to URL and
+// strips Mount before forwarding (see internal/customroutes).
 type CustomRoutesEntry struct {
 	URL string `json:"url"`
+	// Mount is the external URL prefix (default "/custom"). Use a
+	// product-specific prefix (e.g. "/sales-assistant") when the
+	// frontend already calls bare product paths and you don't want a
+	// /custom shim. Must not collide with Agent Protocol reserved paths.
+	Mount string `json:"mount,omitempty"`
 }
 
 // CacheEntry configures whole-run result caching for one agent.

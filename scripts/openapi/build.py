@@ -818,7 +818,7 @@ def _build_public_spec() -> dict:
         "get": {
             "tags": ["Platform"],
             "summary": "Custom Routes (proxy)",
-            "description": "Reverse-proxy prefix for user-defined HTTP endpoints. All methods are proxied; GET is representative. 404 if custom_routes is not configured.",
+            "description": "Reverse-proxy prefix for user-defined HTTP endpoints (default mount /custom; configurable via custom_routes.mount). All methods are proxied; GET is representative. Identity is injected as X-Runkite-* headers. 404 if custom_routes is not configured.",
             "operationId": "custom_routes_proxy",
             "responses": {"200": {"description": "Proxied response"}, "404": _ERR_404},
         }

@@ -44,17 +44,36 @@ Standard closed/open/half-open state machine: closed passes calls through and co
 
 ## Custom Routes
 
-User-defined HTTP endpoints mounted at `/custom/*` alongside the Agent Protocol API. From the control plane's side, both modes below are the exact same mechanism -- a reverse proxy to `custom_routes.url` in `langgraph.json`, with the `/custom` prefix stripped before forwarding (`/custom/webhook` reaches the target as `/webhook`). Unreachable target returns `502`; unconfigured returns `404`.
+User-defined HTTP endpoints mounted alongside the Agent Protocol API so a product can add feedback, favourites, OAuth callbacks, etc. **without forking the control plane**.
 
-**Sidecar mode** (language-agnostic): run any HTTP service yourself, point `custom_routes.url` at it. Works for non-Python routes, or routes that need independent scaling/deployment from the runner.
-
-**In-runner mode** (Python, simplest DX): the runner SDK hosts your ASGI app itself, via `uvicorn`, as a background task alongside its own gRPC poll loop -- "similar to dropping a file in your project":
+From the control plane's side, both modes below are the same mechanism: a reverse proxy to `custom_routes.url`, with the configured **mount** prefix stripped before forwarding (`/custom/webhook` → `{url}/webhook`, or `/sales-assistant/v1/x` → `{url}/v1/x`). Unreachable target returns `502`; unconfigured returns `404`.
 
 ```json
 {
-  "custom_routes": { "url": "http://127.0.0.1:8100" },
+  "custom_routes": {
+    "url": "http://127.0.0.1:8100",
+    "mount": "/custom"
+  },
   "custom_app": { "module": "./app.py:app", "host": "127.0.0.1", "port": 8100 }
 }
 ```
 
-`custom_app.module` uses the same `path:symbol` convention as `graphs`. Works with FastAPI, Starlette, or any ASGI-callable -- `uvicorn` is the only SDK dependency, not a specific framework. WSGI frameworks (e.g. Flask) need an ASGI adapter (e.g. `a2wsgi.WSGIMiddleware`) first, since `uvicorn` only serves ASGI. Because it shares the runner's own process and event loop, a slow custom-route handler can, in principle, delay the runner's own async work -- use sidecar mode instead if a route needs isolation or independent scaling. See `examples/custom_routes_agent/` for a working FastAPI example.
+`mount` defaults to `/custom`. Use a product prefix (e.g. `/sales-assistant`) when the frontend already calls bare product paths — no shim that rewrites `/v1/...` → `/custom/v1/...` is required. Mounts that collide with Agent Protocol reserved paths (`/threads`, `/admin`, `/internal`, …) are rejected at startup.
+
+**Sidecar mode** (language-agnostic): run any HTTP service yourself, point `custom_routes.url` at it.
+
+**In-runner mode** (Python or TypeScript): the runner hosts your ASGI / Node `RequestListener` beside its poll loop. `custom_app.module` uses the same `path:symbol` convention as `graphs`. WSGI needs an ASGI adapter. A slow handler can delay runner work — prefer sidecar for isolation.
+
+### Identity headers (portable auth)
+
+Custom routes go through the same client auth middleware as the Agent Protocol API. After auth succeeds, the proxy **strips** any inbound `X-Runkite-*` identity headers (anti-spoof) and **injects**:
+
+| Header | Meaning |
+|--------|---------|
+| `X-Runkite-Identity` | Authenticated identity |
+| `X-Runkite-Tenant-Id` | Resolved tenant (or `default`) |
+| `X-Runkite-Permissions` | Comma-separated permissions |
+| `X-Runkite-Display-Name` | Optional display name |
+| `X-Runkite-User` | JSON object with the above fields |
+
+`Authorization` is still forwarded if present. Custom apps should treat the `X-Runkite-*` headers as the trust boundary for "who is this?" when traffic arrives via the control plane. Python helpers: `runkite_runner.custom_auth.user_from_request` and `runkite_runner.custom_helpers.ControlPlaneClient` (store/thread/run HTTP calls with the caller's Bearer). See `examples/custom_routes_agent/` (`/ping`, `/whoami`).

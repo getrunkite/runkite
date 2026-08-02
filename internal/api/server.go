@@ -22,6 +22,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/adminui"
 	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/customroutes"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
@@ -41,7 +42,8 @@ type Server struct {
 	connectors  *connector.Registry     // nil if no connectors configured
 	rateLimit   *ratelimit.Limiter      // nil-safe: nil behaves as disabled
 	hooks       *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
-	customProxy http.Handler            // nil if no custom_routes configured; mounted at /custom/
+	customProxy http.Handler // nil if no custom_routes configured
+	customMount string       // external prefix (default /custom); read on every request
 	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
 	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through
@@ -119,11 +121,19 @@ func (s *Server) SetHookDispatcher(d *hooks.Dispatcher) {
 	s.hooks = d
 }
 
-// SetCustomRoutesProxy attaches a reverse proxy to be mounted at /custom/*,
-// the platform's user-defined-routes feature. Called after NewServer when
-// custom_routes is configured; nil (the default) means /custom/* 404s.
-func (s *Server) SetCustomRoutesProxy(proxy http.Handler) {
+// SetCustomRoutesProxy attaches a reverse proxy for user-defined routes.
+// mount is the external URL prefix (e.g. "/custom" or "/sales-assistant");
+// empty means customroutes.DefaultMount. Called after NewServer when
+// custom_routes is configured; nil proxy (the default) means the mount 404s.
+//
+// Mount is read on every request (same reason as the proxy field itself —
+// Handler() is often built before SetCustomRoutesProxy in tests).
+func (s *Server) SetCustomRoutesProxy(proxy http.Handler, mount string) {
 	s.customProxy = proxy
+	if mount == "" {
+		mount = customroutes.DefaultMount
+	}
+	s.customMount = mount
 }
 
 // SetVectorStore attaches a vector/semantic store. Called after NewServer
@@ -325,33 +335,26 @@ func (s *Server) Handler() http.Handler {
 	// is what actually gates access, via /admin-api/* requiring "admin".
 	mux.Handle("GET /admin/", http.StripPrefix("/admin", adminui.Handler()))
 
-	// Custom routes -- user-defined HTTP endpoints mounted alongside the
-	// Agent Protocol API. In-runner mode
-	// (the Python runner SDK hosts the user's ASGI app) and sidecar mode
-	// (a separately-run, language-agnostic process) are the exact same
-	// mechanism from here: a reverse proxy to a configured URL. Mounted
-	// inside the same client auth as the rest of the API by default (see
-	// cmd/serve.go's middleware chain) -- the user's app can layer its own
-	// auth on top if it needs something different.
-	//
-	// Registered unconditionally (unlike a plain nil-check at Handler()
-	// build time) because SetCustomRoutesProxy is always called *after*
-	// Handler() has already been built and handed to the HTTP server (see
-	// cmd/serve.go and every test's newTestEnv) -- net/http.ServeMux has no
-	// way to add a route after the fact, so the proxy field must be read
-	// fresh on every request instead of baked into a one-time routing
-	// decision, the same way s.hooks/s.rateLimit/s.connectors already are.
-	mux.HandleFunc("/custom/", s.handleCustomRoute)
-
-	return mux
-}
-
-func (s *Server) handleCustomRoute(w http.ResponseWriter, r *http.Request) {
-	if s.customProxy == nil {
-		writeError(w, http.StatusNotFound, "custom routes not configured")
-		return
-	}
-	s.customProxy.ServeHTTP(w, r)
+	// Custom routes are dispatched in the wrapper below (not registered on
+	// the mux) so the mount prefix can be configured after Handler() is
+	// built — same dynamic-field pattern as hooks/rateLimit/connectors.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mount := s.customMount
+		if mount == "" {
+			mount = customroutes.DefaultMount
+		}
+		if s.customProxy != nil && customroutes.Matches(mount, r.URL.Path) {
+			s.customProxy.ServeHTTP(w, r)
+			return
+		}
+		// Unconfigured default mount still 404s with a clear message when
+		// someone hits /custom/* with no custom_routes config.
+		if s.customProxy == nil && customroutes.Matches(customroutes.DefaultMount, r.URL.Path) {
+			writeError(w, http.StatusNotFound, "custom routes not configured")
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // GET /internal/webhooks/dead-letters?limit=N

@@ -151,7 +151,7 @@ Observational lifecycle webhooks (`webhooks` in config) cannot reject runs. Sync
 
 ### Custom Routes
 ```
-*      /custom/*                  Reverse-proxied to custom_routes.url, /custom prefix stripped
+*      {mount}/*                  Reverse-proxied to custom_routes.url (default mount `/custom`); mount prefix stripped; X-Runkite-* identity headers injected
 ```
 
 ### Cron Scheduler

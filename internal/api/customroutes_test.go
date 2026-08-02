@@ -4,18 +4,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
 	"net/url"
 	"testing"
-)
 
-// buildTestCustomProxy mirrors cmd/serve.go's initCustomRoutesProxy exactly
-// (strip /custom, reverse-proxy the rest) so this test exercises the same
-// mounting logic the real binary uses, without needing to spin up the
-// actual binary + config file parsing for a unit test.
-func buildTestCustomProxy(target *url.URL) http.Handler {
-	return http.StripPrefix("/custom", httputil.NewSingleHostReverseProxy(target))
-}
+	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/customroutes"
+)
 
 // TestCustomRoutes_ProxiesAndStripsPrefix proves /custom/* is forwarded to
 // the configured URL with the /custom prefix stripped -- the user's
@@ -31,8 +25,13 @@ func TestCustomRoutes_ProxiesAndStripsPrefix(t *testing.T) {
 	defer backend.Close()
 
 	target, _ := url.Parse(backend.URL)
+	proxy, err := customroutes.NewProxy(target, "/custom")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	env := newTestEnv(t)
-	env.apiServer.SetCustomRoutesProxy(buildTestCustomProxy(target))
+	env.apiServer.SetCustomRoutesProxy(proxy, "/custom")
 
 	resp, err := http.Post(env.srv.URL+"/custom/webhook/incoming", "application/json", nil)
 	if err != nil {
@@ -55,6 +54,37 @@ func TestCustomRoutes_ProxiesAndStripsPrefix(t *testing.T) {
 	}
 }
 
+// TestCustomRoutes_ConfigurableMount proves a product-specific mount
+// (not /custom) is honored end-to-end through the API server wrapper.
+func TestCustomRoutes_ConfigurableMount(t *testing.T) {
+	var gotPath string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	target, _ := url.Parse(backend.URL)
+	proxy, err := customroutes.NewProxy(target, "/sales-assistant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := newTestEnv(t)
+	env.apiServer.SetCustomRoutesProxy(proxy, "/sales-assistant")
+
+	resp, err := http.Get(env.srv.URL + "/sales-assistant/v1/favourites")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if gotPath != "/v1/favourites" {
+		t.Errorf("want /v1/favourites, got %q", gotPath)
+	}
+}
+
 // TestCustomRoutes_UnconfiguredIs404 proves the default (no
 // SetCustomRoutesProxy call, matching production with no custom_routes
 // config) leaves /custom/* as a plain 404, not a panic or hang.
@@ -71,17 +101,16 @@ func TestCustomRoutes_UnconfiguredIs404(t *testing.T) {
 }
 
 // TestCustomRoutes_BackendDownReturns502 proves a genuinely unreachable
-// backend surfaces as 502 (via the ErrorHandler configured in
-// initCustomRoutesProxy), not a hang or a raw connection-refused panic.
+// backend surfaces as 502, not a hang or a raw connection-refused panic.
 func TestCustomRoutes_BackendDownReturns502(t *testing.T) {
 	unreachable, _ := url.Parse("http://127.0.0.1:1") // port 1: nothing listens there
-	proxy := httputil.NewSingleHostReverseProxy(unreachable)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		w.WriteHeader(http.StatusBadGateway)
+	proxy, err := customroutes.NewProxy(unreachable, "/custom")
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	env := newTestEnv(t)
-	env.apiServer.SetCustomRoutesProxy(http.StripPrefix("/custom", proxy))
+	env.apiServer.SetCustomRoutesProxy(proxy, "/custom")
 
 	resp, err := http.Get(env.srv.URL + "/custom/anything")
 	if err != nil {
@@ -90,5 +119,51 @@ func TestCustomRoutes_BackendDownReturns502(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("expected 502 for an unreachable backend, got %d", resp.StatusCode)
+	}
+}
+
+// TestCustomRoutes_InjectsAuthIdentityThroughAPIServer proves the
+// identity headers reach the backend when the request is authenticated
+// through the real auth middleware + API server path.
+func TestCustomRoutes_InjectsAuthIdentityThroughAPIServer(t *testing.T) {
+	var gotID, gotTenant string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotID = r.Header.Get(customroutes.HeaderIdentity)
+		gotTenant = r.Header.Get(customroutes.HeaderTenantID)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	target, _ := url.Parse(backend.URL)
+	proxy, err := customroutes.NewProxy(target, "/custom")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	env := newTestEnv(t)
+	env.apiServer.SetCustomRoutesProxy(proxy, "/custom")
+	provider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"test-key": {Name: "tester", TenantID: "t1", Permissions: []string{"admin"}},
+	})
+	env.srv.Close()
+	env.srv = httptest.NewServer(auth.Middleware(provider, nil, nil, env.apiServer.Handler()))
+	t.Cleanup(env.srv.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, env.srv.URL+"/custom/whoami", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set(customroutes.HeaderIdentity, "spoofed")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if gotID != "tester" {
+		t.Errorf("identity: want tester, got %q", gotID)
+	}
+	if gotTenant != "t1" {
+		t.Errorf("tenant: want t1, got %q", gotTenant)
 	}
 }

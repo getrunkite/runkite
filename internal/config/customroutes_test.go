@@ -13,7 +13,7 @@ func TestLoadLangGraphJSON_CustomRoutes(t *testing.T) {
 	dir := t.TempDir()
 	content := `{
 		"graphs": {"echo": "graph.py:graph"},
-		"custom_routes": {"url": "http://127.0.0.1:8100"}
+		"custom_routes": {"url": "http://127.0.0.1:8100", "mount": "/sales-assistant"}
 	}`
 	path := filepath.Join(dir, "langgraph.json")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -26,6 +26,9 @@ func TestLoadLangGraphJSON_CustomRoutes(t *testing.T) {
 	}
 	if cfg.CustomRoutes == nil || cfg.CustomRoutes.URL != "http://127.0.0.1:8100" {
 		t.Errorf("expected custom_routes.url parsed, got %+v", cfg.CustomRoutes)
+	}
+	if cfg.CustomRoutes.Mount != "/sales-assistant" {
+		t.Errorf("expected custom_routes.mount parsed, got %q", cfg.CustomRoutes.Mount)
 	}
 }
 

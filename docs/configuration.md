@@ -34,7 +34,7 @@
   "llm_cache": {
     "my_agent": { "ttl_seconds": 3600 }
   },
-  "custom_routes": { "url": "http://127.0.0.1:8100" },
+  "custom_routes": { "url": "http://127.0.0.1:8100", "mount": "/custom" },
   "cron": {
     "daily-report": {
       "agent_id": "my_agent",

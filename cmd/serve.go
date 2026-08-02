@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/http/pprof"
 	"net/url"
 	"os"
@@ -37,6 +36,7 @@ import (
 	"github.com/getrunkite/runkite/internal/config"
 	"github.com/getrunkite/runkite/internal/connector"
 	"github.com/getrunkite/runkite/internal/cors"
+	"github.com/getrunkite/runkite/internal/customroutes"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
@@ -308,10 +308,10 @@ func startServer(opts serverOpts) {
 	}
 
 	// Custom routes: in-runner + sidecar modes -- both are a reverse
-	// proxy from here, see internal/api's doc comment.
-	if proxy, url := initCustomRoutesProxy(opts.configPath); proxy != nil {
-		apiServer.SetCustomRoutesProxy(proxy)
-		slog.Info("custom routes: enabled", "proxy_url", url, "mount", "/custom/*")
+	// proxy from here, see internal/customroutes.
+	if proxy, url, mount := initCustomRoutesProxy(opts.configPath); proxy != nil {
+		apiServer.SetCustomRoutesProxy(proxy, mount)
+		slog.Info("custom routes: enabled", "proxy_url", url, "mount", mount+"/*")
 	}
 
 	// Cron scheduler: cron-expression scheduling with multi-instance-safe
@@ -1396,34 +1396,35 @@ func initCorsConfig(configPath string) *cors.Config {
 // initCustomRoutesProxy reads the "custom_routes" section from the first
 // discovered langgraph.json (same control-plane-wide/first-file convention
 // as initAuthProvider/initRateLimiter/initHooks) and builds a reverse proxy
-// to it. Returns (nil, "") if unconfigured -- /custom/* then 404s, no
+// to it. Returns (nil, "", "") if unconfigured -- the mount then 404s, no
 // background connections attempted, matching this project's
 // disabled-by-default-until-configured convention for every platform
 // extension.
-func initCustomRoutesProxy(configPath string) (http.Handler, string) {
+func initCustomRoutesProxy(configPath string) (http.Handler, string, string) {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
-		return nil, ""
+		return nil, "", ""
 	}
 	cfg, err := config.LoadLangGraphJSON(paths[0])
 	if err != nil || cfg.CustomRoutes == nil || cfg.CustomRoutes.URL == "" {
-		return nil, ""
+		return nil, "", ""
 	}
 	target, err := url.Parse(cfg.CustomRoutes.URL)
 	if err != nil {
 		slog.Error("custom_routes.url is not a valid URL", "url", cfg.CustomRoutes.URL, "error", err)
-		return nil, ""
+		return nil, "", ""
 	}
-
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		slog.Error("custom route proxy error", "path", r.URL.Path, "target", target.String(), "error", err)
-		w.WriteHeader(http.StatusBadGateway)
+	mount, err := customroutes.NormalizeMount(cfg.CustomRoutes.Mount)
+	if err != nil {
+		slog.Error("custom_routes.mount is invalid", "mount", cfg.CustomRoutes.Mount, "error", err)
+		return nil, "", ""
 	}
-	// Strip the /custom prefix -- the user's app/sidecar sees paths as if
-	// it were mounted at the root (e.g. /custom/webhook -> {url}/webhook),
-	// not as if it needed to know about runkite's own mount point.
-	return http.StripPrefix("/custom", proxy), target.String()
+	proxy, err := customroutes.NewProxy(target, mount)
+	if err != nil {
+		slog.Error("custom_routes proxy setup failed", "error", err)
+		return nil, "", ""
+	}
+	return proxy, target.String(), mount
 }
 
 // initHooks reads the "webhooks" and "preflight_hooks" sections from the

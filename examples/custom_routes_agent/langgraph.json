@@ -1,6 +1,9 @@
 {
   "graphs": {"custom_routes_agent": "./graph.py:graph"},
   "dependencies": ["."],
-  "custom_routes": {"url": "http://127.0.0.1:8100"},
+  "custom_routes": {
+    "url": "http://127.0.0.1:8100",
+    "mount": "/custom"
+  },
   "custom_app": {"module": "./app.py:app", "host": "127.0.0.1", "port": 8100}
 }
