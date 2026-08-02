@@ -426,7 +426,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 				return nil, nil, &errRunRetryRace{run: existing}
 			}
 		}
-		return nil, nil, &state.ErrConflict{Resource: "thread", ID: threadID}
+		// Reason must say "busy", not the default "already exists" --
+		// TryClaimThread failing means another run owns the thread, not
+		// that the thread_id is a duplicate create.
+		return nil, nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "is busy"}
 	}
 	// Release the claim on any subsequent error before CreateRun succeeds
 	// (A2A parent missing, depth exceeded, CreateRun failure). After
@@ -793,7 +796,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	// let the caller take the normal claim path (which will 409).
 	if th, thErr := s.store.GetThread(ctx, threadID); thErr == nil && th != nil {
 		if th.Status == models.ThreadStatusBusy {
-			return nil, false, &state.ErrConflict{Resource: "thread", ID: threadID}
+			return nil, false, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "is busy"}
 		}
 	}
 

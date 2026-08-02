@@ -1149,9 +1149,18 @@ func TestTS009_ConcurrentRunReject409(t *testing.T) {
 	expectStatus(t, resp1, 200)
 	readBody(t, resp1) // consume
 
-	// Second run while first is still running — should 409
+	// Second run while first is still running — should 409 with a
+	// "busy" message, not the generic ErrConflict "already exists"
+	// (that wording is for duplicate thread_id creates).
 	resp2, _ := postJSON(env.srv.URL+"/threads/t1/runs", map[string]interface{}{"agent_id": "test2"})
 	expectStatus(t, resp2, 409)
+	body2 := string(readBody(t, resp2))
+	if !strings.Contains(body2, "busy") {
+		t.Fatalf("expected 409 body to mention busy, got %s", body2)
+	}
+	if strings.Contains(body2, "already exists") {
+		t.Fatalf("busy-thread 409 must not say already exists, got %s", body2)
+	}
 }
 
 // ============================================================================

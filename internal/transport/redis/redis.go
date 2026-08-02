@@ -55,7 +55,17 @@ func NewQueue(rdb *redis.Client) *Queue {
 
 func queueKey(runnerKind string) string { return "rk:queue:" + runnerKind }
 
-const canceledSetKey = "rk:canceled"
+// canceledZSetKey tracks recently-canceled run_ids so a reclaim cannot
+// resurrect them. Sorted set (member=run_id, score=canceled-at ms) so
+// stale entries can be trimmed -- the old plain SET (rk:canceled) grew
+// without bound for the lifetime of the Redis. New key name so a
+// pre-existing SET type does not collide with ZADD after upgrade.
+const canceledZSetKey = "rk:canceled:z"
+
+// canceledMemberTTL bounds how long a cancel marker is kept. Longer than
+// any realistic reclaim window; short enough that a busy cancel path
+// cannot grow Redis forever.
+const canceledMemberTTL = 24 * time.Hour
 
 // inflightZSetKey holds one entry per in-flight (dequeued, not yet Ack'd)
 // job: member=run_id, score=dequeued-at as a Unix millisecond timestamp.
@@ -100,8 +110,23 @@ const inflightPendingKey = "rk:inflight:pending"
 // use of this for exercising ReclaimStale's cutoff boundary precisely.
 var nowMillis = func() int64 { return time.Now().UnixMilli() }
 
+func (q *Queue) isCanceled(ctx context.Context, runID string) (bool, error) {
+	score, err := q.rdb.ZScore(ctx, canceledZSetKey, runID).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if nowMillis()-int64(score) > canceledMemberTTL.Milliseconds() {
+		_ = q.rdb.ZRem(ctx, canceledZSetKey, runID).Err()
+		return false, nil
+	}
+	return true, nil
+}
+
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
-	ok, err := q.rdb.SIsMember(ctx, canceledSetKey, job.RunID).Result()
+	ok, err := q.isCanceled(ctx, job.RunID)
 	if err != nil {
 		return err
 	}
@@ -142,8 +167,8 @@ const dequeueBlockCap = 2 * time.Second
 // Returns {status, run_id, generation} where status is 1=in-flight
 // (caller should return the job) or 0=discarded (canceled / gone).
 //
-// KEYS: pending, data, zset, gen, canceled
-// ARGV: payload, score_millis
+// KEYS: pending, data, zset, gen, canceled_zset
+// ARGV: payload, score_millis, now_ms, canceled_ttl_ms
 const promoteScript = `
 local pending = KEYS[1]
 local data_key = KEYS[2]
@@ -152,6 +177,8 @@ local gen_key = KEYS[4]
 local canceled_key = KEYS[5]
 local payload = ARGV[1]
 local score = ARGV[2]
+local now_ms = tonumber(ARGV[3])
+local canceled_ttl_ms = tonumber(ARGV[4])
 
 local ok, job = pcall(cjson.decode, payload)
 if not ok or type(job) ~= 'table' or not job.run_id then
@@ -170,8 +197,13 @@ if removed == 0 then
   return {0, run_id, 0}
 end
 
-if redis.call('SISMEMBER', canceled_key, run_id) == 1 then
-  return {0, run_id, 0}
+local cscore = redis.call('ZSCORE', canceled_key, run_id)
+if cscore then
+  if now_ms - tonumber(cscore) > canceled_ttl_ms then
+    redis.call('ZREM', canceled_key, run_id)
+  else
+    return {0, run_id, 0}
+  end
 end
 
 redis.call('HSET', data_key, run_id, payload)
@@ -186,8 +218,8 @@ return {1, run_id, gen}
 // forever -- at worst it sits on pending until the next reaper tick
 // (~2s) and then becomes a normal in-flight lease.
 //
-// KEYS: pending, data, zset, gen, canceled
-// ARGV: score_millis
+// KEYS: pending, data, zset, gen, canceled_zset
+// ARGV: score_millis, now_ms, canceled_ttl_ms
 const drainPendingScript = `
 local pending = KEYS[1]
 local data_key = KEYS[2]
@@ -195,6 +227,8 @@ local zset_key = KEYS[3]
 local gen_key = KEYS[4]
 local canceled_key = KEYS[5]
 local score = ARGV[1]
+local now_ms = tonumber(ARGV[2])
+local canceled_ttl_ms = tonumber(ARGV[3])
 
 local promoted = 0
 while true do
@@ -205,14 +239,23 @@ while true do
   local ok, job = pcall(cjson.decode, payload)
   if not ok or type(job) ~= 'table' or not job.run_id then
     -- drop corrupt payload
-  elseif redis.call('SISMEMBER', canceled_key, job.run_id) == 1 then
-    -- discard canceled
   else
-    local gen = tonumber(job.generation) or 0
-    redis.call('HSET', data_key, job.run_id, payload)
-    redis.call('ZADD', zset_key, score, job.run_id)
-    redis.call('HSET', gen_key, job.run_id, gen)
-    promoted = promoted + 1
+    local cscore = redis.call('ZSCORE', canceled_key, job.run_id)
+    local canceled = false
+    if cscore then
+      if now_ms - tonumber(cscore) > canceled_ttl_ms then
+        redis.call('ZREM', canceled_key, job.run_id)
+      else
+        canceled = true
+      end
+    end
+    if not canceled then
+      local gen = tonumber(job.generation) or 0
+      redis.call('HSET', data_key, job.run_id, payload)
+      redis.call('ZADD', zset_key, score, job.run_id)
+      redis.call('HSET', gen_key, job.run_id, gen)
+      promoted = promoted + 1
+    end
   end
 end
 return promoted
@@ -278,9 +321,10 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 // promotePending runs promoteScript. Returns 1 if the job is now in
 // durable inflight tracking, 0 if discarded (canceled / gone).
 func (q *Queue) promotePending(ctx context.Context, payload string) (int64, error) {
+	now := nowMillis()
 	result, err := q.rdb.Eval(ctx, promoteScript,
-		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledSetKey},
-		payload, nowMillis(),
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
+		payload, now, now, canceledMemberTTL.Milliseconds(),
 	).Slice()
 	if err != nil {
 		return 0, err
@@ -297,9 +341,10 @@ func (q *Queue) promotePending(ctx context.Context, payload string) (int64, erro
 }
 
 func (q *Queue) drainPending(ctx context.Context) (int, error) {
+	now := nowMillis()
 	result, err := q.rdb.Eval(ctx, drainPendingScript,
-		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledSetKey},
-		nowMillis(),
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
+		now, now, canceledMemberTTL.Milliseconds(),
 	).Result()
 	if err != nil {
 		return 0, err
@@ -442,15 +487,22 @@ func (q *Queue) Nack(ctx context.Context, runID string) error {
 }
 
 func (q *Queue) Cancel(ctx context.Context, runID string) error {
+	now := nowMillis()
+	cutoff := now - canceledMemberTTL.Milliseconds()
 	if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HDel(ctx, inflightDataKey, runID)
 		pipe.ZRem(ctx, inflightZSetKey, runID)
 		pipe.HDel(ctx, inflightGenKey, runID)
+		pipe.ZAdd(ctx, canceledZSetKey, redis.Z{Score: float64(now), Member: runID})
+		// Opportunistic trim so the zset cannot grow without bound.
+		pipe.ZRemRangeByScore(ctx, canceledZSetKey, "-inf", fmt.Sprintf("%d", cutoff))
+		// Drop legacy unbounded SET if an older binary left it behind.
+		pipe.Del(ctx, "rk:canceled")
 		return nil
 	}); err != nil {
 		return err
 	}
-	return q.rdb.SAdd(ctx, canceledSetKey, runID).Err()
+	return nil
 }
 
 // reclaimStaleScript atomically finds every in-flight job older than the
@@ -492,6 +544,8 @@ local data_key = KEYS[2]
 local canceled_key = KEYS[3]
 local gen_key = KEYS[4]
 local cutoff = ARGV[1]
+local now_ms = tonumber(ARGV[2])
+local canceled_ttl_ms = tonumber(ARGV[3])
 
 local stale_ids = redis.call('ZRANGEBYSCORE', zset_key, '-inf', cutoff)
 local reclaimed = 0
@@ -502,8 +556,16 @@ for _, run_id in ipairs(stale_ids) do
     redis.call('HDEL', data_key, run_id)
 
     if job_json then
-        local is_canceled = redis.call('SISMEMBER', canceled_key, run_id)
-        if is_canceled == 0 then
+        local cscore = redis.call('ZSCORE', canceled_key, run_id)
+        local is_canceled = false
+        if cscore then
+          if now_ms - tonumber(cscore) > canceled_ttl_ms then
+            redis.call('ZREM', canceled_key, run_id)
+          else
+            is_canceled = true
+          end
+        end
+        if not is_canceled then
             local job = cjson.decode(job_json)
             local new_gen = redis.call('HINCRBY', gen_key, run_id, 1)
             -- Go's json.Marshal never emits trailing whitespace, so a
@@ -520,6 +582,9 @@ for _, run_id in ipairs(stale_ids) do
     end
 end
 
+-- Trim expired cancel markers opportunistically on every reclaim tick.
+redis.call('ZREMRANGEBYSCORE', canceled_key, '-inf', tostring(now_ms - canceled_ttl_ms))
+
 return reclaimed
 `
 
@@ -531,10 +596,11 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 	if _, err := q.drainPending(ctx); err != nil {
 		return 0, err
 	}
-	cutoff := nowMillis() - maxAge.Milliseconds()
+	now := nowMillis()
+	cutoff := now - maxAge.Milliseconds()
 	result, err := q.rdb.Eval(ctx, reclaimStaleScript,
-		[]string{inflightZSetKey, inflightDataKey, canceledSetKey, inflightGenKey},
-		cutoff,
+		[]string{inflightZSetKey, inflightDataKey, canceledZSetKey, inflightGenKey},
+		cutoff, now, canceledMemberTTL.Milliseconds(),
 	).Result()
 	if err != nil {
 		return 0, err
