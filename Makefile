@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-python test-ts test-adapters smoke-multi soak-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi soak-multi multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -48,6 +48,17 @@ test-protocol-execute:
 test-llm-matrix:
 	@test -f .env.llm || (echo "missing .env.llm — copy .env.llm.example and add GOOGLE_API_KEY"; exit 1)
 	set -a && . ./.env.llm && set +a && python3 bench/llm/run_matrix.py
+
+# Structural Runner Protocol invariants against a real Gemini agent
+# (lifecycle/seq/terminal/tool signal — not exact expected_events).
+# Skips cleanly if .env.llm is absent.
+test-llm-structural:
+	@if [ -f .env.llm ]; then set -a && . ./.env.llm && set +a; fi; \
+	if [ -x python/.venv/bin/python ]; then \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_protocol_llm_structural.py; \
+	else \
+		PYTHONPATH=python python3 python/tests/test_protocol_llm_structural.py; \
+	fi
 
 # Postgres conformance (requires POSTGRES_DSN or infra-up)
 test-pg:

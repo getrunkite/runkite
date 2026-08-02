@@ -25,7 +25,15 @@ python3 bench/llm/run_matrix.py --backends sqlite_inprocess
 
 # Full N×N (needs `make infra-up`)
 python3 bench/llm/run_matrix.py
+
+# Structural protocol invariants (real Gemini, not exact goldens)
+make test-llm-structural
 ```
+
+Budget: prefers `usage_metadata` from the event stream when present;
+otherwise charges a **conservative high** estimate so the soft cap trips
+early on long agentic loops. See `budget.json` → `measured_calls` vs
+`estimated_calls`.
 
 ## Example agents
 

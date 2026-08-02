@@ -390,7 +390,7 @@ def run_stream(base: str, thread_id: str, agent_id: str, input_obj: dict, timeou
     return status, events
 
 
-def scenario_happy(base: str, agent_id: str) -> tuple[str, str]:
+def scenario_happy(base: str, agent_id: str) -> tuple[str, str, list]:
     tid = create_thread(base)
     status, events = run_stream(
         base,
@@ -399,11 +399,11 @@ def scenario_happy(base: str, agent_id: str) -> tuple[str, str]:
         {"messages": [{"role": "user", "content": f"Say hello in one word. tag={time.time()}"}]},
     )
     if status != "success":
-        return "fail", f"run status={status} events={len(events)}"
-    return "pass", f"events={len(events)}"
+        return "fail", f"run status={status} events={len(events)}", events
+    return "pass", f"events={len(events)}", events
 
 
-def scenario_cancel(base: str, agent_id: str) -> tuple[str, str]:
+def scenario_cancel(base: str, agent_id: str) -> tuple[str, str, list]:
     tid = create_thread(base)
     # Non-stream create then cancel
     _, body = http_json(
@@ -417,7 +417,7 @@ def scenario_cancel(base: str, agent_id: str) -> tuple[str, str]:
     try:
         http_json("POST", f"{base}/threads/{tid}/runs/{run_id}/cancel", {}, headers=auth_headers())
     except urllib.error.HTTPError as e:
-        return "fail", f"cancel http {e.code}"
+        return "fail", f"cancel http {e.code}", []
     # Poll
     deadline = time.time() + 60
     status = "unknown"
@@ -428,8 +428,8 @@ def scenario_cancel(base: str, agent_id: str) -> tuple[str, str]:
             break
         time.sleep(0.5)
     if status != "interrupted":
-        return "fail", f"expected interrupted got {status}"
-    return "pass", f"run={run_id}"
+        return "fail", f"expected interrupted got {status}", []
+    return "pass", f"run={run_id}", []
 
 
 def poll_thread_not_busy(base: str, thread_id: str, timeout: float = 15.0) -> None:
@@ -445,7 +445,7 @@ def poll_thread_not_busy(base: str, thread_id: str, timeout: float = 15.0) -> No
     raise RuntimeError(f"thread {thread_id} still busy after {timeout}s (last={last})")
 
 
-def scenario_hitl(base: str, agent_id: str) -> tuple[str, str]:
+def scenario_hitl(base: str, agent_id: str) -> tuple[str, str, list]:
     # Mirror test/e2e/matrix/scenarios.go scenarioHITL — including the
     # pollThreadNotBusy gate before resume (postgres/mongo can still show
     # busy briefly after the interrupt SSE ends; posting resume too early
@@ -463,7 +463,7 @@ def scenario_hitl(base: str, agent_id: str) -> tuple[str, str]:
     )
     types = [e.get("event") for e in events]
     if status != "interrupted" and "input.requested" not in types:
-        return "fail", f"expected interrupt, status={status} types={types}"
+        return "fail", f"expected interrupt, status={status} types={types}", events
     poll_thread_not_busy(base, tid, timeout=15.0)
     _, result = http_json(
         "POST",
@@ -475,18 +475,18 @@ def scenario_hitl(base: str, agent_id: str) -> tuple[str, str]:
     resumed = (result or {}).get("run") or {}
     final = resumed.get("status")
     if final != "success":
-        return "fail", f"resume status={final} body_keys={list((result or {}).keys())}"
-    return "pass", f"interrupted+resume events={len(events)}"
+        return "fail", f"resume status={final} body_keys={list((result or {}).keys())}", events
+    return "pass", f"interrupted+resume events={len(events)}", events
 
 
-def run_scenario(name: str, base: str, fw: dict) -> tuple[str, str]:
+def run_scenario(name: str, base: str, fw: dict) -> tuple[str, str, list]:
     if name == "happy_path":
         return scenario_happy(base, fw["agent_id"])
     if name == "cancel":
         return scenario_cancel(base, fw["cancel_agent_id"])
     if name == "hitl":
         return scenario_hitl(base, fw["approval_agent_id"])
-    return "fail", f"unknown scenario {name}"
+    return "fail", f"unknown scenario {name}", []
 
 
 def main() -> int:
@@ -570,13 +570,12 @@ def main() -> int:
                     if runner.poll() is not None:
                         raise RuntimeError(f"runner exited early code={runner.returncode}")
                     print(f"    running {sc} ...", flush=True)
-                    status, detail = run_scenario(sc, base, fw)
+                    status, detail, events = run_scenario(sc, base, fw)
                     run_status = detail
-                    # Charge budget: happy_path hits Gemini; cancel/hitl usually don't.
-                    if sc == "happy_path":
-                        budget.charge(800, 200, label)
-                    else:
-                        budget.charge(0, 0, label)
+                    # Prefer usage_metadata from the stream; otherwise charge
+                    # a conservative (high) estimate so the soft cap trips
+                    # early on long agentic loops rather than under-counting.
+                    budget.charge_cell(label, scenario=sc, events=events)
                 except Exception as e:  # noqa: BLE001
                     status = "fail"
                     detail = f"{type(e).__name__}: {e}"
@@ -600,7 +599,8 @@ def main() -> int:
     summary = (
         f"\n## Summary\n\n"
         f"- pass: {passed}\n- fail: {failed}\n- skip: {skipped}\n"
-        f"- estimated_spend_usd: {budget.spent_usd:.4f} / {budget.limit_usd}\n"
+        f"- spend_usd: {budget.spent_usd:.4f} / {budget.limit_usd} "
+        f"(measured_calls={budget.measured_calls}, estimated_calls={budget.estimated_calls})\n"
         f"- ended: {datetime.now(timezone.utc).isoformat()}\n"
     )
     notes.write_text(notes.read_text() + summary)
