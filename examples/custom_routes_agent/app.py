@@ -44,7 +44,10 @@ def whoami(request: Request):
     user = user_from_request(request)
     if user is None:
         return JSONResponse(
-            {"authenticated": False, "hint": "missing X-Runkite-Identity (is the request going through the CP proxy with auth?)"},
+            {
+                "authenticated": False,
+                "hint": "missing X-Runkite-Identity (is the request going through the CP proxy with auth?)",
+            },
             status_code=200,
         )
     return {

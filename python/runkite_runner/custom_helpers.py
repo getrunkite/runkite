@@ -24,7 +24,7 @@ class ControlPlaneClient:
         self._timeout = timeout
 
     @classmethod
-    def from_request(cls, request: Any, base_url: str | None = None) -> "ControlPlaneClient":
+    def from_request(cls, request: Any, base_url: str | None = None) -> ControlPlaneClient:
         """Build a client that reuses the caller's Authorization header.
 
         base_url defaults to the Host the custom app was reached through

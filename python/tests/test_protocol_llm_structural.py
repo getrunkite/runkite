@@ -65,9 +65,15 @@ KNOWN_METHODS = {
 
 def assert_structural(events: list[dict], *, expect_terminal: str) -> None:
     check("non-empty event stream", len(events) >= 2)
-    check("first is lifecycle running", events[0].get("method") == "lifecycle" and (events[0].get("data") or {}).get("event") == "running")
+    check(
+        "first is lifecycle running",
+        events[0].get("method") == "lifecycle" and (events[0].get("data") or {}).get("event") == "running",
+    )
     last = events[-1]
-    check(f"last is {expect_terminal}", last.get("method") == expect_terminal or (expect_terminal == "end" and last.get("method") in ("end", "error")))
+    check(
+        f"last is {expect_terminal}",
+        last.get("method") == expect_terminal or (expect_terminal == "end" and last.get("method") in ("end", "error")),
+    )
     for i, ev in enumerate(events):
         check(f"seq[{i}] contiguous", ev.get("seq") == i + 1, f"got {ev.get('seq')}")
         method = ev.get("method") or ""

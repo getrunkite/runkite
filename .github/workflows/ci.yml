@@ -175,6 +175,7 @@ jobs:
           python python/tests/test_store_dual_mode.py
           python python/tests/test_store_pool.py
           python python/tests/test_custom_app.py
+          python python/tests/test_custom_auth.py
           python python/tests/test_factory_graph.py
           # Live dual-mode interop portion skips without RUNKITE_HTTP_URL
           # set (same as test_store_dual_mode.py above) -- no live control

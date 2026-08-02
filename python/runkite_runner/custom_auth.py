@@ -10,9 +10,9 @@ control plane.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
-
+from typing import Any
 
 HEADER_IDENTITY = "x-runkite-identity"
 HEADER_TENANT_ID = "x-runkite-tenant-id"

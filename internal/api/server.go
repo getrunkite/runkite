@@ -42,8 +42,8 @@ type Server struct {
 	connectors  *connector.Registry     // nil if no connectors configured
 	rateLimit   *ratelimit.Limiter      // nil-safe: nil behaves as disabled
 	hooks       *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
-	customProxy http.Handler // nil if no custom_routes configured
-	customMount string       // external prefix (default /custom); read on every request
+	customProxy http.Handler            // nil if no custom_routes configured
+	customMount string                  // external prefix (default /custom); read on every request
 	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
 	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through

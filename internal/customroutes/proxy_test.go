@@ -34,11 +34,11 @@ func TestNormalizeMount(t *testing.T) {
 
 func TestProxy_StripsMountAndInjectsIdentity(t *testing.T) {
 	var (
-		gotPath string
-		gotID   string
-		gotTen  string
-		gotPerm string
-		gotUser string
+		gotPath  string
+		gotID    string
+		gotTen   string
+		gotPerm  string
+		gotUser  string
 		gotSpoof string
 	)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
