@@ -87,6 +87,7 @@ class RunkiteVectorStore(VectorStore):
         # (not every op) is guarded by _pool_init_lock.
         self._pool_size = pool_size
         self._pool = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._pool_init_lock = asyncio.Lock()
 
     @property
@@ -108,6 +109,9 @@ class RunkiteVectorStore(VectorStore):
                     )
                     await pool.open()
                     self._pool = pool
+                    self._loop = asyncio.get_running_loop()
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         return self._pool
 
     async def aclose(self) -> None:
@@ -123,14 +127,23 @@ class RunkiteVectorStore(VectorStore):
     # raising "asyncio.run() cannot be called from a running event loop".
 
     def _run(self, coro):
+        # Same cross-loop rule as RunkiteStore.batch: if the async pool
+        # lives on a known running loop, schedule onto it instead of
+        # asyncio.run() on a fresh loop (which times out on getconn).
+        def _submit():
+            loop = getattr(self, "_loop", None)
+            if loop is not None and loop.is_running():
+                return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=120)
+            return asyncio.run(coro)
+
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(coro)
+            return _submit()
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(lambda: asyncio.run(coro)).result()
+            return pool.submit(_submit).result(timeout=120)
 
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
         return self._run(self.aadd_documents(documents, **kwargs))

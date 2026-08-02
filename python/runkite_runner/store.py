@@ -165,6 +165,9 @@ class RunkiteStore(BaseStore):
         self.mode = "direct" if postgres_dsn else "proxy"
         self._pool_size = pool_size
         self._pool = None  # AsyncConnectionPool, opened lazily on first direct-mode use
+        # Event loop that owns the AsyncConnectionPool (and that sync
+        # batch() must schedule onto). Set on first abatch/_get_pool.
+        self._loop: asyncio.AbstractEventLoop | None = None
         # Guards only pool CREATION (a one-time, rare event), not every
         # store op -- unlike the old single-connection lock, this doesn't
         # serialize concurrent jobs' store ops against each other.
@@ -185,6 +188,7 @@ class RunkiteStore(BaseStore):
                     )
                     await pool.open()
                     self._pool = pool
+                    self._loop = asyncio.get_running_loop()
         return self._pool
 
     async def aclose(self) -> None:
@@ -195,21 +199,37 @@ class RunkiteStore(BaseStore):
     # -- BaseStore abstract interface --------------------------------------
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
-        # LangGraph sync nodes (store.get/put) typically run in a worker
-        # thread with no event loop, so asyncio.run is fine. If somehow
-        # called from a thread that already has a loop, hop to a fresh
-        # thread so we don't raise "asyncio.run() cannot be called from a
-        # running event loop".
+        # Sync BaseStore entrypoint. deepagents / LangGraph often call this
+        # from asyncio.to_thread (a worker thread with NO running loop)
+        # while the runner's AsyncConnectionPool was opened on the main
+        # loop. asyncio.run(abatch) in that thread opens a *new* loop and
+        # then hangs on pool.getconn (PoolTimeout after 30s) -- live SA
+        # soak failure. Always schedule abatch onto the pool's owning
+        # loop when it is known and still running.
+        ops = list(ops)
+
+        def _run_abatch() -> list[Result]:
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                return asyncio.run_coroutine_threadsafe(self.abatch(ops), loop).result(timeout=120)
+            return asyncio.run(self.abatch(ops))
+
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(self.abatch(ops))
+            return _run_abatch()
+
+        # Sync API invoked from inside a running loop: never block that
+        # same loop waiting on itself -- hop to a worker thread that
+        # run_coroutine_threadsafe's back onto the store loop.
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(lambda: asyncio.run(self.abatch(list(ops)))).result()
+            return pool.submit(_run_abatch).result(timeout=120)
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         ops = list(ops)
         if self.mode == "direct":
             return await self._abatch_direct(ops)
