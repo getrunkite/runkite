@@ -26,8 +26,8 @@ def check(name, cond):
 
 async def test_batch_from_to_thread_uses_store_loop():
     store = RunkiteStore(http_base_url="http://127.0.0.1:9")
+    await store.warm()
     main_loop = asyncio.get_running_loop()
-    store._loop = main_loop
 
     seen: list[asyncio.AbstractEventLoop] = []
 
@@ -42,8 +42,21 @@ async def test_batch_from_to_thread_uses_store_loop():
     check("abatch ran on the store's main loop", len(seen) == 1 and seen[0] is main_loop)
 
 
+async def test_direct_batch_before_warm_fails_loudly():
+    store = RunkiteStore(postgres_dsn="postgresql://unused", http_base_url=None)
+    # Force direct mode even if both were somehow set -- constructor picks
+    # direct when postgres_dsn is set.
+    check("test store is direct mode", store.mode == "direct")
+    try:
+        await asyncio.to_thread(store.batch, [])
+        check("direct batch before warm raised", False)
+    except RuntimeError as e:
+        check("direct batch before warm raised", "warm()" in str(e))
+
+
 async def main():
     await test_batch_from_to_thread_uses_store_loop()
+    await test_direct_batch_before_warm_fails_loudly()
     print("\nAll checks passed.")
 
 

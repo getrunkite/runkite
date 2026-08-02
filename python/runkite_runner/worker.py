@@ -503,6 +503,9 @@ async def run_worker(
         runner_token=runner_token,
         pool_size=concurrency,
     )
+    # Open the direct-mode pool on THIS loop before any job can call
+    # sync store.batch from asyncio.to_thread (deepagents skills path).
+    await store.warm()
     adapter.attach_store(store)
     logger.info(f"Store mode: {store.mode}")
 

@@ -191,6 +191,19 @@ class RunkiteStore(BaseStore):
                     self._loop = asyncio.get_running_loop()
         return self._pool
 
+    async def warm(self) -> None:
+        """Bind to the current event loop and open the direct-mode pool.
+
+        Must run once on the runner's main loop before jobs start. Opening
+        the AsyncConnectionPool via asyncio.run() in a worker thread would
+        leave the pool bound to a loop that dies when run() returns --
+        later main-loop ops then hang on getconn. Proxy mode only records
+        the loop (no pool).
+        """
+        self._loop = asyncio.get_running_loop()
+        if self.mode == "direct":
+            await self._get_pool()
+
     async def aclose(self) -> None:
         if self._pool is not None:
             await self._pool.close()
@@ -212,6 +225,11 @@ class RunkiteStore(BaseStore):
             loop = self._loop
             if loop is not None and loop.is_running():
                 return asyncio.run_coroutine_threadsafe(self.abatch(ops), loop).result(timeout=120)
+            if self.mode == "direct":
+                raise RuntimeError(
+                    "RunkiteStore.batch() used before warm() on the runner event loop "
+                    "(direct-mode pool must not be opened via asyncio.run in a worker thread)"
+                )
             return asyncio.run(self.abatch(ops))
 
         try:
