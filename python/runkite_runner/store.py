@@ -198,9 +198,14 @@ class RunkiteStore(BaseStore):
         the AsyncConnectionPool via asyncio.run() in a worker thread would
         leave the pool bound to a loop that dies when run() returns --
         later main-loop ops then hang on getconn. Proxy mode only records
-        the loop (no pool).
+        the loop (no pool). Also publishes the loop via runner_loop.bind
+        so a RunkiteVectorStore constructed later in a job can schedule
+        onto the same loop without its own warm() call.
         """
+        from . import runner_loop
+
         self._loop = asyncio.get_running_loop()
+        runner_loop.bind(self._loop)
         if self.mode == "direct":
             await self._get_pool()
 

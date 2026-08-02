@@ -38,6 +38,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
+from . import runner_loop
 from .tls_utils import httpx_tls_kwargs
 
 # Direct mode has no per-request tenant identity (a raw DB connection, not
@@ -114,6 +115,20 @@ class RunkiteVectorStore(VectorStore):
             self._loop = asyncio.get_running_loop()
         return self._pool
 
+    async def warm(self) -> None:
+        """Bind to the current event loop and open the direct-mode pool.
+
+        Same contract as RunkiteStore.warm: run on the runner's main loop
+        before sync methods can be called from asyncio.to_thread. Worker
+        startup already binds the loop via store.warm() → runner_loop;
+        call this on a direct-mode instance when running outside that path
+        (tests, standalone scripts).
+        """
+        self._loop = asyncio.get_running_loop()
+        runner_loop.bind(self._loop)
+        if self.mode == "direct":
+            await self._get_pool()
+
     async def aclose(self) -> None:
         if self._pool is not None:
             await self._pool.close()
@@ -126,15 +141,25 @@ class RunkiteVectorStore(VectorStore):
     # somehow already running, fall back to a fresh thread rather than
     # raising "asyncio.run() cannot be called from a running event loop".
 
-    def _run(self, coro):
+    def _run(self, factory):
         # Same cross-loop rule as RunkiteStore.batch: if the async pool
         # lives on a known running loop, schedule onto it instead of
         # asyncio.run() on a fresh loop (which times out on getconn).
+        # Prefer this instance's loop, then the runner-wide loop published
+        # by store.warm() / vectorstore.warm(). factory is a zero-arg
+        # callable that builds the coroutine so the fail-fast path never
+        # leaves an un-awaited coro behind.
         def _submit():
-            loop = getattr(self, "_loop", None)
+            loop = self._loop if self._loop is not None else runner_loop.get()
             if loop is not None and loop.is_running():
-                return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=120)
-            return asyncio.run(coro)
+                return asyncio.run_coroutine_threadsafe(factory(), loop).result(timeout=120)
+            if self.mode == "direct":
+                raise RuntimeError(
+                    "RunkiteVectorStore sync API used before warm() on the runner "
+                    "event loop (direct-mode pool must not be opened via asyncio.run "
+                    "in a worker thread)"
+                )
+            return asyncio.run(factory())
 
         try:
             asyncio.get_running_loop()
@@ -146,19 +171,19 @@ class RunkiteVectorStore(VectorStore):
             return pool.submit(_submit).result(timeout=120)
 
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
-        return self._run(self.aadd_documents(documents, **kwargs))
+        return self._run(lambda: self.aadd_documents(documents, **kwargs))
 
     def similarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
-        return self._run(self.asimilarity_search(query, k, **kwargs))
+        return self._run(lambda: self.asimilarity_search(query, k, **kwargs))
 
     def similarity_search_by_vector(self, embedding: list[float], k: int = 4, **kwargs: Any) -> list[Document]:
-        return self._run(self.asimilarity_search_by_vector(embedding, k, **kwargs))
+        return self._run(lambda: self.asimilarity_search_by_vector(embedding, k, **kwargs))
 
     def similarity_search_with_score(self, query: str, k: int = 4, **kwargs: Any) -> list[tuple[Document, float]]:
-        return self._run(self.asimilarity_search_with_score(query, k, **kwargs))
+        return self._run(lambda: self.asimilarity_search_with_score(query, k, **kwargs))
 
     def delete(self, ids: list[str] | None = None, **kwargs: Any) -> bool | None:
-        return self._run(self.adelete(ids, **kwargs))
+        return self._run(lambda: self.adelete(ids, **kwargs))
 
     @classmethod
     def from_texts(
