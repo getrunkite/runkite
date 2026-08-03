@@ -11,6 +11,7 @@ import { RunnerUser } from "./runnerUser.js";
 import type { FactoryGraphBuild, RunFactoryContext } from "./factoryGraph.js";
 import { logger } from "./logger.js";
 import { checkpointThreadId } from "./tenantCtx.js";
+import { makeRunCallbacks } from "./tracing.js";
 
 export interface RunEvent {
   event_id: string;
@@ -87,6 +88,19 @@ export function buildRunConfig(assignment: RunAssignment): Record<string, any> {
     // instead of (or in addition to) server_info.user.
     config.configurable.user_id = user.identity;
     config.configurable.user_display_name = user.displayName;
+  }
+  // Nest LLM/tool spans under the active runkite.run when OTEL is on.
+  // Merge so a graph that already set LangSmith/custom callbacks keeps them.
+  const otelCbs = makeRunCallbacks(assignment.run_id);
+  if (otelCbs.length > 0) {
+    const existing = config.callbacks;
+    if (existing == null) {
+      config.callbacks = otelCbs;
+    } else if (Array.isArray(existing)) {
+      config.callbacks = [...existing, ...otelCbs];
+    } else {
+      config.callbacks = [existing, ...otelCbs];
+    }
   }
   return config;
 }

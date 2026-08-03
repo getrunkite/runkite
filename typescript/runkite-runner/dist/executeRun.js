@@ -1,6 +1,7 @@
 import { RunnerUser } from "./runnerUser.js";
 import { logger } from "./logger.js";
 import { checkpointThreadId } from "./tenantCtx.js";
+import { makeRunCallbacks } from "./tracing.js";
 /**
  * Builds the RunnableConfig passed to graph.stream(), including the keys
  * LangGraph's own OSS code reads to populate Runtime.server_info for
@@ -40,6 +41,21 @@ export function buildRunConfig(assignment) {
         // instead of (or in addition to) server_info.user.
         config.configurable.user_id = user.identity;
         config.configurable.user_display_name = user.displayName;
+    }
+    // Nest LLM/tool spans under the active runkite.run when OTEL is on.
+    // Merge so a graph that already set LangSmith/custom callbacks keeps them.
+    const otelCbs = makeRunCallbacks(assignment.run_id);
+    if (otelCbs.length > 0) {
+        const existing = config.callbacks;
+        if (existing == null) {
+            config.callbacks = otelCbs;
+        }
+        else if (Array.isArray(existing)) {
+            config.callbacks = [...existing, ...otelCbs];
+        }
+        else {
+            config.callbacks = [existing, ...otelCbs];
+        }
     }
     return config;
 }

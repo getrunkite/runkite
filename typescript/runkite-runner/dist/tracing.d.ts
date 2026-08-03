@@ -7,6 +7,7 @@
  * Go control plane's internal/tracing package.
  */
 import { Span, Tracer } from "@opentelemetry/api";
+import type { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 /** Test-only: install (or clear) the module tracer without OTLP export. */
 export declare function installTracerForTests(t: Tracer | null): void;
 /** Install a TracerProvider from OTEL_* env vars. Returns a shutdown fn. */
@@ -25,3 +26,9 @@ export declare function withRunSpan<T>(opts: {
     traceContext?: TraceContextFields;
 }, fn: (span: Span | null) => Promise<T>): Promise<T>;
 export declare function setRunStatus(span: Span | null, status: string): void;
+/**
+ * LangChain handlers that open LLM/tool child spans under runkite.run.
+ * Empty when tracing is disabled. Call inside an active withRunSpan so
+ * the captured parent context is the job span.
+ */
+export declare function makeRunCallbacks(runId?: string): BaseCallbackHandler[];

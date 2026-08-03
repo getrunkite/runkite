@@ -28,6 +28,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getrunkite/runkite/internal/api"
@@ -423,6 +424,10 @@ func startServer(opts serverOpts) {
 		os.Exit(1)
 	}
 	grpcOpts := []grpc.ServerOption{
+		// Server spans for GetJob/ReportStatus/StreamEvents/WatchCancels
+		// when tracing.Init installed a TracerProvider; no-op otherwise.
+		// Orthogonal to the auth Chain*Interceptor options below.
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    2 * time.Second,
 			Timeout: 2 * time.Second,
