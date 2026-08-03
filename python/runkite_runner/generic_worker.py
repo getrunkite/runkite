@@ -34,6 +34,8 @@ from . import runner_pb2, runner_pb2_grpc
 from .heartbeat import heartbeat_loop
 from .run_status import should_skip_run
 from .tls_utils import grpc_channel_credentials
+from .tracing import init as init_tracing
+from .tracing import run_span, set_run_status
 
 logger = logging.getLogger("runkite.runner")
 
@@ -156,6 +158,8 @@ async def run_worker(
     concurrency controls how many jobs this process handles at once (see
     _poll_loop's dispatcher below) -- default 1 preserves the original
     one-job-at-a-time behavior exactly."""
+    tracing_shutdown = init_tracing()
+
     await adapter.load_config(config_path)
 
     runner_token = os.environ.get("RUNNER_TOKEN", "")
@@ -244,6 +248,7 @@ async def run_worker(
         if in_flight_tasks:
             logger.info(f"Draining {len(in_flight_tasks)} in-flight job(s) before shutdown...")
             await asyncio.gather(*in_flight_tasks, return_exceptions=True)
+        tracing_shutdown()
 
 
 async def register_run(
@@ -267,7 +272,7 @@ async def register_run(
 
 def _log_trace_context(run_id: str, tc: dict | None) -> None:
     """Log W3C / correlation fields from RunAssignment.trace_context.
-    Full OTel span activation in the runner is a separate follow-up.
+    Span activation (when OTEL_* is configured) is handled by run_span.
     """
     tc = tc or {}
     parts = [f"run_id={run_id}"]
@@ -316,80 +321,90 @@ async def _handle_job(
         if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
             return
 
-        event_queue: asyncio.Queue = asyncio.Queue()
+        with run_span(
+            run_id,
+            graph_id=assignment.get("graph_id", ""),
+            thread_id=assignment.get("thread_id", ""),
+            tenant_id=assignment.get("tenant_id") or "",
+            trace_context=assignment.get("trace_context"),
+        ) as span:
+            event_queue: asyncio.Queue = asyncio.Queue()
 
-        async def event_generator():
-            while True:
-                item = await event_queue.get()
-                if item is None:
-                    return
-                yield item
+            async def event_generator():
+                while True:
+                    item = await event_queue.get()
+                    if item is None:
+                        return
+                    yield item
 
-        async def send_event(event: dict):
-            await event_queue.put(
-                runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+            async def send_event(event: dict):
+                await event_queue.put(
+                    runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+                )
+
+            cancel_event = await register_run(
+                pending_cancels,
+                pre_cancelled,
+                pending_cancels_lock,
+                run_id,
             )
 
-        cancel_event = await register_run(
-            pending_cancels,
-            pre_cancelled,
-            pending_cancels_lock,
-            run_id,
-        )
+            # Started as soon as run_id is known, before StreamEvents' first
+            # message -- see worker.py's mirrored change / heartbeat.py.
+            # Shares cancel_event with adapter.execute below -- a superseded
+            # heartbeat sets the SAME event a real cancel signal would.
+            heartbeat_task = asyncio.create_task(
+                heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+            )
 
-        # Started as soon as run_id is known, before StreamEvents' first
-        # message -- see worker.py's mirrored change / heartbeat.py.
-        # Shares cancel_event with adapter.execute below -- a superseded
-        # heartbeat sets the SAME event a real cancel signal would.
-        heartbeat_task = asyncio.create_task(
-            heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
-        )
-
-        try:
-            stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
-            stream_task = asyncio.ensure_future(stream_call)
-
+            stream_task = None
+            status = "error"
             try:
-                status = await adapter.execute(assignment, send_event, cancel_event)
-            except Exception as e:
-                # A misbehaving adapter that raises instead of returning
-                # a status must not leave the run stuck "running"
-                # forever from the control plane's perspective -- see
-                # FrameworkAdapter.execute's doc comment.
-                logger.exception(f"Run {run_id} failed in adapter.execute: {e}")
-                make_event = make_event_factory(run_id)
-                await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
-                status = "error"
-        finally:
-            heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
-            # Always clear the cancel registration, even on an
-            # unexpected failure above -- otherwise it leaks an entry in
-            # pending_cancels for every job that hits this path.
-            async with pending_cancels_lock:
-                pending_cancels.pop(run_id, None)
+                stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
+                stream_task = asyncio.ensure_future(stream_call)
 
-        await event_queue.put(None)
-        if stream_task is not None:
-            try:
-                await stream_task
-            except Exception as e:
-                logger.error(f"Stream finalization error: {e}")
+                try:
+                    status = await adapter.execute(assignment, send_event, cancel_event)
+                except Exception as e:
+                    # A misbehaving adapter that raises instead of returning
+                    # a status must not leave the run stuck "running"
+                    # forever from the control plane's perspective -- see
+                    # FrameworkAdapter.execute's doc comment.
+                    logger.exception(f"Run {run_id} failed in adapter.execute: {e}")
+                    make_event = make_event_factory(run_id)
+                    await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
+                    status = "error"
+            finally:
+                heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat_task
+                # Always clear the cancel registration, even on an
+                # unexpected failure above -- otherwise it leaks an entry in
+                # pending_cancels for every job that hits this path.
+                async with pending_cancels_lock:
+                    pending_cancels.pop(run_id, None)
 
-        # Always report once run_id is known -- StreamEvents setup
-        # failures used to skip this and leave the run "running" forever.
-        await stub.ReportStatus(
-            runner_pb2.ReportStatusRequest(
-                run_id=run_id,
-                status=status,
-                error_message="" if status != "error" else "see error event",
-                generation=generation,
-            ),
-            metadata=auth_metadata,
-        )
+            await event_queue.put(None)
+            if stream_task is not None:
+                try:
+                    await stream_task
+                except Exception as e:
+                    logger.error(f"Stream finalization error: {e}")
 
-        logger.info(f"Run completed: run_id={run_id} status={status}")
+            # Always report once run_id is known -- StreamEvents setup
+            # failures used to skip this and leave the run "running" forever.
+            await stub.ReportStatus(
+                runner_pb2.ReportStatusRequest(
+                    run_id=run_id,
+                    status=status,
+                    error_message="" if status != "error" else "see error event",
+                    generation=generation,
+                ),
+                metadata=auth_metadata,
+            )
+
+            set_run_status(span, status)
+            logger.info(f"Run completed: run_id={run_id} status={status}")
 
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")

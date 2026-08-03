@@ -14,6 +14,7 @@ import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
 import { runWithTenant } from "./tenantCtx.js";
+import { initTracing, setRunStatus, withRunSpan, type TraceContextFields } from "./tracing.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
@@ -160,14 +161,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type TraceContextFields = {
-  correlation_id?: string;
-  traceparent?: string;
-  tracestate?: string;
-};
-
 /** Log W3C / correlation fields from RunAssignment.trace_context.
- * Full OTel span activation in the runner is a separate follow-up. */
+ * Span activation (when OTEL_* is configured) is handled by withRunSpan. */
 function logTraceContext(runId: string, tc?: TraceContextFields): void {
   if (!tc) return;
   const parts = [`run_id=${runId}`];
@@ -179,6 +174,8 @@ function logTraceContext(runId: string, tc?: TraceContextFields): void {
 }
 
 export async function runWorker(opts: WorkerOptions): Promise<void> {
+  const tracingShutdown = await initTracing();
+
   const adapter = new LangGraphAdapter(opts.configPath);
   await adapter.load();
 
@@ -299,6 +296,7 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
     }
     await checkpointerManager.stop();
     await store.close();
+    await tracingShutdown();
   }
 }
 
@@ -340,11 +338,33 @@ export async function handleJob(
     // field, same convention as the Go/Python side.
     generation = assignment.generation ?? 0;
     logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
-    logTraceContext(runId, (assignment as RunAssignment & { trace_context?: TraceContextFields }).trace_context);
+    const tc = (assignment as RunAssignment & { trace_context?: TraceContextFields }).trace_context;
+    logTraceContext(runId, tc);
 
-    await runWithTenant(assignment.tenant_id, async () => {
-      await handleJobUnderTenant(client, adapter, assignment, runId!, generation, metadata, pendingCancels, opts);
-    });
+    await withRunSpan(
+      {
+        runId: runId!,
+        graphId: assignment.graph_id,
+        threadId: assignment.thread_id,
+        tenantId: assignment.tenant_id,
+        traceContext: tc,
+      },
+      async (span) => {
+        await runWithTenant(assignment.tenant_id, async () => {
+          const status = await handleJobUnderTenant(
+            client,
+            adapter,
+            assignment,
+            runId!,
+            generation,
+            metadata,
+            pendingCancels,
+            opts,
+          );
+          if (status) setRunStatus(span, status);
+        });
+      },
+    );
   } catch (err) {
     logger.error(`Worker error handling run_id=${runId}:`, err);
     if (runId !== undefined) {
@@ -374,7 +394,7 @@ async function handleJobUnderTenant(
   metadata: Metadata,
   pendingCancels: Map<string, CancelState>,
   opts?: { httpAddress?: string; runnerKind?: string; runnerToken?: string },
-): Promise<void> {
+): Promise<string | undefined> {
   // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
   if (
     opts?.httpAddress &&
@@ -383,7 +403,7 @@ async function handleJobUnderTenant(
       runnerToken: opts.runnerToken,
     }))
   ) {
-    return;
+    return undefined;
   }
 
   const cancelState = registerRun(pendingCancels, runId);
@@ -447,6 +467,7 @@ async function handleJobUnderTenant(
     });
 
     logger.info(`Run completed: run_id=${runId} status=${status}`);
+    return status;
   } finally {
     heartbeat.stop();
     // Always clear the cancel registration, even if executeRun itself

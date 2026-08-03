@@ -14,6 +14,7 @@ import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun } from "./executeRun.js";
 import { runWithTenant } from "./tenantCtx.js";
+import { initTracing, setRunStatus, withRunSpan } from "./tracing.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
@@ -125,7 +126,7 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 /** Log W3C / correlation fields from RunAssignment.trace_context.
- * Full OTel span activation in the runner is a separate follow-up. */
+ * Span activation (when OTEL_* is configured) is handled by withRunSpan. */
 function logTraceContext(runId, tc) {
     if (!tc)
         return;
@@ -139,6 +140,7 @@ function logTraceContext(runId, tc) {
         logger.info(`trace ${parts.join(" ")}`);
 }
 export async function runWorker(opts) {
+    const tracingShutdown = await initTracing();
     const adapter = new LangGraphAdapter(opts.configPath);
     await adapter.load();
     // Runner auth, two-tier model: if the control plane has
@@ -250,6 +252,7 @@ export async function runWorker(opts) {
         }
         await checkpointerManager.stop();
         await store.close();
+        await tracingShutdown();
     }
 }
 /**
@@ -283,9 +286,20 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
         // field, same convention as the Go/Python side.
         generation = assignment.generation ?? 0;
         logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
-        logTraceContext(runId, assignment.trace_context);
-        await runWithTenant(assignment.tenant_id, async () => {
-            await handleJobUnderTenant(client, adapter, assignment, runId, generation, metadata, pendingCancels, opts);
+        const tc = assignment.trace_context;
+        logTraceContext(runId, tc);
+        await withRunSpan({
+            runId: runId,
+            graphId: assignment.graph_id,
+            threadId: assignment.thread_id,
+            tenantId: assignment.tenant_id,
+            traceContext: tc,
+        }, async (span) => {
+            await runWithTenant(assignment.tenant_id, async () => {
+                const status = await handleJobUnderTenant(client, adapter, assignment, runId, generation, metadata, pendingCancels, opts);
+                if (status)
+                    setRunStatus(span, status);
+            });
         });
     }
     catch (err) {
@@ -310,7 +324,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
             runnerKind: opts.runnerKind,
             runnerToken: opts.runnerToken,
         }))) {
-        return;
+        return undefined;
     }
     const cancelState = registerRun(pendingCancels, runId);
     // Started as soon as runId is known, BEFORE streamEvents' first
@@ -367,6 +381,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
             });
         });
         logger.info(`Run completed: run_id=${runId} status=${status}`);
+        return status;
     }
     finally {
         heartbeat.stop();

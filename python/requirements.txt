@@ -7,3 +7,6 @@ langgraph-checkpoint-postgres
 psycopg[binary,pool]
 httpx
 uvicorn
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp

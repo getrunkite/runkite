@@ -31,6 +31,8 @@ from .run_status import should_skip_run
 from .schema_introspect import report_agent_schemas
 from .store import RunkiteStore
 from .tls_utils import grpc_channel_credentials
+from .tracing import init as init_tracing
+from .tracing import run_span, set_run_status
 
 logger = logging.getLogger("runkite.runner")
 
@@ -477,6 +479,8 @@ async def run_worker(
     connection pools (see checkpoint.py/store.py) so concurrent jobs' DB
     I/O doesn't serialize on a single shared connection.
     """
+    tracing_shutdown = init_tracing()
+
     adapter = LangGraphAdapter()
     await adapter.load_config(config_path)
 
@@ -654,6 +658,7 @@ async def run_worker(
             await asyncio.gather(*in_flight_tasks, return_exceptions=True)
         await checkpointer_manager.stop()
         await store.aclose()
+        tracing_shutdown()
 
 
 def _load_custom_app_config(config_path: str) -> dict | None:
@@ -689,8 +694,7 @@ async def register_run(
 
 def _log_trace_context(run_id: str, tc: dict | None) -> None:
     """Log W3C / correlation fields from RunAssignment.trace_context.
-    Full OTel span activation in the runner is a separate follow-up;
-    structured log fields are enough for correlating with the CP trace.
+    Span activation (when OTEL_* is configured) is handled by run_span.
     """
     tc = tc or {}
     parts = [f"run_id={run_id}"]
@@ -745,24 +749,33 @@ async def _handle_job(
         # whole job (ContextVar -- safe under --concurrency > 1).
         from .tenant_ctx import bind_tenant, reset_tenant
 
-        tenant_token = bind_tenant(assignment.get("tenant_id"))
-        try:
-            await _run_assigned_job(
-                stub,
-                adapter,
-                assignment,
-                run_id,
-                generation,
-                auth_metadata,
-                pending_cancels,
-                pre_cancelled,
-                pending_cancels_lock,
-                http_address,
-                runner_kind,
-                runner_token,
-            )
-        finally:
-            reset_tenant(tenant_token)
+        with run_span(
+            run_id,
+            graph_id=assignment.get("graph_id", ""),
+            thread_id=assignment.get("thread_id", ""),
+            tenant_id=assignment.get("tenant_id") or "",
+            trace_context=assignment.get("trace_context"),
+        ) as span:
+            tenant_token = bind_tenant(assignment.get("tenant_id"))
+            try:
+                status = await _run_assigned_job(
+                    stub,
+                    adapter,
+                    assignment,
+                    run_id,
+                    generation,
+                    auth_metadata,
+                    pending_cancels,
+                    pre_cancelled,
+                    pending_cancels_lock,
+                    http_address,
+                    runner_kind,
+                    runner_token,
+                )
+                if status:
+                    set_run_status(span, status)
+            finally:
+                reset_tenant(tenant_token)
 
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
@@ -795,13 +808,14 @@ async def _run_assigned_job(
     runner_kind: str,
     runner_token: str,
 ):
-    """Job body under an active tenant_ctx binding."""
+    """Job body under an active tenant_ctx binding. Returns terminal status
+    (or None when the cancel-after-dequeue guard skipped the job)."""
     status = "error"
     stream_task = None
 
     # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
     if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
-        return
+        return None
 
     # Open one persistent client-stream per run.
     event_queue: asyncio.Queue[runner_pb2.RunEventProto | None] = asyncio.Queue()
@@ -884,6 +898,7 @@ async def _run_assigned_job(
     )
 
     logger.info(f"Run completed: run_id={run_id} status={status}")
+    return status
 
 
 async def _poll_loop(
