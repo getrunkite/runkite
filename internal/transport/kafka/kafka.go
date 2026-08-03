@@ -139,9 +139,10 @@ func consumerGroupID(namespace, runnerKind string) string {
 type stateEntry struct {
 	// Canceled marks a run_id that must never be delivered (or
 	// re-delivered) again -- checked by Enqueue and Dequeue, set by
-	// Cancel. A canceled entry has no Job/Generation/TouchedAt; it's a
-	// permanent marker, same as Redis's own canceled set having no
-	// expiry.
+	// Cancel. A canceled entry has no Job/Generation/TouchedAt.
+	// Unlike Redis (TTL'd ZSET) / NATS (KV TTL), compacted Kafka state
+	// retains these until a tombstone is written -- Compatible-tier
+	// trade-off, not the old unbounded Redis SET bug class.
 	Canceled bool `json:"canceled,omitempty"`
 
 	RunnerKind         string          `json:"runner_kind,omitempty"`

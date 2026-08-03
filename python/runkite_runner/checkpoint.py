@@ -82,26 +82,18 @@ class CheckpointerManager:
     def __init__(self):
         self._checkpointer = None
         self._pool = None  # AsyncConnectionPool, kept open for the runner's lifetime (postgres mode only)
+        self._dsn: str | None = None
+        self._pool_size: int = 4
+        self._attached: list = []  # graphs whose .checkpointer we own
         self.mode = "none"
 
     async def start(self, postgres_dsn: str | None, pool_size: int = 4):
         if postgres_dsn:
             import psycopg
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-            from psycopg.rows import dict_row
 
-            from . import pg_pool
-
-            # Same connection kwargs from_conn_string used
-            # (autocommit/prepare_threshold/row_factory) -- AsyncPostgresSaver
-            # expects dict-row results, not psycopg's tuple default.
-            self._pool = pg_pool.make(
-                postgres_dsn,
-                max_size=pool_size,
-                conn_kwargs={"prepare_threshold": 0, "row_factory": dict_row},
-            )
-            await self._pool.open()
-            self._checkpointer = AsyncPostgresSaver(conn=self._pool)
+            self._dsn = postgres_dsn
+            self._pool_size = pool_size
+            await self._open_pool()
 
             # Serialize setup() across concurrently-starting runner replicas so
             # its CREATE TABLE IF NOT EXISTS / CREATE INDEX CONCURRENTLY DDL
@@ -151,11 +143,72 @@ class CheckpointerManager:
                 "Set POSTGRES_DSN for production persistence."
             )
 
+    async def _open_pool(self) -> None:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg.rows import dict_row
+
+        from . import pg_pool
+
+        # Same connection kwargs from_conn_string used
+        # (autocommit/prepare_threshold/row_factory) -- AsyncPostgresSaver
+        # expects dict-row results, not psycopg's tuple default.
+        self._pool = pg_pool.make(
+            self._dsn,
+            max_size=self._pool_size,
+            conn_kwargs={"prepare_threshold": 0, "row_factory": dict_row},
+        )
+        await self._pool.open()
+        self._checkpointer = AsyncPostgresSaver(conn=self._pool)
+        for graph in self._attached:
+            graph.checkpointer = self._checkpointer
+
+    async def recreate_pool(self) -> None:
+        """Drop a wedged pool (idle overnight / laptop sleep) and open a new one.
+
+        Rebinds every previously attach()'d graph so LangGraph does not keep
+        calling through the closed pool.
+        """
+        if self._dsn is None:
+            return
+        old = self._pool
+        self._pool = None
+        if old is not None:
+            try:
+                await old.close()
+            except Exception:
+                logger.exception("error closing wedged checkpoint pool")
+        await self._open_pool()
+
+    async def recover_if_wedged(self) -> None:
+        """Cheap pre-job probe: if getconn hangs/fails, recreate once.
+
+        AsyncPostgresSaver owns the pool reference internally, so unlike
+        store.abatch we cannot catch PoolTimeout inside each checkpoint
+        op -- probe here before astream so an overnight-wedged pool does
+        not burn a full run on a 30s timeout mid-graph.
+        """
+        if self._pool is None:
+            return
+        from psycopg_pool import PoolTimeout
+
+        try:
+            async with self._pool.connection(timeout=5.0) as conn:
+                await conn.execute("SELECT 1")
+        except PoolTimeout:
+            logger.warning("checkpoint pool timed out on health probe; recreating pool")
+            await self.recreate_pool()
+        except Exception:
+            logger.warning("checkpoint pool health probe failed; recreating pool", exc_info=True)
+            await self.recreate_pool()
+
     async def stop(self):
         if self._pool is not None:
             await self._pool.close()
+            self._pool = None
 
     def attach(self, graph):
         """Override a compiled graph's checkpointer with the shared one."""
+        if graph not in self._attached:
+            self._attached.append(graph)
         graph.checkpointer = self._checkpointer
         return graph

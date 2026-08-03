@@ -199,6 +199,27 @@ class RunkiteStore(BaseStore):
                     logger.exception("error closing wedged store pool")
         await self._get_pool()
 
+    async def recover_if_wedged(self) -> None:
+        """Cheap pre-job probe: if getconn hangs/fails, recreate once.
+
+        Same overnight/laptop-sleep failure mode as _abatch_direct's
+        PoolTimeout retry, but caught before the run pays a full 30s
+        timeout on the first store op.
+        """
+        if self.mode != "direct" or self._pool is None:
+            return
+        from psycopg_pool import PoolTimeout
+
+        try:
+            async with self._pool.connection(timeout=5.0) as conn:
+                await conn.execute("SELECT 1")
+        except PoolTimeout:
+            logger.warning("store pool timed out on health probe; recreating pool")
+            await self._recreate_pool()
+        except Exception:
+            logger.warning("store pool health probe failed; recreating pool", exc_info=True)
+            await self._recreate_pool()
+
     async def warm(self) -> None:
         """Bind to the current event loop and open the direct-mode pool.
 

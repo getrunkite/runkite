@@ -139,7 +139,13 @@ func NewQueue(ctx context.Context, nc *nats.Conn) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("natstransport: create inflight bucket: %w", err)
 	}
-	canceled, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: canceledBucket})
+	// TTL mirrors Redis canceledMemberTTL (24h): cancel markers only need
+	// to outlive reclaim; without TTL the KV bucket grows without bound
+	// for every canceled run_id over the life of the stream.
+	canceled, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
+		Bucket: canceledBucket,
+		TTL:    24 * time.Hour,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("natstransport: create canceled bucket: %w", err)
 	}

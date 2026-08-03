@@ -293,6 +293,14 @@ async def execute_run(
         # nothing at all until construction finished.
         await event_callback(make_event("lifecycle", {"event": "running"}))
 
+        # Overnight idle / laptop sleep can wedge the runner's Postgres
+        # pools; probe+recreate before astream so the first store/
+        # checkpoint op does not burn 30s on PoolTimeout mid-graph.
+        if adapter._store is not None:
+            await adapter._store.recover_if_wedged()
+        if adapter._checkpointer_manager is not None:
+            await adapter._checkpointer_manager.recover_if_wedged()
+
         async with contextlib.AsyncExitStack() as stack:
             if adapter.is_factory(graph_id):
                 # Factory graph (for LangGraph SDK/ServerRuntime compatibility) --
