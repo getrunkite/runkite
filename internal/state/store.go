@@ -236,7 +236,8 @@ type Store interface {
 	GetRegistryEntryVersion(ctx context.Context, name string, version int) (*models.RegistryEntryVersion, error)
 
 	// --- Lifecycle ---
-	Init(ctx context.Context) error // Create tables / run migrations
+	Init(ctx context.Context) error      // Apply pending numbered schema migrations
+	Downgrade(ctx context.Context) error // Roll back the most recently applied migration
 	Close() error
 
 	// Ping verifies the store can actually reach its backing database

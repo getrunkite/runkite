@@ -55,6 +55,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -114,9 +115,9 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 // approach (internal/state/sqlite's addColumnIfMissing) -- no risk of
 // an error-message wording change across MySQL versions/locales
 // breaking the idempotency check silently.
-func (s *Store) addColumnIfMissing(ctx context.Context, table, column, ddl string) error {
+func (s *Store) addColumnIfMissing(ctx context.Context, db migrate.DB, table, column, ddl string) error {
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
 	`, table, column).Scan(&count)
@@ -126,13 +127,83 @@ func (s *Store) addColumnIfMissing(ctx context.Context, table, column, ddl strin
 	if count > 0 {
 		return nil
 	}
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
 		return fmt.Errorf("add column %s.%s: %w", table, column, err)
 	}
 	return nil
 }
 
+// Init applies pending numbered schema migrations under a MySQL GET_LOCK
+// so concurrent replicas don't race on first-time DDL.
 func (s *Store) Init(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *sql.Conn) error {
+		bk := migrate.NewSQL(conn, migrate.MySQL)
+		return migrate.Upgrade(ctx, bk, s.migrations(conn), func(ctx context.Context) (bool, error) {
+			return migrate.TableExists(ctx, conn, migrate.MySQL, "agents")
+		})
+	})
+}
+
+// Downgrade rolls back the most recently applied migration.
+func (s *Store) Downgrade(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *sql.Conn) error {
+		return migrate.Downgrade(ctx, migrate.NewSQL(conn, migrate.MySQL), s.migrations(conn))
+	})
+}
+
+func (s *Store) withSchemaLock(ctx context.Context, fn func(context.Context, *sql.Conn) error) error {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("mysql: acquire conn for schema lock: %w", err)
+	}
+	defer conn.Close()
+
+	var got sql.NullInt64
+	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK('runkite_schema', 60)").Scan(&got); err != nil {
+		return fmt.Errorf("mysql: GET_LOCK: %w", err)
+	}
+	if !got.Valid || got.Int64 != 1 {
+		return fmt.Errorf("mysql: could not acquire schema lock within 60s")
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), "SELECT RELEASE_LOCK('runkite_schema')")
+	}()
+	return fn(ctx, conn)
+}
+
+func (s *Store) migrations(db migrate.DB) []migrate.Migration {
+	return []migrate.Migration{{
+		Version: 1,
+		Name:    "baseline",
+		Up: func(ctx context.Context) error {
+			return s.baselineUp(ctx, db)
+		},
+		Down: func(ctx context.Context) error {
+			return s.baselineDown(ctx, db)
+		},
+	}}
+}
+
+func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
+	if _, err := db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+		return err
+	}
+	defer db.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck
+
+	for _, tbl := range []string{
+		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
+		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
+		"threads", "agent_schemas", "agent_versions", "agents",
+		"registry_entry_versions", "registry_entries",
+	} {
+		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS "+tbl); err != nil {
+			return fmt.Errorf("mysql: drop %s: %w", tbl, err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) baselineUp(ctx context.Context, db migrate.DB) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS agents (
 			tenant_id    VARCHAR(255) NOT NULL DEFAULT 'default',
@@ -360,7 +431,7 @@ func (s *Store) Init(ctx context.Context) error {
 	}
 
 	for _, stmt := range statements {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("mysql: init schema: %w\nstatement: %s", err, stmt)
 		}
 	}
@@ -372,10 +443,10 @@ func (s *Store) Init(ctx context.Context) error {
 	// database threw "Unknown column 'version'" without this. See
 	// addColumnIfMissing's own doc comment for why MySQL needs a real
 	// existence check here instead of an IF NOT EXISTS clause.
-	if err := s.addColumnIfMissing(ctx, "threads", "version", "INT NOT NULL DEFAULT 1"); err != nil {
+	if err := s.addColumnIfMissing(ctx, db, "threads", "version", "INT NOT NULL DEFAULT 1"); err != nil {
 		return fmt.Errorf("mysql: init schema: %w", err)
 	}
-	if err := s.addColumnIfMissing(ctx, "webhook_dead_letters", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"); err != nil {
+	if err := s.addColumnIfMissing(ctx, db, "webhook_dead_letters", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"); err != nil {
 		return fmt.Errorf("mysql: init schema: %w", err)
 	}
 	return nil

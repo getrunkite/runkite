@@ -96,3 +96,15 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_python_langgraph`) |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` (case-insensitive). Same variable, same values, on the control plane and both runners. |
 | `LOG_FORMAT` | `text` | `text`\|`json`. `json` is the shape a log aggregator (Datadog, Grafana Loki, etc.) expects -- see [Logging](api.md#logging) below. |
+
+### Database CLI
+
+Backend selection matches `serve` (`POSTGRES_DSN` → `MYSQL_DSN` → `MONGO_URI` → SQLite `DATABASE_PATH`):
+
+| Command | Behavior |
+|---------|----------|
+| `runkite db upgrade` | Apply pending numbered schema migrations (`schema_migrations`). `serve`/`dev` also do this on startup via `Init`. |
+| `runkite db downgrade` | Roll back the most recently applied migration. Baseline (v1) Down drops application tables/collections (destructive). Exits `1` when already at version 0. |
+| `runkite db reset` | Truncate (or delete the SQLite file) and re-upgrade to latest. |
+
+Future schema changes are new numbered Up/Down steps next to each store -- not ad-hoc `ALTER` trails inside a single growing `Init`.

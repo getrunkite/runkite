@@ -17,6 +17,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -47,40 +48,85 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 // own application might independently take on the same database.
 const initAdvisoryLockKey = 894127001
 
-// Init creates all tables. Safe to call concurrently from multiple
-// processes against the same database (e.g. several `runkite serve`
-// replicas starting up at once, all pointed at one fresh Postgres) --
-// wrapped in a session-level advisory lock so only one process actually
-// runs the DDL while the others wait, then find the schema already
-// present. Without this, concurrent CREATE TABLE IF NOT EXISTS calls
+// Init applies pending numbered schema migrations. Safe to call
+// concurrently from multiple processes against the same database (e.g.
+// several `runkite serve` replicas starting up at once) -- wrapped in a
+// session-level advisory lock so only one process runs DDL while the
+// others wait. Without this, concurrent CREATE TABLE IF NOT EXISTS calls
 // against a table that doesn't exist yet can race on Postgres's own
 // catalog (confirmed live: "duplicate key value violates unique
 // constraint \"pg_type_typname_nsp_index\"" when 3 replicas started
-// together against a fresh database) -- IF NOT EXISTS makes each
-// individual statement idempotent once the schema exists, but doesn't by
-// itself make the very first, from-nothing creation race-free.
+// together against a fresh database).
 func (s *Store) Init(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
+		bk := migrate.NewPgx(conn)
+		return migrate.Upgrade(ctx, bk, s.migrations(conn), func(ctx context.Context) (bool, error) {
+			return migrate.PgxTableExists(ctx, conn, "agents")
+		})
+	})
+}
+
+// Downgrade rolls back the most recently applied migration under the
+// same advisory lock Init uses.
+func (s *Store) Downgrade(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
+		bk := migrate.NewPgx(conn)
+		return migrate.Downgrade(ctx, bk, s.migrations(conn))
+	})
+}
+
+func (s *Store) withSchemaLock(ctx context.Context, fn func(context.Context, *pgxpool.Conn) error) error {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
-		return fmt.Errorf("acquire connection for schema init lock: %w", err)
+		return fmt.Errorf("acquire connection for schema lock: %w", err)
 	}
 	defer conn.Release()
 
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", initAdvisoryLockKey); err != nil {
-		return fmt.Errorf("acquire schema init advisory lock: %w", err)
+		return fmt.Errorf("acquire schema advisory lock: %w", err)
 	}
 	defer func() {
 		// Best-effort unlock on the same connection the lock was taken on
 		// (required -- session-level advisory locks are connection-scoped).
-		// A failed unlock isn't fatal: the lock releases automatically when
-		// this connection is closed/returned to the pool, at worst
-		// delaying (not blocking forever) any other replica's Init call.
 		if _, unlockErr := conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", initAdvisoryLockKey); unlockErr != nil {
 			return
 		}
 	}()
+	return fn(ctx, conn)
+}
 
-	return s.initSchemaLocked(ctx, conn)
+func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
+	return []migrate.Migration{{
+		Version: 1,
+		Name:    "baseline",
+		Up: func(ctx context.Context) error {
+			return s.initSchemaLocked(ctx, conn)
+		},
+		Down: func(ctx context.Context) error {
+			return s.dropSchemaLocked(ctx, conn)
+		},
+	}}
+}
+
+func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `
+		DROP TABLE IF EXISTS
+			terminal_hook_claims,
+			cron_claims,
+			cron_schedules,
+			run_cache,
+			webhook_dead_letters,
+			store_items,
+			thread_checkpoints,
+			runs,
+			threads,
+			agent_schemas,
+			agent_versions,
+			agents,
+			registry_entry_versions,
+			registry_entries
+		CASCADE`)
+	return err
 }
 
 // splitSchemaStatements splits a semicolon-delimited SQL script into
@@ -129,9 +175,8 @@ func firstLine(stmt string) string {
 	return strings.TrimSpace(stmt)
 }
 
-// initSchemaLocked runs the actual schema DDL, called only while Init
-// holds the advisory lock -- split out so the lock-acquisition wrapper
-// above and the DDL itself aren't tangled together in one long function.
+// initSchemaLocked is baseline migration Up -- full current schema DDL.
+// Called only while the schema advisory lock is held.
 func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS agents (

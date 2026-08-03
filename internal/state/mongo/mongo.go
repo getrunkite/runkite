@@ -53,6 +53,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -136,9 +137,44 @@ func (s *Store) withTransaction(ctx context.Context, fn func(sessCtx context.Con
 	return err
 }
 
-// Init creates all indexes. Collections themselves are created implicitly
-// on first write -- MongoDB doesn't need a CREATE TABLE equivalent.
+// Init applies pending numbered schema migrations (indexes + backfills).
 func (s *Store) Init(ctx context.Context) error {
+	bk := migrate.NewMongo(s.db)
+	return migrate.Upgrade(ctx, bk, s.migrations(), func(ctx context.Context) (bool, error) {
+		return migrate.MongoCollectionExists(ctx, s.db, "agents")
+	})
+}
+
+// Downgrade rolls back the most recently applied migration.
+func (s *Store) Downgrade(ctx context.Context) error {
+	return migrate.Downgrade(ctx, migrate.NewMongo(s.db), s.migrations())
+}
+
+func (s *Store) migrations() []migrate.Migration {
+	return []migrate.Migration{{
+		Version: 1,
+		Name:    "baseline",
+		Up:      s.baselineUp,
+		Down:    s.baselineDown,
+	}}
+}
+
+func (s *Store) baselineDown(ctx context.Context) error {
+	for _, c := range []string{
+		"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
+		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
+		"terminal_hook_claims", "registry_entries", "registry_entry_versions",
+	} {
+		if err := s.db.Collection(c).Drop(ctx); err != nil {
+			return fmt.Errorf("drop collection %s: %w", c, err)
+		}
+	}
+	return nil
+}
+
+// baselineUp creates all indexes. Collections themselves are created
+// implicitly on first write -- MongoDB doesn't need a CREATE TABLE equivalent.
+func (s *Store) baselineUp(ctx context.Context) error {
 	type idx struct {
 		collection string
 		keys       bson.D

@@ -2,15 +2,112 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/migrate"
+	mongostore "github.com/getrunkite/runkite/internal/state/mongo"
 	mysqlstore "github.com/getrunkite/runkite/internal/state/mysql"
 	pgstore "github.com/getrunkite/runkite/internal/state/postgres"
 	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
 )
+
+// dbBackend is one opened state store plus helpers used by db CLI commands.
+// TruncateAll is not on state.Store (test/ops helper), so each backend
+// wires its own resetFn.
+type dbBackend struct {
+	name    string
+	store   state.Store
+	close   func()
+	resetFn func(context.Context) error
+}
+
+func openDBBackend(ctx context.Context) (*dbBackend, error) {
+	if postgresDSN := os.Getenv("POSTGRES_DSN"); postgresDSN != "" {
+		pg, err := pgstore.New(ctx, postgresDSN)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: %w", err)
+		}
+		return &dbBackend{
+			name:  "postgres",
+			store: pg,
+			close: func() { _ = pg.Close() },
+			resetFn: func(ctx context.Context) error {
+				if err := pg.TruncateAll(ctx); err != nil {
+					return err
+				}
+				return pg.Init(ctx)
+			},
+		}, nil
+	}
+	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
+		my, err := mysqlstore.New(ctx, mysqlDSN)
+		if err != nil {
+			return nil, fmt.Errorf("mysql: %w", err)
+		}
+		return &dbBackend{
+			name:  "mysql",
+			store: my,
+			close: func() { _ = my.Close() },
+			resetFn: func(ctx context.Context) error {
+				if err := my.TruncateAll(ctx); err != nil {
+					return err
+				}
+				return my.Init(ctx)
+			},
+		}, nil
+	}
+	if mongoURI := os.Getenv("MONGO_URI"); mongoURI != "" {
+		dbName := envOrDefault("MONGO_DB", "runkite")
+		mg, err := mongostore.New(ctx, mongoURI, dbName)
+		if err != nil {
+			return nil, fmt.Errorf("mongodb: %w", err)
+		}
+		return &dbBackend{
+			name:  "mongodb",
+			store: mg,
+			close: func() { _ = mg.Close() },
+			resetFn: func(ctx context.Context) error {
+				if err := mg.TruncateAll(ctx); err != nil {
+					return err
+				}
+				return mg.Init(ctx)
+			},
+		}, nil
+	}
+
+	dbPath := envOrDefault("DATABASE_PATH", "./runkite.db")
+	sq, err := sqlitestore.New(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: %w", err)
+	}
+	b := &dbBackend{
+		name:  "sqlite",
+		store: sq,
+		close: func() { _ = sq.Close() },
+	}
+	b.resetFn = func(ctx context.Context) error {
+		_ = sq.Close()
+		if dbPath != "" && dbPath != ":memory:" {
+			if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("failed to remove existing sqlite db before reset", "path", dbPath, "error", err)
+			}
+		}
+		fresh, err := sqlitestore.New(dbPath)
+		if err != nil {
+			return err
+		}
+		b.store = fresh
+		b.close = func() { _ = fresh.Close() }
+		sq = fresh
+		return fresh.Init(ctx)
+	}
+	return b, nil
+}
 
 func cmdDBUpgrade(args []string) {
 	fs := flag.NewFlagSet("db upgrade", flag.ExitOnError)
@@ -18,71 +115,40 @@ func cmdDBUpgrade(args []string) {
 
 	setupLogging()
 	ctx := context.Background()
-
-	postgresDSN := os.Getenv("POSTGRES_DSN")
-	if postgresDSN != "" {
-		pg, err := pgstore.New(ctx, postgresDSN)
-		if err != nil {
-			slog.Error("failed to connect to postgres", "error", err)
-			os.Exit(1)
-		}
-		defer pg.Close()
-		if err := pg.Init(ctx); err != nil {
-			slog.Error("failed to initialize postgres", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Database initialized successfully (postgres)")
-		return
-	}
-
-	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
-		my, err := mysqlstore.New(ctx, mysqlDSN)
-		if err != nil {
-			slog.Error("failed to connect to mysql", "error", err)
-			os.Exit(1)
-		}
-		defer my.Close()
-		if err := my.Init(ctx); err != nil {
-			slog.Error("failed to initialize mysql", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Database initialized successfully (mysql)")
-		return
-	}
-
-	dbPath := envOrDefault("DATABASE_PATH", "./runkite.db")
-	sq, err := sqlitestore.New(dbPath)
+	b, err := openDBBackend(ctx)
 	if err != nil {
-		slog.Error("failed to create sqlite store", "error", err)
+		slog.Error("failed to connect", "error", err)
 		os.Exit(1)
 	}
-	defer sq.Close()
-	if err := sq.Init(ctx); err != nil {
-		slog.Error("failed to initialize sqlite", "error", err)
+	defer b.close()
+	if err := b.store.Init(ctx); err != nil {
+		slog.Error("failed to apply migrations", "error", err)
 		os.Exit(1)
 	}
-	fmt.Println("Database initialized successfully (sqlite)")
+	fmt.Printf("Database upgraded successfully (%s)\n", b.name)
 }
 
-// cmdDBDowngrade exists so the CLI surface matches the documented command
-// set, but there is currently no real migration to roll back: the schema is
-// a single idempotent `CREATE TABLE IF NOT EXISTS` script (see Init in
-// internal/state/sqlite and internal/state/postgres), not a sequence of
-// versioned up/down migrations. Silently no-op'ing or pretending to succeed
-// would be worse than being honest that this isn't implemented yet -- a
-// real "downgrade" needs a versioned migration framework (numbered
-// migrations with paired up/down steps and a schema_version table) before
-// this command can do anything meaningful.
 func cmdDBDowngrade(args []string) {
 	fs := flag.NewFlagSet("db downgrade", flag.ExitOnError)
 	fs.Parse(args)
 
-	fmt.Fprintln(os.Stderr, "runkite db downgrade: not supported yet.")
-	fmt.Fprintln(os.Stderr, "The schema is managed as a single idempotent migration (CREATE TABLE IF")
-	fmt.Fprintln(os.Stderr, "NOT EXISTS), not versioned up/down migrations, so there is nothing to roll")
-	fmt.Fprintln(os.Stderr, "back to. If you need a clean slate, use `runkite db reset` (drops and")
-	fmt.Fprintln(os.Stderr, "recreates all tables -- this deletes existing data).")
-	os.Exit(1)
+	setupLogging()
+	ctx := context.Background()
+	b, err := openDBBackend(ctx)
+	if err != nil {
+		slog.Error("failed to connect", "error", err)
+		os.Exit(1)
+	}
+	defer b.close()
+	if err := b.store.Downgrade(ctx); err != nil {
+		if errors.Is(err, migrate.ErrNoMigration) {
+			fmt.Fprintln(os.Stderr, "runkite db downgrade: nothing to roll back (schema version is 0).")
+			os.Exit(1)
+		}
+		slog.Error("failed to downgrade", "error", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Rolled back one migration (%s)\n", b.name)
 }
 
 func cmdDBReset(args []string) {
@@ -91,62 +157,15 @@ func cmdDBReset(args []string) {
 
 	setupLogging()
 	ctx := context.Background()
-
-	postgresDSN := os.Getenv("POSTGRES_DSN")
-	if postgresDSN != "" {
-		pg, err := pgstore.New(ctx, postgresDSN)
-		if err != nil {
-			slog.Error("failed to connect to postgres", "error", err)
-			os.Exit(1)
-		}
-		defer pg.Close()
-		if err := pg.TruncateAll(ctx); err != nil {
-			slog.Error("failed to truncate postgres", "error", err)
-			os.Exit(1)
-		}
-		if err := pg.Init(ctx); err != nil {
-			slog.Error("failed to reinitialize postgres", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Database reset successfully (postgres)")
-		return
-	}
-
-	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
-		my, err := mysqlstore.New(ctx, mysqlDSN)
-		if err != nil {
-			slog.Error("failed to connect to mysql", "error", err)
-			os.Exit(1)
-		}
-		defer my.Close()
-		if err := my.TruncateAll(ctx); err != nil {
-			slog.Error("failed to truncate mysql", "error", err)
-			os.Exit(1)
-		}
-		if err := my.Init(ctx); err != nil {
-			slog.Error("failed to reinitialize mysql", "error", err)
-			os.Exit(1)
-		}
-		fmt.Println("Database reset successfully (mysql)")
-		return
-	}
-
-	// SQLite: delete the file and recreate
-	dbPath := envOrDefault("DATABASE_PATH", "./runkite.db")
-	if dbPath != "" && dbPath != ":memory:" {
-		if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-			slog.Warn("failed to remove existing sqlite db before reset", "path", dbPath, "error", err)
-		}
-	}
-	sq, err := sqlitestore.New(dbPath)
+	b, err := openDBBackend(ctx)
 	if err != nil {
-		slog.Error("failed to create sqlite store", "error", err)
+		slog.Error("failed to connect", "error", err)
 		os.Exit(1)
 	}
-	defer sq.Close()
-	if err := sq.Init(ctx); err != nil {
-		slog.Error("failed to initialize sqlite", "error", err)
+	defer b.close()
+	if err := b.resetFn(ctx); err != nil {
+		slog.Error("failed to reset", "error", err)
 		os.Exit(1)
 	}
-	fmt.Println("Database reset successfully (sqlite)")
+	fmt.Printf("Database reset successfully (%s)\n", b.name)
 }

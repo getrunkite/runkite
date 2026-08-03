@@ -15,6 +15,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -99,8 +100,46 @@ func New(path string) (*SQLiteStore, error) {
 	return &SQLiteStore{db: db}, nil
 }
 
-// Init creates all tables.
+// Init applies pending numbered schema migrations (baseline = full DDL).
 func (s *SQLiteStore) Init(ctx context.Context) error {
+	bk := migrate.NewSQL(s.db, migrate.SQLite)
+	return migrate.Upgrade(ctx, bk, s.migrations(), func(ctx context.Context) (bool, error) {
+		return migrate.TableExists(ctx, s.db, migrate.SQLite, "agents")
+	})
+}
+
+// Downgrade rolls back the most recently applied migration.
+func (s *SQLiteStore) Downgrade(ctx context.Context) error {
+	bk := migrate.NewSQL(s.db, migrate.SQLite)
+	return migrate.Downgrade(ctx, bk, s.migrations())
+}
+
+func (s *SQLiteStore) migrations() []migrate.Migration {
+	return []migrate.Migration{{
+		Version: 1,
+		Name:    "baseline",
+		Up:      s.baselineUp,
+		Down:    s.baselineDown,
+	}}
+}
+
+func (s *SQLiteStore) baselineDown(ctx context.Context) error {
+	// Children before parents (FK). schema_migrations is left for the
+	// migrator to unrecord the version row.
+	for _, tbl := range []string{
+		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
+		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
+		"threads", "agent_schemas", "agent_versions", "agents",
+		"registry_entry_versions", "registry_entries",
+	} {
+		if _, err := s.db.ExecContext(ctx, "DROP TABLE IF EXISTS "+tbl); err != nil {
+			return fmt.Errorf("drop %s: %w", tbl, err)
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) baselineUp(ctx context.Context) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS agents (
 		tenant_id    TEXT NOT NULL DEFAULT 'default',
@@ -389,10 +428,8 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 // databases created before a column existed. modernc.org/sqlite's parser
 // rejects the standard "ADD COLUMN IF NOT EXISTS" syntax outright (a
 // syntax error, not a runtime check), so this detects "already exists" by
-// string-matching the error instead -- the portable idempotency mechanism
-// for a "single idempotent migration" schema (see db downgrade's honest
-// non-support): existing installs get new columns added in place, no
-// versioned up/down migration system needed for purely additive changes.
+// string-matching the error instead. Used inside baseline (and any future
+// additive migration) so upgraded installs get new columns in place.
 func addColumnIfMissing(ctx context.Context, db *sql.DB, table, column, ddl string) error {
 	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl))
 	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {

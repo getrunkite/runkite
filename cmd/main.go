@@ -58,9 +58,9 @@ func printUsage() {
 Commands:
   dev             Start control plane in development mode (auto-discovers agents)
   run, serve      Start control plane in production mode
-  db upgrade      Run database migrations (create tables)
-  db downgrade    Roll back the last migration (not yet supported -- see below)
-  db reset        Reset database (drop + recreate all tables)
+  db upgrade      Apply pending numbered schema migrations
+  db downgrade    Roll back the most recently applied migration
+  db reset        Reset database (truncate/recreate + upgrade to latest)
   agents list     List registered agents from config
   version         Print version info
   help            Show this help message
