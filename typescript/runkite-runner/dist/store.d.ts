@@ -6,11 +6,11 @@
  * - direct mode (POSTGRES_DSN set): queries the control plane's own
  *   store_items table straight over `pg` -- same schema, same \x1F
  *   namespace encoding as internal/state/postgres/postgres.go. Zero HTTP
- *   hop. Always operates in the "default" tenant (see TENANT_ID below) --
- *   same documented Direct Mode Trust Model trade-off as the Python
- *   runner: direct mode bypasses control-plane tenant scoping entirely.
+ *   hop. Tenant comes from RunAssignment.tenant_id via tenantCtx
+ *   (bound per job in worker.ts); absent/legacy assignments fall back
+ *   to "default".
  * - proxy mode (no POSTGRES_DSN): calls the control plane's /internal/
- *   store/* HTTP API. Works against any backend (SQLite, Postgres).
+ *   store/* HTTP API with X-Runkite-Tenant-Id from the same binding.
  *
  * Both modes read/write the exact same rows as the Go control plane and
  * the Python runner -- one store, not three competing systems.
@@ -38,7 +38,6 @@ export declare class RunkiteStore extends BaseStore {
     private baseUrl;
     private headers;
     private readonly dispatcher;
-    private static readonly TENANT_ID;
     constructor(opts: {
         postgresDsn?: string;
         httpBaseUrl?: string;

@@ -13,6 +13,7 @@ import { CheckpointerManager } from "./checkpoint.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun } from "./executeRun.js";
+import { runWithTenant } from "./tenantCtx.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
@@ -175,11 +176,11 @@ export async function runWorker(opts) {
     adapter.attachStore(store);
     logger.info(`Store mode: ${store.mode}`);
     if (store.mode === "direct") {
-        // Direct mode SQL always scopes store_items as tenant "default"
-        // (see store.ts TENANT_ID). Proxy mode inherits the caller's tenant
-        // from the control plane -- required for multi-tenant.
-        logger.warn('store/checkpoint direct mode (POSTGRES_DSN set) always uses tenant "default"; ' +
-            "unset POSTGRES_DSN and use RUNKITE_HTTP_URL for per-tenant isolation (docs/auth.md Multi-tenancy)");
+        // store_items follows RunAssignment.tenant_id per job; LangGraph's
+        // own checkpoint tables are still not tenant-scoped.
+        logger.warn("checkpoint direct mode (POSTGRES_DSN set): LangGraph checkpoint tables are not tenant-scoped. " +
+            "store_items uses RunAssignment.tenant_id. For checkpoint isolation unset POSTGRES_DSN " +
+            "and use RUNKITE_HTTP_URL (docs/auth.md Multi-tenancy)");
     }
     // grpcChannelCredentials() (not just "did TLS env vars get read") is
     // the actual signal createRunnerClient itself uses to decide
@@ -283,86 +284,96 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
         generation = assignment.generation ?? 0;
         logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
         logTraceContext(runId, assignment.trace_context);
-        // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
-        if (opts?.httpAddress &&
-            (await shouldSkipRun(opts.httpAddress, runId, {
-                runnerKind: opts.runnerKind,
-                runnerToken: opts.runnerToken,
-            }))) {
-            return;
-        }
-        const cancelState = registerRun(pendingCancels, runId);
-        // Started as soon as runId is known, BEFORE streamEvents' first
-        // message -- see heartbeat.ts / the Python runner's mirrored change
-        // in worker.py's _handle_job. onSuperseded shares cancelState with
-        // executeRun below -- a superseded heartbeat sets the SAME flag a
-        // real cancel signal would, so this runner stops cooperatively
-        // instead of racing a second runner that's already taken over.
-        const heartbeat = startHeartbeatLoop(client, runId, metadata, {
-            generation,
-            onSuperseded: () => {
-                cancelState.cancelled = true;
-            },
+        await runWithTenant(assignment.tenant_id, async () => {
+            await handleJobUnderTenant(client, adapter, assignment, runId, generation, metadata, pendingCancels, opts);
         });
-        try {
-            // Open one persistent client-streaming call per run, same pattern
-            // as the Python runner's asyncio.Queue-backed generator -- the
-            // ClientWritableStream's own internal buffering plays the same
-            // role the queue does there.
-            let resolveStream;
-            let rejectStream;
-            const streamDone = new Promise((resolve, reject) => {
-                resolveStream = resolve;
-                rejectStream = reject;
-            });
-            const call = client.streamEvents(metadata, (err, resp) => {
-                if (err)
-                    rejectStream(err);
-                else
-                    resolveStream(resp);
-            });
-            const sendEvent = async (event) => {
-                call.write({ runId: runId, eventJson: JSON.stringify(event), generation: String(generation) });
-            };
-            const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
-            call.end();
-            try {
-                await streamDone;
-            }
-            catch (err) {
-                logger.error("Stream finalization error:", err);
-            }
-            await new Promise((resolve, reject) => {
-                client.reportStatus({
-                    runId: runId,
-                    status,
-                    errorMessage: status === "error" ? "see error event" : "",
-                    generation: String(generation),
-                }, metadata, (err) => {
-                    if (err)
-                        reject(err);
-                    else
-                        resolve();
-                });
-            });
-            logger.info(`Run completed: run_id=${runId} status=${status}`);
-        }
-        finally {
-            heartbeat.stop();
-            // Always clear the cancel registration, even if executeRun itself
-            // threw -- otherwise a failure here would leak an entry in
-            // pendingCancels for every job that hits it.
-            pendingCancels.delete(runId);
-        }
     }
     catch (err) {
         logger.error(`Worker error handling run_id=${runId}:`, err);
-        if (runId) {
+        if (runId !== undefined) {
             const failedRunId = runId;
             await new Promise((resolve) => {
-                client.reportStatus({ runId: failedRunId, status: "error", errorMessage: String(err), generation: String(generation) }, metadata, () => resolve());
-            }).catch(() => { });
+                client.reportStatus({
+                    runId: failedRunId,
+                    status: "error",
+                    errorMessage: err instanceof Error ? err.message : String(err),
+                    generation: String(generation),
+                }, metadata, () => resolve());
+            });
         }
+    }
+}
+async function handleJobUnderTenant(client, adapter, assignment, runId, generation, metadata, pendingCancels, opts) {
+    // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+    if (opts?.httpAddress &&
+        (await shouldSkipRun(opts.httpAddress, runId, {
+            runnerKind: opts.runnerKind,
+            runnerToken: opts.runnerToken,
+        }))) {
+        return;
+    }
+    const cancelState = registerRun(pendingCancels, runId);
+    // Started as soon as runId is known, BEFORE streamEvents' first
+    // message -- see heartbeat.ts / the Python runner's mirrored change
+    // in worker.py's _handle_job. onSuperseded shares cancelState with
+    // executeRun below -- a superseded heartbeat sets the SAME flag a
+    // real cancel signal would, so this runner stops cooperatively
+    // instead of racing a second runner that's already taken over.
+    const heartbeat = startHeartbeatLoop(client, runId, metadata, {
+        generation,
+        onSuperseded: () => {
+            cancelState.cancelled = true;
+        },
+    });
+    try {
+        // Open one persistent client-streaming call per run, same pattern
+        // as the Python runner's asyncio.Queue-backed generator -- the
+        // ClientWritableStream's own internal buffering plays the same
+        // role the queue does there.
+        let resolveStream;
+        let rejectStream;
+        const streamDone = new Promise((resolve, reject) => {
+            resolveStream = resolve;
+            rejectStream = reject;
+        });
+        const call = client.streamEvents(metadata, (err, resp) => {
+            if (err)
+                rejectStream(err);
+            else
+                resolveStream(resp);
+        });
+        const sendEvent = async (event) => {
+            call.write({ runId: runId, eventJson: JSON.stringify(event), generation: String(generation) });
+        };
+        const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
+        call.end();
+        try {
+            await streamDone;
+        }
+        catch (err) {
+            logger.error("Stream finalization error:", err);
+        }
+        await new Promise((resolve, reject) => {
+            client.reportStatus({
+                runId: runId,
+                status,
+                errorMessage: status === "error" ? "see error event" : "",
+                generation: String(generation),
+            }, metadata, (err) => {
+                if (err)
+                    reject(err);
+                else
+                    resolve();
+            });
+        });
+        logger.info(`Run completed: run_id=${runId} status=${status}`);
+    }
+    finally {
+        heartbeat.stop();
+        // Always clear the cancel registration, even if executeRun itself
+        // threw -- otherwise a failure here would leak an entry in
+        // pendingCancels for every job that hits it.
+        pendingCancels.delete(runId);
     }
 }
 /**

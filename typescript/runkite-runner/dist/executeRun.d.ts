@@ -28,6 +28,7 @@ export interface RunAssignment {
     } | null;
     user?: Record<string, unknown>;
     generation?: number;
+    tenant_id?: string;
 }
 /**
  * Builds the RunnableConfig passed to graph.stream(), including the keys

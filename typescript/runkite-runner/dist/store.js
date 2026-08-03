@@ -6,11 +6,11 @@
  * - direct mode (POSTGRES_DSN set): queries the control plane's own
  *   store_items table straight over `pg` -- same schema, same \x1F
  *   namespace encoding as internal/state/postgres/postgres.go. Zero HTTP
- *   hop. Always operates in the "default" tenant (see TENANT_ID below) --
- *   same documented Direct Mode Trust Model trade-off as the Python
- *   runner: direct mode bypasses control-plane tenant scoping entirely.
+ *   hop. Tenant comes from RunAssignment.tenant_id via tenantCtx
+ *   (bound per job in worker.ts); absent/legacy assignments fall back
+ *   to "default".
  * - proxy mode (no POSTGRES_DSN): calls the control plane's /internal/
- *   store/* HTTP API. Works against any backend (SQLite, Postgres).
+ *   store/* HTTP API with X-Runkite-Tenant-Id from the same binding.
  *
  * Both modes read/write the exact same rows as the Go control plane and
  * the Python runner -- one store, not three competing systems.
@@ -23,6 +23,7 @@
 import { BaseStore } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
 import { logger } from "./logger.js";
+import { currentTenant, tenantHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export const NS_DELIM = "\x1f";
 /** Exported for direct unit testing of the round-trip/boundary-safety
@@ -80,11 +81,6 @@ export class RunkiteStore extends BaseStore {
     // option," which is fetch's own default behavior (plain http:// or
     // https:// with a publicly-trusted cert).
     dispatcher = httpDispatcher();
-    // Direct mode has no per-request tenant identity to work with (it's a
-    // raw DB connection, not an authenticated HTTP call) -- see the module
-    // docstring's Direct Mode Trust Model note. Must match
-    // internal/tenant.DefaultTenant on the Go side exactly.
-    static TENANT_ID = "default";
     constructor(opts) {
         super();
         if (!opts.postgresDsn && !opts.httpBaseUrl) {
@@ -131,14 +127,14 @@ export class RunkiteStore extends BaseStore {
             // Hide expired rows the same way Python/Go stores do.
             const res = await pool.query(`SELECT namespace, key, value, created_at, updated_at FROM store_items
          WHERE tenant_id = $1 AND namespace = $2 AND key = $3
-           AND (expires_at IS NULL OR expires_at > NOW())`, [RunkiteStore.TENANT_ID, nsToString(op.namespace), op.key]);
+           AND (expires_at IS NULL OR expires_at > NOW())`, [currentTenant(), nsToString(op.namespace), op.key]);
             return res.rows[0] ? itemFromRow(res.rows[0]) : null;
         }
         if (isPutOp(op)) {
             const ns = nsToString(op.namespace);
             if (op.value === null) {
                 await pool.query("DELETE FROM store_items WHERE tenant_id = $1 AND namespace = $2 AND key = $3", [
-                    RunkiteStore.TENANT_ID,
+                    currentTenant(),
                     ns,
                     op.key,
                 ]);
@@ -152,13 +148,13 @@ export class RunkiteStore extends BaseStore {
            VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6)
            ON CONFLICT (tenant_id, namespace, key)
            DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(),
-             ttl_minutes = EXCLUDED.ttl_minutes, expires_at = EXCLUDED.expires_at`, [RunkiteStore.TENANT_ID, ns, op.key, JSON.stringify(op.value), ttlMinutes ?? null, expiresAt]);
+             ttl_minutes = EXCLUDED.ttl_minutes, expires_at = EXCLUDED.expires_at`, [currentTenant(), ns, op.key, JSON.stringify(op.value), ttlMinutes ?? null, expiresAt]);
             }
             return undefined;
         }
         if (isSearchOp(op)) {
             const where = ["tenant_id = $1", "namespace LIKE $2", "(expires_at IS NULL OR expires_at > NOW())"];
-            const args = [RunkiteStore.TENANT_ID, nsPrefixPattern(op.namespacePrefix)];
+            const args = [currentTenant(), nsPrefixPattern(op.namespacePrefix)];
             let argN = 3;
             for (const [k, v] of Object.entries(op.filter ?? {})) {
                 where.push(`value->>$${argN} = $${argN + 1}`);
@@ -175,7 +171,7 @@ export class RunkiteStore extends BaseStore {
         if (isListNamespacesOp(op)) {
             const prefix = op.matchConditions?.find((c) => c.matchType === "prefix")?.path;
             const where = ["tenant_id = $1"];
-            const args = [RunkiteStore.TENANT_ID];
+            const args = [currentTenant()];
             let argN = 2;
             if (prefix) {
                 where.push(`namespace LIKE $${argN}`);
@@ -197,7 +193,7 @@ export class RunkiteStore extends BaseStore {
         // boundary -- see internal/auth/auth.go.
         if (isGetOp(op)) {
             const url = `${this.baseUrl}/internal/store/items?namespace=${encodeURIComponent(op.namespace.join(","))}&key=${encodeURIComponent(op.key)}`;
-            const opts = { headers: this.headers, dispatcher: this.dispatcher };
+            const opts = { headers: { ...this.headers, ...tenantHeaders() }, dispatcher: this.dispatcher };
             const resp = await fetch(url, opts);
             if (resp.status === 404)
                 return null;
@@ -209,7 +205,7 @@ export class RunkiteStore extends BaseStore {
             if (op.value === null) {
                 const opts = {
                     method: "DELETE",
-                    headers: { ...this.headers, "Content-Type": "application/json" },
+                    headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
                     body: JSON.stringify({ namespace: op.namespace, key: op.key }),
                     dispatcher: this.dispatcher,
                 };
@@ -230,7 +226,7 @@ export class RunkiteStore extends BaseStore {
                     body.ttl_minutes = ttlMinutes;
                 const opts = {
                     method: "PUT",
-                    headers: { ...this.headers, "Content-Type": "application/json" },
+                    headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
                     body: JSON.stringify(body),
                     dispatcher: this.dispatcher,
                 };
@@ -243,7 +239,7 @@ export class RunkiteStore extends BaseStore {
         if (isSearchOp(op)) {
             const opts = {
                 method: "POST",
-                headers: { ...this.headers, "Content-Type": "application/json" },
+                headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
                 body: JSON.stringify({
                     namespace_prefix: op.namespacePrefix,
                     filter: op.filter ?? {},
@@ -263,7 +259,7 @@ export class RunkiteStore extends BaseStore {
             const suffix = op.matchConditions?.find((c) => c.matchType === "suffix")?.path;
             const opts = {
                 method: "POST",
-                headers: { ...this.headers, "Content-Type": "application/json" },
+                headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
                 body: JSON.stringify({
                     prefix: prefix ?? null,
                     suffix: suffix ?? null,
