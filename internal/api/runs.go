@@ -597,6 +597,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		StreamModes:    []string{"values", "updates"},
 		ConnectorNeeds: []string{},
 		User:           userContextFromAuth(ctx),
+		TenantID:       tenant.FromContext(ctx),
 		// Generation starts at 1 for every fresh dispatch (see its own
 		// doc comment on RunAssignment for the full fencing rationale)
 		// -- ReclaimStale is the only thing that ever increments it

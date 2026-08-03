@@ -32,6 +32,14 @@ type RunAssignment struct {
 	// provider is configured, or the caller has no identity attached.
 	User *UserContext `json:"user,omitempty"`
 
+	// TenantID scopes direct-mode store/vector SQL (and runner proxy
+	// /internal/* calls via X-Runkite-Tenant-Id) to the same tenant the
+	// control plane used when creating the run. Empty/absent means the
+	// runner falls back to "default" (backward compatible with older
+	// control planes). LangGraph's own checkpoint tables remain
+	// unscoped -- see docs/auth.md Multi-tenancy.
+	TenantID string `json:"tenant_id,omitempty"`
+
 	// Generation fences a job against a runner that gets reclaimed
 	// while genuinely still executing, then finishes anyway and
 	// reports a stale result after a second runner already took over.

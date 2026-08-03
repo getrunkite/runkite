@@ -10,8 +10,7 @@ store:
   control plane's own `vector_items` table straight over psycopg --
   same schema as internal/vectorstore/pgvector/pgvector.go. Zero HTTP
   hop. Only correct when the CP is actually on pgvector; always
-  operates in the "default" tenant (see _TENANT_ID below), the same
-  documented Direct Mode Trust Model trade-off as store.py.
+  scopes SQL via tenant_ctx (RunAssignment.tenant_id), same as store.py.
 
 When BOTH are provided, proxy wins. A common production shape is
 Postgres for state/checkpoints (POSTGRES_DSN set on the runner) plus
@@ -41,10 +40,7 @@ from langchain_core.vectorstores import VectorStore
 from . import pg_pool, runner_loop
 from .tls_utils import httpx_tls_kwargs
 
-# Direct mode has no per-request tenant identity (a raw DB connection, not
-# an authenticated HTTP call) -- see store.py's identical note. Must match
-# internal/tenant.DefaultTenant on the Go side exactly.
-_TENANT_ID = "default"
+from .tenant_ctx import current_tenant, tenant_headers
 
 
 def _item_to_document(item: dict) -> Document:
@@ -268,7 +264,7 @@ class RunkiteVectorStore(VectorStore):
 
     async def _upsert_proxy(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
         ) as client:
             resp = await client.put(
                 "/internal/vectors/items",
@@ -284,7 +280,7 @@ class RunkiteVectorStore(VectorStore):
 
     async def _delete_proxy(self, doc_id: str) -> None:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
         ) as client:
             resp = await client.request(
                 "DELETE", "/internal/vectors/items", json={"namespace": self._namespace, "id": doc_id}
@@ -293,7 +289,7 @@ class RunkiteVectorStore(VectorStore):
 
     async def _search_proxy(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
         ) as client:
             resp = await client.post(
                 "/internal/vectors/search",
@@ -329,7 +325,7 @@ class RunkiteVectorStore(VectorStore):
                         content = EXCLUDED.content, embedding = EXCLUDED.embedding,
                         metadata = EXCLUDED.metadata, updated_at = NOW()
                     """,
-                    (_TENANT_ID, self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
+                    (current_tenant(), self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
                 )
 
         await self._with_direct_conn(_do)
@@ -339,14 +335,14 @@ class RunkiteVectorStore(VectorStore):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "DELETE FROM vector_items WHERE tenant_id = %s AND namespace = %s AND id = %s",
-                    (_TENANT_ID, self._namespace, doc_id),
+                    (current_tenant(), self._namespace, doc_id),
                 )
 
         await self._with_direct_conn(_do)
 
     async def _search_direct(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
         where = ["tenant_id = %s", "namespace = %s"]
-        args: list[Any] = [_TENANT_ID, self._namespace]
+        args: list[Any] = [current_tenant(), self._namespace]
         for key, val in (filter_ or {}).items():
             where.append("metadata->>%s = %s")
             args.append(key)

@@ -40,7 +40,7 @@ func TestDirectModeTenantGapWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := directModeTenantGapWarning(multi)
-	if !strings.Contains(got, "non-default tenant_id") || !strings.Contains(got, "POSTGRES_DSN") {
+	if !strings.Contains(got, "non-default tenant_id") || !strings.Contains(got, "checkpoint") || !strings.Contains(got, "POSTGRES_DSN") {
 		t.Fatalf("multi-tenant warning missing expected fragments, got %q", got)
 	}
 }

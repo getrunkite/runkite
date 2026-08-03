@@ -819,7 +819,7 @@ func directModeTenantGapWarning(configPath string) string {
 	}
 	for _, entry := range cfg.Auth.Keys {
 		if entry.TenantID != "" && entry.TenantID != "default" {
-			return "auth configures non-default tenant_id on API keys: runner POSTGRES_DSN (direct mode) always scopes store/checkpoint as tenant \"default\". Unset POSTGRES_DSN on runners and use RUNKITE_HTTP_URL (proxy mode) for per-tenant isolation. See docs/auth.md Multi-tenancy."
+			return "auth configures non-default tenant_id on API keys: LangGraph direct-mode checkpoint tables are not tenant-scoped (store_items now follows RunAssignment.tenant_id). For checkpoint isolation unset POSTGRES_DSN on runners and use RUNKITE_HTTP_URL (proxy mode). See docs/auth.md Multi-tenancy."
 		}
 	}
 	return ""

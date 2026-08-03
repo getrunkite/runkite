@@ -6,13 +6,11 @@ control plane's unified key-value store instead of checkpoints:
 - direct mode (POSTGRES_DSN set): queries the control plane's own
   `store_items` table straight over psycopg -- same schema, same \\x1F
   namespace encoding as internal/state/postgres/postgres.go. Zero HTTP hop.
-  Always operates in the "default" tenant (see _TENANT_ID below) -- this
-  bypasses the control plane's tenant-scoping entirely, a known trust-model
-  trade-off: direct mode bypasses control-plane authz on checkpoint/store
-  bytes in multi-tenant deployments. Proxy mode is the recommended
-  mitigation for real per-tenant isolation.
-- proxy mode (no POSTGRES_DSN): calls the control plane's /store/* HTTP
-  API over httpx. Works against any backend (SQLite, Postgres).
+  Tenant comes from RunAssignment.tenant_id via tenant_ctx (bound per job
+  in worker.py); absent/legacy assignments fall back to "default".
+- proxy mode (no POSTGRES_DSN): calls the control plane's /internal/store/*
+  HTTP API over httpx, sending X-Runkite-Tenant-Id from the same binding.
+  Works against any backend (SQLite, Postgres).
 
 Both modes read/write the exact same rows, so a value written by a Go
 client via HTTP is immediately visible to a Python graph via direct mode,
@@ -66,17 +64,12 @@ from langgraph.store.base import (
 )
 
 from . import pg_pool
+from .tenant_ctx import current_tenant, tenant_headers
 from .tls_utils import httpx_tls_kwargs
 
 logger = logging.getLogger("runkite.store")
 
 _NS_DELIM = "\x1f"
-
-# Direct mode has no per-request tenant identity to work with (it's a raw
-# DB connection, not an authenticated HTTP call) -- see the module
-# docstring's Direct Mode Trust Model note. Must match
-# internal/tenant.DefaultTenant on the Go side exactly.
-_TENANT_ID = "default"
 
 
 def _ns_to_string(ns: tuple[str, ...]) -> str:
@@ -290,8 +283,9 @@ class RunkiteStore(BaseStore):
     # -- proxy mode: HTTP calls to the control plane -----------------------
 
     async def _abatch_proxy(self, ops: list[Op]) -> list[Result]:
+        headers = {**self._headers, **tenant_headers()}
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers=self._headers, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url, headers=headers, timeout=10.0, **httpx_tls_kwargs()
         ) as client:
             return [await self._proxy_one(client, op) for op in ops]
 
@@ -401,7 +395,7 @@ class RunkiteStore(BaseStore):
                     "SELECT namespace, key, value, created_at, updated_at, ttl_minutes "
                     "FROM store_items WHERE tenant_id = %s AND namespace = %s AND key = %s "
                     "AND (expires_at IS NULL OR expires_at > NOW())",
-                    (_TENANT_ID, ns, op.key),
+                    (current_tenant(), ns, op.key),
                 )
                 row = await cur.fetchone()
                 if row is None:
@@ -411,7 +405,7 @@ class RunkiteStore(BaseStore):
                     new_expiry = datetime.now(timezone.utc) + _timedelta_minutes(ttl_minutes)
                     await cur.execute(
                         "UPDATE store_items SET expires_at = %s WHERE tenant_id = %s AND namespace = %s AND key = %s",
-                        (new_expiry, _TENANT_ID, ns, op.key),
+                        (new_expiry, current_tenant(), ns, op.key),
                     )
                 return _item_from_row(row[:5])
 
@@ -427,7 +421,7 @@ class RunkiteStore(BaseStore):
                 if op.value is None:
                     await cur.execute(
                         "DELETE FROM store_items WHERE tenant_id = %s AND namespace = %s AND key = %s",
-                        (_TENANT_ID, ns, op.key),
+                        (current_tenant(), ns, op.key),
                     )
                 else:
                     await cur.execute(
@@ -438,13 +432,13 @@ class RunkiteStore(BaseStore):
                         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(),
                             ttl_minutes = EXCLUDED.ttl_minutes, expires_at = EXCLUDED.expires_at
                         """,
-                        (_TENANT_ID, ns, op.key, json.dumps(op.value), op.ttl, expires_at),
+                        (current_tenant(), ns, op.key, json.dumps(op.value), op.ttl, expires_at),
                     )
             return None
 
         if isinstance(op, SearchOp):
             where = ["tenant_id = %s", "namespace LIKE %s", "(expires_at IS NULL OR expires_at > NOW())"]
-            args: list[Any] = [_TENANT_ID, _ns_prefix_pattern(op.namespace_prefix)]
+            args: list[Any] = [current_tenant(), _ns_prefix_pattern(op.namespace_prefix)]
             for k, v in (op.filter or {}).items():
                 where.append("value->>%s = %s")
                 args.append(k)
@@ -466,14 +460,14 @@ class RunkiteStore(BaseStore):
                         if ttl_minutes is not None:
                             await cur.execute(
                                 "UPDATE store_items SET expires_at = %s WHERE tenant_id = %s AND namespace = %s AND key = %s",
-                                (now + _timedelta_minutes(ttl_minutes), _TENANT_ID, r[0], r[1]),
+                                (now + _timedelta_minutes(ttl_minutes), current_tenant(), r[0], r[1]),
                             )
                 return items
 
         if isinstance(op, ListNamespacesOp):
             prefix, _suffix = _split_match_conditions(op.match_conditions)
             where = ["tenant_id = %s"]
-            args = [_TENANT_ID]
+            args = [current_tenant()]
             if prefix:
                 where.append("namespace LIKE %s")
                 args.append(_ns_prefix_pattern(prefix))

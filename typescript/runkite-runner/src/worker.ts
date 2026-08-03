@@ -13,6 +13,7 @@ import { CheckpointerManager } from "./checkpoint.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
+import { runWithTenant } from "./tenantCtx.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
@@ -219,12 +220,12 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   adapter.attachStore(store);
   logger.info(`Store mode: ${store.mode}`);
   if (store.mode === "direct") {
-    // Direct mode SQL always scopes store_items as tenant "default"
-    // (see store.ts TENANT_ID). Proxy mode inherits the caller's tenant
-    // from the control plane -- required for multi-tenant.
+    // store_items follows RunAssignment.tenant_id per job; LangGraph's
+    // own checkpoint tables are still not tenant-scoped.
     logger.warn(
-      'store/checkpoint direct mode (POSTGRES_DSN set) always uses tenant "default"; ' +
-        "unset POSTGRES_DSN and use RUNKITE_HTTP_URL for per-tenant isolation (docs/auth.md Multi-tenancy)",
+      "checkpoint direct mode (POSTGRES_DSN set): LangGraph checkpoint tables are not tenant-scoped. " +
+        "store_items uses RunAssignment.tenant_id. For checkpoint isolation unset POSTGRES_DSN " +
+        "and use RUNKITE_HTTP_URL (docs/auth.md Multi-tenancy)",
     );
   }
 
@@ -341,6 +342,39 @@ export async function handleJob(
     logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
     logTraceContext(runId, (assignment as RunAssignment & { trace_context?: TraceContextFields }).trace_context);
 
+    await runWithTenant(assignment.tenant_id, async () => {
+      await handleJobUnderTenant(client, adapter, assignment, runId!, generation, metadata, pendingCancels, opts);
+    });
+  } catch (err) {
+    logger.error(`Worker error handling run_id=${runId}:`, err);
+    if (runId !== undefined) {
+      const failedRunId = runId;
+      await new Promise<void>((resolve) => {
+        client.reportStatus(
+          {
+            runId: failedRunId,
+            status: "error",
+            errorMessage: err instanceof Error ? err.message : String(err),
+            generation: String(generation),
+          },
+          metadata,
+          () => resolve(),
+        );
+      });
+    }
+  }
+}
+
+async function handleJobUnderTenant(
+  client: RunnerServiceClient,
+  adapter: LangGraphAdapter,
+  assignment: RunAssignment,
+  runId: string,
+  generation: number,
+  metadata: Metadata,
+  pendingCancels: Map<string, CancelState>,
+  opts?: { httpAddress?: string; runnerKind?: string; runnerToken?: string },
+): Promise<void> {
     // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
     if (
       opts?.httpAddress &&
@@ -420,19 +454,6 @@ export async function handleJob(
       // pendingCancels for every job that hits it.
       pendingCancels.delete(runId);
     }
-  } catch (err) {
-    logger.error(`Worker error handling run_id=${runId}:`, err);
-    if (runId) {
-      const failedRunId = runId;
-      await new Promise<void>((resolve) => {
-        client.reportStatus(
-          { runId: failedRunId, status: "error", errorMessage: String(err), generation: String(generation) },
-          metadata,
-          () => resolve(),
-        );
-      }).catch(() => {});
-    }
-  }
 }
 
 /**

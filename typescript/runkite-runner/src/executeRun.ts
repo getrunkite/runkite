@@ -40,6 +40,10 @@ export interface RunAssignment {
   // Absent (undefined) from a control plane that predates this field,
   // treated the same as 0 (unfenced) by worker.ts's own `?? 0`.
   generation?: number;
+  // Tenant that authenticated the originating request -- scopes
+  // direct-mode store SQL and proxy X-Runkite-Tenant-Id. Absent on
+  // older control planes → runner falls back to "default".
+  tenant_id?: string;
 }
 
 /**

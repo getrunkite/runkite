@@ -522,13 +522,13 @@ async def run_worker(
     adapter.attach_store(store)
     logger.info(f"Store mode: {store.mode}")
     if store.mode == "direct":
-        # Direct mode SQL always scopes store_items as tenant "default"
-        # (see store.py _TENANT_ID). Proxy mode inherits the caller's
-        # tenant from the control plane -- required for multi-tenant.
+        # store_items follows RunAssignment.tenant_id per job; LangGraph's
+        # own checkpoint tables are still not tenant-scoped.
         logger.warning(
-            "store/checkpoint direct mode (POSTGRES_DSN set) always uses "
-            'tenant "default"; unset POSTGRES_DSN and use RUNKITE_HTTP_URL '
-            "for per-tenant isolation (docs/auth.md Multi-tenancy)"
+            "checkpoint direct mode (POSTGRES_DSN set): LangGraph checkpoint "
+            "tables are not tenant-scoped. store_items uses "
+            "RunAssignment.tenant_id. For checkpoint isolation unset "
+            "POSTGRES_DSN and use RUNKITE_HTTP_URL (docs/auth.md Multi-tenancy)"
         )
 
     # Keepalive so the control plane detects a dead/crashed runner quickly
@@ -743,91 +743,28 @@ async def _handle_job(
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
         _log_trace_context(run_id, assignment.get("trace_context"))
 
-        # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
-        if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
-            return
+        # Scope direct/proxy store+vector ops to this run's tenant for the
+        # whole job (ContextVar -- safe under --concurrency > 1).
+        from .tenant_ctx import bind_tenant, reset_tenant
 
-        # Open one persistent client-stream per run.
-        event_queue: asyncio.Queue[runner_pb2.RunEventProto | None] = asyncio.Queue()
-
-        async def event_generator():
-            """Yield events into the gRPC client-stream until None sentinel."""
-            while True:
-                item = await event_queue.get()
-                if item is None:
-                    return
-                yield item
-
-        async def send_event(event: dict):
-            """Queue an event for streaming to the control plane."""
-            await event_queue.put(
-                runner_pb2.RunEventProto(
-                    run_id=run_id,
-                    event_json=json.dumps(event),
-                    generation=generation,
-                )
-            )
-
-        # Register a cancel event for this run, claiming any
-        # pre-arrived cancel signal for it.
-        cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
-
-        # Started as soon as run_id is known -- BEFORE StreamEvents' first
-        # message, not after -- so the control plane's in-flight lease
-        # (extended by StreamEvents' first-event Renew, then by this loop
-        # for everything after) never goes untouched even if execute_run
-        # takes a while to produce its first event. See heartbeat.py.
-        # Shares cancel_event with execute_run below -- a superseded
-        # heartbeat sets the SAME event a real cancel signal would, so
-        # this runner stops cooperatively instead of racing a second
-        # runner that's already taken over.
-        heartbeat_task = asyncio.create_task(
-            heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
-        )
-
+        tenant_token = bind_tenant(assignment.get("tenant_id"))
         try:
-            # Start the gRPC stream call
-            stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
-
-            async def run_stream():
-                return await stream_call
-
-            stream_task = asyncio.ensure_future(run_stream())
-
-            # Execute the agent with cancel support
-            status = await execute_run(adapter, assignment, send_event, cancel_event=cancel_event)
+            await _run_assigned_job(
+                stub,
+                adapter,
+                assignment,
+                run_id,
+                generation,
+                auth_metadata,
+                pending_cancels,
+                pre_cancelled,
+                pending_cancels_lock,
+                http_address,
+                runner_kind,
+                runner_token,
+            )
         finally:
-            heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
-            # Always clear the cancel registration, even if execute_run
-            # itself raised -- otherwise a failure here would leak an
-            # entry in pending_cancels for every job that hits it.
-            async with pending_cancels_lock:
-                pending_cancels.pop(run_id, None)
-
-        # Signal end of stream and wait for gRPC to finish
-        await event_queue.put(None)
-        if stream_task is not None:
-            try:
-                await stream_task
-            except Exception as e:
-                logger.error(f"Stream finalization error: {e}")
-
-        # Report final status -- must always happen once run_id is known,
-        # even if StreamEvents setup failed above (otherwise the run
-        # stays "running" forever on the control plane).
-        await stub.ReportStatus(
-            runner_pb2.ReportStatusRequest(
-                run_id=run_id,
-                status=status,
-                error_message="" if status != "error" else "see error event",
-                generation=generation,
-            ),
-            metadata=auth_metadata,
-        )
-
-        logger.info(f"Run completed: run_id={run_id} status={status}")
+            reset_tenant(tenant_token)
 
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
@@ -844,6 +781,111 @@ async def _handle_job(
                     ),
                     metadata=auth_metadata,
                 )
+
+
+async def _run_assigned_job(
+    stub,
+    adapter: "LangGraphAdapter",
+    assignment: dict,
+    run_id: str,
+    generation: int,
+    auth_metadata: list,
+    pending_cancels: dict,
+    pre_cancelled: set,
+    pending_cancels_lock: asyncio.Lock,
+    http_address: str,
+    runner_kind: str,
+    runner_token: str,
+):
+    """Job body under an active tenant_ctx binding."""
+    status = "error"
+    stream_task = None
+
+    # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+    if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
+        return
+
+    # Open one persistent client-stream per run.
+    event_queue: asyncio.Queue[runner_pb2.RunEventProto | None] = asyncio.Queue()
+
+    async def event_generator():
+        """Yield events into the gRPC client-stream until None sentinel."""
+        while True:
+            item = await event_queue.get()
+            if item is None:
+                return
+            yield item
+
+    async def send_event(event: dict):
+        """Queue an event for streaming to the control plane."""
+        await event_queue.put(
+            runner_pb2.RunEventProto(
+                run_id=run_id,
+                event_json=json.dumps(event),
+                generation=generation,
+            )
+        )
+
+    # Register a cancel event for this run, claiming any
+    # pre-arrived cancel signal for it.
+    cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
+
+    # Started as soon as run_id is known -- BEFORE StreamEvents' first
+    # message, not after -- so the control plane's in-flight lease
+    # (extended by StreamEvents' first-event Renew, then by this loop
+    # for everything after) never goes untouched even if execute_run
+    # takes a while to produce its first event. See heartbeat.py.
+    # Shares cancel_event with execute_run below -- a superseded
+    # heartbeat sets the SAME event a real cancel signal would, so
+    # this runner stops cooperatively instead of racing a second
+    # runner that's already taken over.
+    heartbeat_task = asyncio.create_task(
+        heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+    )
+
+    try:
+        # Start the gRPC stream call
+        stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
+
+        async def run_stream():
+            return await stream_call
+
+        stream_task = asyncio.ensure_future(run_stream())
+
+        # Execute the agent with cancel support
+        status = await execute_run(adapter, assignment, send_event, cancel_event=cancel_event)
+    finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
+        # Always clear the cancel registration, even if execute_run
+        # itself raised -- otherwise a failure here would leak an
+        # entry in pending_cancels for every job that hits it.
+        async with pending_cancels_lock:
+            pending_cancels.pop(run_id, None)
+
+    # Signal end of stream and wait for gRPC to finish
+    await event_queue.put(None)
+    if stream_task is not None:
+        try:
+            await stream_task
+        except Exception as e:
+            logger.error(f"Stream finalization error: {e}")
+
+    # Report final status -- must always happen once run_id is known,
+    # even if StreamEvents setup failed above (otherwise the run
+    # stays "running" forever on the control plane).
+    await stub.ReportStatus(
+        runner_pb2.ReportStatusRequest(
+            run_id=run_id,
+            status=status,
+            error_message="" if status != "error" else "see error event",
+            generation=generation,
+        ),
+        metadata=auth_metadata,
+    )
+
+    logger.info(f"Run completed: run_id={run_id} status={status}")
 
 
 async def _poll_loop(

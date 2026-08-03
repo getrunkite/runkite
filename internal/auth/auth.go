@@ -55,6 +55,11 @@ func (e *ErrForbidden) Error() string { return e.Message }
 const (
 	HeaderRunnerKind  = "X-Runner-Kind"
 	HeaderRunnerToken = "X-Runner-Token"
+	// HeaderTenantID is sent by runners on /internal/* so proxy-mode
+	// store/vector handlers scope to RunAssignment.tenant_id the same
+	// way client auth scopes via AuthResult.TenantID. Only honored after
+	// runner-token validation (or when runner auth is disabled locally).
+	HeaderTenantID = "X-Runkite-Tenant-Id"
 )
 
 // MiddlewareOpts configures optional authorization behavior for Middleware.
@@ -110,7 +115,13 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 					return
 				}
 			}
-			next.ServeHTTP(w, r)
+			// Optional per-run tenant from the runner (assignment.tenant_id).
+			// Without this, /internal/store|* always landed in "default".
+			ctx := r.Context()
+			if tid := strings.TrimSpace(r.Header.Get(HeaderTenantID)); tid != "" {
+				ctx = tenant.WithContext(ctx, tid)
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
