@@ -375,85 +375,85 @@ async function handleJobUnderTenant(
   pendingCancels: Map<string, CancelState>,
   opts?: { httpAddress?: string; runnerKind?: string; runnerToken?: string },
 ): Promise<void> {
-    // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
-    if (
-      opts?.httpAddress &&
-      (await shouldSkipRun(opts.httpAddress, runId, {
-        runnerKind: opts.runnerKind,
-        runnerToken: opts.runnerToken,
-      }))
-    ) {
-      return;
-    }
+  // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+  if (
+    opts?.httpAddress &&
+    (await shouldSkipRun(opts.httpAddress, runId, {
+      runnerKind: opts.runnerKind,
+      runnerToken: opts.runnerToken,
+    }))
+  ) {
+    return;
+  }
 
-    const cancelState = registerRun(pendingCancels, runId);
+  const cancelState = registerRun(pendingCancels, runId);
 
-    // Started as soon as runId is known, BEFORE streamEvents' first
-    // message -- see heartbeat.ts / the Python runner's mirrored change
-    // in worker.py's _handle_job. onSuperseded shares cancelState with
-    // executeRun below -- a superseded heartbeat sets the SAME flag a
-    // real cancel signal would, so this runner stops cooperatively
-    // instead of racing a second runner that's already taken over.
-    const heartbeat = startHeartbeatLoop(client, runId, metadata, {
-      generation,
-      onSuperseded: () => {
-        cancelState.cancelled = true;
-      },
+  // Started as soon as runId is known, BEFORE streamEvents' first
+  // message -- see heartbeat.ts / the Python runner's mirrored change
+  // in worker.py's _handle_job. onSuperseded shares cancelState with
+  // executeRun below -- a superseded heartbeat sets the SAME flag a
+  // real cancel signal would, so this runner stops cooperatively
+  // instead of racing a second runner that's already taken over.
+  const heartbeat = startHeartbeatLoop(client, runId, metadata, {
+    generation,
+    onSuperseded: () => {
+      cancelState.cancelled = true;
+    },
+  });
+
+  try {
+    // Open one persistent client-streaming call per run, same pattern
+    // as the Python runner's asyncio.Queue-backed generator -- the
+    // ClientWritableStream's own internal buffering plays the same
+    // role the queue does there.
+    let resolveStream!: (resp: StreamEventsResponse) => void;
+    let rejectStream!: (err: Error) => void;
+    const streamDone = new Promise<StreamEventsResponse>((resolve, reject) => {
+      resolveStream = resolve;
+      rejectStream = reject;
+    });
+    const call: ClientWritableStream<RunEventProto> = client.streamEvents(metadata, (err, resp) => {
+      if (err) rejectStream(err);
+      else resolveStream(resp);
     });
 
+    const sendEvent = async (event: RunEvent): Promise<void> => {
+      call.write({ runId: runId!, eventJson: JSON.stringify(event), generation: String(generation) });
+    };
+
+    const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
+
+    call.end();
     try {
-      // Open one persistent client-streaming call per run, same pattern
-      // as the Python runner's asyncio.Queue-backed generator -- the
-      // ClientWritableStream's own internal buffering plays the same
-      // role the queue does there.
-      let resolveStream!: (resp: StreamEventsResponse) => void;
-      let rejectStream!: (err: Error) => void;
-      const streamDone = new Promise<StreamEventsResponse>((resolve, reject) => {
-        resolveStream = resolve;
-        rejectStream = reject;
-      });
-      const call: ClientWritableStream<RunEventProto> = client.streamEvents(metadata, (err, resp) => {
-        if (err) rejectStream(err);
-        else resolveStream(resp);
-      });
-
-      const sendEvent = async (event: RunEvent): Promise<void> => {
-        call.write({ runId: runId!, eventJson: JSON.stringify(event), generation: String(generation) });
-      };
-
-      const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
-
-      call.end();
-      try {
-        await streamDone;
-      } catch (err) {
-        logger.error("Stream finalization error:", err);
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        client.reportStatus(
-          {
-            runId: runId!,
-            status,
-            errorMessage: status === "error" ? "see error event" : "",
-            generation: String(generation),
-          },
-          metadata,
-          (err) => {
-            if (err) reject(err);
-            else resolve();
-          },
-        );
-      });
-
-      logger.info(`Run completed: run_id=${runId} status=${status}`);
-    } finally {
-      heartbeat.stop();
-      // Always clear the cancel registration, even if executeRun itself
-      // threw -- otherwise a failure here would leak an entry in
-      // pendingCancels for every job that hits it.
-      pendingCancels.delete(runId);
+      await streamDone;
+    } catch (err) {
+      logger.error("Stream finalization error:", err);
     }
+
+    await new Promise<void>((resolve, reject) => {
+      client.reportStatus(
+        {
+          runId: runId!,
+          status,
+          errorMessage: status === "error" ? "see error event" : "",
+          generation: String(generation),
+        },
+        metadata,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+
+    logger.info(`Run completed: run_id=${runId} status=${status}`);
+  } finally {
+    heartbeat.stop();
+    // Always clear the cancel registration, even if executeRun itself
+    // threw -- otherwise a failure here would leak an entry in
+    // pendingCancels for every job that hits it.
+    pendingCancels.delete(runId);
+  }
 }
 
 /**
