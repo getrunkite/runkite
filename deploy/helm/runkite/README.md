@@ -87,7 +87,7 @@ crash-loop on admission. Do **not** paper over this with
 
 `/mcp` session state is in-process. Round-robin across replicas yields
 `404 session not found`. Enable `ingressMcp` (ingress-nginx) or stick
-`/mcp` the same way `nginx-multi.conf` does (`hash $remote_addr consistent`)
+`/mcp` the same way `deploy/nginx-multi.conf` does (`hash $remote_addr consistent`)
 at your external load balancer. Do **not** hash on `Mcp-Session-Id` — that
 ID does not exist on the first `initialize` call.
 

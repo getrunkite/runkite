@@ -59,7 +59,7 @@ ingress:
   tls: []
 
 # Separate Ingress for /mcp with client-IP consistent hashing. Disable
-# when your external LB already sticks /mcp the same way nginx-multi.conf
+# when your external LB already sticks /mcp the same way deploy/nginx-multi.conf
 # does (hash $remote_addr consistent).
 ingressMcp:
   enabled: false

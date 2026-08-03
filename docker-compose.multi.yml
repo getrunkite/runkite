@@ -139,7 +139,7 @@ services:
   lb:
     image: nginx:1.27-alpine
     volumes:
-      - ./nginx-multi.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx-multi.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "2026:2026"   # HTTP client API, load-balanced across all 3 replicas
       - "50051:50051" # gRPC runner bridge, load-balanced across all 3 replicas

@@ -465,25 +465,28 @@ func startServer(opts serverOpts) {
 	// pprof (bench-setup: internal profiling infra, opt-in via
 	// RUNKITE_PPROF=1). Off by default -- these endpoints let any caller
 	// dump goroutine stacks/heap contents and, via /debug/pprof/profile,
-	// force real CPU load for 30s, both a real information-disclosure
-	// and DoS surface if left open in production. Registered outside
-	// auth (like /metrics) so a profiling run isn't accidentally gated
-	// by whatever client-facing auth provider is configured -- this is
-	// an operator/developer tool, not part of the Agent Protocol surface.
+	// force real CPU load for 30s. Requires RUNKITE_PPROF_TOKEN so the
+	// endpoints are not anonymously reachable when enabled (Bearer or
+	// X-Runkite-Pprof-Token). Registered outside client auth so a
+	// profiling run isn't gated by the Agent Protocol credential set.
 	if os.Getenv("RUNKITE_PPROF") == "1" {
-		mountPprof(root)
-		// Both default to 0 (no samples collected at all) unless set --
-		// /debug/pprof/mutex and /debug/pprof/block would otherwise
-		// always come back empty regardless of real contention, silently
-		// implying "no contention found" for a profile that was never
-		// actually sampling anything. Rate 1 (sample every contention/
-		// blocking event) is the finest granularity and the right choice
-		// for a short, opt-in diagnostic run -- this flag already carries
-		// its own "real DoS/info-disclosure surface" warning above, so
-		// the added overhead of full sampling isn't a new class of risk.
-		runtime.SetMutexProfileFraction(1)
-		runtime.SetBlockProfileRate(1)
-		slog.Info("pprof: enabled at /debug/pprof/ (RUNKITE_PPROF=1)", "mutex_block_profiling", true)
+		if token := os.Getenv("RUNKITE_PPROF_TOKEN"); token != "" {
+			mountPprof(root, token)
+			// Both default to 0 (no samples collected at all) unless set --
+			// /debug/pprof/mutex and /debug/pprof/block would otherwise
+			// always come back empty regardless of real contention, silently
+			// implying "no contention found" for a profile that was never
+			// actually sampling anything. Rate 1 (sample every contention/
+			// blocking event) is the finest granularity and the right choice
+			// for a short, opt-in diagnostic run -- this flag already carries
+			// its own "real DoS/info-disclosure surface" warning above, so
+			// the added overhead of full sampling isn't a new class of risk.
+			runtime.SetMutexProfileFraction(1)
+			runtime.SetBlockProfileRate(1)
+			slog.Info("pprof: enabled at /debug/pprof/ (RUNKITE_PPROF=1, token required)", "mutex_block_profiling", true)
+		} else {
+			slog.Warn("pprof: RUNKITE_PPROF=1 set but RUNKITE_PPROF_TOKEN is empty; not mounting /debug/pprof/")
+		}
 	}
 	root.Handle("/", authedAPI)
 
@@ -1110,18 +1113,32 @@ func initAuthProvider(configPath string) auth.Provider {
 	}
 }
 
-// initAdminAuthProvider builds the independent /admin-api/* credential set
 // mountPprof registers the standard net/http/pprof handlers on a custom
-// mux. pprof's package normally self-registers onto http.DefaultServeMux
-// as an import side effect, which doesn't help here since the control
-// plane never uses that mux -- these five handlers are the same ones it
-// would have registered, just attached explicitly.
-func mountPprof(mux *http.ServeMux) {
-	mux.HandleFunc("GET /debug/pprof/", pprof.Index)
-	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+// mux, each gated by token (Bearer or X-Runkite-Pprof-Token). pprof's
+// package normally self-registers onto http.DefaultServeMux as an import
+// side effect, which doesn't help here since the control plane never
+// uses that mux.
+func mountPprof(mux *http.ServeMux, token string) {
+	gate := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			got := r.Header.Get("X-Runkite-Pprof-Token")
+			if got == "" {
+				if authz := r.Header.Get("Authorization"); strings.HasPrefix(authz, "Bearer ") {
+					got = strings.TrimPrefix(authz, "Bearer ")
+				}
+			}
+			if got == "" || got != token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
+		}
+	}
+	mux.HandleFunc("GET /debug/pprof/", gate(pprof.Index))
+	mux.HandleFunc("GET /debug/pprof/cmdline", gate(pprof.Cmdline))
+	mux.HandleFunc("GET /debug/pprof/profile", gate(pprof.Profile))
+	mux.HandleFunc("GET /debug/pprof/symbol", gate(pprof.Symbol))
+	mux.HandleFunc("GET /debug/pprof/trace", gate(pprof.Trace))
 }
 
 func initAdminAuthProvider(configPath string) auth.Provider {

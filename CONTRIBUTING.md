@@ -8,6 +8,22 @@ Runkite is a Go control plane implementing the Agent Protocol spec, with Python 
 - **Small, focused PRs** are much easier to review than large ones. If you're planning a big change (a new backend, a new runner language), consider opening an issue first to discuss the approach.
 - **Read the [README](README.md) and [`docs/`](docs/README.md) first.** Deep design rationale, dual-mode notes, and known limitations live in `docs/` (especially [`architecture.md`](docs/architecture.md), [`runners.md`](docs/runners.md), [`limitations.md`](docs/limitations.md)) -- most "why does it work this way?" questions are already answered there.
 
+## Repository layout
+
+Root holds product entrypoints and Docker build context on purpose — do not
+bury `Dockerfile*` / `docker-compose*.yml` under `deploy/` (compose
+`build.context: .` expects them here).
+
+| Path | Role |
+|------|------|
+| `README.md`, `Makefile`, `go.mod` | Project entry |
+| `Dockerfile*`, `docker-compose*.yml` | Image/build context (stay at root) |
+| `deploy/` | Helm chart + nginx/NATS sidecar configs |
+| `cmd/`, `internal/` | Control plane |
+| `python/`, `typescript/`, `admin-ui/` | Runners + Admin UI |
+| `docs/`, `examples/`, `spec/`, `runner-protocol/` | Docs, samples, contracts |
+| `test/`, `tests/`, `bench/` | E2E / SDK / soak harnesses |
+
 ## Development setup
 
 ```bash

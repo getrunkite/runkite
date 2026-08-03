@@ -407,49 +407,66 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 	})
 }
 
-// mcpSessionHeaderCapture records Mcp-Session-Id when the handler sets
-// it, including write paths that flush headers before the outer
-// middleware reads w.Header() again.
+// mcpSessionHeaderCapture owns the response header map so Mcp-Session-Id
+// is always visible after ServeHTTP, even when the SDK sets the header
+// and flushes via paths that never call Write/WriteHeader on a thin
+// wrapper (http.ResponseController.Unwrap was previously returning the
+// underlying writer, which let some flush paths bypass snap()).
 type mcpSessionHeaderCapture struct {
 	http.ResponseWriter
-	captured string
+	hdr     http.Header
+	flushed bool
 }
 
-func (c *mcpSessionHeaderCapture) snap() {
-	if c.captured != "" {
+func (c *mcpSessionHeaderCapture) Header() http.Header {
+	if c.hdr == nil {
+		c.hdr = make(http.Header)
+	}
+	return c.hdr
+}
+
+func (c *mcpSessionHeaderCapture) flushHdr() {
+	if c.flushed {
 		return
 	}
-	if id := c.ResponseWriter.Header().Get(mcpSessionIDHeader); id != "" {
-		c.captured = id
+	c.flushed = true
+	dst := c.ResponseWriter.Header()
+	for k, vv := range c.hdr {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
 	}
 }
 
 func (c *mcpSessionHeaderCapture) WriteHeader(statusCode int) {
-	c.snap()
+	c.flushHdr()
 	c.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (c *mcpSessionHeaderCapture) Write(b []byte) (int, error) {
-	c.snap()
+	c.flushHdr()
 	return c.ResponseWriter.Write(b)
 }
 
 func (c *mcpSessionHeaderCapture) sessionID() string {
-	c.snap()
-	return c.captured
+	if c.hdr != nil {
+		if id := c.hdr.Get(mcpSessionIDHeader); id != "" {
+			return id
+		}
+	}
+	// Fallback if a write path copied onto the underlying writer only.
+	return c.ResponseWriter.Header().Get(mcpSessionIDHeader)
 }
 
 // Flush keeps Streamable HTTP SSE working when the underlying writer
 // supports it -- wrapping ResponseWriter otherwise strips http.Flusher.
+// Deliberately does NOT implement Unwrap: returning the inner writer
+// let ResponseController bypass this wrapper and skip header capture.
 func (c *mcpSessionHeaderCapture) Flush() {
-	c.snap()
+	c.flushHdr()
 	if f, ok := c.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
-}
-
-func (c *mcpSessionHeaderCapture) Unwrap() http.ResponseWriter {
-	return c.ResponseWriter
 }
 
 // sweepOnce evicts ownership records untouched since before cutoff,

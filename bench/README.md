@@ -7,13 +7,15 @@ and findings.
 
 ## pprof
 
-Opt-in via `RUNKITE_PPROF=1` (never on by default -- these endpoints let
+Opt-in via `RUNKITE_PPROF=1` **and** `RUNKITE_PPROF_TOKEN=<secret>` (never
+on by default -- these endpoints let
 any caller dump goroutine/heap state and force real CPU load via
 `/debug/pprof/profile`, both a real information-disclosure and DoS
 surface):
 
 ```bash
-RUNKITE_PPROF=1 ./runkite serve --config langgraph.json
+RUNKITE_PPROF=1 RUNKITE_PPROF_TOKEN=dev ./runkite serve --config langgraph.json
+# then: curl -H "Authorization: Bearer dev" http://localhost:2026/debug/pprof/
 
 go tool pprof http://localhost:2026/debug/pprof/heap
 go tool pprof http://localhost:2026/debug/pprof/profile?seconds=30

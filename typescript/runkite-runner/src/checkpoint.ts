@@ -51,6 +51,12 @@ export class CheckpointerManager {
         connectionTimeoutMillis: 10_000,
         ...(poolSize ? { max: poolSize } : {}),
       });
+      // node-postgres emits 'error' on idle client backend failures
+      // (laptop sleep, server restart). Unhandled, that crashes the
+      // process -- same handler store.ts already installs.
+      pool.on("error", (err) => {
+        logger.error(`checkpoint pool idle client error: ${err.message}`);
+      });
       const saver = new PostgresSaver(pool);
       await saver.setup();
       this.checkpointer = saver;
