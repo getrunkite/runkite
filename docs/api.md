@@ -108,6 +108,8 @@ POST   /runs/{runID}/cancel        Cancel run by ID (query params: wait, action 
 
 `POST .../cancel`'s two Agent Protocol query params (also honored on the thread-scoped `.../runs/{runID}/cancel`): `wait` (bool, default `false`) makes the response wait for the post-cancel grace window that gives the runner a few seconds to emit any final events, instead of backgrounding it -- the run's status is set to `interrupted` synchronously either way, `wait` only changes when the response is sent. `action` (`interrupt` default, or `rollback`) additionally deletes the run record after cancelling it when set to `rollback` -- honest limitation: this does **not** delete checkpoints the way the spec's literal wording describes, since checkpoints in this schema are keyed by `thread_id` (accumulated across every run ever executed on that thread), with no per-run attribution to select just one run's slice, and in direct mode they live in LangGraph's own Postgres tables entirely outside this project's own state store anyway.
 
+Create-run accepts an optional `checkpoint_ref` (opaque past-checkpoint id) for time-travel resume. LangGraph runners map it to `configurable.checkpoint_id`; non-LangGraph runners fail the run rather than ignore it. Empty/whitespace values are treated as absent (resume from the thread's latest checkpoint). The control plane does not verify the id exists before dispatch.
+
 ### Store
 ```
 PUT    /store/items                Create/update store item (body: ..., ttl_minutes?)

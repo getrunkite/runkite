@@ -30,7 +30,9 @@ def test_noop_without_endpoint():
     tracing._shutdown = None
     shutdown = tracing.init()
     shutdown()
-    with tracing.run_span("r1", graph_id="g", trace_context={"traceparent": "00-" + "a" * 32 + "-" + "b" * 16 + "-01"}) as span:
+    with tracing.run_span(
+        "r1", graph_id="g", trace_context={"traceparent": "00-" + "a" * 32 + "-" + "b" * 16 + "-01"}
+    ) as span:
         check("run_span yields None when tracing disabled", span is None)
 
 

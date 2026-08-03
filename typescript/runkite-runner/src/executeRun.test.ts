@@ -392,6 +392,13 @@ test("buildRunConfig does not mutate the original assignment.config object", () 
   );
 });
 
+test("buildRunConfig maps checkpoint_ref to configurable.checkpoint_id", () => {
+  const config = buildRunConfig(assignment({ checkpoint_ref: "  past-cp-42  " }));
+  assert.equal(config.configurable.checkpoint_id, "past-cp-42");
+  assert.equal("checkpoint_id" in buildRunConfig(assignment({ checkpoint_ref: null })).configurable, false);
+  assert.equal("checkpoint_id" in buildRunConfig(assignment({ checkpoint_ref: "   " })).configurable, false);
+});
+
 // -- Factory graph integration ------------------------------------------
 // executeRun.ts's own responsibility here is narrow and already tested
 // thoroughly at the unit level in factoryGraph.test.ts (classification,

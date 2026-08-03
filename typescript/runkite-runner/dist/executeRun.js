@@ -21,6 +21,14 @@ export function buildRunConfig(assignment) {
     config.configurable.run_id = assignment.run_id;
     config.configurable.assistant_id = assignment.graph_id;
     config.configurable.graph_id = assignment.graph_id;
+    // Time-travel: non-empty checkpoint_ref → LangGraph's
+    // configurable.checkpoint_id so stream() resumes from that past
+    // checkpoint instead of the thread's latest. Absent/null keeps the
+    // checkpointer's normal latest-checkpoint lookup.
+    const checkpointRef = assignment.checkpoint_ref;
+    if (typeof checkpointRef === "string" && checkpointRef.trim()) {
+        config.configurable.checkpoint_id = checkpointRef.trim();
+    }
     if (assignment.user) {
         const user = new RunnerUser(assignment.user);
         config.configurable.langgraph_auth_user = user;

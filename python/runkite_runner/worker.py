@@ -182,6 +182,13 @@ def build_run_config(assignment: dict) -> dict:
     config["configurable"]["run_id"] = run_id
     config["configurable"]["assistant_id"] = graph_id
     config["configurable"]["graph_id"] = graph_id
+    # Time-travel: a non-empty checkpoint_ref becomes LangGraph's
+    # configurable.checkpoint_id so astream resumes from that past
+    # checkpoint instead of the thread's latest. Absent/null keeps the
+    # checkpointer's normal latest-checkpoint lookup.
+    checkpoint_ref = assignment.get("checkpoint_ref")
+    if isinstance(checkpoint_ref, str) and checkpoint_ref.strip():
+        config["configurable"]["checkpoint_id"] = checkpoint_ref.strip()
     if assignment.get("user"):
         user = RunnerUser(assignment["user"])
         config["configurable"]["langgraph_auth_user"] = user
@@ -236,18 +243,9 @@ async def execute_run(
     run_id = assignment["run_id"]
     graph_id = assignment["graph_id"]
     input_data = assignment.get("input")
+    # checkpoint_ref is applied inside build_run_config → configurable.checkpoint_id
     config = build_run_config(assignment)
     stream_modes = assignment.get("stream_modes", ["values"])
-    # assignment.get("checkpoint_ref") -- deliberately not read here.
-    # checkpoint_ref flows all the way from the client-facing API down
-    # to this runner (internal/models.RunCreate -> RunAssignment ->
-    # this dict), but nothing on the runner side ever acts on it: a
-    # client asking to resume from a SPECIFIC past checkpoint (rather
-    # than the thread's latest one) gets no error, just silent
-    # fallback to the checkpointer's normal latest-checkpoint lookup.
-    # A real, documented gap, found via ruff flagging this as an
-    # unused local -- not something to paper over by just deleting
-    # the field read without noting why.
     resume_command = assignment.get("resume_command")
 
     seq = 0

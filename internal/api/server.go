@@ -974,29 +974,11 @@ func (e *ErrA2ADepthExceeded) Error() string {
 	return fmt.Sprintf("a2a delegation depth %d exceeds max_depth %d", e.Depth, e.MaxDepth)
 }
 
-// ErrCheckpointRefUnsupported means a client asked to resume from a
-// specific past checkpoint (a real Agent Protocol capability) that this
-// project doesn't implement -- see checkpoint_ref's own doc comment on
-// models.RunCreate. Found by an external audit: checkpoint_ref used to
-// flow all the way from this request down to the runner and get
-// silently dropped there, so a client asking for it got a normal 200
-// and a run that quietly resumed from the thread's LATEST checkpoint
-// instead of the one it actually asked for -- silent wrong behavior,
-// worse than an outright missing feature. Rejecting it here, as early
-// as request validation, means the failure is loud and immediate
-// instead of a correct-looking run with a wrong answer.
-type ErrCheckpointRefUnsupported struct{}
-
-func (e *ErrCheckpointRefUnsupported) Error() string {
-	return "checkpoint_ref is not yet supported: a run always resumes from the thread's latest checkpoint, never a specific past one"
-}
-
 func handleStoreError(w http.ResponseWriter, err error) {
 	var notFound *state.ErrNotFound
 	var conflict *state.ErrConflict
 	var rateLimited *ratelimit.ErrRateLimited
 	var depthExceeded *ErrA2ADepthExceeded
-	var checkpointRefUnsupported *ErrCheckpointRefUnsupported
 	switch {
 	case errors.As(err, &notFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -1006,8 +988,6 @@ func handleStoreError(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, err.Error())
 	case errors.As(err, &depthExceeded):
-		writeError(w, http.StatusBadRequest, err.Error())
-	case errors.As(err, &checkpointRefUnsupported):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		var denied *hooks.ErrDenied

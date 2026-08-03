@@ -24,10 +24,7 @@ _warned_missing = False
 
 
 def _endpoint_configured() -> bool:
-    return bool(
-        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-        or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    )
+    return bool(os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"))
 
 
 def init() -> Callable[[], None]:
@@ -66,9 +63,7 @@ def init() -> Callable[[], None]:
         return noop
 
     protocol = (
-        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
-        or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
-        or "grpc"
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL") or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL") or "grpc"
     ).lower()
     exporter = HttpExporter() if protocol.startswith("http") else GrpcExporter()
 

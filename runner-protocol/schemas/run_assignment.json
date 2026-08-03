@@ -77,7 +77,7 @@
     },
     "checkpoint_ref": {
       "type": ["string", "null"],
-      "description": "Unsupported today: the control plane rejects non-null values with 400 before dispatch. Null/absent only. When implemented, an opaque checkpoint identity for resume-by-id."
+      "description": "Opaque checkpoint identity for resume-by-id (time-travel). Null/absent means resume from the thread's latest checkpoint (or a fresh run). LangGraph runners map a non-empty value to configurable.checkpoint_id; non-LangGraph runners must error rather than ignore."
     },
     "resume_command": {
       "type": ["object", "null"],

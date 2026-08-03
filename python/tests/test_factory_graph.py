@@ -365,6 +365,26 @@ def test_build_run_config_preserves_existing_configurable_keys():
     check("server_info keys added alongside", config["configurable"]["graph_id"] == "my_agent")
 
 
+def test_build_run_config_maps_checkpoint_ref_to_checkpoint_id():
+    """Time-travel: non-empty checkpoint_ref must become LangGraph's
+    configurable.checkpoint_id so astream resumes from that past
+    checkpoint instead of silently using the thread's latest."""
+    assignment = {
+        "run_id": "run-1",
+        "thread_id": "thread-1",
+        "graph_id": "my_agent",
+        "checkpoint_ref": "  past-cp-42  ",
+    }
+    config = build_run_config(assignment)
+    check("checkpoint_id set from checkpoint_ref", config["configurable"]["checkpoint_id"] == "past-cp-42")
+
+    no_ref = build_run_config({"run_id": "r", "thread_id": "t", "graph_id": "g", "checkpoint_ref": None})
+    check("checkpoint_id absent when checkpoint_ref is null", "checkpoint_id" not in no_ref["configurable"])
+
+    blank = build_run_config({"run_id": "r", "thread_id": "t", "graph_id": "g", "checkpoint_ref": "   "})
+    check("checkpoint_id absent for whitespace-only ref", "checkpoint_id" not in blank["configurable"])
+
+
 async def test_lifecycle_running_emitted_before_slow_factory_construction():
     """Regression test for a real bug found live: the 'lifecycle: running'
     event -- the only signal a client gets that its run was accepted
@@ -422,6 +442,7 @@ async def main():
     test_build_run_config_sets_server_info_keys()
     test_build_run_config_sets_langgraph_auth_user_when_authenticated()
     test_build_run_config_preserves_existing_configurable_keys()
+    test_build_run_config_maps_checkpoint_ref_to_checkpoint_id()
     await test_lifecycle_running_emitted_before_slow_factory_construction()
     print("\nAll checks passed.")
 

@@ -364,7 +364,29 @@ async def _handle_job(
                 stream_task = asyncio.ensure_future(stream_call)
 
                 try:
-                    status = await adapter.execute(assignment, send_event, cancel_event)
+                    # Non-LangGraph frameworks have no checkpoint_id
+                    # resume path. Fail loudly rather than silently
+                    # ignoring checkpoint_ref (the audit finding that
+                    # previously bit the LangGraph runners).
+                    cref = assignment.get("checkpoint_ref")
+                    if isinstance(cref, str) and cref.strip():
+                        make_event = make_event_factory(run_id)
+                        await send_event(
+                            make_event(
+                                "error",
+                                {
+                                    "message": (
+                                        "checkpoint_ref is only supported by LangGraph runners "
+                                        "(python-langgraph / typescript-langgraphjs); "
+                                        f"this runner_kind ({runner_kind or 'generic'}) cannot time-travel"
+                                    ),
+                                    "type": "CheckpointRefUnsupported",
+                                },
+                            )
+                        )
+                        status = "error"
+                    else:
+                        status = await adapter.execute(assignment, send_event, cancel_event)
                 except Exception as e:
                     # A misbehaving adapter that raises instead of returning
                     # a status must not leave the run stuck "running"

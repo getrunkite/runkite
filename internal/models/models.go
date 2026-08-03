@@ -248,18 +248,23 @@ type RunCreate struct {
 	// "generate a fresh server-side ID," unchanged from before this
 	// field existed. Any non-empty string is accepted, no format
 	// validation, matching ThreadID's own existing precedent.
-	RunID         string          `json:"run_id,omitempty"`
-	ThreadID      string          `json:"thread_id,omitempty"`
-	AgentID       string          `json:"agent_id,omitempty"`
-	AssistantID   string          `json:"assistant_id,omitempty"` // SDK compat: alias for AgentID
-	Input         json.RawMessage `json:"input,omitempty"`
-	Config        json.RawMessage `json:"config,omitempty"`
-	Metadata      json.RawMessage `json:"metadata,omitempty"`
-	StreamMode    json.RawMessage `json:"stream_mode,omitempty"` // string or []string
-	Webhook       string          `json:"webhook,omitempty"`
-	OnCompletion  string          `json:"on_completion,omitempty"` // "delete" or "keep"
-	OnDisconnect  string          `json:"on_disconnect,omitempty"` // "cancel" or "continue"
-	IfNotExists   string          `json:"if_not_exists,omitempty"` // "create" or "reject"
+	RunID        string          `json:"run_id,omitempty"`
+	ThreadID     string          `json:"thread_id,omitempty"`
+	AgentID      string          `json:"agent_id,omitempty"`
+	AssistantID  string          `json:"assistant_id,omitempty"` // SDK compat: alias for AgentID
+	Input        json.RawMessage `json:"input,omitempty"`
+	Config       json.RawMessage `json:"config,omitempty"`
+	Metadata     json.RawMessage `json:"metadata,omitempty"`
+	StreamMode   json.RawMessage `json:"stream_mode,omitempty"` // string or []string
+	Webhook      string          `json:"webhook,omitempty"`
+	OnCompletion string          `json:"on_completion,omitempty"` // "delete" or "keep"
+	OnDisconnect string          `json:"on_disconnect,omitempty"` // "cancel" or "continue"
+	IfNotExists  string          `json:"if_not_exists,omitempty"` // "create" or "reject"
+	// CheckpointRef is an opaque past-checkpoint id for time-travel
+	// resume. Empty/whitespace is treated as absent. LangGraph runners
+	// map a non-empty value to configurable.checkpoint_id; non-LangGraph
+	// runners reject it rather than ignore it. The control plane does
+	// not verify the id exists before dispatch.
 	CheckpointRef *string         `json:"checkpoint_ref,omitempty"`
 	ResumeCommand json.RawMessage `json:"resume_command,omitempty"`
 	Command       json.RawMessage `json:"command,omitempty"` // SDK compat: {"resume": ...}
