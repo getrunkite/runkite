@@ -4,13 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  checkpointThreadId,
-  currentTenant,
-  HEADER_TENANT_ID,
-  runWithTenant,
-  tenantHeaders,
-} from "./tenantCtx.js";
+import { checkpointThreadId, currentTenant, HEADER_TENANT_ID, runWithTenant, tenantHeaders } from "./tenantCtx.js";
 
 test("default tenant is 'default'", () => {
   assert.equal(currentTenant(), "default");
