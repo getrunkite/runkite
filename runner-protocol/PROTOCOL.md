@@ -108,7 +108,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
     "display_name": "string (optional)",
     "additional_fields": "any additional auth context fields"
   },
-  "checkpoint_ref": "string (opaque, runner-defined format) or null",
+  "checkpoint_ref": "string or null (currently rejected by the control plane when non-null; see field definition)",
   "resume_command": "object or null",
   "stream_modes": ["array of strings"],
   "connector_needs": ["array of strings"],
@@ -131,7 +131,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `input` | any JSON | No | The input to the agent. May be null for resume-only runs. The shape is defined by the agent, not by this protocol. |
 | `config` | object | No | Agent configuration. `config.configurable` carries key-value pairs the agent can read. The runner MUST inject `thread_id` and `run_id` into `configurable` if the agent framework expects them (e.g., LangGraph). |
 | `context` | object | No | Authenticated user context from the control plane's auth layer. The runner SHOULD make this available to the agent (e.g., via LangGraph's `langgraph_auth_user` configurable key). |
-| `checkpoint_ref` | string or null | No | Reference to a checkpoint to resume from. Null for a fresh run. The runner uses this to load the correct checkpoint from the checkpoint store. |
+| `checkpoint_ref` | string or null | No | **Unsupported today.** Non-null values are rejected by the control plane with `400` before dispatch (see `docs/limitations.md`). Null/absent means resume from the thread's latest checkpoint (or a fresh run). Runners MUST NOT implement silent resume-by-id for this field until the control plane supports it. |
 | `resume_command` | object or null | No | If non-null, this run is resuming from an interrupt (HITL). Contains the client's response to the interrupt. The runner MUST pass this to the agent framework's resume mechanism (e.g., LangGraph `Command(resume=...)`). |
 | `stream_modes` | array of strings | No | Which event types the control plane wants. Well-known values: `values`, `updates`, `messages`, `custom`. Default: `["values"]`. Runners SHOULD treat unknown mode strings as pass-through (forward compatibility -- the control plane may map client-requested modes like `events` or `debug` before dispatch, or new modes may be added in future spec versions). The runner SHOULD only emit data events matching these modes (optimization, not a hard requirement -- the control plane filters regardless). **`lifecycle` and `end`/`error` events are always emitted regardless of `stream_modes`** -- they are control events, not data events. |
 | `connector_needs` | array of strings | No | Pre-warm hint. The control plane speculatively fetches authenticated sessions for these connectors before the runner asks. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
@@ -238,7 +238,7 @@ Control Plane                    Runner
 2. **Check run status** against the control plane before executing (guard against cancel-after-dequeue race).
 3. **Set trace context** from `trace_context` before any agent code runs.
 4. **Load the agent** identified by `graph_id`.
-5. **If `checkpoint_ref` is non-null**, load the checkpoint and resume from that state.
+5. **`checkpoint_ref`**: the control plane currently rejects non-null values before dispatch. When that support lands, load the referenced checkpoint; until then, resume from the thread's latest checkpoint via the framework checkpointer.
 6. **If `resume_command` is non-null**, pass the resume payload to the agent framework.
 7. **Execute the agent** and emit `RunEvent` messages for each event.
 8. **On completion**, emit an `end` event with the appropriate status.
@@ -300,7 +300,7 @@ Body: [
 
 - In direct mode, the runner uses its framework's native checkpoint driver. The control plane does not participate in checkpoint read/write during execution.
 - In proxy mode, checkpoint data is opaque bytes. The control plane stores and returns them without parsing.
-- The control plane stores a checkpoint *reference* (`thread_id` + `checkpoint_id`) regardless of mode. This reference is passed back in `RunAssignment.checkpoint_ref` on resume.
+- The control plane stores checkpoint identity (`thread_id` + `checkpoint_id`) for its own bookkeeping. Passing a client-chosen past checkpoint via `RunAssignment.checkpoint_ref` is not supported yet (rejected at the API); HITL resume uses `resume_command` plus the thread's latest checkpoint.
 - The runner MUST write a checkpoint after each node step if the agent framework supports it. This enables crash recovery and HITL resume at the correct position.
 - Direct mode requires the runner to have database credentials (`DATABASE_URL`). Proxy mode does not.
 
@@ -500,7 +500,7 @@ Runner                         Control Plane                Client
    e. Stop execution. Do NOT wait for the response in-process.
 
 2. When the runner receives a new `RunAssignment` with `resume_command` set:
-   a. Load the checkpoint referenced by `checkpoint_ref`.
+   a. Load the thread's latest checkpoint (framework checkpointer / proxy store). Do not require a non-null `checkpoint_ref` -- that field is rejected by the control plane today.
    b. Pass `resume_command` to the agent framework's resume mechanism.
    c. Continue emitting events from where execution was interrupted.
 

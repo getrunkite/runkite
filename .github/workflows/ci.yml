@@ -113,6 +113,7 @@ jobs:
         run: |
           npm install -g npm@10.9.2
           npm ci
+          npm audit --audit-level=high
           npm run lint
           npm run build
 
@@ -197,6 +198,7 @@ jobs:
           python python/tests/test_generic_worker.py
           python python/tests/test_langchain_adapter.py
           python python/tests/test_worker_cancel_race.py
+          python python/tests/test_run_status.py
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py
@@ -224,6 +226,7 @@ jobs:
         working-directory: typescript/runkite-runner
         run: |
           npm install
+          npm audit --audit-level=high
           npm run lint
           npm run format:check
 

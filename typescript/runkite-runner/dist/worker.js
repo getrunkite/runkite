@@ -15,6 +15,7 @@ import { RunkiteStore } from "./store.js";
 import { executeRun } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
+import { shouldSkipRun } from "./runStatus.js";
 import { createRunnerClient, } from "./proto.js";
 import { grpcChannelCredentials } from "./tls.js";
 /**
@@ -211,7 +212,10 @@ export async function runWorker(opts) {
     // matters, same as Python's run_worker/in_flight_tasks.
     const inFlight = new Set();
     try {
-        await pollLoop(client, adapter, opts.runnerKind, metadata, pendingCancels, concurrency, inFlight);
+        await pollLoop(client, adapter, opts.runnerKind, metadata, pendingCancels, concurrency, inFlight, {
+            httpAddress: opts.httpAddress,
+            runnerToken,
+        });
     }
     finally {
         watcherStopped = true;
@@ -243,7 +247,7 @@ export async function runWorker(opts) {
  * with it. The old single-job loop caught these at the outer
  * `while (true)` level; that's no longer where "one job" lives.
  */
-export async function handleJob(client, adapter, response, metadata, pendingCancels) {
+export async function handleJob(client, adapter, response, metadata, pendingCancels, opts) {
     let runId;
     // Fencing token -- see heartbeat.ts's doc comment. Hoisted here (not
     // just below), like runId, so the outer catch's own reportStatus call
@@ -257,6 +261,18 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
         // field, same convention as the Go/Python side.
         generation = assignment.generation ?? 0;
         logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
+        const cid = assignment.trace_context
+            ?.correlation_id;
+        if (cid)
+            logger.info(`trace correlation_id=${cid} run_id=${runId}`);
+        // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+        if (opts?.httpAddress &&
+            (await shouldSkipRun(opts.httpAddress, runId, {
+                runnerKind: opts.runnerKind,
+                runnerToken: opts.runnerToken,
+            }))) {
+            return;
+        }
         const cancelState = registerRun(pendingCancels, runId);
         // Started as soon as runId is known, BEFORE streamEvents' first
         // message -- see heartbeat.ts / the Python runner's mirrored change
@@ -348,7 +364,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
  * depend on) out from under them, the instant this while(true) loop
  * happens to exit, would be a real bug, not just an edge case.
  */
-export async function pollLoop(client, adapter, runnerKind, metadata, pendingCancels, concurrency = 1, inFlight) {
+export async function pollLoop(client, adapter, runnerKind, metadata, pendingCancels, concurrency = 1, inFlight, jobOpts) {
     const sem = new Semaphore(concurrency);
     while (true) {
         await sem.acquire();
@@ -378,7 +394,11 @@ export async function pollLoop(client, adapter, runnerKind, metadata, pendingCan
         // errors (see its own doc comment), so this .finally() is only
         // ever responsible for releasing the semaphore slot and untracking
         // the job -- never for surfacing a rejection.
-        const jobPromise = handleJob(client, adapter, response, metadata, pendingCancels);
+        const jobPromise = handleJob(client, adapter, response, metadata, pendingCancels, {
+            httpAddress: jobOpts?.httpAddress,
+            runnerKind,
+            runnerToken: jobOpts?.runnerToken,
+        });
         inFlight?.add(jobPromise);
         jobPromise.finally(() => {
             sem.release();

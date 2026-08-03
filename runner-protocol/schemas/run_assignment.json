@@ -77,7 +77,7 @@
     },
     "checkpoint_ref": {
       "type": ["string", "null"],
-      "description": "Opaque reference to a checkpoint to resume from. Null for a fresh run. Format is runner-defined (may be UUID, hash, or any string)."
+      "description": "Unsupported today: the control plane rejects non-null values with 400 before dispatch. Null/absent only. When implemented, an opaque checkpoint identity for resume-by-id."
     },
     "resume_command": {
       "type": ["object", "null"],

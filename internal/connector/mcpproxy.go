@@ -191,7 +191,7 @@ func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}

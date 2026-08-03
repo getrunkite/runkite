@@ -1,0 +1,45 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "runkite.fullname" . }}
+  labels:
+    {{- include "runkite.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "runkite.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Control-plane HTTP + gRPC. From anywhere in the cluster by default
+    # (Ingress controllers, Prometheus scrapers, runner pods). Tighten
+    # with networkPolicy.ingressFrom when your CNI supports namespace
+    # selectors for those peers.
+    - ports:
+        - protocol: TCP
+          port: {{ int .Values.config.httpPort }}
+        - protocol: TCP
+          port: {{ int .Values.config.grpcPort }}
+      {{- with .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.runner.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "runkite.fullname" . }}-runner
+  labels:
+    {{- include "runkite.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "runkite.runner.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  # Runners are gRPC/HTTP clients; deny inbound by default (empty ingress).
+  ingress: []
+{{- end }}
+{{- end }}

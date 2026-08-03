@@ -316,6 +316,15 @@ func startServer(opts serverOpts) {
 		slog.Info("custom routes: enabled", "proxy_url", url, "mount", mount+"/*")
 	}
 
+	// WebSocket Origin: reuse cors.allow_origins when configured so a
+	// browser client can't open a WS from an unlisted origin. When CORS
+	// is off (server-to-server / same-origin), keep coder/websocket's
+	// default any-Origin behavior (token auth still applies).
+	corsCfgEarly := initCorsConfig(opts.configPath)
+	if corsCfgEarly.Enabled() {
+		apiServer.SetWSOriginPatterns(corsCfgEarly.AllowOrigins)
+	}
+
 	// Cron scheduler: cron-expression scheduling with multi-instance-safe
 	// claiming (Postgres claim window) and timezone support. Schedules
 	// are bootstrapped the same way agents are (every
@@ -456,12 +465,16 @@ func startServer(opts serverOpts) {
 	rateLimited := ratelimit.Middleware(rateLimiter, apiServer.Handler())
 	authedAPI := auth.MiddlewareWithOpts(authProvider, adminAuthProvider, runnerTokens, authOpts, rateLimited)
 
-	// Top-level mux: /metrics (no auth) + everything else (auth'd API).
+	// Top-level mux: /metrics (optional token) + everything else (auth'd API).
 	// Register both /metrics and /metrics/: the catch-all "/" below would
 	// otherwise swallow "/metrics/" and send it through auth (401 JSON)
 	// instead of Prometheus -- same pre-router path-shape trap as /admin.
 	root := http.NewServeMux()
 	metricsHandler := promhttp.Handler()
+	if token := os.Getenv("RUNKITE_METRICS_TOKEN"); token != "" {
+		metricsHandler = gateSharedSecret(token, "X-Runkite-Metrics-Token", metricsHandler)
+		slog.Info("metrics: RUNKITE_METRICS_TOKEN set; /metrics requires Bearer or X-Runkite-Metrics-Token")
+	}
 	root.Handle("GET /metrics", metricsHandler)
 	root.Handle("GET /metrics/", metricsHandler)
 	// pprof (bench-setup: internal profiling infra, opt-in via
@@ -498,7 +511,8 @@ func startServer(opts serverOpts) {
 	// runs). Wraps the whole root, outside auth, so an OPTIONS preflight
 	// (which carries no Authorization header by design) is answered
 	// directly instead of being rejected by auth.Middleware.
-	corsCfg := initCorsConfig(opts.configPath)
+	// Reuse corsCfgEarly (loaded above for WebSocket OriginPatterns).
+	corsCfg := corsCfgEarly
 	corsed := cors.Middleware(corsCfg, root)
 	if corsCfg.Enabled() {
 		slog.Info("cors: enabled", "allow_origins", corsCfg.AllowOrigins)
@@ -1115,6 +1129,25 @@ func initAuthProvider(configPath string) auth.Provider {
 	}
 }
 
+// gateSharedSecret wraps next so requests must present token via Bearer
+// Authorization or the named header (e.g. X-Runkite-Pprof-Token). Used
+// for opt-in ops endpoints that sit outside client auth.
+func gateSharedSecret(token, header string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get(header)
+		if got == "" {
+			if authz := r.Header.Get("Authorization"); strings.HasPrefix(authz, "Bearer ") {
+				got = strings.TrimPrefix(authz, "Bearer ")
+			}
+		}
+		if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // mountPprof registers the standard net/http/pprof handlers on a custom
 // mux, each gated by token (Bearer or X-Runkite-Pprof-Token). pprof's
 // package normally self-registers onto http.DefaultServeMux as an import
@@ -1122,21 +1155,7 @@ func initAuthProvider(configPath string) auth.Provider {
 // uses that mux.
 func mountPprof(mux *http.ServeMux, token string) {
 	gate := func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			got := r.Header.Get("X-Runkite-Pprof-Token")
-			if got == "" {
-				if authz := r.Header.Get("Authorization"); strings.HasPrefix(authz, "Bearer ") {
-					got = strings.TrimPrefix(authz, "Bearer ")
-				}
-			}
-			// Constant-time compare: opt-in ops endpoint, but still a
-			// shared secret -- avoid short-circuit string equality.
-			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			next(w, r)
-		}
+		return gateSharedSecret(token, "X-Runkite-Pprof-Token", next).ServeHTTP
 	}
 	mux.HandleFunc("GET /debug/pprof/", gate(pprof.Index))
 	mux.HandleFunc("GET /debug/pprof/cmdline", gate(pprof.Cmdline))

@@ -82,6 +82,7 @@ crash-loop on admission. Do **not** paper over this with
 | PodDisruptionBudget | `minAvailable: 1` when `replicaCount > 1` |
 | Deployment (runner) | Optional Python runner talking to the Service |
 | Ingress / Ingress-mcp | Optional; MCP Ingress defaults to `upstream-hash-by: $remote_addr` |
+| NetworkPolicy | Optional (`networkPolicy.enabled`); ingress lockdown for CP + deny-inbound runner |
 
 ## MCP sticky routing
 
@@ -102,3 +103,5 @@ ID does not exist on the first `initialize` call.
 | `terminationGracePeriodSeconds` | `30` | Covers the control plane's drain budget |
 | `autoscaling.enabled` | `false` | Needs `resources.requests.cpu` if turned on |
 | `runner.enabled` | `true` | Set `false` if runners run elsewhere |
+| `networkPolicy.enabled` | `false` | Opt-in; requires a NetworkPolicy-capable CNI |
+| `resources.requests` | `100m` / `256Mi` | Production-shaped defaults; override per env |

@@ -15,6 +15,7 @@ import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
+import { shouldSkipRun } from "./runStatus.js";
 import {
   createRunnerClient,
   type CancelSignal,
@@ -256,7 +257,10 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   const inFlight = new Set<Promise<void>>();
 
   try {
-    await pollLoop(client, adapter, opts.runnerKind, metadata, pendingCancels, concurrency, inFlight);
+    await pollLoop(client, adapter, opts.runnerKind, metadata, pendingCancels, concurrency, inFlight, {
+      httpAddress: opts.httpAddress,
+      runnerToken,
+    });
   } finally {
     watcherStopped = true;
     await cancelWatcherPromise.catch(() => {});
@@ -293,6 +297,7 @@ export async function handleJob(
   response: GetJobResponse,
   metadata: Metadata,
   pendingCancels: Map<string, CancelState>,
+  opts?: { httpAddress?: string; runnerKind?: string; runnerToken?: string },
 ): Promise<void> {
   let runId: string | undefined;
   // Fencing token -- see heartbeat.ts's doc comment. Hoisted here (not
@@ -307,6 +312,20 @@ export async function handleJob(
     // field, same convention as the Go/Python side.
     generation = assignment.generation ?? 0;
     logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
+    const cid = (assignment as RunAssignment & { trace_context?: { correlation_id?: string } }).trace_context
+      ?.correlation_id;
+    if (cid) logger.info(`trace correlation_id=${cid} run_id=${runId}`);
+
+    // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+    if (
+      opts?.httpAddress &&
+      (await shouldSkipRun(opts.httpAddress, runId, {
+        runnerKind: opts.runnerKind,
+        runnerToken: opts.runnerToken,
+      }))
+    ) {
+      return;
+    }
 
     const cancelState = registerRun(pendingCancels, runId);
 
@@ -416,6 +435,7 @@ export async function pollLoop(
   pendingCancels: Map<string, CancelState>,
   concurrency = 1,
   inFlight?: Set<Promise<void>>,
+  jobOpts?: { httpAddress?: string; runnerToken?: string },
 ): Promise<void> {
   const sem = new Semaphore(concurrency);
 
@@ -447,7 +467,11 @@ export async function pollLoop(
     // errors (see its own doc comment), so this .finally() is only
     // ever responsible for releasing the semaphore slot and untracking
     // the job -- never for surfacing a rejection.
-    const jobPromise = handleJob(client, adapter, response, metadata, pendingCancels);
+    const jobPromise = handleJob(client, adapter, response, metadata, pendingCancels, {
+      httpAddress: jobOpts?.httpAddress,
+      runnerKind,
+      runnerToken: jobOpts?.runnerToken,
+    });
     inFlight?.add(jobPromise);
     jobPromise.finally(() => {
       sem.release();

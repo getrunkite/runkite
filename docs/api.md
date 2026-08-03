@@ -209,7 +209,7 @@ Distinct from crash reclaim (heartbeat lease): reclaim covers a **dead** runner;
 GET    /health                     Returns {"status": "ok"} (unconditional, kept for backward compat)
 GET    /livez                      Same as /health, under the Kubernetes-conventional name
 GET    /readyz                     Actually checks store + transport connectivity -- see below
-GET    /metrics                    Prometheus metrics (outside auth)
+GET    /metrics                    Prometheus metrics (outside client auth; optional RUNKITE_METRICS_TOKEN)
 ```
 
 Metrics exposed: `runkite_http_requests_total`, `runkite_http_request_duration_seconds`, `runkite_runs_total`, `runkite_run_duration_seconds`, `runkite_active_runs`, `runkite_queue_depth`, `runkite_active_sse_connections`. HTTP path labels are normalized (UUIDs and resource IDs become `{id}`) to keep cardinality bounded.

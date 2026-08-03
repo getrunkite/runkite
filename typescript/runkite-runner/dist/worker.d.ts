@@ -91,7 +91,11 @@ export declare function runWorker(opts: WorkerOptions): Promise<void>;
  * with it. The old single-job loop caught these at the outer
  * `while (true)` level; that's no longer where "one job" lives.
  */
-export declare function handleJob(client: RunnerServiceClient, adapter: LangGraphAdapter, response: GetJobResponse, metadata: Metadata, pendingCancels: Map<string, CancelState>): Promise<void>;
+export declare function handleJob(client: RunnerServiceClient, adapter: LangGraphAdapter, response: GetJobResponse, metadata: Metadata, pendingCancels: Map<string, CancelState>, opts?: {
+    httpAddress?: string;
+    runnerKind?: string;
+    runnerToken?: string;
+}): Promise<void>;
 /**
  * Semaphore-bounded dispatcher: long-polls for jobs and hands each one
  * to its own handleJob call, up to `concurrency` running at once.
@@ -109,7 +113,10 @@ export declare function handleJob(client: RunnerServiceClient, adapter: LangGrap
  * depend on) out from under them, the instant this while(true) loop
  * happens to exit, would be a real bug, not just an edge case.
  */
-export declare function pollLoop(client: RunnerServiceClient, adapter: LangGraphAdapter, runnerKind: string, metadata: Metadata, pendingCancels: Map<string, CancelState>, concurrency?: number, inFlight?: Set<Promise<void>>): Promise<void>;
+export declare function pollLoop(client: RunnerServiceClient, adapter: LangGraphAdapter, runnerKind: string, metadata: Metadata, pendingCancels: Map<string, CancelState>, concurrency?: number, inFlight?: Set<Promise<void>>, jobOpts?: {
+    httpAddress?: string;
+    runnerToken?: string;
+}): Promise<void>;
 /** Reads the "custom_app" section straight from langgraph.json -- kept
  * separate so callers that only need worker options don't need to parse
  * config twice; re-exported here purely for cli.ts's convenience. */

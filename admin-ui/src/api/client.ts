@@ -11,16 +11,32 @@ const CREDENTIAL_STORAGE_KEY = "runkite_admin_credential";
 /** The credential is whatever the client-facing auth provider expects in
  * an Authorization: Bearer header -- a static API key, or a JWT. The
  * dashboard doesn't know or care which; it just needs "admin" permission
- * on whichever one the operator pastes in (see Login.tsx). */
+ * on whichever one the operator pastes in (see Login.tsx).
+ *
+ * sessionStorage (not localStorage): survives refresh within the tab,
+ * not new tabs or after the browser session ends -- shrinks the window
+ * where a stolen XSS can read a long-lived token. Still XSS-readable
+ * in-tab; an httpOnly cookie session would close that (not implemented). */
 export function getStoredCredential(): string | null {
-  return localStorage.getItem(CREDENTIAL_STORAGE_KEY);
+  const fromSession = sessionStorage.getItem(CREDENTIAL_STORAGE_KEY);
+  if (fromSession) return fromSession;
+  // One-time migrate older localStorage credentials into sessionStorage.
+  const legacy = localStorage.getItem(CREDENTIAL_STORAGE_KEY);
+  if (legacy) {
+    sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, legacy);
+    localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
+    return legacy;
+  }
+  return null;
 }
 
 export function setStoredCredential(token: string): void {
-  localStorage.setItem(CREDENTIAL_STORAGE_KEY, token);
+  sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, token);
+  localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
 }
 
 export function clearStoredCredential(): void {
+  sessionStorage.removeItem(CREDENTIAL_STORAGE_KEY);
   localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
 }
 

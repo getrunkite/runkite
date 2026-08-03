@@ -36,10 +36,15 @@ func (s *Server) handleThreadWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// nil AcceptOptions = any Origin (coder/websocket default). Fine for a
-	// token-authenticated control-plane API; tighten OriginPatterns if this
-	// endpoint is ever served directly to browsers without a reverse proxy.
-	c, err := websocket.Accept(w, r, nil)
+	// When cors.allow_origins is configured, reuse it as OriginPatterns so
+	// a browser cannot open this socket from an unlisted origin. Empty /
+	// unset keeps coder/websocket's default (any Origin) -- fine for
+	// server-to-server and same-origin Admin UI; token auth still applies.
+	var acceptOpts *websocket.AcceptOptions
+	if len(s.wsOriginPatterns) > 0 {
+		acceptOpts = &websocket.AcceptOptions{OriginPatterns: s.wsOriginPatterns}
+	}
+	c, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		return
 	}

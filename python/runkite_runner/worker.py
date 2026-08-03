@@ -27,6 +27,7 @@ from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
 from .logging_config import setup_logging
+from .run_status import should_skip_run
 from .schema_introspect import report_agent_schemas
 from .store import RunkiteStore
 from .tls_utils import grpc_channel_credentials
@@ -632,6 +633,8 @@ async def run_worker(
             pending_cancels_lock,
             concurrency=concurrency,
             in_flight=in_flight_tasks,
+            http_address=http_address,
+            runner_token=runner_token,
         )
     finally:
         cancel_watcher_task.cancel()
@@ -683,6 +686,9 @@ async def _handle_job(
     pending_cancels: dict,
     pre_cancelled: set,
     pending_cancels_lock: asyncio.Lock,
+    http_address: str = "http://localhost:2026",
+    runner_kind: str = "python-langgraph",
+    runner_token: str = "",
 ):
     """Execute one dispatched job end-to-end: register cancel, stream
     events, execute_run, report status. Split out of _poll_loop so the
@@ -712,6 +718,15 @@ async def _handle_job(
         # this field, same convention as the Go side.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
+        tc = assignment.get("trace_context") or {}
+        if cid := tc.get("correlation_id"):
+            logger.info(f"trace correlation_id={cid} run_id={run_id}")
+
+        # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
+        if await should_skip_run(
+            http_address, run_id, runner_kind=runner_kind, runner_token=runner_token
+        ):
+            return
 
         # Open one persistent client-stream per run.
         event_queue: asyncio.Queue[runner_pb2.RunEventProto | None] = asyncio.Queue()
@@ -822,6 +837,8 @@ async def _poll_loop(
     pending_cancels_lock: asyncio.Lock,
     concurrency: int = 1,
     in_flight: set[asyncio.Task] | None = None,
+    http_address: str = "http://localhost:2026",
+    runner_token: str = "",
 ):
     """Semaphore-bounded dispatcher: long-polls for jobs and hands each
     one to its own _handle_job task, up to `concurrency` running at
@@ -884,6 +901,9 @@ async def _poll_loop(
                 pending_cancels,
                 pre_cancelled,
                 pending_cancels_lock,
+                http_address=http_address,
+                runner_kind=runner_kind,
+                runner_token=runner_token,
             )
         )
         in_flight.add(task)

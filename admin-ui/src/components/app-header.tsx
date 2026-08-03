@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { Menu, Search } from "lucide-react";
 import { NAV_GROUPS } from "./app-sidebar";
 import { ModeToggle } from "./mode-toggle";

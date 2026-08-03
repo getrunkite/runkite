@@ -240,6 +240,7 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_generic_worker.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_langchain_adapter.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_cancel_race.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_run_status.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_protocol_execute_goldens.py && \
@@ -263,6 +264,7 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_generic_worker.py && \
 		PYTHONPATH=python python3 python/tests/test_langchain_adapter.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_cancel_race.py && \
+		PYTHONPATH=python python3 python/tests/test_run_status.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py && \
 		PYTHONPATH=python python3 python/tests/test_protocol_execute_goldens.py && \

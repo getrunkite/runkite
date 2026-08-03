@@ -2998,7 +2998,7 @@
           "Platform"
         ],
         "summary": "Prometheus Metrics",
-        "description": "Prometheus-format metrics endpoint. Served outside auth middleware.",
+        "description": "Prometheus-format metrics endpoint. Served outside client auth middleware. When RUNKITE_METRICS_TOKEN is set, requires Authorization: Bearer <token> or X-Runkite-Metrics-Token.",
         "operationId": "get_metrics",
         "security": [],
         "responses": {

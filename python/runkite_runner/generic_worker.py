@@ -32,6 +32,7 @@ import grpc
 
 from . import runner_pb2, runner_pb2_grpc
 from .heartbeat import heartbeat_loop
+from .run_status import should_skip_run
 from .tls_utils import grpc_channel_credentials
 
 logger = logging.getLogger("runkite.runner")
@@ -145,6 +146,7 @@ async def run_worker(
     grpc_address: str,
     runner_kind: str,
     concurrency: int = 1,
+    http_address: str | None = None,
 ) -> None:
     """Main worker loop: poll for jobs, execute via `adapter`, stream
     events back. Mirrors worker.py's run_worker, minus LangGraph-specific
@@ -158,6 +160,7 @@ async def run_worker(
 
     runner_token = os.environ.get("RUNNER_TOKEN", "")
     auth_metadata = [("runner-kind", runner_kind), ("runner-token", runner_token)] if runner_token else []
+    http_address = http_address or os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026")
 
     # Keepalive so the control plane detects a dead/crashed runner
     # quickly -- see worker.py's run_worker for the full rationale
@@ -233,6 +236,8 @@ async def run_worker(
             pending_cancels_lock,
             concurrency=concurrency,
             in_flight=in_flight_tasks,
+            http_address=http_address,
+            runner_token=runner_token,
         )
     finally:
         cancel_watcher_task.cancel()
@@ -268,6 +273,9 @@ async def _handle_job(
     pending_cancels: dict,
     pre_cancelled: set,
     pending_cancels_lock: asyncio.Lock,
+    http_address: str = "http://localhost:2026",
+    runner_kind: str = "",
+    runner_token: str = "",
 ) -> None:
     """Execute one dispatched job end-to-end. Split out of _poll_loop so
     the dispatcher can run one of these per concurrency slot as an
@@ -290,6 +298,14 @@ async def _handle_job(
         # this field, same convention as the Go side.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
+        tc = assignment.get("trace_context") or {}
+        if cid := tc.get("correlation_id"):
+            logger.info(f"trace correlation_id={cid} run_id={run_id}")
+
+        if await should_skip_run(
+            http_address, run_id, runner_kind=runner_kind, runner_token=runner_token
+        ):
+            return
 
         event_queue: asyncio.Queue = asyncio.Queue()
 
@@ -395,6 +411,8 @@ async def _poll_loop(
     pending_cancels_lock: asyncio.Lock,
     concurrency: int = 1,
     in_flight: set[asyncio.Task] | None = None,
+    http_address: str = "http://localhost:2026",
+    runner_token: str = "",
 ) -> None:
     """Semaphore-bounded dispatcher: long-polls for jobs and hands each
     one to its own _handle_job task, up to `concurrency` running at
@@ -448,6 +466,9 @@ async def _poll_loop(
                 pending_cancels,
                 pre_cancelled,
                 pending_cancels_lock,
+                http_address=http_address,
+                runner_kind=runner_kind,
+                runner_token=runner_token,
             )
         )
         in_flight.add(task)

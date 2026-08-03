@@ -47,6 +47,10 @@ type Server struct {
 	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
 	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through
+	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
+	// those Origin values (same list as cors.allow_origins). Empty means
+	// coder/websocket's default any-Origin accept (token auth still applies).
+	wsOriginPatterns []string
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until finishRun closes it out. Process-local on purpose: if the
@@ -113,6 +117,13 @@ func (s *Server) a2aMaxDepthOrDefault() int {
 // unchanged, same as before this feature existed.
 func (s *Server) SetAliasResolver(r *AliasResolver) {
 	s.aliases = r
+}
+
+// SetWSOriginPatterns configures WebSocket Origin checks for
+// /threads/{id}/websocket. Pass the same list as cors.allow_origins.
+// A nil/empty list leaves AcceptOptions nil (any Origin).
+func (s *Server) SetWSOriginPatterns(origins []string) {
+	s.wsOriginPatterns = origins
 }
 
 // SetHookDispatcher attaches an event-hook dispatcher to the server.

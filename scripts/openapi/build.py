@@ -771,7 +771,7 @@ def _build_public_spec() -> dict:
         "get": {
             "tags": ["Platform"],
             "summary": "Prometheus Metrics",
-            "description": "Prometheus-format metrics endpoint. Served outside auth middleware.",
+            "description": "Prometheus-format metrics endpoint. Served outside client auth middleware. When RUNKITE_METRICS_TOKEN is set, requires Authorization: Bearer <token> or X-Runkite-Metrics-Token.",
             "operationId": "get_metrics",
             "security": [],
             "responses": {"200": {"description": "Prometheus text exposition format", "content": {"text/plain": {"schema": {"type": "string"}}}}},

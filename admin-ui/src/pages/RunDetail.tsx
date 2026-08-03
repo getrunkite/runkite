@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { Loader2, Radio, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";

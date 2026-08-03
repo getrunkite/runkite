@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { AppSidebar, NavLinks, SidebarBrand, SignOutButton } from "./app-sidebar";
 import { AppHeader } from "./app-header";
 import { CommandPalette } from "./command-palette";

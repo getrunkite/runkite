@@ -35,8 +35,6 @@ runner's config (RUNNER_TOKEN, POSTGRES_DSN, etc).
 
 import os
 
-import grpc
-
 
 def _read(path: str | None) -> bytes | None:
     if not path:
@@ -49,7 +47,7 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes")
 
 
-def grpc_channel_credentials() -> grpc.ChannelCredentials | None:
+def grpc_channel_credentials():
     """Returns TLS channel credentials for grpc.aio.secure_channel, or
     None if neither RUNKITE_TLS_CA_FILE nor RUNKITE_GRPC_TLS is set --
     callers should fall back to grpc.aio.insecure_channel in that case,
@@ -63,6 +61,8 @@ def grpc_channel_credentials() -> grpc.ChannelCredentials | None:
     private_key/certificate_chain arguments regardless of which trust
     store is selected.
     """
+    import grpc  # lazy: httpx_tls_kwargs callers need not install grpc
+
     ca_file = os.environ.get("RUNKITE_TLS_CA_FILE")
     if not ca_file and not _truthy(os.environ.get("RUNKITE_GRPC_TLS")):
         return None

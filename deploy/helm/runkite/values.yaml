@@ -98,6 +98,16 @@ podDisruptionBudget:
   # replicaCount >= 2. Ignored when replicaCount is 1.
   minAvailable: 1
 
+# Opt-in ingress lockdown. Off by default -- many clusters lack a
+# NetworkPolicy-capable CNI, and default-deny egress would break
+# OAuth/connectors/webhooks/OTLP without careful allow-lists.
+networkPolicy:
+  enabled: false
+  # Optional additional from: rules for the control-plane policy
+  # (namespaceSelector / podSelector). Empty = allow ingress from any
+  # peer in the cluster on HTTP/gRPC ports.
+  ingressFrom: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
