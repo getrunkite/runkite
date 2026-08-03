@@ -93,7 +93,8 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `PINECONE_URL` | (unset, defaults to `https://api.pinecone.io`) | Fallback for `vector_store.url` when `vector_store.type` is `"pinecone"`; override to point at a self-hosted Pinecone Local instance |
 | `PINECONE_API_KEY` | (unset) | Fallback for `vector_store.api_key`; required for a real Pinecone account, ignored entirely by Pinecone Local |
 | `LANGGRAPH_CONFIG` | (unset) | Path to langgraph.json (alternative to --config flag) |
-| `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_python_langgraph`) |
+| `RUNNER_TOKEN_<kind>` | (unset) | Shared token for runner auth (e.g. `RUNNER_TOKEN_PYTHON_LANGGRAPH` for kind `python-langgraph`) |
+| `RUNNER_TENANTS_<kind>` | (unset) | Optional comma-separated tenant allow-list for that kind's `X-Runkite-Tenant-Id` on `/internal/*` (e.g. `RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta`). Unset = any tenant after kind-token auth. Missing header counts as `default`. |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` (case-insensitive). Same variable, same values, on the control plane and both runners. |
 | `LOG_FORMAT` | `text` | `text`\|`json`. `json` is the shape a log aggregator (Datadog, Grafana Loki, etc.) expects -- see [Logging](api.md#logging) below. |
 

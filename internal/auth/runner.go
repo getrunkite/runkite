@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"os"
 	"strings"
+
+	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // RunnerTokens implements two-tier runner authentication:
@@ -14,27 +16,60 @@ import (
 // gRPC bridge (GetJob/StreamEvents/ReportStatus/WatchCancels) and the
 // /internal/* HTTP routes that vend connector credentials and run status --
 // surfaces the client-facing auth middleware always lets through.
+//
+// Optional per-kind tenant allow-lists (RUNNER_TENANTS_*) restrict which
+// X-Runkite-Tenant-Id values a kind token may claim on /internal/*. When
+// unset for a kind, any tenant header is still accepted (today's shared
+// multi-tenant runner pool). When set, a missing header is treated as
+// "default" for the allow check.
 type RunnerTokens struct {
-	tokens map[string]string // runner_kind -> token
+	tokens  map[string]string              // runner_kind -> token
+	tenants map[string]map[string]struct{} // runner_kind -> allowed tenant ids (absent/empty = unrestricted)
 }
 
 // EnvPrefix is the environment variable prefix for runner tokens, e.g.
 // RUNNER_TOKEN_PYTHON_LANGGRAPH for runner_kind "python-langgraph".
 const EnvPrefix = "RUNNER_TOKEN_"
 
+// TenantsEnvPrefix is the optional allow-list for X-Runkite-Tenant-Id on
+// /internal/*, e.g. RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta.
+const TenantsEnvPrefix = "RUNNER_TENANTS_"
+
 // LoadRunnerTokensFromEnv scans the process environment for RUNNER_TOKEN_*
-// variables and builds a RunnerTokens set keyed by runner_kind.
+// and optional RUNNER_TENANTS_* variables and builds a RunnerTokens set
+// keyed by runner_kind.
 func LoadRunnerTokensFromEnv() *RunnerTokens {
-	rt := &RunnerTokens{tokens: make(map[string]string)}
+	rt := &RunnerTokens{
+		tokens:  make(map[string]string),
+		tenants: make(map[string]map[string]struct{}),
+	}
 	for _, kv := range os.Environ() {
 		k, v, ok := strings.Cut(kv, "=")
-		if !ok || !strings.HasPrefix(k, EnvPrefix) || v == "" {
+		if !ok || v == "" {
 			continue
 		}
-		kind := envKeyToRunnerKind(strings.TrimPrefix(k, EnvPrefix))
-		rt.tokens[kind] = v
+		switch {
+		case strings.HasPrefix(k, EnvPrefix):
+			kind := envKeyToRunnerKind(strings.TrimPrefix(k, EnvPrefix))
+			rt.tokens[kind] = v
+		case strings.HasPrefix(k, TenantsEnvPrefix):
+			kind := envKeyToRunnerKind(strings.TrimPrefix(k, TenantsEnvPrefix))
+			rt.tenants[kind] = parseTenantAllowList(v)
+		}
 	}
 	return rt
+}
+
+func parseTenantAllowList(v string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, part := range strings.Split(v, ",") {
+		tid := strings.TrimSpace(part)
+		if tid == "" {
+			continue
+		}
+		out[tid] = struct{}{}
+	}
+	return out
 }
 
 // envKeyToRunnerKind reverses the env-safe encoding: env vars can't contain
@@ -61,4 +96,24 @@ func (rt *RunnerTokens) Validate(runnerKind, token string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(want), []byte(token)) == 1
+}
+
+// AllowsTenant reports whether runnerKind may claim tenantID on /internal/*
+// (via X-Runkite-Tenant-Id). Always true in local mode, when no allow-list
+// is configured for that kind, or when the allow-list is empty. A missing
+// / blank tenantID is treated as tenant.DefaultTenant for the check.
+func (rt *RunnerTokens) AllowsTenant(runnerKind, tenantID string) bool {
+	if rt == nil || !rt.Enabled() {
+		return true
+	}
+	allow, ok := rt.tenants[runnerKind]
+	if !ok || len(allow) == 0 {
+		return true
+	}
+	tid := strings.TrimSpace(tenantID)
+	if tid == "" {
+		tid = tenant.DefaultTenant
+	}
+	_, ok = allow[tid]
+	return ok
 }

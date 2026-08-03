@@ -88,3 +88,55 @@ func TestRunnerTokens_MissingKindRejected(t *testing.T) {
 		t.Fatal("unregistered runner_kind should never validate, even with a token that matches another kind")
 	}
 }
+
+func TestRunnerTokens_AllowsTenant_UnboundByDefault(t *testing.T) {
+	withEnv(t, map[string]string{"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.AllowsTenant("python-langgraph", "acme") {
+		t.Fatal("without RUNNER_TENANTS_*, any tenant should be allowed")
+	}
+	if !rt.AllowsTenant("python-langgraph", "") {
+		t.Fatal("empty claim (default) should be allowed when unbound")
+	}
+}
+
+func TestRunnerTokens_AllowsTenant_BoundAllowList(t *testing.T) {
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH": "acme, beta",
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.AllowsTenant("python-langgraph", "acme") {
+		t.Fatal("acme should be allowed")
+	}
+	if !rt.AllowsTenant("python-langgraph", "beta") {
+		t.Fatal("beta should be allowed")
+	}
+	if rt.AllowsTenant("python-langgraph", "evil") {
+		t.Fatal("evil should be denied")
+	}
+	if rt.AllowsTenant("python-langgraph", "") {
+		t.Fatal("missing header → default should be denied when default not listed")
+	}
+	if !rt.AllowsTenant("other-kind", "evil") {
+		t.Fatal("kinds without an allow-list stay unrestricted")
+	}
+}
+
+func TestRunnerTokens_AllowsTenant_DefaultExplicit(t *testing.T) {
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH": "default,acme",
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.AllowsTenant("python-langgraph", "") {
+		t.Fatal("empty claim should match listed default")
+	}
+}
+
+func TestRunnerTokens_AllowsTenant_LocalMode(t *testing.T) {
+	var rt *auth.RunnerTokens
+	if !rt.AllowsTenant("python-langgraph", "anything") {
+		t.Fatal("local mode must not enforce tenant allow-lists")
+	}
+}

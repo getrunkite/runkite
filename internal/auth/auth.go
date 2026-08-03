@@ -59,9 +59,11 @@ const (
 	// store/vector handlers scope to RunAssignment.tenant_id the same
 	// way client auth scopes via AuthResult.TenantID. Only honored after
 	// runner-token validation (or when runner auth is disabled locally).
-	// Trust note: the value is self-reported -- kind tokens are not
-	// per-tenant, and the control plane does not yet cross-check this
-	// header against the assigned run's tenant_id on record.
+	// When RUNNER_TENANTS_<KIND> is set, the claimed value (missing →
+	// "default") must be on that kind's allow-list; otherwise any tenant
+	// header is still accepted after kind-token auth. The control plane
+	// does not yet cross-check the claim against the assigned run's
+	// tenant_id on record.
 	HeaderTenantID = "X-Runkite-Tenant-Id"
 )
 
@@ -110,8 +112,8 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 
 		// Internal routes (runner-facing) use runner auth, not client auth.
 		if isInternalPath(path) {
+			kind := r.Header.Get(HeaderRunnerKind)
 			if runnerTokens.Enabled() {
-				kind := r.Header.Get(HeaderRunnerKind)
 				token := r.Header.Get(HeaderRunnerToken)
 				if kind == "" || token == "" || !runnerTokens.Validate(kind, token) {
 					writeUnauthorized(w, "invalid or missing runner credentials")
@@ -120,9 +122,18 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			}
 			// Optional per-run tenant from the runner (assignment.tenant_id).
 			// Without this, /internal/store|* always landed in "default".
+			// When RUNNER_TENANTS_<KIND> is set, the claimed tenant (missing
+			// header → "default") must be on that kind's allow-list.
+			claimed := strings.TrimSpace(r.Header.Get(HeaderTenantID))
+			if runnerTokens.Enabled() && !runnerTokens.AllowsTenant(kind, claimed) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"message": "tenant not allowed for this runner kind"})
+				return
+			}
 			ctx := r.Context()
-			if tid := strings.TrimSpace(r.Header.Get(HeaderTenantID)); tid != "" {
-				ctx = tenant.WithContext(ctx, tid)
+			if claimed != "" {
+				ctx = tenant.WithContext(ctx, claimed)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
