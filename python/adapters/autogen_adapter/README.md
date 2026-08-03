@@ -21,7 +21,7 @@ stay protected against future version drift.
 ```bash
 cd python/adapters/autogen_adapter
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python autogen-agentchat grpcio protobuf
+uv pip install --python .venv/bin/python autogen-agentchat grpcio protobuf httpx
 ```
 
 ## Run

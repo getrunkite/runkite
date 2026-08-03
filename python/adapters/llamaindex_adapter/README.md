@@ -19,7 +19,7 @@ is used specifically to avoid pulling in a cloud LLM SDK by default.
 ```bash
 cd python/adapters/llamaindex_adapter
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python llama-index-core grpcio protobuf
+uv pip install --python .venv/bin/python llama-index-core grpcio protobuf httpx
 ```
 
 ## Run

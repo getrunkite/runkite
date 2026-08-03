@@ -70,7 +70,7 @@ Cancellation is wired into all four via `generic_worker.run_cancellable` -- each
 ```bash
 cd python/adapters/crewai_adapter        # or llamaindex_adapter / autogen_adapter
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python crewai grpcio protobuf   # or: llama-index-core ... / autogen-agentchat ...
+uv pip install --python .venv/bin/python crewai grpcio protobuf httpx   # or: llama-index-core ... / autogen-agentchat ... (+ httpx)
 
 cd ../../../examples/crewai_agent
 PYTHONPATH=<repo>/python:<repo>/python/adapters \

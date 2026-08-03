@@ -210,16 +210,21 @@ jobs:
         # crewai` there downgraded protobuf during development).
         run: |
           pip install uv
+          # httpx is required by runkite_runner.run_status (pre-exec status
+          # check imported via generic_worker) -- declare it explicitly so
+          # adapters don't depend on a transitive pull from the framework
+          # package (autogen-agentchat does not ship httpx; crewai/llama
+          # only do today by accident).
           uv venv --python 3.12 python/adapters/crewai_adapter/.venv
-          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf
+          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf httpx
           PYTHONPATH=python:python/adapters python/adapters/crewai_adapter/.venv/bin/python python/adapters/crewai_adapter/test_adapter.py
 
           uv venv --python 3.12 python/adapters/llamaindex_adapter/.venv
-          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf
+          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf httpx
           PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_adapter.py
 
           uv venv --python 3.12 python/adapters/autogen_adapter/.venv
-          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf
+          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf httpx
           PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py
 
       - name: TypeScript runner lint + format check

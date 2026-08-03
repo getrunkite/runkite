@@ -91,13 +91,13 @@ jobs:
         run: |
           pip install uv
           uv venv --python 3.12 python/adapters/crewai_adapter/.venv
-          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf
+          uv pip install --python python/adapters/crewai_adapter/.venv/bin/python crewai grpcio protobuf httpx
 
           uv venv --python 3.12 python/adapters/llamaindex_adapter/.venv
-          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf
+          uv pip install --python python/adapters/llamaindex_adapter/.venv/bin/python llama-index-core grpcio protobuf httpx
 
           uv venv --python 3.12 python/adapters/autogen_adapter/.venv
-          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf
+          uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf httpx
 
       - name: TypeScript runner dependencies
         working-directory: typescript/runkite-runner
