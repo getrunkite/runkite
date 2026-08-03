@@ -1019,6 +1019,80 @@ def _build_admin_spec() -> dict:
             },
         },
         "paths": {
+            "/admin-api/session": {
+                "post": {
+                    "tags": ["Admin"],
+                    "summary": "Create Admin Session",
+                    "description": "Exchange an API key/JWT for an httpOnly session cookie + CSRF token. The credential is not retained by the browser afterward.",
+                    "operationId": "admin_create_session",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"credential": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        **_json_response(
+                            "200",
+                            "Session created (Set-Cookie: runkite_admin_session)",
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "csrf_token": {"type": "string"},
+                                    "identity": {"type": "string"},
+                                    "auth_required": {"type": "boolean"},
+                                },
+                            },
+                        ),
+                        "401": {"description": "Unauthorized", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "403": {"description": "Forbidden", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    },
+                },
+                "get": {
+                    "tags": ["Admin"],
+                    "summary": "Admin Session Status",
+                    "description": "Bootstrap probe: returns whether a session cookie is active (and its CSRF token), or whether auth is required at all.",
+                    "operationId": "admin_session_status",
+                    "responses": {
+                        **_json_response(
+                            "200",
+                            "Success",
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "authenticated": {"type": "boolean"},
+                                    "auth_required": {"type": "boolean"},
+                                    "csrf_token": {"type": "string"},
+                                    "identity": {"type": "string"},
+                                },
+                            },
+                        )
+                    },
+                },
+                "delete": {
+                    "tags": ["Admin"],
+                    "summary": "Destroy Admin Session",
+                    "description": "Logout. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
+                    "operationId": "admin_destroy_session",
+                    "parameters": [
+                        {
+                            "name": "X-CSRF-Token",
+                            "in": "header",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {
+                        "204": {"description": "Logged out"},
+                        "403": {"description": "Invalid or missing CSRF token", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    },
+                },
+            },
             "/admin-api/overview": {"get": {"tags": ["Admin"], "summary": "Admin Overview", "operationId": "admin_overview", "responses": {**_json_response("200", "Success", _ref("AdminOverview"))}}},
             "/admin-api/agents": {"get": {"tags": ["Admin"], "summary": "List All Agents", "operationId": "admin_list_agents", "parameters": list(admin_page), "responses": {**_json_response("200", "Success", _array_of(_ref("AdminAgentView")))}}},
             "/admin-api/agents/{agent_id}": {"get": {"tags": ["Admin"], "summary": "Get Agent (admin)", "operationId": "admin_get_agent", "parameters": [a_id, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminAgentView")), "404": _ERR_404}}},

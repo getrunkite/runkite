@@ -120,7 +120,7 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 		// X-CSRF-Token on mutating methods.
 		if isAdminAPIPath(path) && opts.AdminSessions != nil && !hasAuthHeader(r) {
 			if sess := opts.AdminSessions.Get(SessionIDFromRequest(r)); sess != nil {
-				if isMutatingMethod(r.Method) && r.Header.Get(HeaderCSRF) != sess.CSRF {
+				if isMutatingMethod(r.Method) && !csrfTokenMatch(r.Header.Get(HeaderCSRF), sess.CSRF) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
 					json.NewEncoder(w).Encode(map[string]string{"message": "invalid or missing CSRF token"})

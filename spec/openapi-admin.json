@@ -318,6 +318,141 @@
     }
   },
   "paths": {
+    "/admin-api/session": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create Admin Session",
+        "description": "Exchange an API key/JWT for an httpOnly session cookie + CSRF token. The credential is not retained by the browser afterward.",
+        "operationId": "admin_create_session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credential": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session created (Set-Cookie: runkite_admin_session)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "csrf_token": {
+                      "type": "string"
+                    },
+                    "identity": {
+                      "type": "string"
+                    },
+                    "auth_required": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Session Status",
+        "description": "Bootstrap probe: returns whether a session cookie is active (and its CSRF token), or whether auth is required at all.",
+        "operationId": "admin_session_status",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "auth_required": {
+                      "type": "boolean"
+                    },
+                    "csrf_token": {
+                      "type": "string"
+                    },
+                    "identity": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Destroy Admin Session",
+        "description": "Logout. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
+        "operationId": "admin_destroy_session",
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          },
+          "403": {
+            "description": "Invalid or missing CSRF token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin-api/overview": {
       "get": {
         "tags": [

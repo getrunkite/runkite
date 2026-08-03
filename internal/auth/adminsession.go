@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"sync"
@@ -197,4 +198,11 @@ func isMutatingMethod(method string) bool {
 	default:
 		return false
 	}
+}
+
+// csrfTokenMatch is a constant-time compare matching the pprof/metrics
+// and runner-token gates elsewhere in this codebase. Length mismatch
+// fails closed (ConstantTimeCompare returns 0).
+func csrfTokenMatch(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
