@@ -243,9 +243,9 @@ class RunkiteStore(BaseStore):
         # from asyncio.to_thread (a worker thread with NO running loop)
         # while the runner's AsyncConnectionPool was opened on the main
         # loop. asyncio.run(abatch) in that thread opens a *new* loop and
-        # then hangs on pool.getconn (PoolTimeout after 30s) -- live SA
-        # soak failure. Always schedule abatch onto the pool's owning
-        # loop when it is known and still running.
+        # then hangs on pool.getconn (PoolTimeout after 30s) -- live soak
+        # failure. Always schedule abatch onto the pool's owning loop when
+        # it is known and still running.
         ops = list(ops)
 
         def _run_abatch() -> list[Result]:

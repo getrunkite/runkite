@@ -59,6 +59,9 @@ const (
 	// store/vector handlers scope to RunAssignment.tenant_id the same
 	// way client auth scopes via AuthResult.TenantID. Only honored after
 	// runner-token validation (or when runner auth is disabled locally).
+	// Trust note: the value is self-reported -- kind tokens are not
+	// per-tenant, and the control plane does not yet cross-check this
+	// header against the assigned run's tenant_id on record.
 	HeaderTenantID = "X-Runkite-Tenant-Id"
 )
 

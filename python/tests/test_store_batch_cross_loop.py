@@ -1,7 +1,7 @@
 """Regression: sync store.batch from a worker thread must use the pool's
 owning event loop, not asyncio.run() on a fresh loop.
 
-Live SA soak failure: deepagents SkillsMiddleware called store.get via
+Live soak failure: deepagents SkillsMiddleware called store.get via
 asyncio.to_thread → batch → asyncio.run(abatch) → PoolTimeout 30s because
 AsyncConnectionPool was opened on the runner's main loop.
 """
