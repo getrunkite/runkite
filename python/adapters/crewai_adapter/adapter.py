@@ -143,8 +143,9 @@ class CrewAIAdapter:
             # isn't safe to run concurrently with itself, so concurrent
             # runs on the same graph_id queue here rather than racing on
             # the crew's own instance attributes.
-            # attach_otel_listeners nests runkite.llm/tool under the active
-            # runkite.run (no-op when OTEL is off).
+            # Shared bus listeners + ContextVar job state (see otel_events):
+            # nests runkite.llm/tool under the active runkite.run; no-op when
+            # OTEL is off. Safe across concurrent graph_ids / waiting lockers.
             with attach_otel_listeners(run_id):
                 async with self._crew_locks[graph_id]:
                     result = await run_cancellable(crew.akickoff(inputs={"input": text}), cancel_event)

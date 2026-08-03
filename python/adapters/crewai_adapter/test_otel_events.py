@@ -95,9 +95,89 @@ def test_synthetic_events_under_run_span():
     tracing._tracer = None
 
 
+def test_concurrent_attaches_do_not_cross_attribute():
+    """Two open attach windows must not duplicate one emit onto both runs.
+
+    Reproduces the pre-fix bug: N per-call closures on the global bus
+    meant every LLM event created a span under every concurrently attached
+    run. With ContextVar-scoped state, only the emitting job's parent gets
+    the child span.
+    """
+    import threading
+    import time
+
+    try:
+        from crewai.events import crewai_event_bus
+        from crewai.events.types.llm_events import LLMCallCompletedEvent, LLMCallStartedEvent, LLMCallType
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    except ImportError as e:
+        print(f"[SKIP] missing dep: {e}")
+        return
+
+    from crewai_adapter.otel_events import attach_otel_listeners
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracing._tracer = provider.get_tracer("test")
+
+    ready_a = threading.Event()
+    release_a = threading.Event()
+    errors: list[BaseException] = []
+
+    def hold_run_a():
+        try:
+            with tracing.run_span("run-A"):
+                with attach_otel_listeners("run-A"):
+                    ready_a.set()
+                    release_a.wait(timeout=5.0)
+        except BaseException as e:
+            errors.append(e)
+
+    t = threading.Thread(target=hold_run_a, daemon=True)
+    t.start()
+    check("run-A attach ready", ready_a.wait(timeout=5.0))
+
+    with tracing.run_span("run-B"):
+        with attach_otel_listeners("run-B"):
+            # Brief overlap so both attaches are live when we emit.
+            time.sleep(0.05)
+            started = LLMCallStartedEvent(model="gpt-b-only", call_id="only-b", messages=[])
+            crewai_event_bus.emit(None, started)
+            crewai_event_bus.emit(
+                None,
+                LLMCallCompletedEvent(
+                    messages=[],
+                    response="ok",
+                    call_type=LLMCallType.LLM_CALL,
+                    call_id="only-b",
+                    started_event_id=started.event_id,
+                ),
+            )
+            crewai_event_bus.flush(timeout=5.0)
+
+    release_a.set()
+    t.join(timeout=5.0)
+    check("run-A thread clean", not errors)
+
+    finished = list(exporter.get_finished_spans())
+    llm = [s for s in finished if s.name == "runkite.llm"]
+    runs = {s.attributes.get("run.id"): s for s in finished if s.name == "runkite.run"}
+    check("exactly one llm span", len(llm) == 1)
+    check("llm attributed to run-B", llm[0].attributes.get("run.id") == "run-B")
+    check("llm under run-B", llm[0].parent.span_id == runs["run-B"].context.span_id)
+    check("llm.name", llm[0].attributes.get("llm.name") == "gpt-b-only")
+
+    provider.shutdown()
+    tracing._tracer = None
+
+
 def main():
     test_noop_when_tracing_off()
     test_synthetic_events_under_run_span()
+    test_concurrent_attaches_do_not_cross_attribute()
     print("\nAll checks passed.")
 
 
