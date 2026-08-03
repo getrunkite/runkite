@@ -19,8 +19,19 @@ import (
 	pgxvector "github.com/pgvector/pgvector-go/pgx"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
+
+// schemaMigrationsTable is separate from the state store's
+// schema_migrations -- both can share one Postgres database, and their
+// version streams must not collide (state v1 stamped must not skip
+// vector baseline).
+const schemaMigrationsTable = "vector_schema_migrations"
+
+// initAdvisoryLockKey serializes vector schema DDL across concurrent
+// control-plane replicas. Distinct from the state store's lock key.
+const initAdvisoryLockKey = 894127002
 
 // Store implements vectorstore.VectorStore with PostgreSQL + pgvector.
 type Store struct {
@@ -76,22 +87,70 @@ func New(ctx context.Context, dsn string, dimensions int) (*Store, error) {
 	return &Store{pool: pool, dimensions: dimensions}, nil
 }
 
-// Init creates the table and an HNSW index (the vector extension itself
-// is already guaranteed to exist by New, above). Safe to call on every
-// startup (IF NOT EXISTS throughout) -- same idempotent, non-versioned
-// migration convention as state.Store's Init.
+// Init applies pending numbered schema migrations for vector_items
+// (tracked in vector_schema_migrations, not the state store's
+// schema_migrations). Safe to call concurrently from multiple processes
+// -- wrapped in a session advisory lock like state.Store.Init. The
+// vector extension itself is already created by New.
 //
-// Known limitation, discovered by testing rather than assumed away: the
-// embedding column's dimension is fixed the FIRST time this table is
-// created and CREATE TABLE IF NOT EXISTS never revisits it. Changing
-// vector_store.dimensions in langgraph.json after the table already
-// exists does not migrate existing rows or the column type -- Upsert
-// simply starts failing loudly (a clear Postgres dimension-mismatch
-// error, not silent corruption) until the table is manually dropped or
-// recreated with the new width. No in-place ALTER COLUMN TYPE migration
-// is implemented for this, matching the project's existing
-// "single idempotent migration, not versioned up/down" convention.
+// Known limitation: the embedding column's dimension is fixed the FIRST
+// time the table is created; CREATE TABLE IF NOT EXISTS never revisits
+// it. Changing vector_store.dimensions after the table exists does not
+// migrate rows or the column type -- Upsert fails with a Postgres
+// dimension-mismatch error until the table is dropped/recreated. No
+// in-place ALTER COLUMN TYPE step is registered for that.
 func (s *Store) Init(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
+		bk := migrate.NewPgxTable(conn, schemaMigrationsTable)
+		return migrate.Upgrade(ctx, bk, s.migrations(conn), func(ctx context.Context) (bool, error) {
+			return migrate.PgxTableExists(ctx, conn, "vector_items")
+		})
+	})
+}
+
+// Downgrade rolls back the most recently applied vector migration under
+// the same advisory lock Init uses. Baseline (v1) Down drops
+// vector_items (destructive).
+func (s *Store) Downgrade(ctx context.Context) error {
+	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
+		bk := migrate.NewPgxTable(conn, schemaMigrationsTable)
+		return migrate.Downgrade(ctx, bk, s.migrations(conn))
+	})
+}
+
+func (s *Store) withSchemaLock(ctx context.Context, fn func(context.Context, *pgxpool.Conn) error) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("pgvector: acquire connection for schema lock: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", initAdvisoryLockKey); err != nil {
+		return fmt.Errorf("pgvector: acquire schema advisory lock: %w", err)
+	}
+	defer func() {
+		if _, unlockErr := conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", initAdvisoryLockKey); unlockErr != nil {
+			return
+		}
+	}()
+	return fn(ctx, conn)
+}
+
+func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
+	return []migrate.Migration{{
+		Version: 1,
+		Name:    "baseline",
+		Up: func(ctx context.Context) error {
+			return s.initSchemaLocked(ctx, conn)
+		},
+		Down: func(ctx context.Context) error {
+			_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS vector_items CASCADE`)
+			return err
+		},
+	}}
+}
+
+func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error {
 	schema := fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS vector_items (
 		tenant_id  TEXT NOT NULL DEFAULT 'default',
@@ -105,7 +164,7 @@ func (s *Store) Init(ctx context.Context) error {
 		PRIMARY KEY (tenant_id, namespace, id)
 	);
 	`, s.dimensions)
-	if _, err := s.pool.Exec(ctx, schema); err != nil {
+	if _, err := conn.Exec(ctx, schema); err != nil {
 		return fmt.Errorf("pgvector: create table: %w", err)
 	}
 
@@ -114,7 +173,7 @@ func (s *Store) Init(ctx context.Context) error {
 	// clusters are trained once from whatever data exists at CREATE INDEX
 	// time and degrade as the data distribution drifts, needing a manual
 	// REINDEX. vector_cosine_ops matches Search's `<=>` operator below.
-	if _, err := s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_vector_items_hnsw ON vector_items USING hnsw (embedding vector_cosine_ops)`); err != nil {
+	if _, err := conn.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_vector_items_hnsw ON vector_items USING hnsw (embedding vector_cosine_ops)`); err != nil {
 		return fmt.Errorf("pgvector: create hnsw index: %w", err)
 	}
 	return nil

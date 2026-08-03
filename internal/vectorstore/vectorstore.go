@@ -33,6 +33,8 @@ type VectorStore interface {
 
 	// Init creates the schema/extension/indexes needed. Called once at
 	// control-plane startup, only when vector_store is configured.
+	// pgvector applies numbered migrations (vector_schema_migrations);
+	// Qdrant/Weaviate/Pinecone keep create-if-missing Init (no DDL trail).
 	Init(ctx context.Context) error
 	Close() error
 }

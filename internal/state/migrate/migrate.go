@@ -1,7 +1,9 @@
 // Package migrate is a small numbered up/down schema migration runner for
-// the control-plane state stores. No external migrator dependency: each
-// backend registers Go Migration steps (baseline = today's full Init DDL)
-// and this package tracks applied versions in schema_migrations.
+// control-plane state stores and (separately) the pgvector vector store.
+// No external migrator dependency: each backend registers Go Migration
+// steps (baseline = today's full Init DDL) and tracks applied versions in
+// a bookkeeper table (schema_migrations for state; vector stores that
+// share Postgres must use a distinct table name).
 package migrate
 
 import (

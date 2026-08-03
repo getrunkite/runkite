@@ -34,6 +34,20 @@ func main() {
 			fmt.Fprintf(os.Stderr, "unknown db command: %s\n", os.Args[2])
 			os.Exit(1)
 		}
+	case "vector":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "Usage: runkite vector <upgrade|downgrade>")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "upgrade":
+			cmdVectorUpgrade(os.Args[3:])
+		case "downgrade":
+			cmdVectorDowngrade(os.Args[3:])
+		default:
+			fmt.Fprintf(os.Stderr, "unknown vector command: %s\n", os.Args[2])
+			os.Exit(1)
+		}
 	case "agents":
 		if len(os.Args) < 3 || os.Args[2] == "list" {
 			cmdAgentsList(os.Args[2:])
@@ -61,6 +75,8 @@ Commands:
   db upgrade      Apply pending numbered schema migrations
   db downgrade    Roll back the most recently applied migration
   db reset        Reset database (truncate/recreate + upgrade to latest)
+  vector upgrade  Apply pending vector-store schema migrations (pgvector numbered; others = Init)
+  vector downgrade  Roll back one pgvector migration (not supported for Qdrant/Weaviate/Pinecone)
   agents list     List registered agents from config
   version         Print version info
   help            Show this help message

@@ -39,9 +39,14 @@ func newTestStore(t *testing.T) vectorstore.VectorStore {
 	if err != nil {
 		t.Fatalf("pgxpool.New for setup: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS vector_items"); err != nil {
-		pool.Close()
-		t.Fatalf("drop vector_items: %v", err)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS vector_items CASCADE`,
+		`DROP TABLE IF EXISTS vector_schema_migrations CASCADE`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			pool.Close()
+			t.Fatalf("%s: %v", q, err)
+		}
 	}
 	pool.Close()
 

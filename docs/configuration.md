@@ -108,4 +108,13 @@ Backend selection matches `serve` (`POSTGRES_DSN` → `MYSQL_DSN` → `MONGO_URI
 | `runkite db downgrade` | Roll back the most recently applied migration (prints a warning first). Baseline (v1) Down drops application tables/collections (destructive). Exits `1` when already at version 0. |
 | `runkite db reset` | Truncate (or delete the SQLite file) and re-upgrade to latest. |
 
-Future schema changes are new numbered Up/Down steps next to each store -- not ad-hoc `ALTER` trails inside a single growing `Init`.
+### Vector-store CLI
+
+Requires a `vector_store` section in `langgraph.json` (`--config` / `LANGGRAPH_CONFIG`). Does not share the state `schema_migrations` table.
+
+| Command | Behavior |
+|---------|----------|
+| `runkite vector upgrade` | Apply pending vector schema (pgvector: numbered Ups via `vector_schema_migrations`; Qdrant/Weaviate/Pinecone: create-if-missing `Init`). `serve`/`dev` also call `Init` when vector_store is configured. |
+| `runkite vector downgrade` | Roll back one pgvector migration (baseline Down drops `vector_items`). Exits `1` for backends without a Down step, or when already at version 0. |
+
+Future pgvector schema changes are new numbered Up/Down steps -- not ad-hoc `ALTER` trails inside a single growing `Init`. Dimension changes are still not migrated (drop/recreate).

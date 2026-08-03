@@ -120,7 +120,9 @@ func (s *Store) Close() error {
 // than blindly POSTing and matching an error string -- Weaviate's
 // "class already exists" response is a generic 422 that isn't reliably
 // distinguishable from other schema validation failures, unlike
-// Qdrant's dedicated 409.
+// Qdrant's dedicated 409. Intentionally create-if-missing (not a
+// numbered migration trail like pgvector) until a real property-schema
+// evolution lands; an existing class is never patched here.
 //
 // vectorizer: "none" is load-bearing, not a default left in place --
 // without it Weaviate runs its own configured vectorizer module against

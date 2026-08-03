@@ -120,8 +120,9 @@ func (s *Store) do(ctx context.Context, method, path string, body interface{}) (
 
 // Init creates the collection if it doesn't already exist. Safe to call
 // on every startup -- Qdrant's create-collection endpoint 409s on an
-// existing collection, which is treated as success (same idempotent,
-// non-versioned convention as every other backend's Init).
+// existing collection, which is treated as success. Intentionally not a
+// numbered migration trail (unlike pgvector): Qdrant has no evolvable
+// DDL; payload fields are schemaless.
 //
 // Known limitation, same shape as pgvector's: the collection's vector
 // size is fixed the first time it's created. Changing

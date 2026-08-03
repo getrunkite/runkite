@@ -126,8 +126,9 @@ func vectorID(tenantID, id string) string {
 // creating the index first if it doesn't already exist. Safe to call on
 // every startup -- a 404 from describe is treated as "doesn't exist
 // yet, create it," anything else describe returns (including a
-// successful 200) is treated as already there, same idempotent,
-// non-versioned convention as every other backend's Init.
+// successful 200) is treated as already there. Intentionally
+// create-if-missing (not a numbered migration trail like pgvector):
+// Pinecone indexes have no evolvable DDL beyond create/describe.
 //
 // Known limitation, same shape as pgvector's/Qdrant's/Weaviate's: the
 // index's dimension is fixed the first time it's actually created.

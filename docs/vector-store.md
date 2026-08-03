@@ -67,6 +67,8 @@ await store.addDocuments([{ pageContent: "...", metadata: {} }]);
 const results = await store.similaritySearchWithScore("query text", 4);
 ```
 
+**Schema**: pgvector applies numbered Up/Down migrations tracked in `vector_schema_migrations` (separate from the state store's `schema_migrations` so the two version streams never collide on a shared Postgres). `serve`/`dev` run them via `Init`; offline: `runkite vector upgrade` / `vector downgrade`. Qdrant, Weaviate, and Pinecone keep create-if-missing `Init` (no evolvable DDL trail); `vector downgrade` refuses those backends.
+
 **Known limitations, stated plainly**:
 - **Dimension is fixed at first creation, not migrated**, for all four backends. Changing `vector_store.dimensions` after the table/collection/class/index already exists does not migrate existing rows -- `Upsert` starts failing with a clear dimension-mismatch error (not silent corruption) until it's manually dropped or recreated at the new width.
 - **Cosine similarity only.** All four backends support other distance metrics (pgvector: L2, inner-product; Qdrant: Euclidean, dot product; Weaviate: dot product, L2-squared, hamming, manhattan; Pinecone: Euclidean, dot product); only cosine is wired up today, the most common choice for text embeddings.
