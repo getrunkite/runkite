@@ -17,7 +17,10 @@ RUN GIT_COMMIT=$(cat .git/refs/heads/main 2>/dev/null | cut -c1-7 || echo "docke
       -ldflags "-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
       -o runkite ./cmd/
 
-FROM alpine:3.20
+# Runtime base is independent of the golang:*-alpine builder image.
+# Keep this on a supported Alpine line so Trivy can assess CVEs (3.20
+# reached EOL 2026-04-01 and produced a false-clean scan).
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates wget && \
     addgroup -g 65532 -S runkite && \
     adduser -u 65532 -S -G runkite -H -D runkite
