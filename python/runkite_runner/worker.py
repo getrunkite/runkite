@@ -723,9 +723,7 @@ async def _handle_job(
             logger.info(f"trace correlation_id={cid} run_id={run_id}")
 
         # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
-        if await should_skip_run(
-            http_address, run_id, runner_kind=runner_kind, runner_token=runner_token
-        ):
+        if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
             return
 
         # Open one persistent client-stream per run.

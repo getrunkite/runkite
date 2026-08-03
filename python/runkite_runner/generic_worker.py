@@ -302,9 +302,7 @@ async def _handle_job(
         if cid := tc.get("correlation_id"):
             logger.info(f"trace correlation_id={cid} run_id={run_id}")
 
-        if await should_skip_run(
-            http_address, run_id, runner_kind=runner_kind, runner_token=runner_token
-        ):
+        if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
             return
 
         event_queue: asyncio.Queue = asyncio.Queue()

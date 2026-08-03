@@ -23,7 +23,13 @@ export async function shouldSkipRun(
     headers["X-Runner-Token"] = opts.runnerToken;
   }
   try {
-    const init: FetchInit = { headers, dispatcher: httpDispatcher() };
+    // Match Python's httpx timeout=5.0 -- undici's default headers/body
+    // timeouts are ~300s, which would defeat fail-open on a stalled CP.
+    const init: FetchInit = {
+      headers,
+      dispatcher: httpDispatcher(),
+      signal: AbortSignal.timeout(5_000),
+    };
     const resp = await fetch(`${base}/internal/runs/${runId}/status`, init);
     if (resp.status === 404) {
       logger.warn(`pre-exec status: run ${runId} not found; discarding`);
