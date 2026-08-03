@@ -30,14 +30,21 @@ func newTestEnvWithVectorStore(t *testing.T) *testEnv {
 	// time and never migrated (see pgvector.go's Init doc comment) -- a
 	// stale table left at a different dimensions value by another test
 	// binary/example sharing this database would otherwise fail every
-	// Upsert here with an unrelated dimension-mismatch error.
+	// Upsert here with an unrelated dimension-mismatch error. Also drop
+	// vector_schema_migrations so Init re-runs baseline Up instead of
+	// seeing a stamped v1 with a missing table.
 	setupPool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("pgxpool.New for setup: %v", err)
 	}
-	if _, err := setupPool.Exec(ctx, "DROP TABLE IF EXISTS vector_items"); err != nil {
-		setupPool.Close()
-		t.Fatalf("drop vector_items: %v", err)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS vector_items CASCADE`,
+		`DROP TABLE IF EXISTS vector_schema_migrations CASCADE`,
+	} {
+		if _, err := setupPool.Exec(ctx, q); err != nil {
+			setupPool.Close()
+			t.Fatalf("%s: %v", q, err)
+		}
 	}
 	setupPool.Close()
 
