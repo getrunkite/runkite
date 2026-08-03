@@ -229,10 +229,13 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_store_dual_mode.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_store_pool.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_store_batch_cross_loop.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_store_pool_recreate.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_checkpoint_pool_recreate.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_checkpoint_concurrent_setup.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_custom_app.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_custom_auth.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_factory_graph.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_vectorstore_cross_loop.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_vectorstore_dual_mode.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_generic_worker.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_langchain_adapter.py && \
@@ -249,10 +252,13 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_store_dual_mode.py && \
 		PYTHONPATH=python python3 python/tests/test_store_pool.py && \
 		PYTHONPATH=python python3 python/tests/test_store_batch_cross_loop.py && \
+		PYTHONPATH=python python3 python/tests/test_store_pool_recreate.py && \
+		PYTHONPATH=python python3 python/tests/test_checkpoint_pool_recreate.py && \
 		PYTHONPATH=python python3 python/tests/test_checkpoint_concurrent_setup.py && \
 		PYTHONPATH=python python3 python/tests/test_custom_app.py && \
 		PYTHONPATH=python python3 python/tests/test_custom_auth.py && \
 		PYTHONPATH=python python3 python/tests/test_factory_graph.py && \
+		PYTHONPATH=python python3 python/tests/test_vectorstore_cross_loop.py && \
 		PYTHONPATH=python python3 python/tests/test_vectorstore_dual_mode.py && \
 		PYTHONPATH=python python3 python/tests/test_generic_worker.py && \
 		PYTHONPATH=python python3 python/tests/test_langchain_adapter.py && \

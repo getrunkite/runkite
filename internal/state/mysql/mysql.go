@@ -86,6 +86,12 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sql.Open: %w", err)
 	}
+	// database/sql defaults to unlimited idle time; MySQL's wait_timeout
+	// (often 8h) then silently drops sockets the pool still thinks are
+	// live. Bound idle/lifetime to match pgxpool's own defaults so a
+	// long-running control plane does not hand out half-open conns.
+	db.SetConnMaxIdleTime(30 * time.Minute)
+	db.SetConnMaxLifetime(time.Hour)
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping: %w", err)

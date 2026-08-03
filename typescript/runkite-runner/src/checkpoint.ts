@@ -39,7 +39,18 @@ export class CheckpointerManager {
     if (postgresDsn) {
       const { PostgresSaver } = await import("@langchain/langgraph-checkpoint-postgres");
       const { Pool } = await import("pg");
-      const pool = new Pool({ connectionString: postgresDsn, ...(poolSize ? { max: poolSize } : {}) });
+      // idleTimeoutMillis / connectionTimeoutMillis: node-pg's default
+      // idle eviction is already short (~10s); pin it explicitly and
+      // bound connect so a wedged Postgres cannot hang job startup.
+      // Unlike Python's psycopg_pool there is no checkout check_connection
+      // hook -- stale sockets surface as query errors and the pool
+      // discards them on the next checkout.
+      const pool = new Pool({
+        connectionString: postgresDsn,
+        idleTimeoutMillis: 60_000,
+        connectionTimeoutMillis: 10_000,
+        ...(poolSize ? { max: poolSize } : {}),
+      });
       const saver = new PostgresSaver(pool);
       await saver.setup();
       this.checkpointer = saver;

@@ -72,7 +72,12 @@ func New(ctx context.Context, uri, dbName string) (*Store, error) {
 	// return nil for every such field otherwise. This makes it decode
 	// as bson.M (map[string]interface{}) instead, matching what
 	// jsonToBSON produces on the way in.
-	clientOpts := options.Client().ApplyURI(uri).SetBSONOptions(&options.BSONOptions{DefaultDocumentM: true})
+	// MaxConnIdleTime mirrors pgxpool / MySQL store idle eviction.
+	// mongo-go-driver default is 0 (idle forever); a laptop-sleep or
+	// network blip then leaves half-open sockets in the pool.
+	clientOpts := options.Client().ApplyURI(uri).
+		SetBSONOptions(&options.BSONOptions{DefaultDocumentM: true}).
+		SetMaxConnIdleTime(30 * time.Minute)
 	client, err := mongo.Connect(clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("mongo.Connect: %w", err)

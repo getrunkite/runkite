@@ -32,6 +32,7 @@ import type {
   SearchOperation,
 } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
+import { logger } from "./logger.js";
 import { httpDispatcher, type FetchInit } from "./tls.js";
 
 export const NS_DELIM = "\x1f";
@@ -119,7 +120,18 @@ export class RunkiteStore extends BaseStore {
       // poolSize mirrors the Python runner's pool_size=concurrency --
       // see checkpoint.ts's CheckpointerManager.start() for the full
       // rationale. Undefined leaves node-postgres's own default (10).
-      this.pool = new pg.Pool({ connectionString: opts.postgresDsn, ...(opts.poolSize ? { max: opts.poolSize } : {}) });
+      // See checkpoint.ts for idle/connect timeout rationale.
+      this.pool = new pg.Pool({
+        connectionString: opts.postgresDsn,
+        idleTimeoutMillis: 60_000,
+        connectionTimeoutMillis: 10_000,
+        ...(opts.poolSize ? { max: opts.poolSize } : {}),
+      });
+      this.pool.on("error", (err) => {
+        // Idle clients can error after server-side close; log and let
+        // the pool drop them rather than crashing the process.
+        logger.error(`store pool idle client error: ${err.message}`);
+      });
     }
     if (opts.httpBaseUrl) {
       this.baseUrl = opts.httpBaseUrl.replace(/\/+$/, "");

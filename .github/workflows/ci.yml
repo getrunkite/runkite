@@ -107,8 +107,11 @@ jobs:
         # Builds straight into internal/adminui/dist (see admin-ui/vite.config.ts),
         # so the Go build step right after this actually exercises a fresh
         # bundle instead of whatever was last committed.
+        # Pin npm 10 to match packageManager / engines -- local npm 11
+        # rewrites lockfile keys CI's npm 10 cannot resolve (@emnapi/*).
         working-directory: admin-ui
         run: |
+          npm install -g npm@10.9.2
           npm ci
           npm run lint
           npm run build
