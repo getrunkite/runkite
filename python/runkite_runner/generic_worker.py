@@ -265,6 +265,19 @@ async def register_run(
         return ev
 
 
+def _log_trace_context(run_id: str, tc: dict | None) -> None:
+    """Log W3C / correlation fields from RunAssignment.trace_context.
+    Full OTel span activation in the runner is a separate follow-up.
+    """
+    tc = tc or {}
+    parts = [f"run_id={run_id}"]
+    for key in ("correlation_id", "traceparent", "tracestate"):
+        if val := tc.get(key):
+            parts.append(f"{key}={val}")
+    if len(parts) > 1:
+        logger.info("trace " + " ".join(parts))
+
+
 async def _handle_job(
     stub,
     adapter: FrameworkAdapter,
@@ -298,9 +311,7 @@ async def _handle_job(
         # this field, same convention as the Go side.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
-        tc = assignment.get("trace_context") or {}
-        if cid := tc.get("correlation_id"):
-            logger.info(f"trace correlation_id={cid} run_id={run_id}")
+        _log_trace_context(run_id, assignment.get("trace_context"))
 
         if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
             return

@@ -521,6 +521,15 @@ async def run_worker(
     await store.warm()
     adapter.attach_store(store)
     logger.info(f"Store mode: {store.mode}")
+    if store.mode == "direct":
+        # Direct mode SQL always scopes store_items as tenant "default"
+        # (see store.py _TENANT_ID). Proxy mode inherits the caller's
+        # tenant from the control plane -- required for multi-tenant.
+        logger.warning(
+            "store/checkpoint direct mode (POSTGRES_DSN set) always uses "
+            'tenant "default"; unset POSTGRES_DSN and use RUNKITE_HTTP_URL '
+            "for per-tenant isolation (docs/auth.md Multi-tenancy)"
+        )
 
     # Keepalive so the control plane detects a dead/crashed runner quickly
     # instead of relying on TCP-level detection, which can leave a
@@ -678,6 +687,20 @@ async def register_run(
         return ev
 
 
+def _log_trace_context(run_id: str, tc: dict | None) -> None:
+    """Log W3C / correlation fields from RunAssignment.trace_context.
+    Full OTel span activation in the runner is a separate follow-up;
+    structured log fields are enough for correlating with the CP trace.
+    """
+    tc = tc or {}
+    parts = [f"run_id={run_id}"]
+    for key in ("correlation_id", "traceparent", "tracestate"):
+        if val := tc.get(key):
+            parts.append(f"{key}={val}")
+    if len(parts) > 1:
+        logger.info("trace " + " ".join(parts))
+
+
 async def _handle_job(
     stub,
     adapter: "LangGraphAdapter",
@@ -718,9 +741,7 @@ async def _handle_job(
         # this field, same convention as the Go side.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
-        tc = assignment.get("trace_context") or {}
-        if cid := tc.get("correlation_id"):
-            logger.info(f"trace correlation_id={cid} run_id={run_id}")
+        _log_trace_context(run_id, assignment.get("trace_context"))
 
         # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
         if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):

@@ -159,6 +159,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type TraceContextFields = {
+  correlation_id?: string;
+  traceparent?: string;
+  tracestate?: string;
+};
+
+/** Log W3C / correlation fields from RunAssignment.trace_context.
+ * Full OTel span activation in the runner is a separate follow-up. */
+function logTraceContext(runId: string, tc?: TraceContextFields): void {
+  if (!tc) return;
+  const parts = [`run_id=${runId}`];
+  for (const key of ["correlation_id", "traceparent", "tracestate"] as const) {
+    const val = tc[key];
+    if (val) parts.push(`${key}=${val}`);
+  }
+  if (parts.length > 1) logger.info(`trace ${parts.join(" ")}`);
+}
+
 export async function runWorker(opts: WorkerOptions): Promise<void> {
   const adapter = new LangGraphAdapter(opts.configPath);
   await adapter.load();
@@ -200,6 +218,15 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   });
   adapter.attachStore(store);
   logger.info(`Store mode: ${store.mode}`);
+  if (store.mode === "direct") {
+    // Direct mode SQL always scopes store_items as tenant "default"
+    // (see store.ts TENANT_ID). Proxy mode inherits the caller's tenant
+    // from the control plane -- required for multi-tenant.
+    logger.warn(
+      'store/checkpoint direct mode (POSTGRES_DSN set) always uses tenant "default"; ' +
+        "unset POSTGRES_DSN and use RUNKITE_HTTP_URL for per-tenant isolation (docs/auth.md Multi-tenancy)",
+    );
+  }
 
   // grpcChannelCredentials() (not just "did TLS env vars get read") is
   // the actual signal createRunnerClient itself uses to decide
@@ -312,9 +339,7 @@ export async function handleJob(
     // field, same convention as the Go/Python side.
     generation = assignment.generation ?? 0;
     logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
-    const cid = (assignment as RunAssignment & { trace_context?: { correlation_id?: string } }).trace_context
-      ?.correlation_id;
-    if (cid) logger.info(`trace correlation_id=${cid} run_id=${runId}`);
+    logTraceContext(runId, (assignment as RunAssignment & { trace_context?: TraceContextFields }).trace_context);
 
     // PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
     if (

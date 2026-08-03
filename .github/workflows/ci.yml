@@ -265,3 +265,24 @@ jobs:
           POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
         run: go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
+
+  # Separate job so a base-image CVE can't mask the main test suite.
+  # Uses the Trivy container (not trivy-action) pinned by tag after the
+  # 2026 trivy-action supply-chain incident -- avoid floating @master.
+  image-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build control-plane image
+        run: docker build -t runkite:ci -f Dockerfile .
+
+      - name: Trivy vulnerability scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.72.0 image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            runkite:ci
