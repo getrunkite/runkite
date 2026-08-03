@@ -232,7 +232,6 @@ func startServer(opts serverOpts) {
 	// --- State store ---
 	store := initStore(ctx)
 	warnCheckpointDualMode()
-	warnDirectModeTenantGap(opts.configPath)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -796,33 +795,6 @@ func warnCheckpointDualMode() {
 	if msg := checkpointDualModeWarning(); msg != "" {
 		slog.Warn(msg)
 	}
-}
-
-// warnDirectModeTenantGap logs when langgraph.json configures non-default
-// tenant_id values on API keys. Direct-mode runners always read/write
-// store_items as tenant "default" (hardcoded), so multi-tenant deployments
-// must use proxy mode (unset runner POSTGRES_DSN, set RUNKITE_HTTP_URL).
-func warnDirectModeTenantGap(configPath string) {
-	if msg := directModeTenantGapWarning(configPath); msg != "" {
-		slog.Warn(msg)
-	}
-}
-
-func directModeTenantGapWarning(configPath string) string {
-	paths := config.FindLangGraphJSON(configPath)
-	if len(paths) == 0 {
-		return ""
-	}
-	cfg, err := config.LoadLangGraphJSON(paths[0])
-	if err != nil || cfg.Auth == nil {
-		return ""
-	}
-	for _, entry := range cfg.Auth.Keys {
-		if entry.TenantID != "" && entry.TenantID != "default" {
-			return "auth configures non-default tenant_id on API keys: LangGraph direct-mode checkpoint tables are not tenant-scoped (store_items now follows RunAssignment.tenant_id). For checkpoint isolation unset POSTGRES_DSN on runners and use RUNKITE_HTTP_URL (proxy mode). See docs/auth.md Multi-tenancy."
-		}
-	}
-	return ""
 }
 
 // checkpointDualModeWarning returns the warn text for the active state

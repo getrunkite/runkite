@@ -30,6 +30,7 @@ from .logging_config import setup_logging
 from .run_status import should_skip_run
 from .schema_introspect import report_agent_schemas
 from .store import RunkiteStore
+from .tenant_ctx import checkpoint_thread_id
 from .tls_utils import grpc_channel_credentials
 from .tracing import init as init_tracing
 from .tracing import run_span, set_run_status
@@ -178,7 +179,13 @@ def build_run_config(assignment: dict) -> dict:
     config = assignment.get("config") or {}
 
     config.setdefault("configurable", {})
-    config["configurable"]["thread_id"] = assignment["thread_id"]
+    # Checkpointer key: bare thread_id for default/absent tenant (keeps
+    # existing single-tenant rows reachable); "{tenant}:{thread}" otherwise
+    # so two tenants cannot collide on a client-chosen thread id. Node code
+    # that reads configurable.thread_id sees this same value.
+    config["configurable"]["thread_id"] = checkpoint_thread_id(
+        assignment.get("tenant_id"), assignment["thread_id"]
+    )
     config["configurable"]["run_id"] = run_id
     config["configurable"]["assistant_id"] = graph_id
     config["configurable"]["graph_id"] = graph_id
@@ -523,16 +530,6 @@ async def run_worker(
     await store.warm()
     adapter.attach_store(store)
     logger.info(f"Store mode: {store.mode}")
-    if store.mode == "direct":
-        # store_items follows RunAssignment.tenant_id per job; LangGraph's
-        # own checkpoint tables are still not tenant-scoped.
-        logger.warning(
-            "checkpoint direct mode (POSTGRES_DSN set): LangGraph checkpoint "
-            "tables are not tenant-scoped. store_items uses "
-            "RunAssignment.tenant_id. For checkpoint isolation unset "
-            "POSTGRES_DSN and use RUNKITE_HTTP_URL (docs/auth.md Multi-tenancy)"
-        )
-
     # Keepalive so the control plane detects a dead/crashed runner quickly
     # instead of relying on TCP-level detection, which can leave a
     # crashed runner's in-flight GetJob long-poll "zombie" server-side for

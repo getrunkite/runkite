@@ -1,6 +1,9 @@
 /**
  * Per-run tenant binding for direct-mode store SQL and proxy headers.
  * Mirrors python/runkite_runner/tenant_ctx.py -- see that module's docstring.
+ *
+ * Also owns the LangGraph checkpointer thread-id encoding (see
+ * checkpointThreadId) so PostgresSaver rows do not collide across tenants.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -21,4 +24,13 @@ export function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise
 
 export function tenantHeaders(): Record<string, string> {
   return { [HEADER_TENANT_ID]: currentTenant() };
+}
+
+/** LangGraph checkpointer key for this assignment's logical thread.
+ * Empty / "default" → bare threadId (existing single-tenant rows stay
+ * reachable). Any other tenant → `${tenantId}:${threadId}`. */
+export function checkpointThreadId(tenantId: string | undefined | null, threadId: string): string {
+  const tid = (tenantId ?? "").trim() || DEFAULT_TENANT;
+  if (tid === DEFAULT_TENANT) return threadId;
+  return `${tid}:${threadId}`;
 }

@@ -4,7 +4,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { currentTenant, HEADER_TENANT_ID, runWithTenant, tenantHeaders } from "./tenantCtx.js";
+import {
+  checkpointThreadId,
+  currentTenant,
+  HEADER_TENANT_ID,
+  runWithTenant,
+  tenantHeaders,
+} from "./tenantCtx.js";
 
 test("default tenant is 'default'", () => {
   assert.equal(currentTenant(), "default");
@@ -36,4 +42,11 @@ test("concurrent jobs keep distinct tenants", async () => {
     ),
   );
   assert.deepEqual(seen.sort(), ["a", "b", "c"]);
+});
+
+test("checkpointThreadId encodes non-default tenants", () => {
+  assert.equal(checkpointThreadId(undefined, "t1"), "t1");
+  assert.equal(checkpointThreadId("default", "t1"), "t1");
+  assert.equal(checkpointThreadId("  ", "t1"), "t1");
+  assert.equal(checkpointThreadId("acme", "t1"), "acme:t1");
 });

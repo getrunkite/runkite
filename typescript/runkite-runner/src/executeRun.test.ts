@@ -399,6 +399,19 @@ test("buildRunConfig maps checkpoint_ref to configurable.checkpoint_id", () => {
   assert.equal("checkpoint_id" in buildRunConfig(assignment({ checkpoint_ref: "   " })).configurable, false);
 });
 
+test("buildRunConfig tenant-scopes configurable.thread_id for non-default tenants", () => {
+  assert.equal(buildRunConfig(assignment({ thread_id: "t1" })).configurable.thread_id, "t1");
+  assert.equal(
+    buildRunConfig(assignment({ thread_id: "t1", tenant_id: "default" })).configurable.thread_id,
+    "t1",
+  );
+  assert.equal(buildRunConfig(assignment({ thread_id: "t1", tenant_id: "  " })).configurable.thread_id, "t1");
+  assert.equal(
+    buildRunConfig(assignment({ thread_id: "t1", tenant_id: "acme" })).configurable.thread_id,
+    "acme:t1",
+  );
+});
+
 // -- Factory graph integration ------------------------------------------
 // executeRun.ts's own responsibility here is narrow and already tested
 // thoroughly at the unit level in factoryGraph.test.ts (classification,

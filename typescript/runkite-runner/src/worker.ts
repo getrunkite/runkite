@@ -216,16 +216,6 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   });
   adapter.attachStore(store);
   logger.info(`Store mode: ${store.mode}`);
-  if (store.mode === "direct") {
-    // store_items follows RunAssignment.tenant_id per job; LangGraph's
-    // own checkpoint tables are still not tenant-scoped.
-    logger.warn(
-      "checkpoint direct mode (POSTGRES_DSN set): LangGraph checkpoint tables are not tenant-scoped. " +
-        "store_items uses RunAssignment.tenant_id. For checkpoint isolation unset POSTGRES_DSN " +
-        "and use RUNKITE_HTTP_URL (docs/auth.md Multi-tenancy)",
-    );
-  }
-
   // grpcChannelCredentials() (not just "did TLS env vars get read") is
   // the actual signal createRunnerClient itself uses to decide
   // insecure vs TLS -- checking the same function here (rather than

@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runkite_runner.tenant_ctx import (  # noqa: E402
     HEADER_TENANT_ID,
     bind_tenant,
+    checkpoint_thread_id,
     current_tenant,
     reset_tenant,
     tenant_headers,
@@ -86,11 +87,19 @@ def test_concurrent_jobs_do_not_clobber():
     )
 
 
+def test_checkpoint_thread_id_encoding():
+    check("absent tenant → bare", checkpoint_thread_id(None, "t1") == "t1")
+    check("default tenant → bare", checkpoint_thread_id("default", "t1") == "t1")
+    check("whitespace tenant → bare", checkpoint_thread_id("  ", "t1") == "t1")
+    check("acme tenant → prefixed", checkpoint_thread_id("acme", "t1") == "acme:t1")
+
+
 def main():
     test_default_tenant()
     test_bind_and_reset()
     test_empty_binds_default()
     test_concurrent_jobs_do_not_clobber()
+    test_checkpoint_thread_id_encoding()
     print("\nAll checks passed.")
 
 

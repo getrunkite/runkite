@@ -385,6 +385,23 @@ def test_build_run_config_maps_checkpoint_ref_to_checkpoint_id():
     check("checkpoint_id absent for whitespace-only ref", "checkpoint_id" not in blank["configurable"])
 
 
+def test_build_run_config_tenant_scopes_checkpoint_thread_id():
+    """Non-default tenants must not share LangGraph checkpoint rows when
+    they reuse the same client-chosen thread_id -- configurable.thread_id
+    becomes the checkpointer key."""
+    bare = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g"})
+    check("absent tenant keeps bare thread_id", bare["configurable"]["thread_id"] == "t1")
+
+    default = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "default"})
+    check("default tenant keeps bare thread_id", default["configurable"]["thread_id"] == "t1")
+
+    blank = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "  "})
+    check("whitespace tenant keeps bare thread_id", blank["configurable"]["thread_id"] == "t1")
+
+    acme = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "acme"})
+    check("non-default tenant prefixes thread_id", acme["configurable"]["thread_id"] == "acme:t1")
+
+
 async def test_lifecycle_running_emitted_before_slow_factory_construction():
     """Regression test for a real bug found live: the 'lifecycle: running'
     event -- the only signal a client gets that its run was accepted
@@ -443,6 +460,7 @@ async def main():
     test_build_run_config_sets_langgraph_auth_user_when_authenticated()
     test_build_run_config_preserves_existing_configurable_keys()
     test_build_run_config_maps_checkpoint_ref_to_checkpoint_id()
+    test_build_run_config_tenant_scopes_checkpoint_thread_id()
     await test_lifecycle_running_emitted_before_slow_factory_construction()
     print("\nAll checks passed.")
 

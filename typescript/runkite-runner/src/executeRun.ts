@@ -10,6 +10,7 @@ import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
 import { RunnerUser } from "./runnerUser.js";
 import type { FactoryGraphBuild, RunFactoryContext } from "./factoryGraph.js";
 import { logger } from "./logger.js";
+import { checkpointThreadId } from "./tenantCtx.js";
 
 export interface RunEvent {
   event_id: string;
@@ -41,8 +42,9 @@ export interface RunAssignment {
   // treated the same as 0 (unfenced) by worker.ts's own `?? 0`.
   generation?: number;
   // Tenant that authenticated the originating request -- scopes
-  // direct-mode store SQL and proxy X-Runkite-Tenant-Id. Absent on
-  // older control planes → runner falls back to "default".
+  // direct-mode store SQL, proxy X-Runkite-Tenant-Id, and (for
+  // non-default tenants) the LangGraph checkpointer thread_id key.
+  // Absent on older control planes → runner falls back to "default".
   tenant_id?: string;
 }
 
@@ -63,7 +65,10 @@ export interface RunAssignment {
 export function buildRunConfig(assignment: RunAssignment): Record<string, any> {
   const config: Record<string, any> = { ...(assignment.config ?? {}) };
   config.configurable = { ...(config.configurable ?? {}) };
-  config.configurable.thread_id = assignment.thread_id;
+  // Checkpointer key: bare thread_id for default/absent tenant; prefixed
+  // otherwise so tenants cannot collide on a client-chosen thread id.
+  // Node code that reads configurable.thread_id sees this same value.
+  config.configurable.thread_id = checkpointThreadId(assignment.tenant_id, assignment.thread_id);
   config.configurable.run_id = assignment.run_id;
   config.configurable.assistant_id = assignment.graph_id;
   config.configurable.graph_id = assignment.graph_id;

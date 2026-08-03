@@ -1,5 +1,6 @@
 import { RunnerUser } from "./runnerUser.js";
 import { logger } from "./logger.js";
+import { checkpointThreadId } from "./tenantCtx.js";
 /**
  * Builds the RunnableConfig passed to graph.stream(), including the keys
  * LangGraph's own OSS code reads to populate Runtime.server_info for
@@ -17,7 +18,10 @@ import { logger } from "./logger.js";
 export function buildRunConfig(assignment) {
     const config = { ...(assignment.config ?? {}) };
     config.configurable = { ...(config.configurable ?? {}) };
-    config.configurable.thread_id = assignment.thread_id;
+    // Checkpointer key: bare thread_id for default/absent tenant; prefixed
+    // otherwise so tenants cannot collide on a client-chosen thread id.
+    // Node code that reads configurable.thread_id sees this same value.
+    config.configurable.thread_id = checkpointThreadId(assignment.tenant_id, assignment.thread_id);
     config.configurable.run_id = assignment.run_id;
     config.configurable.assistant_id = assignment.graph_id;
     config.configurable.graph_id = assignment.graph_id;
