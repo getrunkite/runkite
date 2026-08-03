@@ -141,3 +141,24 @@ def set_run_status(span: Any, status: str) -> None:
         span.set_status(Status(StatusCode.ERROR))
     else:
         span.set_status(Status(StatusCode.OK))
+
+
+def make_run_callbacks(run_id: str = "") -> list:
+    """LangChain handlers that open LLM/tool child spans under runkite.run.
+
+    Empty when tracing is disabled or langchain_core is unavailable.
+    Call inside an active run_span (or after extract) so the captured
+    parent context is the job span, not the process root.
+    """
+    if _tracer is None:
+        return []
+    try:
+        from opentelemetry import context as otel_context
+
+        from .otel_callbacks import new_handler
+    except ImportError:
+        return []
+    handler = new_handler(_tracer, otel_context.get_current(), run_id=run_id)
+    if handler is None:
+        return []
+    return [handler]

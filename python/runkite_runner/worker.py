@@ -33,7 +33,7 @@ from .store import RunkiteStore
 from .tenant_ctx import checkpoint_thread_id
 from .tls_utils import grpc_channel_credentials
 from .tracing import init as init_tracing
-from .tracing import run_span, set_run_status
+from .tracing import make_run_callbacks, run_span, set_run_status
 
 logger = logging.getLogger("runkite.runner")
 
@@ -203,6 +203,17 @@ def build_run_config(assignment: dict) -> dict:
         # read instead of (or in addition to) server_info.user.
         config["configurable"]["user_id"] = user.identity
         config["configurable"]["user_display_name"] = user.display_name
+    # Nest LLM/tool spans under the active runkite.run when OTEL is on.
+    # Merge so a graph that already set LangSmith/custom callbacks keeps them.
+    otel_cbs = make_run_callbacks(run_id)
+    if otel_cbs:
+        existing = config.get("callbacks")
+        if existing is None:
+            config["callbacks"] = otel_cbs
+        elif isinstance(existing, list):
+            config["callbacks"] = list(existing) + otel_cbs
+        else:
+            config["callbacks"] = [existing, *otel_cbs]
     return config
 
 

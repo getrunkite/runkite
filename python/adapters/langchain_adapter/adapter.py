@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
+from runkite_runner.tracing import make_run_callbacks
 
 
 def _last_human_text(messages: list) -> str:
@@ -110,7 +111,13 @@ class LangChainAdapter:
             messages = list(input_data.get("messages", []))
             text = _last_human_text(messages)
 
-            result = await run_cancellable(runnable.ainvoke({"input": text}), cancel_event)
+            # Only pass config when we have callbacks -- a bare ainvoke(input)
+            # keeps working for minimal/test Runnables that don't take config.
+            if otel_cbs := make_run_callbacks(run_id):
+                invoke = runnable.ainvoke({"input": text}, config={"callbacks": otel_cbs})
+            else:
+                invoke = runnable.ainvoke({"input": text})
+            result = await run_cancellable(invoke, cancel_event)
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
