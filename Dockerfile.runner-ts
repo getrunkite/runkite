@@ -17,6 +17,9 @@ RUN cd typescript/runkite-runner && npm ci
 
 COPY typescript/runkite-runner/ ./typescript/runkite-runner/
 COPY examples/ ./examples/
+# Agent graphs resolve npm deps from their own directory (see
+# examples/echo_agent_ts/package.json), not from the runner's node_modules.
+RUN cd examples/echo_agent_ts && npm ci
 
 RUN chown -R runkite:runkite /app /home/runkite
 

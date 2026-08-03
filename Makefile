@@ -188,9 +188,9 @@ test-e2e:
 # target, not folded into test-e2e's 120s budget. Nightly /
 # workflow_dispatch in .github/workflows/matrix.yml; locally
 # `make infra-up && make test-matrix` (needs python/.venv, adapter
-# venvs, and typescript/runkite-runner node_modules). SQLite+in-process
-# cells run without infra; other cells skip if their MATRIX_* / DSN
-# env is unset.
+# venvs, typescript/runkite-runner node_modules, and
+# examples/echo_agent_ts node_modules). SQLite+in-process cells run
+# without infra; other cells skip if their MATRIX_* / DSN env is unset.
 #
 # MATRIX_* defaults match docker-compose.test.yml host ports. CI
 # overrides them to Actions service ports (5432/3306/6379/27017).
@@ -200,6 +200,7 @@ MATRIX_REDIS_URL ?= redis://localhost:6380
 MATRIX_MONGO_URI ?= mongodb://localhost:27018/?replicaSet=rs0&directConnection=true
 
 test-matrix:
+	@test -d examples/echo_agent_ts/node_modules || (cd examples/echo_agent_ts && npm ci)
 	RUNKITE_RUN_MATRIX=1 \
 	POSTGRES_DSN="$(MATRIX_POSTGRES_DSN)" \
 	MYSQL_DSN="$(MATRIX_MYSQL_DSN)" \

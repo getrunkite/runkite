@@ -103,6 +103,16 @@ jobs:
         working-directory: typescript/runkite-runner
         run: npm ci || npm install
 
+      # examples/echo_agent_ts/graph.ts imports @langchain/langgraph from
+      # its own package.json -- Node resolves from the graph file's
+      # directory, not from typescript/runkite-runner/node_modules. Without
+      # this install the TS matrix cell crashes on load
+      # (ERR_MODULE_NOT_FOUND) while waitForAgent still passes (agents come
+      # from config bootstrap, not runner liveness).
+      - name: TypeScript example agent dependencies
+        working-directory: examples/echo_agent_ts
+        run: npm ci || npm install
+
       - name: Framework × backend matrix
         # MATRIX_* overrides use Actions service ports (5432/3306/6379/27017).
         # make test-matrix defaults are docker-compose.test.yml host ports.

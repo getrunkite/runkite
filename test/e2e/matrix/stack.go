@@ -278,6 +278,14 @@ func startCell(t *testing.T, backend BackendSpec, runner RunnerSpec) *cell {
 		t.Fatalf("agent never registered: %v\n--- control plane output ---\n%s\n--- runner output ---\n%s",
 			err, serveLog.String(), proc.Log.String())
 	}
+	// waitForAgent only proves the control plane bootstrapped the agent
+	// from langgraph.json -- a runner that crashed on graph load (missing
+	// npm deps, bad import) still leaves that agent visible. Signal(0)
+	// is a liveness check: fails if the runner process has already exited.
+	if err := proc.Cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Fatalf("runner exited during startup: %v\n--- control plane output ---\n%s\n--- runner output ---\n%s",
+			err, serveLog.String(), proc.Log.String())
+	}
 	// Let the runner reach its dispatch-ready poll loop before the first
 	// job is created -- same fixed grace period ../e2e_test.go and
 	// ../adapters/main_test.go both use after agent registration.
