@@ -68,6 +68,35 @@ func TestMCPSessionOwner_MiddlewareTracksNewSessionFromResponseHeader(t *testing
 	}
 }
 
+// TestMCPSessionOwner_RecordsBeforeClientCanSeeSessionID is the CI race
+// regression: on contended runners the client received Mcp-Session-Id
+// (response flushed) and immediately POSTed notifications/initialized
+// before the middleware goroutine recorded o.sessions[id] after
+// ServeHTTP returned -- hard 403. Ownership must exist by WriteHeader.
+func TestMCPSessionOwner_RecordsBeforeClientCanSeeSessionID(t *testing.T) {
+	o := newMCPSessionOwner(mcpSessionTTL, mcpSessionSweepInterval)
+	recordedAtWriteHeader := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(mcpSessionIDHeader, "race-session-id")
+		w.WriteHeader(http.StatusOK)
+		// The moment WriteHeader returns, a real client may already have
+		// the session ID. Ownership must be present then -- not only
+		// after this handler (and ServeHTTP) fully return.
+		o.mu.Lock()
+		_, recordedAtWriteHeader = o.sessions["race-session-id"]
+		o.mu.Unlock()
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req = req.WithContext(auth.WithContext(tenant.WithContext(req.Context(), "tenant-a"), &auth.AuthResult{Identity: "user1"}))
+	rec := httptest.NewRecorder()
+	o.middleware(next).ServeHTTP(rec, req)
+
+	if !recordedAtWriteHeader {
+		t.Fatal("expected ownership recorded at WriteHeader, before ServeHTTP returns")
+	}
+}
+
 // TestMCPSessionOwner_MiddlewareRejectsUnknownSession proves an
 // Mcp-Session-Id the middleware has never seen (guessed, leaked after
 // restart, or swept) is rejected at the ownership layer -- pass-through

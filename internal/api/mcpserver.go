@@ -375,17 +375,35 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		// Capture the session ID as the SDK sets it on the response.
-		// Some Streamable HTTP write paths set the header then write
-		// the body in ways where a post-hoc Header().Get on the
-		// original ResponseWriter can miss it under load; snapshot on
-		// Write/WriteHeader so ownership always records.
-		cw := &mcpSessionHeaderCapture{ResponseWriter: w}
+		// Record ownership BEFORE response bytes hit the wire. Recording
+		// only after next.ServeHTTP returned left a real race on contended
+		// CI runners: the client already had Mcp-Session-Id and could POST
+		// notifications/initialized while o.sessions still lacked the ID
+		// -- which this middleware correctly 403s. flushHdr records as
+		// soon as the SDK's session header is about to leave.
+		cw := &mcpSessionHeaderCapture{
+			ResponseWriter: w,
+			recordNew: func(newID string) {
+				o.mu.Lock()
+				o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+				o.mu.Unlock()
+			},
+		}
 		next.ServeHTTP(cw, r)
 
+		// Touch lastSeen for continued use of an existing session (new
+		// sessions are already recorded in flushHdr). Also covers the
+		// exotic case where a handler sets the session header but never
+		// writes/flushes -- client could not have seen the ID yet either.
 		if newID := cw.sessionID(); newID != "" {
 			o.mu.Lock()
-			o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+			if _, exists := o.sessions[newID]; !exists {
+				o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+			} else {
+				entry := o.sessions[newID]
+				entry.lastSeen = time.Now()
+				o.sessions[newID] = entry
+			}
 			o.mu.Unlock()
 		} else if sessionID != "" {
 			o.mu.Lock()
@@ -408,14 +426,15 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 }
 
 // mcpSessionHeaderCapture owns the response header map so Mcp-Session-Id
-// is always visible after ServeHTTP, even when the SDK sets the header
-// and flushes via paths that never call Write/WriteHeader on a thin
-// wrapper (http.ResponseController.Unwrap was previously returning the
-// underlying writer, which let some flush paths bypass snap()).
+// cannot be missed, and records ownership in flushHdr BEFORE the
+// underlying writer sends headers -- closing the race where a fast
+// client reuses the new session ID before post-ServeHTTP bookkeeping.
 type mcpSessionHeaderCapture struct {
 	http.ResponseWriter
-	hdr     http.Header
-	flushed bool
+	hdr       http.Header
+	flushed   bool
+	recordNew func(sessionID string)
+	recorded  bool
 }
 
 func (c *mcpSessionHeaderCapture) Header() http.Header {
@@ -430,6 +449,15 @@ func (c *mcpSessionHeaderCapture) flushHdr() {
 		return
 	}
 	c.flushed = true
+	// Ownership first -- then copy headers onto the real writer. Once
+	// WriteHeader/Flush runs below, the client may already be in flight
+	// with this session ID.
+	if !c.recorded && c.recordNew != nil && c.hdr != nil {
+		if id := c.hdr.Get(mcpSessionIDHeader); id != "" {
+			c.recordNew(id)
+			c.recorded = true
+		}
+	}
 	dst := c.ResponseWriter.Header()
 	for k, vv := range c.hdr {
 		for _, v := range vv {
@@ -454,7 +482,6 @@ func (c *mcpSessionHeaderCapture) sessionID() string {
 			return id
 		}
 	}
-	// Fallback if a write path copied onto the underlying writer only.
 	return c.ResponseWriter.Header().Get(mcpSessionIDHeader)
 }
 

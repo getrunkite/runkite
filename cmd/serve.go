@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"flag"
 	"fmt"
@@ -1127,7 +1128,9 @@ func mountPprof(mux *http.ServeMux, token string) {
 					got = strings.TrimPrefix(authz, "Bearer ")
 				}
 			}
-			if got == "" || got != token {
+			// Constant-time compare: opt-in ops endpoint, but still a
+			// shared secret -- avoid short-circuit string equality.
+			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
