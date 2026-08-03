@@ -22,6 +22,7 @@
  */
 import { BaseStore } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
+import { logger } from "./logger.js";
 import { httpDispatcher } from "./tls.js";
 export const NS_DELIM = "\x1f";
 /** Exported for direct unit testing of the round-trip/boundary-safety
@@ -94,7 +95,18 @@ export class RunkiteStore extends BaseStore {
             // poolSize mirrors the Python runner's pool_size=concurrency --
             // see checkpoint.ts's CheckpointerManager.start() for the full
             // rationale. Undefined leaves node-postgres's own default (10).
-            this.pool = new pg.Pool({ connectionString: opts.postgresDsn, ...(opts.poolSize ? { max: opts.poolSize } : {}) });
+            // See checkpoint.ts for idle/connect timeout rationale.
+            this.pool = new pg.Pool({
+                connectionString: opts.postgresDsn,
+                idleTimeoutMillis: 60_000,
+                connectionTimeoutMillis: 10_000,
+                ...(opts.poolSize ? { max: opts.poolSize } : {}),
+            });
+            this.pool.on("error", (err) => {
+                // Idle clients can error after server-side close; log and let
+                // the pool drop them rather than crashing the process.
+                logger.error(`store pool idle client error: ${err.message}`);
+            });
         }
         if (opts.httpBaseUrl) {
             this.baseUrl = opts.httpBaseUrl.replace(/\/+$/, "");
@@ -116,7 +128,10 @@ export class RunkiteStore extends BaseStore {
     async directOne(op) {
         const pool = this.pool;
         if (isGetOp(op)) {
-            const res = await pool.query("SELECT namespace, key, value, created_at, updated_at FROM store_items WHERE tenant_id = $1 AND namespace = $2 AND key = $3", [RunkiteStore.TENANT_ID, nsToString(op.namespace), op.key]);
+            // Hide expired rows the same way Python/Go stores do.
+            const res = await pool.query(`SELECT namespace, key, value, created_at, updated_at FROM store_items
+         WHERE tenant_id = $1 AND namespace = $2 AND key = $3
+           AND (expires_at IS NULL OR expires_at > NOW())`, [RunkiteStore.TENANT_ID, nsToString(op.namespace), op.key]);
             return res.rows[0] ? itemFromRow(res.rows[0]) : null;
         }
         if (isPutOp(op)) {
@@ -129,15 +144,20 @@ export class RunkiteStore extends BaseStore {
                 ]);
             }
             else {
-                await pool.query(`INSERT INTO store_items (tenant_id, namespace, key, value, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
+                // LangGraph JS PutOperation typings omit ttl today; accept it when
+                // present (parity with Python runner / Go store_items columns).
+                const ttlMinutes = op.ttl;
+                const expiresAt = ttlMinutes == null ? null : new Date(Date.now() + ttlMinutes * 60_000);
+                await pool.query(`INSERT INTO store_items (tenant_id, namespace, key, value, created_at, updated_at, ttl_minutes, expires_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6)
            ON CONFLICT (tenant_id, namespace, key)
-           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [RunkiteStore.TENANT_ID, ns, op.key, JSON.stringify(op.value)]);
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(),
+             ttl_minutes = EXCLUDED.ttl_minutes, expires_at = EXCLUDED.expires_at`, [RunkiteStore.TENANT_ID, ns, op.key, JSON.stringify(op.value), ttlMinutes ?? null, expiresAt]);
             }
             return undefined;
         }
         if (isSearchOp(op)) {
-            const where = ["tenant_id = $1", "namespace LIKE $2"];
+            const where = ["tenant_id = $1", "namespace LIKE $2", "(expires_at IS NULL OR expires_at > NOW())"];
             const args = [RunkiteStore.TENANT_ID, nsPrefixPattern(op.namespacePrefix)];
             let argN = 3;
             for (const [k, v] of Object.entries(op.filter ?? {})) {
@@ -198,10 +218,20 @@ export class RunkiteStore extends BaseStore {
                     throw new Error(`DELETE store item failed: ${resp.status} ${await resp.text()}`);
             }
             else {
+                // LangGraph JS PutOperation typings omit ttl; forward when present
+                // (matches Python proxy + Go StorePutRequest.ttl_minutes).
+                const ttlMinutes = op.ttl;
+                const body = {
+                    namespace: op.namespace,
+                    key: op.key,
+                    value: op.value,
+                };
+                if (ttlMinutes != null)
+                    body.ttl_minutes = ttlMinutes;
                 const opts = {
                     method: "PUT",
                     headers: { ...this.headers, "Content-Type": "application/json" },
-                    body: JSON.stringify({ namespace: op.namespace, key: op.key, value: op.value }),
+                    body: JSON.stringify(body),
                     dispatcher: this.dispatcher,
                 };
                 const resp = await fetch(`${this.baseUrl}/internal/store/items`, opts);
