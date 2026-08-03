@@ -25,6 +25,7 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 |---|---|
 | **Agent Protocol, in Go** | HTTP / SSE / WebSocket, auth, streaming, job dispatch, persistence, connectors — one static binary |
 | **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js over the same gRPC Runner Protocol |
+| **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`) — same Agent Protocol path, with depth limits, cancel cascade, and cost rollup |
 | **Ops without a second deploy** | React Admin UI embedded via `embed.FS` — no Node runtime for end users |
 | **Honest backends** | **Supported:** Postgres + Redis HA. **Also wired:** SQLite, MySQL, MongoDB, NATS, Kafka, pgvector / Qdrant / Weaviate / Pinecone — with documented tiers, not equal claims |
 
@@ -102,6 +103,26 @@ sequenceDiagram
 | Cancel / HITL | Plane ↔ runner | Side channels on the same protocol |
 
 So: Agent Protocol = “what the product client speaks.” Runner Protocol = “what our workers speak.” The plane translates between them, owns Postgres/Redis, and never imports LangGraph itself.
+
+### Agent-to-agent delegation
+
+An agent can call another agent as a sub-task mid-execution — not a separate wire protocol, the same create-run + wait path, reached from inside the runner via `POST /internal/a2a/runs`. Python `call_agent` and TypeScript `callAgent` forward the parent’s auth context; the plane enforces recursion depth, cascades cancel to children, and can roll up cost across the tree.
+
+```mermaid
+sequenceDiagram
+  participant Coord as Coordinator agent
+  participant CP as Control plane
+  participant Work as Worker agent
+
+  Note over Coord,CP: Parent run already executing on a runner
+  Coord->>CP: call_agent / callAgent (internal A2A)
+  CP->>CP: depth check · parent/root bookkeeping
+  CP->>Work: enqueue child run (Runner Protocol)
+  Work-->>CP: result
+  CP-->>Coord: child output (wait=True)
+```
+
+Example: [`examples/a2a_agent/`](examples/a2a_agent/). Details: [docs/a2a.md](docs/a2a.md).
 
 Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 
