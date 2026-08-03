@@ -190,7 +190,8 @@ func hasClientFacingAuthConfigured(configPath string) bool {
 
 // authStrictPermissions reads auth.strict_permissions from the first
 // discovered langgraph.json (same first-file convention as
-// initAuthProvider). False when unset or unconfigured.
+// initAuthProvider). Unset + api_key/jwt/webhook defaults to true --
+// see config.AuthEntry.EffectiveStrictPermissions.
 func authStrictPermissions(configPath string) bool {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
@@ -200,7 +201,7 @@ func authStrictPermissions(configPath string) bool {
 	if err != nil || cfg.Auth == nil {
 		return false
 	}
-	return cfg.Auth.StrictPermissions
+	return cfg.Auth.EffectiveStrictPermissions()
 }
 
 func startServer(opts serverOpts) {

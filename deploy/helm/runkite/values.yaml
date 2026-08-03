@@ -73,9 +73,15 @@ ingressMcp:
           pathType: Prefix
   tls: []
 
-# Leave empty unless autoscaling.enabled=true -- HPA CPU metrics need
-# requests.cpu set or the autoscaler has nothing to compute against.
-resources: {}
+# Production-shaped defaults; override per environment. HPA needs
+# requests.cpu when autoscaling.enabled=true.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
 
 autoscaling:
   # Requires resources.requests.cpu (and usually memory) on the control-

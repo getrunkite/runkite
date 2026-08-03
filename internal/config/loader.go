@@ -348,10 +348,12 @@ type AuthEntry struct {
 	// StrictPermissions fail-closes authorization when a credential
 	// authenticates with an empty app-level permissions list (nil, [],
 	// or only foreign IdP scopes that filterAppPermissions drops).
-	// Default false keeps the backward-compatible "empty = unrestricted"
-	// convention; production SSO/api_key deployments that want every
-	// caller to carry explicit read/write/admin should set this true.
-	StrictPermissions bool `json:"strict_permissions,omitempty"`
+	// Pointer so JSON can distinguish unset vs explicit false:
+	//   unset + Type api_key/jwt/webhook → default true (fail closed)
+	//   explicit false → keep empty=unrestricted for local/dev
+	//   explicit true → fail closed
+	// See EffectiveStrictPermissions.
+	StrictPermissions *bool `json:"strict_permissions,omitempty"`
 	// AdminKeys defines an independent credential set accepted ONLY for
 	// /admin-api/*, regardless of Type above (map: key string -> a
 	// display name for it, shown nowhere but useful in audit logging).
@@ -362,6 +364,25 @@ type AuthEntry struct {
 	// the dashboard; a normal SSO token that itself carries "admin"
 	// still works too (see auth.Middleware's doc comment).
 	AdminKeys map[string]string `json:"admin_keys,omitempty"`
+}
+
+// EffectiveStrictPermissions returns whether empty app-level permissions
+// should deny. Explicit JSON true/false wins; when the field is omitted,
+// api_key/jwt/webhook auth defaults to fail-closed so production SSO
+// cannot accidentally grant unrestricted access via an empty claim set.
+func (a *AuthEntry) EffectiveStrictPermissions() bool {
+	if a == nil {
+		return false
+	}
+	if a.StrictPermissions != nil {
+		return *a.StrictPermissions
+	}
+	switch a.Type {
+	case "api_key", "jwt", "webhook":
+		return true
+	default:
+		return false
+	}
 }
 
 // ConnectorEntry is a connector definition in langgraph.json.

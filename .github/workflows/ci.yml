@@ -122,6 +122,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: OpenAPI spec check
         run: python3 scripts/openapi/check.py
 
