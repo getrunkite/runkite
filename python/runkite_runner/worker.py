@@ -727,8 +727,6 @@ async def _handle_job(
     level; that's no longer where "one job" lives.
     """
     run_id = None
-    stream_task = None
-    status = "error"
     # Fencing token -- see heartbeat.py's docstring. Initialized here
     # (not just below) so the outer except's own ReportStatus call
     # always has a defined value even if json.loads/assignment["run_id"]

@@ -38,9 +38,8 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
 from . import pg_pool, runner_loop
-from .tls_utils import httpx_tls_kwargs
-
 from .tenant_ctx import current_tenant, tenant_headers
+from .tls_utils import httpx_tls_kwargs
 
 
 def _item_to_document(item: dict) -> Document:
@@ -325,7 +324,14 @@ class RunkiteVectorStore(VectorStore):
                         content = EXCLUDED.content, embedding = EXCLUDED.embedding,
                         metadata = EXCLUDED.metadata, updated_at = NOW()
                     """,
-                    (current_tenant(), self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
+                    (
+                        current_tenant(),
+                        self._namespace,
+                        doc_id,
+                        content,
+                        _vector_literal(embedding),
+                        json.dumps(metadata),
+                    ),
                 )
 
         await self._with_direct_conn(_do)
