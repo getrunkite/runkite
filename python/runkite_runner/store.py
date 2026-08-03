@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -64,7 +65,10 @@ from langgraph.store.base import (
     SearchOp,
 )
 
+from . import pg_pool
 from .tls_utils import httpx_tls_kwargs
+
+logger = logging.getLogger("runkite.store")
 
 _NS_DELIM = "\x1f"
 
@@ -177,19 +181,23 @@ class RunkiteStore(BaseStore):
         if self._pool is None:
             async with self._pool_init_lock:
                 if self._pool is None:  # re-check: lost the race to open() below
-                    from psycopg_pool import AsyncConnectionPool
-
-                    pool = AsyncConnectionPool(
-                        self._dsn,
-                        min_size=1,
-                        max_size=max(self._pool_size, 1),
-                        kwargs={"autocommit": True},
-                        open=False,
-                    )
+                    pool = pg_pool.make(self._dsn, max_size=self._pool_size)
                     await pool.open()
                     self._pool = pool
                     self._loop = asyncio.get_running_loop()
         return self._pool
+
+    async def _recreate_pool(self) -> None:
+        """Drop a wedged pool (idle overnight / laptop sleep) and open a new one."""
+        async with self._pool_init_lock:
+            old = self._pool
+            self._pool = None
+            if old is not None:
+                try:
+                    await old.close()
+                except Exception:
+                    logger.exception("error closing wedged store pool")
+        await self._get_pool()
 
     async def warm(self) -> None:
         """Bind to the current event loop and open the direct-mode pool.
@@ -340,6 +348,19 @@ class RunkiteStore(BaseStore):
     # -- direct mode: psycopg straight to store_items ------------------------
 
     async def _abatch_direct(self, ops: list[Op]) -> list[Result]:
+        from psycopg_pool import PoolTimeout
+
+        try:
+            return await self._abatch_direct_once(ops)
+        except PoolTimeout:
+            # After long idle (laptop sleep, Postgres restart) the pool's
+            # workers can wedge and every getconn hits the 30s timeout.
+            # A closed pool cannot be reopen()'d -- rebuild and retry once.
+            logger.warning("store pool timed out getting a connection; recreating pool")
+            await self._recreate_pool()
+            return await self._abatch_direct_once(ops)
+
+    async def _abatch_direct_once(self, ops: list[Op]) -> list[Result]:
         pool = await self._get_pool()
         async with pool.connection() as conn:
             results: list[Result] = []

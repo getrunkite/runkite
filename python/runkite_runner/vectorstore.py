@@ -38,7 +38,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
-from . import runner_loop
+from . import pg_pool, runner_loop
 from .tls_utils import httpx_tls_kwargs
 
 # Direct mode has no per-request tenant identity (a raw DB connection, not
@@ -99,21 +99,24 @@ class RunkiteVectorStore(VectorStore):
         if self._pool is None:
             async with self._pool_init_lock:
                 if self._pool is None:
-                    from psycopg_pool import AsyncConnectionPool
-
-                    pool = AsyncConnectionPool(
-                        self._dsn,
-                        min_size=1,
-                        max_size=max(self._pool_size, 1),
-                        kwargs={"autocommit": True},
-                        open=False,
-                    )
+                    pool = pg_pool.make(self._dsn, max_size=self._pool_size)
                     await pool.open()
                     self._pool = pool
                     self._loop = asyncio.get_running_loop()
         if self._loop is None:
             self._loop = asyncio.get_running_loop()
         return self._pool
+
+    async def _recreate_pool(self) -> None:
+        async with self._pool_init_lock:
+            old = self._pool
+            self._pool = None
+            if old is not None:
+                try:
+                    await old.close()
+                except Exception:
+                    pass
+        await self._get_pool()
 
     async def warm(self) -> None:
         """Bind to the current event loop and open the direct-mode pool.
@@ -301,27 +304,45 @@ class RunkiteVectorStore(VectorStore):
 
     # -- direct mode: psycopg straight to vector_items -----------------------
 
+    async def _with_direct_conn(self, fn):
+        """Run fn(conn) with one PoolTimeout → recreate-pool retry."""
+        from psycopg_pool import PoolTimeout
+
+        try:
+            pool = await self._get_pool()
+            async with pool.connection() as conn:
+                return await fn(conn)
+        except PoolTimeout:
+            await self._recreate_pool()
+            pool = await self._get_pool()
+            async with pool.connection() as conn:
+                return await fn(conn)
+
     async def _upsert_direct(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
-        pool = await self._get_pool()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO vector_items (tenant_id, namespace, id, content, embedding, metadata, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s::vector, %s, NOW(), NOW())
-                ON CONFLICT (tenant_id, namespace, id) DO UPDATE SET
-                    content = EXCLUDED.content, embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata, updated_at = NOW()
-                """,
-                (_TENANT_ID, self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
-            )
+        async def _do(conn):
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO vector_items (tenant_id, namespace, id, content, embedding, metadata, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, NOW(), NOW())
+                    ON CONFLICT (tenant_id, namespace, id) DO UPDATE SET
+                        content = EXCLUDED.content, embedding = EXCLUDED.embedding,
+                        metadata = EXCLUDED.metadata, updated_at = NOW()
+                    """,
+                    (_TENANT_ID, self._namespace, doc_id, content, _vector_literal(embedding), json.dumps(metadata)),
+                )
+
+        await self._with_direct_conn(_do)
 
     async def _delete_direct(self, doc_id: str) -> None:
-        pool = await self._get_pool()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(
-                "DELETE FROM vector_items WHERE tenant_id = %s AND namespace = %s AND id = %s",
-                (_TENANT_ID, self._namespace, doc_id),
-            )
+        async def _do(conn):
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "DELETE FROM vector_items WHERE tenant_id = %s AND namespace = %s AND id = %s",
+                    (_TENANT_ID, self._namespace, doc_id),
+                )
+
+        await self._with_direct_conn(_do)
 
     async def _search_direct(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
         where = ["tenant_id = %s", "namespace = %s"]
@@ -335,10 +356,13 @@ class RunkiteVectorStore(VectorStore):
             f"WHERE {' AND '.join(where)} ORDER BY embedding <=> %s::vector LIMIT %s"
         )
         vec = _vector_literal(embedding)
-        pool = await self._get_pool()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(query, [vec, *args, vec, k])
-            rows = await cur.fetchall()
+
+        async def _do(conn):
+            async with conn.cursor() as cur:
+                await cur.execute(query, [vec, *args, vec, k])
+                return await cur.fetchall()
+
+        rows = await self._with_direct_conn(_do)
         results = []
         for doc_id, content, metadata, score in rows:
             meta = metadata if isinstance(metadata, dict) else json.loads(metadata or "{}")

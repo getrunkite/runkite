@@ -89,17 +89,16 @@ class CheckpointerManager:
             import psycopg
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             from psycopg.rows import dict_row
-            from psycopg_pool import AsyncConnectionPool
+
+            from . import pg_pool
 
             # Same connection kwargs from_conn_string used
             # (autocommit/prepare_threshold/row_factory) -- AsyncPostgresSaver
             # expects dict-row results, not psycopg's tuple default.
-            self._pool = AsyncConnectionPool(
+            self._pool = pg_pool.make(
                 postgres_dsn,
-                min_size=1,
-                max_size=max(pool_size, 1),
-                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-                open=False,
+                max_size=pool_size,
+                conn_kwargs={"prepare_threshold": 0, "row_factory": dict_row},
             )
             await self._pool.open()
             self._checkpointer = AsyncPostgresSaver(conn=self._pool)
