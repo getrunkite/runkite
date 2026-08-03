@@ -6,7 +6,7 @@ import { useApi } from "../api/useApi";
 import type { AdminThread } from "../api/types";
 import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
 import { DataTable } from "../components/data-table";
-import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
+import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 
@@ -50,22 +50,24 @@ const columns: ColumnDef<AdminThread, unknown>[] = [
 ];
 
 export function Threads() {
-  const [offset, setOffset] = useState(0);
-  const path = `/threads?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
-  const { data, error, loading } = useApi<AdminThread[]>(path, [offset]);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
+  const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
+  const path = adminListPath("/threads", cursor);
+  const { data, error, loading, nextCursor } = useApi<AdminThread[]>(path, [cursor]);
   const navigate = useNavigate();
+  const onFirstPage = cursorStack.length === 0;
 
   return (
     <div>
       <PageHeader title="Threads" subtitle="Across every tenant. Click any column to sort the current page." />
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && offset === 0 && (
+      {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={MessagesSquare}
           message="No threads yet -- one is created the moment a client starts a conversation."
         />
       )}
-      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+      {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (
         <>
           <DataTable
             columns={columns}
@@ -75,7 +77,15 @@ export function Threads() {
             loading={loading}
             initialSorting={[{ id: "updated_at", desc: true }]}
           />
-          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+          <ListPager
+            pageIndex={cursorStack.length}
+            pageCount={data?.length ?? 0}
+            hasNext={Boolean(nextCursor)}
+            onPrev={() => setCursorStack((s) => s.slice(0, -1))}
+            onNext={() => {
+              if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
+            }}
+          />
         </>
       )}
     </div>

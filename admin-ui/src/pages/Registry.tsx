@@ -5,7 +5,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
 import { EmptyState, ErrorState, PageHeader } from "../components/common";
 import { DataTable } from "../components/data-table";
-import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
+import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 
 const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
@@ -59,9 +59,11 @@ const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
 ];
 
 export function Registry() {
-  const [offset, setOffset] = useState(0);
-  const path = `/registry?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
-  const { data, error, loading } = useApi<AdminRegistryEntry[]>(path, [offset]);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
+  const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
+  const path = adminListPath("/registry", cursor);
+  const { data, error, loading, nextCursor } = useApi<AdminRegistryEntry[]>(path, [cursor]);
+  const onFirstPage = cursorStack.length === 0;
 
   return (
     <div>
@@ -70,17 +72,25 @@ export function Registry() {
         subtitle="A metadata catalog for publishing and discovering agent definitions across every tenant."
       />
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && offset === 0 && (
+      {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={Package}
           title="No registry entries published yet"
           message="Publish an entry via PUT /registry/entries/{name} to see it here."
         />
       )}
-      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+      {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (
         <>
           <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
-          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+          <ListPager
+            pageIndex={cursorStack.length}
+            pageCount={data?.length ?? 0}
+            hasNext={Boolean(nextCursor)}
+            onPrev={() => setCursorStack((s) => s.slice(0, -1))}
+            onNext={() => {
+              if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
+            }}
+          />
         </>
       )}
     </div>

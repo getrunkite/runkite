@@ -433,6 +433,81 @@ func TestAdminList_LimitOffsetPaging(t *testing.T) {
 	}
 }
 
+// TestAdminList_CursorPaging walks Admin threads via ?cursor= / X-Next-Cursor
+// and rejects invalid / conflicting paging params.
+func TestAdminList_CursorPaging(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	base := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		id := "tc-" + strconv.Itoa(i)
+		ts := base.Add(time.Duration(i) * time.Second)
+		if err := env.store.CreateThread(ctx, &models.Thread{
+			ThreadID: id, Status: models.ThreadStatusIdle,
+			Metadata: map[string]interface{}{}, CreatedAt: ts, UpdatedAt: ts,
+		}); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+
+	page1, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2")
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	defer page1.Body.Close()
+	if page1.StatusCode != http.StatusOK {
+		t.Fatalf("page1 status %d", page1.StatusCode)
+	}
+	var first []map[string]interface{}
+	json.NewDecoder(page1.Body).Decode(&first)
+	if len(first) != 2 {
+		t.Fatalf("expected page size 2, got %d", len(first))
+	}
+	cursor := page1.Header.Get("X-Next-Cursor")
+	if cursor == "" {
+		t.Fatal("expected X-Next-Cursor on a full page")
+	}
+
+	page2, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2&cursor=" + cursor)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	defer page2.Body.Close()
+	var second []map[string]interface{}
+	json.NewDecoder(page2.Body).Decode(&second)
+	if len(second) != 2 {
+		t.Fatalf("expected second page size 2, got %d", len(second))
+	}
+	seen := map[string]bool{}
+	for _, th := range first {
+		seen[th["thread_id"].(string)] = true
+	}
+	for _, th := range second {
+		id := th["thread_id"].(string)
+		if seen[id] {
+			t.Fatalf("expected cursor pages to be disjoint, %q appeared in both", id)
+		}
+	}
+
+	bad, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2&cursor=not-a-cursor")
+	if err != nil {
+		t.Fatalf("bad cursor: %v", err)
+	}
+	defer bad.Body.Close()
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid cursor, got %d", bad.StatusCode)
+	}
+
+	both, err := http.Get(env.srv.URL + "/admin-api/threads?limit=2&cursor=" + cursor + "&offset=0")
+	if err != nil {
+		t.Fatalf("cursor+offset: %v", err)
+	}
+	defer both.Body.Close()
+	if both.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for cursor+offset, got %d", both.StatusCode)
+	}
+}
+
 // TestAdminGetAgent_SeesCrossTenantAgentAndExposesTenantID proves
 // handleAdminGetAgent (unlike handleAdminListAgents, already covered
 // above) reuses the same system-context, tenant_id-visible convention

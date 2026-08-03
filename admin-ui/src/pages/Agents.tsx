@@ -5,7 +5,7 @@ import { useApi } from "../api/useApi";
 import type { AdminAgent } from "../api/types";
 import { EmptyState, ErrorState, PageHeader } from "../components/common";
 import { DataTable } from "../components/data-table";
-import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
+import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 
@@ -33,10 +33,12 @@ const columns: ColumnDef<AdminAgent, unknown>[] = [
 ];
 
 export function Agents() {
-  const [offset, setOffset] = useState(0);
-  const path = `/agents?limit=${ADMIN_PAGE_SIZE}&offset=${offset}`;
-  const { data, error, loading } = useApi<AdminAgent[]>(path, [offset]);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
+  const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
+  const path = adminListPath("/agents", cursor);
+  const { data, error, loading, nextCursor } = useApi<AdminAgent[]>(path, [cursor]);
   const [query, setQuery] = useState("");
+  const onFirstPage = cursorStack.length === 0;
 
   const filtered = useMemo(() => {
     if (!data) return null;
@@ -63,7 +65,7 @@ export function Agents() {
             />
           </div>
 
-          {data && data.length === 0 && offset === 0 ? (
+          {data && data.length === 0 && onFirstPage ? (
             <EmptyState icon={Bot} title="No agents registered" message="Agents appear here once a langgraph.json is bootstrapped." />
           ) : filtered && filtered.length === 0 ? (
             <EmptyState
@@ -84,7 +86,15 @@ export function Agents() {
                 loading={loading}
                 initialSorting={[{ id: "agent_id", desc: false }]}
               />
-              <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+              <ListPager
+                pageIndex={cursorStack.length}
+                pageCount={data?.length ?? 0}
+                hasNext={Boolean(nextCursor)}
+                onPrev={() => setCursorStack((s) => s.slice(0, -1))}
+                onNext={() => {
+                  if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
+                }}
+              />
             </>
           )}
         </>

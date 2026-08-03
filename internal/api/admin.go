@@ -32,11 +32,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -70,30 +73,54 @@ type AdminOverview struct {
 }
 
 // Admin list endpoints (Agents/Threads/Runs/Registry) take ?limit=&offset=
-// like Agent Protocol search: bare JSON array; has-more when len == limit.
+// and optionally ?cursor= (keyset). Response is a bare JSON array; has-more
+// when len == limit. When another page exists, X-Next-Cursor carries the
+// opaque resume token (see internal/pagecursor).
 const (
 	adminListDefaultLimit = 50
 	adminListMaxLimit     = 200
 )
 
-// adminListPaging reads ?limit=&offset= for Admin list handlers.
-// Invalid/missing values fall back to defaults; offset below 0 becomes 0.
-func adminListPaging(r *http.Request) (limit, offset int) {
-	limit = adminListDefaultLimit
+type adminPaging struct {
+	Limit  int
+	Offset int
+	Cursor string
+}
+
+// adminListPaging reads ?limit=&offset=&cursor= for Admin list handlers.
+// cursor and offset are mutually exclusive (either query present → 400).
+func adminListPaging(r *http.Request) (adminPaging, error) {
+	p := adminPaging{Limit: adminListDefaultLimit}
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
+			p.Limit = n
 		}
 	}
-	if limit > adminListMaxLimit {
-		limit = adminListMaxLimit
+	if p.Limit > adminListMaxLimit {
+		p.Limit = adminListMaxLimit
 	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = n
+	p.Cursor = r.URL.Query().Get("cursor")
+	_, hasOffset := r.URL.Query()["offset"]
+	if p.Cursor != "" && hasOffset {
+		return p, fmt.Errorf("cursor and offset are mutually exclusive")
+	}
+	if hasOffset {
+		if v := r.URL.Query().Get("offset"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				p.Offset = n
+			}
 		}
 	}
-	return limit, offset
+	return p, nil
+}
+
+func writeAdminListJSON(w http.ResponseWriter, status int, v interface{}, nextCursor string) {
+	w.Header().Set("Content-Type", "application/json")
+	if nextCursor != "" {
+		w.Header().Set(pagecursor.HeaderNextCursor, nextCursor)
+	}
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }
 
 func sumStatusCounts(byStatus map[string]int) int {
@@ -167,11 +194,23 @@ func toAdminAgentView(a *models.Agent) adminAgentView {
 	return adminAgentView{Agent: a, TenantID: a.TenantID}
 }
 
-// GET /admin-api/agents?limit=&offset=
+// GET /admin-api/agents?limit=&offset=&cursor=
 func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	limit, offset := adminListPaging(r)
-	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{Limit: limit, Offset: offset})
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeKey(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	agents, err := s.store.SearchAgents(ctx, &models.AgentSearchRequest{
+		Limit: paging.Limit, Offset: paging.Offset, Cursor: paging.Cursor,
+	})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -180,7 +219,12 @@ func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 	for _, a := range agents {
 		views = append(views, toAdminAgentView(a))
 	}
-	writeJSON(w, http.StatusOK, views)
+	next := ""
+	if len(agents) == paging.Limit && len(agents) > 0 {
+		last := agents[len(agents)-1]
+		next = pagecursor.EncodeKey(last.Name, last.AgentID)
+	}
+	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
 // adminScopedAgentContext mirrors adminScopedRegistryContext: agent_id is
@@ -216,11 +260,23 @@ func toAdminRegistryEntryView(e *models.RegistryEntry) adminRegistryEntryView {
 	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID}
 }
 
-// GET /admin-api/registry?limit=&offset=
+// GET /admin-api/registry?limit=&offset=&cursor=
 func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	limit, offset := adminListPaging(r)
-	entries, err := s.store.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{Limit: limit, Offset: offset})
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeKey(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	entries, err := s.store.SearchRegistryEntries(ctx, &models.RegistrySearchRequest{
+		Limit: paging.Limit, Offset: paging.Offset, Cursor: paging.Cursor,
+	})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -229,7 +285,12 @@ func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.R
 	for _, e := range entries {
 		views = append(views, toAdminRegistryEntryView(e))
 	}
-	writeJSON(w, http.StatusOK, views)
+	next := ""
+	if len(entries) == paging.Limit && len(entries) > 0 {
+		last := entries[len(entries)-1]
+		next = pagecursor.EncodeKey(last.Name, last.TenantID)
+	}
+	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
 // adminScopedRegistryContext resolves the context a registry admin
@@ -295,11 +356,21 @@ func toAdminThreadView(t *models.Thread) adminThreadView {
 	return adminThreadView{Thread: t, TenantID: t.TenantID}
 }
 
-// GET /admin-api/threads?limit=&offset=&status=
+// GET /admin-api/threads?limit=&offset=&cursor=&status=
 func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	limit, offset := adminListPaging(r)
-	req := models.ThreadSearchRequest{Limit: limit, Offset: offset}
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeTime(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	req := models.ThreadSearchRequest{Limit: paging.Limit, Offset: paging.Offset, Cursor: paging.Cursor}
 	if status := r.URL.Query().Get("status"); status != "" {
 		st := models.ThreadStatus(status)
 		req.Status = &st
@@ -313,7 +384,12 @@ func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) 
 	for _, t := range threads {
 		views = append(views, toAdminThreadView(t))
 	}
-	writeJSON(w, http.StatusOK, views)
+	next := ""
+	if len(threads) == paging.Limit && len(threads) > 0 {
+		last := threads[len(threads)-1]
+		next = pagecursor.EncodeTime(last.CreatedAt, last.ThreadID)
+	}
+	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
 // GET /admin-api/threads/{threadID}
@@ -340,14 +416,26 @@ func toAdminRunView(run *models.Run) adminRunView {
 	return adminRunView{Run: run, TenantID: run.TenantID}
 }
 
-// GET /admin-api/threads/{threadID}/runs?limit=&offset= -- same data as the
+// GET /admin-api/threads/{threadID}/runs?limit=&offset=&cursor= -- same data as the
 // client-facing list, but with tenant_id visible (models.Run hides it via
 // json:"-").
 func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
 	threadID := r.PathValue("threadID")
-	limit, offset := adminListPaging(r)
-	runs, err := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: threadID, Limit: limit, Offset: offset})
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeTime(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	runs, err := s.store.SearchRuns(ctx, &models.RunSearchRequest{
+		ThreadID: threadID, Limit: paging.Limit, Offset: paging.Offset, Cursor: paging.Cursor,
+	})
 	if err != nil {
 		handleStoreError(w, err)
 		return
@@ -356,16 +444,32 @@ func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Reques
 	for _, run := range runs {
 		views = append(views, toAdminRunView(run))
 	}
-	writeJSON(w, http.StatusOK, views)
+	next := ""
+	if len(runs) == paging.Limit && len(runs) > 0 {
+		last := runs[len(runs)-1]
+		next = pagecursor.EncodeTime(last.CreatedAt, last.RunID)
+	}
+	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
-// GET /admin-api/runs?limit=&offset= -- optional ?status=&agent_id=&thread_id= filters.
+// GET /admin-api/runs?limit=&offset=&cursor= -- optional ?status=&agent_id=&thread_id= filters.
 func (s *Server) handleAdminListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
-	limit, offset := adminListPaging(r)
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeTime(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
 	req := models.RunSearchRequest{
-		Limit:    limit,
-		Offset:   offset,
+		Limit:    paging.Limit,
+		Offset:   paging.Offset,
+		Cursor:   paging.Cursor,
 		AgentID:  r.URL.Query().Get("agent_id"),
 		ThreadID: r.URL.Query().Get("thread_id"),
 	}
@@ -382,7 +486,12 @@ func (s *Server) handleAdminListRuns(w http.ResponseWriter, r *http.Request) {
 	for _, run := range runs {
 		views = append(views, toAdminRunView(run))
 	}
-	writeJSON(w, http.StatusOK, views)
+	next := ""
+	if len(runs) == paging.Limit && len(runs) > 0 {
+		last := runs[len(runs)-1]
+		next = pagecursor.EncodeTime(last.CreatedAt, last.RunID)
+	}
+	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
 // GET /admin-api/runs/{runID}

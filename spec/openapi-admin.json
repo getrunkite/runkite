@@ -500,12 +500,30 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -513,6 +531,16 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminAgentView"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -597,12 +625,30 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -610,6 +656,16 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminRegistryEntryView"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -746,12 +802,30 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -759,6 +833,16 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminThreadView"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -882,12 +966,30 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -895,6 +997,16 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminRunView"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -952,12 +1064,30 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -965,6 +1095,16 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminRunView"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

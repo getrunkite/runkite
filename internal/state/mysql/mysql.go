@@ -53,6 +53,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
@@ -576,11 +577,24 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 			args = append(args, path, string(valJSON))
 		}
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if kc.ID != "" {
+		where = append(where, "(name > ? OR (name = ? AND agent_id > ?))")
+		args = append(args, kc.Key, kc.Key, kc.ID)
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY name ASC LIMIT ? OFFSET ?"
-	args = append(args, limit, req.Offset)
+	if kc.ID != "" {
+		query += " ORDER BY name ASC, agent_id ASC LIMIT ?"
+		args = append(args, limit)
+	} else {
+		query += " ORDER BY name ASC, agent_id ASC LIMIT ? OFFSET ?"
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -902,11 +916,24 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 			args = append(args, path, string(valJSON))
 		}
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, "(created_at < ? OR (created_at = ? AND thread_id < ?))")
+		args = append(args, tc.Time, tc.Time, tc.ID)
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, req.Offset)
+	if tc.ID != "" {
+		query += " ORDER BY created_at DESC, thread_id DESC LIMIT ?"
+		args = append(args, limit)
+	} else {
+		query += " ORDER BY created_at DESC, thread_id DESC LIMIT ? OFFSET ?"
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1245,11 +1272,24 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 			args = append(args, path, string(valJSON))
 		}
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, "(created_at < ? OR (created_at = ? AND run_id < ?))")
+		args = append(args, tc.Time, tc.Time, tc.ID)
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, req.Offset)
+	if tc.ID != "" {
+		query += " ORDER BY created_at DESC, run_id DESC LIMIT ?"
+		args = append(args, limit)
+	} else {
+		query += " ORDER BY created_at DESC, run_id DESC LIMIT ? OFFSET ?"
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -2129,11 +2169,24 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 		tagJSON, _ := json.Marshal(tag)
 		args = append(args, string(tagJSON))
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if kc.ID != "" {
+		where = append(where, "(name > ? OR (name = ? AND tenant_id > ?))")
+		args = append(args, kc.Key, kc.Key, kc.ID)
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY name ASC LIMIT ? OFFSET ?"
-	args = append(args, limit, req.Offset)
+	if kc.ID != "" {
+		query += " ORDER BY name ASC, tenant_id ASC LIMIT ?"
+		args = append(args, limit)
+	} else {
+		query += " ORDER BY name ASC, tenant_id ASC LIMIT ? OFFSET ?"
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

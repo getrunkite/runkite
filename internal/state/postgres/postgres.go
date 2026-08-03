@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
@@ -707,11 +708,26 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 		args = append(args, string(tagJSON))
 		argN++
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if kc.ID != "" {
+		// Secondary key is tenant_id (name alone is not unique under system context).
+		where = append(where, fmt.Sprintf("(name > $%d OR (name = $%d AND tenant_id > $%d))", argN, argN, argN+1))
+		args = append(args, kc.Key, kc.ID)
+		argN += 2
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += fmt.Sprintf(" ORDER BY name ASC LIMIT $%d OFFSET $%d", argN, argN+1)
-	args = append(args, limit, req.Offset)
+	if kc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY name ASC, tenant_id ASC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY name ASC, tenant_id ASC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -907,11 +923,25 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 		}
 		argN += 2
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if kc.ID != "" {
+		where = append(where, fmt.Sprintf("(name > $%d OR (name = $%d AND agent_id > $%d))", argN, argN, argN+1))
+		args = append(args, kc.Key, kc.ID)
+		argN += 2
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += fmt.Sprintf(" ORDER BY name LIMIT $%d OFFSET $%d", argN, argN+1)
-	args = append(args, limit, offset)
+	if kc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY name ASC, agent_id ASC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY name ASC, agent_id ASC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, offset)
+	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -1163,11 +1193,25 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		}
 		argN += 2
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, fmt.Sprintf("(created_at < $%d OR (created_at = $%d AND thread_id < $%d))", argN, argN, argN+1))
+		args = append(args, tc.Time, tc.ID)
+		argN += 2
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
-	args = append(args, limit, req.Offset)
+	if tc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, thread_id DESC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, thread_id DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -1685,11 +1729,25 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		}
 		argN += 2
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, fmt.Sprintf("(created_at < $%d OR (created_at = $%d AND run_id < $%d))", argN, argN, argN+1))
+		args = append(args, tc.Time, tc.ID)
+		argN += 2
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
-	args = append(args, limit, req.Offset)
+	if tc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, run_id DESC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, run_id DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

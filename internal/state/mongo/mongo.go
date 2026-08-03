@@ -51,6 +51,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
@@ -588,9 +589,21 @@ func (s *Store) SearchRegistryEntries(ctx context.Context, req *models.RegistryS
 	if len(req.Tags) > 0 {
 		filter["tags"] = bson.M{"$all": req.Tags}
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	findOpts := options.Find().SetSort(bson.D{{Key: "name", Value: 1}, {Key: "tenant_id", Value: 1}}).SetLimit(int64(limit))
+	if kc.ID != "" {
+		filter["$or"] = bson.A{
+			bson.M{"name": bson.M{"$gt": kc.Key}},
+			bson.M{"name": kc.Key, "tenant_id": bson.M{"$gt": kc.ID}},
+		}
+	} else {
+		findOpts.SetSkip(int64(req.Offset))
+	}
 
-	cur, err := s.col("registry_entries").Find(ctx, filter,
-		options.Find().SetSort(bson.D{{Key: "name", Value: 1}}).SetSkip(int64(req.Offset)).SetLimit(int64(limit)))
+	cur, err := s.col("registry_entries").Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -725,9 +738,21 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 	for k, v := range req.Metadata {
 		filter["metadata."+k] = metadataMatchValue(v)
 	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	findOpts := options.Find().SetSort(bson.D{{Key: "name", Value: 1}, {Key: "agent_id", Value: 1}}).SetLimit(int64(limit))
+	if kc.ID != "" {
+		filter["$or"] = bson.A{
+			bson.M{"name": bson.M{"$gt": kc.Key}},
+			bson.M{"name": kc.Key, "agent_id": bson.M{"$gt": kc.ID}},
+		}
+	} else {
+		findOpts.SetSkip(int64(req.Offset))
+	}
 
-	cur, err := s.col("agents").Find(ctx, filter,
-		options.Find().SetSort(bson.D{{Key: "name", Value: 1}}).SetSkip(int64(req.Offset)).SetLimit(int64(limit)))
+	cur, err := s.col("agents").Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -954,9 +979,21 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 	for k, v := range req.Metadata {
 		filter["metadata."+k] = metadataMatchValue(v)
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	findOpts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "thread_id", Value: -1}}).SetLimit(int64(limit))
+	if tc.ID != "" {
+		filter["$or"] = bson.A{
+			bson.M{"created_at": bson.M{"$lt": tc.Time}},
+			bson.M{"created_at": tc.Time, "thread_id": bson.M{"$lt": tc.ID}},
+		}
+	} else {
+		findOpts.SetSkip(int64(req.Offset))
+	}
 
-	cur, err := s.col("threads").Find(ctx, filter,
-		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetSkip(int64(req.Offset)).SetLimit(int64(limit)))
+	cur, err := s.col("threads").Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -1366,9 +1403,21 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	for k, v := range req.Metadata {
 		filter["metadata."+k] = metadataMatchValue(v)
 	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	findOpts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "run_id", Value: -1}}).SetLimit(int64(limit))
+	if tc.ID != "" {
+		filter["$or"] = bson.A{
+			bson.M{"created_at": bson.M{"$lt": tc.Time}},
+			bson.M{"created_at": tc.Time, "run_id": bson.M{"$lt": tc.ID}},
+		}
+	} else {
+		findOpts.SetSkip(int64(req.Offset))
+	}
 
-	cur, err := s.col("runs").Find(ctx, filter,
-		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetSkip(int64(req.Offset)).SetLimit(int64(limit)))
+	cur, err := s.col("runs").Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, err
 	}

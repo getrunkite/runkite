@@ -6,7 +6,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRun } from "../api/types";
 import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
 import { DataTable } from "../components/data-table";
-import { ADMIN_PAGE_SIZE, ListPager } from "../components/list-pager";
+import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -71,12 +71,13 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
 
 export function Runs() {
   const [status, setStatus] = useState("all");
-  const [offset, setOffset] = useState(0);
-  const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE), offset: String(offset) });
-  if (status !== "all") params.set("status", status);
-  const path = `/runs?${params.toString()}`;
-  const { data, error, loading } = useApi<AdminRun[]>(path, [status, offset], 8000);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
+  const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
+  const extra = status !== "all" ? { status } : undefined;
+  const path = adminListPath("/runs", cursor, extra);
+  const { data, error, loading, nextCursor } = useApi<AdminRun[]>(path, [status, cursor], 8000);
   const navigate = useNavigate();
+  const onFirstPage = cursorStack.length === 0;
 
   return (
     <div>
@@ -87,7 +88,7 @@ export function Runs() {
           value={status}
           onValueChange={(v) => {
             setStatus(v);
-            setOffset(0);
+            setCursorStack([]);
           }}
         >
           <SelectTrigger className="w-44">
@@ -104,7 +105,7 @@ export function Runs() {
       </div>
 
       {error && !data && <ErrorState message={error} />}
-      {data && data.length === 0 && offset === 0 && (
+      {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={Workflow}
           title={status === "all" ? "No runs yet" : "No matching runs"}
@@ -120,7 +121,7 @@ export function Runs() {
                 className="text-sm font-medium text-primary hover:underline"
                 onClick={() => {
                   setStatus("all");
-                  setOffset(0);
+                  setCursorStack([]);
                 }}
               >
                 Clear status filter
@@ -129,7 +130,7 @@ export function Runs() {
           }
         />
       )}
-      {(data === null || (data && data.length > 0) || offset > 0) && !(data && data.length === 0 && offset === 0) && (
+      {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (
         <>
           <DataTable
             columns={columns}
@@ -139,7 +140,15 @@ export function Runs() {
             loading={loading}
             initialSorting={[{ id: "updated_at", desc: true }]}
           />
-          <ListPager offset={offset} limit={ADMIN_PAGE_SIZE} pageCount={data?.length ?? 0} onChange={setOffset} />
+          <ListPager
+            pageIndex={cursorStack.length}
+            pageCount={data?.length ?? 0}
+            hasNext={Boolean(nextCursor)}
+            onPrev={() => setCursorStack((s) => s.slice(0, -1))}
+            onNext={() => {
+              if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
+            }}
+          />
         </>
       )}
     </div>

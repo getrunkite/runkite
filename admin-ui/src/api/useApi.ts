@@ -5,6 +5,8 @@ interface ApiState<T> {
   data: T | null;
   error: string | null;
   loading: boolean;
+  /** Opaque resume token from the last list response (X-Next-Cursor). */
+  nextCursor: string | null;
   reload: () => void;
 }
 
@@ -23,6 +25,7 @@ export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): 
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -35,10 +38,11 @@ export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): 
         setError(null);
       }
       api
-        .get<T>(path)
+        .getWithMeta<T>(path)
         .then((result) => {
           if (!cancelled) {
-            setData(result);
+            setData(result.data);
+            setNextCursor(result.nextCursor);
             setError(null);
           }
         })
@@ -60,5 +64,11 @@ export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, reloadKey, pollMs, ...deps]);
 
-  return { data, error, loading, reload: () => setReloadKey((k) => k + 1) };
+  return {
+    data,
+    error,
+    loading,
+    nextCursor,
+    reload: () => setReloadKey((k) => k + 1),
+  };
 }

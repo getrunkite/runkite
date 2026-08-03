@@ -921,10 +921,20 @@ def _build_admin_spec() -> dict:
     n_param = _path_param("name", "Registry entry name.", fmt="")
     dl_id = _path_param("id", "Dead letter ID.", fmt="")
     # Matches adminListPaging in internal/api/admin.go (default 50, max 200).
+    # cursor and offset are mutually exclusive; X-Next-Cursor resumes keyset pages.
     admin_page = (
         {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50, "maximum": 200}},
-        {"name": "offset", "in": "query", "required": False, "schema": {"type": "integer", "default": 0, "minimum": 0}},
+        {"name": "offset", "in": "query", "required": False, "schema": {"type": "integer", "default": 0, "minimum": 0},
+         "description": "Offset paging (mutually exclusive with cursor)."},
+        {"name": "cursor", "in": "query", "required": False, "schema": {"type": "string"},
+         "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."},
     )
+    admin_list_headers = {
+        "X-Next-Cursor": {
+            "description": "Opaque resume token when another page exists (len(items) == limit).",
+            "schema": {"type": "string"},
+        }
+    }
 
     return {
         "openapi": "3.1.0",
@@ -1094,23 +1104,23 @@ def _build_admin_spec() -> dict:
                 },
             },
             "/admin-api/overview": {"get": {"tags": ["Admin"], "summary": "Admin Overview", "operationId": "admin_overview", "responses": {**_json_response("200", "Success", _ref("AdminOverview"))}}},
-            "/admin-api/agents": {"get": {"tags": ["Admin"], "summary": "List All Agents", "operationId": "admin_list_agents", "parameters": list(admin_page), "responses": {**_json_response("200", "Success", _array_of(_ref("AdminAgentView")))}}},
+            "/admin-api/agents": {"get": {"tags": ["Admin"], "summary": "List All Agents", "operationId": "admin_list_agents", "parameters": list(admin_page), "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminAgentView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/agents/{agent_id}": {"get": {"tags": ["Admin"], "summary": "Get Agent (admin)", "operationId": "admin_get_agent", "parameters": [a_id, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminAgentView")), "404": _ERR_404}}},
-            "/admin-api/registry": {"get": {"tags": ["Admin"], "summary": "List Registry Entries", "operationId": "admin_list_registry", "parameters": list(admin_page), "responses": {**_json_response("200", "Success", _array_of(_ref("AdminRegistryEntryView")))}}},
+            "/admin-api/registry": {"get": {"tags": ["Admin"], "summary": "List Registry Entries", "operationId": "admin_list_registry", "parameters": list(admin_page), "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRegistryEntryView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/registry/{name}": {"get": {"tags": ["Admin"], "summary": "Get Registry Entry (admin)", "operationId": "admin_get_registry_entry", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminRegistryEntryView")), "404": _ERR_404}}},
             "/admin-api/registry/{name}/versions": {"get": {"tags": ["Admin"], "summary": "List Registry Versions (admin)", "operationId": "admin_list_registry_versions", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _array_of({"type": "object"}))}}},
-            "/admin-api/threads": {"get": {"tags": ["Admin"], "summary": "List All Threads", "operationId": "admin_list_threads", "parameters": [{"name": "status", "in": "query", "required": False, "schema": {"type": "string"}}, *admin_page], "responses": {**_json_response("200", "Success", _array_of(_ref("AdminThreadView")))}}},
+            "/admin-api/threads": {"get": {"tags": ["Admin"], "summary": "List All Threads", "operationId": "admin_list_threads", "parameters": [{"name": "status", "in": "query", "required": False, "schema": {"type": "string"}}, *admin_page], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminThreadView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/threads/{thread_id}": {
                 "get": {"tags": ["Admin"], "summary": "Get Thread (admin)", "operationId": "admin_get_thread", "parameters": [t_id], "responses": {**_json_response("200", "Success", _ref("AdminThreadView")), "404": _ERR_404}},
                 "delete": {"tags": ["Admin"], "summary": "Delete Thread (admin)", "operationId": "admin_delete_thread", "parameters": [t_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}},
             },
-            "/admin-api/threads/{thread_id}/runs": {"get": {"tags": ["Admin"], "summary": "List Thread Runs (admin)", "operationId": "admin_list_thread_runs", "parameters": [t_id, *admin_page], "responses": {**_json_response("200", "Success", _array_of(_ref("AdminRunView")))}}},
+            "/admin-api/threads/{thread_id}/runs": {"get": {"tags": ["Admin"], "summary": "List Thread Runs (admin)", "operationId": "admin_list_thread_runs", "parameters": [t_id, *admin_page], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRunView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/runs": {"get": {"tags": ["Admin"], "summary": "List All Runs", "operationId": "admin_list_runs", "parameters": [
                 {"name": "status", "in": "query", "required": False, "schema": {"type": "string"}},
                 {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 {"name": "thread_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 *admin_page,
-            ], "responses": {**_json_response("200", "Success", _array_of(_ref("AdminRunView")))}}},
+            ], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRunView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "operationId": "admin_get_run", "parameters": [r_id], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "404": _ERR_404}}},
             "/admin-api/runs/{run_id}/stream": {"get": {"tags": ["Admin"], "summary": "Stream Run (admin)", "operationId": "admin_stream_run", "parameters": [r_id], "responses": {"200": {"description": "SSE event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}}},
             "/admin-api/runs/{run_id}/cancel": {"post": {"tags": ["Admin"], "summary": "Cancel Run (admin)", "operationId": "admin_cancel_run", "parameters": [r_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}}},

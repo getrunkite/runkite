@@ -44,7 +44,13 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export interface ApiResponse<T> {
+  data: T;
+  /** Opaque Admin list resume token from X-Next-Cursor, when present. */
+  nextCursor: string | null;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD" && csrfToken) {
@@ -66,19 +72,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(resp.status, message);
   }
-  if (resp.status === 204) return undefined as T;
-  return resp.json() as Promise<T>;
+  const nextCursor = resp.headers.get("X-Next-Cursor");
+  if (resp.status === 204) return { data: undefined as T, nextCursor: null };
+  return { data: (await resp.json()) as T, nextCursor };
+}
+
+async function requestData<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data } = await request<T>(path, init);
+  return data;
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string) => requestData<T>(path),
+  /** Like get, but also returns X-Next-Cursor for Admin keyset paging. */
+  getWithMeta: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
-    request<T>(path, {
+    requestData<T>(path, {
       method: "POST",
       headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
-  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  del: <T>(path: string) => requestData<T>(path, { method: "DELETE" }),
 };
 
 export interface SessionStatus {

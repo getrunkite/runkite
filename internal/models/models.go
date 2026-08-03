@@ -73,6 +73,9 @@ type AgentSearchRequest struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	Limit    int                    `json:"limit,omitempty"`
 	Offset   int                    `json:"offset,omitempty"`
+	// Cursor is an opaque keyset token (Admin lists). When set, Offset is
+	// ignored. Client Protocol search never sets this.
+	Cursor string `json:"cursor,omitempty"`
 }
 
 // --------------------------------------------------------------------------
@@ -145,6 +148,9 @@ type ThreadSearchRequest struct {
 	Status   *ThreadStatus          `json:"status,omitempty"`
 	Limit    int                    `json:"limit,omitempty"`
 	Offset   int                    `json:"offset,omitempty"`
+	// Cursor is an opaque keyset token (Admin lists). When set, Offset is
+	// ignored. Client Protocol search never sets this.
+	Cursor string `json:"cursor,omitempty"`
 }
 
 // ThreadCheckpoint identifies a specific point in thread history.
@@ -278,6 +284,9 @@ type RunSearchRequest struct {
 	RootRunID string `json:"root_run_id,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
 	Offset    int    `json:"offset,omitempty"`
+	// Cursor is an opaque keyset token (Admin lists). When set, Offset is
+	// ignored. Client Protocol search never sets this.
+	Cursor string `json:"cursor,omitempty"`
 }
 
 // RunWaitResponse is returned by GET /runs/{id}/wait.
@@ -575,6 +584,9 @@ type RegistrySearchRequest struct {
 	Author string   `json:"author,omitempty"` // exact match
 	Limit  int      `json:"limit,omitempty"`
 	Offset int      `json:"offset,omitempty"`
+	// Cursor is an opaque keyset token (Admin lists). When set, Offset is
+	// ignored. Client Protocol search never sets this.
+	Cursor string `json:"cursor,omitempty"`
 }
 
 // --------------------------------------------------------------------------
