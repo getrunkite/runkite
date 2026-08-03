@@ -103,8 +103,8 @@ Backend selection matches `serve` (`POSTGRES_DSN` → `MYSQL_DSN` → `MONGO_URI
 
 | Command | Behavior |
 |---------|----------|
-| `runkite db upgrade` | Apply pending numbered schema migrations (`schema_migrations`). `serve`/`dev` also do this on startup via `Init`. |
-| `runkite db downgrade` | Roll back the most recently applied migration. Baseline (v1) Down drops application tables/collections (destructive). Exits `1` when already at version 0. |
+| `runkite db upgrade` | Apply pending numbered schema migrations (`schema_migrations`). `serve`/`dev` also do this on startup via `Init`. Pre-versioned DBs run baseline Up (self-heal ADD COLUMN) then stamp v1. |
+| `runkite db downgrade` | Roll back the most recently applied migration (prints a warning first). Baseline (v1) Down drops application tables/collections (destructive). Exits `1` when already at version 0. |
 | `runkite db reset` | Truncate (or delete the SQLite file) and re-upgrade to latest. |
 
 Future schema changes are new numbered Up/Down steps next to each store -- not ad-hoc `ALTER` trails inside a single growing `Init`.

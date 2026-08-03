@@ -140,6 +140,11 @@ func cmdDBDowngrade(args []string) {
 		os.Exit(1)
 	}
 	defer b.close()
+	// Baseline (currently the only migration) Down drops every application
+	// table/collection -- same class of risk as db reset. Future v2+ Downs
+	// are smaller; until then, say so loudly before executing.
+	fmt.Fprintln(os.Stderr, "warning: db downgrade runs the previous migration's Down step.")
+	fmt.Fprintln(os.Stderr, "While only baseline (v1) exists, that drops all application tables/collections.")
 	if err := b.store.Downgrade(ctx); err != nil {
 		if errors.Is(err, migrate.ErrNoMigration) {
 			fmt.Fprintln(os.Stderr, "runkite db downgrade: nothing to roll back (schema version is 0).")

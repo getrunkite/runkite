@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -100,11 +101,16 @@ func TestUpgradeAndDowngrade(t *testing.T) {
 	}
 }
 
-func TestStampLegacyWithoutReplaying(t *testing.T) {
+func TestStampLegacyRunsUpThenStamps(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()
+	// Minimal legacy schema: agents present (trips the probe) and a
+	// threads table missing a column that Up self-heals.
 	if _, err := db.ExecContext(ctx, `CREATE TABLE agents (id TEXT PRIMARY KEY)`); err != nil {
-		t.Fatalf("seed legacy: %v", err)
+		t.Fatalf("seed agents: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE threads (thread_id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatalf("seed threads: %v", err)
 	}
 	bk := migrate.NewSQL(db, migrate.SQLite)
 	upCalls := 0
@@ -113,6 +119,11 @@ func TestStampLegacyWithoutReplaying(t *testing.T) {
 		Name:    "baseline",
 		Up: func(ctx context.Context) error {
 			upCalls++
+			// Idempotent self-heal, same class as real baseline ADD COLUMN.
+			_, err := db.ExecContext(ctx, `ALTER TABLE threads ADD COLUMN version INTEGER NOT NULL DEFAULT 1`)
+			if err != nil && !containsDupCol(err) {
+				return err
+			}
 			return nil
 		},
 		Down: func(ctx context.Context) error { return nil },
@@ -123,13 +134,22 @@ func TestStampLegacyWithoutReplaying(t *testing.T) {
 	if err := migrate.Upgrade(ctx, bk, migrations, legacy); err != nil {
 		t.Fatalf("upgrade: %v", err)
 	}
-	if upCalls != 0 {
-		t.Fatalf("legacy stamp must not run Up, ran %d times", upCalls)
+	if upCalls != 1 {
+		t.Fatalf("legacy path must run Up exactly once, ran %d times", upCalls)
 	}
 	cur, _ := bk.Current(ctx)
 	if cur != 1 {
 		t.Fatalf("current = %d, want 1", cur)
 	}
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('threads') WHERE name = 'version'`).Scan(&n)
+	if err != nil || n != 1 {
+		t.Fatalf("threads.version after legacy upgrade: n=%d err=%v", n, err)
+	}
+}
+
+func containsDupCol(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
 
 func TestDowngradeAtZero(t *testing.T) {

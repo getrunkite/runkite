@@ -32,9 +32,16 @@ type Bookkeeper interface {
 	Delete(ctx context.Context, version int) error
 }
 
-// Upgrade ensures the migrations table exists, stamps baseline v1 when an
-// already-initialized legacy database has no version rows, then applies
-// every pending Up in order.
+// Upgrade ensures the migrations table exists, heals and stamps baseline
+// v1 when an already-initialized legacy database has no version rows,
+// then applies every pending Up in order.
+//
+// Legacy path (tables exist, schema_migrations empty): runs migration
+// 1's Up before stamping. Baseline Up is written to be idempotent
+// (CREATE IF NOT EXISTS / existence-checked ADD COLUMN), and those ADD
+// COLUMN steps are exactly the self-healing the old unconditional Init
+// ran on every boot -- skipping Up and only inserting the version row
+// would leave older schemas missing columns like threads.version.
 func Upgrade(ctx context.Context, bk Bookkeeper, migrations []Migration, legacyExists func(context.Context) (bool, error)) error {
 	if err := validate(migrations); err != nil {
 		return err
@@ -55,6 +62,9 @@ func Upgrade(ctx context.Context, bk Bookkeeper, migrations []Migration, legacyE
 			m1 := byVersion(migrations, 1)
 			if m1 == nil {
 				return fmt.Errorf("legacy stamp requires migration version 1")
+			}
+			if err := m1.Up(ctx); err != nil {
+				return fmt.Errorf("migrate up %d (%s) for legacy schema: %w", m1.Version, m1.Name, err)
 			}
 			if err := bk.Insert(ctx, m1.Version, m1.Name); err != nil {
 				return fmt.Errorf("stamp baseline v1: %w", err)
