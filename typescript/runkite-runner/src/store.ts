@@ -180,8 +180,7 @@ export class RunkiteStore extends BaseStore {
         // LangGraph JS PutOperation typings omit ttl today; accept it when
         // present (parity with Python runner / Go store_items columns).
         const ttlMinutes = (op as PutOperation & { ttl?: number }).ttl;
-        const expiresAt =
-          ttlMinutes == null ? null : new Date(Date.now() + ttlMinutes * 60_000);
+        const expiresAt = ttlMinutes == null ? null : new Date(Date.now() + ttlMinutes * 60_000);
         await pool.query(
           `INSERT INTO store_items (tenant_id, namespace, key, value, created_at, updated_at, ttl_minutes, expires_at)
            VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6)

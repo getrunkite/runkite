@@ -15,8 +15,7 @@ test("shouldSkipRun returns true for interrupted", async () => {
 
 test("shouldSkipRun returns false for pending", async () => {
   const orig = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ status: "pending" }), { status: 200 })) as typeof fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ status: "pending" }), { status: 200 })) as typeof fetch;
   try {
     assert.equal(await shouldSkipRun("http://cp:2026", "run-1"), false);
   } finally {
