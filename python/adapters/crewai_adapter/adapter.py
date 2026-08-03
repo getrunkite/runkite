@@ -54,6 +54,8 @@ os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
 
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable  # noqa: E402
 
+from .otel_events import attach_otel_listeners  # noqa: E402
+
 
 def _last_human_text(messages: list) -> str:
     for msg in reversed(messages):
@@ -141,8 +143,11 @@ class CrewAIAdapter:
             # isn't safe to run concurrently with itself, so concurrent
             # runs on the same graph_id queue here rather than racing on
             # the crew's own instance attributes.
-            async with self._crew_locks[graph_id]:
-                result = await run_cancellable(crew.akickoff(inputs={"input": text}), cancel_event)
+            # attach_otel_listeners nests runkite.llm/tool under the active
+            # runkite.run (no-op when OTEL is off).
+            with attach_otel_listeners(run_id):
+                async with self._crew_locks[graph_id]:
+                    result = await run_cancellable(crew.akickoff(inputs={"input": text}), cancel_event)
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]

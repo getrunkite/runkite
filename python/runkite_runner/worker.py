@@ -183,9 +183,7 @@ def build_run_config(assignment: dict) -> dict:
     # existing single-tenant rows reachable); "{tenant}:{thread}" otherwise
     # so two tenants cannot collide on a client-chosen thread id. Node code
     # that reads configurable.thread_id sees this same value.
-    config["configurable"]["thread_id"] = checkpoint_thread_id(
-        assignment.get("tenant_id"), assignment["thread_id"]
-    )
+    config["configurable"]["thread_id"] = checkpoint_thread_id(assignment.get("tenant_id"), assignment["thread_id"])
     config["configurable"]["run_id"] = run_id
     config["configurable"]["assistant_id"] = graph_id
     config["configurable"]["graph_id"] = graph_id

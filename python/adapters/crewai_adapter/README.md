@@ -21,7 +21,8 @@ isolated venv here matches that reality rather than fighting it.
 ```bash
 cd python/adapters/crewai_adapter
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python crewai grpcio protobuf httpx
+uv pip install --python .venv/bin/python crewai grpcio protobuf httpx \
+  opentelemetry-api opentelemetry-sdk
 ```
 
 ## Run

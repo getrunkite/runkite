@@ -6,6 +6,7 @@
 
 # Node (admin-ui, typescript/runkite-runner)
 node_modules/
+*.tsbuildinfo
 
 # internal/adminui/dist is the Admin UI's built output and IS committed
 # (see internal/adminui/adminui.go's doc comment) so `go build` never

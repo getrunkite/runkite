@@ -291,12 +291,14 @@ test-python:
 # test-pg/test-redis.
 test-adapters:
 	@if [ -x python/adapters/crewai_adapter/.venv/bin/python ]; then \
-		PYTHONPATH=python:python/adapters python/adapters/crewai_adapter/.venv/bin/python python/adapters/crewai_adapter/test_adapter.py; \
+		PYTHONPATH=python:python/adapters python/adapters/crewai_adapter/.venv/bin/python python/adapters/crewai_adapter/test_adapter.py && \
+		PYTHONPATH=python:python/adapters python/adapters/crewai_adapter/.venv/bin/python python/adapters/crewai_adapter/test_otel_events.py; \
 	else \
 		echo "skip: python/adapters/crewai_adapter/.venv not set up (see python/adapters/crewai_adapter/README.md)"; \
 	fi
 	@if [ -x python/adapters/llamaindex_adapter/.venv/bin/python ]; then \
-		PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_adapter.py; \
+		PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_adapter.py && \
+		PYTHONPATH=python:python/adapters python/adapters/llamaindex_adapter/.venv/bin/python python/adapters/llamaindex_adapter/test_otel_events.py; \
 	else \
 		echo "skip: python/adapters/llamaindex_adapter/.venv not set up (see python/adapters/llamaindex_adapter/README.md)"; \
 	fi

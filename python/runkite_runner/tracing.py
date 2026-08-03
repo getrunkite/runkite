@@ -143,6 +143,11 @@ def set_run_status(span: Any, status: str) -> None:
         span.set_status(Status(StatusCode.OK))
 
 
+def get_tracer() -> Any | None:
+    """Return the installed tracer, or None when tracing is disabled."""
+    return _tracer
+
+
 def make_run_callbacks(run_id: str = "") -> list:
     """LangChain handlers that open LLM/tool child spans under runkite.run.
 

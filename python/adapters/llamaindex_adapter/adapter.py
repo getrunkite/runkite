@@ -32,6 +32,8 @@ from typing import Any
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 
+from .otel_events import attach_otel_job
+
 
 def _to_chat_messages(messages: list) -> list[ChatMessage]:
     """Converts the Runner Protocol's {"role": ..., "content": ...}
@@ -122,7 +124,9 @@ class LlamaIndexAdapter:
             )
             prior_history = _to_chat_messages(messages[:-1])
 
-            result = await run_cancellable(engine.achat(last_text, chat_history=prior_history), cancel_event)
+            # Nest runkite.llm/tool under the active runkite.run (no-op when OTEL is off).
+            with attach_otel_job(run_id):
+                result = await run_cancellable(engine.achat(last_text, chat_history=prior_history), cancel_event)
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
