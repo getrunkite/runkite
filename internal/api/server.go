@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getrunkite/runkite/internal/adminui"
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
 	"github.com/getrunkite/runkite/internal/customroutes"
 	"github.com/getrunkite/runkite/internal/hooks"
@@ -51,6 +52,11 @@ type Server struct {
 	// those Origin values (same list as cors.allow_origins). Empty means
 	// coder/websocket's default any-Origin accept (token auth still applies).
 	wsOriginPatterns []string
+
+	// adminSessions serves POST/GET/DELETE /admin-api/session for the
+	// Admin UI httpOnly cookie login. nil means those routes 404 (tests
+	// that never call SetAdminSessions); production always sets it.
+	adminSessions *auth.AdminSessionHandlers
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until finishRun closes it out. Process-local on purpose: if the
@@ -117,6 +123,11 @@ func (s *Server) a2aMaxDepthOrDefault() int {
 // unchanged, same as before this feature existed.
 func (s *Server) SetAliasResolver(r *AliasResolver) {
 	s.aliases = r
+}
+
+// SetAdminSessions wires Admin UI httpOnly cookie session endpoints.
+func (s *Server) SetAdminSessions(h *auth.AdminSessionHandlers) {
+	s.adminSessions = h
 }
 
 // SetWSOriginPatterns configures WebSocket Origin checks for
@@ -316,6 +327,11 @@ func (s *Server) Handler() http.Handler {
 	// Admin API. Gated on "admin" permission specifically, enforced in
 	// auth.Middleware for the whole /admin-api/ prefix -- see this file's
 	// package doc comment for scope.
+	if s.adminSessions != nil {
+		mux.HandleFunc("POST /admin-api/session", s.adminSessions.Create)
+		mux.HandleFunc("GET /admin-api/session", s.adminSessions.Status)
+		mux.HandleFunc("DELETE /admin-api/session", s.adminSessions.Delete)
+	}
 	mux.HandleFunc("GET /admin-api/overview", s.handleAdminOverview)
 	mux.HandleFunc("GET /admin-api/agents", s.handleAdminListAgents)
 	mux.HandleFunc("GET /admin-api/agents/{agentID}", s.handleAdminGetAgent)

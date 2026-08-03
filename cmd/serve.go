@@ -459,7 +459,17 @@ func startServer(opts serverOpts) {
 	// separately inside createRun, see internal/ratelimit's doc comment.
 	authProvider := initAuthProvider(opts.configPath)
 	adminAuthProvider := initAdminAuthProvider(opts.configPath)
-	authOpts := auth.MiddlewareOpts{StrictPermissions: authStrictPermissions(opts.configPath)}
+	adminSessions := auth.NewAdminSessionStore(0)
+	apiServer.SetAdminSessions(&auth.AdminSessionHandlers{
+		Store:         adminSessions,
+		AdminProvider: adminAuthProvider,
+		Provider:      authProvider,
+		Strict:        authStrictPermissions(opts.configPath),
+	})
+	authOpts := auth.MiddlewareOpts{
+		StrictPermissions: authStrictPermissions(opts.configPath),
+		AdminSessions:     adminSessions,
+	}
 	if authOpts.StrictPermissions {
 		slog.Info("auth: strict_permissions enabled (empty permissions deny)")
 	}

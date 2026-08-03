@@ -3,41 +3,37 @@
 // control plane unchanged, see vite.config.ts) and in production (the
 // built bundle is served from the same origin as the API -- see
 // internal/adminui's embed.FS wiring).
+//
+// Auth: httpOnly session cookie set by POST /admin-api/session. The API
+// key/JWT is sent once at login and never stored in JavaScript. Mutating
+// calls send X-CSRF-Token (synchronizer token from the login/status
+// response). Machine clients can still use Authorization: Bearer.
 
 const BASE = "/admin-api";
 
-const CREDENTIAL_STORAGE_KEY = "runkite_admin_credential";
+const LEGACY_CREDENTIAL_KEY = "runkite_admin_credential";
 
-/** The credential is whatever the client-facing auth provider expects in
- * an Authorization: Bearer header -- a static API key, or a JWT. The
- * dashboard doesn't know or care which; it just needs "admin" permission
- * on whichever one the operator pastes in (see Login.tsx).
- *
- * sessionStorage (not localStorage): survives refresh within the tab,
- * not new tabs or after the browser session ends -- shrinks the window
- * where a stolen XSS can read a long-lived token. Still XSS-readable
- * in-tab; an httpOnly cookie session would close that (not implemented). */
-export function getStoredCredential(): string | null {
-  const fromSession = sessionStorage.getItem(CREDENTIAL_STORAGE_KEY);
-  if (fromSession) return fromSession;
-  // One-time migrate older localStorage credentials into sessionStorage.
-  const legacy = localStorage.getItem(CREDENTIAL_STORAGE_KEY);
-  if (legacy) {
-    sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, legacy);
-    localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-    return legacy;
+/** CSRF synchronizer token for cookie-authenticated mutations. Held in
+ * module memory (and optionally rehydrated from GET /admin-api/session
+ * after refresh) -- not the API key. */
+let csrfToken: string | null = null;
+
+export function getCSRFToken(): string | null {
+  return csrfToken;
+}
+
+export function setCSRFToken(token: string | null): void {
+  csrfToken = token;
+}
+
+/** Drop any pre-httpOnly credential left in web storage. */
+export function clearLegacyCredentials(): void {
+  try {
+    sessionStorage.removeItem(LEGACY_CREDENTIAL_KEY);
+    localStorage.removeItem(LEGACY_CREDENTIAL_KEY);
+  } catch {
+    // private mode / disabled storage -- nothing to clear
   }
-  return null;
-}
-
-export function setStoredCredential(token: string): void {
-  sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, token);
-  localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-}
-
-export function clearStoredCredential(): void {
-  sessionStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-  localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
 }
 
 export class ApiError extends Error {
@@ -49,11 +45,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const credential = getStoredCredential();
   const headers = new Headers(init?.headers);
-  if (credential) headers.set("Authorization", `Bearer ${credential}`);
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && csrfToken) {
+    headers.set("X-CSRF-Token", csrfToken);
+  }
 
-  const resp = await fetch(`${BASE}${path}`, { ...init, headers });
+  const resp = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
   if (!resp.ok) {
     let message = `${resp.status} ${resp.statusText}`;
     try {
@@ -79,17 +81,53 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
-/** Verifies a credential actually has admin access before storing it --
- * Login.tsx calls this so a bad key fails fast with a clear message
- * instead of silently landing on a dashboard full of 403s. */
-export async function verifyCredential(token: string): Promise<void> {
-  const resp = await fetch(`${BASE}/overview`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export interface SessionStatus {
+  authenticated: boolean;
+  auth_required: boolean;
+  csrf_token?: string;
+  identity?: string;
+}
+
+/** Probe / create session state without storing the API key in JS. */
+export async function fetchSessionStatus(): Promise<SessionStatus> {
+  const resp = await fetch(`${BASE}/session`, { credentials: "include" });
   if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      throw new ApiError(resp.status, "Invalid credential or missing 'admin' permission.");
-    }
     throw new ApiError(resp.status, `Unexpected response: ${resp.status}`);
   }
+  return resp.json() as Promise<SessionStatus>;
+}
+
+/** Exchange a pasted credential for an httpOnly session cookie + CSRF. */
+export async function createSession(credential: string): Promise<SessionStatus> {
+  const resp = await fetch(`${BASE}/session`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+  });
+  if (!resp.ok) {
+    let message = `${resp.status} ${resp.statusText}`;
+    try {
+      const body = await resp.json();
+      if (body?.message) message = body.message;
+    } catch {
+      // keep status line
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new ApiError(resp.status, message || "Invalid credential or missing 'admin' permission.");
+    }
+    throw new ApiError(resp.status, message);
+  }
+  return resp.json() as Promise<SessionStatus>;
+}
+
+export async function destroySession(): Promise<void> {
+  const headers = new Headers();
+  if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  await fetch(`${BASE}/session`, {
+    method: "DELETE",
+    credentials: "include",
+    headers,
+  });
+  csrfToken = null;
 }

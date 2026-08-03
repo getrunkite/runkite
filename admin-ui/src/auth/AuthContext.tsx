@@ -1,17 +1,22 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { clearStoredCredential, getStoredCredential, setStoredCredential, verifyCredential } from "../api/client";
+import {
+  clearLegacyCredentials,
+  createSession,
+  destroySession,
+  fetchSessionStatus,
+  setCSRFToken,
+} from "../api/client";
 
 interface AuthState {
   // "checking": haven't determined yet whether a login is even needed
-  // (see the no-auth-configured probe below). "authenticated": either a
-  // verified credential is stored, or the control plane has no auth
-  // provider configured at all (local/dev mode) -- the dashboard doesn't
-  // force a login screen on top of a deployment that has no auth to log
-  // in to. "unauthenticated": a login is required and none is stored yet.
+  // (see the session status probe below). "authenticated": either a
+  // live httpOnly session cookie exists, or the control plane has no
+  // auth provider configured at all (local/dev mode). "unauthenticated":
+  // a login is required and no session is active.
   status: "checking" | "authenticated" | "unauthenticated";
-  // False when the empty-token probe succeeded -- the control plane is
-  // open (no client-facing auth). Sign-out must not trap the operator
-  // on the Login form in that mode.
+  // False when the empty-session probe reports auth_required=false --
+  // the control plane is open. Sign-out must not trap the operator on
+  // the Login form in that mode.
   authRequired: boolean;
   login: (token: string) => Promise<void>;
   logout: () => void;
@@ -24,24 +29,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authRequired, setAuthRequired] = useState(true);
 
   useEffect(() => {
-    const stored = getStoredCredential();
-    if (stored) {
-      // Trust a previously-verified credential optimistically; if it's
-      // since been revoked, the first real API call will 401/403 and the
-      // relevant page shows that error rather than silently redirecting
-      // (a stale redirect loop is worse UX than a visible error here).
-      setAuthRequired(true);
-      setStatus("authenticated");
-      return;
-    }
-    // No credential stored -- probe whether auth is even configured. A
-    // deployment with no auth provider (local/dev mode, see README's Auth
-    // section) answers every request the same regardless of credentials,
-    // so this doubles as "is a login required at all".
-    verifyCredential("").then(
-      () => {
-        setAuthRequired(false);
-        setStatus("authenticated");
+    clearLegacyCredentials();
+    fetchSessionStatus().then(
+      (s) => {
+        setAuthRequired(s.auth_required);
+        if (s.csrf_token) setCSRFToken(s.csrf_token);
+        setStatus(s.authenticated ? "authenticated" : "unauthenticated");
       },
       () => {
         setAuthRequired(true);
@@ -51,21 +44,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(token: string) {
-    await verifyCredential(token);
-    setStoredCredential(token);
+    const s = await createSession(token);
+    if (s.csrf_token) setCSRFToken(s.csrf_token);
     setAuthRequired(true);
     setStatus("authenticated");
   }
 
   function logout() {
-    clearStoredCredential();
-    if (!authRequired) {
-      // Open deployment: clearing storage must not land on Login, which
-      // requires a non-empty token and has nowhere useful to go.
-      setStatus("authenticated");
-      return;
-    }
-    setStatus("unauthenticated");
+    void destroySession().finally(() => {
+      setCSRFToken(null);
+      if (!authRequired) {
+        setStatus("authenticated");
+        return;
+      }
+      setStatus("unauthenticated");
+    });
   }
 
   return (

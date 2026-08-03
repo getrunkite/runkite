@@ -63,6 +63,11 @@ type MiddlewareOpts struct {
 	// permissions list is empty (see authorized). Default false preserves
 	// the backward-compatible "empty = unrestricted" convention.
 	StrictPermissions bool
+	// AdminSessions, when set, accepts the Admin UI httpOnly session
+	// cookie on /admin-api/* (when no Authorization/X-API-Key header is
+	// present). Mutating methods require X-CSRF-Token. Bearer auth is
+	// unchanged for machine clients.
+	AdminSessions *AdminSessionStore
 }
 
 // Middleware returns an http.Handler that enforces auth before delegating to
@@ -107,6 +112,25 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			}
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		// Browser Admin UI session cookie (httpOnly). Only when the
+		// caller did not send a machine Bearer/API-Key header -- those
+		// keep the existing path (no CSRF). Cookie auth requires
+		// X-CSRF-Token on mutating methods.
+		if isAdminAPIPath(path) && opts.AdminSessions != nil && !hasAuthHeader(r) {
+			if sess := opts.AdminSessions.Get(SessionIDFromRequest(r)); sess != nil {
+				if isMutatingMethod(r.Method) && r.Header.Get(HeaderCSRF) != sess.CSRF {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]string{"message": "invalid or missing CSRF token"})
+					return
+				}
+				ctx := WithContext(r.Context(), &sess.Result)
+				ctx = tenant.WithContext(ctx, sess.Result.TenantID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 		}
 
 		// An independent admin credential for the Admin API/UI, if
@@ -205,8 +229,17 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 // sees raw 401 JSON (the /admin vs /admin/ bug).
 //
 // Deliberately does NOT use HasPrefix("/admin") without the slash:
-// "/admin-api/..." must stay authenticated (admin permission gate).
+// "/admin-api/..." must stay authenticated (admin permission gate),
+// except the session bootstrap endpoints which authenticate the
+// pasted credential inside their own handlers (or report status).
 func isPublicPath(method, path string) bool {
+	// Admin UI login + session probe -- handlers do their own auth.
+	// Logout (DELETE) is NOT public: it requires the session cookie + CSRF.
+	if path == "/admin-api/session" || path == "/admin-api/session/" {
+		if method == http.MethodPost || method == http.MethodGet || method == http.MethodHead {
+			return true
+		}
+	}
 	if method != http.MethodGet && method != http.MethodHead {
 		return false
 	}

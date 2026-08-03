@@ -1,5 +1,3 @@
-import { getStoredCredential } from "./client";
-
 export interface SseEvent {
   event: string;
   data: string;
@@ -7,21 +5,19 @@ export interface SseEvent {
 
 /**
  * Manually parsed SSE reader instead of the browser's native EventSource.
- * EventSource can't send a custom Authorization header at all -- a well
- * known platform limitation -- and every /admin-api/* route requires one
- * whenever auth is configured. fetch() has no such restriction, so this
- * reads the same "id: ...\nevent: ...\ndata: ...\n\n" stream
- * streamExistingRun (internal/api/runs.go) writes, by hand.
+ * EventSource can't send custom headers -- we already used fetch for that
+ * when auth was Bearer; now the session cookie is enough (credentials:
+ * "include"), and GET streams don't need CSRF.
  *
  * Returns an abort() function; call it on unmount to close the stream.
  */
 export function streamSSE(path: string, onEvent: (event: SseEvent) => void, onDone: () => void): () => void {
   const controller = new AbortController();
-  const credential = getStoredCredential();
-  const headers = new Headers();
-  if (credential) headers.set("Authorization", `Bearer ${credential}`);
 
-  fetch(`/admin-api${path}`, { headers, signal: controller.signal })
+  fetch(`/admin-api${path}`, {
+    credentials: "include",
+    signal: controller.signal,
+  })
     .then(async (resp) => {
       if (!resp.ok || !resp.body) {
         onDone();

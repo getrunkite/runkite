@@ -15,6 +15,8 @@ Four providers, configured via `auth` in `langgraph.json`:
 
 **`admin_keys`** (optional, under the same `auth` object) is an independent credential set accepted **only** for `/admin-api/*` -- every key implicitly grants `admin`. Useful when the primary provider is short-lived SSO and an operator wants a stable break-glass key for the dashboard without minting JWTs. It is additive: a primary credential that itself carries `admin` still works, and a missing/invalid admin key still falls through to a configured primary provider (so a normal SSO user with `admin` permission works too). With **no** primary `auth.type` configured at all, `admin_keys` fails closed on `/admin-api/*` -- a missing/invalid admin credential gets `401`, not the client-facing surface's local-dev trust-everyone. Configuring a credential never leaves the dashboard less protected than configuring none.
 
+**Admin UI login** (`POST /admin-api/session`) exchanges a pasted API key/JWT for an httpOnly `runkite_admin_session` cookie; the browser never keeps the credential in JavaScript. Mutating dashboard calls send `X-CSRF-Token` from the login response. `GET /admin-api/session` rehydrates CSRF after refresh; `DELETE /admin-api/session` logs out. Curl/OpenAPI keep using `Authorization: Bearer` on `/admin-api/*` with no CSRF.
+
 **Runner auth** is separate: in local mode runners are trusted implicitly. In production, set `RUNNER_TOKEN_<kind>` env vars -- one shared token per runner type, validated on every gRPC call and `/internal/*` HTTP request.
 
 Example (webhook sidecar):
