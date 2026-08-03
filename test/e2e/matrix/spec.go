@@ -192,6 +192,12 @@ type launchEnv struct {
 	RepoRoot   string
 	ConfigPath string
 	GRPCAddr   string
+	// HTTPAddr is the control plane's HTTP base URL for this cell
+	// (e.g. http://localhost:2102). Runners need it for pre-exec status
+	// checks and store proxy mode; without it they default to
+	// localhost:2026, which is never where this matrix's dynamic ports
+	// land.
+	HTTPAddr string
 }
 
 var runners = []RunnerSpec{

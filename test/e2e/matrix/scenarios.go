@@ -80,7 +80,7 @@ func scenarioHappyPath(t *testing.T, c *cell) NormalizedRun {
 		"input":    map[string]any{"messages": []map[string]string{{"role": "user", "content": uniqueContent("hello from the test matrix")}}},
 	})
 	defer resp.Body.Close()
-	events := parseSSE(t, resp)
+	events := parseSSE(t, c, resp)
 	return normalize(events)
 }
 
@@ -153,7 +153,7 @@ func scenarioHITL(t *testing.T, c *cell) NormalizedRun {
 			"approved": false,
 		},
 	})
-	events := parseSSE(t, resp)
+	events := parseSSE(t, c, resp)
 	resp.Body.Close()
 	types := eventTypesOf(events)
 
@@ -266,11 +266,11 @@ type sseEvent struct {
 	Data  map[string]any
 }
 
-func parseSSE(t *testing.T, resp *http.Response) []sseEvent {
+func parseSSE(t *testing.T, c *cell, resp *http.Response) []sseEvent {
 	t.Helper()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("read SSE body: %v", err)
+		t.Fatalf("read SSE body: %v\n%s", err, c.diagnostics())
 	}
 	var events []sseEvent
 	for _, block := range strings.Split(string(body), "\n\n") {

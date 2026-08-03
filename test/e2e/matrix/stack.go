@@ -58,6 +58,33 @@ func nextPortPair() (httpPort, grpcPort string) {
 
 func lookupEnv(name string) string { return os.Getenv(name) }
 
+// runnerLaunchEnv is the process environment for matrix runner
+// subprocesses. It inherits the parent env, then blanks every
+// backend-selection variable (`make test-matrix` exports POSTGRES_DSN /
+// MYSQL_DSN / REDIS_URL / MONGO_URI for the *control plane* cells).
+// Leaving those set on the runner forces checkpoint/store direct mode
+// against whatever DSN the Makefile exported -- which for
+// sqlite/mysql/mongo cells is the wrong database, and for an unreachable
+// local DSN hangs PostgresSaver.setup() long enough that GetJob never
+// starts and the SSE client hits its 30s deadline. Matrix cells prove
+// framework × CP integration over gRPC (+ HTTP for status/store proxy);
+// runner direct-mode DB sharing is a separate contract.
+//
+// httpAddr is exported as RUNKITE_HTTP_URL rather than a CLI flag:
+// python-langgraph accepts --http-address, but the framework adapters
+// (langchain/crewai/llamaindex/autogen) share a narrower argparse and
+// reject the flag. Every runner already reads RUNKITE_HTTP_URL.
+func runnerLaunchEnv(httpAddr string) []string {
+	env := append([]string(nil), os.Environ()...)
+	for _, name := range allBackendSelectionVars {
+		env = append(env, name+"=")
+	}
+	if httpAddr != "" {
+		env = append(env, "RUNKITE_HTTP_URL="+httpAddr)
+	}
+	return env
+}
+
 // syncBuffer wraps bytes.Buffer with a mutex -- a subprocess's stdout is
 // written to it from exec's internal io.Copy goroutine while the test
 // goroutine reads String() for diagnostics, a genuine data race
@@ -123,7 +150,7 @@ func launchPythonModule(moduleName, extraPathRel, venvRelPath string) func(launc
 		if extraPathRel != "" {
 			pythonPath += string(os.PathListSeparator) + filepath.Join(env.RepoRoot, extraPathRel)
 		}
-		cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+		cmd.Env = append(runnerLaunchEnv(env.HTTPAddr), "PYTHONPATH="+pythonPath)
 		logBuf := &syncBuffer{}
 		cmd.Stdout = logBuf
 		cmd.Stderr = logBuf
@@ -149,9 +176,10 @@ func launchTypeScriptRunner(env launchEnv) (LaunchedProcess, error) {
 	cmd := exec.Command(tsx, "src/cli.ts",
 		"--config", env.ConfigPath,
 		"--grpc-address", env.GRPCAddr,
+		"--http-address", env.HTTPAddr,
 	)
 	cmd.Dir = tsRunnerDir
-	cmd.Env = os.Environ()
+	cmd.Env = runnerLaunchEnv(env.HTTPAddr)
 	// tsx spawns a child Node process to run the transformed TS; killing
 	// only the tsx wrapper process leaves that child alive holding the
 	// stdout/stderr pipes open, which hangs Cmd.Wait() forever during
@@ -235,7 +263,12 @@ func startCell(t *testing.T, backend BackendSpec, runner RunnerSpec) *cell {
 		t.Fatalf("control plane never became healthy: %v\n--- control plane output ---\n%s", err, serveLog.String())
 	}
 
-	proc, err := runner.Launch(launchEnv{RepoRoot: repoRoot, ConfigPath: configPath, GRPCAddr: "localhost:" + grpcPort})
+	proc, err := runner.Launch(launchEnv{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		GRPCAddr:   "localhost:" + grpcPort,
+		HTTPAddr:   baseURL,
+	})
 	if err != nil {
 		t.Fatalf("start %s runner: %v", runner.Name, err)
 	}
