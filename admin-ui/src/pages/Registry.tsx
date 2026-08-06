@@ -75,8 +75,8 @@ export function Registry() {
       {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={Package}
-          title="No registry entries published yet"
-          message="Publish an entry via PUT /registry/entries/{name} to see it here."
+          title="Registry is empty"
+          message="Optional catalog. Publish with PUT /registry/entries/{name} when you want discoverable agent definitions across tenants — see docs/registry.md."
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

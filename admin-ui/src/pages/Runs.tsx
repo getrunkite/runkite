@@ -111,7 +111,7 @@ export function Runs() {
           title={status === "all" ? "No runs yet" : "No matching runs"}
           message={
             status === "all"
-              ? "Runs appear here as clients create them across every tenant."
+              ? "Create a thread and run via the Agent Protocol API, or smoke-test with examples/echo_agent after runkite serve + a runner."
               : `No runs with status “${status}”. Try another filter.`
           }
           action={

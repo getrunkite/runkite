@@ -96,8 +96,8 @@ export function Overview() {
           </CardHeader>
           <CardContent>
             {history.length < 2 ? (
-              <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
-                Collecting data points...
+              <div className="flex h-56 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                Waiting for the next poll — the trend line builds live as runs arrive. A flat zero is normal on a fresh deploy.
               </div>
             ) : (
               <ChartContainer config={runsChartConfig} className="h-56 w-full">
@@ -226,7 +226,11 @@ function StatusDonut({ breakdown, loading }: { breakdown?: Record<string, number
   if (loading) return <Skeleton className="mx-auto h-48 w-48 rounded-full" />;
   const entries = Object.entries(breakdown ?? {});
   if (entries.length === 0) {
-    return <p className="flex h-48 items-center justify-center text-sm text-muted-foreground">No runs yet.</p>;
+    return (
+      <p className="flex h-48 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+        No runs yet — create one via the Agent Protocol API once a runner is attached.
+      </p>
+    );
   }
   const chartData = entries.map(([status, count]) => ({ status, count, fill: `var(--color-${status})` }));
   const config: ChartConfig = Object.fromEntries(
@@ -269,7 +273,11 @@ function StatusBreakdownBars({ breakdown, loading }: { breakdown?: Record<string
   }
   const entries = Object.entries(breakdown ?? {});
   if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground">No threads yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No threads yet — empty is expected until a client opens a conversation.
+      </p>
+    );
   }
   const max = Math.max(...entries.map(([, count]) => count), 1);
 

@@ -66,7 +66,11 @@ export function Agents() {
           </div>
 
           {data && data.length === 0 && onFirstPage ? (
-            <EmptyState icon={Bot} title="No agents registered" message="Agents appear here once a langgraph.json is bootstrapped." />
+            <EmptyState
+              icon={Bot}
+              title="No agents registered"
+              message="Start the control plane with a graph config, then attach a runner. Try: runkite dev --config examples/echo_agent/langgraph.json"
+            />
           ) : filtered && filtered.length === 0 ? (
             <EmptyState
               title="No matches"

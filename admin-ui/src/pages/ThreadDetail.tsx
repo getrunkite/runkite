@@ -129,7 +129,10 @@ export function ThreadDetail() {
         <CardContent>
           {runs.error && <ErrorState message={runs.error} />}
           {runs.data && runs.data.length === 0 && (
-            <EmptyState title="No runs yet" message="Runs on this thread will show up here once a client starts one." />
+            <EmptyState
+              title="No runs on this thread"
+              message="Start a run against this thread_id from your client or SDK — status and stream output will appear here."
+            />
           )}
           {(runs.loading || (runs.data && runs.data.length > 0)) && (
             <Table>

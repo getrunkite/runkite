@@ -37,7 +37,11 @@ export function Connectors() {
       <PageHeader title="Connectors" subtitle="OAuth/MCP sessions runners pre-warm for their declared agents." />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (
-        <EmptyState icon={Plug} message="No connectors configured in langgraph.json." />
+        <EmptyState
+          icon={Plug}
+          title="No connectors"
+          message="Optional. Add a connectors block to langgraph.json when agents need pre-warmed OAuth or MCP sessions — see docs/connectors.md."
+        />
       )}
       {(data === null || (data && data.length > 0)) && (
         <DataTable columns={columns} data={data ?? []} getRowId={(c) => c.name} loading={loading} />

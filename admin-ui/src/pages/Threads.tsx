@@ -64,7 +64,8 @@ export function Threads() {
       {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={MessagesSquare}
-          message="No threads yet -- one is created the moment a client starts a conversation."
+          title="No threads yet"
+          message="A thread is created when a client POSTs /threads (or starts a run that allocates one). Empty is normal on a fresh deploy."
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

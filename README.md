@@ -7,6 +7,7 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 [![Matrix](https://img.shields.io/badge/matrix-nightly-6F42C1)](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Site](https://img.shields.io/badge/site-getrunkite.github.io-0c1210)](https://getrunkite.github.io/runkite/)
 
 <p align="center">
   <img src="docs/assets/admin-walkthrough.gif" alt="Runkite Admin UI walkthrough" width="920" />
@@ -205,7 +206,7 @@ Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `
 | [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth / TLS / tenants](docs/auth.md) | Getting started |
 | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) | Core |
 | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) | Features |
-| [Deployment](docs/deployment.md) · [Factory graphs](docs/factory-graphs.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) | Ops |
+| [Deployment](docs/deployment.md) · [Factory graphs](docs/factory-graphs.md) · [Limitations](docs/limitations.md) (release summary + deep dive) · [Site](https://getrunkite.github.io/runkite/) · [All docs](docs/README.md) | Ops |
 
 ## Examples
 

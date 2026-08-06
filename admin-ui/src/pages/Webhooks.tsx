@@ -113,7 +113,11 @@ export function Webhooks() {
       />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (
-        <EmptyState icon={WebhookIcon} title="Nothing to see here" message="No failed webhook deliveries." />
+        <EmptyState
+          icon={WebhookIcon}
+          title="No dead-letters"
+          message="Good — nothing exhausted retries. Failed deliveries land here after the webhook pipeline gives up; empty means healthy or no webhooks configured."
+        />
       )}
       {(data === null || (data && data.length > 0)) && (
         <DataTable

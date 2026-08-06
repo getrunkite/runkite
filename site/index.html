@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runkite — self-hosted Agent Protocol control plane</title>
+    <meta
+      name="description"
+      content="One Go binary. Framework-agnostic runners. Embedded Admin UI. Postgres + Redis for HA."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,500;0,9..40,700;1,9..40,500&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg0: #0c1210;
+        --bg1: #14201c;
+        --ink: #e8f0ec;
+        --muted: #9bb0a6;
+        --accent: #3dba8a;
+        --accent-dim: #2a7a5c;
+        --line: rgba(232, 240, 236, 0.12);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg0);
+        color: var(--ink);
+        font-family: "DM Sans", system-ui, sans-serif;
+      }
+      body {
+        background-image:
+          radial-gradient(1200px 600px at 80% -10%, rgba(61, 186, 138, 0.18), transparent 55%),
+          radial-gradient(900px 500px at -10% 40%, rgba(42, 122, 92, 0.22), transparent 50%),
+          linear-gradient(180deg, var(--bg1), var(--bg0) 55%);
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 4.5rem 1.5rem 5rem;
+      }
+      .brand {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 1.25rem;
+      }
+      h1 {
+        font-size: clamp(2.1rem, 5vw, 3rem);
+        line-height: 1.1;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin: 0 0 1rem;
+      }
+      .lede {
+        font-size: 1.15rem;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 38rem;
+        margin: 0 0 2rem;
+      }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 3rem;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.7rem 1.1rem;
+        border-radius: 0.4rem;
+        font-weight: 700;
+        font-size: 0.95rem;
+        border: 1px solid transparent;
+        text-decoration: none;
+      }
+      .btn:hover {
+        text-decoration: none;
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: #06110c;
+      }
+      .btn-primary:hover {
+        filter: brightness(1.05);
+      }
+      .btn-ghost {
+        border-color: var(--line);
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .btn-ghost:hover {
+        border-color: rgba(61, 186, 138, 0.45);
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 0.55rem;
+        background: rgba(8, 14, 12, 0.55);
+        padding: 1rem 1.1rem;
+        overflow-x: auto;
+      }
+      pre {
+        margin: 0;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.82rem;
+        line-height: 1.55;
+        color: #cfe6da;
+        white-space: pre-wrap;
+      }
+      .foot {
+        margin-top: 2.75rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--line);
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 1.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <p class="brand">Runkite</p>
+      <h1>Self-hosted Agent Protocol control plane</h1>
+      <p class="lede">
+        One Go binary. Framework-agnostic runners. Embedded Admin UI. Postgres + Redis for HA —
+        with honest tiers for everything else.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/getrunkite/runkite">GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite#quick-start">Quick start</a>
+        <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/limitations.md"
+          >Limitations</a
+        >
+      </div>
+      <div class="panel">
+        <pre>git clone https://github.com/getrunkite/runkite && cd runkite
+make build
+
+export RUNKITE_ALLOW_INSECURE_SERVE=1   # local demo only
+./runkite dev --config examples/echo_agent/langgraph.json
+# open http://127.0.0.1:2026/admin/</pre>
+      </div>
+      <div class="foot">
+        <a href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
+        <a href="https://github.com/getrunkite/runkite/blob/main/LICENSE">BUSL-1.1</a>
+        <span>Site: getrunkite.github.io/runkite</span>
+      </div>
+    </main>
+  </body>
+</html>

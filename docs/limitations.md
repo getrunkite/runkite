@@ -1,6 +1,28 @@
 # Known Limitations
 
-> Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
+Honest gaps, not hidden ones. Use the **Release summary** below in GitHub Release notes and launch posts; the long list after it is the full deep dive.
+
+## Release summary
+
+What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth + runner tokens + TLS). Everything else is Compatible / Experimental — see [Architecture](architecture.md) backend tiers.
+
+| Area | Limitation |
+|------|------------|
+| **Scale-out** | Admin UI sessions and MCP sessions are **process-local** — multi-replica needs sticky routing (same class as documented for `/mcp`). |
+| **Authz** | Permissions are coarse (`read` / `write` / `admin`), not per-agent or per-tool ACLs. |
+| **Tenancy** | Flat `tenant_id`; no tenant registry UI. LangGraph checkpoint isolation is by key prefix, not a SQL `tenant_id` column. Set `RUNNER_TENANTS_*` in multi-tenant prod. |
+| **Checkpoints** | Durable LangGraph checkpoints need **Postgres direct mode** on the runner. `checkpoint_ref` time-travel is LangGraph-only; CP does not pre-validate that the id exists. |
+| **Streaming** | Non-terminal `StreamEvents` chunks are not generation-fenced (terminal status / heartbeats are). Cosmetic stray progress possible in a short reclaim window. |
+| **Rate limits** | Shared cluster-wide only with Redis backend (auto when `REDIS_URL` is set). |
+| **Observability** | OTel/Prometheus emit run + metadata LLM/tool spans — not full prompt/completion capture (use your OTLP backend / Langfuse). AutoGen uses native GenAI span names, not `runkite.llm` / `runkite.tool`. |
+| **Protocol surface** | Agent Protocol client search is offset-only (Admin lists have keyset cursors). TS / non-LangGraph runners report stub JSON Schema for agents. |
+| **License** | [BUSL-1.1](../LICENSE): self-host freely (including production); no offering Runkite as a hosted SaaS to third parties without a commercial license. Converts to Apache 2.0 on the Change Date. |
+
+**Not limitations of the product claim:** multi-replica CP behind a load balancer, framework adapters (LangGraph / LangChain / CrewAI / LlamaIndex / AutoGen / LangGraph.js), and the framework×backend matrix are implemented and soak-tested on Supported.
+
+---
+
+## Deep dive
 
 Honest gaps, not hidden ones:
 

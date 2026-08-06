@@ -57,7 +57,11 @@ export function Cron() {
       <PageHeader title="Cron schedules" subtitle="Across every tenant." />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (
-        <EmptyState icon={Clock} message="No cron schedules configured in langgraph.json." />
+        <EmptyState
+          icon={Clock}
+          title="No cron schedules"
+          message="Optional. Declare schedules in langgraph.json (or via the cron API) when an agent should wake on a cadence — empty is fine for interactive-only deployments."
+        />
       )}
       {(data === null || (data && data.length > 0)) && (
         <DataTable
