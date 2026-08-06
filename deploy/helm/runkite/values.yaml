@@ -6,10 +6,10 @@
 replicaCount: 2
 
 image:
-  # Build from the repo root Dockerfile, or push to your registry and set
-  # repository/tag. No public image is published by this project yet.
-  repository: runkite
-  tag: latest
+  # Published on tag: ghcr.io/getrunkite/runkite:<version>
+  # Override repository/tag to use a private mirror or a locally built image.
+  repository: ghcr.io/getrunkite/runkite
+  tag: "0.1.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -176,8 +176,8 @@ runner:
   enabled: true
   replicaCount: 1
   image:
-    repository: runkite-runner
-    tag: latest
+    repository: ghcr.io/getrunkite/runkite-runner
+    tag: "0.1.0"
     pullPolicy: IfNotPresent
   resources: {}
   # Extra env for the runner pod (e.g. an LLM API key via valueFrom).

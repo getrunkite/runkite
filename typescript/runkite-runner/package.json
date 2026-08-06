@@ -1,13 +1,19 @@
 {
   "name": "runkite-runner",
-  "version": "1.0.0",
-  "description": "Runkite Runner Protocol SDK for TypeScript/LangGraph.js -- connects to a Runkite control plane, executes LangGraph.js agents, and streams events back. TypeScript/Node equivalent of the Python runner (runkite_runner), proving the Runner Protocol is genuinely language-agnostic.",
+  "version": "0.1.0",
+  "description": "Runkite Runner Protocol SDK for TypeScript/LangGraph.js — connects to a Runkite control plane and executes LangGraph.js agents.",
   "type": "module",
   "bin": {
     "runkite-runner": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "proto",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
@@ -17,7 +23,22 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\""
   },
-  "license": "Apache-2.0",
+  "license": "BUSL-1.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getrunkite/runkite.git",
+    "directory": "typescript/runkite-runner"
+  },
+  "homepage": "https://getrunkite.github.io/runkite/",
+  "bugs": {
+    "url": "https://github.com/getrunkite/runkite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",

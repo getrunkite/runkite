@@ -14,8 +14,11 @@ Minimal Kubernetes packaging for a multi-replica Runkite control plane
   or [`docs/architecture.md`](../../../docs/architecture.md#backend-support-tiers)). Redis is required for
   multi-replica; without it the in-process transport only works for
   `replicaCount: 1`.
-- Container images built from this repo's `Dockerfile` and
-  `Dockerfile.runner` (no public registry image is published yet).
+- Container images: defaults pull
+  `ghcr.io/getrunkite/runkite:0.1.0` and
+  `ghcr.io/getrunkite/runkite-runner:0.1.0` (published on release tags).
+  For air-gapped/kind, build locally and override `image.repository` /
+  `runner.image.repository`.
 
 ## Install
 
@@ -26,9 +29,9 @@ with `auth.type=api_key` and substitutes `${RUNKITE_API_KEY}` from the
 Secret — no custom image rebuild required.
 
 ```bash
-# Build and load images (kind/minikube example)
-docker build -t runkite:latest -f Dockerfile .
-docker build -t runkite-runner:latest -f Dockerfile.runner .
+# Optional: build and load local images instead of GHCR
+# docker build -t runkite:0.1.0 -f Dockerfile .
+# docker build -t runkite-runner:0.1.0 -f Dockerfile.runner .
 
 API_KEY="$(openssl rand -hex 32)"
 RUNNER_TOKEN="$(openssl rand -hex 32)"

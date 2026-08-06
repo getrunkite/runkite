@@ -620,18 +620,27 @@
         <section id="start" class="reveal">
           <p class="section-kicker">Quick start</p>
           <h2>From zero to Admin UI</h2>
-          <p class="section-copy">Clone, build, run the echo agent. Open the embedded dashboard at localhost:2026/admin/.</p>
+          <p class="section-copy">
+            Preview <strong>0.1.0</strong> — pull the binary or image, install a runner, open Admin at localhost:2026/admin/.
+          </p>
           <div class="terminal">
             <div class="bar"><i></i><i></i><i></i> ~/runkite</div>
-            <pre><span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite
-<span class="cmd">make build</span>
+            <pre><span class="cmt"># runners</span>
+<span class="cmd">pip install</span> runkite-runner==0.1.0
+<span class="cmd">npm install -g</span> runkite-runner@0.1.0
 
+<span class="cmt"># control plane (Docker) — or download the Release binary</span>
+<span class="cmd">docker pull</span> ghcr.io/getrunkite/runkite:0.1.0
+
+<span class="cmt"># from source</span>
+<span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite && <span class="cmd">make build</span>
 <span class="cmd">export</span> RUNKITE_ALLOW_INSECURE_SERVE=1  <span class="cmt"># local demo only</span>
 <span class="cmd">./runkite dev</span> --config examples/echo_agent/langgraph.json
 <span class="cmt"># → http://127.0.0.1:2026/admin/</span></pre>
           </div>
           <div class="cta" style="margin-top: 1.5rem">
-            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite#quick-start">Full quick start</a>
+            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/releases">GitHub Releases</a>
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite#quick-start">Full quick start</a>
             <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
           </div>
         </section>

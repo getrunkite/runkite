@@ -7,21 +7,16 @@ WORKDIR /app
 RUN groupadd --gid 65532 runkite && \
     useradd --uid 65532 --gid 65532 --create-home --home-dir /home/runkite runkite
 
-COPY python/requirements.txt ./python/requirements.txt
 COPY python/ ./python/
 COPY examples/ ./examples/
 
-RUN pip install --no-cache-dir -r python/requirements.txt && \
+RUN pip install --no-cache-dir ./python && \
     chown -R runkite:runkite /app
 
 ENV PYTHONUNBUFFERED=1
-# runkite_runner package lives at /app/python/runkite_runner -- PYTHONPATH
-# must include /app/python for `python -m runkite_runner` to resolve it
-# (same convention as local dev: PYTHONPATH=python python -m runkite_runner).
-ENV PYTHONPATH=/app/python
 ENV HOME=/home/runkite
 
 USER runkite
 
-ENTRYPOINT ["python", "-m", "runkite_runner"]
+ENTRYPOINT ["runkite-runner"]
 CMD ["--config", "/app/examples/all_agents/langgraph.json"]

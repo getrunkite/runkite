@@ -30,6 +30,12 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+python/dist/
+python/build/
+*.tgz
+
+# GoReleaser local artifacts
+/dist/
 
 # Local env
 .env

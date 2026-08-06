@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runkite-runner"
+version = "0.1.0"
+description = "Python runner SDK for the Runkite Agent Protocol control plane (LangGraph and adapters)."
+readme = "README.md"
+license = { text = "BUSL-1.1" }
+requires-python = ">=3.11"
+authors = [{ name = "Runkite contributors" }]
+keywords = ["runkite", "agent-protocol", "langgraph", "grpc", "agents"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: Other/Proprietary License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+  "grpcio",
+  "protobuf",
+  "langgraph",
+  "langgraph-sdk",
+  "langchain-core",
+  "langgraph-checkpoint-postgres",
+  "psycopg[binary,pool]",
+  "httpx",
+  "uvicorn",
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "opentelemetry-exporter-otlp",
+]
+
+[project.urls]
+Homepage = "https://getrunkite.github.io/runkite/"
+Repository = "https://github.com/getrunkite/runkite"
+Documentation = "https://github.com/getrunkite/runkite/tree/main/docs"
+Changelog = "https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md"
+Issues = "https://github.com/getrunkite/runkite/issues"
+
+[project.scripts]
+runkite-runner = "runkite_runner.worker:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["runkite_runner*"]
+
+[tool.setuptools.package-data]
+runkite_runner = ["py.typed"]

@@ -22,3 +22,4 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Known Limitations](limitations.md) | Release summary + full caveats (link from GitHub Releases) |
 | [Test plan crosswalk](test-plan-crosswalk.md) | Internal test-plan IDs → done / mixed / gap (honesty map) |
 | [Agent skills](../skills/README.md) | Cursor skill: scaffold a new Runkite agent |
+| [Releasing](releasing.md) | Tag → GitHub Release, GHCR, PyPI, npm |

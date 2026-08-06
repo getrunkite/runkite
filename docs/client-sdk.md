@@ -59,7 +59,7 @@ With auth enabled, send `Authorization: Bearer <key>` or `X-API-Key: <key>` (see
 
 ### Option C — OpenAPI artifact on GitHub Releases
 
-Tagged releases attach `openapi.json`, `openapi-admin.json`, and `openapi-internal.json` so you can download the contract without cloning the repo (workflow: `.github/workflows/release-openapi.yml`).
+Tagged releases attach `openapi.json`, `openapi-admin.json`, and `openapi-internal.json` so you can download the contract without cloning the repo (workflow: `.github/workflows/release.yml`).
 
 ## Deliberately not built yet — first-party client SDK
 
