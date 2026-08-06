@@ -43,13 +43,20 @@ checksum:
   name_template: checksums.txt
 
 changelog:
+  # Install / download links live in release.header so they appear first.
   use: github
   sort: asc
+  groups:
+    - title: Changes
+      order: 0
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
+      - "^docs"
+      - "^test"
+      - "^ci"
+      - "^chore"
+      - Merge pull request
+      - dependabot
 
 release:
   github:
@@ -62,31 +69,37 @@ release:
     - glob: ./spec/openapi.json
     - glob: ./spec/openapi-admin.json
     - glob: ./spec/openapi-internal.json
-  footer: |
+  # Shown ABOVE the auto changelog so Downloads are the first thing people see.
+  # (GitHub still lists binary Assets in the Assets section below the notes.)
+  header: |
+    ## Downloads
+
+    | Platform | Archive |
+    |----------|---------|
+    | macOS Apple Silicon | [runkite_{{.Version}}_Darwin_arm64.tar.gz](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/runkite_{{.Version}}_Darwin_arm64.tar.gz) |
+    | macOS Intel | [runkite_{{.Version}}_Darwin_x86_64.tar.gz](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/runkite_{{.Version}}_Darwin_x86_64.tar.gz) |
+    | Linux x86_64 | [runkite_{{.Version}}_Linux_x86_64.tar.gz](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/runkite_{{.Version}}_Linux_x86_64.tar.gz) |
+    | Linux arm64 | [runkite_{{.Version}}_Linux_arm64.tar.gz](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/runkite_{{.Version}}_Linux_arm64.tar.gz) |
+    | Checksums | [checksums.txt](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/checksums.txt) |
+    | OpenAPI | [openapi.json](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/openapi.json) · [admin](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/openapi-admin.json) · [internal](https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/openapi-internal.json) |
+
     ## Install
 
-    **Binary** — download an archive below, or:
-
     ```bash
-    # example (linux amd64)
+    # Binary (example: Linux x86_64)
     curl -fsSL -o runkite.tgz \
       https://github.com/getrunkite/runkite/releases/download/v{{.Version}}/runkite_{{.Version}}_Linux_x86_64.tar.gz
     tar -xzf runkite.tgz && sudo mv runkite /usr/local/bin/
-    ```
 
-    **Docker**
-
-    ```bash
+    # Docker
     docker pull ghcr.io/getrunkite/runkite:{{.Version}}
     docker pull ghcr.io/getrunkite/runkite-runner:{{.Version}}
-    ```
 
-    **Python / npm runners**
-
-    ```bash
+    # Runners
     pip install runkite-runner=={{.Version}}
     npm install -g runkite-runner@{{.Version}}
     ```
 
-    Site: https://getrunkite.github.io/runkite/  
-    Limitations (release summary): https://github.com/getrunkite/runkite/blob/main/docs/limitations.md
+    Site: https://getrunkite.github.io/runkite/ · Limitations: https://github.com/getrunkite/runkite/blob/main/docs/limitations.md
+
+    ---

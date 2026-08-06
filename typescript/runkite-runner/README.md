@@ -1,22 +1,21 @@
-# runkite-runner (TypeScript)
+# runkite-runner
 
-TypeScript / **LangGraph.js** runner for **[Runkite](https://github.com/getrunkite/runkite)** —
-the self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane.
+**TypeScript / LangGraph.js runner for [Runkite](https://github.com/getrunkite/runkite)** — the
+self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane.
 
-Same Runner Protocol as the Python package: connect over gRPC, load graphs from
-`langgraph.json`, stream events and cancels, optional Postgres checkpoints.
+Same Runner Protocol as the [Python package on PyPI](https://pypi.org/project/runkite-runner/):
+connect over gRPC, load graphs from `langgraph.json`, stream events and cancels,
+optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 
 | | |
 |---|---|
 | **Install** | `npm install -g runkite-runner` |
 | **CLI** | `runkite-runner` |
-| **Site** | https://getrunkite.github.io/runkite/ |
-| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Quick start](https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md) |
+| **Control plane** | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `ghcr.io/getrunkite/runkite` |
+| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Site](https://getrunkite.github.io/runkite/) |
 | **License** | [BUSL-1.1](./LICENSE) |
 
 ## Quick start
-
-You need a running control plane (`runkite serve` / `runkite dev`, or Docker). Then:
 
 ```bash
 npm install -g runkite-runner
@@ -27,43 +26,26 @@ runkite-runner \
   --http-address http://127.0.0.1:2026
 ```
 
-Local / from a clone (no global install):
-
-```bash
-cd typescript/runkite-runner && npm ci && npm run build
-npx runkite-runner --config ../../examples/echo_agent_ts/langgraph.json \
-  --grpc-address 127.0.0.1:50051
-```
+From a clone: `npm ci && npm run build` then `npx runkite-runner --config …`.
 
 | Variable | Purpose |
 |----------|---------|
 | `POSTGRES_DSN` | Direct-mode LangGraph.js checkpoints + store |
-| `RUNNER_TOKEN` / kind token | Authenticate to the control plane |
+| `RUNNER_TOKEN` | Authenticate to the control plane |
 | `RUNKITE_CONCURRENCY` | Concurrent jobs per process (default `1`) |
 | `OTEL_EXPORTER_OTLP_*` | Optional OpenTelemetry export |
 
-`runner_kind` for this package: `typescript-langgraphjs`.
-
-## What you get
+## Features
 
 - Dynamic `.ts` graph loading via `tsx` (no separate build step for agent code)
 - Streaming, cancel (`WatchCancels`), interrupt / resume
 - Postgres checkpointer when `POSTGRES_DSN` is set
-- Thin OTel wiring under the control plane’s `traceparent`
-
-## Related packages & artifacts
-
-| Artifact | Where |
-|----------|--------|
-| Control plane binary | [GitHub Releases](https://github.com/getrunkite/runkite/releases) |
-| Control plane image | `ghcr.io/getrunkite/runkite` |
-| Python / LangGraph runner | [`runkite-runner` on PyPI](https://pypi.org/project/runkite-runner/) |
-| Helm chart | [`deploy/helm/runkite`](https://github.com/getrunkite/runkite/tree/main/deploy/helm/runkite) |
+- Thin OTel under the control plane’s `traceparent`
 
 ## Links
 
 - Homepage: https://getrunkite.github.io/runkite/
 - Source: https://github.com/getrunkite/runkite/tree/main/typescript/runkite-runner
-- Issues: https://github.com/getrunkite/runkite/issues
+- Python twin: https://pypi.org/project/runkite-runner/
 - Changelog: https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md
 - Limitations: https://github.com/getrunkite/runkite/blob/main/docs/limitations.md
