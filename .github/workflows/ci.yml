@@ -266,6 +266,24 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
+  # Validates every workflow file's YAML *and* GitHub Actions expression
+  # semantics (e.g. `secrets` is not a valid context in `if:` -- a step-level
+  # `if: secrets.X != ''` passes plain YAML parsing but fails GitHub's own
+  # workflow validator at push time with zero jobs run and no per-job log to
+  # point at the cause). Confirmed live: this exact mistake shipped twice in
+  # release.yml's npm job before being caught, silently breaking the entire
+  # release workflow (goreleaser/docker/pypi too, not just npm) since one
+  # invalid `if:` fails validation for the whole file. actionlint catches it
+  # here, on every push/PR, before it ever reaches a real tag push.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint workflow files
+        run: "$(go env GOPATH)/bin/actionlint"
+
   # Separate job so a base-image CVE can't mask the main test suite.
   # Uses the Trivy container (not trivy-action) pinned by tag after the
   # 2026 trivy-action supply-chain incident -- avoid floating @master.

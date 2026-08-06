@@ -151,6 +151,12 @@ jobs:
     defaults:
       run:
         working-directory: typescript/runkite-runner
+    # secrets.* is not a valid context in step `if:` (job/step if only sees
+    # env/github/needs/vars/inputs/etc, not secrets) -- referencing it there
+    # fails the WHOLE workflow file's validation, not just this job. Mirror
+    # the pypi job above: lift the secret into env once, gate on that.
+    env:
+      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -175,7 +181,7 @@ jobs:
           npm publish --access public
           echo "skipped=0" >> "$GITHUB_OUTPUT"
       - name: Publish to npm (NPM_TOKEN fallback)
-        if: ${{ steps.npm_oidc.outcome == 'failure' && secrets.NPM_TOKEN != '' }}
+        if: ${{ steps.npm_oidc.outcome == 'failure' && env.NPM_TOKEN_SET == 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -186,7 +192,7 @@ jobs:
           fi
           npm publish --access public
       - name: Fail if npm not published
-        if: ${{ steps.npm_oidc.outcome == 'failure' && secrets.NPM_TOKEN == '' }}
+        if: ${{ steps.npm_oidc.outcome == 'failure' && env.NPM_TOKEN_SET != 'true' }}
         run: |
           echo "OIDC npm publish failed and NPM_TOKEN is unset."
           echo "Configure Trusted Publisher on npmjs.com for getrunkite/runkite release.yml,"

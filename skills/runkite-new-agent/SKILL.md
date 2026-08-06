@@ -62,12 +62,14 @@ dispatch via the Python (or TypeScript) runner.
 
    ```bash
    # terminal A — control plane (from repo root after make build)
-   export RUNKITE_ALLOW_INSECURE_SERVE=1   # only for local demo without auth
    ./runkite dev --config examples/<agent_id>/langgraph.json
+   # `dev` always skips the production-admission check (no auth, no
+   # external DB required) -- RUNKITE_ALLOW_INSECURE_SERVE is only
+   # relevant for `runkite serve`/`run`, never for `dev`.
 
    # terminal B — runner
    export PYTHONPATH=python
-   python/python/.venv/bin/python -m runkite_runner \
+   python/.venv/bin/python -m runkite_runner \
      --config examples/<agent_id>/langgraph.json \
      --grpc-address 127.0.0.1:50051 \
      --http-address http://127.0.0.1:2026
@@ -75,8 +77,9 @@ dispatch via the Python (or TypeScript) runner.
 
    Prefer the project’s documented venv paths if they differ. For
    production `serve`, set `POSTGRES_DSN`, `REDIS_URL`,
-   `RUNNER_TOKEN_PYTHON_LANGGRAPH`, and client `auth` — see
-   `docs/deployment.md`.
+   `RUNNER_TOKEN_PYTHON_LANGGRAPH`, and client `auth` (or
+   `RUNKITE_ALLOW_INSECURE_SERVE=1` for a deliberate insecure quick
+   demo) — see `docs/deployment.md`.
 
 7. **Smoke**
 
