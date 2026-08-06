@@ -107,9 +107,20 @@ In a second terminal:
 
 ```bash
 cd runkite
-# pip install runkite-runner   # or from a clone:
-PYTHONPATH=python python -m runkite_runner --config langgraph.json
+
+# Option A: from PyPI
+pip install runkite-runner
+runkite-runner --config langgraph.json
+
+# Option B: from this clone (editable install, picks up local changes)
+pip install -e python/
+python -m runkite_runner --config langgraph.json
 ```
+
+Either installs LangGraph, gRPC, and the other runner dependencies declared
+in `python/pyproject.toml` -- `PYTHONPATH=python python -m runkite_runner`
+without one of these first will fail with `ModuleNotFoundError` the moment
+it tries to import LangGraph.
 
 The runner connects to the control plane's gRPC bridge and waits for jobs.
 

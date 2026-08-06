@@ -19,9 +19,13 @@ runkite-runner --config path/to/langgraph.json \
 ```
 
 Pin with `==` / `@` when you need a fixed release. From a clone (dev),
-`PYTHONPATH=python python -m runkite_runner` and `npx tsx src/cli.ts` still
-work. Framework adapters under `python/adapters/` are not on PyPI yet — use
-`PYTHONPATH` as below.
+`pip install -e python/` then `python -m runkite_runner` works the same way
+(`PYTHONPATH=python python -m runkite_runner` also works once dependencies
+are installed some other way, e.g. `uv pip install -e python/`); TypeScript's
+`npx tsx src/cli.ts` needs `npm ci` in `typescript/runkite-runner/` first.
+Framework adapters under `python/adapters/` are not on PyPI yet — use
+`PYTHONPATH` as below, after installing each adapter's own dependencies (see
+each adapter's README).
 
 Two runner SDKs today, both implementing the exact same Runner Protocol against the exact same Go control plane -- proof that the protocol is actually language-agnostic, not just designed to look that way on paper:
 

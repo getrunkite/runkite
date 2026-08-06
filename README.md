@@ -176,11 +176,13 @@ Health:      http://localhost:2026/health
 
 ```bash
 # published package (Python)
+pip install runkite-runner
 runkite-runner --config examples/echo_agent/langgraph.json \
   --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026
 
-# or from a clone
-PYTHONPATH=python python -m runkite_runner --config examples/echo_agent/langgraph.json
+# or from a clone (editable install, then run as a module)
+pip install -e python/
+python -m runkite_runner --config examples/echo_agent/langgraph.json
 ```
 
 TypeScript / LangGraph.js: `npm install -g runkite-runner` — see [docs/runners.md](docs/runners.md).
