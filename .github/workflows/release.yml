@@ -159,9 +159,24 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
+      # OIDC trusted publishing must NOT see NODE_AUTH_TOKEN — if the secret is
+      # set, npm prefers the token and 2FA/WebAuthn packages fail with EOTP in CI.
+      # Fallback token path only when NPM_TOKEN is present AND OIDC publish fails.
       - name: Publish to npm (OIDC trusted publishing)
+        id: npm_oidc
+        continue-on-error: true
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if npm view "runkite-runner@${V}" version >/dev/null 2>&1; then
+            echo "runkite-runner@${V} already on npm — skipping publish"
+            echo "skipped=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npm publish --access public
+          echo "skipped=0" >> "$GITHUB_OUTPUT"
+      - name: Publish to npm (NPM_TOKEN fallback)
+        if: ${{ steps.npm_oidc.outcome == 'failure' && secrets.NPM_TOKEN != '' }}
         env:
-          # Present so token fallback still works if OIDC is not configured yet.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -170,3 +185,10 @@ jobs:
             exit 0
           fi
           npm publish --access public
+      - name: Fail if npm not published
+        if: ${{ steps.npm_oidc.outcome == 'failure' && secrets.NPM_TOKEN == '' }}
+        run: |
+          echo "OIDC npm publish failed and NPM_TOKEN is unset."
+          echo "Configure Trusted Publisher on npmjs.com for getrunkite/runkite release.yml,"
+          echo "or publish locally: cd typescript/runkite-runner && npm publish --access public"
+          exit 1
