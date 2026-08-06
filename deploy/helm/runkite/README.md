@@ -15,10 +15,10 @@ Minimal Kubernetes packaging for a multi-replica Runkite control plane
   multi-replica; without it the in-process transport only works for
   `replicaCount: 1`.
 - Container images: defaults pull
-  `ghcr.io/getrunkite/runkite:0.1.0` and
-  `ghcr.io/getrunkite/runkite-runner:0.1.0` (published on release tags).
-  For air-gapped/kind, build locally and override `image.repository` /
-  `runner.image.repository`.
+  `ghcr.io/getrunkite/runkite:latest` and
+  `ghcr.io/getrunkite/runkite-runner:latest` (published on release tags).
+  Pin `image.tag` / `runner.image.tag` for production. For air-gapped/kind,
+  build locally and override `image.repository` / `runner.image.repository`.
 
 ## Install
 
@@ -30,8 +30,8 @@ Secret — no custom image rebuild required.
 
 ```bash
 # Optional: build and load local images instead of GHCR
-# docker build -t runkite:0.1.0 -f Dockerfile .
-# docker build -t runkite-runner:0.1.0 -f Dockerfile.runner .
+# docker build -t runkite:latest -f Dockerfile .
+# docker build -t runkite-runner:latest -f Dockerfile.runner .
 
 API_KEY="$(openssl rand -hex 32)"
 RUNNER_TOKEN="$(openssl rand -hex 32)"

@@ -107,7 +107,7 @@ In a second terminal:
 
 ```bash
 cd runkite
-# pip install runkite-runner==0.1.0   # or from a clone:
+# pip install runkite-runner   # or from a clone:
 PYTHONPATH=python python -m runkite_runner --config langgraph.json
 ```
 

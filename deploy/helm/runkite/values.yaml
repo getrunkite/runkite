@@ -6,10 +6,10 @@
 replicaCount: 2
 
 image:
-  # Published on tag: ghcr.io/getrunkite/runkite:<version>
-  # Override repository/tag to use a private mirror or a locally built image.
+  # Published on release tags: ghcr.io/getrunkite/runkite:<version>
+  # Default follows :latest from the Release workflow; pin tag for prod.
   repository: ghcr.io/getrunkite/runkite
-  tag: "0.1.0"
+  tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -177,7 +177,7 @@ runner:
   replicaCount: 1
   image:
     repository: ghcr.io/getrunkite/runkite-runner
-    tag: "0.1.0"
+    tag: latest
     pullPolicy: IfNotPresent
   resources: {}
   # Extra env for the runner pod (e.g. an LLM API key via valueFrom).

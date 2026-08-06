@@ -1,6 +1,10 @@
 # Releasing Runkite
 
-Version lives in [`VERSION`](../VERSION) (currently **0.1.0**). Python and npm package versions must match that file and the git tag `v$VERSION`.
+Version lives in [`VERSION`](../VERSION). Keep Python (`pyproject.toml` /
+`__version__`), npm (`package.json`), Helm `appVersion`, and the git tag
+`v$VERSION` in sync. **Public install docs stay unpinned** (`pip install
+runkite-runner`, `npm install -g runkite-runner`, `docker pull …:latest`) so
+README/site do not need edits on every bump — badges show the current version.
 
 ## What a tag publishes
 
@@ -9,62 +13,43 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
 | Artifact | Destination | Requires |
 |----------|-------------|----------|
 | `runkite` binaries + checksums + OpenAPI JSON | GitHub Release | `GITHUB_TOKEN` (automatic) |
-| Control-plane + runner images | `ghcr.io/getrunkite/*` | `packages: write` (automatic) |
+| Control-plane + runner images (`:<version>` and `:latest`) | `ghcr.io/getrunkite/*` | `packages: write` (automatic) |
 | `runkite-runner` wheel | PyPI | repo secret **`PYPI_API_TOKEN`** |
-| `runkite-runner` npm package | npmjs.com | repo secret **`NPM_TOKEN`** |
-
-Without PyPI/npm secrets, the release still publishes binaries + GHCR; those jobs print a skip notice.
+| `runkite-runner` npm package | npmjs.com | **Trusted Publisher (OIDC)** preferred; else **`NPM_TOKEN`** |
 
 ## Maintainer checklist (cut a release)
 
-1. [ ] `VERSION`, `python/pyproject.toml`, `python/runkite_runner/__init__.py`, `typescript/runkite-runner/package.json`, Helm `appVersion` / image tags, `CHANGELOG.md` all agree.
-2. [ ] CI green on `main`.
-3. [ ] Local dry-run: `python -m build` in `python/`, `npm pack` in `typescript/runkite-runner/`, `goreleaser release --snapshot --clean` (optional).
-4. [ ] Secrets present (see below) if you want PyPI/npm on this tag.
-5. [ ] Tag and push:
+1. [ ] Bump `VERSION` and matching package/Helm fields; update `CHANGELOG.md`.
+2. [ ] Enrich `python/README.md` / `typescript/runkite-runner/README.md` if the PyPI/npm page should change (they ship with the next upload).
+3. [ ] CI green on `main`.
+4. [ ] Tag and push:
    ```bash
    git checkout main && git pull
    git tag -a "v$(tr -d '[:space:]' < VERSION)" -m "v$(tr -d '[:space:]' < VERSION)"
    git push origin "v$(tr -d '[:space:]' < VERSION)"
    ```
-6. [ ] Watch the **Release** workflow; verify GitHub Release assets, `docker pull`, `pip install`, `npm view`.
-7. [ ] Confirm README + site install commands match the published version.
+5. [ ] Watch **Release**; verify GitHub Release, `docker pull …:latest`, `pip` / `npm` latest.
+6. [ ] After first GHCR push: set each package visibility to **Public** (org → Packages).
 
 ## One-time setup (humans)
 
 ### PyPI
 
-1. Create an account on https://pypi.org (and verify email).
-2. Account settings → API tokens → add token (scope: entire account or project `runkite-runner` after first upload).
-3. GitHub → `getrunkite/runkite` → Settings → Secrets and variables → Actions → New repository secret:
-   - Name: `PYPI_API_TOKEN`
-   - Value: the token (including `pypi-` prefix).
+Repo secret `PYPI_API_TOKEN` (project-scoped token for `runkite-runner` after first upload is ideal).
 
-First upload creates the project; later releases need the same token (or a project-scoped one).
+### npm — Trusted Publisher (preferred)
 
-### npm
+Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 
-**Preferred: Trusted Publishing (OIDC)** — no long-lived publish token.
+1. https://www.npmjs.com/package/runkite-runner → **Settings** → **Trusted Publisher**
+2. GitHub Actions: org `getrunkite`, repo `runkite`, workflow filename `release.yml`, allow `npm publish`
+3. Future tags publish via OIDC (`id-token: write` in the Release workflow)
 
-1. Create the package once (first version only), from a clone with 2FA:
-   ```bash
-   cd typescript/runkite-runner
-   npm publish --access public --otp=<authenticator-code>
-   ```
-2. On https://www.npmjs.com/package/runkite-runner → **Settings** → **Trusted Publisher**:
-   - Provider: GitHub Actions
-   - Organization: `getrunkite`
-   - Repository: `runkite`
-   - Workflow filename: `release.yml` (filename only)
-   - Allowed action: `npm publish`
-3. Later tags publish via OIDC in `.github/workflows/release.yml` (`id-token: write`).
+**First-ever publish** (or emergency): on your laptop, `npm login` then
+`npm publish --access public` and complete the browser / passkey prompt.
 
-**Fallback:** granular access token with **Bypass 2FA** checked → GitHub secret `NPM_TOKEN`. Classic tokens are revoked on npm; if CI returns `EOTP`, the token did not bypass 2FA — use Trusted Publishing or re-create the granular token with bypass enabled.
+**Fallback:** granular token with **Bypass 2FA** → secret `NPM_TOKEN` (often still hits `EOTP` for new packages; prefer Trusted Publisher).
 
 ### GHCR
 
-Uses `GITHUB_TOKEN`. After the first push, set package visibility to **Public** under GitHub → Packages (`runkite`, `runkite-runner`, `runkite-runner-ts`) so `docker pull` works without auth.
-
-### Stale tag note
-
-An old annotated tag `v1.0.0` may still exist from early development and does **not** match current `main`. Public install docs target **`v0.1.0`**. Do not move `v1.0.0` onto current main without an explicit decision.
+Make `runkite`, `runkite-runner`, and `runkite-runner-ts` **Public** under the org so anonymous `docker pull` works.

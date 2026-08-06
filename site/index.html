@@ -621,16 +621,16 @@
           <p class="section-kicker">Quick start</p>
           <h2>From zero to Admin UI</h2>
           <p class="section-copy">
-            Preview <strong>0.1.0</strong> — pull the binary or image, install a runner, open Admin at localhost:2026/admin/.
+            Install the latest runners and control plane, then open Admin at localhost:2026/admin/.
           </p>
           <div class="terminal">
             <div class="bar"><i></i><i></i><i></i> ~/runkite</div>
-            <pre><span class="cmt"># runners</span>
-<span class="cmd">pip install</span> runkite-runner==0.1.0
-<span class="cmd">npm install -g</span> runkite-runner@0.1.0
+            <pre><span class="cmt"># runners (latest from PyPI / npm)</span>
+<span class="cmd">pip install</span> runkite-runner
+<span class="cmd">npm install -g</span> runkite-runner
 
-<span class="cmt"># control plane (Docker) — or download the Release binary</span>
-<span class="cmd">docker pull</span> ghcr.io/getrunkite/runkite:0.1.0
+<span class="cmt"># control plane — Docker or GitHub Release binary</span>
+<span class="cmd">docker pull</span> ghcr.io/getrunkite/runkite:latest
 
 <span class="cmt"># from source</span>
 <span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite && <span class="cmd">make build</span>
@@ -640,8 +640,9 @@
           </div>
           <div class="cta" style="margin-top: 1.5rem">
             <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/releases">GitHub Releases</a>
+            <a class="btn btn-ghost" href="https://pypi.org/project/runkite-runner/">PyPI</a>
+            <a class="btn btn-ghost" href="https://www.npmjs.com/package/runkite-runner">npm</a>
             <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite#quick-start">Full quick start</a>
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
           </div>
         </section>
       </main>
@@ -650,6 +651,8 @@
         <div>© Runkite · self-hosted Agent Protocol</div>
         <div class="links">
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
+          <a href="https://pypi.org/project/runkite-runner/">PyPI</a>
+          <a href="https://www.npmjs.com/package/runkite-runner">npm</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/LICENSE">BUSL-1.1</a>
         </div>

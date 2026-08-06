@@ -3,7 +3,7 @@
 **Self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane.**  
 One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & transport — Postgres + Redis for HA, with MySQL, MongoDB, NATS, Kafka, and more when you need them.
 
-**Website:** [getrunkite.github.io/runkite](https://getrunkite.github.io/runkite/) · **Release:** [v0.1.0](https://github.com/getrunkite/runkite/releases/tag/v0.1.0) (preview)
+**Website:** [getrunkite.github.io/runkite](https://getrunkite.github.io/runkite/) · **Releases:** [GitHub Releases](https://github.com/getrunkite/runkite/releases)
 
 [![CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getrunkite/runkite/actions/workflows/ci.yml?query=branch%3Amain)
 [![Matrix](https://img.shields.io/badge/matrix-nightly-6F42C1)](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
@@ -11,6 +11,7 @@ One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![PyPI](https://img.shields.io/pypi/v/runkite-runner)](https://pypi.org/project/runkite-runner/)
 [![npm](https://img.shields.io/npm/v/runkite-runner)](https://www.npmjs.com/package/runkite-runner)
+[![GHCR](https://img.shields.io/badge/GHCR-getrunkite%2Frunkite-blue)](https://github.com/getrunkite/runkite/pkgs/container/runkite)
 [![Site](https://img.shields.io/badge/site-getrunkite.github.io-0c1210)](https://getrunkite.github.io/runkite/)
 
 <p align="center">
@@ -133,17 +134,17 @@ Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
-**Website:** [getrunkite.github.io/runkite](https://getrunkite.github.io/runkite/) · **Release:** [v0.1.0](https://github.com/getrunkite/runkite/releases/tag/v0.1.0) (preview)
-
-### Install (preview 0.1.0)
+### Install
 
 | Piece | Command |
 |-------|---------|
-| Control plane (binary) | Download from [GitHub Releases](https://github.com/getrunkite/runkite/releases) · or build from source below |
-| Control plane (Docker) | `docker pull ghcr.io/getrunkite/runkite:0.1.0` |
-| Python runner | `pip install runkite-runner==0.1.0` |
-| TypeScript runner | `npm install -g runkite-runner@0.1.0` |
-| Helm | Chart in-repo [`deploy/helm/runkite`](deploy/helm/runkite) (images default to GHCR `0.1.0`) |
+| Control plane (binary) | Latest from [GitHub Releases](https://github.com/getrunkite/runkite/releases) · or build from source below |
+| Control plane (Docker) | `docker pull ghcr.io/getrunkite/runkite:latest` |
+| Python runner | `pip install runkite-runner` · [PyPI](https://pypi.org/project/runkite-runner/) |
+| TypeScript runner | `npm install -g runkite-runner` · [npm](https://www.npmjs.com/package/runkite-runner) |
+| Helm | Chart in-repo [`deploy/helm/runkite`](deploy/helm/runkite) (defaults to GHCR images) |
+
+Pin a release when you need reproducibility (`pip install runkite-runner==…`, `npm install runkite-runner@…`, `docker pull …:<tag>`). Badges above show the current published versions.
 
 ### From source
 
@@ -170,7 +171,7 @@ Health:      http://localhost:2026/health
 **2 — Runner**
 
 ```bash
-# published package
+# published package (Python)
 runkite-runner --config examples/echo_agent/langgraph.json \
   --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026
 
@@ -178,7 +179,7 @@ runkite-runner --config examples/echo_agent/langgraph.json \
 PYTHONPATH=python python -m runkite_runner --config examples/echo_agent/langgraph.json
 ```
 
-TypeScript / LangGraph.js: see [docs/runners.md](docs/runners.md).
+TypeScript / LangGraph.js: `npm install -g runkite-runner` — see [docs/runners.md](docs/runners.md).
 
 **3 — Create a run**
 

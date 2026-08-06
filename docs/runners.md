@@ -4,25 +4,24 @@
 
 ## Install (published packages)
 
-Preview **0.1.0** (see [`VERSION`](../VERSION)):
-
 ```bash
 # Python — LangGraph runner (+ importable SDK)
-pip install runkite-runner==0.1.0
+pip install runkite-runner
 runkite-runner --config path/to/langgraph.json \
   --grpc-address 127.0.0.1:50051 \
   --http-address http://127.0.0.1:2026
 
 # TypeScript — LangGraph.js runner
-npm install -g runkite-runner@0.1.0
+npm install -g runkite-runner
 runkite-runner --config path/to/langgraph.json \
   --grpc-address 127.0.0.1:50051 \
   --http-address http://127.0.0.1:2026
 ```
 
-From a clone (dev), `PYTHONPATH=python python -m runkite_runner` and
-`npx tsx src/cli.ts` still work. Framework adapters under
-`python/adapters/` are not on PyPI yet — use `PYTHONPATH` as below.
+Pin with `==` / `@` when you need a fixed release. From a clone (dev),
+`PYTHONPATH=python python -m runkite_runner` and `npx tsx src/cli.ts` still
+work. Framework adapters under `python/adapters/` are not on PyPI yet — use
+`PYTHONPATH` as below.
 
 Two runner SDKs today, both implementing the exact same Runner Protocol against the exact same Go control plane -- proof that the protocol is actually language-agnostic, not just designed to look that way on paper:
 

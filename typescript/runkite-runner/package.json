@@ -1,7 +1,7 @@
 {
   "name": "runkite-runner",
   "version": "0.1.0",
-  "description": "Runkite Runner Protocol SDK for TypeScript/LangGraph.js — connects to a Runkite control plane and executes LangGraph.js agents.",
+  "description": "TypeScript/LangGraph.js runner for Runkite — gRPC Agent Protocol worker with streaming, cancel, and optional Postgres checkpoints.",
   "type": "module",
   "bin": {
     "runkite-runner": "dist/cli.js"
