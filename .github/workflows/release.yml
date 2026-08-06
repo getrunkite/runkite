@@ -135,11 +135,19 @@ jobs:
         if: ${{ env.PYPI_API_TOKEN == '' }}
         run: echo "PYPI_API_TOKEN not set — skipping PyPI publish (binaries/GHCR still released)."
 
+  # Prefer npm Trusted Publishing (OIDC). Configure once on npmjs.com after the
+  # package exists: Package → Settings → Trusted Publisher → GitHub Actions
+  #   Organization: getrunkite
+  #   Repository:   runkite
+  #   Workflow:     release.yml
+  #   Allowed:      npm publish
+  # Falls back to NPM_TOKEN (granular + Bypass 2FA) if OIDC is not configured.
   npm:
     runs-on: ubuntu-latest
     needs: [goreleaser]
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: typescript/runkite-runner
@@ -151,9 +159,14 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
-      - name: Publish to npm
-        if: ${{ env.NODE_AUTH_TOKEN != '' }}
-        run: npm publish --access public
-      - name: Skip notice
-        if: ${{ env.NODE_AUTH_TOKEN == '' }}
-        run: echo "NPM_TOKEN not set — skipping npm publish (binaries/GHCR still released)."
+      - name: Publish to npm (OIDC trusted publishing)
+        env:
+          # Present so token fallback still works if OIDC is not configured yet.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if npm view "runkite-runner@${V}" version >/dev/null 2>&1; then
+            echo "runkite-runner@${V} already on npm — skipping publish"
+            exit 0
+          fi
+          npm publish --access public

@@ -44,13 +44,22 @@ First upload creates the project; later releases need the same token (or a proje
 
 ### npm
 
-1. Create an account on https://www.npmjs.com.
-2. Access Tokens → Granular or classic **Automation** token with publish permission.
-3. GitHub secret:
-   - Name: `NPM_TOKEN`
-   - Value: the token.
+**Preferred: Trusted Publishing (OIDC)** — no long-lived publish token.
 
-Package name `runkite-runner` was free at packaging time; if publish fails with 403/exists, claim/rename before retagging.
+1. Create the package once (first version only), from a clone with 2FA:
+   ```bash
+   cd typescript/runkite-runner
+   npm publish --access public --otp=<authenticator-code>
+   ```
+2. On https://www.npmjs.com/package/runkite-runner → **Settings** → **Trusted Publisher**:
+   - Provider: GitHub Actions
+   - Organization: `getrunkite`
+   - Repository: `runkite`
+   - Workflow filename: `release.yml` (filename only)
+   - Allowed action: `npm publish`
+3. Later tags publish via OIDC in `.github/workflows/release.yml` (`id-token: write`).
+
+**Fallback:** granular access token with **Bypass 2FA** checked → GitHub secret `NPM_TOKEN`. Classic tokens are revoked on npm; if CI returns `EOTP`, the token did not bypass 2FA — use Trusted Publishing or re-create the granular token with bypass enabled.
 
 ### GHCR
 

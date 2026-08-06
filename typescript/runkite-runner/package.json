@@ -4,7 +4,7 @@
   "description": "Runkite Runner Protocol SDK for TypeScript/LangGraph.js — connects to a Runkite control plane and executes LangGraph.js agents.",
   "type": "module",
   "bin": {
-    "runkite-runner": "./dist/cli.js"
+    "runkite-runner": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
