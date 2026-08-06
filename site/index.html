@@ -9,6 +9,22 @@
       content="One Go binary. Framework-agnostic runners. Embedded Admin UI. Postgres + Redis for HA."
     />
     <meta name="theme-color" content="#050a0c" />
+    <meta property="og:title" content="Runkite — self-hosted Agent Protocol control plane" />
+    <meta
+      property="og:description"
+      content="One Go binary. Framework-agnostic runners. Embedded Admin UI. Postgres + Redis for HA."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://getrunkite.github.io/runkite/" />
+    <meta property="og:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Runkite — self-hosted Agent Protocol control plane" />
+    <meta
+      name="twitter:description"
+      content="One Go binary. Framework-agnostic runners. Embedded Admin UI. Postgres + Redis for HA."
+    />
+    <meta name="twitter:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -508,6 +524,21 @@
           max-width: none;
         }
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        .aurora,
+        .brand-mark,
+        .hero-visual,
+        .hero-visual::before,
+        .lede .typed::after {
+          animation: none !important;
+        }
+        .reveal {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -667,13 +698,14 @@
         );
         reveals.forEach((n) => io.observe(n));
 
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const canvas = document.getElementById("stars");
         const ctx = canvas.getContext("2d");
-        let w, h, stars, raf;
+        let stars, raf;
 
         function resize() {
-          w = canvas.width = window.innerWidth * devicePixelRatio;
-          h = canvas.height = window.innerHeight * devicePixelRatio;
+          canvas.width = window.innerWidth * devicePixelRatio;
+          canvas.height = window.innerHeight * devicePixelRatio;
           canvas.style.width = window.innerWidth + "px";
           canvas.style.height = window.innerHeight + "px";
           ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -686,28 +718,41 @@
           }));
         }
 
-        function draw() {
+        function paint(animate) {
           ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
           for (const s of stars) {
-            s.y += s.v;
-            if (s.y > window.innerHeight) {
-              s.y = 0;
-              s.x = Math.random() * window.innerWidth;
+            if (animate) {
+              s.y += s.v;
+              if (s.y > window.innerHeight) {
+                s.y = 0;
+                s.x = Math.random() * window.innerWidth;
+              }
             }
             ctx.beginPath();
             ctx.fillStyle = `rgba(180, 255, 220, ${s.a})`;
             ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
             ctx.fill();
           }
+        }
+
+        function draw() {
+          paint(true);
           raf = requestAnimationFrame(draw);
         }
 
         resize();
-        draw();
-        window.addEventListener("resize", resize);
-        document.addEventListener("visibilitychange", () => {
-          if (document.hidden) cancelAnimationFrame(raf);
-          else draw();
+        if (reduce) {
+          paint(false);
+        } else {
+          draw();
+          document.addEventListener("visibilitychange", () => {
+            if (document.hidden) cancelAnimationFrame(raf);
+            else draw();
+          });
+        }
+        window.addEventListener("resize", () => {
+          resize();
+          if (reduce) paint(false);
         });
       })();
     </script>
