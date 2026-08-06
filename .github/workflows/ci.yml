@@ -133,7 +133,8 @@ jobs:
 
       - name: Gofmt
         run: |
-          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          # xargs -0 avoids SC2046 word-splitting on paths from git ls-files
+          unformatted=$(git ls-files -z -- '*.go' | xargs -0 gofmt -l)
           if [ -n "$unformatted" ]; then echo "not gofmt'd:"; echo "$unformatted"; exit 1; fi
 
       - name: golangci-lint
@@ -280,9 +281,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install actionlint
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Lint workflow files
-        run: "$(go env GOPATH)/bin/actionlint"
+        run: actionlint
 
   # Separate job so a base-image CVE can't mask the main test suite.
   # Uses the Trivy container (not trivy-action) pinned by tag after the

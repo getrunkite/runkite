@@ -1,7 +1,8 @@
 # Runkite
 
-**Self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane.**  
-One Go binary. Framework-agnostic runners. Embedded Admin UI. Pluggable state & transport — Postgres + Redis for HA, with MySQL, MongoDB, NATS, Kafka, and more when you need them.
+**Runkite is what LangSmith Deployments would be if it were open source, framework-agnostic, and shipped as one Go binary.**
+
+Self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane — not a LangSmith API clone and not locked to LangGraph. Framework-agnostic runners (LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js). Embedded Admin UI. Pluggable state & transport — Postgres + Redis for HA, with MySQL, MongoDB, NATS, Kafka, and more when you need them.
 
 - Website: https://getrunkite.github.io/runkite/
 - Releases / binaries: https://github.com/getrunkite/runkite/releases
