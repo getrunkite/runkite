@@ -76,7 +76,9 @@ When `langgraph.json` has a non-empty `policy` section (grants and/or webhook), 
 | `POST .../session` | Grant must match `(tenant_id, agent_id, connector)` |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny |
 
-Static grants evaluate in-process. An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
+Static grants evaluate in-process. An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny — first deny wins, and a static allow does **not** bypass the webhook. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
+
+When grants and a webhook are both configured, grants act as a first-pass allowlist: a request with no matching grant is denied immediately and the webhook is never called. `default_effect: allow` is only honored when there is **no** webhook (grants-only setups). With a webhook and no grants, the webhook decides; `default_effect` is the fallback if nothing else returns.
 
 Every decision is written to `audit_events` on **Postgres (Supported)** when `policy.audit` is true (default). Compatible backends skip durable audit in this release — do not claim equal audit proofs there. Admin search/HITL for `pending` are Phase 2.
 
