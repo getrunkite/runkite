@@ -2154,8 +2154,8 @@ func (s *Store) upAuditEvents(ctx context.Context, conn *pgxpool.Conn) error {
 }
 
 // WriteAuditEvent persists one policy/security decision. Supported
-// profile (Postgres) only in Phase 1 — Compatible backends omit this
-// method (callers type-assert).
+// profile (Postgres) only — Compatible backends omit this method
+// (callers type-assert).
 func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error {
 	if ev == nil {
 		return nil
@@ -2184,6 +2184,120 @@ func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) erro
 		ev.Decision, ev.ReasonCode, ev.RuleID, ev.LatencyMs,
 		ev.RunID, ev.Generation, ev.AgentID, ev.Connector, ev.Tool, attrs, ev.TraceID)
 	return err
+}
+
+// SearchAuditEvents lists policy decisions newest-first. Keyset cursor
+// is (ts, id). System context sees every tenant unless TenantID is set;
+// a normal tenant context is always scoped to that tenant.
+func (s *Store) SearchAuditEvents(ctx context.Context, req *models.AuditSearchRequest) ([]*models.AuditEvent, error) {
+	if req == nil {
+		req = &models.AuditSearchRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `SELECT id, ts, tenant_id, actor, action, resource_type, resource_id,
+		decision, reason_code, rule_id, latency_ms,
+		run_id, generation, agent_id, connector, tool, attrs, trace_id
+		FROM audit_events`
+	var args []interface{}
+	var where []string
+	argN := 1
+
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	} else if req.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, req.TenantID)
+		argN++
+	}
+	if req.Decision != "" {
+		where = append(where, fmt.Sprintf("decision = $%d", argN))
+		args = append(args, req.Decision)
+		argN++
+	}
+	if req.Action != "" {
+		where = append(where, fmt.Sprintf("action = $%d", argN))
+		args = append(args, req.Action)
+		argN++
+	}
+	if req.RunID != "" {
+		where = append(where, fmt.Sprintf("run_id = $%d", argN))
+		args = append(args, req.RunID)
+		argN++
+	}
+	if req.AgentID != "" {
+		where = append(where, fmt.Sprintf("agent_id = $%d", argN))
+		args = append(args, req.AgentID)
+		argN++
+	}
+	if req.Connector != "" {
+		where = append(where, fmt.Sprintf("connector = $%d", argN))
+		args = append(args, req.Connector)
+		argN++
+	}
+	if req.Tool != "" {
+		where = append(where, fmt.Sprintf("tool = $%d", argN))
+		args = append(args, req.Tool)
+		argN++
+	}
+	if req.Since != nil {
+		where = append(where, fmt.Sprintf("ts >= $%d", argN))
+		args = append(args, req.Since.UTC())
+		argN++
+	}
+	if req.Until != nil {
+		where = append(where, fmt.Sprintf("ts < $%d", argN))
+		args = append(args, req.Until.UTC())
+		argN++
+	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, fmt.Sprintf("(ts < $%d OR (ts = $%d AND id < $%d))", argN, argN, argN+1))
+		args = append(args, tc.Time, tc.ID)
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	if tc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY ts DESC, id DESC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY ts DESC, id DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []*models.AuditEvent{}
+	for rows.Next() {
+		var ev models.AuditEvent
+		var attrsRaw []byte
+		if err := rows.Scan(
+			&ev.ID, &ev.TS, &ev.TenantID, &ev.Actor, &ev.Action, &ev.ResourceType, &ev.ResourceID,
+			&ev.Decision, &ev.ReasonCode, &ev.RuleID, &ev.LatencyMs,
+			&ev.RunID, &ev.Generation, &ev.AgentID, &ev.Connector, &ev.Tool, &attrsRaw, &ev.TraceID,
+		); err != nil {
+			return nil, err
+		}
+		if len(attrsRaw) > 0 {
+			_ = json.Unmarshal(attrsRaw, &ev.Attrs)
+		}
+		events = append(events, &ev)
+	}
+	return events, rows.Err()
 }
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {

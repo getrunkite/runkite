@@ -80,7 +80,15 @@ Static grants evaluate in-process. An optional sync webhook (HMAC, same shape as
 
 When grants and a webhook are both configured, grants act as a first-pass allowlist: a request with no matching grant is denied immediately and the webhook is never called. `default_effect: allow` is only honored when there is **no** webhook (grants-only setups). With a webhook and no grants, the webhook decides; `default_effect` is the fallback if nothing else returns.
 
-Every decision is written to `audit_events` on **Postgres (Supported)** when `policy.audit` is true (default). Compatible backends skip durable audit in this release — do not claim equal audit proofs there. Admin search/HITL for `pending` are Phase 2.
+Every decision is written to `audit_events` on **Postgres (Supported)** when `policy.audit` is true (default). Compatible backends skip durable audit in this release — do not claim equal audit proofs there.
+
+**Admin search (Phase 2):** `GET /admin-api/audit-events` lists decisions newest-first with cursor paging (`X-Next-Cursor`) and filters (`tenant_id`, `decision`, `action`, `run_id`, `agent_id`, `connector`, `tool`, `since`/`until` as RFC3339). Example — denials for tenant `acme` in the last 7 days:
+
+```
+GET /admin-api/audit-events?tenant_id=acme&decision=deny&since=<RFC3339>
+```
+
+Returns `501` when the state backend is not Postgres. Admin UI tab, SIEM export, and HITL `pending` follow in the rest of Phase 2.
 
 Example:
 

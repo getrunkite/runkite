@@ -314,6 +314,67 @@
           }
         },
         "title": "WebhookDeadLetter"
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "connector": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "attrs": {
+            "type": "object"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "title": "AuditEvent"
       }
     }
   },
@@ -1216,6 +1277,168 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/audit-events": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Audit Events",
+        "description": "Policy decisions newest-first. Postgres Supported profile only; Compatible backends return 501.",
+        "operationId": "admin_list_audit_events",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "decision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "allow | deny | pending"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tool",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive lower bound on ts (RFC3339)."
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive upper bound on ts (RFC3339)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor, cursor+offset, or since/until",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is not Postgres",
             "content": {
               "application/json": {
                 "schema": {

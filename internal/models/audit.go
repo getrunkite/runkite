@@ -3,7 +3,7 @@ package models
 import "time"
 
 // AuditEvent is one durable policy (or security) decision row.
-// Phase 1 writes policy decisions; Phase 2 adds search/Admin UI.
+// Phase 1 writes policy decisions; Phase 2 adds Admin search (UI later).
 type AuditEvent struct {
 	ID           string                 `json:"id"`
 	TS           time.Time              `json:"ts"`
@@ -23,4 +23,21 @@ type AuditEvent struct {
 	Tool         string                 `json:"tool,omitempty"`
 	Attrs        map[string]interface{} `json:"attrs,omitempty"`
 	TraceID      string                 `json:"trace_id,omitempty"`
+}
+
+// AuditSearchRequest filters Admin audit list pages
+// (GET /admin-api/audit-events). Postgres Supported only.
+type AuditSearchRequest struct {
+	TenantID  string     `json:"tenant_id,omitempty"`
+	Decision  string     `json:"decision,omitempty"` // allow | deny | pending
+	Action    string     `json:"action,omitempty"`   // e.g. tool.call, connector.session
+	RunID     string     `json:"run_id,omitempty"`
+	AgentID   string     `json:"agent_id,omitempty"`
+	Connector string     `json:"connector,omitempty"`
+	Tool      string     `json:"tool,omitempty"`
+	Since     *time.Time `json:"since,omitempty"` // inclusive lower bound on ts
+	Until     *time.Time `json:"until,omitempty"` // exclusive upper bound on ts
+	Limit     int        `json:"limit,omitempty"`
+	Offset    int        `json:"offset,omitempty"`
+	Cursor    string     `json:"cursor,omitempty"` // keyset on (ts, id); ignores Offset
 }

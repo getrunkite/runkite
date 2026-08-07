@@ -3,7 +3,8 @@
 //
 // Scope, stated plainly: this covers the OPERATIONAL half of that list --
 // agents, threads, runs (with live debugging via the same SSE stream
-// clients use), connector status, cron schedules, and a summary overview.
+// clients use), connector status, cron schedules, policy audit search
+// (Postgres Supported), and a summary overview.
 // "User management" is explicitly NOT built here: there is no persisted
 // user/API-key table today (auth.APIKeyEntry is static langgraph.json
 // config, not a DB-backed model) -- building real user CRUD means
@@ -503,6 +504,78 @@ func (s *Server) handleAdminGetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toAdminRunView(run))
+}
+
+// auditEventStore is the Postgres-only search surface for policy
+// decisions. Compatible backends omit it; the Admin handler returns 501.
+type auditEventStore interface {
+	SearchAuditEvents(ctx context.Context, req *models.AuditSearchRequest) ([]*models.AuditEvent, error)
+}
+
+// GET /admin-api/audit-events?limit=&offset=&cursor=
+// Optional filters: tenant_id, decision, action, run_id, agent_id,
+// connector, tool, since, until (RFC3339; since inclusive, until exclusive).
+func (s *Server) handleAdminListAuditEvents(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.store.(auditEventStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "audit search requires Postgres state backend (Supported profile)")
+		return
+	}
+	ctx := tenant.SystemContext(r.Context())
+	paging, err := adminListPaging(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if paging.Cursor != "" {
+		if _, err := pagecursor.DecodeTime(paging.Cursor); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+	q := r.URL.Query()
+	req := models.AuditSearchRequest{
+		Limit:     paging.Limit,
+		Offset:    paging.Offset,
+		Cursor:    paging.Cursor,
+		TenantID:  q.Get("tenant_id"),
+		Decision:  q.Get("decision"),
+		Action:    q.Get("action"),
+		RunID:     q.Get("run_id"),
+		AgentID:   q.Get("agent_id"),
+		Connector: q.Get("connector"),
+		Tool:      q.Get("tool"),
+	}
+	if v := q.Get("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be RFC3339")
+			return
+		}
+		req.Since = &t
+	}
+	if v := q.Get("until"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "until must be RFC3339")
+			return
+		}
+		req.Until = &t
+	}
+	events, err := store.SearchAuditEvents(ctx, &req)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	if events == nil {
+		events = []*models.AuditEvent{}
+	}
+	next := ""
+	if len(events) == paging.Limit && len(events) > 0 {
+		last := events[len(events)-1]
+		next = pagecursor.EncodeTime(last.TS, last.ID)
+	}
+	writeAdminListJSON(w, http.StatusOK, events, next)
 }
 
 // GET /admin-api/runs/{runID}/stream -- live/replayed event debugging, same

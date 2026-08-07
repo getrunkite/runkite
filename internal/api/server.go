@@ -352,6 +352,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/runs", s.handleAdminListRuns)
 	mux.HandleFunc("GET /admin-api/runs/{runID}", s.handleAdminGetRun)
 	mux.HandleFunc("GET /admin-api/runs/{runID}/stream", s.handleAdminStreamRun)
+	mux.HandleFunc("GET /admin-api/audit-events", s.handleAdminListAuditEvents)
 	mux.HandleFunc("GET /admin-api/connectors", withSystemContext(s.handleListConnectors))
 	mux.HandleFunc("GET /admin-api/connectors/{name}", withSystemContext(s.handleGetConnector))
 	mux.HandleFunc("GET /admin-api/cron", withSystemContext(s.handleListCronSchedules))
