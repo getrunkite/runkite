@@ -251,6 +251,7 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tls_utils.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_schema_introspect.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tenant_ctx.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_connectors.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tracing.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_otel_callbacks.py; \
 	else \
@@ -278,6 +279,7 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_tls_utils.py && \
 		PYTHONPATH=python python3 python/tests/test_schema_introspect.py && \
 		PYTHONPATH=python python3 python/tests/test_tenant_ctx.py && \
+		PYTHONPATH=python python3 python/tests/test_connectors.py && \
 		PYTHONPATH=python python3 python/tests/test_tracing.py && \
 		PYTHONPATH=python python3 python/tests/test_otel_callbacks.py; \
 	fi

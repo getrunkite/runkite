@@ -49,7 +49,8 @@ def _run_bound_headers(config: dict | None) -> dict[str, str]:
     headers[HEADER_GENERATION] = str(int(cfg.get("generation") or 0))
     runner_token = os.environ.get("RUNNER_TOKEN")
     if runner_token:
-        headers["X-Runner-Kind"] = os.environ.get("RUNNER_KIND", "python-langgraph")
+        # Same hardcoded kind as store.py / a2a.py (no RUNNER_KIND env).
+        headers["X-Runner-Kind"] = "python-langgraph"
         headers["X-Runner-Token"] = runner_token
     return headers
 

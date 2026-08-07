@@ -695,9 +695,11 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 		}); err != nil {
 			continue
 		}
-		s.entry.Generation = newGen
-		s.entry.TouchedAtUnixMilli = nowMillis()
-		if err := q.putState(ctx, s.runID, &s.entry); err != nil {
+		// Tombstone like Nack: nothing is in-flight until the next
+		// Dequeue re-records state from the re-produced message.
+		// Leaving a bumped-generation entry here made LookupInflight
+		// report an assignment no runner had claimed yet.
+		if err := q.putState(ctx, s.runID, nil); err != nil {
 			continue
 		}
 		reclaimed++

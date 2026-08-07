@@ -33,7 +33,8 @@ function runBoundHeaders(config) {
     };
     const runnerToken = process.env.RUNNER_TOKEN;
     if (runnerToken) {
-        headers["X-Runner-Kind"] = process.env.RUNNER_KIND || "typescript-langgraphjs";
+        // Same hardcoded kind as store.ts / a2a.ts (no RUNNER_KIND env).
+        headers["X-Runner-Kind"] = "typescript-langgraphjs";
         headers["X-Runner-Token"] = runnerToken;
     }
     return headers;
