@@ -22,7 +22,29 @@ tools:
 
 Supported auth types: `oauth2_client_credentials`, `oauth2_token_exchange`, `api_key`, `bearer`.
 
-Runners call `POST /internal/connectors/{name}/session` to get ready-to-use credentials without implementing auth flows themselves.
+### Calling connectors from agent code (run-bound)
+
+`POST /internal/connectors/{name}/session` and `POST /internal/connectors/{name}/mcp` require an **in-flight run**: runners must send `X-Runkite-Run-Id` + `X-Runkite-Generation`. The control plane derives tenant/agent from that assignment — a bare kind-token call without those headers gets `401` with `reason_code: run_binding_required`. See [Trust & governance](trust-governance.md).
+
+Do **not** call those URLs with only a runner token from graph code. Use the SDK helpers (they read `configurable.run_id` / `configurable.generation` set by the runner for every job):
+
+```python
+# Python (inside a LangGraph node)
+from runkite_runner.connectors import get_connector_session, proxy_connector_mcp
+
+async def my_node(state, config):
+    sess = await get_connector_session(config, "salesforce")
+    # or: result = await proxy_connector_mcp(config, "salesforce", {"jsonrpc":"2.0", ...})
+```
+
+```typescript
+// TypeScript
+import { getConnectorSession, proxyConnectorMcp } from "runkite-runner";
+
+const sess = await getConnectorSession(config, "salesforce");
+```
+
+Store/vector proxy clients already attach the same headers via `tenant_headers()` / `tenantHeaders()`; connectors need these helpers because agent-authored code makes the HTTP call.
 
 ### Tool allow/deny enforcement (MCP connectors)
 

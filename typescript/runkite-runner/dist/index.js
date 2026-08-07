@@ -6,5 +6,6 @@ export { RunkiteStore } from "./store.js";
 export { executeRun, buildRunConfig } from "./executeRun.js";
 export { loadRequestHandler, serveCustomApp } from "./customApp.js";
 export { callAgent, A2AError } from "./a2a.js";
+export { getConnectorSession, proxyConnectorMcp, ConnectorError, } from "./connectors.js";
 export { RunnerUser } from "./runnerUser.js";
 export { RunkiteVectorStore } from "./vectorstore.js";

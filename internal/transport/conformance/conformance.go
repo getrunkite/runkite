@@ -472,6 +472,138 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("generation-0 Ack should bypass fencing, got accepted=%v err=%v", accepted, err)
 		}
 	})
+
+	// LookupInflight backs /internal/* run-binding. Every backend must
+	// agree: only a currently tracked dispatch is visible, Ack/Cancel
+	// clear it, and reclaim surfaces the bumped generation on the next
+	// Dequeue (not a stale embedded value).
+	t.Run("lookup_inflight_after_dequeue", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-lookup-1", "test-runner", "echo")
+		job.Generation = 1
+		job.TenantID = "acme"
+		_ = q.Enqueue(ctx, job)
+
+		before, err := q.LookupInflight(ctx, "run-lookup-1")
+		if err != nil {
+			t.Fatalf("LookupInflight before dequeue: %v", err)
+		}
+		if before != nil {
+			t.Fatalf("LookupInflight before dequeue want nil, got %+v", before)
+		}
+
+		got, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || got == nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+		looked, err := q.LookupInflight(ctx, "run-lookup-1")
+		if err != nil {
+			t.Fatalf("LookupInflight: %v", err)
+		}
+		if looked == nil {
+			t.Fatal("LookupInflight after dequeue want assignment, got nil")
+		}
+		if looked.RunID != "run-lookup-1" || looked.GraphID != "echo" {
+			t.Fatalf("LookupInflight identity mismatch: %+v", looked)
+		}
+		if looked.Generation != 1 {
+			t.Fatalf("LookupInflight generation=%d, want 1", looked.Generation)
+		}
+		if looked.TenantID != "acme" {
+			t.Fatalf("LookupInflight tenant=%q, want acme", looked.TenantID)
+		}
+	})
+
+	t.Run("lookup_inflight_nil_after_ack", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-lookup-ack", "test-runner", "echo")
+		job.Generation = 1
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+		if accepted, err := q.Ack(ctx, "run-lookup-ack", 1); err != nil || !accepted {
+			t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
+		}
+		looked, err := q.LookupInflight(ctx, "run-lookup-ack")
+		if err != nil {
+			t.Fatalf("LookupInflight: %v", err)
+		}
+		if looked != nil {
+			t.Fatalf("LookupInflight after Ack want nil, got %+v", looked)
+		}
+	})
+
+	t.Run("lookup_inflight_nil_after_cancel", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-lookup-cancel", "test-runner", "echo")
+		job.Generation = 1
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+		if err := q.Cancel(ctx, "run-lookup-cancel"); err != nil {
+			t.Fatalf("Cancel: %v", err)
+		}
+		looked, err := q.LookupInflight(ctx, "run-lookup-cancel")
+		if err != nil {
+			t.Fatalf("LookupInflight: %v", err)
+		}
+		if looked != nil {
+			t.Fatalf("LookupInflight after Cancel want nil, got %+v", looked)
+		}
+	})
+
+	t.Run("lookup_inflight_shows_bumped_generation_after_reclaim", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-lookup-reclaim", "test-runner", "echo")
+		job.Generation = 1
+		job.TenantID = "acme"
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+
+		r, ok := q.(staleReclaimer)
+		if !ok {
+			t.Skip("backend doesn't implement ReclaimStale")
+		}
+		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
+		}
+
+		// Reclaim clears the old inflight entry and re-enqueues; nothing
+		// is in-flight until the replacement is dequeued.
+		mid, err := q.LookupInflight(ctx, "run-lookup-reclaim")
+		if err != nil {
+			t.Fatalf("LookupInflight mid-reclaim: %v", err)
+		}
+		if mid != nil {
+			t.Fatalf("LookupInflight between reclaim and redequeue want nil, got %+v", mid)
+		}
+
+		replacement, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || replacement == nil || replacement.Generation != 2 {
+			t.Fatalf("expected redequeued generation 2, got %v (err=%v)", replacement, err)
+		}
+		looked, err := q.LookupInflight(ctx, "run-lookup-reclaim")
+		if err != nil {
+			t.Fatalf("LookupInflight: %v", err)
+		}
+		if looked == nil {
+			t.Fatal("LookupInflight after redequeue want assignment, got nil")
+		}
+		if looked.Generation != 2 {
+			t.Fatalf("LookupInflight generation=%d, want 2 (authoritative after reclaim)", looked.Generation)
+		}
+		if looked.TenantID != "acme" {
+			t.Fatalf("LookupInflight tenant=%q, want acme", looked.TenantID)
+		}
+	})
 }
 
 // staleReclaimer mirrors cmd/serve.go's own interface -- implemented by

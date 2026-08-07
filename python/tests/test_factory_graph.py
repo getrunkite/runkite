@@ -319,9 +319,15 @@ def test_build_run_config_sets_server_info_keys():
     configurable = config["configurable"]
     check("thread_id set", configurable["thread_id"] == "thread-1")
     check("run_id set", configurable["run_id"] == "run-1")
+    check("generation defaults to 0", configurable["generation"] == 0)
     check("assistant_id set to graph_id", configurable["assistant_id"] == "my_agent")
     check("graph_id set", configurable["graph_id"] == "my_agent")
     check("langgraph_auth_user absent when no user forwarded", "langgraph_auth_user" not in configurable)
+
+    with_gen = build_run_config(
+        {"run_id": "run-2", "thread_id": "t", "graph_id": "g", "generation": 3, "config": {}}
+    )
+    check("generation echoed from assignment", with_gen["configurable"]["generation"] == 3)
 
 
 def test_build_run_config_sets_langgraph_auth_user_when_authenticated():

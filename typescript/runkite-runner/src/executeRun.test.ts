@@ -351,8 +351,14 @@ test("buildRunConfig sets thread_id, run_id, assistant_id, and graph_id on confi
   const config = buildRunConfig(assignment({ run_id: "run-1", thread_id: "thread-1", graph_id: "my_graph" }));
   assert.equal(config.configurable.thread_id, "thread-1");
   assert.equal(config.configurable.run_id, "run-1");
+  assert.equal(config.configurable.generation, 0);
   assert.equal(config.configurable.assistant_id, "my_graph");
   assert.equal(config.configurable.graph_id, "my_graph");
+});
+
+test("buildRunConfig echoes assignment.generation onto configurable", () => {
+  const config = buildRunConfig(assignment({ generation: 3 }));
+  assert.equal(config.configurable.generation, 3);
 });
 
 test("buildRunConfig preserves an existing config.configurable's own fields", () => {

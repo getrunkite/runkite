@@ -24,6 +24,10 @@ export function buildRunConfig(assignment) {
     // Node code that reads configurable.thread_id sees this same value.
     config.configurable.thread_id = checkpointThreadId(assignment.tenant_id, assignment.thread_id);
     config.configurable.run_id = assignment.run_id;
+    // Fencing generation for run-bound /internal/* calls (connectors,
+    // store, vectors). Same value Heartbeat/ReportStatus echo; helpers
+    // like getConnectorSession read it from configurable.
+    config.configurable.generation = assignment.generation ?? 0;
     config.configurable.assistant_id = assignment.graph_id;
     config.configurable.graph_id = assignment.graph_id;
     // Time-travel: non-empty checkpoint_ref → LangGraph's

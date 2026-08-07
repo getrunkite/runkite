@@ -185,6 +185,10 @@ def build_run_config(assignment: dict) -> dict:
     # that reads configurable.thread_id sees this same value.
     config["configurable"]["thread_id"] = checkpoint_thread_id(assignment.get("tenant_id"), assignment["thread_id"])
     config["configurable"]["run_id"] = run_id
+    # Fencing generation for run-bound /internal/* calls (connectors,
+    # store, vectors). Same value Heartbeat/ReportStatus echo; helpers
+    # like get_connector_session read it from configurable.
+    config["configurable"]["generation"] = int(assignment.get("generation") or 0)
     config["configurable"]["assistant_id"] = graph_id
     config["configurable"]["graph_id"] = graph_id
     # Time-travel: a non-empty checkpoint_ref becomes LangGraph's
