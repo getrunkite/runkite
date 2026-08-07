@@ -324,9 +324,7 @@ def test_build_run_config_sets_server_info_keys():
     check("graph_id set", configurable["graph_id"] == "my_agent")
     check("langgraph_auth_user absent when no user forwarded", "langgraph_auth_user" not in configurable)
 
-    with_gen = build_run_config(
-        {"run_id": "run-2", "thread_id": "t", "graph_id": "g", "generation": 3, "config": {}}
-    )
+    with_gen = build_run_config({"run_id": "run-2", "thread_id": "t", "graph_id": "g", "generation": 3, "config": {}})
     check("generation echoed from assignment", with_gen["configurable"]["generation"] == 3)
 
 
