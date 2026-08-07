@@ -340,22 +340,19 @@ export async function handleJob(
         traceContext: tc,
       },
       async (span) => {
-        await runWithBinding(
-          { tenantId: assignment.tenant_id, runId: runId!, generation },
-          async () => {
-            const status = await handleJobUnderTenant(
-              client,
-              adapter,
-              assignment,
-              runId!,
-              generation,
-              metadata,
-              pendingCancels,
-              opts,
-            );
-            if (status) setRunStatus(span, status);
-          },
-        );
+        await runWithBinding({ tenantId: assignment.tenant_id, runId: runId!, generation }, async () => {
+          const status = await handleJobUnderTenant(
+            client,
+            adapter,
+            assignment,
+            runId!,
+            generation,
+            metadata,
+            pendingCancels,
+            opts,
+          );
+          if (status) setRunStatus(span, status);
+        });
       },
     );
   } catch (err) {

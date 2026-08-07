@@ -66,7 +66,10 @@ export async function getConnectorSession(
     dispatcher: httpDispatcher(),
     signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
   };
-  const resp = await fetch(`${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/session`, init);
+  const resp = await fetch(
+    `${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/session`,
+    init,
+  );
   if (!resp.ok) {
     throw new ConnectorError(`getConnectorSession ${name}: HTTP ${resp.status}: ${await resp.text()}`);
   }
@@ -87,7 +90,10 @@ export async function proxyConnectorMcp(
     dispatcher: httpDispatcher(),
     signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
   };
-  const resp = await fetch(`${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/mcp`, init);
+  const resp = await fetch(
+    `${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/mcp`,
+    init,
+  );
   if (!resp.ok) {
     throw new ConnectorError(`proxyConnectorMcp ${name}: HTTP ${resp.status}: ${await resp.text()}`);
   }
