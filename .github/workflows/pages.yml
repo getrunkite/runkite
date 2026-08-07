@@ -13,9 +13,11 @@ permissions:
   pages: write
   id-token: write
 
+# Do not cancel in-progress deploys — overlapping cancels were leaving
+# GitHub Pages stuck ("Deployment cancelled") on this repo.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -31,3 +33,6 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # 15m — previous runs hit the 10m default timeout on a stuck backend
+          timeout: 900000
