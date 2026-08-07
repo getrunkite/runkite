@@ -284,6 +284,10 @@ func startServer(opts serverOpts) {
 		slog.Info("connector registry loaded", "connectors", reg.List())
 	}
 
+	if eng := initPolicy(opts.configPath, store); eng != nil {
+		apiServer.SetPolicyEngine(eng)
+	}
+
 	// Vector/semantic store. Disabled entirely unless a vector_store
 	// section is present -- never
 	// implicitly enabled just because POSTGRES_DSN is set, since an

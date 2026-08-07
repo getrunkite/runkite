@@ -96,16 +96,29 @@ func (s *Store) withSchemaLock(ctx context.Context, fn func(context.Context, *pg
 }
 
 func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
-	return []migrate.Migration{{
-		Version: 1,
-		Name:    "baseline",
-		Up: func(ctx context.Context) error {
-			return s.initSchemaLocked(ctx, conn)
+	return []migrate.Migration{
+		{
+			Version: 1,
+			Name:    "baseline",
+			Up: func(ctx context.Context) error {
+				return s.initSchemaLocked(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				return s.dropSchemaLocked(ctx, conn)
+			},
 		},
-		Down: func(ctx context.Context) error {
-			return s.dropSchemaLocked(ctx, conn)
+		{
+			Version: 2,
+			Name:    "audit_events",
+			Up: func(ctx context.Context) error {
+				return s.upAuditEvents(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS audit_events`)
+				return err
+			},
 		},
-	}}
+	}
 }
 
 func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error {
@@ -116,6 +129,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			cron_schedules,
 			run_cache,
 			webhook_dead_letters,
+			audit_events,
 			store_items,
 			thread_checkpoints,
 			runs,
@@ -385,6 +399,30 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	ALTER TABLE webhook_dead_letters ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
 	CREATE INDEX IF NOT EXISTS idx_dead_letters_failed_at ON webhook_dead_letters(failed_at DESC);
 
+	-- Policy / security decision log (Phase 1 write path; query in Phase 2).
+	CREATE TABLE IF NOT EXISTS audit_events (
+		id            TEXT PRIMARY KEY,
+		ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		tenant_id     TEXT NOT NULL DEFAULT 'default',
+		actor         TEXT DEFAULT '',
+		action        TEXT NOT NULL,
+		resource_type TEXT DEFAULT '',
+		resource_id   TEXT DEFAULT '',
+		decision      TEXT NOT NULL,
+		reason_code   TEXT DEFAULT '',
+		rule_id       TEXT DEFAULT '',
+		latency_ms    INTEGER NOT NULL DEFAULT 0,
+		run_id        TEXT DEFAULT '',
+		generation    BIGINT NOT NULL DEFAULT 0,
+		agent_id      TEXT DEFAULT '',
+		connector     TEXT DEFAULT '',
+		tool          TEXT DEFAULT '',
+		attrs         JSONB NOT NULL DEFAULT '{}',
+		trace_id      TEXT DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS idx_audit_events_tenant_ts ON audit_events(tenant_id, ts DESC);
+	CREATE INDEX IF NOT EXISTS idx_audit_events_run ON audit_events(run_id);
+
 	-- Composite PK so two tenants can cache the same logical input under
 	-- the same raw cache_key without colliding. computeCacheKey also
 	-- embeds tenant_id (defense in depth if a WHERE clause is missed).
@@ -507,7 +545,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -2086,6 +2124,67 @@ func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespa
 // --------------------------------------------------------------------------
 // Webhook dead-letter
 // --------------------------------------------------------------------------
+
+func (s *Store) upAuditEvents(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS audit_events (
+			id            TEXT PRIMARY KEY,
+			ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			tenant_id     TEXT NOT NULL DEFAULT 'default',
+			actor         TEXT DEFAULT '',
+			action        TEXT NOT NULL,
+			resource_type TEXT DEFAULT '',
+			resource_id   TEXT DEFAULT '',
+			decision      TEXT NOT NULL,
+			reason_code   TEXT DEFAULT '',
+			rule_id       TEXT DEFAULT '',
+			latency_ms    INTEGER NOT NULL DEFAULT 0,
+			run_id        TEXT DEFAULT '',
+			generation    BIGINT NOT NULL DEFAULT 0,
+			agent_id      TEXT DEFAULT '',
+			connector     TEXT DEFAULT '',
+			tool          TEXT DEFAULT '',
+			attrs         JSONB NOT NULL DEFAULT '{}',
+			trace_id      TEXT DEFAULT ''
+		);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_tenant_ts ON audit_events(tenant_id, ts DESC);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_run ON audit_events(run_id);
+	`)
+	return err
+}
+
+// WriteAuditEvent persists one policy/security decision. Supported
+// profile (Postgres) only in Phase 1 — Compatible backends omit this
+// method (callers type-assert).
+func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error {
+	if ev == nil {
+		return nil
+	}
+	attrs, _ := json.Marshal(ev.Attrs)
+	if attrs == nil {
+		attrs = []byte("{}")
+	}
+	tenantID := ev.TenantID
+	if tenantID == "" {
+		tenantID = tenant.FromContext(ctx)
+	}
+	ts := ev.TS
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, ts, tenant_id, actor, action, resource_type, resource_id,
+			decision, reason_code, rule_id, latency_ms,
+			run_id, generation, agent_id, connector, tool, attrs, trace_id
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+		)
+	`, ev.ID, ts, tenantID, ev.Actor, ev.Action, ev.ResourceType, ev.ResourceID,
+		ev.Decision, ev.ReasonCode, ev.RuleID, ev.LatencyMs,
+		ev.RunID, ev.Generation, ev.AgentID, ev.Connector, ev.Tool, attrs, ev.TraceID)
+	return err
+}
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
 	_, err := s.pool.Exec(ctx, `

@@ -46,6 +46,10 @@ const sess = await getConnectorSession(config, "salesforce");
 
 Store/vector proxy clients already attach the same headers via `tenant_headers()` / `tenantHeaders()`; connectors need these helpers because agent-authored code makes the HTTP call.
 
+### Policy grants (fail-closed when configured)
+
+With a non-empty `policy` section in `langgraph.json`, session mint and MCP `tools/call` require a matching grant for `(tenant_id, agent_id, connector)` derived from the in-flight run — see [Trust & governance](trust-governance.md). Production MCP connectors should stay **proxy-only** (the control plane never returns the raw downstream MCP URL when MCP is configured); that is what makes tool grants enforceable.
+
 ### Tool allow/deny enforcement (MCP connectors)
 
 The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just an advisory hint. `GetSession`'s `mcp.url` points at this control plane's own MCP proxy (`POST /internal/connectors/{name}/mcp`), not the connector's raw downstream MCP server -- so a `tools/call` request passes through here first, where a denied tool is rejected with a JSON-RPC error and **never reaches the downstream server at all**. `tools/list` responses are filtered against the same allow/deny list using the downstream server's own real tool list -- correct even for a deny-only filter (no allow list), which can't be represented in a static preview without knowing the full tool universe the downstream server exposes. An empty/missing tool name is always rejected too, independent of the filter shape (never a legitimate request regardless of what's allowed or denied). Every other JSON-RPC method (`initialize`, `resources/*`, etc.) is forwarded transparently. The connector's existing circuit breaker (guarding token fetches) also guards the proxied MCP call.

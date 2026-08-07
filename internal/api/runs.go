@@ -21,6 +21,7 @@ import (
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/ratelimit"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -648,8 +649,13 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// This is a hint, not a hard gate — don't block run creation on failure.
 	if s.connectors != nil && len(assignment.ConnectorNeeds) > 0 {
 		sessions := make(map[string]interface{})
+		prewarmCtx := withPolicyAgent(ctx, req.AgentID, runID)
 		for _, name := range assignment.ConnectorNeeds {
-			sess, err := s.connectors.GetSession(ctx, name, nil)
+			if dec, deny := s.checkConnectorPolicy(prewarmCtx, policy.StageConnectorSession, name, ""); deny {
+				slog.Warn("connector pre-warm skipped by policy", "connector", name, "run_id", runID, "reason_code", dec.ReasonCode)
+				continue
+			}
+			sess, err := s.connectors.GetSession(prewarmCtx, name, nil)
 			if err != nil {
 				slog.Warn("connector pre-warm failed", "connector", name, "run_id", runID, "error", err)
 				continue

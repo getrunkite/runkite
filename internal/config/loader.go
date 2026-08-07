@@ -107,6 +107,52 @@ type LangGraphConfig struct {
 	// client-facing name that ISN'T a real registered agent and also
 	// isn't an alias 404s, same as always.
 	AgentAliases map[string]AgentAliasEntry `json:"agent_aliases,omitempty"`
+	// Policy is control-plane-wide, same first-file convention as
+	// Auth/PreflightHooks (see initPolicy in cmd/policy.go). Absent or
+	// empty (no grants, no webhook) preserves V1 open connector access
+	// after runner auth + run-binding. When any grant or webhook is
+	// present, connector.session / tool.call default to deny unless a
+	// grant matches (see internal/policy).
+	Policy *PolicyEntry `json:"policy,omitempty"`
+}
+
+// PolicyEntry is the "policy" section of langgraph.json.
+type PolicyEntry struct {
+	// DefaultEffect when no grant matches: "deny" (default) or "allow".
+	DefaultEffect string `json:"default_effect,omitempty"`
+	// FailClosed controls webhook timeout/error behavior (default true).
+	FailClosed *bool `json:"fail_closed,omitempty"`
+	// CacheTTLMS is short-TTL decision cache for webhook backends (0 = off).
+	CacheTTLMS int `json:"cache_ttl_ms,omitempty"`
+	// Audit enables durable audit_events writes on Supported (Postgres).
+	// Default true when policy is configured.
+	Audit *bool `json:"audit,omitempty"`
+	// Grants are in-process connector grants (tenant + agent + connector).
+	Grants []PolicyGrantEntry `json:"grants,omitempty"`
+	// Webhook is an optional sync PolicyProvider (WebhookGate-shaped).
+	Webhook *PolicyWebhookEntry `json:"webhook,omitempty"`
+}
+
+// PolicyGrantEntry is one static connector grant.
+type PolicyGrantEntry struct {
+	ID        string            `json:"id,omitempty"`
+	TenantID  string            `json:"tenant_id"`
+	AgentID   string            `json:"agent_id"`
+	Connector string            `json:"connector"`
+	Tools     *PolicyToolFilter `json:"tools,omitempty"`
+}
+
+// PolicyToolFilter is allow/deny for tools within a grant.
+type PolicyToolFilter struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+// PolicyWebhookEntry is the sync policy webhook endpoint.
+type PolicyWebhookEntry struct {
+	URL       string `json:"url"`
+	Secret    string `json:"secret,omitempty"`
+	TimeoutMS int    `json:"timeout_ms,omitempty"`
 }
 
 // AgentAliasEntry is one entry in langgraph.json's "agent_aliases"

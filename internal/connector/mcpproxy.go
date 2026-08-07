@@ -64,8 +64,9 @@ type jsonRPCResponse struct {
 }
 
 type jsonRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // toolNotAllowedCode is a custom JSON-RPC error code in the
@@ -162,13 +163,28 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 // same way a downstream server's own "unknown tool" response would be.
 // The downstream server is never contacted for a denied call.
 func deniedToolResult(id json.RawMessage, connectorName, toolName string) (*ProxyMCPResult, error) {
+	return DeniedRPCResult(id, fmt.Sprintf("tool %q is not allowed by connector %q's tool filter", toolName, connectorName), nil)
+}
+
+// DeniedRPCResult builds an HTTP-200 JSON-RPC error (-32000) for a
+// denied tools/call. data is optional (e.g. reason_code from policy).
+// Does not contact the downstream server or the circuit breaker.
+func DeniedRPCResult(id json.RawMessage, message string, data map[string]interface{}) (*ProxyMCPResult, error) {
+	errBody := &jsonRPCError{
+		Code:    toolNotAllowedCode,
+		Message: message,
+	}
+	if len(data) > 0 {
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return nil, fmt.Errorf("marshal denied-tool data: %w", err)
+		}
+		errBody.Data = raw
+	}
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Error: &jsonRPCError{
-			Code:    toolNotAllowedCode,
-			Message: fmt.Sprintf("tool %q is not allowed by connector %q's tool filter", toolName, connectorName),
-		},
+		Error:   errBody,
 	}
 	out, err := json.Marshal(resp)
 	if err != nil {

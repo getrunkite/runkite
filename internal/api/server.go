@@ -27,6 +27,7 @@ import (
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/ratelimit"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -41,6 +42,7 @@ type Server struct {
 	broker      transport.EventBroker
 	cancel      transport.CancelBroker
 	connectors  *connector.Registry     // nil if no connectors configured
+	policy      *policy.Engine          // nil = V1 open (no policy configured)
 	rateLimit   *ratelimit.Limiter      // nil-safe: nil behaves as disabled
 	hooks       *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
 	customProxy http.Handler            // nil if no custom_routes configured
@@ -88,6 +90,12 @@ func NewServer(store state.Store, queue transport.JobQueue, broker transport.Eve
 // Called after NewServer when connectors are configured.
 func (s *Server) SetConnectorRegistry(r *connector.Registry) {
 	s.connectors = r
+}
+
+// SetPolicyEngine attaches the connector/tool policy engine. Nil keeps
+// V1 open connector access (after runner auth + run-binding).
+func (s *Server) SetPolicyEngine(e *policy.Engine) {
+	s.policy = e
 }
 
 // SetRateLimiter attaches a rate limiter to the server. Called after
@@ -720,6 +728,11 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageConnectorSession, name, ""); deny {
+		writeJSON(w, http.StatusForbidden, policyDenyJSON(dec))
+		return
+	}
+
 	var body struct {
 		UserContext map[string]interface{} `json:"user_context"`
 	}
@@ -790,6 +803,26 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	var userCtx map[string]interface{}
 	if raw := r.Header.Get("X-Runkite-User-Context"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &userCtx)
+	}
+
+	// Policy on tools/call only (other MCP methods stay transparent after
+	// the connector's own static tool filter inside ProxyMCPRequest).
+	if method, tool := extractToolsCallName(body); method == "tools/call" {
+		if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageToolCall, name, tool); deny {
+			msg := dec.Reason
+			if msg == "" {
+				msg = "denied by policy"
+			}
+			denied, err := connector.DeniedRPCResult(extractJSONRPCID(body), msg, mcpPolicyDenyData(dec))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(denied.StatusCode)
+			_, _ = w.Write(denied.Body)
+			return
+		}
 	}
 
 	result, err := s.connectors.ProxyMCPRequest(r.Context(), name, userCtx, body)

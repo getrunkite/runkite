@@ -31,6 +31,18 @@
   "preflight_hooks": [
     { "url": "https://guardrails.example/check", "secret": "whsec_...", "timeout_ms": 2000 }
   ],
+  "policy": {
+    "default_effect": "deny",
+    "grants": [
+      {
+        "id": "acme-sales-sf-read",
+        "tenant_id": "acme",
+        "agent_id": "sales-assistant",
+        "connector": "salesforce",
+        "tools": { "allow": ["query", "getRecord"], "deny": ["updateRecord"] }
+      }
+    ]
+  },
   "llm_cache": {
     "my_agent": { "ttl_seconds": 3600 }
   },
@@ -59,6 +71,8 @@ Event hooks are also usable directly from Go code by embedding runkite as a libr
 `preflight_hooks` are **synchronous** gates that can **allow or deny** a run **before** any thread auto-create, thread claim, or run row (Promptfoo-style guardrails). They are separate from `webhooks` on purpose: observational webhooks must never delay or block run creation; preflight hooks exist specifically to block. Same first-file / control-plane-wide convention as `webhooks`.
 
 Each entry POSTs a `before_run` event JSON (`type`, `run_id`, `thread_id`, `agent_id`, `tenant_id`, `data.input`, `timestamp`) to `url`, with the same optional `X-Runkite-Signature` HMAC as webhooks. The gate must respond `2xx` with `{"allow": true}` or `{"allow": false, "reason": "..."}`. Deny, non-2xx, timeout, or malformed JSON → **fail closed** (`403` to the client; no thread auto-created for a new `thread_id`, no run persisted, no `run_start` webhook). `timeout_ms` defaults to `2000`. Multiple entries all must allow (first deny wins). Library embedders can `RegisterGate` any `hooks.Gate` implementation on the same Dispatcher.
+
+`policy` is opt-in and control-plane-wide (first-file). When absent or empty, connector access stays V1-open after runner auth + run-binding. When any `grants` or `webhook` is present, `connector.session` and MCP `tools/call` are fail-closed: a grant must match `(tenant_id, agent_id, connector)` from the in-flight run (see [Trust & governance](trust-governance.md)). Optional `webhook` is a sync PolicyProvider (same HMAC / fail-closed culture as `preflight_hooks`, not the async `webhooks` path). Decisions are written to Postgres `audit_events` when `audit` is true (default); Compatible backends skip durable audit in this release.
 
 `rate_limit` is opt-in and control-plane-wide (read from the first discovered `langgraph.json`, same convention as `auth`); any subset of `global`/`per_user`/`per_agent`/`per_tenant` may be set, unconfigured dimensions are unlimited. Each is a token bucket: `rps` is the sustained rate, `burst` is how many requests can arrive back-to-back before limiting kicks in. `global`/`per_user`/`per_tenant` are enforced at the HTTP layer (per-user keyed on the authenticated identity, per-tenant keyed on `tenant_id` -- see Multi-tenancy -- both unlimited when no auth provider is configured, since there's no identity/tenant to key on); `per_agent` is enforced in the shared run-creation path, so it applies uniformly across REST, WebSocket, and streaming-command run starts. Exceeding a limit returns `429` with a `Retry-After` header.
 

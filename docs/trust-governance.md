@@ -67,4 +67,34 @@ Stable `reason_code` values on denials include:
 - Replacing your IdP
 - Equal security proofs on Experimental state/transport backends
 
-Policy deny at the connector proxy, durable audit query, and HITL for `pending` tool calls are on the roadmap; this document will grow as those ship. Until then, treat run-binding + runner tokens + optional tenant allow-lists as the enforceable floor.
+## Connector policy (Phase 1)
+
+When `langgraph.json` has a non-empty `policy` section (grants and/or webhook), connector access is **fail-closed**:
+
+| Stage | Gate |
+|-------|------|
+| `POST .../session` | Grant must match `(tenant_id, agent_id, connector)` |
+| `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny |
+
+Static grants evaluate in-process. An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
+
+Every decision is written to `audit_events` on **Postgres (Supported)** when `policy.audit` is true (default). Compatible backends skip durable audit in this release — do not claim equal audit proofs there. Admin search/HITL for `pending` are Phase 2.
+
+Example:
+
+```json
+"policy": {
+  "default_effect": "deny",
+  "grants": [
+    {
+      "id": "acme-sales-sf-read",
+      "tenant_id": "acme",
+      "agent_id": "sales-assistant",
+      "connector": "salesforce",
+      "tools": { "allow": ["query", "getRecord"], "deny": ["updateRecord"] }
+    }
+  ]
+}
+```
+
+Absent / empty `policy` preserves V1 open access after runner auth + run-binding.
