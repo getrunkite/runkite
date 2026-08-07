@@ -133,6 +133,18 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 	return true, nil
 }
 
+// LookupInflight returns a copy of the in-flight assignment for runID.
+func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	entry, ok := q.inflight[runID]
+	if !ok || entry.job == nil {
+		return nil, nil
+	}
+	cp := *entry.job
+	return &cp, nil
+}
+
 // Nack re-enqueues a previously dequeued job so another runner can take it.
 func (q *Queue) Nack(ctx context.Context, runID string) error {
 	q.mu.Lock()

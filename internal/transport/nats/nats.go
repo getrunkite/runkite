@@ -336,6 +336,32 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 	return true, nil
 }
 
+// LookupInflight returns the currently tracked assignment for runID.
+func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	kve, err := q.inflight.Get(ctx, runID)
+	if err != nil {
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var entry inflightEntry
+	if err := json.Unmarshal(kve.Value(), &entry); err != nil {
+		return nil, err
+	}
+	if len(entry.Job) == 0 {
+		return nil, nil
+	}
+	var job transport.RunAssignment
+	if err := json.Unmarshal(entry.Job, &job); err != nil {
+		return nil, err
+	}
+	if entry.Generation != 0 {
+		job.Generation = entry.Generation
+	}
+	return &job, nil
+}
+
 func (q *Queue) Nack(ctx context.Context, runID string) error {
 	kve, err := q.inflight.Get(ctx, runID)
 	if err != nil {

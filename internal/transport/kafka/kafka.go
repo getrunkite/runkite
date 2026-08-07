@@ -592,6 +592,25 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 	return true, nil
 }
 
+// LookupInflight returns the currently tracked assignment for runID.
+func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	entry, ok := q.getState(runID)
+	if !ok || entry.Canceled || len(entry.Job) == 0 {
+		return nil, nil
+	}
+	var job transport.RunAssignment
+	if err := json.Unmarshal(entry.Job, &job); err != nil {
+		return nil, err
+	}
+	// Prefer the state topic's fencing generation over whatever is
+	// embedded in the job payload -- reclaim bumps both, but reading
+	// the authoritative state entry avoids a stale embedded value.
+	if entry.Generation != 0 {
+		job.Generation = entry.Generation
+	}
+	return &job, nil
+}
+
 // bumpGeneration unmarshals a job payload, sets its embedded
 // generation field to newGen, and re-marshals it -- unlike Redis's own
 // Lua-side generation bump (string surgery on the raw JSON, chosen

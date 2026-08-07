@@ -55,15 +55,13 @@ func (e *ErrForbidden) Error() string { return e.Message }
 const (
 	HeaderRunnerKind  = "X-Runner-Kind"
 	HeaderRunnerToken = "X-Runner-Token"
-	// HeaderTenantID is sent by runners on /internal/* so proxy-mode
-	// store/vector handlers scope to RunAssignment.tenant_id the same
-	// way client auth scopes via AuthResult.TenantID. Only honored after
-	// runner-token validation (or when runner auth is disabled locally).
-	// When RUNNER_TENANTS_<KIND> is set, the claimed value (missing →
-	// "default") must be on that kind's allow-list; otherwise any tenant
-	// header is still accepted after kind-token auth. The control plane
-	// does not yet cross-check the claim against the assigned run's
-	// tenant_id on record.
+	// HeaderTenantID is sent by runners on /internal/* that are not
+	// run-bound (schema publish, status, A2A, connector metadata). On
+	// run-bound proxy paths (store/vectors/connector session+MCP),
+	// tenant is derived from the in-flight RunAssignment instead -- see
+	// MiddlewareOpts.Inflight and requiresRunBinding. When
+	// RUNNER_TENANTS_<KIND> is set, the effective tenant (header claim
+	// or assignment) must be on that kind's allow-list.
 	HeaderTenantID = "X-Runkite-Tenant-Id"
 )
 
@@ -78,6 +76,14 @@ type MiddlewareOpts struct {
 	// present). Mutating methods require X-CSRF-Token. Bearer auth is
 	// unchanged for machine clients.
 	AdminSessions *AdminSessionStore
+	// Inflight, when set, enables run-binding on connector session/MCP,
+	// store, and vector /internal/* paths: callers must present
+	// X-Runkite-Run-Id + X-Runkite-Generation for an active assignment,
+	// and tenant/agent are taken from that assignment (runner tenant
+	// headers are ignored on those paths). Production serve always sets
+	// this to the job queue; nil keeps the legacy header-only tenant
+	// model (test helpers that do not wire a queue).
+	Inflight InflightLookup
 }
 
 // Middleware returns an http.Handler that enforces auth before delegating to
@@ -116,9 +122,21 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			if runnerTokens.Enabled() {
 				token := r.Header.Get(HeaderRunnerToken)
 				if kind == "" || token == "" || !runnerTokens.Validate(kind, token) {
-					writeUnauthorized(w, "invalid or missing runner credentials")
+					writeDenied(w, http.StatusUnauthorized, ReasonRunnerCredentialsInvalid,
+						"invalid or missing runner credentials")
 					return
 				}
+			}
+			// Run-bound proxy paths: prove an active assignment and derive
+			// tenant/agent from it. Inflight nil → legacy tenant header
+			// (unit tests); production serve always wires the job queue.
+			if opts.Inflight != nil && requiresRunBinding(path) {
+				ctx, ok := bindInternalRun(w, r, kind, runnerTokens, opts.Inflight)
+				if !ok {
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
 			}
 			// Optional per-run tenant from the runner (assignment.tenant_id).
 			// Without this, /internal/store|* always landed in "default".
@@ -126,9 +144,8 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			// header → "default") must be on that kind's allow-list.
 			claimed := strings.TrimSpace(r.Header.Get(HeaderTenantID))
 			if runnerTokens.Enabled() && !runnerTokens.AllowsTenant(kind, claimed) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{"message": "tenant not allowed for this runner kind"})
+				writeDenied(w, http.StatusForbidden, ReasonRunnerTenantDenied,
+					"tenant not allowed for this runner kind")
 				return
 			}
 			ctx := r.Context()

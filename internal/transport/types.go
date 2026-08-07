@@ -32,12 +32,13 @@ type RunAssignment struct {
 	// provider is configured, or the caller has no identity attached.
 	User *UserContext `json:"user,omitempty"`
 
-	// TenantID scopes direct-mode store/vector SQL (and runner proxy
-	// /internal/* calls via X-Runkite-Tenant-Id) to the same tenant the
-	// control plane used when creating the run. Empty/absent means the
-	// runner falls back to "default" (backward compatible with older
-	// control planes). LangGraph's own checkpoint tables remain
-	// unscoped -- see docs/auth.md Multi-tenancy.
+	// TenantID scopes direct-mode store/vector SQL to the same tenant
+	// the control plane used when creating the run. On run-bound
+	// /internal/* proxy paths the control plane re-reads this from the
+	// in-flight assignment (runners still echo X-Runkite-Tenant-Id for
+	// unbound routes and older control planes). Empty/absent means
+	// "default". LangGraph's own checkpoint tables remain unscoped --
+	// see docs/auth.md Multi-tenancy.
 	TenantID string `json:"tenant_id,omitempty"`
 
 	// Generation fences a job against a runner that gets reclaimed
@@ -244,6 +245,14 @@ type JobQueue interface {
 	// pollQueueDepth), Ping is meant to be cheap enough to call on
 	// every readiness probe.
 	Ping(ctx context.Context) error
+
+	// LookupInflight returns the currently in-flight RunAssignment for
+	// runID, or (nil, nil) if nothing is tracked (never dequeued, already
+	// Ack'd, canceled, or unknown). Used by /internal/* run-binding so
+	// connector/store/vector calls can prove they belong to an active
+	// dispatch and derive tenant/agent from the assignment instead of
+	// trusting runner-supplied headers.
+	LookupInflight(ctx context.Context, runID string) (*RunAssignment, error)
 }
 
 // EventBroker handles publishing and subscribing to run events.

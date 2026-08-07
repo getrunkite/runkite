@@ -38,6 +38,7 @@
 import { VectorStore } from "@langchain/core/vectorstores";
 import { Document, type DocumentInterface } from "@langchain/core/documents";
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
+import { tenantHeaders } from "./tenantCtx.js";
 import { httpDispatcher, type FetchInit } from "./tls.js";
 
 export interface RunkiteVectorStoreOptions {
@@ -147,7 +148,7 @@ export class RunkiteVectorStore extends VectorStore {
   ): Promise<void> {
     const opts: FetchInit = {
       method: "PUT",
-      headers: this.headers,
+      headers: { ...this.headers, ...tenantHeaders() },
       body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
       dispatcher: this.dispatcher,
     };
@@ -158,7 +159,7 @@ export class RunkiteVectorStore extends VectorStore {
   private async deleteOne(id: string): Promise<void> {
     const opts: FetchInit = {
       method: "DELETE",
-      headers: this.headers,
+      headers: { ...this.headers, ...tenantHeaders() },
       body: JSON.stringify({ namespace: this.namespace, id }),
       dispatcher: this.dispatcher,
     };
@@ -173,7 +174,7 @@ export class RunkiteVectorStore extends VectorStore {
   ): Promise<Array<{ item: VectorItemJson; score: number }>> {
     const opts: FetchInit = {
       method: "POST",
-      headers: this.headers,
+      headers: { ...this.headers, ...tenantHeaders() },
       body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),
       dispatcher: this.dispatcher,
     };

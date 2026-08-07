@@ -751,7 +751,7 @@ async def _handle_job(
 
         # Scope direct/proxy store+vector ops to this run's tenant for the
         # whole job (ContextVar -- safe under --concurrency > 1).
-        from .tenant_ctx import bind_tenant, reset_tenant
+        from .tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
 
         with run_span(
             run_id,
@@ -761,6 +761,7 @@ async def _handle_job(
             trace_context=assignment.get("trace_context"),
         ) as span:
             tenant_token = bind_tenant(assignment.get("tenant_id"))
+            run_token = bind_run(run_id, generation)
             try:
                 status = await _run_assigned_job(
                     stub,
@@ -779,6 +780,7 @@ async def _handle_job(
                 if status:
                     set_run_status(span, status)
             finally:
+                reset_run(run_token)
                 reset_tenant(tenant_token)
 
     except grpc.aio.AioRpcError as e:

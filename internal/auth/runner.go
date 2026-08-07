@@ -117,3 +117,18 @@ func (rt *RunnerTokens) AllowsTenant(runnerKind, tenantID string) bool {
 	_, ok = allow[tid]
 	return ok
 }
+
+// HasTenantAllowList reports whether any RUNNER_TENANTS_* allow-list is
+// configured for a kind that also has a token. Used for a startup warning
+// when client-facing auth is on but tenant allow-lists are absent.
+func (rt *RunnerTokens) HasTenantAllowList() bool {
+	if rt == nil {
+		return false
+	}
+	for kind := range rt.tokens {
+		if allow, ok := rt.tenants[kind]; ok && len(allow) > 0 {
+			return true
+		}
+	}
+	return false
+}

@@ -20,10 +20,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from runkite_runner.tenant_ctx import (  # noqa: E402
+    HEADER_GENERATION,
+    HEADER_RUN_ID,
     HEADER_TENANT_ID,
+    bind_run,
     bind_tenant,
     checkpoint_thread_id,
     current_tenant,
+    reset_run,
     reset_tenant,
     tenant_headers,
 )
@@ -94,12 +98,25 @@ def test_checkpoint_thread_id_encoding():
     check("acme tenant → prefixed", checkpoint_thread_id("acme", "t1") == "acme:t1")
 
 
+def test_run_binding_headers():
+    check("no run headers by default", HEADER_RUN_ID not in tenant_headers())
+    token = bind_run("run-1", 3)
+    try:
+        h = tenant_headers()
+        check("run id header set", h.get(HEADER_RUN_ID) == "run-1")
+        check("generation header set", h.get(HEADER_GENERATION) == "3")
+    finally:
+        reset_run(token)
+    check("run headers cleared after reset", HEADER_RUN_ID not in tenant_headers())
+
+
 def main():
     test_default_tenant()
     test_bind_and_reset()
     test_empty_binds_default()
     test_concurrent_jobs_do_not_clobber()
     test_checkpoint_thread_id_encoding()
+    test_run_binding_headers()
     print("\nAll checks passed.")
 
 

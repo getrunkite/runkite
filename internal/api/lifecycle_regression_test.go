@@ -38,6 +38,9 @@ func (failQueue) Cancel(context.Context, string) error {
 }
 func (failQueue) Len(context.Context) (int64, error) { return 0, nil }
 func (failQueue) Ping(context.Context) error         { return nil }
+func (failQueue) LookupInflight(context.Context, string) (*transport.RunAssignment, error) {
+	return nil, nil
+}
 
 func newLifecycleServer(t *testing.T, queue transport.JobQueue) (*Server, *sqlitestore.SQLiteStore) {
 	t.Helper()

@@ -461,6 +461,22 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 	return n == 1, nil
 }
 
+// LookupInflight returns the currently tracked assignment for runID.
+func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var job transport.RunAssignment
+	if err := json.Unmarshal([]byte(data), &job); err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 func (q *Queue) Nack(ctx context.Context, runID string) error {
 	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
 	if err == redis.Nil {

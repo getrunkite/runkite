@@ -205,6 +205,23 @@ func authStrictPermissions(configPath string) bool {
 	return cfg.Auth.EffectiveStrictPermissions()
 }
 
+// warnRunnerTenantsIfNeeded logs when client-facing auth is configured and
+// runner tokens are on, but no RUNNER_TENANTS_* allow-list is set for any
+// kind. Run-binding now derives tenant from the assignment on proxy paths,
+// yet kind tokens without an allow-list can still reach unbound /internal/*
+// routes and claim any tenant header there. Not a hard admission failure
+// (single-tenant deployments are fine) -- operators with real multi-tenant
+// auth should set the allow-lists.
+func warnRunnerTenantsIfNeeded(configPath string, runnerTokens *auth.RunnerTokens) {
+	if !hasClientFacingAuthConfigured(configPath) || !runnerTokens.Enabled() {
+		return
+	}
+	if runnerTokens.HasTenantAllowList() {
+		return
+	}
+	slog.Warn("auth: client-facing auth is configured and RUNNER_TOKEN_* is set, but no RUNNER_TENANTS_* allow-list is configured for any runner kind -- consider setting RUNNER_TENANTS_<KIND> so a leaked kind token cannot claim arbitrary tenants on unbound /internal/* routes")
+}
+
 func startServer(opts serverOpts) {
 	setupLogging()
 	checkProductionAdmission(opts)
@@ -473,10 +490,16 @@ func startServer(opts serverOpts) {
 	authOpts := auth.MiddlewareOpts{
 		StrictPermissions: authStrictPermissions(opts.configPath),
 		AdminSessions:     adminSessions,
+		// Derive tenant/agent on store/vector/connector proxy calls from
+		// the in-flight RunAssignment (runners must send run id +
+		// generation). Closes the self-reported X-Runkite-Tenant-Id gap
+		// on those paths.
+		Inflight: queue,
 	}
 	if authOpts.StrictPermissions {
 		slog.Info("auth: strict_permissions enabled (empty permissions deny)")
 	}
+	warnRunnerTenantsIfNeeded(opts.configPath, runnerTokens)
 	rateLimited := ratelimit.Middleware(rateLimiter, apiServer.Handler())
 	authedAPI := auth.MiddlewareWithOpts(authProvider, adminAuthProvider, runnerTokens, authOpts, rateLimited)
 

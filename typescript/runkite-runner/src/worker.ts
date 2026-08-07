@@ -13,7 +13,7 @@ import { CheckpointerManager } from "./checkpoint.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
-import { runWithTenant } from "./tenantCtx.js";
+import { runWithBinding } from "./tenantCtx.js";
 import { initTracing, setRunStatus, withRunSpan, type TraceContextFields } from "./tracing.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
@@ -340,19 +340,22 @@ export async function handleJob(
         traceContext: tc,
       },
       async (span) => {
-        await runWithTenant(assignment.tenant_id, async () => {
-          const status = await handleJobUnderTenant(
-            client,
-            adapter,
-            assignment,
-            runId!,
-            generation,
-            metadata,
-            pendingCancels,
-            opts,
-          );
-          if (status) setRunStatus(span, status);
-        });
+        await runWithBinding(
+          { tenantId: assignment.tenant_id, runId: runId!, generation },
+          async () => {
+            const status = await handleJobUnderTenant(
+              client,
+              adapter,
+              assignment,
+              runId!,
+              generation,
+              metadata,
+              pendingCancels,
+              opts,
+            );
+            if (status) setRunStatus(span, status);
+          },
+        );
       },
     );
   } catch (err) {

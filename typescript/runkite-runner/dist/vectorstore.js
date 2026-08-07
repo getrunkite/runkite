@@ -37,6 +37,7 @@
  */
 import { VectorStore } from "@langchain/core/vectorstores";
 import { Document } from "@langchain/core/documents";
+import { tenantHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 function itemToDocument(item) {
     return new Document({ pageContent: item.content ?? "", metadata: item.metadata ?? {}, id: item.id });
@@ -106,7 +107,7 @@ export class RunkiteVectorStore extends VectorStore {
     async upsert(id, content, metadata, embedding) {
         const opts = {
             method: "PUT",
-            headers: this.headers,
+            headers: { ...this.headers, ...tenantHeaders() },
             body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
             dispatcher: this.dispatcher,
         };
@@ -117,7 +118,7 @@ export class RunkiteVectorStore extends VectorStore {
     async deleteOne(id) {
         const opts = {
             method: "DELETE",
-            headers: this.headers,
+            headers: { ...this.headers, ...tenantHeaders() },
             body: JSON.stringify({ namespace: this.namespace, id }),
             dispatcher: this.dispatcher,
         };
@@ -128,7 +129,7 @@ export class RunkiteVectorStore extends VectorStore {
     async search(embedding, topK, filter) {
         const opts = {
             method: "POST",
-            headers: this.headers,
+            headers: { ...this.headers, ...tenantHeaders() },
             body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),
             dispatcher: this.dispatcher,
         };
