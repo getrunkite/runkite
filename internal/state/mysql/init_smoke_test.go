@@ -47,6 +47,7 @@ func TestInit_CreatesCoreAndGovernanceTablesIdempotently(t *testing.T) {
 		"store_items", "webhook_dead_letters", "run_cache",
 		"cron_schedules", "cron_claims",
 		"audit_events", "policy_grants", "pending_actions",
+		"kill_switches", "break_glass_windows",
 	}
 	for _, table := range want {
 		var name string

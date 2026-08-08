@@ -258,6 +258,17 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return s.downRunsParentIndex(ctx, db)
 			},
 		},
+		{
+			Version: 7,
+			Name:    "break_glass_windows",
+			Up: func(ctx context.Context) error {
+				return s.upBreakGlassWindows(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS break_glass_windows`)
+				return err
+			},
+		},
 	}
 }
 
@@ -291,7 +302,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
-		"kill_switches", "pending_actions", "policy_grants", "audit_events",
+		"break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
@@ -613,6 +624,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
 		"webhook_dead_letters", "audit_events", "policy_grants", "pending_actions",
+		"kill_switches", "break_glass_windows",
 		"run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {

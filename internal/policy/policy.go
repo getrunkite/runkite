@@ -42,6 +42,7 @@ const (
 	ReasonPolicyMissingBinding = "policy_missing_binding"
 	ReasonPolicyPending        = "policy_pending"
 	ReasonPolicyAdmissionDeny  = "policy_admission_deny"
+	ReasonBreakGlass           = "break_glass"
 )
 
 // PolicyInput is the decision context for one gate check.

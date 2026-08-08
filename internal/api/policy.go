@@ -58,6 +58,13 @@ func (s *Server) checkConnectorPolicy(ctx context.Context, stage, connectorName,
 	if v, ok := ctx.Value(policyRunKey{}).(string); ok && in.RunID == "" {
 		in.RunID = v
 	}
+	if s.tryBreakGlassBypass(ctx, in) {
+		return policy.PolicyDecision{
+			Effect:     policy.EffectAllow,
+			Reason:     "break-glass window active",
+			ReasonCode: policy.ReasonBreakGlass,
+		}, false
+	}
 	dec := s.policy.Decide(ctx, in)
 	if dec.Effect != policy.EffectAllow {
 		return dec, true

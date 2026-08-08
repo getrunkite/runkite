@@ -86,13 +86,17 @@ func (g *admissionGate) Decide(ctx context.Context, event hooks.Event) hooks.Dec
 		if ar := auth.FromContext(ctx); ar != nil {
 			principal = ar.Identity
 		}
-		dec := s.policy.Decide(ctx, policy.PolicyInput{
+		in := policy.PolicyInput{
 			Stage:     policy.StageRunCreate,
 			TenantID:  tenantID,
 			AgentID:   agentID,
 			RunID:     event.RunID,
 			Principal: principal,
-		})
+		}
+		if s.tryBreakGlassBypass(ctx, in) {
+			return hooks.Decision{Allow: true}
+		}
+		dec := s.policy.Decide(ctx, in)
 		if dec.Effect != policy.EffectAllow {
 			reason := dec.Reason
 			if reason == "" {

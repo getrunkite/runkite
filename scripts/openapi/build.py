@@ -1113,6 +1113,25 @@ def _build_admin_spec() -> dict:
                     "required": ["tenant_id"],
                     "title": "KillSwitch",
                 },
+                "BreakGlassWindow": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "tenant_id": {"type": "string"},
+                        "agent_id": {
+                            "type": "string",
+                            "description": "Empty = whole tenant",
+                        },
+                        "reason": {"type": "string"},
+                        "created_by": {"type": "string"},
+                        "starts_at": {"type": "string", "format": "date-time"},
+                        "expires_at": {"type": "string", "format": "date-time"},
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                    "required": ["tenant_id", "reason", "expires_at"],
+                    "title": "BreakGlassWindow",
+                },
             },
         },
         "paths": {
@@ -1281,6 +1300,25 @@ def _build_admin_spec() -> dict:
             "/admin-api/kill-switches/{id}": {
                 "get": {"tags": ["Admin"], "summary": "Get Kill Switch", "operationId": "admin_get_kill_switch", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("KillSwitch")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
                 "delete": {"tags": ["Admin"], "summary": "Delete Kill Switch", "operationId": "admin_delete_kill_switch", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+            },
+            "/admin-api/break-glass": {
+                "get": {"tags": ["Admin"], "summary": "List Break-Glass Windows", "description": "Time-bounded policy bypass windows (SQL backends). Active windows short-circuit policy Decide for run.create / connector.session / tool.call; they do not override kill, agent authz, or admission_limits. Max duration 24h on mint.", "operationId": "admin_list_break_glass", "parameters": [
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    *admin_page,
+                ], "responses": {
+                    "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("BreakGlassWindow"))}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+                "post": {"tags": ["Admin"], "summary": "Mint Break-Glass Window", "operationId": "admin_create_break_glass", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("BreakGlassWindow")}}}, "responses": {
+                    "201": {"description": "Created", "content": {"application/json": {"schema": _ref("BreakGlassWindow")}}},
+                    "400": {"description": "Invalid body (missing fields, expiry not in future, or duration > 24h)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+            },
+            "/admin-api/break-glass/{id}": {
+                "get": {"tags": ["Admin"], "summary": "Get Break-Glass Window", "operationId": "admin_get_break_glass", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("BreakGlassWindow")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "delete": {"tags": ["Admin"], "summary": "Revoke Break-Glass Window", "operationId": "admin_delete_break_glass", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Revoked"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/audit-events": {"get": {"tags": ["Admin"], "summary": "List Audit Events", "description": "Policy decisions newest-first. SQL state backends (Postgres/MySQL/SQLite); Mongo returns 501.", "operationId": "admin_list_audit_events", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},

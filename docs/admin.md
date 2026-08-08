@@ -44,6 +44,10 @@ GET /admin-api/kill-switches                Tenant/agent kill or pause flags (SQ
 POST /admin-api/kill-switches               Upsert kill/pause; unless pause_only, cancel non-terminal runs in scope
 GET /admin-api/kill-switches/{id}           Get one kill switch
 DELETE /admin-api/kill-switches/{id}        Clear a kill switch (resume enqueue)
+GET /admin-api/break-glass                  Time-bounded policy bypass windows (SQL; ?tenant_id=&agent_id=; X-Next-Cursor). 501 on Mongo.
+POST /admin-api/break-glass                 Mint window (reason + expires_at required; max 24h; does not bypass kill/authz/limits)
+GET /admin-api/break-glass/{id}             Get one window
+DELETE /admin-api/break-glass/{id}          Revoke a window (policy Decide applies again)
 GET /admin-api/connectors                   Connector status, including circuit breaker state
 GET /admin-api/cron                         Cron schedules across every tenant
 GET /admin-api/webhooks/dead-letters        Failed webhook deliveries
@@ -65,6 +69,7 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s) |
 | `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
+| `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |
 | `/admin/audit` | Search policy decisions |
 
 Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
@@ -76,5 +81,5 @@ flowchart LR
   A[Login] --> B[Overview]
   B --> C[Inspect run stream]
   C --> D[Cancel run]
-  B --> E[Grants / Pending / Kill / Audit]
+  B --> E[Grants / Pending / Kill / Break-glass / Audit]
 ```

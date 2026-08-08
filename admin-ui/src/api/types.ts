@@ -172,3 +172,16 @@ export interface AdminKillSwitchCreateResponse {
   kill_switch: AdminKillSwitch;
   cancelled: number;
 }
+
+/** Active break-glass window from GET /admin-api/break-glass. */
+export interface AdminBreakGlassWindow {
+  id: string;
+  tenant_id: string;
+  agent_id?: string;
+  reason: string;
+  created_by?: string;
+  starts_at: string;
+  expires_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
