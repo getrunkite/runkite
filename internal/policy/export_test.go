@@ -63,7 +63,7 @@ func TestDecide_EmitsOTelSpanEvent(t *testing.T) {
 	}
 	attrs := map[string]string{}
 	for _, a := range evs[0].Attributes {
-		attrs[string(a.Key)] = a.Value.Emit()
+		attrs[string(a.Key)] = a.Value.String()
 	}
 	if attrs["policy.effect"] != "allow" || attrs["policy.stage"] != policy.StageToolCall ||
 		attrs["run.id"] != "run-1" || attrs["connector"] != "sf" || attrs["tool"] != "query" {
