@@ -13,6 +13,7 @@ import { RunDetail } from "./pages/RunDetail";
 import { Connectors } from "./pages/Connectors";
 import { Cron } from "./pages/Cron";
 import { Webhooks } from "./pages/Webhooks";
+import { Audit } from "./pages/Audit";
 
 function Gate() {
   const { status } = useAuth();
@@ -48,6 +49,7 @@ function Gate() {
         <Route path="connectors" element={<Connectors />} />
         <Route path="cron" element={<Cron />} />
         <Route path="webhooks" element={<Webhooks />} />
+        <Route path="audit" element={<Audit />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>

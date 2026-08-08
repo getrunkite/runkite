@@ -7,6 +7,7 @@ import {
   MessagesSquare,
   Package,
   Plug,
+  Shield,
   Webhook as WebhookIcon,
   Workflow,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/connectors", label: "Connectors", icon: Plug },
       { to: "/admin/cron", label: "Cron", icon: Clock },
       { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
+      { to: "/admin/audit", label: "Audit", icon: Shield },
     ],
   },
 ];

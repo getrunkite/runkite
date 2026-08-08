@@ -104,3 +104,25 @@ export interface AdminWebhookDeadLetter {
   attempts: number;
   failed_at: string;
 }
+
+/** Policy decision row from GET /admin-api/audit-events (Postgres Supported). */
+export interface AdminAuditEvent {
+  id: string;
+  ts: string;
+  tenant_id: string;
+  actor?: string;
+  action: string;
+  resource_type?: string;
+  resource_id?: string;
+  decision: string;
+  reason_code?: string;
+  rule_id?: string;
+  latency_ms?: number;
+  run_id?: string;
+  generation?: number;
+  agent_id?: string;
+  connector?: string;
+  tool?: string;
+  attrs?: Record<string, unknown>;
+  trace_id?: string;
+}

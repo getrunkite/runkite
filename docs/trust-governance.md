@@ -88,7 +88,7 @@ Every decision is written to `audit_events` on **Postgres (Supported)** when `po
 GET /admin-api/audit-events?tenant_id=acme&decision=deny&since=<RFC3339>
 ```
 
-Returns `501` when the state backend is not Postgres. Admin UI tab, SIEM export, and HITL `pending` follow in the rest of Phase 2.
+Returns `501` when the state backend is not Postgres. The Admin UI **Audit** page (`/admin/audit`) lists the same data with tenant/decision/connector filters. SIEM export and HITL `pending` follow in the rest of Phase 2.
 
 Example:
 
