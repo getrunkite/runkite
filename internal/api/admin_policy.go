@@ -27,9 +27,11 @@ func (s *Server) policyGrants() (policyGrantStore, bool) {
 	return pg, ok
 }
 
-// reloadPolicyOverlays loads DB grants into the engine. No-op when policy
-// or Postgres store is unavailable. Multi-replica: only this process refreshes.
-func (s *Server) reloadPolicyOverlays(ctx context.Context) {
+// ReloadPolicyOverlays loads durable SQL grants into the in-process engine.
+// Called after Admin grant CRUD on the writing replica, and by the
+// background overlay poll so sibling replicas converge without a restart.
+// No-op when policy is off or the store has no grant table.
+func (s *Server) ReloadPolicyOverlays(ctx context.Context) {
 	if !s.policy.Enabled() {
 		return
 	}
@@ -137,7 +139,7 @@ func (s *Server) handleAdminCreatePolicyGrant(w http.ResponseWriter, r *http.Req
 		handleStoreError(w, err)
 		return
 	}
-	s.reloadPolicyOverlays(ctx)
+	s.ReloadPolicyOverlays(ctx)
 	g, err := store.GetPolicyGrant(ctx, body.ID)
 	if err != nil {
 		handleStoreError(w, err)
@@ -177,7 +179,7 @@ func (s *Server) handleAdminUpdatePolicyGrant(w http.ResponseWriter, r *http.Req
 		handleStoreError(w, err)
 		return
 	}
-	s.reloadPolicyOverlays(ctx)
+	s.ReloadPolicyOverlays(ctx)
 	g, err := store.GetPolicyGrant(ctx, id)
 	if err != nil {
 		handleStoreError(w, err)
@@ -203,7 +205,7 @@ func (s *Server) handleAdminDeletePolicyGrant(w http.ResponseWriter, r *http.Req
 		handleStoreError(w, err)
 		return
 	}
-	s.reloadPolicyOverlays(ctx)
+	s.ReloadPolicyOverlays(ctx)
 	w.WriteHeader(http.StatusNoContent)
 }
 

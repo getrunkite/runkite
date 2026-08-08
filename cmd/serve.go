@@ -295,6 +295,12 @@ func startServer(opts serverOpts) {
 	if eng, runEvents := initPolicy(opts.configPath, store, hookDispatcher); eng != nil {
 		apiServer.SetPolicyEngine(eng)
 		apiServer.SetPolicyRunEvents(runEvents)
+		// Sibling replicas only see Admin grant writes via this poll;
+		// the writing replica still hot-reloads in the Admin handlers.
+		if lister, ok := store.(policyGrantLister); ok {
+			go runPolicyOverlayPoll(ctx, lister, apiServer)
+			slog.Info("policy: overlay poll enabled", "interval", policyOverlayPollInterval)
+		}
 	}
 
 	// Vector/semantic store. Disabled entirely unless a vector_store

@@ -32,10 +32,10 @@ GET /admin-api/runs/{id}                    Run detail
 GET /admin-api/runs/{id}/stream             Live/replayed SSE event log for a run (same mechanics as the client-facing stream)
 GET /admin-api/audit-events                 Policy decisions (SQL: Postgres/MySQL/SQLite; ?tenant_id=&decision=&action=&run_id=&agent_id=&connector=&tool=&since=&until= RFC3339; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/policy-grants                Durable connector grants (SQL; overlays langgraph.json defaults; ?tenant_id=&agent_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
-POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads the in-process engine on this replica
+POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads this replica (siblings converge via 15s overlay poll)
 GET /admin-api/policy-grants/{id}           Get one grant
-PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads
-DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads
+PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads this replica (siblings via poll)
+DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads this replica (siblings via poll)
 GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/pending-actions/{id}         Get one pending action
 POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
@@ -58,7 +58,7 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 
 | Route | Purpose |
 | --- | --- |
-| `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (hot-reload on this replica) |
+| `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s) |
 | `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
 | `/admin/audit` | Search policy decisions |
 
