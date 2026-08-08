@@ -104,7 +104,7 @@ type breakGlassBody struct {
 	TenantID  string `json:"tenant_id"`
 	AgentID   string `json:"agent_id,omitempty"`
 	Reason    string `json:"reason"`
-	StartsAt  string `json:"starts_at,omitempty"`  // RFC3339; default now
+	StartsAt  string `json:"starts_at,omitempty"` // RFC3339; default now
 	ExpiresAt string `json:"expires_at"`          // RFC3339; required
 }
 

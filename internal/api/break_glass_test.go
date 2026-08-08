@@ -224,7 +224,7 @@ func TestBreakGlass_DoesNotBypassKillOrAuthz(t *testing.T) {
 	apiServer.SetPolicyEngine(policy.New(policy.Config{ForceEnable: true}))
 
 	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
-		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+		"op":     {Permissions: []string{"write"}, TenantID: "acme"},
 		"scoped": {Permissions: []string{auth.AgentRunPermission("other")}, TenantID: "acme"},
 	})
 	h := auth.Middleware(p, nil, nil, apiServer.Handler())
