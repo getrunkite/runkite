@@ -1921,6 +1921,46 @@ func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
 }
 
+func (s *Store) CountActiveRuns(ctx context.Context, agentID string) (int, error) {
+	query := `SELECT COUNT(*) FROM runs WHERE status IN ('pending','running')`
+	args := []interface{}{}
+	argN := 1
+	if !tenant.IsSystem(ctx) {
+		query += fmt.Sprintf(` AND tenant_id = $%d`, argN)
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if agentID != "" {
+		query += fmt.Sprintf(` AND agent_id = $%d`, argN)
+		args = append(args, agentID)
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (s *Store) CountRunsCreatedSince(ctx context.Context, since time.Time, agentID string) (int, error) {
+	query := `SELECT COUNT(*) FROM runs WHERE created_at >= $1`
+	args := []interface{}{since.UTC()}
+	argN := 2
+	if !tenant.IsSystem(ctx) {
+		query += fmt.Sprintf(` AND tenant_id = $%d`, argN)
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	}
+	if agentID != "" {
+		query += fmt.Sprintf(` AND agent_id = $%d`, argN)
+		args = append(args, agentID)
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *Store) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO terminal_hook_claims (run_id, claimed_at) VALUES ($1, $2)

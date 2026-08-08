@@ -252,6 +252,44 @@ func runCountTests(t *testing.T, factory StoreFactory) {
 		if byRunA[string(models.RunStatusError)] != 3 { // 1,5,9
 			t.Errorf("error runs = %d, want 3; map=%v", byRunA[string(models.RunStatusError)], byRunA)
 		}
+
+		activeA, err := s.CountActiveRuns(ctxA, "")
+		if err != nil {
+			t.Fatalf("CountActiveRuns: %v", err)
+		}
+		// Seed uses pending/error/success only — active = pending(3).
+		if activeA != 3 {
+			t.Errorf("CountActiveRuns(tenant-a) = %d, want 3", activeA)
+		}
+		activeAgent, err := s.CountActiveRuns(ctxA, "ag-a1")
+		if err != nil {
+			t.Fatalf("CountActiveRuns agent: %v", err)
+		}
+		if activeAgent != 3 {
+			t.Errorf("CountActiveRuns(ag-a1) = %d, want 3", activeAgent)
+		}
+		activeOther, err := s.CountActiveRuns(ctxA, "no-such-agent")
+		if err != nil {
+			t.Fatalf("CountActiveRuns other: %v", err)
+		}
+		if activeOther != 0 {
+			t.Errorf("CountActiveRuns(no-such-agent) = %d, want 0", activeOther)
+		}
+		since := now.Add(-time.Minute)
+		daily, err := s.CountRunsCreatedSince(ctxA, since, "")
+		if err != nil {
+			t.Fatalf("CountRunsCreatedSince: %v", err)
+		}
+		if daily != 12 {
+			t.Errorf("CountRunsCreatedSince = %d, want 12", daily)
+		}
+		oldDaily, err := s.CountRunsCreatedSince(ctxA, now.Add(time.Hour), "")
+		if err != nil {
+			t.Fatalf("CountRunsCreatedSince future: %v", err)
+		}
+		if oldDaily != 0 {
+			t.Errorf("CountRunsCreatedSince(future) = %d, want 0", oldDaily)
+		}
 	})
 }
 

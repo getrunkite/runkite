@@ -538,7 +538,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		}
 	}
 
-	if err = s.store.CreateRun(ctx, run); err != nil {
+	// admission_limits (when configured) use CreateRunAdmitted: scope
+	// lock + COUNT + INSERT on one connection/tx so a burst cannot all
+	// pass a stale COUNT. Over-cap → *state.ErrAdmissionLimitExceeded (429).
+	if err = s.createRunRespectingLimits(ctx, run, now); err != nil {
 		// run_id is the primary key, so this fails with a unique-
 		// constraint violation if a concurrent request already inserted
 		// the same client-supplied run_id first. Only reachable when
@@ -840,7 +843,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		Output:    outputJSON,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.store.CreateRun(ctx, run); err != nil {
+	if err := s.createRunRespectingLimits(ctx, run, now); err != nil {
 		return nil, false, err
 	}
 	// CreateRun's INSERT has no output column (output is normally only

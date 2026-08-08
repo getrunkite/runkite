@@ -339,6 +339,15 @@ func startServer(opts serverOpts) {
 		slog.Info("a2a: max_breadth configured", "max_breadth", maxBreadth)
 	}
 
+	if lim := initAdmissionLimits(opts.configPath); lim != nil && lim.Enabled() {
+		apiServer.SetAdmissionLimits(lim)
+		slog.Info("admission_limits: enabled",
+			"tenant_concurrent", lim.TenantConcurrent,
+			"tenant_daily", lim.TenantDaily,
+			"agent_concurrent", lim.AgentConcurrent,
+			"agent_daily", lim.AgentDaily)
+	}
+
 	// A/B deployment routing, built on top of full agent versioning.
 	// Disabled (pure pass-through) unless "agent_aliases" is configured.
 	if aliasCfg := initAgentAliases(opts.configPath); len(aliasCfg) > 0 {
@@ -1282,6 +1291,40 @@ func initA2AMaxBreadth(configPath string) int {
 		return 0
 	}
 	return cfg.A2A.MaxBreadth
+}
+
+// initAdmissionLimits reads admission_limits from the first langgraph.json.
+// Returns nil when absent or all ceilings are unset/<=0.
+func initAdmissionLimits(configPath string) *api.AdmissionLimits {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.AdmissionLimits == nil {
+		return nil
+	}
+	out := &api.AdmissionLimits{}
+	if r := cfg.AdmissionLimits.PerTenant; r != nil {
+		if r.MaxConcurrent > 0 {
+			out.TenantConcurrent = r.MaxConcurrent
+		}
+		if r.MaxDaily > 0 {
+			out.TenantDaily = r.MaxDaily
+		}
+	}
+	if r := cfg.AdmissionLimits.PerAgent; r != nil {
+		if r.MaxConcurrent > 0 {
+			out.AgentConcurrent = r.MaxConcurrent
+		}
+		if r.MaxDaily > 0 {
+			out.AgentDaily = r.MaxDaily
+		}
+	}
+	if !out.Enabled() {
+		return nil
+	}
+	return out
 }
 
 // initRateLimiter reads the "rate_limit" section from the first discovered

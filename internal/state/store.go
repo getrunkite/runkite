@@ -72,6 +72,13 @@ type Store interface {
 
 	// --- Runs ---
 	CreateRun(ctx context.Context, run *models.Run) error
+	// CreateRunAdmitted inserts a run only if caps allow. When caps is
+	// nil or disabled, identical to CreateRun. Otherwise serializes
+	// per-tenant / per-agent scope (DB advisory lock or equivalent),
+	// COUNTs, then INSERTs on the same connection/transaction so a
+	// burst of concurrent creates cannot all pass a stale COUNT.
+	// Returns *ErrAdmissionLimitExceeded when over ceiling.
+	CreateRunAdmitted(ctx context.Context, run *models.Run, caps *RunAdmissionCaps) error
 	GetRun(ctx context.Context, runID string) (*models.Run, error)
 	UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error
 	DeleteRun(ctx context.Context, runID string) error
@@ -80,6 +87,14 @@ type Store interface {
 	// under ctx (system = all tenants). Empty statuses are omitted;
 	// total runs is the sum of the map values.
 	CountRunsByStatus(ctx context.Context) (map[string]int, error)
+	// CountActiveRuns returns pending+running runs visible under ctx.
+	// When agentID is non-empty, only that agent is counted. Used by
+	// admission_limits.max_concurrent.
+	CountActiveRuns(ctx context.Context, agentID string) (int, error)
+	// CountRunsCreatedSince returns runs with created_at >= since
+	// (inclusive), tenant-scoped like CountActiveRuns. Used by
+	// admission_limits.max_daily (UTC day start).
+	CountRunsCreatedSince(ctx context.Context, since time.Time, agentID string) (int, error)
 	// TryClaimTerminalHook atomically claims the right to dispatch the
 	// terminal webhook (run_complete/error/interrupt) for runID so
 	// exactly one control-plane replica fires it when cancel and

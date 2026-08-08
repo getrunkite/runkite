@@ -38,6 +38,11 @@ type LangGraphConfig struct {
 	// discovered langgraph.json only (see initRateLimiter in cmd/serve.go),
 	// same convention as Auth.
 	RateLimit *RateLimitEntry `json:"rate_limit,omitempty"`
+	// AdmissionLimits caps in-flight and per-UTC-day run creates
+	// (occupancy/quota, not request-rate). Control-plane-wide, first-file
+	// (see initAdmissionLimits in cmd/serve.go). Separate from RateLimit
+	// on purpose: different semantics and SQL COUNT enforcement.
+	AdmissionLimits *AdmissionLimitsEntry `json:"admission_limits,omitempty"`
 	// Webhooks is control-plane-wide, same first-file convention as Auth
 	// and RateLimit (see initHooks in cmd/serve.go). Observational only
 	// (async); cannot reject runs. For sync deny-before-create guardrails,
@@ -386,6 +391,21 @@ type RateLimitEntry struct {
 type RateLimitRule struct {
 	RPS   float64 `json:"rps"`
 	Burst int     `json:"burst"`
+}
+
+// AdmissionLimitsEntry is the "admission_limits" section of langgraph.json.
+// Any subset of dimensions may be set; unset or <= 0 values are unlimited.
+type AdmissionLimitsEntry struct {
+	PerTenant *AdmissionLimitRule `json:"per_tenant,omitempty"`
+	PerAgent  *AdmissionLimitRule `json:"per_agent,omitempty"`
+}
+
+// AdmissionLimitRule is one occupancy/quota ceiling.
+type AdmissionLimitRule struct {
+	// MaxConcurrent caps pending+running runs (SQL COUNT).
+	MaxConcurrent int `json:"max_concurrent,omitempty"`
+	// MaxDaily caps runs with created_at >= start of current UTC day.
+	MaxDaily int `json:"max_daily,omitempty"`
 }
 
 // AuthEntry is the "auth" section of langgraph.json.

@@ -126,6 +126,8 @@ That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) 
 
 **Run admission:** every `createRunCtx` path shares one `hooks.Gate` pipeline (same as `preflight_hooks`). The admission Gate checks, in order: (1) SQL kill/pause switch for tenant or tenant+agent, (2) agent-scoped authz `agents:<id>:run` (route-level write only on run-create paths; blanket `write`/`admin` still allow any agent; empty permissions stay unrestricted), (3) when policy is enabled, `Decide` at stage `run.create` (skips connector grants; optional sync webhook can still deny; decisions are audited). Deny → HTTP 403. Kill activation (`POST /admin-api/kill-switches`, Admin UI `/admin/kill`) refuses new creates immediately on every replica (SQL read) and, unless `pause_only`, drains **all** pending/running runs in scope on the writing replica (paginated SearchRuns until empty; interrupted/success/error/timeout are already terminal and are not re-cancelled).
 
+Optional **`admission_limits`** (occupancy/quota, not request-rate): per-tenant / per-agent `max_concurrent` (pending+running) and `max_daily` (UTC day), enforced atomically with run INSERT under a scope lock. Exceed → HTTP 429. See [Configuration](configuration.md).
+
 ### Bring your own PDP (sync `policy.webhook`)
 
 Runkite does not ship a proprietary policy product. You point `policy.webhook.url` at **your** decision service (OPA, Cedar, internal ABAC, or a 50-line script). The control plane sends `policy.decide` JSON (HMAC optional), fail-closes on errors, and enforces `allow` / `deny` / `pending` on connector paths.

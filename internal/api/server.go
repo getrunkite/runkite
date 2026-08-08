@@ -51,6 +51,7 @@ type Server struct {
 	vectors         vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth     int                     // 0 means "use the default" -- see SetA2AMaxDepth
 	a2aMaxBreadth   int                     // 0 means "use the default" -- see SetA2AMaxBreadth
+	admissionLimits *AdmissionLimits        // nil/disabled = unlimited occupancy/quota
 	aliases         *AliasResolver          // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
@@ -147,6 +148,12 @@ func (s *Server) a2aMaxBreadthOrDefault() int {
 		return defaultA2AMaxBreadth
 	}
 	return s.a2aMaxBreadth
+}
+
+// SetAdmissionLimits attaches occupancy/quota ceilings from
+// admission_limits config. Nil or all-zero disables checks.
+func (s *Server) SetAdmissionLimits(l *AdmissionLimits) {
+	s.admissionLimits = l
 }
 
 // SetAliasResolver attaches A/B deployment routing (see alias.go).
@@ -1092,6 +1099,7 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	var rateLimited *ratelimit.ErrRateLimited
 	var depthExceeded *ErrA2ADepthExceeded
 	var breadthExceeded *ErrA2ABreadthExceeded
+	var admissionExceeded *state.ErrAdmissionLimitExceeded
 	switch {
 	case errors.As(err, &notFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -1099,6 +1107,9 @@ func handleStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.As(err, &rateLimited):
 		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, err.Error())
+	case errors.As(err, &admissionExceeded):
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfterAdmission(admissionExceeded, time.Now())))
 		writeError(w, http.StatusTooManyRequests, err.Error())
 	case errors.As(err, &depthExceeded):
 		writeError(w, http.StatusBadRequest, err.Error())

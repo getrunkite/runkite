@@ -1479,6 +1479,34 @@ func (s *Store) CountRunsByStatus(ctx context.Context) (map[string]int, error) {
 	return s.countByStatus(ctx, "runs")
 }
 
+func (s *Store) CountActiveRuns(ctx context.Context, agentID string) (int, error) {
+	filter := tenantFilter(ctx, bson.M{
+		"status": bson.M{"$in": []string{"pending", "running"}},
+	})
+	if agentID != "" {
+		filter["agent_id"] = agentID
+	}
+	n, err := s.col("runs").CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+func (s *Store) CountRunsCreatedSince(ctx context.Context, since time.Time, agentID string) (int, error) {
+	filter := tenantFilter(ctx, bson.M{
+		"created_at": bson.M{"$gte": since.UTC()},
+	})
+	if agentID != "" {
+		filter["agent_id"] = agentID
+	}
+	n, err := s.col("runs").CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
 func (s *Store) TryClaimTerminalHook(ctx context.Context, runID string) (bool, error) {
 	_, err := s.col("terminal_hook_claims").InsertOne(ctx, bson.M{
 		"run_id": runID, "claimed_at": time.Now().UTC(),
