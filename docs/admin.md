@@ -64,6 +64,7 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | --- | --- |
 | `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s) |
 | `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
+| `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/audit` | Search policy decisions |
 
 Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
@@ -75,5 +76,5 @@ flowchart LR
   A[Login] --> B[Overview]
   B --> C[Inspect run stream]
   C --> D[Cancel run]
-  B --> E[Grants / Pending / Audit]
+  B --> E[Grants / Pending / Kill / Audit]
 ```

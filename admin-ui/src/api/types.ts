@@ -154,3 +154,21 @@ export interface AdminPendingAction {
   created_at: string;
   updated_at: string;
 }
+
+/** Active kill/pause flag from GET /admin-api/kill-switches. */
+export interface AdminKillSwitch {
+  id: string;
+  tenant_id: string;
+  agent_id?: string;
+  pause_only: boolean;
+  reason?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** POST /admin-api/kill-switches response. */
+export interface AdminKillSwitchCreateResponse {
+  kill_switch: AdminKillSwitch;
+  cancelled: number;
+}
