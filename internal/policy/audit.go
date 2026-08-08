@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
@@ -57,6 +59,9 @@ func (a *storeAuditor) WritePolicyDecision(ctx context.Context, in PolicyInput, 
 		Attrs: map[string]interface{}{
 			"reason": dec.Reason,
 		},
+	}
+	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
+		ev.TraceID = sc.TraceID().String()
 	}
 	return a.store.WriteAuditEvent(ctx, ev)
 }

@@ -1,7 +1,8 @@
 // Package hooks implements platform event hooks:
 //
 //   - Observational (async): run_start, run_complete, tool_call, error,
-//     interrupt — Sink + Dispatch; never delays run creation.
+//     interrupt, policy_decision — Sink + Dispatch; never delays run
+//     creation (policy_decision is also fired from internal/policy).
 //   - Pre-flight (sync): before_run — Gate + CheckBeforeRun; can deny a
 //     run before thread auto-create, claim, or run row (fail-closed on
 //     timeout/error).
@@ -23,12 +24,13 @@ import (
 type EventType string
 
 const (
-	RunStart    EventType = "run_start"
-	RunComplete EventType = "run_complete"
-	ToolCall    EventType = "tool_call"
-	Error       EventType = "error"
-	Interrupt   EventType = "interrupt"
-	BeforeRun   EventType = "before_run" // sync pre-flight only (Gate), not Dispatch/Sink
+	RunStart       EventType = "run_start"
+	RunComplete    EventType = "run_complete"
+	ToolCall       EventType = "tool_call"
+	Error          EventType = "error"
+	Interrupt      EventType = "interrupt"
+	PolicyDecision EventType = "policy_decision" // async SIEM / observational export
+	BeforeRun      EventType = "before_run"      // sync pre-flight only (Gate), not Dispatch/Sink
 )
 
 // Event is what gets dispatched to every registered Sink.

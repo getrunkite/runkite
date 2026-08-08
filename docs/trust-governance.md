@@ -88,7 +88,18 @@ Every decision is written to `audit_events` on **Postgres (Supported)** when `po
 GET /admin-api/audit-events?tenant_id=acme&decision=deny&since=<RFC3339>
 ```
 
-Returns `501` when the state backend is not Postgres. The Admin UI **Audit** page (`/admin/audit`) lists the same data with tenant/decision/connector filters. SIEM export and HITL `pending` follow in the rest of Phase 2.
+Returns `501` when the state backend is not Postgres. The Admin UI **Audit** page (`/admin/audit`) lists the same data with tenant/decision/connector filters.
+
+**Observability:** every Decide adds an OTel span event `policy.decide` (effect, reason_code, run/agent/connector/tool) on the active HTTP span when OTLP is configured. Optional async SIEM export:
+
+```json
+"policy": {
+  "grants": [ ... ],
+  "siem": { "url": "https://siem.example/hooks/runkite", "secret": "..." }
+}
+```
+
+That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) — it does **not** block connector/MCP paths. HITL `pending` and Compatible-backend audit tables follow in the rest of Phase 2.
 
 Example:
 

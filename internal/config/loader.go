@@ -131,6 +131,9 @@ type PolicyEntry struct {
 	Grants []PolicyGrantEntry `json:"grants,omitempty"`
 	// Webhook is an optional sync PolicyProvider (WebhookGate-shaped).
 	Webhook *PolicyWebhookEntry `json:"webhook,omitempty"`
+	// SIEM is an optional async export sink for policy_decision events
+	// (hooks.Dispatcher / WebhookSink — not the sync decide webhook).
+	SIEM *PolicySIEMEntry `json:"siem,omitempty"`
 }
 
 // PolicyGrantEntry is one static connector grant.
@@ -153,6 +156,14 @@ type PolicyWebhookEntry struct {
 	URL       string `json:"url"`
 	Secret    string `json:"secret,omitempty"`
 	TimeoutMS int    `json:"timeout_ms,omitempty"`
+}
+
+// PolicySIEMEntry is an async HTTP sink for policy_decision events.
+// Delivery uses the same HMAC / retry / dead-letter path as top-level
+// webhooks; it never blocks Decide.
+type PolicySIEMEntry struct {
+	URL    string `json:"url"`
+	Secret string `json:"secret,omitempty"`
 }
 
 // AgentAliasEntry is one entry in langgraph.json's "agent_aliases"

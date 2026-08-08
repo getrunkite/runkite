@@ -284,7 +284,15 @@ func startServer(opts serverOpts) {
 		slog.Info("connector registry loaded", "connectors", reg.List())
 	}
 
-	if eng := initPolicy(opts.configPath, store); eng != nil {
+	// Event hooks + webhook delivery first so policy.siem can register
+	// an async policy_decision sink on the same Dispatcher.
+	hookDispatcher := initHooks(opts.configPath, store)
+	apiServer.SetHookDispatcher(hookDispatcher)
+	if hookDispatcher.HasSinks() {
+		slog.Info("event hooks: enabled")
+	}
+
+	if eng := initPolicy(opts.configPath, store, hookDispatcher); eng != nil {
 		apiServer.SetPolicyEngine(eng)
 	}
 
@@ -321,14 +329,6 @@ func startServer(opts serverOpts) {
 	if aliasCfg := initAgentAliases(opts.configPath); len(aliasCfg) > 0 {
 		apiServer.SetAliasResolver(api.NewAliasResolver(aliasCfg))
 		slog.Info("agent aliases: configured", "count", len(aliasCfg))
-	}
-
-	// Event hooks + webhook delivery: on_run_start, on_run_complete,
-	// on_tool_call, on_error, on_interrupt.
-	hookDispatcher := initHooks(opts.configPath, store)
-	apiServer.SetHookDispatcher(hookDispatcher)
-	if hookDispatcher.HasSinks() {
-		slog.Info("event hooks: enabled")
 	}
 
 	// Custom routes: in-runner + sidecar modes -- both are a reverse

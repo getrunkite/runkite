@@ -9,6 +9,9 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Stages evaluated today. run.create / a2a stay on hooks.Gate (Phase 3).
@@ -70,12 +73,19 @@ type Auditor interface {
 	WritePolicyDecision(ctx context.Context, in PolicyInput, dec PolicyDecision) error
 }
 
+// Exporter fans a decision out asynchronously (SIEM webhook, etc.).
+// Must not block; nil is a no-op.
+type Exporter interface {
+	ExportPolicyDecision(ctx context.Context, in PolicyInput, dec PolicyDecision)
+}
+
 // Engine chains static grants then optional webhook. First deny wins.
 // When Enabled() is false, callers must skip Decide (V1 open).
 type Engine struct {
 	static        *Static
 	webhook       *Webhook
 	auditor       Auditor
+	exporter      Exporter
 	cache         *decisionCache
 	defaultEffect string
 	failClosed    bool
@@ -89,6 +99,7 @@ type Config struct {
 	Grants        []Grant
 	Webhook       *WebhookConfig
 	Auditor       Auditor
+	Exporter      Exporter
 }
 
 // New returns an Engine, or nil when nothing is configured (V1 open).
@@ -110,6 +121,7 @@ func New(cfg Config) *Engine {
 		defaultEffect: def,
 		failClosed:    failClosed,
 		auditor:       cfg.Auditor,
+		exporter:      cfg.Exporter,
 	}
 	if hasGrants {
 		e.static = NewStatic(cfg.Grants)
@@ -123,22 +135,70 @@ func New(cfg Config) *Engine {
 	return e
 }
 
+// SetExporter attaches (or clears) the async SIEM/export sink after New.
+func (e *Engine) SetExporter(exp Exporter) {
+	if e == nil {
+		return
+	}
+	e.exporter = exp
+}
+
 // Enabled reports whether any policy layer is active.
 func (e *Engine) Enabled() bool {
 	return e != nil && (e.static != nil || e.webhook != nil)
 }
 
 // Decide evaluates static grants then webhook. Call only when Enabled().
+// Every call (including cache hits) emits an OTel span event, writes
+// audit when configured, and fans out to Exporter (SIEM) when set.
 func (e *Engine) Decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	start := time.Now()
 	dec := e.decide(ctx, in)
 	dec.LatencyMs = int(time.Since(start).Milliseconds())
+	recordPolicySpanEvent(ctx, in, dec)
 	if e.auditor != nil {
 		if err := e.auditor.WritePolicyDecision(ctx, in, dec); err != nil {
 			slog.Warn("policy: audit write failed", "error", err, "stage", in.Stage, "run_id", in.RunID)
 		}
 	}
+	if e.exporter != nil {
+		e.exporter.ExportPolicyDecision(ctx, in, dec)
+	}
 	return dec
+}
+
+func recordPolicySpanEvent(ctx context.Context, in PolicyInput, dec PolicyDecision) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("policy.stage", in.Stage),
+		attribute.String("policy.effect", dec.Effect),
+		attribute.Int("policy.latency_ms", dec.LatencyMs),
+	}
+	if dec.ReasonCode != "" {
+		attrs = append(attrs, attribute.String("policy.reason_code", dec.ReasonCode))
+	}
+	if dec.RuleID != "" {
+		attrs = append(attrs, attribute.String("policy.rule_id", dec.RuleID))
+	}
+	if in.TenantID != "" {
+		attrs = append(attrs, attribute.String("tenant.id", in.TenantID))
+	}
+	if in.RunID != "" {
+		attrs = append(attrs, attribute.String("run.id", in.RunID))
+	}
+	if in.AgentID != "" {
+		attrs = append(attrs, attribute.String("agent.id", in.AgentID))
+	}
+	if in.Connector != "" {
+		attrs = append(attrs, attribute.String("connector", in.Connector))
+	}
+	if in.Tool != "" {
+		attrs = append(attrs, attribute.String("tool", in.Tool))
+	}
+	span.AddEvent("policy.decide", trace.WithAttributes(attrs...))
 }
 
 func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
