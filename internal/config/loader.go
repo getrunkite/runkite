@@ -127,6 +127,9 @@ type PolicyEntry struct {
 	// Audit enables durable audit_events writes on Supported (Postgres).
 	// Default true when policy is configured.
 	Audit *bool `json:"audit,omitempty"`
+	// RunEvents emits method "tool_auth" RunEvents on connector policy
+	// denials (session + tools/call). Default true when policy is configured.
+	RunEvents *bool `json:"run_events,omitempty"`
 	// Grants are in-process connector grants (tenant + agent + connector).
 	Grants []PolicyGrantEntry `json:"grants,omitempty"`
 	// Webhook is an optional sync PolicyProvider (WebhookGate-shaped).

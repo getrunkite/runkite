@@ -292,8 +292,9 @@ func startServer(opts serverOpts) {
 		slog.Info("event hooks: enabled")
 	}
 
-	if eng := initPolicy(opts.configPath, store, hookDispatcher); eng != nil {
+	if eng, runEvents := initPolicy(opts.configPath, store, hookDispatcher); eng != nil {
 		apiServer.SetPolicyEngine(eng)
+		apiServer.SetPolicyRunEvents(runEvents)
 	}
 
 	// Vector/semantic store. Disabled entirely unless a vector_store

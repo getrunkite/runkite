@@ -188,11 +188,12 @@ A `RunEvent` is a JSON object published by the runner back to the control plane.
 | `custom:{name}` | Named custom event from a user stream channel. | `{ "name": "string", "payload": any }` |
 | `end` | Terminal event. The run is finished. | `{ "status": "success" | "error" | "interrupted" }` |
 | `error` | Error event. The run failed. | `{ "message": "string", "type": "string (optional)", "stacktrace": "string (optional)" }` |
+| `tool_auth` | Control-plane connector policy denial (not emitted by runners). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number }` |
 
 ### 4.4 Rules
 
 - `seq` MUST be monotonically increasing within a run. The runner MUST NOT reuse or skip sequence numbers.
-- `event_id` MUST be unique within a run. The recommended format is `{run_id}_evt_{seq}`.
+- `event_id` MUST be unique within a run. The recommended format is `{run_id}_evt_{seq}`. Control-plane `tool_auth` events use `{run_id}_tool_auth_{hex}` so they never collide with runner IDs; their `seq` is best-effort (`max(replay)+1`) and may interleave with concurrent runner publishes — clients MUST dedupe by `event_id`.
 - Every run MUST end with either an `end` event (status=success or status=interrupted) or an `error` event. A run with no terminal event is considered crashed.
 - The `lifecycle` method with `event: "running"` SHOULD be the first event emitted after the runner begins execution.
 - The `lifecycle` method with `event: "interrupted"` MUST be emitted before an `input.requested` event (it signals the run is paused; the `input.requested` provides the details of what's needed).

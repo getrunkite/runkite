@@ -2,11 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"log/slog"
+	"time"
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // policyInputFromRequest builds a PolicyInput from run-binding (preferred)
@@ -93,6 +98,66 @@ func mcpPolicyDenyData(dec policy.PolicyDecision) map[string]interface{} {
 		data["rule_id"] = dec.RuleID
 	}
 	return data
+}
+
+// emitToolAuthEvent publishes a best-effort RunEvent so Agent Protocol
+// streams surface connector policy denials. Event IDs use a distinct
+// namespace from runner `{run_id}_evt_{seq}` so they never collide; seq
+// is max(replay)+1 (best-effort under concurrent runner publishes).
+func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, tool string, dec policy.PolicyDecision) {
+	if s == nil || !s.policyRunEvents || s.broker == nil {
+		return
+	}
+	in := policyInputFromRequest(ctx, stage, connectorName, tool)
+	if in.RunID == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"stage":       stage,
+		"effect":      dec.Effect,
+		"connector":   connectorName,
+		"tool":        tool,
+		"reason":      dec.Reason,
+		"reason_code": dec.ReasonCode,
+		"rule_id":     dec.RuleID,
+		"generation":  in.Generation,
+	})
+	if err != nil {
+		slog.Warn("policy: tool_auth marshal failed", "error", err, "run_id", in.RunID)
+		return
+	}
+	seq := int64(1)
+	if prev, replayErr := s.broker.Replay(ctx, in.RunID, 0); replayErr == nil {
+		for _, ev := range prev {
+			if ev != nil && ev.Seq >= seq {
+				seq = ev.Seq + 1
+			}
+		}
+	}
+	idSuffix, err := randomHex(8)
+	if err != nil {
+		slog.Warn("policy: tool_auth id failed", "error", err, "run_id", in.RunID)
+		return
+	}
+	ev := &transport.RunEvent{
+		EventID:   in.RunID + "_tool_auth_" + idSuffix,
+		Seq:       seq,
+		Method:    "tool_auth",
+		Namespace: []string{},
+		Data:      payload,
+		Ts:        time.Now().UnixMilli(),
+	}
+	if err := s.broker.Publish(ctx, in.RunID, ev); err != nil {
+		slog.Warn("policy: tool_auth publish failed", "error", err, "run_id", in.RunID)
+	}
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // extractJSONRPCID pulls the JSON-RPC id from a raw body for deny responses.

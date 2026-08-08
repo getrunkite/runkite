@@ -105,7 +105,9 @@ func replayAndTail(
 	seq := int64(0)
 	toStreamEvent := func(event *transport.RunEvent) (*models.StreamingEvent, bool) {
 		method := event.Method
-		if method != "lifecycle" && method != "end" && method != "error" {
+		// tool_auth is control-plane policy deny DX — always forward like
+		// lifecycle/end/error so channel filters don't hide denials.
+		if method != "lifecycle" && method != "end" && method != "error" && method != "tool_auth" {
 			if len(channelSet) > 0 && !channelSet[method] && !channelSet["*"] {
 				return nil, false
 			}

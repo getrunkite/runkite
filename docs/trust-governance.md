@@ -99,7 +99,9 @@ Returns `501` when the state backend is not Postgres. The Admin UI **Audit** pag
 }
 ```
 
-That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) — it does **not** block connector/MCP paths. HITL `pending` and Compatible-backend audit tables follow in the rest of Phase 2.
+That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) — it does **not** block connector/MCP paths.
+
+**Run stream DX:** when `policy.run_events` is true (default), session and MCP `tools/call` denials also publish a `tool_auth` RunEvent on the run's event broker so Agent Protocol SSE/WS clients see the denial in-stream (`reason_code`, connector, tool). Event IDs use `{run_id}_tool_auth_{hex}` (not the runner `{run_id}_evt_{n}` namespace). HITL `pending` and Compatible-backend audit tables follow in the rest of Phase 2.
 
 Example:
 

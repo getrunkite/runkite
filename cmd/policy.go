@@ -13,21 +13,23 @@ import (
 )
 
 // initPolicy loads langgraph.json's "policy" section (first file) and
-// builds an Engine. Returns nil when absent/empty (V1 open). When
-// policy.siem is set, registers an async WebhookSink on dispatcher for
-// policy_decision events and attaches it as the Engine's Exporter.
-func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatcher) *policy.Engine {
+// builds an Engine. Returns (nil, false) when absent/empty (V1 open).
+// When policy.siem is set, registers an async WebhookSink on dispatcher
+// for policy_decision events and attaches it as the Engine's Exporter.
+// runEvents is true by default (tool_auth RunEvents on denials) unless
+// policy.run_events is explicitly false.
+func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatcher) (eng *policy.Engine, runEvents bool) {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
-		return nil
+		return nil, false
 	}
 	cfg, err := config.LoadLangGraphJSON(paths[0])
 	if err != nil || cfg.Policy == nil {
-		return nil
+		return nil, false
 	}
 	p := cfg.Policy
 	if len(p.Grants) == 0 && (p.Webhook == nil || p.Webhook.URL == "") {
-		return nil
+		return nil, false
 	}
 
 	var auditor policy.Auditor
@@ -74,9 +76,14 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		pcfg.Webhook = wc
 	}
 
-	eng := policy.New(pcfg)
+	eng = policy.New(pcfg)
 	if eng == nil {
-		return nil
+		return nil, false
+	}
+
+	runEvents = true
+	if p.RunEvents != nil {
+		runEvents = *p.RunEvents
 	}
 
 	siemOn := false
@@ -97,8 +104,9 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,
 		"siem", siemOn,
+		"run_events", runEvents,
 	)
-	return eng
+	return eng, runEvents
 }
 
 // siemExporter fans Decide results onto the shared hooks.Dispatcher

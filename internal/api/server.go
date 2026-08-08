@@ -37,19 +37,20 @@ import (
 
 // Server is the HTTP API server for the Agent Protocol.
 type Server struct {
-	store       state.Store
-	queue       transport.JobQueue
-	broker      transport.EventBroker
-	cancel      transport.CancelBroker
-	connectors  *connector.Registry     // nil if no connectors configured
-	policy      *policy.Engine          // nil = V1 open (no policy configured)
-	rateLimit   *ratelimit.Limiter      // nil-safe: nil behaves as disabled
-	hooks       *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
-	customProxy http.Handler            // nil if no custom_routes configured
-	customMount string                  // external prefix (default /custom); read on every request
-	vectors     vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
-	a2aMaxDepth int                     // 0 means "use the default" -- see SetA2AMaxDepth
-	aliases     *AliasResolver          // nil-safe: nil Resolve is a pass-through
+	store           state.Store
+	queue           transport.JobQueue
+	broker          transport.EventBroker
+	cancel          transport.CancelBroker
+	connectors      *connector.Registry     // nil if no connectors configured
+	policy          *policy.Engine          // nil = V1 open (no policy configured)
+	policyRunEvents bool                    // emit tool_auth RunEvents on policy denials
+	rateLimit       *ratelimit.Limiter      // nil-safe: nil behaves as disabled
+	hooks           *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
+	customProxy     http.Handler            // nil if no custom_routes configured
+	customMount     string                  // external prefix (default /custom); read on every request
+	vectors         vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
+	a2aMaxDepth     int                     // 0 means "use the default" -- see SetA2AMaxDepth
+	aliases         *AliasResolver          // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
 	// coder/websocket's default any-Origin accept (token auth still applies).
@@ -96,6 +97,12 @@ func (s *Server) SetConnectorRegistry(r *connector.Registry) {
 // V1 open connector access (after runner auth + run-binding).
 func (s *Server) SetPolicyEngine(e *policy.Engine) {
 	s.policy = e
+}
+
+// SetPolicyRunEvents toggles publishing method "tool_auth" RunEvents
+// when a connector session or tools/call is denied by policy.
+func (s *Server) SetPolicyRunEvents(on bool) {
+	s.policyRunEvents = on
 }
 
 // SetRateLimiter attaches a rate limiter to the server. Called after
@@ -730,6 +737,7 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageConnectorSession, name, ""); deny {
+		s.emitToolAuthEvent(r.Context(), policy.StageConnectorSession, name, "", dec)
 		writeJSON(w, http.StatusForbidden, policyDenyJSON(dec))
 		return
 	}
@@ -810,6 +818,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	// the connector's own static tool filter inside ProxyMCPRequest).
 	if method, tool := extractToolsCallName(body); method == "tools/call" {
 		if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageToolCall, name, tool); deny {
+			s.emitToolAuthEvent(r.Context(), policy.StageToolCall, name, tool, dec)
 			msg := dec.Reason
 			if msg == "" {
 				msg = "denied by policy"
