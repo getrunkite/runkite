@@ -297,7 +297,7 @@ func startServer(opts serverOpts) {
 		apiServer.SetPolicyRunEvents(runEvents)
 		// Sibling replicas only see Admin grant writes via this poll;
 		// the writing replica still hot-reloads in the Admin handlers.
-		if lister, ok := store.(policyGrantLister); ok {
+		if lister, ok := store.(policyOverlayStore); ok {
 			go runPolicyOverlayPoll(ctx, lister, apiServer)
 			slog.Info("policy: overlay poll enabled", "interval", policyOverlayPollInterval)
 		}

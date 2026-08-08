@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/auth"
@@ -59,6 +60,22 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 			"window_id", win.ID, "error", err)
 		return false
 	}
+	attrs := map[string]interface{}{
+		"reason":     win.Reason,
+		"window_id":  win.ID,
+		"created_by": win.CreatedBy,
+		"expires_at": win.ExpiresAt.UTC().Format(time.RFC3339),
+	}
+	// Observability only: note when this bypass also skipped a
+	// mandatory_hitl gate (no behavior change — break-glass still wins).
+	if in.Stage == policy.StageToolCall {
+		if rule := s.policy.MatchMandatoryHITL(in); rule != nil {
+			attrs["mandatory_hitl_bypassed"] = true
+			if id := strings.TrimSpace(rule.ID); id != "" {
+				attrs["mandatory_hitl_rule_id"] = id
+			}
+		}
+	}
 	ev := &models.AuditEvent{
 		ID:           "bg-use-" + suffix,
 		TS:           time.Now().UTC(),
@@ -75,12 +92,7 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 		AgentID:      in.AgentID,
 		Connector:    in.Connector,
 		Tool:         in.Tool,
-		Attrs: map[string]interface{}{
-			"reason":     win.Reason,
-			"window_id":  win.ID,
-			"created_by": win.CreatedBy,
-			"expires_at": win.ExpiresAt.UTC().Format(time.RFC3339),
-		},
+		Attrs:        attrs,
 	}
 	if err := aw.WriteAuditEvent(ctx, ev); err != nil {
 		slog.Warn("break-glass audit write failed; refusing bypass",

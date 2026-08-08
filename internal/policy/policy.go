@@ -89,17 +89,20 @@ type Exporter interface {
 // Engine chains static grants then optional webhook. First deny wins.
 // When Enabled() is false, callers must skip Decide (V1 open).
 type Engine struct {
-	mu            sync.RWMutex
-	baseline      []Grant // immutable deployment defaults from langgraph.json
-	overlays      []Grant // durable Admin/DB grants; win on same key
-	static        *Static
-	webhook       *Webhook
-	mandatoryHITL []MandatoryHITLRule // config-only; force allow → pending on tool.call
-	auditor       Auditor
-	exporter      Exporter
-	cache         *decisionCache
-	defaultEffect string
-	failClosed    bool
+	mu       sync.RWMutex
+	baseline []Grant // immutable deployment defaults from langgraph.json
+	overlays []Grant // durable Admin/DB grants; win on same key
+	static   *Static
+	webhook  *Webhook
+	// mandatoryHITL* — config baseline + SQL overlays; merged into mandatoryHITL.
+	mandatoryHITLBaseline []MandatoryHITLRule
+	mandatoryHITLOverlays []MandatoryHITLRule
+	mandatoryHITL         []MandatoryHITLRule // force allow → pending on tool.call
+	auditor               Auditor
+	exporter              Exporter
+	cache                 *decisionCache
+	defaultEffect         string
+	failClosed            bool
 }
 
 // Config builds an Engine from langgraph.json's policy section.
@@ -137,12 +140,12 @@ func New(cfg Config) *Engine {
 		failClosed = *cfg.FailClosed
 	}
 	e := &Engine{
-		defaultEffect: def,
-		failClosed:    failClosed,
-		auditor:       cfg.Auditor,
-		exporter:      cfg.Exporter,
-		baseline:      append([]Grant(nil), cfg.Grants...),
-		mandatoryHITL: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
+		defaultEffect:         def,
+		failClosed:            failClosed,
+		auditor:               cfg.Auditor,
+		exporter:              cfg.Exporter,
+		baseline:              append([]Grant(nil), cfg.Grants...),
+		mandatoryHITLBaseline: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
 	}
 	if hasWebhook {
 		e.webhook = NewWebhook(*cfg.Webhook)
@@ -151,6 +154,7 @@ func New(cfg Config) *Engine {
 		e.cache = newDecisionCache(cfg.CacheTTL)
 	}
 	e.applyOverlaysLocked(cfg.Overlays)
+	e.applyMandatoryHITLOverlaysLocked(nil)
 	return e
 }
 
@@ -182,6 +186,54 @@ func (e *Engine) applyOverlaysLocked(overlays []Grant) {
 		e.static = NewStatic(merged)
 	}
 	e.cache.clear()
+}
+
+// ReplaceMandatoryHITL swaps durable SQL mandatory-HITL overlays and
+// rebuilds the active rule list. Overlay rows win over baseline on
+// (tenant_id, agent_id, connector).
+func (e *Engine) ReplaceMandatoryHITL(overlays []MandatoryHITLRule) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.applyMandatoryHITLOverlaysLocked(overlays)
+}
+
+func (e *Engine) applyMandatoryHITLOverlaysLocked(overlays []MandatoryHITLRule) {
+	e.mandatoryHITLOverlays = append([]MandatoryHITLRule(nil), overlays...)
+	e.mandatoryHITL = mergeMandatoryHITL(e.mandatoryHITLBaseline, e.mandatoryHITLOverlays)
+	if e.cache != nil {
+		e.cache.clear()
+	}
+}
+
+// mergeMandatoryHITL unions baseline and overlays; overlays win on the same key.
+// Empty agent_id is a valid key (whole-tenant rule), unlike connector grants.
+func mergeMandatoryHITL(baseline, overlays []MandatoryHITLRule) []MandatoryHITLRule {
+	type key struct{ t, a, c string }
+	out := make([]MandatoryHITLRule, 0, len(baseline)+len(overlays))
+	idx := map[key]int{}
+	add := func(r MandatoryHITLRule) {
+		k := key{strings.TrimSpace(r.TenantID), strings.TrimSpace(r.AgentID), strings.TrimSpace(r.Connector)}
+		if k.t == "" || k.c == "" {
+			return
+		}
+		r.Tools = append([]string(nil), r.Tools...)
+		if i, ok := idx[k]; ok {
+			out[i] = r
+			return
+		}
+		idx[k] = len(out)
+		out = append(out, r)
+	}
+	for _, r := range baseline {
+		add(r)
+	}
+	for _, r := range overlays {
+		add(r)
+	}
+	return out
 }
 
 // mergeGrants unions baseline and overlays; overlays win on the same key.

@@ -173,6 +173,17 @@ export interface AdminKillSwitchCreateResponse {
   cancelled: number;
 }
 
+/** Durable mandatory HITL overlay from GET /admin-api/mandatory-hitl. */
+export interface AdminMandatoryHITLRule {
+  id: string;
+  tenant_id: string;
+  agent_id?: string;
+  connector: string;
+  tools?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 /** Active break-glass window from GET /admin-api/break-glass. */
 export interface AdminBreakGlassWindow {
   id: string;

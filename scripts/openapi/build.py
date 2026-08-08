@@ -1113,6 +1113,27 @@ def _build_admin_spec() -> dict:
                     "required": ["tenant_id"],
                     "title": "KillSwitch",
                 },
+                "MandatoryHITLRule": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "tenant_id": {"type": "string"},
+                        "agent_id": {
+                            "type": "string",
+                            "description": "Empty = whole tenant",
+                        },
+                        "connector": {"type": "string"},
+                        "tools": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Empty = all tools on the connector",
+                        },
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                    "required": ["tenant_id", "connector"],
+                    "title": "MandatoryHITLRule",
+                },
                 "BreakGlassWindow": {
                     "type": "object",
                     "properties": {
@@ -1252,6 +1273,28 @@ def _build_admin_spec() -> dict:
                 "get": {"tags": ["Admin"], "summary": "Get Policy Grant", "operationId": "admin_get_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
                 "put": {"tags": ["Admin"], "summary": "Update Policy Grant", "operationId": "admin_update_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
                 "delete": {"tags": ["Admin"], "summary": "Delete Policy Grant", "operationId": "admin_delete_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+            },
+            "/admin-api/mandatory-hitl": {
+                "get": {"tags": ["Admin"], "summary": "List Mandatory HITL Rules", "description": "Durable overlays that force matching tool.call allows to pending (SQL backends). Config baselines in langgraph.json are not listed.", "operationId": "admin_list_mandatory_hitl", "parameters": [
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "connector", "in": "query", "required": False, "schema": {"type": "string"}},
+                    *admin_page,
+                ], "responses": {
+                    "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("MandatoryHITLRule"))}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+                "post": {"tags": ["Admin"], "summary": "Create Mandatory HITL Rule", "operationId": "admin_create_mandatory_hitl", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("MandatoryHITLRule")}}}, "responses": {
+                    "201": {"description": "Created", "content": {"application/json": {"schema": _ref("MandatoryHITLRule")}}},
+                    "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "409": {"description": "Policy engine not enabled", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+            },
+            "/admin-api/mandatory-hitl/{id}": {
+                "get": {"tags": ["Admin"], "summary": "Get Mandatory HITL Rule", "operationId": "admin_get_mandatory_hitl", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("MandatoryHITLRule")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "put": {"tags": ["Admin"], "summary": "Update Mandatory HITL Rule", "operationId": "admin_update_mandatory_hitl", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("MandatoryHITLRule")}}}, "responses": {**_json_response("200", "Success", _ref("MandatoryHITLRule")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "delete": {"tags": ["Admin"], "summary": "Delete Mandatory HITL Rule", "operationId": "admin_delete_mandatory_hitl", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions": {
                 "get": {"tags": ["Admin"], "summary": "List Pending Actions", "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability for the next matching tools/call.", "operationId": "admin_list_pending_actions", "parameters": [

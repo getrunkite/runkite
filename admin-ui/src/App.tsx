@@ -17,6 +17,7 @@ import { PolicyGrants } from "./pages/PolicyGrants";
 import { PendingActions } from "./pages/PendingActions";
 import { KillSwitches } from "./pages/KillSwitches";
 import { BreakGlass } from "./pages/BreakGlass";
+import { MandatoryHITL } from "./pages/MandatoryHITL";
 import { Audit } from "./pages/Audit";
 
 function Gate() {
@@ -54,6 +55,7 @@ function Gate() {
         <Route path="cron" element={<Cron />} />
         <Route path="webhooks" element={<Webhooks />} />
         <Route path="grants" element={<PolicyGrants />} />
+        <Route path="mandatory-hitl" element={<MandatoryHITL />} />
         <Route path="pending" element={<PendingActions />} />
         <Route path="kill" element={<KillSwitches />} />
         <Route path="break-glass" element={<BreakGlass />} />

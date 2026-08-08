@@ -42,6 +42,12 @@ func (e *Engine) applyMandatoryHITL(in PolicyInput, dec PolicyDecision) PolicyDe
 	}
 }
 
+// MatchMandatoryHITL reports whether a rule would force pending for this
+// input (observability / break-glass audit). Nil when none match.
+func (e *Engine) MatchMandatoryHITL(in PolicyInput) *MandatoryHITLRule {
+	return e.matchMandatoryHITL(in)
+}
+
 func (e *Engine) matchMandatoryHITL(in PolicyInput) *MandatoryHITLRule {
 	e.mu.RLock()
 	rules := e.mandatoryHITL
@@ -53,6 +59,7 @@ func (e *Engine) matchMandatoryHITL(in PolicyInput) *MandatoryHITLRule {
 	agent := strings.TrimSpace(in.AgentID)
 	connector := strings.TrimSpace(in.Connector)
 	tool := strings.TrimSpace(in.Tool)
+	var tenantWide *MandatoryHITLRule
 	for i := range rules {
 		r := &rules[i]
 		if strings.TrimSpace(r.TenantID) != tenant {
@@ -61,15 +68,21 @@ func (e *Engine) matchMandatoryHITL(in PolicyInput) *MandatoryHITLRule {
 		if strings.TrimSpace(r.Connector) != connector {
 			continue
 		}
-		if aid := strings.TrimSpace(r.AgentID); aid != "" && aid != agent {
-			continue
-		}
 		if !mandatoryToolMatch(r.Tools, tool) {
 			continue
 		}
-		return r
+		aid := strings.TrimSpace(r.AgentID)
+		if aid == "" {
+			if tenantWide == nil {
+				tenantWide = r
+			}
+			continue
+		}
+		if aid == agent {
+			return r // agent-scoped wins over tenant-wide
+		}
 	}
-	return nil
+	return tenantWide
 }
 
 func mandatoryToolMatch(tools []string, tool string) bool {

@@ -269,6 +269,17 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 8,
+			Name:    "mandatory_hitl_rules",
+			Up: func(ctx context.Context) error {
+				return s.upMandatoryHITLRules(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS mandatory_hitl_rules`)
+				return err
+			},
+		},
 	}
 }
 
@@ -302,7 +313,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
-		"break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
+		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
@@ -624,7 +635,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
 		"webhook_dead_letters", "audit_events", "policy_grants", "pending_actions",
-		"kill_switches", "break_glass_windows",
+		"kill_switches", "break_glass_windows", "mandatory_hitl_rules",
 		"run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {

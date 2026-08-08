@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,4 +85,71 @@ func TestBreakGlass_BypassesConnectorPolicy(t *testing.T) {
 	if !foundUse {
 		t.Fatalf("expected break_glass use audit; body was OK, events=%d", len(audits))
 	}
+}
+
+func TestBreakGlass_AuditNotesMandatoryHITLBypass(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := connector.NewRegistry(map[string]connector.ConnectorConfig{
+		"gh": {
+			Auth: connector.AuthConfig{Type: "bearer", BearerToken: "tok"},
+			MCP:  &connector.MCPConfig{URL: "http://127.0.0.1:1"},
+		},
+	})
+	s := NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	s.SetConnectorRegistry(reg)
+	s.SetPolicyEngine(policy.New(policy.Config{
+		Grants: []policy.Grant{{
+			ID: "g1", TenantID: "acme", AgentID: "sales", Connector: "gh",
+		}},
+		MandatoryHITL: []policy.MandatoryHITLRule{{
+			ID: "force-delete", TenantID: "acme", Connector: "gh", Tools: []string{"delete_repo"},
+		}},
+	}))
+	if err := store.CreateBreakGlassWindow(ctx, &models.BreakGlassWindow{
+		ID: "bg-m", TenantID: "acme", Reason: "sev1",
+		StartsAt: time.Now().UTC().Add(-time.Minute), ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reqBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_repo"}}`
+	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/gh/mcp", strings.NewReader(reqBody))
+	req.SetPathValue("name", "gh")
+	req = req.WithContext(auth.WithRunBinding(context.Background(), &auth.RunBinding{
+		RunID: "r-bg-m", Generation: 1, TenantID: "acme", AgentID: "sales",
+		User: &transport.UserContext{Identity: "alice"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleProxyMCPRequest(rec, req)
+	// Downstream may 502; we only need the break-glass audit attrs.
+	_ = rec
+
+	audits, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{
+		TenantID: "acme", Action: policy.StageToolCall, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range audits {
+		if ev.ReasonCode != policy.ReasonBreakGlass {
+			continue
+		}
+		if ev.Attrs["mandatory_hitl_bypassed"] != true {
+			t.Fatalf("want mandatory_hitl_bypassed attr, attrs=%v", ev.Attrs)
+		}
+		if ev.Attrs["mandatory_hitl_rule_id"] != "force-delete" {
+			t.Fatalf("rule_id attr=%v", ev.Attrs["mandatory_hitl_rule_id"])
+		}
+		return
+	}
+	t.Fatal("no break_glass tool.call audit found")
 }

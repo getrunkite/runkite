@@ -36,6 +36,11 @@ POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads t
 GET /admin-api/policy-grants/{id}           Get one grant
 PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads this replica (siblings via poll)
 DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads this replica (siblings via poll)
+GET /admin-api/mandatory-hitl               Durable mandatory-HITL overlays (SQL; ?tenant_id=&agent_id=&connector=; X-Next-Cursor). 501 on Mongo.
+POST /admin-api/mandatory-hitl              Create/upsert a rule; hot-reloads this replica (siblings via 15s overlay poll)
+GET /admin-api/mandatory-hitl/{id}          Get one rule
+PUT /admin-api/mandatory-hitl/{id}          Replace a rule; hot-reloads this replica (siblings via poll)
+DELETE /admin-api/mandatory-hitl/{id}       Delete a rule; hot-reloads this replica (siblings via poll)
 GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/pending-actions/{id}         Get one pending action
 POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
@@ -67,6 +72,7 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | Route | Purpose |
 | --- | --- |
 | `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s) |
+| `/admin/mandatory-hitl` | List / create / edit / delete durable mandatory-HITL overlays (same hot-reload / poll) |
 | `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |

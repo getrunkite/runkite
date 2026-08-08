@@ -95,3 +95,53 @@ func TestSyncPolicyOverlaysIfChanged_SiblingSeesAdminWrite(t *testing.T) {
 		t.Fatalf("after delete poll: want deny, got %q", dec.Effect)
 	}
 }
+
+func TestSyncPolicyOverlaysIfChanged_MandatoryHITL(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	eng := policy.New(policy.Config{
+		ForceEnable:   true,
+		DefaultEffect: "deny",
+		Grants: []policy.Grant{{
+			ID: "g1", TenantID: "acme", AgentID: "sales", Connector: "gh",
+		}},
+	})
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetPolicyEngine(eng)
+
+	fp, err := syncPolicyOverlaysIfChanged(ctx, store, apiServer, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := policy.PolicyInput{
+		Stage: policy.StageToolCall, TenantID: "acme", AgentID: "sales",
+		Connector: "gh", Tool: "delete_repo",
+	}
+	if dec := eng.Decide(ctx, in); dec.Effect != policy.EffectAllow {
+		t.Fatalf("precondition allow: %#v", dec)
+	}
+
+	if err := store.UpsertMandatoryHITLRule(ctx, &models.MandatoryHITLRule{
+		ID: "m1", TenantID: "acme", Connector: "gh", Tools: []string{"delete_repo"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := syncPolicyOverlaysIfChanged(ctx, store, apiServer, fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == fp {
+		t.Fatal("expected fingerprint change after mandatory_hitl upsert")
+	}
+	if dec := eng.Decide(ctx, in); dec.Effect != policy.EffectPending || dec.ReasonCode != policy.ReasonMandatoryHITL {
+		t.Fatalf("after poll: want mandatory pending, got %#v", dec)
+	}
+}

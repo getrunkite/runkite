@@ -17,6 +17,12 @@ type policyGrantLister interface {
 	ListPolicyGrants(ctx context.Context) ([]*models.PolicyGrant, error)
 }
 
+// mandatoryHITLLister is implemented by SQL stores that persist Admin
+// mandatory_hitl overlays.
+type mandatoryHITLLister interface {
+	ListMandatoryHITLRules(ctx context.Context) ([]*models.MandatoryHITLRule, error)
+}
+
 // initPolicy loads langgraph.json's "policy" section (first file) and
 // builds an Engine. Returns (nil, false) when absent/empty (V1 open).
 // When policy.siem is set, registers an async WebhookSink on dispatcher
@@ -50,6 +56,23 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 					og.Tools = &policy.ToolFilter{Allow: g.Tools.Allow, Deny: g.Tools.Deny}
 				}
 				overlays = append(overlays, og)
+			}
+		}
+	}
+
+	var mhitlOverlays []policy.MandatoryHITLRule
+	if lister, ok := store.(mandatoryHITLLister); ok {
+		if rows, err := lister.ListMandatoryHITLRules(context.Background()); err != nil {
+			slog.Warn("policy: load DB mandatory_hitl failed", "error", err)
+		} else {
+			for _, r := range rows {
+				if r == nil {
+					continue
+				}
+				mhitlOverlays = append(mhitlOverlays, policy.MandatoryHITLRule{
+					ID: r.ID, TenantID: r.TenantID, AgentID: r.AgentID, Connector: r.Connector,
+					Tools: append([]string(nil), r.Tools...),
+				})
 			}
 		}
 	}
@@ -117,6 +140,9 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	if eng == nil {
 		return nil, false
 	}
+	if len(mhitlOverlays) > 0 {
+		eng.ReplaceMandatoryHITL(mhitlOverlays)
+	}
 
 	runEvents = true
 	if p.RunEvents != nil {
@@ -139,6 +165,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		"grants", len(pcfg.Grants),
 		"overlays", len(overlays),
 		"mandatory_hitl", len(pcfg.MandatoryHITL),
+		"mandatory_hitl_overlays", len(mhitlOverlays),
 		"webhook", pcfg.Webhook != nil,
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,

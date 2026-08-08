@@ -174,6 +174,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 8,
+			Name:    "mandatory_hitl_rules",
+			Up: func(ctx context.Context) error {
+				return s.upMandatoryHITLRules(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS mandatory_hitl_rules`)
+				return err
+			},
+		},
 	}
 }
 
@@ -190,6 +201,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			pending_actions,
 			kill_switches,
 			break_glass_windows,
+			mandatory_hitl_rules,
 			store_items,
 			thread_checkpoints,
 			runs,
@@ -606,7 +618,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, mandatory_hitl_rules, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
