@@ -59,6 +59,12 @@ Every network hop in this project is plaintext until you configure otherwise -- 
 
 Live-verified end to end with self-signed certificates: HTTPS-only (server cert, no mTLS) rejects a plain-HTTP request and accepts HTTPS; mTLS on the HTTP API rejects a request with no client cert or an untrusted one and accepts a CA-signed one; a real Python runner completed a full run over an mTLS gRPC channel plus HTTPS proxy-mode store calls; a real TypeScript runner did the same with mTLS on *both* the gRPC bridge and the HTTP API simultaneously; both runners, given `RUNKITE_GRPC_TLS=1` and no CA file, attempted a genuine system-trust TLS handshake against a self-signed server cert and correctly rejected it (`CERTIFICATE_VERIFY_FAILED: self signed certificate` / `self-signed certificate`) -- exactly the outcome a real publicly-trusted-cert deployment would need to *not* see.
 
+**Kubernetes / Helm:** the chart's `tls:` block mounts Secrets and sets the
+same env vars above (no new TLS code paths). Prefer gRPC mTLS with HTTP TLS
+and `http.mtls: false` so kubelet probes keep working. See
+[`deploy/helm/runkite/README.md`](../deploy/helm/runkite/README.md#pod-tls--mtls).
+Ingress `tls:` is edge termination only and does not encrypt CP↔runner.
+
 ```bash
 # Control plane: HTTPS + mTLS on both HTTP and gRPC
 TLS_CERT_FILE=server-cert.pem TLS_KEY_FILE=server-key.pem TLS_CLIENT_CA_FILE=ca-cert.pem \

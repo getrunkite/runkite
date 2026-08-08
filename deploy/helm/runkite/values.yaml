@@ -170,6 +170,29 @@ secrets:
   # does not reference that env var.
   apiKey: ""
 
+# Pod-level TLS / mTLS for control-plane ↔ runner (and client HTTPS).
+# Off by default. Reuses the env contract in docs/auth.md — the chart only
+# mounts Secrets and sets those vars. Does NOT generate certificates;
+# supply kubernetes.io/tls (server/client) + Opaque CA (ca.crt) Secrets yourself
+# (cert-manager, openssl, etc.). Server cert SAN must include the Service
+# DNS name runners use (Release fullname / FQDN).
+#
+# Recommended when enabled: HTTP TLS + gRPC TLS + gRPC mTLS; leave
+# http.mtls false so kubelet httpGet probes keep working (HTTP mTLS would
+# require a client cert on /livez+/readyz, which httpGet cannot present).
+tls:
+  enabled: false
+  serverSecretName: "" # kubernetes.io/tls: tls.crt + tls.key (CP server cert)
+  caSecretName: ""     # Opaque (or similar): ca.crt
+  clientSecretName: "" # kubernetes.io/tls: tls.crt + tls.key (runner client cert; required when any *.mtls)
+  mountPath: /etc/runkite/tls
+  http:
+    enabled: true  # TLS_CERT_FILE / TLS_KEY_FILE; probes use scheme HTTPS
+    mtls: false    # TLS_CLIENT_CA_FILE — keep false unless you override probes
+  grpc:
+    enabled: true  # GRPC_TLS_CERT_FILE / GRPC_TLS_KEY_FILE
+    mtls: true     # GRPC_TLS_CLIENT_CA_FILE (recommended when tls.enabled)
+
 # Optional Python runner Deployment (Dockerfile.runner). Talks to the
 # control-plane Service over cluster DNS for gRPC + HTTP.
 runner:

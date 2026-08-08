@@ -78,7 +78,7 @@ crash-loop on admission. Do **not** paper over this with
 | Resource | Purpose |
 |---|---|
 | Deployment (control plane) | `runkite serve`, N replicas, `/livez` + `/readyz` probes |
-| Service | ClusterIP HTTP (`2026`) + gRPC (`50051`, `appProtocol: kubernetes.io/h2c`) |
+| Service | ClusterIP HTTP (`2026`) + gRPC (`50051`; `h2c` plaintext or `h2` when `tls.grpc.enabled`) |
 | ConfigMap (env) | Ports + `LANGGRAPH_CONFIG` path |
 | ConfigMap (`*-langgraph`) | Mounted `langgraph.json` (when `config.langgraphJson` is set) |
 | Secret | DSNs, runner token, `RUNKITE_API_KEY` |
@@ -107,4 +107,48 @@ ID does not exist on the first `initialize` call.
 | `autoscaling.enabled` | `false` | Needs `resources.requests.cpu` if turned on |
 | `runner.enabled` | `true` | Set `false` if runners run elsewhere |
 | `networkPolicy.enabled` | `false` | Opt-in; requires a NetworkPolicy-capable CNI |
+| `tls.enabled` | `false` | Pod TLS/mTLS; see [Pod TLS / mTLS](#pod-tls--mtls) |
 | `resources.requests` | `100m` / `256Mi` | Production-shaped defaults; override per env |
+
+## Pod TLS / mTLS
+
+App-level TLS is **env-driven** ([`docs/auth.md`](../../../docs/auth.md)); this
+chart only mounts Secrets and sets those vars. Ingress `tls:` is edge
+termination only — it does **not** encrypt control-plane ↔ runner.
+
+**Defaults when `tls.enabled: true`:** HTTP TLS + gRPC TLS + **gRPC mTLS**;
+`http.mtls` stays **false** so kubelet `httpGet` probes (`scheme: HTTPS`)
+keep working. Setting `tls.http.mtls: true` **fails** `helm template`/`install`
+— kubelet cannot present a client cert on those probes, so health checks
+would CrashLoop forever. (App env still supports HTTP mTLS outside this
+chart if you wire probes yourself.)
+
+Create Secrets (example with openssl; use cert-manager in real deploys).
+Server cert SAN must include the Service DNS name the runner dials
+(e.g. `runkite` / `runkite.<ns>.svc.cluster.local`):
+
+```bash
+# After creating ca.crt/key, server tls.crt/key, client tls.crt/key:
+kubectl create secret tls runkite-tls-server --cert=server.crt --key=server.key
+kubectl create secret generic runkite-tls-ca --from-file=ca.crt=ca.crt
+kubectl create secret tls runkite-tls-client --cert=client.crt --key=client.key
+
+helm upgrade --install runkite ./deploy/helm/runkite \
+  --set secrets.existingSecret=runkite-creds \
+  --set tls.enabled=true \
+  --set tls.serverSecretName=runkite-tls-server \
+  --set tls.caSecretName=runkite-tls-ca \
+  --set tls.clientSecretName=runkite-tls-client
+```
+
+| Value | Maps to (CP) | Maps to (runner) |
+|---|---|---|
+| `tls.http.enabled` | `TLS_CERT_FILE` / `TLS_KEY_FILE` | `RUNKITE_HTTP_URL=https://…` |
+| `tls.http.mtls` | `TLS_CLIENT_CA_FILE` | client cert/key (if any mTLS) |
+| `tls.grpc.enabled` | `GRPC_TLS_CERT_FILE` / `GRPC_TLS_KEY_FILE` | (via CA file) |
+| `tls.grpc.mtls` | `GRPC_TLS_CLIENT_CA_FILE` | `RUNKITE_TLS_CLIENT_*` |
+| `tls.caSecretName` | CA mount | `RUNKITE_TLS_CA_FILE` |
+
+Chart does not mint certificates. Missing `serverSecretName` / `caSecretName`
+(or `clientSecretName` when any `*.mtls`) fails `helm template`/`install`
+early.

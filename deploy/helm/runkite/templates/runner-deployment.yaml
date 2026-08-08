@@ -1,4 +1,5 @@
 {{- if .Values.runner.enabled }}
+{{- include "runkite.tls.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,7 +34,7 @@ spec:
             - name: RUNKITE_GRPC_URL
               value: "{{ include "runkite.fullname" . }}:{{ .Values.service.grpcPort }}"
             - name: RUNKITE_HTTP_URL
-              value: "http://{{ include "runkite.fullname" . }}:{{ .Values.service.httpPort }}"
+              value: "{{ include "runkite.httpScheme" . }}://{{ include "runkite.fullname" . }}:{{ .Values.service.httpPort }}"
             - name: RUNNER_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -44,12 +45,44 @@ spec:
                 secretKeyRef:
                   name: {{ include "runkite.secretName" . }}
                   key: POSTGRES_DSN
+            {{- if .Values.tls.enabled }}
+            - name: RUNKITE_TLS_CA_FILE
+              value: {{ include "runkite.tls.caDir" . }}/ca.crt
+            {{- if or .Values.tls.http.mtls .Values.tls.grpc.mtls }}
+            - name: RUNKITE_TLS_CLIENT_CERT_FILE
+              value: {{ include "runkite.tls.clientDir" . }}/tls.crt
+            - name: RUNKITE_TLS_CLIENT_KEY_FILE
+              value: {{ include "runkite.tls.clientDir" . }}/tls.key
+            {{- end }}
+            {{- end }}
             {{- range $k, $v := .Values.runner.extraEnv }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls-ca
+              mountPath: {{ include "runkite.tls.caDir" . }}
+              readOnly: true
+            {{- if or .Values.tls.http.mtls .Values.tls.grpc.mtls }}
+            - name: tls-client
+              mountPath: {{ include "runkite.tls.clientDir" . }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
           resources:
             {{- toYaml .Values.runner.resources | nindent 12 }}
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls-ca
+          secret:
+            secretName: {{ .Values.tls.caSecretName | quote }}
+        {{- if or .Values.tls.http.mtls .Values.tls.grpc.mtls }}
+        - name: tls-client
+          secret:
+            secretName: {{ .Values.tls.clientSecretName | quote }}
+        {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

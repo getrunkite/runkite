@@ -1,3 +1,4 @@
+{{- include "runkite.tls.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,16 +52,52 @@ spec:
                 name: {{ include "runkite.fullname" . }}
             - secretRef:
                 name: {{ include "runkite.secretName" . }}
-          {{- if .Values.config.langgraphJson }}
+          {{- if .Values.tls.enabled }}
+          env:
+            {{- if .Values.tls.http.enabled }}
+            - name: TLS_CERT_FILE
+              value: {{ include "runkite.tls.serverDir" . }}/tls.crt
+            - name: TLS_KEY_FILE
+              value: {{ include "runkite.tls.serverDir" . }}/tls.key
+            {{- if .Values.tls.http.mtls }}
+            - name: TLS_CLIENT_CA_FILE
+              value: {{ include "runkite.tls.caDir" . }}/ca.crt
+            {{- end }}
+            {{- end }}
+            {{- if .Values.tls.grpc.enabled }}
+            - name: GRPC_TLS_CERT_FILE
+              value: {{ include "runkite.tls.serverDir" . }}/tls.crt
+            - name: GRPC_TLS_KEY_FILE
+              value: {{ include "runkite.tls.serverDir" . }}/tls.key
+            {{- if .Values.tls.grpc.mtls }}
+            - name: GRPC_TLS_CLIENT_CA_FILE
+              value: {{ include "runkite.tls.caDir" . }}/ca.crt
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.config.langgraphJson .Values.tls.enabled }}
           volumeMounts:
+            {{- if .Values.config.langgraphJson }}
             - name: langgraph-config
               mountPath: /etc/runkite
               readOnly: true
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls-server
+              mountPath: {{ include "runkite.tls.serverDir" . }}
+              readOnly: true
+            - name: tls-ca
+              mountPath: {{ include "runkite.tls.caDir" . }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           startupProbe:
             httpGet:
               path: /livez
               port: http
+              {{- if and .Values.tls.enabled .Values.tls.http.enabled }}
+              scheme: HTTPS
+              {{- end }}
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 30
@@ -68,6 +105,9 @@ spec:
             httpGet:
               path: /livez
               port: http
+              {{- if and .Values.tls.enabled .Values.tls.http.enabled }}
+              scheme: HTTPS
+              {{- end }}
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
@@ -75,16 +115,29 @@ spec:
             httpGet:
               path: /readyz
               port: http
+              {{- if and .Values.tls.enabled .Values.tls.http.enabled }}
+              scheme: HTTPS
+              {{- end }}
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if .Values.config.langgraphJson }}
+      {{- if or .Values.config.langgraphJson .Values.tls.enabled }}
       volumes:
+        {{- if .Values.config.langgraphJson }}
         - name: langgraph-config
           configMap:
             name: {{ include "runkite.fullname" . }}-langgraph
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls-server
+          secret:
+            secretName: {{ .Values.tls.serverSecretName | quote }}
+        - name: tls-ca
+          secret:
+            secretName: {{ .Values.tls.caSecretName | quote }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

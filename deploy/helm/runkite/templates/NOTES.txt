@@ -5,14 +5,21 @@ Runkite control plane installed as {{ include "runkite.fullname" . }}.
 
 2. Port-forward the API (ClusterIP Service by default):
    kubectl port-forward svc/{{ include "runkite.fullname" . }} {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }}
-   curl -sS http://127.0.0.1:{{ .Values.service.httpPort }}/readyz
+   curl -sS {{ include "runkite.httpScheme" . }}://127.0.0.1:{{ .Values.service.httpPort }}/readyz
 
 3. Call the API / Admin UI with the key from secrets.apiKey (or the
    RUNKITE_API_KEY entry in your existingSecret):
-   curl -sS -H "Authorization: Bearer <api-key>" http://127.0.0.1:{{ .Values.service.httpPort }}/agents
+   curl -sS -H "Authorization: Bearer <api-key>" {{ include "runkite.httpScheme" . }}://127.0.0.1:{{ .Values.service.httpPort }}/agents
 
 4. Runners (if enabled) reach gRPC at:
    {{ include "runkite.fullname" . }}:{{ .Values.service.grpcPort }}
+{{- if .Values.tls.enabled }}
+
+TLS is enabled (pod-level). Server Secret={{ .Values.tls.serverSecretName }},
+CA Secret={{ .Values.tls.caSecretName }}{{- if or .Values.tls.http.mtls .Values.tls.grpc.mtls }}, client Secret={{ .Values.tls.clientSecretName }}{{- end }}.
+HTTP mTLS={{ .Values.tls.http.mtls }} (keep false unless probes are overridden);
+gRPC mTLS={{ .Values.tls.grpc.mtls }}. See chart README "Pod TLS / mTLS".
+{{- end }}
 
 {{- if .Values.config.langgraphJson }}
 

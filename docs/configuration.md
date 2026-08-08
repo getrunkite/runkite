@@ -126,6 +126,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `RUNNER_TENANTS_<kind>` | (unset) | Optional comma-separated tenant allow-list for that kind's `X-Runkite-Tenant-Id` on `/internal/*` (e.g. `RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta`). Unset = any tenant after kind-token auth. Missing header counts as `default`. |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` (case-insensitive). Same variable, same values, on the control plane and both runners. |
 | `LOG_FORMAT` | `text` | `text`\|`json`. `json` is the shape a log aggregator (Datadog, Grafana Loki, etc.) expects -- see [Logging](api.md#logging) below. |
+| `TLS_*` / `GRPC_TLS_*` / `RUNKITE_TLS_*` | (unset) | Pod/process TLS and mTLS — see [Auth → TLS](auth.md#tls--mtls). Helm chart `tls:` mounts Secrets and sets these; see [chart README](../deploy/helm/runkite/README.md#pod-tls--mtls). |
 
 ### Database CLI
 
