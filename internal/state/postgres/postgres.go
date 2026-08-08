@@ -140,6 +140,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 5,
+			Name:    "kill_switches",
+			Up: func(ctx context.Context) error {
+				return s.upKillSwitches(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS kill_switches`)
+				return err
+			},
+		},
 	}
 }
 
@@ -154,6 +165,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			audit_events,
 			policy_grants,
 			pending_actions,
+			kill_switches,
 			store_items,
 			thread_checkpoints,
 			runs,
@@ -569,7 +581,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }

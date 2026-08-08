@@ -21,10 +21,10 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 4 {
-		t.Fatalf("version after Init = %d, %v; want 4", cur, err)
+	if err != nil || cur != 5 {
+		t.Fatalf("version after Init = %d, %v; want 5", cur, err)
 	}
-	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions"} {
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches"} {
 		if !tableExists(t, s, tbl) {
 			t.Fatalf("%s missing after Init", tbl)
 		}
@@ -34,13 +34,13 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("second Init: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 4 {
-		t.Fatalf("version after second Init = %d, want 4", cur)
+	if cur != 5 {
+		t.Fatalf("version after second Init = %d, want 5", cur)
 	}
 
-	// v4→v3→v2→v1→0
-	wantTablesGone := []string{"pending_actions", "policy_grants", "audit_events"}
-	for step, wantVer := range []int{3, 2, 1, 0} {
+	// v5→v4→v3→v2→v1→0
+	wantTablesGone := []string{"kill_switches", "pending_actions", "policy_grants", "audit_events"}
+	for step, wantVer := range []int{4, 3, 2, 1, 0} {
 		if err := s.Downgrade(ctx); err != nil {
 			t.Fatalf("Downgrade to %d: %v", wantVer, err)
 		}
@@ -48,7 +48,7 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		if cur != wantVer {
 			t.Fatalf("version after Downgrade = %d, want %d", cur, wantVer)
 		}
-		if step < 3 && tableExists(t, s, wantTablesGone[step]) {
+		if step < 4 && tableExists(t, s, wantTablesGone[step]) {
 			t.Fatalf("%s still present after Downgrade to %d", wantTablesGone[step], wantVer)
 		}
 	}
@@ -60,10 +60,10 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("re-Init after downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 4 {
-		t.Fatalf("version after re-Init = %d, want 4", cur)
+	if cur != 5 {
+		t.Fatalf("version after re-Init = %d, want 5", cur)
 	}
-	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions"} {
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches"} {
 		if !tableExists(t, s, tbl) {
 			t.Fatalf("%s missing after re-Init", tbl)
 		}
@@ -84,10 +84,6 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 
-	// Shape mirrors a pre-versioned install: agents already present (with
-	// enough columns for later FK-bearing CREATE TABLE IF NOT EXISTS
-	// statements) and threads missing the version column that baseline
-	// Up self-heals via addColumnIfMissing.
 	if _, err := s.db.ExecContext(ctx, `
 		CREATE TABLE agents (
 			tenant_id TEXT NOT NULL DEFAULT 'default',
@@ -113,8 +109,8 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 4 {
-		t.Fatalf("stamped version = %d, %v; want 4", cur, err)
+	if err != nil || cur != 5 {
+		t.Fatalf("stamped version = %d, %v; want 5", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")
@@ -124,20 +120,24 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 func columnExists(t *testing.T, s *SQLiteStore, table, column string) bool {
 	t.Helper()
 	var n int
-	// Table name is a test constant (threads/agents), not user input.
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM pragma_table_info('`+table+`') WHERE name = ?`,
 		column,
 	).Scan(&n)
 	if err != nil {
-		t.Fatalf("pragma_table_info(%s): %v", table, err)
+		t.Fatal(err)
 	}
 	return n > 0
 }
 
-func tableExists(t *testing.T, s *SQLiteStore, table string) bool {
+func tableExists(t *testing.T, s *SQLiteStore, name string) bool {
 	t.Helper()
-	var name string
-	err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
-	return err == nil && name == table
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name,
+	).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n > 0
 }

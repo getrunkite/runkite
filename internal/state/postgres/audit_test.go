@@ -37,8 +37,8 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	}
 	bk := migrate.NewPgx(s.pool)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 4 {
-		t.Fatalf("version after Init = %d, %v; want 4", cur, err)
+	if err != nil || cur != 5 {
+		t.Fatalf("version after Init = %d, %v; want 5", cur, err)
 	}
 	if !tableExists(t, ctx, s, "audit_events") {
 		t.Fatal("audit_events missing after Init")
@@ -46,9 +46,22 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	if !tableExists(t, ctx, s, "pending_actions") {
 		t.Fatal("pending_actions missing after Init")
 	}
+	if !tableExists(t, ctx, s, "kill_switches") {
+		t.Fatal("kill_switches missing after Init")
+	}
 
-	// Downgrade v4→v3→v2→v1: drop pending_actions, policy_grants, then
-	// audit_events; re-Init restores all three.
+	// Downgrade v5→v4→v3→v2→v1: drop kill_switches, pending_actions,
+	// policy_grants, then audit_events; re-Init restores all.
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade v5→v4: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 4 {
+		t.Fatalf("version after Downgrade = %d, want 4", cur)
+	}
+	if tableExists(t, ctx, s, "kill_switches") {
+		t.Fatal("kill_switches still present after v5 Down")
+	}
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatalf("Downgrade v4→v3: %v", err)
 	}
@@ -83,11 +96,11 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 		t.Fatalf("re-Init after Downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 4 {
-		t.Fatalf("version after re-Init = %d, want 4", cur)
+	if cur != 5 {
+		t.Fatalf("version after re-Init = %d, want 5", cur)
 	}
-	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") {
-		t.Fatal("audit_events/policy_grants/pending_actions missing after re-Init")
+	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") || !tableExists(t, ctx, s, "kill_switches") {
+		t.Fatal("audit_events/policy_grants/pending_actions/kill_switches missing after re-Init")
 	}
 
 	ts := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)

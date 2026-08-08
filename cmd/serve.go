@@ -302,6 +302,10 @@ func startServer(opts serverOpts) {
 			slog.Info("policy: overlay poll enabled", "interval", policyOverlayPollInterval)
 		}
 	}
+	// Run admission (kill switches + agents:<id>:run + optional policy
+	// run.create) shares the same CheckBeforeRun Gate pipeline as
+	// preflight_hooks — one choke point, not a parallel config surface.
+	apiServer.RegisterAdmissionGate(hookDispatcher)
 
 	// Vector/semantic store. Disabled entirely unless a vector_store
 	// section is present -- never

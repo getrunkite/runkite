@@ -77,10 +77,12 @@ Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs
 | Durable `audit_events` + Admin search / Audit UI | Yes | No (writes skipped; Admin `501`) |
 | Durable `policy_grants` Admin CRUD overlays | Yes | No (`501`) |
 | Durable `pending_actions` HITL approve/deny | Yes | No (pending fails closed to deny; Admin `501`) |
+| Durable `kill_switches` (tenant/agent pause + drain) | Yes | No (`501`) |
+| Run admission Gate (`agents:<id>:run` + kill + optional `run.create` Decide) | Yes | Authz works; kill durability SQL-only |
 | OTel `policy.decide` + optional SIEM `policy_decision` | Yes | Yes (not store-backed) |
 | `tool_auth` RunEvents | Yes | Yes |
 
-**Security marketing rule:** claim audit search, Admin grant overlays, and connector HITL for SQL state backends. Mongo is fine for agent runs and connector policy *enforcement* when grants/webhook live in `langgraph.json`, but it is **not** an equal governance proof. Production HA still prefers Postgres + Redis (direct-mode checkpoints, Helm defaults); MySQL/SQLite share the governance tables.
+**Security marketing rule:** claim audit search, Admin grant overlays, connector HITL, and kill switches for SQL state backends. Mongo is fine for agent runs and connector policy *enforcement* when grants/webhook live in `langgraph.json`, but it is **not** an equal governance proof. Production HA still prefers Postgres + Redis (direct-mode checkpoints, Helm defaults); MySQL/SQLite share the governance tables.
 
 ## Connector policy
 
@@ -121,6 +123,8 @@ That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) 
 **Admin grant CRUD:** `langgraph.json` `policy.grants` are immutable deployment defaults. Durable overlays live in SQL `policy_grants` and are mutated via `/admin-api/policy-grants` without redeploy — DB rows win on the same `(tenant_id, agent_id, connector)`. A second create for the same key with a different `id` returns `409`. An empty `"policy": {}` section still enables the engine (fail-closed) so deployments can be 100% Admin-managed. The writing replica hot-reloads immediately; every other control-plane replica converges via a 15s SQL fingerprint poll (same cadence as cron). Mongo returns `501`.
 
 **Connector HITL (`pending`):** a sync policy webhook may return `"effect": "pending"` for MCP `tools/call` (e.g. `delete_repo`). The control plane does **not** pause the LangGraph run via interrupt/resume — it refuses the tool call with JSON-RPC `-32000`, `reason_code: policy_pending`, and an `action_id`, persists a SQL `pending_actions` row, and emits `tool_auth` with `effect: pending`. Operators list/approve/deny via `/admin-api/pending-actions`. Approve re-evaluates policy (hard deny refuses); otherwise the row becomes `approved` (one-shot capability). The agent's next matching `tools/call` for the same `(run_id, generation, connector, tool)` consumes that capability before Decide and is forwarded once; further calls go pending/deny again. Pending decisions are never cached. Without a SQL store (Mongo), pending cannot be persisted — the MCP path fails closed to deny (same `reason_code`, no `action_id`).
+
+**Run admission:** every `createRunCtx` path shares one `hooks.Gate` pipeline (same as `preflight_hooks`). The admission Gate checks, in order: (1) SQL kill/pause switch for tenant or tenant+agent, (2) agent-scoped authz `agents:<id>:run` (route-level write only on run-create paths; blanket `write`/`admin` still allow any agent; empty permissions stay unrestricted), (3) when policy is enabled, `Decide` at stage `run.create` (skips connector grants; optional sync webhook can still deny; decisions are audited). Deny → HTTP 403. Kill activation (`POST /admin-api/kill-switches`) refuses new creates immediately on every replica (SQL read) and, unless `pause_only`, drains **all** pending/running runs in scope on the writing replica (paginated SearchRuns until empty; interrupted/success/error/timeout are already terminal and are not re-cancelled).
 
 Example:
 

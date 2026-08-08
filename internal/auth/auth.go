@@ -249,7 +249,7 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 				json.NewEncoder(w).Encode(map[string]string{"message": "insufficient permissions (requires 'admin')"})
 				return
 			}
-		} else if !authorized(result, r.Method, opts.StrictPermissions) {
+		} else if !authorized(result, r.Method, path, opts.StrictPermissions) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{
@@ -319,7 +319,7 @@ func requiredPermission(method string) string {
 }
 
 // authorized checks whether an authenticated caller may perform the given
-// HTTP method.
+// HTTP method on path.
 //
 // With strict=false (default), an EMPTY permissions list means
 // "unrestricted" (backward compatible -- authenticating without
@@ -330,15 +330,17 @@ func requiredPermission(method string) string {
 //
 // A NON-EMPTY list is always a real allow-list: the caller must hold the
 // specific permission the request requires. "write" implies "read"
-// (a writer can GET). "admin" implies everything.
-func authorized(result *AuthResult, method string, strict bool) bool {
+// (a writer can GET). "admin" implies everything. agents:<id>:run
+// satisfies "write" only on run-create paths (see isRunCreatePath) —
+// never on DELETE/cancel/store/thread mutations.
+func authorized(result *AuthResult, method, path string, strict bool) bool {
 	if result == nil {
 		return !strict
 	}
 	if len(result.Permissions) == 0 {
 		return !strict
 	}
-	return hasPermission(result.Permissions, requiredPermission(method))
+	return hasPermission(result.Permissions, requiredPermission(method), method, path)
 }
 
 // authorizedAdmin is the /admin-api/* gate: requires "admin" when
@@ -351,12 +353,15 @@ func authorizedAdmin(result *AuthResult, strict bool) bool {
 	if len(result.Permissions) == 0 {
 		return !strict
 	}
-	return hasPermission(result.Permissions, "admin")
+	return hasPermission(result.Permissions, "admin", "", "")
 }
 
 // hasPermission reports whether permissions grants required. "admin"
 // always grants everything; "write" implies "read" (a writer can GET).
-func hasPermission(permissions []string, required string) bool {
+// An agents:<id>:run grant satisfies "write" only when method+path is a
+// run-create route; CanRunAgent still enforces the specific agent_id
+// inside createRunCtx. It never grants blanket write or read.
+func hasPermission(permissions []string, required, method, path string) bool {
 	for _, p := range permissions {
 		if p == "admin" || p == required {
 			return true
@@ -364,32 +369,36 @@ func hasPermission(permissions []string, required string) bool {
 		if required == "read" && p == "write" {
 			return true
 		}
+		if required == "write" && isAgentRunPermission(p) && isRunCreatePath(method, path) {
+			return true
+		}
 	}
 	return false
 }
 
 // appPermission reports whether p is one of this control plane's own
-// RBAC vocabulary strings (read/write/admin). Anything else -- OIDC
-// consent scopes, Auth0 API permissions like "read:messages", custom
-// realm roles -- is not something authorized() understands, and must
-// NOT be kept in AuthResult.Permissions: a non-empty list of unknown
-// strings is treated as a restrictive allow-list and silently 403s
-// every real request (the Keycloak scope bug; same class for an
-// always-on "permissions" claim from Auth0).
+// RBAC vocabulary strings (read/write/admin, or agents:<id>:run).
+// Anything else -- OIDC consent scopes, Auth0 API permissions like
+// "read:messages", custom realm roles -- is not something authorized()
+// understands, and must NOT be kept in AuthResult.Permissions: a
+// non-empty list of unknown strings is treated as a restrictive
+// allow-list and silently 403s every real request (the Keycloak scope
+// bug; same class for an always-on "permissions" claim from Auth0).
 func appPermission(p string) bool {
 	switch p {
 	case "read", "write", "admin":
 		return true
 	default:
-		return false
+		return isAgentRunPermission(p)
 	}
 }
 
-// filterAppPermissions keeps only read/write/admin. Unknown values are
-// dropped so IdP-native claim vocabularies collapse to empty. With
-// StrictPermissions off that empty list means unrestricted; with it on
-// empty means deny -- either way the foreign vocabulary never becomes a
-// bogus restrictive allow-list of strings authorized() does not understand.
+// filterAppPermissions keeps only this control plane's RBAC vocabulary.
+// Unknown values are dropped so IdP-native claim vocabularies collapse
+// to empty. With StrictPermissions off that empty list means
+// unrestricted; with it on empty means deny -- either way the foreign
+// vocabulary never becomes a bogus restrictive allow-list of strings
+// authorized() does not understand.
 func filterAppPermissions(perms []string) []string {
 	if len(perms) == 0 {
 		return nil

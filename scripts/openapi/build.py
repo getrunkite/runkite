@@ -1092,6 +1092,27 @@ def _build_admin_spec() -> dict:
                     },
                     "title": "PendingAction",
                 },
+                "KillSwitch": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "tenant_id": {"type": "string"},
+                        "agent_id": {
+                            "type": "string",
+                            "description": "Empty = whole tenant",
+                        },
+                        "pause_only": {
+                            "type": "boolean",
+                            "description": "true = refuse creates only; false = also cancel non-terminal runs",
+                        },
+                        "reason": {"type": "string"},
+                        "created_by": {"type": "string"},
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                    "required": ["tenant_id"],
+                    "title": "KillSwitch",
+                },
             },
         },
         "paths": {
@@ -1241,6 +1262,25 @@ def _build_admin_spec() -> dict:
                     "409": {"description": "Not pending", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                     "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
+            },
+            "/admin-api/kill-switches": {
+                "get": {"tags": ["Admin"], "summary": "List Kill Switches", "description": "Tenant/agent kill or pause flags (SQL backends). Active flags refuse new run creates; non-pause kills also cancel in-flight runs on activate.", "operationId": "admin_list_kill_switches", "parameters": [
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    *admin_page,
+                ], "responses": {
+                    "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("KillSwitch"))}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+                "post": {"tags": ["Admin"], "summary": "Create Kill Switch", "operationId": "admin_create_kill_switch", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("KillSwitch")}}}, "responses": {
+                    "201": {"description": "Created (body includes kill_switch + cancelled count)", "content": {"application/json": {"schema": {"type": "object"}}}},
+                    "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+            },
+            "/admin-api/kill-switches/{id}": {
+                "get": {"tags": ["Admin"], "summary": "Get Kill Switch", "operationId": "admin_get_kill_switch", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("KillSwitch")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "delete": {"tags": ["Admin"], "summary": "Delete Kill Switch", "operationId": "admin_delete_kill_switch", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/audit-events": {"get": {"tags": ["Admin"], "summary": "List Audit Events", "description": "Policy decisions newest-first. SQL state backends (Postgres/MySQL/SQLite); Mongo returns 501.", "operationId": "admin_list_audit_events", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},

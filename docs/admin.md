@@ -40,6 +40,10 @@ GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_i
 GET /admin-api/pending-actions/{id}         Get one pending action
 POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
 POST /admin-api/pending-actions/{id}/deny   Mark denied
+GET /admin-api/kill-switches                Tenant/agent kill or pause flags (SQL; ?tenant_id=&agent_id=; X-Next-Cursor). 501 on Mongo.
+POST /admin-api/kill-switches               Upsert kill/pause; unless pause_only, cancel non-terminal runs in scope
+GET /admin-api/kill-switches/{id}           Get one kill switch
+DELETE /admin-api/kill-switches/{id}        Clear a kill switch (resume enqueue)
 GET /admin-api/connectors                   Connector status, including circuit breaker state
 GET /admin-api/cron                         Cron schedules across every tenant
 GET /admin-api/webhooks/dead-letters        Failed webhook deliveries

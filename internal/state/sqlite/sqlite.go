@@ -149,6 +149,15 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 5,
+			Name:    "kill_switches",
+			Up:      s.upKillSwitches,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS kill_switches`)
+				return err
+			},
+		},
 	}
 }
 
@@ -157,7 +166,7 @@ func (s *SQLiteStore) baselineDown(ctx context.Context) error {
 	// migrator to unrecord the version row.
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
-		"pending_actions", "policy_grants", "audit_events",
+		"kill_switches", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",

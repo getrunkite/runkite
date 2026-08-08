@@ -472,6 +472,43 @@
           }
         },
         "title": "PendingAction"
+      },
+      "KillSwitch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Empty = whole tenant"
+          },
+          "pause_only": {
+            "type": "boolean",
+            "description": "true = refuse creates only; false = also cancel non-terminal runs"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "KillSwitch"
       }
     }
   },
@@ -1956,6 +1993,239 @@
           },
           "409": {
             "description": "Not pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (governance durability requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/kill-switches": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Kill Switches",
+        "description": "Tenant/agent kill or pause flags (SQL backends). Active flags refuse new run creates; non-pause kills also cancel in-flight runs on activate.",
+        "operationId": "admin_list_kill_switches",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KillSwitch"
+                  }
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (governance durability requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create Kill Switch",
+        "operationId": "admin_create_kill_switch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KillSwitch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created (body includes kill_switch + cancelled count)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (governance durability requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/kill-switches/{id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Kill Switch",
+        "operationId": "admin_get_kill_switch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KillSwitch"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (governance durability requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete Kill Switch",
+        "operationId": "admin_delete_kill_switch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {

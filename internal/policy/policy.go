@@ -15,10 +15,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Stages evaluated today. run.create / a2a stay on hooks.Gate (Phase 3).
+// Stages evaluated by Decide. Connector stages use static grants;
+// run.create skips connector matching (authz + kill switches run in the
+// admission Gate; optional webhook still applies here).
 const (
 	StageConnectorSession = "connector.session"
 	StageToolCall         = "tool.call"
+	StageRunCreate        = "run.create"
 )
 
 // Effects returned by Decide.
@@ -38,6 +41,7 @@ const (
 	ReasonPolicyDefaultDeny    = "policy_default_deny"
 	ReasonPolicyMissingBinding = "policy_missing_binding"
 	ReasonPolicyPending        = "policy_pending"
+	ReasonPolicyAdmissionDeny  = "policy_admission_deny"
 )
 
 // PolicyInput is the decision context for one gate check.
@@ -288,6 +292,12 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 		}
 	}
 
+	// run.create is not keyed by connector — skip static grants so a
+	// connector-only policy section does not deny every run create.
+	if in.Stage == StageRunCreate {
+		return e.decideRunCreate(ctx, in, webhook, failClosed)
+	}
+
 	var staticAllow *PolicyDecision
 	if static != nil {
 		dec := static.decide(in)
@@ -338,6 +348,39 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	if defaultEffect == EffectAllow {
 		out.Reason = "default allow"
 		out.ReasonCode = ""
+	}
+	e.cachePut(in, out)
+	return out
+}
+
+// decideRunCreate skips connector grants. Optional webhook can still deny;
+// pending is treated as deny (HITL is connector-only).
+func (e *Engine) decideRunCreate(ctx context.Context, in PolicyInput, webhook *Webhook, failClosed bool) PolicyDecision {
+	if webhook != nil {
+		dec := webhook.Decide(ctx, in, failClosed)
+		if dec.Effect == EffectPending {
+			out := PolicyDecision{
+				Effect:     EffectDeny,
+				Reason:     "run.create does not support pending",
+				ReasonCode: ReasonPolicyAdmissionDeny,
+				RuleID:     dec.RuleID,
+			}
+			e.cachePut(in, out)
+			return out
+		}
+		if dec.Effect != EffectAllow {
+			if dec.ReasonCode == "" {
+				dec.ReasonCode = ReasonPolicyAdmissionDeny
+			}
+			e.cachePut(in, dec)
+			return dec
+		}
+		e.cachePut(in, dec)
+		return dec
+	}
+	out := PolicyDecision{
+		Effect: EffectAllow,
+		Reason: "run.create admitted",
 	}
 	e.cachePut(in, out)
 	return out
