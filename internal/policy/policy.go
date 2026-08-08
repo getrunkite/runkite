@@ -94,6 +94,7 @@ type Engine struct {
 	overlays      []Grant // durable Admin/DB grants; win on same key
 	static        *Static
 	webhook       *Webhook
+	mandatoryHITL []MandatoryHITLRule // config-only; force allow → pending on tool.call
 	auditor       Auditor
 	exporter      Exporter
 	cache         *decisionCache
@@ -108,6 +109,8 @@ type Config struct {
 	CacheTTL      time.Duration
 	Grants        []Grant // deployment defaults (baseline)
 	Overlays      []Grant // DB grants loaded at startup
+	// MandatoryHITL forces matching tool.call allows to pending (config-only).
+	MandatoryHITL []MandatoryHITLRule
 	Webhook       *WebhookConfig
 	Auditor       Auditor
 	Exporter      Exporter
@@ -121,7 +124,8 @@ func New(cfg Config) *Engine {
 	hasBaseline := len(cfg.Grants) > 0
 	hasOverlays := len(cfg.Overlays) > 0
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
-	if !hasBaseline && !hasOverlays && !hasWebhook && !cfg.ForceEnable {
+	hasMandatory := len(cfg.MandatoryHITL) > 0
+	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !cfg.ForceEnable {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -138,6 +142,7 @@ func New(cfg Config) *Engine {
 		auditor:       cfg.Auditor,
 		exporter:      cfg.Exporter,
 		baseline:      append([]Grant(nil), cfg.Grants...),
+		mandatoryHITL: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
 	}
 	if hasWebhook {
 		e.webhook = NewWebhook(*cfg.Webhook)
@@ -224,6 +229,7 @@ func (e *Engine) Enabled() bool {
 func (e *Engine) Decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	start := time.Now()
 	dec := e.decide(ctx, in)
+	dec = e.applyMandatoryHITL(in, dec)
 	dec.LatencyMs = int(time.Since(start).Milliseconds())
 	recordPolicySpanEvent(ctx, in, dec)
 	if e.auditor != nil {

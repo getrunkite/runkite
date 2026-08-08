@@ -93,6 +93,15 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		}
 		pcfg.Grants = append(pcfg.Grants, grant)
 	}
+	for _, r := range p.MandatoryHITL {
+		pcfg.MandatoryHITL = append(pcfg.MandatoryHITL, policy.MandatoryHITLRule{
+			ID:        r.ID,
+			TenantID:  r.TenantID,
+			AgentID:   r.AgentID,
+			Connector: r.Connector,
+			Tools:     append([]string(nil), r.Tools...),
+		})
+	}
 	if hasWebhook {
 		wc := &policy.WebhookConfig{
 			URL:    p.Webhook.URL,
@@ -129,6 +138,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	slog.Info("policy: enabled",
 		"grants", len(pcfg.Grants),
 		"overlays", len(overlays),
+		"mandatory_hitl", len(pcfg.MandatoryHITL),
 		"webhook", pcfg.Webhook != nil,
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,

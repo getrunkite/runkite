@@ -137,11 +137,25 @@ type PolicyEntry struct {
 	RunEvents *bool `json:"run_events,omitempty"`
 	// Grants are in-process connector grants (tenant + agent + connector).
 	Grants []PolicyGrantEntry `json:"grants,omitempty"`
+	// MandatoryHITL forces matching tool.call allows to pending (Admin
+	// approve → one-shot retry). Config-only; hard deny still wins.
+	MandatoryHITL []PolicyMandatoryHITLEntry `json:"mandatory_hitl,omitempty"`
 	// Webhook is an optional sync PolicyProvider (WebhookGate-shaped).
 	Webhook *PolicyWebhookEntry `json:"webhook,omitempty"`
 	// SIEM is an optional async export sink for policy_decision events
 	// (hooks.Dispatcher / WebhookSink — not the sync decide webhook).
 	SIEM *PolicySIEMEntry `json:"siem,omitempty"`
+}
+
+// PolicyMandatoryHITLEntry forces tool.call to pending when Decide would
+// allow. Empty agent_id = whole tenant; empty tools = every tool on the
+// connector.
+type PolicyMandatoryHITLEntry struct {
+	ID        string   `json:"id,omitempty"`
+	TenantID  string   `json:"tenant_id"`
+	AgentID   string   `json:"agent_id,omitempty"`
+	Connector string   `json:"connector"`
+	Tools     []string `json:"tools,omitempty"`
 }
 
 // PolicyGrantEntry is one static connector grant.
