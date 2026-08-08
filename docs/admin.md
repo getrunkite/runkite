@@ -31,6 +31,11 @@ GET /admin-api/runs                         List runs (tenant_id visible; ?statu
 GET /admin-api/runs/{id}                    Run detail
 GET /admin-api/runs/{id}/stream             Live/replayed SSE event log for a run (same mechanics as the client-facing stream)
 GET /admin-api/audit-events                 Policy decisions (Postgres Supported; ?tenant_id=&decision=&action=&run_id=&agent_id=&connector=&tool=&since=&until= RFC3339; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
+GET /admin-api/policy-grants                Durable connector grants (Postgres; overlays langgraph.json defaults; ?tenant_id=&agent_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
+POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads the in-process engine on this replica
+GET /admin-api/policy-grants/{id}           Get one grant
+PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads
+DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads
 GET /admin-api/connectors                   Connector status, including circuit breaker state
 GET /admin-api/cron                         Cron schedules across every tenant
 GET /admin-api/webhooks/dead-letters        Failed webhook deliveries

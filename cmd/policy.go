@@ -28,7 +28,29 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		return nil, false
 	}
 	p := cfg.Policy
-	if len(p.Grants) == 0 && (p.Webhook == nil || p.Webhook.URL == "") {
+
+	var overlays []policy.Grant
+	if pg, ok := store.(*pgstore.Store); ok {
+		if rows, err := pg.ListPolicyGrants(context.Background()); err != nil {
+			slog.Warn("policy: load DB grants failed", "error", err)
+		} else {
+			for _, g := range rows {
+				if g == nil {
+					continue
+				}
+				og := policy.Grant{
+					ID: g.ID, TenantID: g.TenantID, AgentID: g.AgentID, Connector: g.Connector,
+				}
+				if g.Tools != nil {
+					og.Tools = &policy.ToolFilter{Allow: g.Tools.Allow, Deny: g.Tools.Deny}
+				}
+				overlays = append(overlays, og)
+			}
+		}
+	}
+
+	hasWebhook := p.Webhook != nil && p.Webhook.URL != ""
+	if len(p.Grants) == 0 && !hasWebhook && len(overlays) == 0 {
 		return nil, false
 	}
 
@@ -49,6 +71,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		DefaultEffect: p.DefaultEffect,
 		FailClosed:    p.FailClosed,
 		Auditor:       auditor,
+		Overlays:      overlays,
 	}
 	if p.CacheTTLMS > 0 {
 		pcfg.CacheTTL = time.Duration(p.CacheTTLMS) * time.Millisecond
@@ -65,7 +88,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		}
 		pcfg.Grants = append(pcfg.Grants, grant)
 	}
-	if p.Webhook != nil && p.Webhook.URL != "" {
+	if hasWebhook {
 		wc := &policy.WebhookConfig{
 			URL:    p.Webhook.URL,
 			Secret: p.Webhook.Secret,
@@ -100,6 +123,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 
 	slog.Info("policy: enabled",
 		"grants", len(pcfg.Grants),
+		"overlays", len(overlays),
 		"webhook", pcfg.Webhook != nil,
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,

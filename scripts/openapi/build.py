@@ -1050,6 +1050,26 @@ def _build_admin_spec() -> dict:
                     },
                     "title": "AuditEvent",
                 },
+                "PolicyGrant": {
+                    "type": "object",
+                    "required": ["tenant_id", "agent_id", "connector"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "tenant_id": {"type": "string"},
+                        "agent_id": {"type": "string"},
+                        "connector": {"type": "string"},
+                        "tools": {
+                            "type": "object",
+                            "properties": {
+                                "allow": {"type": "array", "items": {"type": "string"}},
+                                "deny": {"type": "array", "items": {"type": "string"}},
+                            },
+                        },
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                    "title": "PolicyGrant",
+                },
             },
         },
         "paths": {
@@ -1148,6 +1168,29 @@ def _build_admin_spec() -> dict:
             "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "operationId": "admin_get_run", "parameters": [r_id], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "404": _ERR_404}}},
             "/admin-api/runs/{run_id}/stream": {"get": {"tags": ["Admin"], "summary": "Stream Run (admin)", "operationId": "admin_stream_run", "parameters": [r_id], "responses": {"200": {"description": "SSE event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}}},
             "/admin-api/runs/{run_id}/cancel": {"post": {"tags": ["Admin"], "summary": "Cancel Run (admin)", "operationId": "admin_cancel_run", "parameters": [r_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}}},
+            "/admin-api/policy-grants": {
+                "get": {"tags": ["Admin"], "summary": "List Policy Grants", "description": "Durable connector grant overlays (Postgres). Deployment defaults in langgraph.json are not listed here.", "operationId": "admin_list_policy_grants", "parameters": [
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "connector", "in": "query", "required": False, "schema": {"type": "string"}},
+                    *admin_page,
+                ], "responses": {
+                    "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("PolicyGrant"))}}},
+                    "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+                "post": {"tags": ["Admin"], "summary": "Create Policy Grant", "operationId": "admin_create_policy_grant", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {
+                    "201": {"description": "Created", "content": {"application/json": {"schema": _ref("PolicyGrant")}}},
+                    "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "409": {"description": "Policy engine not enabled", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                }},
+            },
+            "/admin-api/policy-grants/{id}": {
+                "get": {"tags": ["Admin"], "summary": "Get Policy Grant", "operationId": "admin_get_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "put": {"tags": ["Admin"], "summary": "Update Policy Grant", "operationId": "admin_update_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "delete": {"tags": ["Admin"], "summary": "Delete Policy Grant", "operationId": "admin_delete_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+            },
             "/admin-api/audit-events": {"get": {"tags": ["Admin"], "summary": "List Audit Events", "description": "Policy decisions newest-first. Postgres Supported profile only; Compatible backends return 501.", "operationId": "admin_list_audit_events", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 {"name": "decision", "in": "query", "required": False, "schema": {"type": "string"}, "description": "allow | deny | pending"},

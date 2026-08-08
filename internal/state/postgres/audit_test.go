@@ -37,14 +37,24 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	}
 	bk := migrate.NewPgx(s.pool)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 2 {
-		t.Fatalf("version after Init = %d, %v; want 2", cur, err)
+	if err != nil || cur != 3 {
+		t.Fatalf("version after Init = %d, %v; want 3", cur, err)
 	}
 	if !tableExists(t, ctx, s, "audit_events") {
-		t.Fatal("audit_events missing after Init to v2")
+		t.Fatal("audit_events missing after Init")
 	}
 
-	// v2 Down drops the table; Init brings it back via v2 Up.
+	// Downgrade v3 then v2: drop policy_grants, then audit_events; re-Init restores both.
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade v3→v2: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 2 {
+		t.Fatalf("version after Downgrade = %d, want 2", cur)
+	}
+	if tableExists(t, ctx, s, "policy_grants") {
+		t.Fatal("policy_grants still present after v3 Down")
+	}
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatalf("Downgrade v2→v1: %v", err)
 	}
@@ -59,11 +69,11 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 		t.Fatalf("re-Init after Downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 2 {
-		t.Fatalf("version after re-Init = %d, want 2", cur)
+	if cur != 3 {
+		t.Fatalf("version after re-Init = %d, want 3", cur)
 	}
-	if !tableExists(t, ctx, s, "audit_events") {
-		t.Fatal("audit_events missing after v2 Up")
+	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") {
+		t.Fatal("audit_events/policy_grants missing after re-Init")
 	}
 
 	ts := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)

@@ -44,3 +44,12 @@ func (c *decisionCache) put(in PolicyInput, dec PolicyDecision) {
 	defer c.mu.Unlock()
 	c.m[cacheKey(in)] = cacheEntry{dec: dec, exp: time.Now().Add(c.ttl)}
 }
+
+func (c *decisionCache) clear() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m = make(map[string]cacheEntry)
+}

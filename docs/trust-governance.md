@@ -101,7 +101,9 @@ Returns `501` when the state backend is not Postgres. The Admin UI **Audit** pag
 
 That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) — it does **not** block connector/MCP paths.
 
-**Run stream DX:** when `policy.run_events` is true (default), session and MCP `tools/call` denials also publish a `tool_auth` RunEvent on the run's event broker so Agent Protocol SSE/WS clients see the denial in-stream (`reason_code`, connector, tool). Event IDs use `{run_id}_tool_auth_{hex}` (not the runner `{run_id}_evt_{n}` namespace). HITL `pending` and Compatible-backend audit tables follow in the rest of Phase 2.
+**Run stream DX:** when `policy.run_events` is true (default), session and MCP `tools/call` denials also publish a `tool_auth` RunEvent on the run's event broker so Agent Protocol SSE/WS clients see the denial in-stream (`reason_code`, connector, tool). Event IDs use `{run_id}_tool_auth_{hex}` (not the runner `{run_id}_evt_{n}` namespace).
+
+**Admin grant CRUD:** `langgraph.json` `policy.grants` are immutable deployment defaults. Durable overlays live in Postgres `policy_grants` and are mutated via `/admin-api/policy-grants` without redeploy — DB rows win on the same `(tenant_id, agent_id, connector)`. Each replica reloads overlays on its own Admin write (no cross-replica watch yet). Compatible backends return `501`. HITL `pending` and Compatible-backend audit tables follow in the rest of Phase 2.
 
 Example:
 

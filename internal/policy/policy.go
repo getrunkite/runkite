@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -82,6 +83,9 @@ type Exporter interface {
 // Engine chains static grants then optional webhook. First deny wins.
 // When Enabled() is false, callers must skip Decide (V1 open).
 type Engine struct {
+	mu            sync.RWMutex
+	baseline      []Grant // immutable deployment defaults from langgraph.json
+	overlays      []Grant // durable Admin/DB grants; win on same key
 	static        *Static
 	webhook       *Webhook
 	auditor       Auditor
@@ -96,7 +100,8 @@ type Config struct {
 	DefaultEffect string // "allow" | "deny"; default "deny" when enabled
 	FailClosed    *bool  // webhook errors; default true
 	CacheTTL      time.Duration
-	Grants        []Grant
+	Grants        []Grant // deployment defaults (baseline)
+	Overlays      []Grant // DB grants loaded at startup
 	Webhook       *WebhookConfig
 	Auditor       Auditor
 	Exporter      Exporter
@@ -104,9 +109,10 @@ type Config struct {
 
 // New returns an Engine, or nil when nothing is configured (V1 open).
 func New(cfg Config) *Engine {
-	hasGrants := len(cfg.Grants) > 0
+	hasBaseline := len(cfg.Grants) > 0
+	hasOverlays := len(cfg.Overlays) > 0
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
-	if !hasGrants && !hasWebhook {
+	if !hasBaseline && !hasOverlays && !hasWebhook {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -122,9 +128,7 @@ func New(cfg Config) *Engine {
 		failClosed:    failClosed,
 		auditor:       cfg.Auditor,
 		exporter:      cfg.Exporter,
-	}
-	if hasGrants {
-		e.static = NewStatic(cfg.Grants)
+		baseline:      append([]Grant(nil), cfg.Grants...),
 	}
 	if hasWebhook {
 		e.webhook = NewWebhook(*cfg.Webhook)
@@ -132,6 +136,7 @@ func New(cfg Config) *Engine {
 	if cfg.CacheTTL > 0 {
 		e.cache = newDecisionCache(cfg.CacheTTL)
 	}
+	e.applyOverlaysLocked(cfg.Overlays)
 	return e
 }
 
@@ -143,9 +148,68 @@ func (e *Engine) SetExporter(exp Exporter) {
 	e.exporter = exp
 }
 
+// ReplaceOverlays swaps durable DB grants and rebuilds the static layer.
+// Overlay rows win over baseline on (tenant_id, agent_id, connector).
+func (e *Engine) ReplaceOverlays(overlays []Grant) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.applyOverlaysLocked(overlays)
+}
+
+func (e *Engine) applyOverlaysLocked(overlays []Grant) {
+	e.overlays = append([]Grant(nil), overlays...)
+	merged := mergeGrants(e.baseline, e.overlays)
+	if len(merged) == 0 {
+		e.static = nil
+	} else {
+		e.static = NewStatic(merged)
+	}
+	e.cache.clear()
+}
+
+// mergeGrants unions baseline and overlays; overlays win on the same key.
+func mergeGrants(baseline, overlays []Grant) []Grant {
+	type key struct{ t, a, c string }
+	out := make([]Grant, 0, len(baseline)+len(overlays))
+	idx := map[key]int{}
+	for _, g := range baseline {
+		k := key{strings.TrimSpace(g.TenantID), strings.TrimSpace(g.AgentID), strings.TrimSpace(g.Connector)}
+		if k.t == "" || k.a == "" || k.c == "" {
+			continue
+		}
+		if i, ok := idx[k]; ok {
+			out[i] = g
+			continue
+		}
+		idx[k] = len(out)
+		out = append(out, g)
+	}
+	for _, g := range overlays {
+		k := key{strings.TrimSpace(g.TenantID), strings.TrimSpace(g.AgentID), strings.TrimSpace(g.Connector)}
+		if k.t == "" || k.a == "" || k.c == "" {
+			continue
+		}
+		if i, ok := idx[k]; ok {
+			out[i] = g
+			continue
+		}
+		idx[k] = len(out)
+		out = append(out, g)
+	}
+	return out
+}
+
 // Enabled reports whether any policy layer is active.
 func (e *Engine) Enabled() bool {
-	return e != nil && (e.static != nil || e.webhook != nil)
+	if e == nil {
+		return false
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.static != nil || e.webhook != nil
 }
 
 // Decide evaluates static grants then webhook. Call only when Enabled().
@@ -210,6 +274,13 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 		}
 	}
 
+	e.mu.RLock()
+	static := e.static
+	webhook := e.webhook
+	defaultEffect := e.defaultEffect
+	failClosed := e.failClosed
+	e.mu.RUnlock()
+
 	if e.cache != nil {
 		if hit, ok := e.cache.get(in); ok {
 			return hit
@@ -217,11 +288,11 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	}
 
 	var staticAllow *PolicyDecision
-	if e.static != nil {
-		dec := e.static.decide(in)
+	if static != nil {
+		dec := static.decide(in)
 		if dec.Effect == EffectDeny {
 			// No grant: honor default_effect when that is the only reason.
-			if dec.ReasonCode == ReasonPolicyNoGrant && e.defaultEffect == EffectAllow && e.webhook == nil {
+			if dec.ReasonCode == ReasonPolicyNoGrant && defaultEffect == EffectAllow && webhook == nil {
 				out := PolicyDecision{Effect: EffectAllow, Reason: "default allow (no matching grant)"}
 				e.cachePut(in, out)
 				return out
@@ -232,8 +303,8 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 		staticAllow = &dec
 	}
 
-	if e.webhook != nil {
-		dec := e.webhook.Decide(ctx, in, e.failClosed)
+	if webhook != nil {
+		dec := webhook.Decide(ctx, in, failClosed)
 		if dec.Effect != EffectAllow {
 			e.cachePut(in, dec)
 			return dec
@@ -253,11 +324,11 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 
 	// Webhook-only path that somehow didn't return, or empty layers.
 	out := PolicyDecision{
-		Effect:     e.defaultEffect,
+		Effect:     defaultEffect,
 		Reason:     "no matching policy grant",
 		ReasonCode: ReasonPolicyDefaultDeny,
 	}
-	if e.defaultEffect == EffectAllow {
+	if defaultEffect == EffectAllow {
 		out.Reason = "default allow"
 		out.ReasonCode = ""
 	}

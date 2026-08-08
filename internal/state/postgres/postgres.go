@@ -118,6 +118,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 3,
+			Name:    "policy_grants",
+			Up: func(ctx context.Context) error {
+				return s.upPolicyGrants(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS policy_grants`)
+				return err
+			},
+		},
 	}
 }
 
@@ -130,6 +141,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			run_cache,
 			webhook_dead_letters,
 			audit_events,
+			policy_grants,
 			store_items,
 			thread_checkpoints,
 			runs,
@@ -545,7 +557,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -2298,6 +2310,180 @@ func (s *Store) SearchAuditEvents(ctx context.Context, req *models.AuditSearchRe
 		events = append(events, &ev)
 	}
 	return events, rows.Err()
+}
+
+func (s *Store) upPolicyGrants(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS policy_grants (
+			id         TEXT PRIMARY KEY,
+			tenant_id  TEXT NOT NULL,
+			agent_id   TEXT NOT NULL,
+			connector  TEXT NOT NULL,
+			tools      JSONB NOT NULL DEFAULT '{}',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (tenant_id, agent_id, connector)
+		);
+		CREATE INDEX IF NOT EXISTS idx_policy_grants_tenant ON policy_grants(tenant_id);
+	`)
+	return err
+}
+
+// ListPolicyGrants returns every durable grant (Admin reload / startup).
+func (s *Store) ListPolicyGrants(ctx context.Context) ([]*models.PolicyGrant, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, agent_id, connector, tools, created_at, updated_at
+		FROM policy_grants
+		ORDER BY tenant_id ASC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPolicyGrants(rows)
+}
+
+// SearchPolicyGrants lists grants with optional filters and keyset paging.
+func (s *Store) SearchPolicyGrants(ctx context.Context, req *models.PolicyGrantSearchRequest) ([]*models.PolicyGrant, error) {
+	if req == nil {
+		req = &models.PolicyGrantSearchRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT id, tenant_id, agent_id, connector, tools, created_at, updated_at FROM policy_grants`
+	var args []interface{}
+	var where []string
+	argN := 1
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	} else if req.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, req.TenantID)
+		argN++
+	}
+	if req.AgentID != "" {
+		where = append(where, fmt.Sprintf("agent_id = $%d", argN))
+		args = append(args, req.AgentID)
+		argN++
+	}
+	if req.Connector != "" {
+		where = append(where, fmt.Sprintf("connector = $%d", argN))
+		args = append(args, req.Connector)
+		argN++
+	}
+	kc, err := pagecursor.DecodeKey(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if kc.ID != "" {
+		// Keyset: (tenant_id, id) ASC
+		where = append(where, fmt.Sprintf("(tenant_id > $%d OR (tenant_id = $%d AND id > $%d))", argN, argN, argN+1))
+		args = append(args, kc.Key, kc.ID)
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	if kc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY tenant_id ASC, id ASC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY tenant_id ASC, id ASC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPolicyGrants(rows)
+}
+
+// UpsertPolicyGrant inserts or replaces a grant by id; enforces unique
+// (tenant_id, agent_id, connector).
+func (s *Store) UpsertPolicyGrant(ctx context.Context, g *models.PolicyGrant) error {
+	if g == nil {
+		return nil
+	}
+	tools, _ := json.Marshal(g.Tools)
+	if tools == nil || string(tools) == "null" {
+		tools = []byte("{}")
+	}
+	now := time.Now().UTC()
+	if g.CreatedAt.IsZero() {
+		g.CreatedAt = now
+	}
+	g.UpdatedAt = now
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO policy_grants (id, tenant_id, agent_id, connector, tools, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE SET
+			tenant_id = EXCLUDED.tenant_id,
+			agent_id = EXCLUDED.agent_id,
+			connector = EXCLUDED.connector,
+			tools = EXCLUDED.tools,
+			updated_at = EXCLUDED.updated_at
+	`, g.ID, g.TenantID, g.AgentID, g.Connector, tools, g.CreatedAt, g.UpdatedAt)
+	return err
+}
+
+// GetPolicyGrant returns one grant by id, or state.ErrNotFound.
+func (s *Store) GetPolicyGrant(ctx context.Context, id string) (*models.PolicyGrant, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, agent_id, connector, tools, created_at, updated_at
+		FROM policy_grants WHERE id = $1
+	`, id)
+	g, err := scanPolicyGrant(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &state.ErrNotFound{Resource: "policy_grant", ID: id}
+		}
+		return nil, err
+	}
+	return g, nil
+}
+
+// DeletePolicyGrant removes a grant by id. Missing id is not an error.
+func (s *Store) DeletePolicyGrant(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM policy_grants WHERE id = $1`, id)
+	return err
+}
+
+type policyGrantScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPolicyGrant(row policyGrantScanner) (*models.PolicyGrant, error) {
+	var g models.PolicyGrant
+	var toolsRaw []byte
+	if err := row.Scan(&g.ID, &g.TenantID, &g.AgentID, &g.Connector, &toolsRaw, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if len(toolsRaw) > 0 && string(toolsRaw) != "{}" && string(toolsRaw) != "null" {
+		var tf models.PolicyToolFilter
+		if err := json.Unmarshal(toolsRaw, &tf); err == nil {
+			if len(tf.Allow) > 0 || len(tf.Deny) > 0 {
+				g.Tools = &tf
+			}
+		}
+	}
+	return &g, nil
+}
+
+func scanPolicyGrants(rows pgx.Rows) ([]*models.PolicyGrant, error) {
+	out := []*models.PolicyGrant{}
+	for rows.Next() {
+		g, err := scanPolicyGrant(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
