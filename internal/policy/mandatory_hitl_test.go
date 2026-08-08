@@ -106,6 +106,50 @@ func TestMandatoryHITL_TenantWideEmptyAgent(t *testing.T) {
 	}
 }
 
+// Agent-scoped and tenant-wide rules can coexist for the same tenant+connector
+// once Admin CRUD is in play. Matching must prefer the agent-scoped rule
+// regardless of slice order (not "first match in iteration order").
+func TestMandatoryHITL_AgentScopedWinsOverTenantWide(t *testing.T) {
+	tenantWide := policy.MandatoryHITLRule{
+		ID: "tenant-wide", TenantID: "acme", AgentID: "", Connector: "gh",
+		Tools: []string{"delete_repo"},
+	}
+	agentScoped := policy.MandatoryHITLRule{
+		ID: "agent-sales", TenantID: "acme", AgentID: "sales", Connector: "gh",
+		Tools: []string{"delete_repo"},
+	}
+	grants := []policy.Grant{
+		{ID: "g1", TenantID: "acme", AgentID: "sales", Connector: "gh"},
+		{ID: "g2", TenantID: "acme", AgentID: "other", Connector: "gh"},
+	}
+
+	for _, name := range []string{"tenant-first", "agent-first"} {
+		var rules []policy.MandatoryHITLRule
+		if name == "tenant-first" {
+			rules = []policy.MandatoryHITLRule{tenantWide, agentScoped}
+		} else {
+			rules = []policy.MandatoryHITLRule{agentScoped, tenantWide}
+		}
+		t.Run(name, func(t *testing.T) {
+			eng := policy.New(policy.Config{Grants: grants, MandatoryHITL: rules})
+			sales := eng.Decide(context.Background(), policy.PolicyInput{
+				Stage: policy.StageToolCall, TenantID: "acme", AgentID: "sales",
+				Connector: "gh", Tool: "delete_repo",
+			})
+			if sales.Effect != policy.EffectPending || sales.RuleID != "agent-sales" {
+				t.Fatalf("sales: want agent-scoped rule, got %#v", sales)
+			}
+			other := eng.Decide(context.Background(), policy.PolicyInput{
+				Stage: policy.StageToolCall, TenantID: "acme", AgentID: "other",
+				Connector: "gh", Tool: "delete_repo",
+			})
+			if other.Effect != policy.EffectPending || other.RuleID != "tenant-wide" {
+				t.Fatalf("other: want tenant-wide fallback, got %#v", other)
+			}
+		})
+	}
+}
+
 func TestMandatoryHITL_SkipsSessionAndRunCreate(t *testing.T) {
 	eng := policy.New(policy.Config{
 		Grants: []policy.Grant{{
