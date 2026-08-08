@@ -2,12 +2,14 @@ import { NavLink } from "react-router";
 import {
   Bot,
   Clock,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MessagesSquare,
   Package,
   Plug,
   Shield,
+  ShieldAlert,
   Webhook as WebhookIcon,
   Workflow,
 } from "lucide-react";
@@ -49,6 +51,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/connectors", label: "Connectors", icon: Plug },
       { to: "/admin/cron", label: "Cron", icon: Clock },
       { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
+      { to: "/admin/grants", label: "Grants", icon: KeyRound },
+      { to: "/admin/pending", label: "Pending", icon: ShieldAlert },
       { to: "/admin/audit", label: "Audit", icon: Shield },
     ],
   },

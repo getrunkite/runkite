@@ -22,6 +22,8 @@ const STATUS_META: Record<string, StatusMeta> = {
   idle: { tone: "success", icon: CheckCircle2 },
   closed: { tone: "success", icon: CheckCircle2 },
   allow: { tone: "success", icon: CheckCircle2 },
+  approved: { tone: "success", icon: CheckCircle2 },
+  consumed: { tone: "success", icon: CheckCircle2 },
   running: { tone: "secondary", icon: Loader2, spin: true },
   busy: { tone: "secondary", icon: Loader2, spin: true },
   pending: { tone: "warning", icon: Clock },
@@ -31,6 +33,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   timeout: { tone: "destructive", icon: AlertCircle },
   open: { tone: "destructive", icon: AlertCircle },
   deny: { tone: "destructive", icon: CircleSlash },
+  denied: { tone: "destructive", icon: CircleSlash },
 };
 
 export function statusMeta(status: string): StatusMeta {

@@ -125,7 +125,7 @@ export function Audit() {
     <div>
       <PageHeader
         title="Audit"
-        subtitle="Policy decisions across every tenant (Postgres Supported). Click any column to sort the current page."
+        subtitle="Policy decisions across every tenant (SQL backends). Click any column to sort the current page."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -174,8 +174,8 @@ export function Audit() {
           title={hasFilter ? "No matching decisions" : "No audit events yet"}
           message={
             hasFilter
-              ? "No policy decisions match these filters. Try clearing them, or confirm policy is enabled and the state backend is Postgres."
-              : "Decisions appear here when policy is configured and audit writes are enabled (Supported / Postgres)."
+              ? "No policy decisions match these filters. Try clearing them, or confirm policy is enabled on a SQL state backend."
+              : "Decisions appear here when policy is configured and audit writes are enabled (Postgres, MySQL, or SQLite)."
           }
           action={
             hasFilter ? (

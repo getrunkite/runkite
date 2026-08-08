@@ -105,7 +105,7 @@ export interface AdminWebhookDeadLetter {
   failed_at: string;
 }
 
-/** Policy decision row from GET /admin-api/audit-events (Postgres Supported). */
+/** Policy decision row from GET /admin-api/audit-events (SQL backends). */
 export interface AdminAuditEvent {
   id: string;
   ts: string;
@@ -125,4 +125,32 @@ export interface AdminAuditEvent {
   tool?: string;
   attrs?: Record<string, unknown>;
   trace_id?: string;
+}
+
+/** Durable connector grant overlay from GET /admin-api/policy-grants. */
+export interface AdminPolicyGrant {
+  id: string;
+  tenant_id: string;
+  agent_id: string;
+  connector: string;
+  tools?: { allow?: string[]; deny?: string[] };
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Connector HITL row from GET /admin-api/pending-actions. */
+export interface AdminPendingAction {
+  id: string;
+  run_id: string;
+  generation: number;
+  tenant_id: string;
+  agent_id: string;
+  connector: string;
+  tool: string;
+  rule_id?: string;
+  reason?: string;
+  reason_code?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }

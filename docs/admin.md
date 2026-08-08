@@ -4,7 +4,7 @@
 
 ![Admin UI walkthrough](assets/admin-walkthrough.gif)
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, webhook dead-letters, and policy audit decisions (SQL state backends).
+A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, webhook dead-letters, durable policy grants, the connector HITL pending queue, and policy audit decisions (SQL state backends).
 
 ```
 runkite serve --config langgraph.json
@@ -54,6 +54,16 @@ Building the UI from source (only needed if you're changing `admin-ui/` itself -
 cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui/dist/
 ```
 
+## Governance pages (SQL backends)
+
+| Route | Purpose |
+| --- | --- |
+| `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (hot-reload on this replica) |
+| `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
+| `/admin/audit` | Search policy decisions |
+
+Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
+
 ## Operator flow
 
 ```mermaid
@@ -61,4 +71,5 @@ flowchart LR
   A[Login] --> B[Overview]
   B --> C[Inspect run stream]
   C --> D[Cancel run]
+  B --> E[Grants / Pending / Audit]
 ```

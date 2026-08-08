@@ -13,6 +13,8 @@ import { RunDetail } from "./pages/RunDetail";
 import { Connectors } from "./pages/Connectors";
 import { Cron } from "./pages/Cron";
 import { Webhooks } from "./pages/Webhooks";
+import { PolicyGrants } from "./pages/PolicyGrants";
+import { PendingActions } from "./pages/PendingActions";
 import { Audit } from "./pages/Audit";
 
 function Gate() {
@@ -49,6 +51,8 @@ function Gate() {
         <Route path="connectors" element={<Connectors />} />
         <Route path="cron" element={<Cron />} />
         <Route path="webhooks" element={<Webhooks />} />
+        <Route path="grants" element={<PolicyGrants />} />
+        <Route path="pending" element={<PendingActions />} />
         <Route path="audit" element={<Audit />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin" replace />} />
