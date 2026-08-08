@@ -251,6 +251,7 @@ Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `
 | [`vector_agent`](examples/vector_agent/) | Vector store |
 | [`factory_agent`](examples/factory_agent/) | Per-request factory graphs |
 | [`cron_agent`](examples/cron_agent/) · [`store_agent`](examples/store_agent/) · [`custom_routes_agent`](examples/custom_routes_agent/) | Cron, store, custom routes |
+| [`policy_webhook`](examples/policy_webhook/) | Bring-your-own sync policy PDP (deny / pending + HMAC) |
 | [`gemini/`](examples/gemini/) | Real Gemini agents for every claimed runner (needs `.env.llm`) |
 
 ## Development

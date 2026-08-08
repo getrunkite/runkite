@@ -42,6 +42,11 @@
         "tools": { "allow": ["query", "getRecord"], "deny": ["updateRecord"] }
       }
     ],
+    "webhook": {
+      "url": "http://127.0.0.1:8099/decide",
+      "secret": "dev-policy-secret",
+      "timeout_ms": 2000
+    },
     "siem": { "url": "https://siem.example/hooks/runkite", "secret": "siem-hmac" }
   },
   "llm_cache": {
