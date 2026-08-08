@@ -188,7 +188,7 @@ A `RunEvent` is a JSON object published by the runner back to the control plane.
 | `custom:{name}` | Named custom event from a user stream channel. | `{ "name": "string", "payload": any }` |
 | `end` | Terminal event. The run is finished. | `{ "status": "success" | "error" | "interrupted" }` |
 | `error` | Error event. The run failed. | `{ "message": "string", "type": "string (optional)", "stacktrace": "string (optional)" }` |
-| `tool_auth` | Control-plane connector policy denial (not emitted by runners). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number }` |
+| `tool_auth` | Control-plane connector policy denial / pending HITL (not emitted by runners). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny" \| "pending", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number, "action_id"?: "string" }` |
 
 ### 4.4 Rules
 

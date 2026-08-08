@@ -133,8 +133,13 @@ func (w *Webhook) Decide(ctx context.Context, in PolicyInput, failClosed bool) P
 	}
 
 	code := parsed.ReasonCode
-	if effect == EffectDeny && code == "" {
-		code = ReasonPolicyWebhookDeny
+	if code == "" {
+		switch effect {
+		case EffectDeny:
+			code = ReasonPolicyWebhookDeny
+		case EffectPending:
+			code = ReasonPolicyPending
+		}
 	}
 	return PolicyDecision{
 		Effect:     effect,

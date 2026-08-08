@@ -36,6 +36,10 @@ POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads t
 GET /admin-api/policy-grants/{id}           Get one grant
 PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads
 DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads
+GET /admin-api/pending-actions              Connector HITL queue (Postgres; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
+GET /admin-api/pending-actions/{id}         Get one pending action
+POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
+POST /admin-api/pending-actions/{id}/deny   Mark denied
 GET /admin-api/connectors                   Connector status, including circuit breaker state
 GET /admin-api/cron                         Cron schedules across every tenant
 GET /admin-api/webhooks/dead-letters        Failed webhook deliveries

@@ -25,7 +25,7 @@ const (
 const (
 	EffectAllow   = "allow"
 	EffectDeny    = "deny"
-	EffectPending = "pending" // reserved; HITL lands in Phase 2
+	EffectPending = "pending" // connector HITL: Admin approve → one-shot retry
 )
 
 // Stable reason codes for denials / failures.
@@ -37,6 +37,7 @@ const (
 	ReasonPolicyWebhookFailed  = "policy_webhook_failed"
 	ReasonPolicyDefaultDeny    = "policy_default_deny"
 	ReasonPolicyMissingBinding = "policy_missing_binding"
+	ReasonPolicyPending        = "policy_pending"
 )
 
 // PolicyInput is the decision context for one gate check.
@@ -306,7 +307,13 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	if webhook != nil {
 		dec := webhook.Decide(ctx, in, failClosed)
 		if dec.Effect != EffectAllow {
-			e.cachePut(in, dec)
+			// Never cache pending — approve + retry must re-evaluate / see capability.
+			if dec.Effect != EffectPending {
+				e.cachePut(in, dec)
+			}
+			if dec.Effect == EffectPending && dec.ReasonCode == "" {
+				dec.ReasonCode = ReasonPolicyPending
+			}
 			return dec
 		}
 		if staticAllow != nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -89,7 +90,7 @@ func policyDenyJSON(dec policy.PolicyDecision) map[string]string {
 	return out
 }
 
-func mcpPolicyDenyData(dec policy.PolicyDecision) map[string]interface{} {
+func mcpPolicyDenyData(dec policy.PolicyDecision, actionID string) map[string]interface{} {
 	data := map[string]interface{}{}
 	if dec.ReasonCode != "" {
 		data["reason_code"] = dec.ReasonCode
@@ -97,14 +98,20 @@ func mcpPolicyDenyData(dec policy.PolicyDecision) map[string]interface{} {
 	if dec.RuleID != "" {
 		data["rule_id"] = dec.RuleID
 	}
+	if actionID != "" {
+		data["action_id"] = actionID
+	}
+	if dec.Effect != "" {
+		data["effect"] = dec.Effect
+	}
 	return data
 }
 
 // emitToolAuthEvent publishes a best-effort RunEvent so Agent Protocol
-// streams surface connector policy denials. Event IDs use a distinct
-// namespace from runner `{run_id}_evt_{seq}` so they never collide; seq
-// is max(replay)+1 (best-effort under concurrent runner publishes).
-func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, tool string, dec policy.PolicyDecision) {
+// streams surface connector policy denials / pending HITL. Event IDs use
+// a distinct namespace from runner `{run_id}_evt_{seq}` so they never
+// collide; seq is max(replay)+1 (best-effort under concurrent runner publishes).
+func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, tool string, dec policy.PolicyDecision, actionID string) {
 	if s == nil || !s.policyRunEvents || s.broker == nil {
 		return
 	}
@@ -112,7 +119,7 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, to
 	if in.RunID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{
+	payloadMap := map[string]interface{}{
 		"stage":       stage,
 		"effect":      dec.Effect,
 		"connector":   connectorName,
@@ -121,7 +128,11 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, to
 		"reason_code": dec.ReasonCode,
 		"rule_id":     dec.RuleID,
 		"generation":  in.Generation,
-	})
+	}
+	if actionID != "" {
+		payloadMap["action_id"] = actionID
+	}
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		slog.Warn("policy: tool_auth marshal failed", "error", err, "run_id", in.RunID)
 		return
@@ -186,4 +197,64 @@ func extractToolsCallName(body []byte) (method, tool string) {
 	}
 	_ = json.Unmarshal(envelope.Params, &params)
 	return envelope.Method, params.Name
+}
+
+// tryConsumePendingCapability burns one approved pending_action for this
+// tools/call. Returns true when the call should proceed without Decide.
+func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool string) bool {
+	store, ok := s.pendingActions()
+	if !ok {
+		return false
+	}
+	in := policyInputFromRequest(ctx, policy.StageToolCall, connectorName, tool)
+	if in.RunID == "" {
+		return false
+	}
+	id, err := store.ConsumeApprovedAction(ctx, in.RunID, in.Generation, connectorName, tool)
+	if err != nil {
+		slog.Warn("policy: consume approved action failed", "error", err, "run_id", in.RunID)
+		return false
+	}
+	return id != ""
+}
+
+// persistPendingAction stores (or reuses) a pending HITL row. Returns action id.
+func (s *Server) persistPendingAction(ctx context.Context, connectorName, tool string, dec policy.PolicyDecision) (string, error) {
+	store, ok := s.pendingActions()
+	if !ok {
+		return "", errString("pending actions require Postgres state backend")
+	}
+	in := policyInputFromRequest(ctx, policy.StageToolCall, connectorName, tool)
+	if in.RunID == "" {
+		return "", errString("pending actions require run binding")
+	}
+	if existing, err := store.FindOpenPendingAction(ctx, in.RunID, in.Generation, connectorName, tool); err != nil {
+		return "", err
+	} else if existing != nil {
+		return existing.ID, nil
+	}
+	suffix, err := randomHex(8)
+	if err != nil {
+		return "", err
+	}
+	a := &models.PendingAction{
+		ID:         "pending-" + suffix,
+		RunID:      in.RunID,
+		Generation: in.Generation,
+		TenantID:   in.TenantID,
+		AgentID:    in.AgentID,
+		Connector:  connectorName,
+		Tool:       tool,
+		RuleID:     dec.RuleID,
+		Reason:     dec.Reason,
+		ReasonCode: dec.ReasonCode,
+		Status:     models.PendingStatusPending,
+	}
+	if a.ReasonCode == "" {
+		a.ReasonCode = policy.ReasonPolicyPending
+	}
+	if err := store.CreatePendingAction(ctx, a); err != nil {
+		return "", err
+	}
+	return a.ID, nil
 }

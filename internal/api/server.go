@@ -365,6 +365,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/policy-grants/{id}", s.handleAdminGetPolicyGrant)
 	mux.HandleFunc("PUT /admin-api/policy-grants/{id}", s.handleAdminUpdatePolicyGrant)
 	mux.HandleFunc("DELETE /admin-api/policy-grants/{id}", s.handleAdminDeletePolicyGrant)
+	mux.HandleFunc("GET /admin-api/pending-actions", s.handleAdminListPendingActions)
+	mux.HandleFunc("GET /admin-api/pending-actions/{id}", s.handleAdminGetPendingAction)
+	mux.HandleFunc("POST /admin-api/pending-actions/{id}/approve", s.handleAdminApprovePendingAction)
+	mux.HandleFunc("POST /admin-api/pending-actions/{id}/deny", s.handleAdminDenyPendingAction)
 	mux.HandleFunc("GET /admin-api/connectors", withSystemContext(s.handleListConnectors))
 	mux.HandleFunc("GET /admin-api/connectors/{name}", withSystemContext(s.handleGetConnector))
 	mux.HandleFunc("GET /admin-api/cron", withSystemContext(s.handleListCronSchedules))
@@ -742,7 +746,7 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageConnectorSession, name, ""); deny {
-		s.emitToolAuthEvent(r.Context(), policy.StageConnectorSession, name, "", dec)
+		s.emitToolAuthEvent(r.Context(), policy.StageConnectorSession, name, "", dec, "")
 		writeJSON(w, http.StatusForbidden, policyDenyJSON(dec))
 		return
 	}
@@ -821,22 +825,49 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Policy on tools/call only (other MCP methods stay transparent after
 	// the connector's own static tool filter inside ProxyMCPRequest).
+	// One-shot capability (Admin-approved pending) is checked before Decide
+	// so a cached or re-pending webhook cannot block the approved retry.
 	if method, tool := extractToolsCallName(body); method == "tools/call" {
-		if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageToolCall, name, tool); deny {
-			s.emitToolAuthEvent(r.Context(), policy.StageToolCall, name, tool, dec)
-			msg := dec.Reason
-			if msg == "" {
-				msg = "denied by policy"
-			}
-			denied, err := connector.DeniedRPCResult(extractJSONRPCID(body), msg, mcpPolicyDenyData(dec))
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
+		if !s.tryConsumePendingCapability(r.Context(), name, tool) {
+			if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageToolCall, name, tool); deny {
+				actionID := ""
+				if dec.Effect == policy.EffectPending {
+					id, err := s.persistPendingAction(r.Context(), name, tool, dec)
+					if err != nil {
+						slog.Warn("policy: persist pending action failed", "error", err, "connector", name, "tool", tool)
+						dec.Effect = policy.EffectDeny
+						if dec.Reason == "" {
+							dec.Reason = "pending approval unavailable"
+						}
+						if dec.ReasonCode == "" {
+							dec.ReasonCode = policy.ReasonPolicyPending
+						}
+					} else {
+						actionID = id
+						if dec.ReasonCode == "" {
+							dec.ReasonCode = policy.ReasonPolicyPending
+						}
+					}
+				}
+				s.emitToolAuthEvent(r.Context(), policy.StageToolCall, name, tool, dec, actionID)
+				msg := dec.Reason
+				if msg == "" {
+					if dec.Effect == policy.EffectPending {
+						msg = "awaiting policy approval"
+					} else {
+						msg = "denied by policy"
+					}
+				}
+				denied, err := connector.DeniedRPCResult(extractJSONRPCID(body), msg, mcpPolicyDenyData(dec, actionID))
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(denied.StatusCode)
+				_, _ = w.Write(denied.Body)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(denied.StatusCode)
-			_, _ = w.Write(denied.Body)
-			return
 		}
 	}
 

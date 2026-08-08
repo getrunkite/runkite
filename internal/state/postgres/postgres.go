@@ -129,6 +129,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 4,
+			Name:    "pending_actions",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActions(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS pending_actions`)
+				return err
+			},
+		},
 	}
 }
 
@@ -142,6 +153,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			webhook_dead_letters,
 			audit_events,
 			policy_grants,
+			pending_actions,
 			store_items,
 			thread_checkpoints,
 			runs,
@@ -557,7 +569,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -2496,6 +2508,219 @@ func scanPolicyGrants(rows pgx.Rows) ([]*models.PolicyGrant, error) {
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) upPendingActions(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS pending_actions (
+			id          TEXT PRIMARY KEY,
+			run_id      TEXT NOT NULL,
+			generation  BIGINT NOT NULL DEFAULT 0,
+			tenant_id   TEXT NOT NULL,
+			agent_id    TEXT NOT NULL DEFAULT '',
+			connector   TEXT NOT NULL,
+			tool        TEXT NOT NULL DEFAULT '',
+			rule_id     TEXT NOT NULL DEFAULT '',
+			reason      TEXT NOT NULL DEFAULT '',
+			reason_code TEXT NOT NULL DEFAULT '',
+			status      TEXT NOT NULL DEFAULT 'pending',
+			created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_pending_actions_status_ts ON pending_actions(status, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_pending_actions_run ON pending_actions(run_id);
+	`)
+	return err
+}
+
+// CreatePendingAction inserts a new pending HITL row.
+func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction) error {
+	if a == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = now
+	}
+	a.UpdatedAt = now
+	if a.Status == "" {
+		a.Status = models.PendingStatusPending
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO pending_actions (
+			id, run_id, generation, tenant_id, agent_id, connector, tool,
+			rule_id, reason, reason_code, status, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+	`, a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
+		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt)
+	return err
+}
+
+// GetPendingAction returns one row by id.
+func (s *Store) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
+		       rule_id, reason, reason_code, status, created_at, updated_at
+		FROM pending_actions WHERE id = $1
+	`, id)
+	a, err := scanPendingAction(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &state.ErrNotFound{Resource: "pending_action", ID: id}
+		}
+		return nil, err
+	}
+	return a, nil
+}
+
+// SearchPendingActions lists pending actions with optional filters.
+func (s *Store) SearchPendingActions(ctx context.Context, req *models.PendingActionSearchRequest) ([]*models.PendingAction, error) {
+	if req == nil {
+		req = &models.PendingActionSearchRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
+		rule_id, reason, reason_code, status, created_at, updated_at FROM pending_actions`
+	var args []interface{}
+	var where []string
+	argN := 1
+	if !tenant.IsSystem(ctx) {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, tenant.FromContext(ctx))
+		argN++
+	} else if req.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argN))
+		args = append(args, req.TenantID)
+		argN++
+	}
+	if req.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", argN))
+		args = append(args, req.Status)
+		argN++
+	}
+	if req.RunID != "" {
+		where = append(where, fmt.Sprintf("run_id = $%d", argN))
+		args = append(args, req.RunID)
+		argN++
+	}
+	if req.Connector != "" {
+		where = append(where, fmt.Sprintf("connector = $%d", argN))
+		args = append(args, req.Connector)
+		argN++
+	}
+	tc, err := pagecursor.DecodeTime(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	if tc.ID != "" {
+		where = append(where, fmt.Sprintf("(created_at < $%d OR (created_at = $%d AND id < $%d))", argN, argN, argN+1))
+		args = append(args, tc.Time, tc.ID)
+		argN += 2
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	if tc.ID != "" {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", argN)
+		args = append(args, limit)
+	} else {
+		query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, req.Offset)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*models.PendingAction{}
+	for rows.Next() {
+		a, err := scanPendingAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// SetPendingActionStatus updates status if the row is still in fromStatus
+// (optimistic). Returns ErrConflict if the row moved on.
+func (s *Store) SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE pending_actions SET status = $1, updated_at = $2
+		WHERE id = $3 AND status = $4
+	`, toStatus, time.Now().UTC(), id, fromStatus)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed"}
+	}
+	return nil
+}
+
+// FindOpenPendingAction returns the oldest still-pending row for a call tuple.
+func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool string) (*models.PendingAction, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
+		       rule_id, reason, reason_code, status, created_at, updated_at
+		FROM pending_actions
+		WHERE run_id = $1 AND generation = $2 AND connector = $3 AND tool = $4
+		  AND status = $5
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, runID, generation, connector, tool, models.PendingStatusPending)
+	a, err := scanPendingAction(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return a, nil
+}
+
+// ConsumeApprovedAction atomically marks an approved action consumed for
+// the matching run/generation/connector/tool. Returns the action id or "".
+func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool string) (string, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `
+		WITH picked AS (
+			SELECT id FROM pending_actions
+			WHERE run_id = $3 AND generation = $4 AND connector = $5 AND tool = $6
+			  AND status = $7
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE
+		)
+		UPDATE pending_actions AS p
+		SET status = $1, updated_at = $2
+		FROM picked
+		WHERE p.id = picked.id
+		RETURNING p.id
+	`, models.PendingStatusConsumed, time.Now().UTC(),
+		runID, generation, connector, tool, models.PendingStatusApproved).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return id, nil
+}
+
+func scanPendingAction(row policyGrantScanner) (*models.PendingAction, error) {
+	var a models.PendingAction
+	if err := row.Scan(
+		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
+		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {
