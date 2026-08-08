@@ -187,10 +187,9 @@ type AgentAliasEntry struct {
 
 // A2AEntry is the "a2a" section of langgraph.json, for Agent-to-Agent
 // (A2A) delegation where an agent calls another agent via the same Agent
-// Protocol API. Currently just the one knob every deployment needs to
-// consider: how deep a delegation chain is allowed to go before the
-// control plane refuses to create another sub-run, the guard against a
-// runaway or cyclic A->B->A delegation loop.
+// Protocol API. Knobs every deployment needs to consider before a
+// runaway or cyclic A->B->A (or A fans out to N children) delegation
+// loop silently consumes resources.
 type A2AEntry struct {
 	// MaxDepth caps how many delegation hops a chain may have (a
 	// top-level run is depth 0; each POST /internal/a2a/runs call
@@ -199,6 +198,11 @@ type A2AEntry struct {
 	// small enough that a cyclic delegation bug fails fast instead of
 	// silently consuming resources.
 	MaxDepth int `json:"max_depth,omitempty"`
+	// MaxBreadth caps how many direct children a single parent run may
+	// create via POST /internal/a2a/runs. Defaults to 20 when unset or
+	// <= 0 -- enough for fan-out workers, tight enough that a buggy
+	// coordinator cannot fork-bomb the queue in one hop.
+	MaxBreadth int `json:"max_breadth,omitempty"`
 }
 
 // RunTimeoutEntry is the "run_timeout" section of langgraph.json.

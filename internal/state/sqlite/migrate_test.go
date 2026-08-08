@@ -21,8 +21,8 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 5 {
-		t.Fatalf("version after Init = %d, %v; want 5", cur, err)
+	if err != nil || cur != 6 {
+		t.Fatalf("version after Init = %d, %v; want 6", cur, err)
 	}
 	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches"} {
 		if !tableExists(t, s, tbl) {
@@ -34,11 +34,18 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("second Init: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 5 {
-		t.Fatalf("version after second Init = %d, want 5", cur)
+	if cur != 6 {
+		t.Fatalf("version after second Init = %d, want 6", cur)
 	}
 
-	// v5→v4→v3→v2→v1→0
+	// v6→v5 (index only) then v5→v4→v3→v2→v1→0 (tables)
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade to 5: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 5 {
+		t.Fatalf("version after Downgrade = %d, want 5", cur)
+	}
 	wantTablesGone := []string{"kill_switches", "pending_actions", "policy_grants", "audit_events"}
 	for step, wantVer := range []int{4, 3, 2, 1, 0} {
 		if err := s.Downgrade(ctx); err != nil {
@@ -60,8 +67,8 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("re-Init after downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 5 {
-		t.Fatalf("version after re-Init = %d, want 5", cur)
+	if cur != 6 {
+		t.Fatalf("version after re-Init = %d, want 6", cur)
 	}
 	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches"} {
 		if !tableExists(t, s, tbl) {
@@ -109,8 +116,8 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 5 {
-		t.Fatalf("stamped version = %d, %v; want 5", cur, err)
+	if err != nil || cur != 6 {
+		t.Fatalf("stamped version = %d, %v; want 6", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")

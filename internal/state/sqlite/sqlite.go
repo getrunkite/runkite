@@ -158,6 +158,18 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 6,
+			Name:    "runs_parent_index",
+			Up: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id)`)
+				return err
+			},
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_runs_parent`)
+				return err
+			},
+		},
 	}
 }
 
@@ -419,6 +431,9 @@ func (s *SQLiteStore) baselineUp(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_runs_root ON runs(root_run_id)"); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id)"); err != nil {
 		return err
 	}
 	// These indexes reference tenant_id, so (unlike the CREATE INDEX
@@ -1738,6 +1753,10 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 	if req.RootRunID != "" {
 		where = append(where, "root_run_id = ?")
 		args = append(args, req.RootRunID)
+	}
+	if req.ParentRunID != "" {
+		where = append(where, "parent_run_id = ?")
+		args = append(args, req.ParentRunID)
 	}
 	for k, v := range req.Metadata {
 		where = append(where, "json_extract(metadata, ?) = ?")

@@ -50,6 +50,7 @@ type Server struct {
 	customMount     string                  // external prefix (default /custom); read on every request
 	vectors         vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
 	a2aMaxDepth     int                     // 0 means "use the default" -- see SetA2AMaxDepth
+	a2aMaxBreadth   int                     // 0 means "use the default" -- see SetA2AMaxBreadth
 	aliases         *AliasResolver          // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
@@ -118,6 +119,9 @@ func (s *Server) SetRateLimiter(l *ratelimit.Limiter) {
 // see A2AEntry's doc comment in internal/config/loader.go.
 const defaultA2AMaxDepth = 10
 
+// defaultA2AMaxBreadth applies when a2a.max_breadth is unset or <= 0.
+const defaultA2AMaxBreadth = 20
+
 // SetA2AMaxDepth configures the maximum Agent-to-Agent delegation chain
 // depth. Called after NewServer when an "a2a" config section is present;
 // never called (or called with <= 0) means defaultA2AMaxDepth applies.
@@ -130,6 +134,19 @@ func (s *Server) a2aMaxDepthOrDefault() int {
 		return defaultA2AMaxDepth
 	}
 	return s.a2aMaxDepth
+}
+
+// SetA2AMaxBreadth configures the maximum number of direct children one
+// parent run may create via A2A. Never called (or <= 0) → defaultA2AMaxBreadth.
+func (s *Server) SetA2AMaxBreadth(breadth int) {
+	s.a2aMaxBreadth = breadth
+}
+
+func (s *Server) a2aMaxBreadthOrDefault() int {
+	if s.a2aMaxBreadth <= 0 {
+		return defaultA2AMaxBreadth
+	}
+	return s.a2aMaxBreadth
 }
 
 // SetAliasResolver attaches A/B deployment routing (see alias.go).
@@ -1057,11 +1074,24 @@ func (e *ErrA2ADepthExceeded) Error() string {
 	return fmt.Sprintf("a2a delegation depth %d exceeds max_depth %d", e.Depth, e.MaxDepth)
 }
 
+// ErrA2ABreadthExceeded means the parent already has max_breadth direct
+// children -- client-actionable 400 (fan-out cap), not a server fault.
+type ErrA2ABreadthExceeded struct {
+	ParentRunID string
+	Breadth     int
+	MaxBreadth  int
+}
+
+func (e *ErrA2ABreadthExceeded) Error() string {
+	return fmt.Sprintf("a2a parent %s already has %d direct children (max_breadth %d)", e.ParentRunID, e.Breadth, e.MaxBreadth)
+}
+
 func handleStoreError(w http.ResponseWriter, err error) {
 	var notFound *state.ErrNotFound
 	var conflict *state.ErrConflict
 	var rateLimited *ratelimit.ErrRateLimited
 	var depthExceeded *ErrA2ADepthExceeded
+	var breadthExceeded *ErrA2ABreadthExceeded
 	switch {
 	case errors.As(err, &notFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -1071,6 +1101,8 @@ func handleStoreError(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, err.Error())
 	case errors.As(err, &depthExceeded):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.As(err, &breadthExceeded):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		var denied *hooks.ErrDenied

@@ -327,12 +327,16 @@ func startServer(opts serverOpts) {
 		slog.Info("rate limiting: enabled", "backend", rateLimiter.BackendName())
 	}
 
-	// Agent-to-Agent (A2A) delegation recursion depth limit. Always
-	// available at POST /internal/a2a/runs; this only tunes how deep a
-	// chain may go.
+	// Agent-to-Agent (A2A) delegation recursion limits. Always available
+	// at POST /internal/a2a/runs; these only tune chain depth and
+	// per-parent fan-out.
 	if maxDepth := initA2AMaxDepth(opts.configPath); maxDepth > 0 {
 		apiServer.SetA2AMaxDepth(maxDepth)
 		slog.Info("a2a: max_depth configured", "max_depth", maxDepth)
+	}
+	if maxBreadth := initA2AMaxBreadth(opts.configPath); maxBreadth > 0 {
+		apiServer.SetA2AMaxBreadth(maxBreadth)
+		slog.Info("a2a: max_breadth configured", "max_breadth", maxBreadth)
 	}
 
 	// A/B deployment routing, built on top of full agent versioning.
@@ -1264,6 +1268,20 @@ func initA2AMaxDepth(configPath string) int {
 		return 0
 	}
 	return cfg.A2A.MaxDepth
+}
+
+// initA2AMaxBreadth reads a2a.max_breadth from the first langgraph.json.
+// Returns 0 (use api.Server default) if unconfigured.
+func initA2AMaxBreadth(configPath string) int {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return 0
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.A2A == nil {
+		return 0
+	}
+	return cfg.A2A.MaxBreadth
 }
 
 // initRateLimiter reads the "rate_limit" section from the first discovered

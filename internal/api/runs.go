@@ -451,9 +451,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// never populated from a client-facing request body -- see
 	// RunCreate.ParentRunID's doc comment). A top-level run has Depth 0
 	// and no parent/root; a delegated run inherits and increments from
-	// its parent, enforced against a2aMaxDepthOrDefault() here so a
-	// cyclic or runaway delegation chain fails fast at creation time
-	// rather than consuming resources indefinitely.
+	// its parent, enforced against a2aMaxDepthOrDefault() and
+	// a2aMaxBreadthOrDefault() here so a cyclic chain or fan-out bomb
+	// fails fast at creation time rather than consuming resources.
 	var rootRunID *string
 	depth := 0
 	if req.ParentRunID != nil {
@@ -465,6 +465,28 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		depth = parent.Depth + 1
 		if depth > s.a2aMaxDepthOrDefault() {
 			err = &ErrA2ADepthExceeded{Depth: depth, MaxDepth: s.a2aMaxDepthOrDefault()}
+			return nil, nil, err
+		}
+		maxBreadth := s.a2aMaxBreadthOrDefault()
+		// Limit == maxBreadth is enough: if that many siblings already
+		// exist, the next create is over the cap. Concurrent creates
+		// under the same parent can race past this check (same TOCTOU
+		// class as other admission counts); the ceiling still bounds
+		// steady-state fan-out.
+		var siblings []*models.Run
+		siblings, err = s.store.SearchRuns(ctx, &models.RunSearchRequest{
+			ParentRunID: *req.ParentRunID,
+			Limit:       maxBreadth,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("a2a: list children of parent %s: %w", *req.ParentRunID, err)
+		}
+		if len(siblings) >= maxBreadth {
+			err = &ErrA2ABreadthExceeded{
+				ParentRunID: *req.ParentRunID,
+				Breadth:     len(siblings),
+				MaxBreadth:  maxBreadth,
+			}
 			return nil, nil, err
 		}
 		if parent.RootRunID != nil {

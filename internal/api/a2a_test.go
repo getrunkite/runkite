@@ -152,6 +152,34 @@ func TestA2A_DepthLimitEnforced(t *testing.T) {
 	}
 }
 
+// TestA2A_BreadthLimitEnforced proves a parent cannot create more
+// direct children than a2a.max_breadth (sibling fan-out cap).
+func TestA2A_BreadthLimitEnforced(t *testing.T) {
+	env := newTestEnv(t)
+	env.apiServer.SetA2AMaxBreadth(2)
+	ctx := context.Background()
+	upsertA2AAgent(t, env, ctx, "agent")
+
+	now := time.Now().UTC()
+	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+	env.store.CreateRun(ctx, &models.Run{RunID: "parent", ThreadID: "t1", AgentID: "agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+
+	for i := 0; i < 2; i++ {
+		resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
+		body := readBody(t, resp)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("child %d: expected 200, got %d: %s", i+1, resp.StatusCode, body)
+		}
+	}
+
+	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("child 3: expected 400 (breadth limit exceeded), got %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
 // TestA2A_IdentityPropagatesToRunnerAssignment proves on_behalf_of
 // reaches the enqueued RunAssignment's User field -- the sub-agent
 // executes with the original caller's identity, not an anonymous or

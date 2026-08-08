@@ -231,7 +231,8 @@ type Run struct {
 	// query (WHERE root_run_id = ?) instead of walking parent pointers.
 	// Depth is 0 for a top-level run, parent.Depth+1 for a delegated
 	// one -- enforced against a2a.max_depth at creation time to prevent
-	// runaway/cyclic delegation chains.
+	// runaway/cyclic delegation chains. Direct children per parent are
+	// capped separately by a2a.max_breadth.
 	ParentRunID *string `json:"parent_run_id,omitempty"`
 	RootRunID   *string `json:"root_run_id,omitempty"`
 	Depth       int     `json:"depth,omitempty"`
@@ -287,8 +288,11 @@ type RunSearchRequest struct {
 	// run delegated from it, directly or transitively. Matches exactly,
 	// no partial/prefix semantics.
 	RootRunID string `json:"root_run_id,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
+	// ParentRunID finds direct children of one run (one hop). Used by
+	// a2a.max_breadth admission; also available on POST /runs/search.
+	ParentRunID string `json:"parent_run_id,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	Offset      int    `json:"offset,omitempty"`
 	// Cursor is an opaque keyset token (Admin lists). When set, Offset is
 	// ignored. Client Protocol search never sets this.
 	Cursor string `json:"cursor,omitempty"`

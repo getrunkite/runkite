@@ -151,6 +151,18 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 6,
+			Name:    "runs_parent_index",
+			Up: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id)`)
+				return err
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP INDEX IF EXISTS idx_runs_parent`)
+				return err
+			},
+		},
 	}
 }
 
@@ -390,6 +402,7 @@ func (s *Store) initSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 	CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 	CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id);
 	CREATE INDEX IF NOT EXISTS idx_runs_root ON runs(root_run_id);
+	CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id);
 
 	CREATE TABLE IF NOT EXISTS thread_checkpoints (
 		tenant_id       TEXT NOT NULL DEFAULT 'default',
@@ -1835,6 +1848,11 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	if req.RootRunID != "" {
 		where = append(where, fmt.Sprintf("root_run_id = $%d", argN))
 		args = append(args, req.RootRunID)
+		argN++
+	}
+	if req.ParentRunID != "" {
+		where = append(where, fmt.Sprintf("parent_run_id = $%d", argN))
+		args = append(args, req.ParentRunID)
 		argN++
 	}
 	for k, v := range req.Metadata {

@@ -202,6 +202,8 @@ func (s *Store) baselineUp(ctx context.Context) error {
 		// backends already have idx_runs_root; without this Mongo falls
 		// back to a collection scan for any tree query.
 		{"runs", bson.D{{Key: "root_run_id", Value: 1}}, false},
+		// A2A max_breadth admission (direct children of one parent).
+		{"runs", bson.D{{Key: "parent_run_id", Value: 1}}, false},
 		{"thread_checkpoints", bson.D{{Key: "checkpoint_id", Value: 1}}, true},
 		{"thread_checkpoints", bson.D{{Key: "thread_id", Value: 1}, {Key: "created_at", Value: -1}}, false},
 		{"store_items", bson.D{{Key: "tenant_id", Value: 1}, {Key: "namespace", Value: 1}, {Key: "key", Value: 1}}, true},
@@ -1435,6 +1437,9 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	}
 	if req.RootRunID != "" {
 		filter["root_run_id"] = req.RootRunID
+	}
+	if req.ParentRunID != "" {
+		filter["parent_run_id"] = req.ParentRunID
 	}
 	for k, v := range req.Metadata {
 		filter["metadata."+k] = metadataMatchValue(v)

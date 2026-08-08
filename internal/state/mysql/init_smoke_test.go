@@ -67,6 +67,7 @@ func TestInit_CreatesCoreAndGovernanceTablesIdempotently(t *testing.T) {
 		"KEY `idx_runs_status` (`status`)",
 		"KEY `idx_runs_tenant` (`tenant_id`)",
 		"KEY `idx_runs_root` (`root_run_id`)",
+		"KEY `idx_runs_parent` (`parent_run_id`)",
 		"FOREIGN KEY (`thread_id`) REFERENCES `threads` (`thread_id`) ON DELETE CASCADE",
 		"utf8mb4",
 	} {

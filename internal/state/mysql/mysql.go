@@ -5,16 +5,15 @@
 // checkpoints: schema (New/Init/Close) plus Agents CRUD so far;
 // remaining Store methods land before conformance wiring.
 //
-// A fresh backend (no pre-multi-tenancy/pre-versioning legacy schema
-// to migrate the way Postgres/SQLite's Init() carries forward), so the
-// schema below is written as its final shape directly -- no `ALTER
-// TABLE ADD COLUMN IF NOT EXISTS` migration trail, and every index is
-// declared inline on its CREATE TABLE rather than as separate `CREATE
-// INDEX IF NOT EXISTS` statements (MySQL, unlike Postgres, has no
-// portable `IF NOT EXISTS` for CREATE INDEX across all supported
-// versions -- inline index declarations sidestep the question
-// entirely, since CREATE TABLE IF NOT EXISTS is a no-op, indexes
-// included, on a table that already exists).
+// Schema evolves via numbered migrations (baseline v1 + later Ups).
+// Fresh CREATE TABLE statements declare their final indexes inline
+// (MySQL has no portable CREATE INDEX IF NOT EXISTS across versions).
+// That alone does not self-heal an already-created table: CREATE TABLE
+// IF NOT EXISTS is a whole-table no-op when the table exists, so a new
+// KEY added to the baseline DDL never appears on long-lived databases.
+// Columns and indexes introduced after first Init use addColumnIfMissing
+// / addIndexIfMissing (INFORMATION_SCHEMA probes + ALTER TABLE), either
+// inside baseline Up (legacy stamp path) or a later migration version.
 //
 // Two real dialect differences from Postgres/SQLite drove design
 // choices here, not just syntax substitution:
@@ -101,9 +100,6 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// Init creates all tables. Safe to call on every startup (CREATE TABLE
-// IF NOT EXISTS throughout) -- same idempotent, non-versioned migration
-// convention as every other backend's Init.
 // addColumnIfMissing adds a column to an existing table if it isn't
 // already there. MySQL, unlike Postgres/MariaDB, has no `ADD COLUMN IF
 // NOT EXISTS` clause at all (confirmed against the official 8.4 ALTER
@@ -129,6 +125,31 @@ func (s *Store) addColumnIfMissing(ctx context.Context, db migrate.DB, table, co
 	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
 		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+// addIndexIfMissing adds a secondary index when absent. Same INFORMATION_SCHEMA
+// probe pattern as addColumnIfMissing: MySQL has no portable
+// CREATE INDEX IF NOT EXISTS, and CREATE TABLE IF NOT EXISTS never adds
+// a KEY that was only edited into the baseline DDL after the table already
+// existed. columnsDDL is the parenthesized column list without the outer
+// parentheses (e.g. "parent_run_id" or "tenant_id, agent_id").
+func (s *Store) addIndexIfMissing(ctx context.Context, db migrate.DB, table, indexName, columnsDDL string) error {
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+	`, table, indexName).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check index %s.%s: %w", table, indexName, err)
+	}
+	if count > 0 {
+		return nil
+	}
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD INDEX %s (%s)", table, indexName, columnsDDL)
+	if _, err := db.ExecContext(ctx, stmt); err != nil {
+		return fmt.Errorf("add index %s.%s: %w", table, indexName, err)
 	}
 	return nil
 }
@@ -227,7 +248,39 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 6,
+			Name:    "runs_parent_index",
+			Up: func(ctx context.Context) error {
+				return s.upRunsParentIndex(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				return s.downRunsParentIndex(ctx, db)
+			},
+		},
 	}
+}
+
+// upRunsParentIndex self-heals idx_runs_parent on deployments that
+// already ran baseline before the KEY was added to CREATE TABLE runs.
+func (s *Store) upRunsParentIndex(ctx context.Context, db migrate.DB) error {
+	return s.addIndexIfMissing(ctx, db, "runs", "idx_runs_parent", "parent_run_id")
+}
+
+func (s *Store) downRunsParentIndex(ctx context.Context, db migrate.DB) error {
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'runs' AND INDEX_NAME = 'idx_runs_parent'
+	`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check index runs.idx_runs_parent: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+	_, err = db.ExecContext(ctx, `ALTER TABLE runs DROP INDEX idx_runs_parent`)
+	return err
 }
 
 func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
@@ -367,6 +420,7 @@ func (s *Store) baselineUp(ctx context.Context, db migrate.DB) error {
 			KEY idx_runs_status (status),
 			KEY idx_runs_tenant (tenant_id),
 			KEY idx_runs_root (root_run_id),
+			KEY idx_runs_parent (parent_run_id),
 			FOREIGN KEY (thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
 
@@ -494,6 +548,12 @@ func (s *Store) baselineUp(ctx context.Context, db migrate.DB) error {
 		return fmt.Errorf("mysql: init schema: %w", err)
 	}
 	if err := s.addColumnIfMissing(ctx, db, "webhook_dead_letters", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"); err != nil {
+		return fmt.Errorf("mysql: init schema: %w", err)
+	}
+	// Same class as threads.version: KEY on CREATE TABLE only applies to
+	// fresh tables. Legacy stamp / older baselines need the ALTER path.
+	// Migration v6 also calls this for DBs already past baseline.
+	if err := s.addIndexIfMissing(ctx, db, "runs", "idx_runs_parent", "parent_run_id"); err != nil {
 		return fmt.Errorf("mysql: init schema: %w", err)
 	}
 	return nil
@@ -1375,6 +1435,10 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	if req.RootRunID != "" {
 		where = append(where, "root_run_id = ?")
 		args = append(args, req.RootRunID)
+	}
+	if req.ParentRunID != "" {
+		where = append(where, "parent_run_id = ?")
+		args = append(args, req.ParentRunID)
 	}
 	// Same MySQL scalar-vs-JSON comparison rule SearchThreads relies
 	// on: JSON_EXTRACT(...) returns a JSON value, and comparing it with

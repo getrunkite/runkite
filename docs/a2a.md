@@ -29,10 +29,11 @@ See `examples/a2a_agent/` for a complete working example (`coordinator_agent` de
 Three things this adds on top of the shared run-creation/wait path:
 
 - **Auth context propagation**: the runner forwards the caller's identity/permissions via `on_behalf_of` (both the Python and TypeScript helpers copy them from the parent run's `langgraph_auth_user`, via each language's own duck-typed `to_dict()`/`toDict()` check). Tenant is derived from the PARENT run's own `tenant_id` (looked up server-side), never trusted from the request body. This is **propagation, not enforcement** -- the control plane does not re-check `on_behalf_of.permissions` against a stored parent-auth record (runs don't persist the original caller's auth), so a buggy or compromised agent/runner could claim higher permissions than the parent run actually had. The trust boundary is "the runner is trusted," same as the rest of `/internal/*`.
-- **Recursion limits**: every sub-run's `depth` is enforced against `a2a.max_depth` (default 10) at creation time -- an accidental cycle or runaway delegation chain fails fast with `400`, not a resource leak. Configurable:
+- **Recursion limits**: every sub-run's `depth` is enforced against `a2a.max_depth` (default 10) at creation time -- an accidental cycle or runaway delegation chain fails fast with `400`, not a resource leak. Direct children per parent are capped by `a2a.max_breadth` (default 20) so a buggy coordinator cannot fork-bomb the queue in one hop. Configurable:
   ```json
-  { "a2a": { "max_depth": 10 } }
+  { "a2a": { "max_depth": 10, "max_breadth": 20 } }
   ```
+  `POST /runs/search` accepts `parent_run_id` to list those direct children (same filter the admission check uses).
 - **Cost attribution**: every *delegated* run carries `parent_run_id` and `root_run_id` (the top of the chain), persisted and indexed. `RunSearchRequest` exposes `root_run_id` as a client-facing filter (`POST /runs/search`) -- pass the tree's root `run_id` (or any descendant's own `root_run_id` value, which is the same thing) to list every OTHER run in the tree with one query. The root itself is never returned this way (its own `root_run_id` is nil by design; fetch it separately by ID), and this filtered search is subject to the same `maxSearchLimit` (100) clamp as any other client-facing search. `GET /runs/{runID}/cost` (below) is more permissive: pass ANY run's ID in the tree -- root or descendant -- and it resolves to the same root internally before aggregating, no client-side root-finding required.
 - **Cancel cascade**: cancelling a run cancels everything it delegated to, directly or transitively (not ancestors or siblings) -- a cancelled parent can't leave orphaned children still executing.
 
