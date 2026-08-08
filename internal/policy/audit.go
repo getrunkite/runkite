@@ -13,7 +13,7 @@ import (
 )
 
 // AuditStore is the narrow write path for policy decisions. Implemented
-// by the Postgres state store in Phase 1; other backends omit it.
+// by SQL state stores (Postgres/MySQL/SQLite); Mongo omits it.
 type AuditStore interface {
 	WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error
 }
@@ -22,7 +22,7 @@ type storeAuditor struct {
 	store AuditStore
 }
 
-// NewStoreAuditor wraps a Postgres-backed AuditStore.
+// NewStoreAuditor wraps a durable AuditStore.
 func NewStoreAuditor(store AuditStore) Auditor {
 	if store == nil {
 		return nil

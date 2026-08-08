@@ -2177,9 +2177,9 @@ func (s *Store) upAuditEvents(ctx context.Context, conn *pgxpool.Conn) error {
 	return err
 }
 
-// WriteAuditEvent persists one policy/security decision. Supported
-// profile (Postgres) only — Compatible backends omit this method
-// (callers type-assert).
+// WriteAuditEvent persists one policy/security decision. SQL backends
+// (Postgres/MySQL/SQLite) implement this; Mongo callers type-assert and
+// skip durable audit.
 func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error {
 	if ev == nil {
 		return nil

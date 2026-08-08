@@ -21,35 +21,52 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 1 {
-		t.Fatalf("version after Init = %d, %v; want 1", cur, err)
+	if err != nil || cur != 4 {
+		t.Fatalf("version after Init = %d, %v; want 4", cur, err)
+	}
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions"} {
+		if !tableExists(t, s, tbl) {
+			t.Fatalf("%s missing after Init", tbl)
+		}
 	}
 
 	if err := s.Init(ctx); err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 1 {
-		t.Fatalf("version after second Init = %d, want 1", cur)
+	if cur != 4 {
+		t.Fatalf("version after second Init = %d, want 4", cur)
 	}
 
-	if err := s.Downgrade(ctx); err != nil {
-		t.Fatalf("Downgrade: %v", err)
-	}
-	cur, _ = bk.Current(ctx)
-	if cur != 0 {
-		t.Fatalf("version after Downgrade = %d, want 0", cur)
+	// v4→v3→v2→v1→0
+	wantTablesGone := []string{"pending_actions", "policy_grants", "audit_events"}
+	for step, wantVer := range []int{3, 2, 1, 0} {
+		if err := s.Downgrade(ctx); err != nil {
+			t.Fatalf("Downgrade to %d: %v", wantVer, err)
+		}
+		cur, _ = bk.Current(ctx)
+		if cur != wantVer {
+			t.Fatalf("version after Downgrade = %d, want %d", cur, wantVer)
+		}
+		if step < 3 && tableExists(t, s, wantTablesGone[step]) {
+			t.Fatalf("%s still present after Downgrade to %d", wantTablesGone[step], wantVer)
+		}
 	}
 	if err := s.Downgrade(ctx); !errors.Is(err, migrate.ErrNoMigration) {
-		t.Fatalf("second Downgrade: want ErrNoMigration, got %v", err)
+		t.Fatalf("extra Downgrade: want ErrNoMigration, got %v", err)
 	}
 
 	if err := s.Init(ctx); err != nil {
 		t.Fatalf("re-Init after downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 1 {
-		t.Fatalf("version after re-Init = %d, want 1", cur)
+	if cur != 4 {
+		t.Fatalf("version after re-Init = %d, want 4", cur)
+	}
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions"} {
+		if !tableExists(t, s, tbl) {
+			t.Fatalf("%s missing after re-Init", tbl)
+		}
 	}
 }
 
@@ -96,8 +113,8 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 1 {
-		t.Fatalf("stamped version = %d, %v; want 1", cur, err)
+	if err != nil || cur != 4 {
+		t.Fatalf("stamped version = %d, %v; want 4", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")
@@ -116,4 +133,11 @@ func columnExists(t *testing.T, s *SQLiteStore, table, column string) bool {
 		t.Fatalf("pragma_table_info(%s): %v", table, err)
 	}
 	return n > 0
+}
+
+func tableExists(t *testing.T, s *SQLiteStore, table string) bool {
+	t.Helper()
+	var name string
+	err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
+	return err == nil && name == table
 }

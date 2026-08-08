@@ -17,9 +17,11 @@ import (
 	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
-func TestAdminPolicyGrants_UnsupportedStoreReturns501(t *testing.T) {
-	env := newTestEnv(t)
-	resp, err := http.Get(env.srv.URL + "/admin-api/policy-grants")
+func TestAdminPolicyGrants_NonSQLStoreReturns501(t *testing.T) {
+	// nil store does not implement grant CRUD (same as Mongo).
+	srv := httptest.NewServer(api.NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus()).Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/policy-grants")
 	if err != nil {
 		t.Fatal(err)
 	}

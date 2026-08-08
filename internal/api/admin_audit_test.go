@@ -20,17 +20,18 @@ import (
 	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
-func TestAdminListAuditEvents_UnsupportedStoreReturns501(t *testing.T) {
-	env := newTestEnv(t) // SQLite — no SearchAuditEvents
-
-	resp, err := http.Get(env.srv.URL + "/admin-api/audit-events")
+func TestAdminListAuditEvents_NonSQLStoreReturns501(t *testing.T) {
+	// nil store does not implement SearchAuditEvents (same as Mongo).
+	srv := httptest.NewServer(api.NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus()).Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/audit-events")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotImplemented {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 501 on non-Postgres store, got %d: %s", resp.StatusCode, body)
+		t.Fatalf("expected 501 on non-SQL store, got %d: %s", resp.StatusCode, body)
 	}
 }
 

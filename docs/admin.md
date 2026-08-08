@@ -4,7 +4,7 @@
 
 ![Admin UI walkthrough](assets/admin-walkthrough.gif)
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, webhook dead-letters, and policy audit decisions (Postgres Supported).
+A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, webhook dead-letters, and policy audit decisions (SQL state backends).
 
 ```
 runkite serve --config langgraph.json
@@ -30,13 +30,13 @@ GET /admin-api/threads/{id}/runs            Runs on a thread (?limit=&cursor= or
 GET /admin-api/runs                         List runs (tenant_id visible; ?status=/?agent_id=/?thread_id=; ?limit=&cursor= or ?offset=; X-Next-Cursor)
 GET /admin-api/runs/{id}                    Run detail
 GET /admin-api/runs/{id}/stream             Live/replayed SSE event log for a run (same mechanics as the client-facing stream)
-GET /admin-api/audit-events                 Policy decisions (Postgres Supported; ?tenant_id=&decision=&action=&run_id=&agent_id=&connector=&tool=&since=&until= RFC3339; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
-GET /admin-api/policy-grants                Durable connector grants (Postgres; overlays langgraph.json defaults; ?tenant_id=&agent_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
+GET /admin-api/audit-events                 Policy decisions (SQL: Postgres/MySQL/SQLite; ?tenant_id=&decision=&action=&run_id=&agent_id=&connector=&tool=&since=&until= RFC3339; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
+GET /admin-api/policy-grants                Durable connector grants (SQL; overlays langgraph.json defaults; ?tenant_id=&agent_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 POST /admin-api/policy-grants               Create/upsert a grant; hot-reloads the in-process engine on this replica
 GET /admin-api/policy-grants/{id}           Get one grant
 PUT /admin-api/policy-grants/{id}           Replace a grant; hot-reloads
 DELETE /admin-api/policy-grants/{id}        Delete a grant; hot-reloads
-GET /admin-api/pending-actions              Connector HITL queue (Postgres; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Compatible backends.
+GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/pending-actions/{id}         Get one pending action
 POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
 POST /admin-api/pending-actions/{id}/deny   Mark denied

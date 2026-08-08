@@ -1191,7 +1191,7 @@ def _build_admin_spec() -> dict:
             "/admin-api/runs/{run_id}/stream": {"get": {"tags": ["Admin"], "summary": "Stream Run (admin)", "operationId": "admin_stream_run", "parameters": [r_id], "responses": {"200": {"description": "SSE event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}}},
             "/admin-api/runs/{run_id}/cancel": {"post": {"tags": ["Admin"], "summary": "Cancel Run (admin)", "operationId": "admin_cancel_run", "parameters": [r_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}}},
             "/admin-api/policy-grants": {
-                "get": {"tags": ["Admin"], "summary": "List Policy Grants", "description": "Durable connector grant overlays (Postgres). Deployment defaults in langgraph.json are not listed here.", "operationId": "admin_list_policy_grants", "parameters": [
+                "get": {"tags": ["Admin"], "summary": "List Policy Grants", "description": "Durable connector grant overlays (SQL backends). Deployment defaults in langgraph.json are not listed here.", "operationId": "admin_list_policy_grants", "parameters": [
                     {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                     {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
                     {"name": "connector", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1199,22 +1199,22 @@ def _build_admin_spec() -> dict:
                 ], "responses": {
                     "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("PolicyGrant"))}}},
                     "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
                 "post": {"tags": ["Admin"], "summary": "Create Policy Grant", "operationId": "admin_create_policy_grant", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {
                     "201": {"description": "Created", "content": {"application/json": {"schema": _ref("PolicyGrant")}}},
                     "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                     "409": {"description": "Policy engine not enabled", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
             },
             "/admin-api/policy-grants/{id}": {
-                "get": {"tags": ["Admin"], "summary": "Get Policy Grant", "operationId": "admin_get_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
-                "put": {"tags": ["Admin"], "summary": "Update Policy Grant", "operationId": "admin_update_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
-                "delete": {"tags": ["Admin"], "summary": "Delete Policy Grant", "operationId": "admin_delete_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "get": {"tags": ["Admin"], "summary": "Get Policy Grant", "operationId": "admin_get_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "put": {"tags": ["Admin"], "summary": "Update Policy Grant", "operationId": "admin_update_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("PolicyGrant")}}}, "responses": {**_json_response("200", "Success", _ref("PolicyGrant")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "delete": {"tags": ["Admin"], "summary": "Delete Policy Grant", "operationId": "admin_delete_policy_grant", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions": {
-                "get": {"tags": ["Admin"], "summary": "List Pending Actions", "description": "Connector tool calls awaiting HITL approval (Postgres). Approve mints a one-shot capability for the next matching tools/call.", "operationId": "admin_list_pending_actions", "parameters": [
+                "get": {"tags": ["Admin"], "summary": "List Pending Actions", "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability for the next matching tools/call.", "operationId": "admin_list_pending_actions", "parameters": [
                     {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                     {"name": "status", "in": "query", "required": False, "schema": {"type": "string"}, "description": "pending | approved | denied | consumed"},
                     {"name": "run_id", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1222,27 +1222,27 @@ def _build_admin_spec() -> dict:
                     *admin_page,
                 ], "responses": {
                     "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("PendingAction"))}}},
-                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
             },
             "/admin-api/pending-actions/{id}": {
-                "get": {"tags": ["Admin"], "summary": "Get Pending Action", "operationId": "admin_get_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PendingAction")), "404": _ERR_404, "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
+                "get": {"tags": ["Admin"], "summary": "Get Pending Action", "operationId": "admin_get_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PendingAction")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions/{id}/approve": {
                 "post": {"tags": ["Admin"], "summary": "Approve Pending Action", "description": "Re-evaluates policy; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching tools/call).", "operationId": "admin_approve_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
                     "200": {"description": "Approved", "content": {"application/json": {"schema": _ref("PendingAction")}}},
                     "409": {"description": "Not pending, or policy still denies", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
             },
             "/admin-api/pending-actions/{id}/deny": {
                 "post": {"tags": ["Admin"], "summary": "Deny Pending Action", "operationId": "admin_deny_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
                     "200": {"description": "Denied", "content": {"application/json": {"schema": _ref("PendingAction")}}},
                     "409": {"description": "Not pending", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                    "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 }},
             },
-            "/admin-api/audit-events": {"get": {"tags": ["Admin"], "summary": "List Audit Events", "description": "Policy decisions newest-first. Postgres Supported profile only; Compatible backends return 501.", "operationId": "admin_list_audit_events", "parameters": [
+            "/admin-api/audit-events": {"get": {"tags": ["Admin"], "summary": "List Audit Events", "description": "Policy decisions newest-first. SQL state backends (Postgres/MySQL/SQLite); Mongo returns 501.", "operationId": "admin_list_audit_events", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 {"name": "decision", "in": "query", "required": False, "schema": {"type": "string"}, "description": "allow | deny | pending"},
                 {"name": "action", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1256,7 +1256,7 @@ def _build_admin_spec() -> dict:
             ], "responses": {
                 "200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AuditEvent"))}}},
                 "400": {"description": "Invalid cursor, cursor+offset, or since/until", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                "501": {"description": "State backend is not Postgres", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
             "/admin-api/connectors": {"get": {"tags": ["Admin"], "summary": "List Connectors (admin)", "operationId": "admin_list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/admin-api/connectors/{name}": {"get": {"tags": ["Admin"], "summary": "Get Connector (admin)", "operationId": "admin_get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorInfo")), "404": _ERR_404}}},

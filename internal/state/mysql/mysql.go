@@ -172,16 +172,51 @@ func (s *Store) withSchemaLock(ctx context.Context, fn func(context.Context, *sq
 }
 
 func (s *Store) migrations(db migrate.DB) []migrate.Migration {
-	return []migrate.Migration{{
-		Version: 1,
-		Name:    "baseline",
-		Up: func(ctx context.Context) error {
-			return s.baselineUp(ctx, db)
+	return []migrate.Migration{
+		{
+			Version: 1,
+			Name:    "baseline",
+			Up: func(ctx context.Context) error {
+				return s.baselineUp(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				return s.baselineDown(ctx, db)
+			},
 		},
-		Down: func(ctx context.Context) error {
-			return s.baselineDown(ctx, db)
+		{
+			Version: 2,
+			Name:    "audit_events",
+			Up: func(ctx context.Context) error {
+				return s.upAuditEvents(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS audit_events`)
+				return err
+			},
 		},
-	}}
+		{
+			Version: 3,
+			Name:    "policy_grants",
+			Up: func(ctx context.Context) error {
+				return s.upPolicyGrants(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS policy_grants`)
+				return err
+			},
+		},
+		{
+			Version: 4,
+			Name:    "pending_actions",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActions(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS pending_actions`)
+				return err
+			},
+		},
+	}
 }
 
 func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
@@ -192,6 +227,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
+		"pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
@@ -505,7 +541,8 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"store_items", "runs", "thread_checkpoints", "threads",
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
-		"webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
+		"webhook_dead_letters", "audit_events", "policy_grants", "pending_actions",
+		"run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {
 		if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE "+tbl); err != nil {

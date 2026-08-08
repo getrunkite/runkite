@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// PolicyGrant is one durable connector grant row (Admin CRUD / Postgres).
+// PolicyGrant is one durable connector grant row (Admin CRUD / SQL).
 // Deployment defaults still live in langgraph.json; DB rows overlay them.
 type PolicyGrant struct {
 	ID        string            `json:"id"`

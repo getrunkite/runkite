@@ -222,7 +222,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 func (s *Server) persistPendingAction(ctx context.Context, connectorName, tool string, dec policy.PolicyDecision) (string, error) {
 	store, ok := s.pendingActions()
 	if !ok {
-		return "", errString("pending actions require Postgres state backend")
+		return "", errString("pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 	}
 	in := policyInputFromRequest(ctx, policy.StageToolCall, connectorName, tool)
 	if in.RunID == "" {

@@ -26,7 +26,7 @@ type AuditEvent struct {
 }
 
 // AuditSearchRequest filters Admin audit list pages
-// (GET /admin-api/audit-events). Postgres Supported only.
+// (GET /admin-api/audit-events). SQL backends only (not Mongo).
 type AuditSearchRequest struct {
 	TenantID  string     `json:"tenant_id,omitempty"`
 	Decision  string     `json:"decision,omitempty"` // allow | deny | pending

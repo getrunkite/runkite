@@ -13,7 +13,7 @@ import (
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
-// policyGrantStore is the Postgres-only Admin CRUD surface for durable grants.
+// policyGrantStore is the SQL Admin CRUD surface for durable grants.
 type policyGrantStore interface {
 	ListPolicyGrants(ctx context.Context) ([]*models.PolicyGrant, error)
 	SearchPolicyGrants(ctx context.Context, req *models.PolicyGrantSearchRequest) ([]*models.PolicyGrant, error)
@@ -49,7 +49,7 @@ func (s *Server) reloadPolicyOverlays(ctx context.Context) {
 func (s *Server) handleAdminListPolicyGrants(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.policyGrants()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	ctx := tenant.SystemContext(r.Context())
@@ -93,7 +93,7 @@ func (s *Server) handleAdminListPolicyGrants(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleAdminGetPolicyGrant(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.policyGrants()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	g, err := store.GetPolicyGrant(tenant.SystemContext(r.Context()), r.PathValue("id"))
@@ -108,7 +108,7 @@ func (s *Server) handleAdminGetPolicyGrant(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleAdminCreatePolicyGrant(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.policyGrants()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	if !s.policy.Enabled() {
@@ -150,7 +150,7 @@ func (s *Server) handleAdminCreatePolicyGrant(w http.ResponseWriter, r *http.Req
 func (s *Server) handleAdminUpdatePolicyGrant(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.policyGrants()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	if !s.policy.Enabled() {
@@ -190,7 +190,7 @@ func (s *Server) handleAdminUpdatePolicyGrant(w http.ResponseWriter, r *http.Req
 func (s *Server) handleAdminDeletePolicyGrant(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.policyGrants()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "policy grant CRUD requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	ctx := tenant.SystemContext(r.Context())

@@ -2,12 +2,17 @@ package api_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/getrunkite/runkite/internal/api"
+	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
-func TestAdminPendingActions_UnsupportedStoreReturns501(t *testing.T) {
-	env := newTestEnv(t)
-	resp, err := http.Get(env.srv.URL + "/admin-api/pending-actions")
+func TestAdminPendingActions_NonSQLStoreReturns501(t *testing.T) {
+	srv := httptest.NewServer(api.NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus()).Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/pending-actions")
 	if err != nil {
 		t.Fatal(err)
 	}

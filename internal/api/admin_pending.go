@@ -10,7 +10,7 @@ import (
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
-// pendingActionStore is the Postgres-only Admin + one-shot capability surface.
+// pendingActionStore is the SQL Admin + one-shot capability surface.
 type pendingActionStore interface {
 	CreatePendingAction(ctx context.Context, a *models.PendingAction) error
 	GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error)
@@ -29,7 +29,7 @@ func (s *Server) pendingActions() (pendingActionStore, bool) {
 func (s *Server) handleAdminListPendingActions(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.pendingActions()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	ctx := tenant.SystemContext(r.Context())
@@ -74,7 +74,7 @@ func (s *Server) handleAdminListPendingActions(w http.ResponseWriter, r *http.Re
 func (s *Server) handleAdminGetPendingAction(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.pendingActions()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	a, err := store.GetPendingAction(tenant.SystemContext(r.Context()), r.PathValue("id"))
@@ -91,7 +91,7 @@ func (s *Server) handleAdminGetPendingAction(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.pendingActions()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	if !s.policy.Enabled() {
@@ -138,7 +138,7 @@ func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.
 func (s *Server) handleAdminDenyPendingAction(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.pendingActions()
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	ctx := tenant.SystemContext(r.Context())

@@ -115,12 +115,41 @@ func (s *SQLiteStore) Downgrade(ctx context.Context) error {
 }
 
 func (s *SQLiteStore) migrations() []migrate.Migration {
-	return []migrate.Migration{{
-		Version: 1,
-		Name:    "baseline",
-		Up:      s.baselineUp,
-		Down:    s.baselineDown,
-	}}
+	return []migrate.Migration{
+		{
+			Version: 1,
+			Name:    "baseline",
+			Up:      s.baselineUp,
+			Down:    s.baselineDown,
+		},
+		{
+			Version: 2,
+			Name:    "audit_events",
+			Up:      s.upAuditEvents,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS audit_events`)
+				return err
+			},
+		},
+		{
+			Version: 3,
+			Name:    "policy_grants",
+			Up:      s.upPolicyGrants,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS policy_grants`)
+				return err
+			},
+		},
+		{
+			Version: 4,
+			Name:    "pending_actions",
+			Up:      s.upPendingActions,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS pending_actions`)
+				return err
+			},
+		},
+	}
 }
 
 func (s *SQLiteStore) baselineDown(ctx context.Context) error {
@@ -128,6 +157,7 @@ func (s *SQLiteStore) baselineDown(ctx context.Context) error {
 	// migrator to unrecord the version row.
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
+		"pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",

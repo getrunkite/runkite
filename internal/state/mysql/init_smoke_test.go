@@ -13,7 +13,7 @@ import (
 
 // Live schema smoke test for checkpoint 1. Skips when MySQL isn't up
 // (CI/local without docker-compose.test.yml's mysql service).
-func TestInit_CreatesThirteenTablesIdempotently(t *testing.T) {
+func TestInit_CreatesCoreAndGovernanceTablesIdempotently(t *testing.T) {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
 		dsn = "runkite:runkite@tcp(127.0.0.1:3307)/runkite_test?parseTime=true"
@@ -46,6 +46,7 @@ func TestInit_CreatesThirteenTablesIdempotently(t *testing.T) {
 		"threads", "runs", "thread_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache",
 		"cron_schedules", "cron_claims",
+		"audit_events", "policy_grants", "pending_actions",
 	}
 	for _, table := range want {
 		var name string

@@ -1391,7 +1391,7 @@
           "Admin"
         ],
         "summary": "List Policy Grants",
-        "description": "Durable connector grant overlays (Postgres). Deployment defaults in langgraph.json are not listed here.",
+        "description": "Durable connector grant overlays (SQL backends). Deployment defaults in langgraph.json are not listed here.",
         "operationId": "admin_list_policy_grants",
         "parameters": [
           {
@@ -1482,7 +1482,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1541,7 +1541,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1592,7 +1592,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1661,7 +1661,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1703,7 +1703,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1721,7 +1721,7 @@
           "Admin"
         ],
         "summary": "List Pending Actions",
-        "description": "Connector tool calls awaiting HITL approval (Postgres). Approve mints a one-shot capability for the next matching tools/call.",
+        "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability for the next matching tools/call.",
         "operationId": "admin_list_pending_actions",
         "parameters": [
           {
@@ -1811,7 +1811,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1862,7 +1862,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1914,7 +1914,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1965,7 +1965,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1983,7 +1983,7 @@
           "Admin"
         ],
         "summary": "List Audit Events",
-        "description": "Policy decisions newest-first. Postgres Supported profile only; Compatible backends return 501.",
+        "description": "Policy decisions newest-first. SQL state backends (Postgres/MySQL/SQLite); Mongo returns 501.",
         "operationId": "admin_list_audit_events",
         "parameters": [
           {
@@ -2127,7 +2127,7 @@
             }
           },
           "501": {
-            "description": "State backend is not Postgres",
+            "description": "State backend is Mongo (governance durability requires SQL)",
             "content": {
               "application/json": {
                 "schema": {

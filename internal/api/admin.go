@@ -4,7 +4,7 @@
 // Scope, stated plainly: this covers the OPERATIONAL half of that list --
 // agents, threads, runs (with live debugging via the same SSE stream
 // clients use), connector status, cron schedules, policy audit search
-// (Postgres Supported), and a summary overview.
+// (SQL backends), and a summary overview.
 // "User management" is explicitly NOT built here: there is no persisted
 // user/API-key table today (auth.APIKeyEntry is static langgraph.json
 // config, not a DB-backed model) -- building real user CRUD means
@@ -518,7 +518,7 @@ type auditEventStore interface {
 func (s *Server) handleAdminListAuditEvents(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(auditEventStore)
 	if !ok {
-		writeError(w, http.StatusNotImplemented, "audit search requires Postgres state backend (Supported profile)")
+		writeError(w, http.StatusNotImplemented, "audit search requires a SQL state backend (Postgres, MySQL, or SQLite)")
 		return
 	}
 	ctx := tenant.SystemContext(r.Context())

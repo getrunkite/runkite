@@ -7,10 +7,15 @@ import (
 
 	"github.com/getrunkite/runkite/internal/config"
 	"github.com/getrunkite/runkite/internal/hooks"
+	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/state"
-	pgstore "github.com/getrunkite/runkite/internal/state/postgres"
 )
+
+// policyGrantLister is implemented by SQL stores that persist Admin overlays.
+type policyGrantLister interface {
+	ListPolicyGrants(ctx context.Context) ([]*models.PolicyGrant, error)
+}
 
 // initPolicy loads langgraph.json's "policy" section (first file) and
 // builds an Engine. Returns (nil, false) when absent/empty (V1 open).
@@ -30,8 +35,8 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	p := cfg.Policy
 
 	var overlays []policy.Grant
-	if pg, ok := store.(*pgstore.Store); ok {
-		if rows, err := pg.ListPolicyGrants(context.Background()); err != nil {
+	if lister, ok := store.(policyGrantLister); ok {
+		if rows, err := lister.ListPolicyGrants(context.Background()); err != nil {
 			slog.Warn("policy: load DB grants failed", "error", err)
 		} else {
 			for _, g := range rows {
@@ -59,10 +64,10 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		auditOn = *p.Audit
 	}
 	if auditOn {
-		if pg, ok := store.(*pgstore.Store); ok {
-			auditor = policy.NewStoreAuditor(pg)
+		if aw, ok := store.(policy.AuditStore); ok {
+			auditor = policy.NewStoreAuditor(aw)
 		} else {
-			slog.Warn("policy: audit writes enabled but state backend is not Postgres — decisions will not be persisted (Supported profile only in this release)")
+			slog.Warn("policy: audit writes enabled but state backend has no durable audit store — decisions will not be persisted (Mongo; use Postgres/MySQL/SQLite for the trail)")
 		}
 	}
 
