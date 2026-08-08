@@ -50,9 +50,8 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	}
 
 	hasWebhook := p.Webhook != nil && p.Webhook.URL != ""
-	if len(p.Grants) == 0 && !hasWebhook && len(overlays) == 0 {
-		return nil, false
-	}
+	// Any non-nil "policy" section enables the engine — including
+	// "policy": {} for Admin-API-only grants (fail-closed until overlays).
 
 	var auditor policy.Auditor
 	auditOn := true
@@ -72,6 +71,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		FailClosed:    p.FailClosed,
 		Auditor:       auditor,
 		Overlays:      overlays,
+		ForceEnable:   true,
 	}
 	if p.CacheTTLMS > 0 {
 		pcfg.CacheTTL = time.Duration(p.CacheTTLMS) * time.Millisecond

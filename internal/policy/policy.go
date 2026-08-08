@@ -105,6 +105,9 @@ type Config struct {
 	Webhook       *WebhookConfig
 	Auditor       Auditor
 	Exporter      Exporter
+	// ForceEnable builds an engine even with no grants/webhook (empty
+	// "policy": {} for Admin-API-only grant management).
+	ForceEnable bool
 }
 
 // New returns an Engine, or nil when nothing is configured (V1 open).
@@ -112,7 +115,7 @@ func New(cfg Config) *Engine {
 	hasBaseline := len(cfg.Grants) > 0
 	hasOverlays := len(cfg.Overlays) > 0
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
-	if !hasBaseline && !hasOverlays && !hasWebhook {
+	if !hasBaseline && !hasOverlays && !hasWebhook && !cfg.ForceEnable {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -202,14 +205,11 @@ func mergeGrants(baseline, overlays []Grant) []Grant {
 	return out
 }
 
-// Enabled reports whether any policy layer is active.
+// Enabled reports whether the policy engine is attached. An empty
+// ForceEnable engine (no grants/webhook yet) is still enabled — Decide
+// applies default_effect until Admin overlays or config grants appear.
 func (e *Engine) Enabled() bool {
-	if e == nil {
-		return false
-	}
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.static != nil || e.webhook != nil
+	return e != nil
 }
 
 // Decide evaluates static grants then webhook. Call only when Enabled().

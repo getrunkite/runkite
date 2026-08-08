@@ -2428,6 +2428,18 @@ func (s *Store) UpsertPolicyGrant(ctx context.Context, g *models.PolicyGrant) er
 			tools = EXCLUDED.tools,
 			updated_at = EXCLUDED.updated_at
 	`, g.ID, g.TenantID, g.AgentID, g.Connector, tools, g.CreatedAt, g.UpdatedAt)
+	if err != nil {
+		// UNIQUE (tenant_id, agent_id, connector) with a different id —
+		// surface as 409, not a raw 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return &state.ErrConflict{
+				Resource: "policy_grant",
+				ID:       g.TenantID + "/" + g.AgentID + "/" + g.Connector,
+				Reason:   "already exists for tenant/agent/connector (use PUT on the existing id)",
+			}
+		}
+	}
 	return err
 }
 
