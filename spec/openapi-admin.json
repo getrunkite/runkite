@@ -1775,7 +1775,8 @@
               "type": "integer",
               "default": 0,
               "minimum": 0
-            }
+            },
+            "description": "Offset paging (mutually exclusive with cursor)."
           },
           {
             "name": "cursor",
@@ -1783,7 +1784,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
           }
         ],
         "responses": {
@@ -1791,7 +1793,7 @@
             "description": "Success",
             "headers": {
               "X-Next-Cursor": {
-                "description": "Opaque resume token when another page exists",
+                "description": "Opaque resume token when another page exists (len(items) == limit).",
                 "schema": {
                   "type": "string"
                 }
