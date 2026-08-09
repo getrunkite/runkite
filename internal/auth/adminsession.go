@@ -16,15 +16,23 @@ import (
 // session cookie. Machine clients keep using Authorization: Bearer
 // (no cookie, no CSRF).
 //
-// Store is process-local with a TTL sweep -- same class of trade-off as
-// MCP session ownership. Multi-replica Admin UI needs sticky routing to
-// the replica that minted the session (or a shared store later).
+// Memory store is process-local with a TTL sweep. When REDIS_URL is set,
+// serve wires a Redis-backed SessionStore instead so multi-replica Admin
+// UI does not need sticky routing (MCP sessions remain process-local).
 
 const (
 	CookieAdminSession = "runkite_admin_session"
 	HeaderCSRF         = "X-CSRF-Token"
 	AdminSessionTTL    = 12 * time.Hour
 )
+
+// SessionStore persists Admin UI browser sessions (memory or Redis).
+type SessionStore interface {
+	Create(result *AuthResult) (*AdminSession, error)
+	Get(id string) *AdminSession
+	Delete(id string)
+	TTL() time.Duration
+}
 
 // AdminSession is one browser login.
 type AdminSession struct {
@@ -34,14 +42,14 @@ type AdminSession struct {
 	Expires time.Time
 }
 
-// AdminSessionStore holds active Admin UI sessions.
+// AdminSessionStore is the process-local SessionStore (no Redis).
 type AdminSessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]*AdminSession
 	ttl      time.Duration
 }
 
-// NewAdminSessionStore creates an empty store. ttl <= 0 uses AdminSessionTTL.
+// NewAdminSessionStore creates an empty memory store. ttl <= 0 uses AdminSessionTTL.
 func NewAdminSessionStore(ttl time.Duration) *AdminSessionStore {
 	if ttl <= 0 {
 		ttl = AdminSessionTTL
@@ -53,6 +61,9 @@ func NewAdminSessionStore(ttl time.Duration) *AdminSessionStore {
 	go s.sweepLoop()
 	return s
 }
+
+// TTL returns the configured sliding session lifetime.
+func (s *AdminSessionStore) TTL() time.Duration { return s.ttl }
 
 func (s *AdminSessionStore) sweepLoop() {
 	t := time.NewTicker(time.Minute)
@@ -80,19 +91,7 @@ func (s *AdminSessionStore) Create(result *AuthResult) (*AdminSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	copied := *result
-	if result.Extra != nil {
-		extra := make(map[string]interface{}, len(result.Extra))
-		for k, v := range result.Extra {
-			extra[k] = v
-		}
-		copied.Extra = extra
-	}
-	if result.Permissions != nil {
-		perms := make([]string, len(result.Permissions))
-		copy(perms, result.Permissions)
-		copied.Permissions = perms
-	}
+	copied := copyAuthResult(result)
 	sess := &AdminSession{
 		ID:      id,
 		CSRF:    csrf,

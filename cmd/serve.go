@@ -508,7 +508,16 @@ func startServer(opts serverOpts) {
 	// separately inside createRun, see internal/ratelimit's doc comment.
 	authProvider := initAuthProvider(opts.configPath)
 	adminAuthProvider := initAdminAuthProvider(opts.configPath)
-	adminSessions := auth.NewAdminSessionStore(0)
+	// Admin UI sessions: Redis when REDIS_URL is set (shared across
+	// replicas), otherwise process-local memory — same auto pattern as
+	// the rate-limit backend.
+	var adminSessions auth.SessionStore
+	if rdb != nil {
+		adminSessions = auth.NewRedisAdminSessionStore(rdb, 0)
+		slog.Info("admin sessions: redis backend (shared across replicas)")
+	} else {
+		adminSessions = auth.NewAdminSessionStore(0)
+	}
 	apiServer.SetAdminSessions(&auth.AdminSessionHandlers{
 		Store:         adminSessions,
 		AdminProvider: adminAuthProvider,

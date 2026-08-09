@@ -10,7 +10,7 @@ import (
 // Login authenticates the pasted credential once; the browser never
 // retains the API key/JWT afterward.
 type AdminSessionHandlers struct {
-	Store         *AdminSessionStore
+	Store         SessionStore
 	AdminProvider Provider
 	Provider      Provider
 	Strict        bool
@@ -53,7 +53,7 @@ func (h *AdminSessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to create session"})
 		return
 	}
-	SetSessionCookie(w, r, sess.ID, h.Store.ttl)
+	SetSessionCookie(w, r, sess.ID, h.Store.TTL())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"csrf_token":    sess.CSRF,
 		"identity":      sess.Result.Identity,

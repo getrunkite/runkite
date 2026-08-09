@@ -75,7 +75,7 @@ type MiddlewareOpts struct {
 	// cookie on /admin-api/* (when no Authorization/X-API-Key header is
 	// present). Mutating methods require X-CSRF-Token. Bearer auth is
 	// unchanged for machine clients.
-	AdminSessions *AdminSessionStore
+	AdminSessions SessionStore
 	// Inflight, when set, enables run-binding on connector session/MCP,
 	// store, and vector /internal/* paths: callers must present
 	// X-Runkite-Run-Id + X-Runkite-Generation for an active assignment,
