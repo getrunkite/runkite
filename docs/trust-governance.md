@@ -4,6 +4,8 @@ Runkite is a control plane. Security that fits is **governance of the plane**: w
 
 This page documents the trust boundary and what is (and is not) enforced today. It deliberately under-promises.
 
+**Announce bar (verify, don’t rebuild):** run-binding, connector policy deny + durable audit, Admin audit search, and connector HITL (pending → approve → one-shot retry) are exercised by `make smoke-governance` on Postgres. That smoke is the laptop proof for those exits — not Mongo parity, not in-graph tool sandboxing, not a paid cloud soak, and not FinOps dashboards.
+
 ## Trust boundary
 
 ```

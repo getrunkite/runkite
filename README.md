@@ -37,6 +37,7 @@ That line is the familiar category (durable agent runs you operate yourself). Ru
 | **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js over the same gRPC Runner Protocol |
 | **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`) — same Agent Protocol path, with depth limits, cancel cascade, and cost rollup |
 | **Ops without a second deploy** | React Admin UI embedded via `embed.FS` — no Node runtime for end users |
+| **Plane governance** | Run-bound connectors/store/vectors, fail-closed grants, durable audit, connector HITL — on SQL backends. See [Trust & governance](docs/trust-governance.md); prove with `make smoke-governance` |
 | **Honest backends** | **Supported:** Postgres + Redis HA. **Also wired:** SQLite, MySQL, MongoDB, NATS, Kafka, pgvector / Qdrant / Weaviate / Pinecone — with documented tiers, not equal claims |
 
 ## Architecture

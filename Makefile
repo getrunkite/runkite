@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -429,6 +429,11 @@ multi-down:
 
 smoke-multi:
 	@bash scripts/smoke-multi.sh
+
+# Governance announce bar (Phases 0–2): run-binding, connector deny+audit,
+# Admin audit query + mandatory HITL one-shot. Uses test Postgres (+Redis).
+smoke-governance:
+	@bash scripts/smoke-governance.sh
 
 # 30-minute laptop soak: 3 CP + 2 runners + webhooks/preflight + Py/JS clients.
 # Pass criteria / announce writeup: bench/soak/WRITEUP.md

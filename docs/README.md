@@ -8,7 +8,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Client SDK](client-sdk.md) | Client SDK usage |
 | [Configuration](configuration.md) | `langgraph.json` and environment variables |
 | [Auth](auth.md) | Auth, TLS/mTLS, multi-tenancy |
-| [Trust & governance](trust-governance.md) | Trust boundary, run-binding, non-goals |
+| [Trust & governance](trust-governance.md) | Trust boundary, run-binding, non-goals; `make smoke-governance` |
 | [Admin UI](admin.md) | Embedded operator UI |
 | [Factory Graphs](factory-graphs.md) | LangGraph SDK factory-graph compatibility |
 | [Vector Store](vector-store.md) | Vector store backends and APIs |
