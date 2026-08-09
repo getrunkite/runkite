@@ -49,8 +49,9 @@ the TLS Secrets named there, or override the names). See
 [`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). Kind smokes:
 `make kind-helm-smoke` (install), `make kind-helm-rotate` (token rotation),
 `make kind-helm-reclaim` (mid-run reclaim), `make kind-helm-net` (Ingress +
-NetworkPolicy). Those are **install / ops smokes**, not a soak. A green EKS
-soak is **not** claimed — treat cluster installs as **Compatible** until then.
+NetworkPolicy). Those are **install / ops smokes**, not a soak. A paid EKS
+(or equivalent) soak is **deferred** until named demand and budget; cluster
+installs stay **Compatible** until then.
 
 ## Install
 
