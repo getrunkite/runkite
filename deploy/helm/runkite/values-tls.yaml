@@ -1,0 +1,28 @@
+# Optional pod TLS / mTLS overlay (use with values-supported.yaml).
+#
+# Recommended shape: HTTP TLS + gRPC TLS + gRPC mTLS; http.mtls stays false
+# so kubelet httpGet probes (scheme HTTPS) keep working. Chart does not mint
+# certificates — create Secrets first (cert-manager or openssl), then:
+#
+#   helm upgrade --install runkite ./deploy/helm/runkite \
+#     -f deploy/helm/runkite/values.yaml \
+#     -f deploy/helm/runkite/values-supported.yaml \
+#     -f deploy/helm/runkite/values-tls.yaml \
+#     --set secrets.existingSecret=runkite-creds
+#
+# Replace the placeholder Secret names below with yours (or --set them).
+
+tls:
+  enabled: true
+  # kubernetes.io/tls: tls.crt + tls.key (CP server; SAN must include Service DNS)
+  serverSecretName: runkite-tls-server
+  # Opaque (or similar): ca.crt
+  caSecretName: runkite-tls-ca
+  # kubernetes.io/tls: runner client cert (required when grpc.mtls is true)
+  clientSecretName: runkite-tls-client
+  http:
+    enabled: true
+    mtls: false
+  grpc:
+    enabled: true
+    mtls: true

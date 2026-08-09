@@ -267,6 +267,38 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
+  # Cheap chart render only — no kind/cluster. Catches values-supported /
+  # values-tls overlays and tls.validate fail-closed paths breaking template.
+  helm-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: helm template (Supported overlay)
+        run: |
+          helm template runkite ./deploy/helm/runkite \
+            -f deploy/helm/runkite/values.yaml \
+            -f deploy/helm/runkite/values-supported.yaml \
+            --set secrets.postgresDsn=postgres://x \
+            --set secrets.redisUrl=redis://x \
+            --set secrets.runnerToken=t \
+            --set secrets.apiKey=k \
+            >/dev/null
+      - name: helm template (Supported + TLS overlay)
+        run: |
+          helm template runkite ./deploy/helm/runkite \
+            -f deploy/helm/runkite/values.yaml \
+            -f deploy/helm/runkite/values-supported.yaml \
+            -f deploy/helm/runkite/values-tls.yaml \
+            --set secrets.postgresDsn=postgres://x \
+            --set secrets.redisUrl=redis://x \
+            --set secrets.runnerToken=t \
+            --set secrets.apiKey=k \
+            >/dev/null
+
   # Validates every workflow file's YAML *and* GitHub Actions expression
   # semantics (e.g. `secrets` is not a valid context in `if:` -- a step-level
   # `if: secrets.X != ''` passes plain YAML parsing but fails GitHub's own

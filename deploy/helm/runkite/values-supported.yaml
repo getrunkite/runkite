@@ -1,0 +1,35 @@
+# Supported / announce profile overlay.
+#
+# Pins the same Postgres + Redis multi-replica shape exercised by
+# docker-compose.multi.yml and make soak-multi. This chart does NOT
+# install Postgres or Redis — point secrets at infrastructure you run.
+#
+# Install:
+#   helm upgrade --install runkite ./deploy/helm/runkite \
+#     -f deploy/helm/runkite/values.yaml \
+#     -f deploy/helm/runkite/values-supported.yaml \
+#     --set secrets.existingSecret=runkite-creds
+#
+# Required Secret keys (existingSecret or inline secrets.*):
+#   POSTGRES_DSN
+#   REDIS_URL
+#   RUNNER_TOKEN                 # runner Deployment
+#   RUNNER_TOKEN_PYTHON_LANGGRAPH  # control plane (may equal RUNNER_TOKEN)
+#   RUNKITE_API_KEY              # default langgraphJson api_key auth
+#
+# Compose multi/soak is the Supported correctness proof path. This overlay
+# packages the same topology for Kubernetes; a green cluster soak (kind/EKS)
+# is not claimed yet — treat K8s as Compatible until then.
+#
+# Optional pod TLS: also -f values-tls.yaml (and supply TLS Secrets).
+
+replicaCount: 2
+
+autoscaling:
+  enabled: false
+
+tls:
+  enabled: false
+
+runner:
+  enabled: true

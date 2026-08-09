@@ -5,9 +5,12 @@
 # cron, connectors; drives parallel Python (langgraph_sdk) + JS HTTP clients;
 # samples Admin overview, Prometheus metrics, docker stats, webhook counts.
 #
+# Pass criteria / announce writeup: bench/soak/WRITEUP.md
+#
 # Usage (from repo root):
 #   SOAK_DURATION=1800 make soak-multi
-#   SOAK_DURATION=120 bash bench/soak/run.sh   # short rehearsal
+#   make soak-multi-short                  # 10 min rehearsal
+#   SOAK_DURATION=120 bash bench/soak/run.sh   # shorter rehearsal
 #
 # Watch live: http://localhost:2026/admin/
 set -euo pipefail

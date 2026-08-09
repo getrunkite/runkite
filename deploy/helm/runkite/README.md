@@ -20,32 +20,11 @@ Minimal Kubernetes packaging for a multi-replica Runkite control plane
   Pin `image.tag` / `runner.image.tag` for production. For air-gapped/kind,
   build locally and override `image.repository` / `runner.image.repository`.
 
-## Install
+## Supported profile
 
-`serve` refuses to start without client-facing auth (same production
-admission check as a bare binary). The chart's default
-`config.langgraphJson` mounts a ConfigMap at `/etc/runkite/langgraph.json`
-with `auth.type=api_key` and substitutes `${RUNKITE_API_KEY}` from the
-Secret — no custom image rebuild required.
-
-```bash
-# Optional: build and load local images instead of GHCR
-# docker build -t runkite:latest -f Dockerfile .
-# docker build -t runkite-runner:latest -f Dockerfile.runner .
-
-API_KEY="$(openssl rand -hex 32)"
-RUNNER_TOKEN="$(openssl rand -hex 32)"
-
-helm upgrade --install runkite ./deploy/helm/runkite \
-  --set secrets.postgresDsn='postgres://user:pass@postgres:5432/runkite?sslmode=disable' \
-  --set secrets.redisUrl='redis://redis:6379' \
-  --set secrets.runnerToken="$RUNNER_TOKEN" \
-  --set secrets.apiKey="$API_KEY"
-
-# Admin UI / API: Authorization: Bearer $API_KEY
-```
-
-Prefer an existing Secret in real deployments:
+[`values-supported.yaml`](values-supported.yaml) pins the announce /
+**Supported** posture: multi-replica control plane, runner on, TLS off,
+HPA off — Postgres + Redis supplied by you. Install:
 
 ```bash
 kubectl create secret generic runkite-creds \
@@ -56,8 +35,49 @@ kubectl create secret generic runkite-creds \
   --from-literal=RUNKITE_API_KEY='...'
 
 helm upgrade --install runkite ./deploy/helm/runkite \
-  --set secrets.existingSecret=runkite-creds \
-  --set runner.enabled=true
+  -f deploy/helm/runkite/values.yaml \
+  -f deploy/helm/runkite/values-supported.yaml \
+  --set secrets.existingSecret=runkite-creds
+```
+
+For pod TLS / mTLS, also `-f deploy/helm/runkite/values-tls.yaml` (and create
+the TLS Secrets named there, or override the names). See
+[Pod TLS / mTLS](#pod-tls--mtls).
+
+**Proof posture:** `make smoke-multi` / `make soak-multi` on
+`docker-compose.multi.yml` is the Supported correctness path (see
+[`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). This chart
+packages the same topology for Kubernetes; a green kind/EKS soak is **not**
+claimed yet — treat cluster installs as **Compatible** until then.
+
+## Install
+
+`serve` refuses to start without client-facing auth (same production
+admission check as a bare binary). The chart's default
+`config.langgraphJson` mounts a ConfigMap at `/etc/runkite/langgraph.json`
+with `auth.type=api_key` and substitutes `${RUNKITE_API_KEY}` from the
+Secret — no custom image rebuild required.
+
+Same Supported overlay with inline secrets (prefer `existingSecret` above
+for real deploys):
+
+```bash
+# Optional: build and load local images instead of GHCR
+# docker build -t runkite:latest -f Dockerfile .
+# docker build -t runkite-runner:latest -f Dockerfile.runner .
+
+API_KEY="$(openssl rand -hex 32)"
+RUNNER_TOKEN="$(openssl rand -hex 32)"
+
+helm upgrade --install runkite ./deploy/helm/runkite \
+  -f deploy/helm/runkite/values.yaml \
+  -f deploy/helm/runkite/values-supported.yaml \
+  --set secrets.postgresDsn='postgres://user:pass@postgres:5432/runkite?sslmode=disable' \
+  --set secrets.redisUrl='redis://redis:6379' \
+  --set secrets.runnerToken="$RUNNER_TOKEN" \
+  --set secrets.apiKey="$API_KEY"
+
+# Admin UI / API: Authorization: Bearer $API_KEY
 ```
 
 ### Custom graphs / auth
