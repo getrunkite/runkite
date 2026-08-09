@@ -4,6 +4,8 @@
 
 That line is the familiar category (durable agent runs you operate yourself). Runkite goes further: a self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane you own — not a LangSmith API clone, not LangGraph-only. Pluggable runners (LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js), agent-to-agent delegation, embedded Admin UI, and backends beyond a single PG+Redis stack (MySQL, MongoDB, NATS, Kafka, vectors — with honest Supported tiers).
 
+**On the plane, not only in the agent:** fail-closed connector grants, durable policy audit, and connector HITL on SQL backends ([Trust & governance](docs/trust-governance.md)). Prove with `make smoke-governance`. Multi-CP HA is soaked on Compose (`make soak-multi`); Kubernetes/Helm stays Compatible until a real-cloud soak.
+
 - Website: https://getrunkite.github.io/runkite/
 - Releases / binaries: https://github.com/getrunkite/runkite/releases
 - PyPI runner: https://pypi.org/project/runkite-runner/
@@ -237,7 +239,7 @@ Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `
 | [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth / TLS / tenants](docs/auth.md) | Getting started |
 | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) | Core |
 | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) | Features |
-| [Deployment](docs/deployment.md) · [Factory graphs](docs/factory-graphs.md) · [Limitations](docs/limitations.md) (release summary + deep dive) · [Site](https://getrunkite.github.io/runkite/) · [All docs](docs/README.md) | Ops |
+| [Deployment](docs/deployment.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [Site](https://getrunkite.github.io/runkite/) · [All docs](docs/README.md) | Ops |
 
 ## Examples
 
@@ -261,6 +263,7 @@ Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `
 make test                    # SQLite + in-memory + protocol fixtures
 make test-all                # All backends (needs infra-up)
 make test-e2e                # Tier-0 black-box E2E
+make smoke-governance        # Governance announce bar on Postgres (run-bind / deny+audit / HITL)
 make test-matrix             # Framework × backend goldens (nightly CI)
 make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
 make test-protocol-execute   # execute_run → expected_events goldens (Python)
