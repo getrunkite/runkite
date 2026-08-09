@@ -316,11 +316,13 @@ export REDIS_URL="redis://localhost:6379"
 
 ### Secure runner communication
 
-Set runner tokens for production (prevents unauthorized processes from dequeuing jobs):
+Set runner tokens for production (prevents unauthorized processes from dequeuing jobs).
+Control-plane env key is uppercase (`RUNNER_TOKEN_PYTHON_LANGGRAPH` → kind
+`python-langgraph`); value may be a comma-separated allowlist. Runners present
+a single `RUNNER_TOKEN` via gRPC metadata / `X-Runner-*` headers — see
+[Auth](auth.md) and [PROTOCOL §11](../runner-protocol/PROTOCOL.md#112-production-mode).
 
 ```bash
-export RUNNER_TOKEN_python_langgraph="your-secret-token"
+export RUNNER_TOKEN_PYTHON_LANGGRAPH="your-secret-token"
 ./runkite serve --config langgraph.json
 ```
-
-The runner must present the matching token on every gRPC call.
