@@ -46,9 +46,10 @@ the TLS Secrets named there, or override the names). See
 
 **Proof posture:** `make smoke-multi` / `make soak-multi` on
 `docker-compose.multi.yml` is the Supported correctness path (see
-[`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). This chart
-packages the same topology for Kubernetes; a green kind/EKS soak is **not**
-claimed yet — treat cluster installs as **Compatible** until then.
+[`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). `make kind-helm-smoke`
+proves this overlay installs on kind (`/readyz` + one `echo_agent` run) and
+tears the cluster down; that is **install smoke**, not a soak. A green EKS
+soak is **not** claimed — treat cluster installs as **Compatible** until then.
 
 ## Install
 
