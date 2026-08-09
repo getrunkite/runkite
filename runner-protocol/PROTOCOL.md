@@ -560,24 +560,25 @@ No authentication. The runner is trusted implicitly. Suitable for local developm
 
 ### 11.2 Production Mode
 
-Each runner authenticates with a shared token scoped to its `runner_kind`. The token is passed in every request from the runner to the control plane's internal APIs and in the queue connection credentials.
+Any `RUNNER_TOKEN_<KIND>` env var on the control plane enables production mode
+(e.g. `RUNNER_TOKEN_PYTHON_LANGGRAPH`). The value is one token or a
+**comma-separated allowlist** of equally valid tokens for that kind. Runners
+present a single `RUNNER_TOKEN` that must match one allowlisted value for
+their `runner_kind`. Kind encoding: env key uppercase with underscores maps to
+hyphenated kind (`PYTHON_LANGGRAPH` → `python-langgraph`).
 
-**Token configuration** (control plane side):
-```env
-RUNNER_TOKEN_python_langgraph=<secret>
-RUNNER_TOKEN_typescript_langgraphjs=<secret>
-```
+**Wire format** (same credential, two carriers — not `Authorization: Bearer`,
+which is for client/admin auth):
 
-**Token usage** (runner side):
-- For internal HTTP APIs: `Authorization: Bearer <token>` header.
-- For queue transport: token is part of the connection credentials or used to authenticate the channel subscription.
+- **gRPC:** metadata `runner-kind` + `runner-token` on every RPC
+- **HTTP `/internal/*`:** headers `X-Runner-Kind` + `X-Runner-Token`
 
 ### 11.3 Rules
 
-- In local mode, the control plane accepts all internal API requests without authentication.
-- In production mode, a runner with `runner_kind=python-langgraph` can only authenticate with the token for `python_langgraph`. A leaked token cannot impersonate a different `runner_kind`.
-- Queue channels/subjects are scoped per `runner_kind`. A runner only sees jobs for its own `runner_kind`.
-- Token rotation is NOT supported in v0. For environments requiring rotation, use an external secrets manager and restart runners.
+- In local mode (no `RUNNER_TOKEN_*` set), the control plane accepts runners without authentication.
+- Kind-scoped: a token allowlisted for `python-langgraph` cannot authenticate as another `runner_kind`.
+- Queue channels/subjects are scoped per `runner_kind` on the control plane. Runners do **not** put the token in Redis/NATS/Kafka connection credentials — auth is gRPC metadata and `/internal/*` headers only.
+- Dual-token rotation: set the CP allowlist to `old,new`, restart the control plane, roll runners to `new`, then drop `old` from the allowlist and restart CP again. See [`docs/auth.md`](../docs/auth.md).
 
 ---
 
