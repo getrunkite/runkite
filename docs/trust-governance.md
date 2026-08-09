@@ -92,7 +92,8 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 
 | Stage | Gate |
 |-------|------|
-| `POST .../session` | Grant must match `(tenant_id, agent_id, connector)` |
+| `POST .../session` | Grant must match `(tenant_id, agent_id, connector)`; MCP responses include a short-lived `session_token` |
+| `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny |
 
 Static grants evaluate in-process. An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny — first deny wins, and a static allow does **not** bypass the webhook. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**

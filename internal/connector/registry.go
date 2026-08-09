@@ -43,7 +43,12 @@ type CachedToken struct {
 type SessionResponse struct {
 	Credentials map[string]string `json:"credentials"`
 	ExpiresAt   string            `json:"expires_at"`
-	MCP         *MCPSession       `json:"mcp,omitempty"`
+	// SessionToken is a short-lived capability for MCP proxy calls
+	// (HeaderConnectorSession). Set by the HTTP session handler for MCP
+	// connectors only — not minted during run pre-warm into assignment
+	// Context (those would expire in the queue).
+	SessionToken string      `json:"session_token,omitempty"`
+	MCP          *MCPSession `json:"mcp,omitempty"`
 }
 
 // MCPSession describes a ready-to-use MCP connection.

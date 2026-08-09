@@ -427,33 +427,43 @@ Body: {
 
 Response: 200 OK
 Content-Type: application/json
-Body: {
+Body (non-MCP connector): {
   "credentials": {
     "access_token": "string",
     "instance_url": "string (optional)",
-    "token_type": "string (optional)",
-    "additional_fields": "any"
+    "refresh_token": "string (optional)"
   },
-  "expires_at": "ISO 8601 timestamp or null",
-  "connector_name": "string",
-  "tools": {
-    "allowed": ["array of tool names"] or null,
-    "denied": ["array of tool names"] or null
+  "expires_at": "ISO 8601 timestamp"
+}
+
+Body (MCP connector — proxy-only, no raw credentials): {
+  "session_token": "opaque capability token",
+  "expires_at": "ISO 8601 capability expiry (15m absolute)",
+  "mcp": {
+    "url": "/internal/connectors/{connector_name}/mcp",
+    "tools": ["optional preview"]
   }
 }
 
-Response: 401 Unauthorized (user not authorized for this connector)
+MCP proxy calls also require:
+```
+POST /internal/connectors/{connector_name}/mcp
+X-Runkite-Connector-Session: <session_token from GetSession>
+X-Runkite-Run-Id / X-Runkite-Generation: (run-binding)
+```
+
+Response: 401 Unauthorized (user not authorized / missing session token)
 Response: 404 Not Found (connector not configured)
 Response: 502 Bad Gateway (upstream auth provider failed)
 ```
 
 ### 8.2 Rules
 
-- `connector_needs` in RunAssignment is a pre-warm hint. The control plane MAY pre-fetch sessions for listed connectors. The runner MAY request sessions for any connector at any time, including ones not in `connector_needs`.
-- Session credentials are scoped to the user identified in `user_context`. Different users get different sessions.
-- The control plane caches sessions. Repeated requests for the same user + connector within the TTL return the cached session without a new OAuth round-trip.
-- If `tools.allowed` is non-null, the runner SHOULD only invoke tools in that list. If `tools.denied` is non-null, the runner MUST NOT invoke tools in that list.
-- Secrets (client_id, client_secret, private_key) are NEVER returned to the runner. Only the resulting session credentials are returned.
+- `connector_needs` in RunAssignment is a pre-warm hint. The control plane MAY pre-fetch downstream credentials for listed connectors. Capability `session_token`s are **not** put on the assignment (they expire quickly); runners mint at use time via GetSession.
+- Session credentials / tokens are scoped to the in-flight run (run-binding). MCP `session_token` is additionally bound to `(run_id, generation, connector)`.
+- Downstream OAuth client-credentials tokens may be cached server-side. Runner-facing MCP capability tokens are absolute-TTL and not sliding.
+- Tool allow/deny is enforced on the control-plane MCP proxy, not by trusting the runner to filter.
+- Secrets (client_id, client_secret, private_key) and raw MCP URLs are NEVER returned to the runner. For MCP connectors, raw access tokens are also omitted.
 - If the connector's upstream auth provider fails, the control plane returns 502 with an error message from the connector's configured error taxonomy.
 
 ---

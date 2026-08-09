@@ -3,16 +3,20 @@
  * TypeScript mirror of python/runkite_runner/connectors.py -- see that
  * module's docstring. Session and MCP paths are run-bound; these helpers
  * send X-Runkite-Run-Id + X-Runkite-Generation from configurable
- * (set by buildRunConfig) plus tenantHeaders().
+ * (set by buildRunConfig) plus tenantHeaders(). MCP calls also send
+ * X-Runkite-Connector-Session (auto-minted when not provided).
  */
 import { HEADER_GENERATION, HEADER_RUN_ID, tenantHeaders } from "./tenantCtx.js";
 import { httpDispatcher, type FetchInit } from "./tls.js";
+
+export const HEADER_CONNECTOR_SESSION = "X-Runkite-Connector-Session";
 
 export class ConnectorError extends Error {}
 
 export interface ConnectorHelperOptions {
   controlPlaneUrl?: string;
   timeoutMs?: number;
+  sessionToken?: string;
 }
 
 function configurableOf(config: Record<string, any> | null | undefined): Record<string, any> {
@@ -84,17 +88,43 @@ export async function proxyConnectorMcp(
   request: Record<string, unknown>,
   opts: ConnectorHelperOptions = {},
 ): Promise<Record<string, unknown>> {
-  const init: FetchInit = {
-    method: "POST",
-    headers: runBoundHeaders(config),
-    body: JSON.stringify(request),
-    dispatcher: httpDispatcher(),
-    signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
+  let token = opts.sessionToken;
+  if (!token) {
+    const sess = await getConnectorSession(config, name, {
+      controlPlaneUrl: opts.controlPlaneUrl,
+      timeoutMs: opts.timeoutMs,
+    });
+    token = typeof sess.session_token === "string" ? sess.session_token : undefined;
+    if (!token) {
+      throw new ConnectorError(`proxyConnectorMcp ${name}: session response missing session_token`);
+    }
+  }
+
+  const once = async (tok: string) => {
+    const headers = runBoundHeaders(config);
+    headers[HEADER_CONNECTOR_SESSION] = tok;
+    const init: FetchInit = {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      dispatcher: httpDispatcher(),
+      signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
+    };
+    return fetch(`${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/mcp`, init);
   };
-  const resp = await fetch(
-    `${baseUrl(opts.controlPlaneUrl)}/internal/connectors/${encodeURIComponent(name)}/mcp`,
-    init,
-  );
+
+  let resp = await once(token);
+  if (resp.status === 401 && opts.sessionToken === undefined) {
+    const sess = await getConnectorSession(config, name, {
+      controlPlaneUrl: opts.controlPlaneUrl,
+      timeoutMs: opts.timeoutMs,
+    });
+    token = typeof sess.session_token === "string" ? sess.session_token : "";
+    if (!token) {
+      throw new ConnectorError(`proxyConnectorMcp ${name}: re-mint missing session_token`);
+    }
+    resp = await once(token);
+  }
   if (!resp.ok) {
     throw new ConnectorError(`proxyConnectorMcp ${name}: HTTP ${resp.status}: ${await resp.text()}`);
   }

@@ -37,22 +37,23 @@ import (
 
 // Server is the HTTP API server for the Agent Protocol.
 type Server struct {
-	store           state.Store
-	queue           transport.JobQueue
-	broker          transport.EventBroker
-	cancel          transport.CancelBroker
-	connectors      *connector.Registry     // nil if no connectors configured
-	policy          *policy.Engine          // nil = V1 open (no policy configured)
-	policyRunEvents bool                    // emit tool_auth RunEvents on policy denials
-	rateLimit       *ratelimit.Limiter      // nil-safe: nil behaves as disabled
-	hooks           *hooks.Dispatcher       // nil-safe: nil Dispatch/HasSinks are no-ops
-	customProxy     http.Handler            // nil if no custom_routes configured
-	customMount     string                  // external prefix (default /custom); read on every request
-	vectors         vectorstore.VectorStore // nil if no vector_store configured; /vectors/* 501s
-	a2aMaxDepth     int                     // 0 means "use the default" -- see SetA2AMaxDepth
-	a2aMaxBreadth   int                     // 0 means "use the default" -- see SetA2AMaxBreadth
-	admissionLimits *AdmissionLimits        // nil/disabled = unlimited occupancy/quota
-	aliases         *AliasResolver          // nil-safe: nil Resolve is a pass-through
+	store             state.Store
+	queue             transport.JobQueue
+	broker            transport.EventBroker
+	cancel            transport.CancelBroker
+	connectors        *connector.Registry             // nil if no connectors configured
+	connectorSessions connector.ConnectorSessionStore // MCP capability tokens; nil = /mcp fail-closed
+	policy            *policy.Engine                  // nil = V1 open (no policy configured)
+	policyRunEvents   bool                            // emit tool_auth RunEvents on policy denials
+	rateLimit         *ratelimit.Limiter              // nil-safe: nil behaves as disabled
+	hooks             *hooks.Dispatcher               // nil-safe: nil Dispatch/HasSinks are no-ops
+	customProxy       http.Handler                    // nil if no custom_routes configured
+	customMount       string                          // external prefix (default /custom); read on every request
+	vectors           vectorstore.VectorStore         // nil if no vector_store configured; /vectors/* 501s
+	a2aMaxDepth       int                             // 0 means "use the default" -- see SetA2AMaxDepth
+	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
+	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
+	aliases           *AliasResolver                  // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
 	// coder/websocket's default any-Origin accept (token auth still applies).
@@ -93,6 +94,13 @@ func NewServer(store state.Store, queue transport.JobQueue, broker transport.Eve
 // Called after NewServer when connectors are configured.
 func (s *Server) SetConnectorRegistry(r *connector.Registry) {
 	s.connectors = r
+}
+
+// SetConnectorSessionStore wires short-lived MCP capability tokens
+// (minted on GetSession, required on /mcp). Production always sets this
+// (Redis when REDIS_URL is set, else memory).
+func (s *Server) SetConnectorSessionStore(store connector.ConnectorSessionStore) {
+	s.connectorSessions = store
 }
 
 // SetPolicyEngine attaches the connector/tool policy engine. Nil keeps
@@ -828,6 +836,30 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadGateway, msg)
 		return
 	}
+
+	// MCP connectors get a short-lived capability token bound to this
+	// run. Pre-warm (createRun) calls Registry.GetSession directly and
+	// does not mint — runners mint at use time via this handler.
+	if sess.MCP != nil {
+		if s.connectorSessions == nil {
+			writeError(w, http.StatusServiceUnavailable, "connector session store not configured")
+			return
+		}
+		binding := auth.RunBindingFromContext(r.Context())
+		if binding == nil {
+			writeError(w, http.StatusUnauthorized, "run binding required for MCP connector session")
+			return
+		}
+		cap, err := s.connectorSessions.Create(name, binding.RunID, binding.Generation, binding.TenantID, binding.AgentID)
+		if err != nil {
+			slog.Error("connector session mint failed", "connector", name, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to mint connector session token")
+			return
+		}
+		sess.SessionToken = cap.Token
+		sess.ExpiresAt = cap.Expires.UTC().Format(time.RFC3339)
+	}
+
 	writeJSON(w, http.StatusOK, sess)
 }
 
@@ -846,6 +878,13 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if s.connectors == nil {
 		writeError(w, http.StatusNotFound, "connector not found: "+name)
+		return
+	}
+	if _, err := s.connectors.Get(name); err != nil {
+		writeError(w, http.StatusNotFound, "connector not found: "+name)
+		return
+	}
+	if err := s.requireConnectorSession(w, r, name); err != nil {
 		return
 	}
 
@@ -939,6 +978,38 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(result.StatusCode)
 	w.Write(result.Body)
 }
+
+// requireConnectorSession checks the short-lived MCP capability token.
+// Returns a non-nil error after writing the HTTP response on failure.
+func (s *Server) requireConnectorSession(w http.ResponseWriter, r *http.Request, connectorName string) error {
+	if s.connectorSessions == nil {
+		writeError(w, http.StatusServiceUnavailable, "connector session store not configured")
+		return errConnectorSession
+	}
+	token := strings.TrimSpace(r.Header.Get(connector.HeaderConnectorSession))
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing "+connector.HeaderConnectorSession)
+		return errConnectorSession
+	}
+	sess := s.connectorSessions.Get(token)
+	if sess == nil {
+		writeError(w, http.StatusUnauthorized, "invalid or expired connector session token")
+		return errConnectorSession
+	}
+	binding := auth.RunBindingFromContext(r.Context())
+	if binding == nil {
+		writeError(w, http.StatusUnauthorized, "run binding required")
+		return errConnectorSession
+	}
+	if sess.Connector != connectorName || sess.RunID != binding.RunID || sess.Generation != binding.Generation {
+		writeError(w, http.StatusForbidden, "connector session token does not match this run")
+		return errConnectorSession
+	}
+	return nil
+}
+
+// errConnectorSession marks that requireConnectorSession already wrote the response.
+var errConnectorSession = errors.New("connector session denied")
 
 // --- Shared helpers ---
 

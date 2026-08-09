@@ -45,11 +45,12 @@ func TestHandleProxyMCP_PolicyDeny(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"updateRecord"}}`
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/sf/mcp", strings.NewReader(body))
 	req.SetPathValue("name", "sf")
-	ctx := auth.WithRunBinding(req.Context(), &auth.RunBinding{
+	binding := &auth.RunBinding{
 		RunID: "run-1", Generation: 1, TenantID: "acme", AgentID: "sales",
 		User: &transport.UserContext{Identity: "alice"},
-	})
-	req = req.WithContext(ctx)
+	}
+	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+	attachConnectorSession(t, s, binding, "sf", req)
 	rec := httptest.NewRecorder()
 	s.handleProxyMCPRequest(rec, req)
 
@@ -173,9 +174,11 @@ func TestHandleProxyMCP_PolicyDeny_RunEventsOff(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"updateRecord"}}`
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/sf/mcp", strings.NewReader(body))
 	req.SetPathValue("name", "sf")
-	req = req.WithContext(auth.WithRunBinding(req.Context(), &auth.RunBinding{
+	binding := &auth.RunBinding{
 		RunID: "run-off", Generation: 1, TenantID: "acme", AgentID: "sales",
-	}))
+	}
+	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+	attachConnectorSession(t, s, binding, "sf", req)
 	rec := httptest.NewRecorder()
 	s.handleProxyMCPRequest(rec, req)
 	if rec.Code != http.StatusOK {

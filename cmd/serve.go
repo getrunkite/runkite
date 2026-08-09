@@ -283,6 +283,16 @@ func startServer(opts serverOpts) {
 		apiServer.SetConnectorRegistry(reg)
 		slog.Info("connector registry loaded", "connectors", reg.List())
 	}
+	// MCP capability tokens: Redis when REDIS_URL is set (shared across
+	// replicas), otherwise process-local memory — same auto pattern as
+	// Admin sessions / rate limits. Always wired so /mcp fails closed
+	// rather than accepting kind-token-only access.
+	if rdb != nil {
+		apiServer.SetConnectorSessionStore(connector.NewRedisConnectorSessionStore(rdb, 0))
+		slog.Info("connector sessions: redis backend (shared across replicas)")
+	} else {
+		apiServer.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
+	}
 
 	// Event hooks + webhook delivery first so policy.siem can register
 	// an async policy_decision sink on the same Dispatcher.

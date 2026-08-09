@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2721,11 +2722,71 @@ func newTestEnvWithConnectors(t *testing.T, configs map[string]connector.Connect
 	env := newTestEnv(t)
 	reg := connector.NewRegistry(configs)
 	env.apiServer.SetConnectorRegistry(reg)
-	// Rebuild server with updated handler
+	env.apiServer.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
+	// Rebuild server with run-binding stub for connector session/MCP paths
+	// (production middleware attaches RunBinding from Inflight; unit tests
+	// skip that stack).
 	env.srv.Close()
-	env.srv = httptest.NewServer(env.apiServer.Handler())
+	env.srv = httptest.NewServer(withTestConnectorRunBinding(env.apiServer.Handler()))
 	t.Cleanup(env.srv.Close)
 	return env
+}
+
+// withTestConnectorRunBinding fabricates a RunBinding for connector
+// session/MCP routes when none is present, so HTTP-level connector tests
+// can mint/require capability tokens without full auth middleware.
+func withTestConnectorRunBinding(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/internal/connectors/") &&
+			(strings.HasSuffix(path, "/session") || strings.HasSuffix(path, "/mcp")) &&
+			auth.RunBindingFromContext(r.Context()) == nil {
+			runID := r.Header.Get(auth.HeaderRunID)
+			if runID == "" {
+				runID = "test-run"
+			}
+			gen := int64(1)
+			if g := r.Header.Get(auth.HeaderGeneration); g != "" {
+				if parsed, err := strconv.ParseInt(g, 10, 64); err == nil {
+					gen = parsed
+				}
+			}
+			r = r.WithContext(auth.WithRunBinding(r.Context(), &auth.RunBinding{
+				RunID: runID, Generation: gen, TenantID: "default", AgentID: "test",
+			}))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// postConnectorMCP mints a session token then POSTs to /mcp with it.
+func postConnectorMCP(t *testing.T, baseURL, name string, body interface{}) *http.Response {
+	t.Helper()
+	sessResp, err := postJSON(baseURL+"/internal/connectors/"+name+"/session", map[string]interface{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sessResp.Body.Close()
+	if sessResp.StatusCode != 200 {
+		b, _ := io.ReadAll(sessResp.Body)
+		t.Fatalf("mint session: %d %s", sessResp.StatusCode, b)
+	}
+	var sess connector.SessionResponse
+	if err := json.NewDecoder(sessResp.Body).Decode(&sess); err != nil {
+		t.Fatal(err)
+	}
+	if sess.SessionToken == "" {
+		t.Fatal("expected session_token from MCP GetSession")
+	}
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/internal/connectors/"+name+"/mcp", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(connector.HeaderConnectorSession, sess.SessionToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 // ============================================================================
@@ -2830,6 +2891,9 @@ func TestConnector_SessionOmitsCredentialsWhenMCPConfigured(t *testing.T) {
 	json.Unmarshal(body, &sess)
 	if sess.Credentials != nil {
 		t.Fatalf("expected no credentials in the session response for an MCP-proxied connector, got %v", sess.Credentials)
+	}
+	if sess.SessionToken == "" {
+		t.Fatal("expected session_token for MCP connector")
 	}
 	if strings.Contains(string(body), "raw-secret-should-not-leak") {
 		t.Fatal("raw downstream credential leaked into the session response despite MCP being configured")
@@ -2967,7 +3031,7 @@ func TestConnector_MCPProxy_AllowedToolReachesDownstream(t *testing.T) {
 		},
 	})
 
-	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/mcp", map[string]interface{}{
+	resp := postConnectorMCP(t, env.srv.URL, "sf", map[string]interface{}{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "query"},
 	})
 	expectStatus(t, resp, 200)
@@ -2998,7 +3062,7 @@ func TestConnector_MCPProxy_DeniedToolNeverReachesDownstream(t *testing.T) {
 		},
 	})
 
-	resp, _ := postJSON(env.srv.URL+"/internal/connectors/sf/mcp", map[string]interface{}{
+	resp := postConnectorMCP(t, env.srv.URL, "sf", map[string]interface{}{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]interface{}{"name": "deleteEverything"},
 	})
 	expectStatus(t, resp, 200) // JSON-RPC errors are still HTTP 200
@@ -3036,6 +3100,9 @@ func TestConnector_MCPProxy_SessionURLPointsAtProxyNotRawDownstream(t *testing.T
 	json.Unmarshal(readBody(t, resp), &sess)
 	if sess.MCP == nil || sess.MCP.URL != "/internal/connectors/sf/mcp" {
 		t.Fatalf("expected session to point at the proxy path, got %+v", sess.MCP)
+	}
+	if sess.SessionToken == "" {
+		t.Fatal("expected session_token")
 	}
 }
 

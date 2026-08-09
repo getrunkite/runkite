@@ -19,7 +19,7 @@ Four providers, configured via `auth` in `langgraph.json`:
 
 **Runner auth** is separate: in local mode runners are trusted implicitly. In production, set `RUNNER_TOKEN_<kind>` env vars -- one shared token per runner type, validated on every gRPC call and `/internal/*` HTTP request. Optionally set `RUNNER_TENANTS_<kind>` (comma-separated tenant ids, same kind encoding as tokens) to restrict which tenants that kind may use; unset means any tenant is still accepted after kind-token auth. A missing tenant is treated as `default` for the allow check.
 
-**Run-binding** applies to proxy-mode store/vector calls and connector `session`/`mcp`: runners must send `X-Runkite-Run-Id` + `X-Runkite-Generation` for an in-flight assignment. The control plane derives `tenant_id` (and agent id) from that assignment — it does **not** trust `X-Runkite-Tenant-Id` on those paths. See [Trust & governance](trust-governance.md).
+**Run-binding** applies to proxy-mode store/vector calls and connector `session`/`mcp`: runners must send `X-Runkite-Run-Id` + `X-Runkite-Generation` for an in-flight assignment. The control plane derives `tenant_id` (and agent id) from that assignment — it does **not** trust `X-Runkite-Tenant-Id` on those paths. Connector MCP also requires a short-lived `session_token` from GetSession (`X-Runkite-Connector-Session`); see [Connectors](connectors.md). See [Trust & governance](trust-governance.md).
 
 Example (webhook sidecar):
 ```json

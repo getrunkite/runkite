@@ -63,6 +63,7 @@ func TestMandatoryHITL_MCPPendingThenApprove(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/connectors/gh/mcp", strings.NewReader(reqBody))
 		req.SetPathValue("name", "gh")
 		req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+		attachConnectorSession(t, s, binding, "gh", req)
 		rec := httptest.NewRecorder()
 		s.handleProxyMCPRequest(rec, req)
 		return rec.Code, rec.Body.Bytes()
