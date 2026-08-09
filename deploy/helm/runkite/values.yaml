@@ -162,9 +162,15 @@ secrets:
   existingSecret: ""
   postgresDsn: ""
   redisUrl: ""
-  # Shared with runners as RUNNER_TOKEN; control plane expects
-  # RUNNER_TOKEN_PYTHON_LANGGRAPH (same value).
+  # Presented by this chart's runner Deployment as RUNNER_TOKEN.
+  # Control plane gets RUNNER_TOKEN_PYTHON_LANGGRAPH = runnerTokenAllowlist
+  # when that is set, otherwise the same value as runnerToken.
   runnerToken: ""
+  # Optional comma-separated allowlist for the control plane only
+  # (fleet rotation / multi-fleet). When empty, CP uses runnerToken.
+  # Runner pods still receive only secrets.runnerToken (one secret).
+  # See chart README "Runner token allowlist".
+  runnerTokenAllowlist: ""
   # Substituted into the default langgraphJson as ${RUNKITE_API_KEY}.
   # Required for the stock quick-start; unused if your langgraphJson
   # does not reference that env var.

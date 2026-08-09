@@ -106,9 +106,31 @@ ID does not exist on the first `initialize` call.
 | `terminationGracePeriodSeconds` | `30` | Covers the control plane's drain budget |
 | `autoscaling.enabled` | `false` | Needs `resources.requests.cpu` if turned on |
 | `runner.enabled` | `true` | Set `false` if runners run elsewhere |
+| `secrets.runnerTokenAllowlist` | `""` | CP `RUNNER_TOKEN_*` allowlist; see [Runner token allowlist](#runner-token-allowlist) |
 | `networkPolicy.enabled` | `false` | Opt-in; requires a NetworkPolicy-capable CNI |
 | `tls.enabled` | `false` | Pod TLS/mTLS; see [Pod TLS / mTLS](#pod-tls--mtls) |
 | `resources.requests` | `100m` / `256Mi` | Production-shaped defaults; override per env |
+
+## Runner token allowlist
+
+Control plane `RUNNER_TOKEN_<KIND>` accepts a **comma-separated allowlist**
+of equally valid tokens (fleet credentials / rotation), not unique-per-pod
+secrets (Deployments share one Secret across pods).
+
+| Value | Effect |
+|---|---|
+| `secrets.runnerToken` | This chart’s runner Deployment `RUNNER_TOKEN` (one secret) |
+| `secrets.runnerTokenAllowlist` | When set, CP `RUNNER_TOKEN_PYTHON_LANGGRAPH`; else CP uses `runnerToken` |
+
+**Rotation:** set allowlist to `old,new` → restart CP → roll runners to
+`new` → set allowlist (or `runnerToken`) to `new` → restart CP.
+
+**Multi-fleet:** put both fleets’ tokens in the CP allowlist; run a second
+runner Deployment (or `existingSecret`) with a different `RUNNER_TOKEN`.
+Revoke one fleet by dropping its token from the allowlist and restarting CP.
+
+With `helm --set` / `--set-string`, escape commas (`tok-a\,tok-b`) or pass a
+values file — Helm treats unescaped commas as list separators.
 
 ## Pod TLS / mTLS
 

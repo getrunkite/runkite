@@ -42,7 +42,10 @@
 # a real RUNNER_TOKEN (no "change-me-in-production" fallback), the same
 # reasoning as docker-compose.yml: a shared placeholder secret invites
 # copy-pasting it somewhere it matters. Set RUNNER_TOKEN in your shell or
-# a .env file before running this (see .env.example).
+# a .env file before running this (see .env.example). Both runner services
+# share one token here for simplicity; the control plane also accepts a
+# comma-separated RUNNER_TOKEN_* allowlist for multi-fleet / rotation
+# (see docs/auth.md) — not unique-per-container secrets.
 name: runkite-multi
 services:
   postgres:

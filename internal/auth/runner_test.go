@@ -2,6 +2,8 @@ package auth_test
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/getrunkite/runkite/internal/auth"
@@ -138,5 +140,76 @@ func TestRunnerTokens_AllowsTenant_LocalMode(t *testing.T) {
 	var rt *auth.RunnerTokens
 	if !rt.AllowsTenant("python-langgraph", "anything") {
 		t.Fatal("local mode must not enforce tenant allow-lists")
+	}
+}
+
+func TestLoadRunnerTokensFromEnv_CommaAllowList(t *testing.T) {
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH": "fleet-a, fleet-b",
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.Validate("python-langgraph", "fleet-a") {
+		t.Fatal("first allowlist token should validate")
+	}
+	if !rt.Validate("python-langgraph", "fleet-b") {
+		t.Fatal("second allowlist token should validate")
+	}
+	if rt.Validate("python-langgraph", "fleet-c") {
+		t.Fatal("unknown token must not validate")
+	}
+	if rt.Validate("typescript-langgraphjs", "fleet-a") {
+		t.Fatal("allowlist must not cross kinds")
+	}
+}
+
+func TestLoadRunnerTokensFromEnv_EmptySegmentsIgnored(t *testing.T) {
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH": ",tok-a,, tok-b ,",
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.Validate("python-langgraph", "tok-a") || !rt.Validate("python-langgraph", "tok-b") {
+		t.Fatal("trimmed non-empty segments should validate")
+	}
+	if rt.Validate("python-langgraph", "") {
+		t.Fatal("empty presented token must not validate in production mode")
+	}
+}
+
+func TestLoadRunnerTokensFromEnv_SoftCapTruncates(t *testing.T) {
+	// 17 distinct tokens; only the first 16 must validate.
+	parts := make([]string, 17)
+	for i := range parts {
+		parts[i] = "tok-" + strconv.Itoa(i)
+	}
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH": strings.Join(parts, ","),
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	for i := 0; i < 16; i++ {
+		if !rt.Validate("python-langgraph", "tok-"+strconv.Itoa(i)) {
+			t.Fatalf("token %d within cap should validate", i)
+		}
+	}
+	if rt.Validate("python-langgraph", "tok-16") {
+		t.Fatal("17th token must be truncated / rejected")
+	}
+}
+
+func TestLoadRunnerTokensFromEnv_OnlyCommasSkipsKind(t *testing.T) {
+	// Another kind keeps production mode on; the empty allowlist kind
+	// must be omitted (missing-kind reject), not treated as local-mode trust.
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":       ",,,",
+		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS": "ts-tok",
+	})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if !rt.Enabled() {
+		t.Fatal("expected production mode from typescript token")
+	}
+	if rt.Validate("python-langgraph", "tok") {
+		t.Fatal("kind with empty allowlist must not validate any token")
+	}
+	if !rt.Validate("typescript-langgraphjs", "ts-tok") {
+		t.Fatal("other kind should still validate")
 	}
 }

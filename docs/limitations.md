@@ -8,7 +8,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 | Area | Limitation |
 |------|------------|
-| **Scale-out** | Agent Protocol MCP sessions (`/mcp`) are **process-local** (sticky routing). Admin UI sessions and connector MCP capability tokens are shared when `REDIS_URL` is set; without Redis they stay process-local. |
+| **Scale-out** | Agent Protocol MCP sessions (`/mcp`) are **process-local** (sticky routing). Admin UI sessions and connector MCP capability tokens are shared when `REDIS_URL` is set; without Redis they stay process-local. Runner tokens are per-kind (optional comma allowlist for fleets/rotation), not unique per pod. |
 | **Authz** | Route-level `read` / `write` / `admin`, plus optional `agents:<id>:run` (write only on run-create routes, then agent check at create). Not per-tool ACLs (connector tools use policy grants). |
 | **Tenancy** | Flat `tenant_id`; no tenant registry UI. LangGraph checkpoint isolation is by key prefix, not a SQL `tenant_id` column. Set `RUNNER_TENANTS_*` in multi-tenant prod. |
 | **Checkpoints** | Durable LangGraph checkpoints need **Postgres direct mode** on the runner. `checkpoint_ref` time-travel is LangGraph-only; CP does not pre-validate that the id exists. |
