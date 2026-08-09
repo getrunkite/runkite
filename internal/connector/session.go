@@ -15,6 +15,10 @@ const HeaderConnectorSession = "X-Runkite-Connector-Session"
 // Not sliding — a stolen token dies after this window.
 const ConnectorSessionTTL = 15 * time.Minute
 
+// StaticCredentialSessionTTL is the advisory expires_at for api_key/bearer
+// GetSession responses. Remint hint only — does not revoke the underlying secret.
+const StaticCredentialSessionTTL = time.Hour
+
 // ConnectorSession is one short-lived MCP capability for a run.
 type ConnectorSession struct {
 	Token      string

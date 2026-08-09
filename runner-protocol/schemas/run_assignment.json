@@ -55,22 +55,26 @@
       },
       "additionalProperties": true
     },
-    "context": {
+    "user": {
       "type": "object",
-      "description": "Authenticated user context from the control plane's auth layer.",
+      "description": "Authenticated identity from the control plane's auth layer (flat wire shape). Runners SHOULD expose this to the agent (e.g. LangGraph langgraph_auth_user / runtime.user). Absent when no auth provider is configured.",
       "properties": {
-        "user_id": {
+        "identity": {
           "type": "string",
           "description": "Authenticated user identifier."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable user name."
+        },
+        "is_authenticated": {
+          "type": "boolean",
+          "description": "Whether the caller presented a valid identity."
         },
         "permissions": {
           "type": "array",
           "items": { "type": "string" },
           "description": "User permissions/roles."
-        },
-        "display_name": {
-          "type": "string",
-          "description": "Human-readable user name."
         }
       },
       "additionalProperties": true

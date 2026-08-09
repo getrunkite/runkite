@@ -9,7 +9,7 @@
     "graph_id": "stateful_agent",
     "input": null,
     "config": { "configurable": {} },
-    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
     "checkpoint_ref": "chk-previous-state",
     "resume_command": null,
     "stream_modes": ["values"],

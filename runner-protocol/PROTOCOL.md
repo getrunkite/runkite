@@ -102,11 +102,12 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
     "recursion_limit": "integer (optional)",
     "metadata": "object (optional)"
   },
-  "context": {
-    "user_id": "string",
-    "permissions": ["array of strings"],
+  "user": {
+    "identity": "string",
     "display_name": "string (optional)",
-    "additional_fields": "any additional auth context fields"
+    "is_authenticated": "boolean",
+    "permissions": ["array of strings"],
+    "additional_fields": "any provider-specific fields flattened onto the same object"
   },
   "checkpoint_ref": "string or null (opaque checkpoint id for time-travel; null = latest)",
   "resume_command": "object or null",
@@ -130,11 +131,11 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `graph_id` | string | Yes | Identifies which agent/graph to execute. Maps to a graph definition in the runner's config. |
 | `input` | any JSON | No | The input to the agent. May be null for resume-only runs. The shape is defined by the agent, not by this protocol. |
 | `config` | object | No | Agent configuration. `config.configurable` carries key-value pairs the agent can read. The runner MUST inject `thread_id` and `run_id` into `configurable` if the agent framework expects them (e.g., LangGraph). |
-| `context` | object | No | Authenticated user context from the control plane's auth layer. The runner SHOULD make this available to the agent (e.g., via LangGraph's `langgraph_auth_user` configurable key). |
+| `user` | object | No | Authenticated identity from the control plane's auth layer (flat wire shape: `identity`, `display_name`, `is_authenticated`, `permissions`, plus provider Extra fields). The runner SHOULD make this available to the agent (e.g. LangGraph `langgraph_auth_user` / `runtime.user`). Absent when no auth provider is configured. |
 | `checkpoint_ref` | string or null | No | Opaque checkpoint identity for resume-by-id (time-travel). Null/absent means resume from the thread's latest checkpoint (or a fresh run). LangGraph runners MUST map a non-empty value to the framework's checkpoint-id config key (`configurable.checkpoint_id`). Runners whose framework has no resume-by-id MUST fail the run with an error event -- never silently ignore a non-null value. |
 | `resume_command` | object or null | No | If non-null, this run is resuming from an interrupt (HITL). Contains the client's response to the interrupt. The runner MUST pass this to the agent framework's resume mechanism (e.g., LangGraph `Command(resume=...)`). |
 | `stream_modes` | array of strings | No | Which event types the control plane wants. Well-known values: `values`, `updates`, `messages`, `custom`. Default: `["values"]`. Runners SHOULD treat unknown mode strings as pass-through (forward compatibility -- the control plane may map client-requested modes like `events` or `debug` before dispatch, or new modes may be added in future spec versions). The runner SHOULD only emit data events matching these modes (optimization, not a hard requirement -- the control plane filters regardless). **`lifecycle` and `end`/`error` events are always emitted regardless of `stream_modes`** -- they are control events, not data events. |
-| `connector_needs` | array of strings | No | Pre-warm hint. The control plane speculatively fetches authenticated sessions for these connectors before the runner asks. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
+| `connector_needs` | array of strings | No | Pre-warm hint. The control plane MAY call GetSession for these connectors at dispatch (e.g. warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
 | `tenant_id` | string | No | Tenant that authenticated the originating request. Runners MUST scope direct-mode `store_items`/`vector_items` SQL (and proxy `X-Runkite-Tenant-Id` on `/internal/*`) to this value. Absent on older control planes -- runners fall back to `"default"`. LangGraph runners MUST also encode this into the checkpointer key: `configurable.thread_id` is the bare `thread_id` when tenant is `"default"`/absent, otherwise `"{tenant_id}:{thread_id}"` (logical thread remains the top-level `thread_id` field; avoid `:` inside tenant ids -- the encoding is a single colon split). Proxy-mode: after kind-token auth the control plane accepts the runner-supplied `X-Runkite-Tenant-Id`, optionally constrained by `RUNNER_TENANTS_<kind>` when configured; see docs/auth.md. |
 | `trace_context` | object | No | W3C Trace Context for cross-process observability. The runner SHOULD set this as the active trace context before executing the agent, so that all spans (LLM calls, tool invocations, etc.) are children of this trace. |
 
@@ -433,7 +434,7 @@ Body (non-MCP connector): {
     "instance_url": "string (optional)",
     "refresh_token": "string (optional)"
   },
-  "expires_at": "ISO 8601 timestamp"
+  "expires_at": "ISO 8601 (api_key/bearer: 1h advisory remint hint; OAuth: IdP expires_in)"
 }
 
 Body (MCP connector — proxy-only, no raw credentials): {
@@ -459,7 +460,8 @@ Response: 502 Bad Gateway (upstream auth provider failed)
 
 ### 8.2 Rules
 
-- `connector_needs` in RunAssignment is a pre-warm hint. The control plane MAY pre-fetch downstream credentials for listed connectors. Capability `session_token`s are **not** put on the assignment (they expire quickly); runners mint at use time via GetSession.
+- `connector_needs` in RunAssignment is a pre-warm hint. The control plane MAY call GetSession for listed connectors (e.g. to warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment payload. Runners mint/fetch at use time via GetSession.
+- For non-MCP `api_key`/`bearer`, `expires_at` is a 1h advisory remint hint (does not revoke the underlying secret). OAuth uses the IdP's `expires_in`.
 - Session credentials / tokens are scoped to the in-flight run (run-binding). MCP `session_token` is additionally bound to `(run_id, generation, connector)`.
 - Downstream OAuth client-credentials tokens may be cached server-side. Runner-facing MCP capability tokens are absolute-TTL and not sliding.
 - Tool allow/deny is enforced on the control-plane MCP proxy, not by trusting the runner to filter.

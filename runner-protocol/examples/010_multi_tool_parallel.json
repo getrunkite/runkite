@@ -9,7 +9,7 @@
     "graph_id": "multi_tool_agent",
     "input": { "messages": [{ "role": "user", "content": "Compare weather in London and Paris" }] },
     "config": { "configurable": {} },
-    "context": { "user_id": "test-user", "permissions": ["read"] },
+    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read"] },
     "checkpoint_ref": null,
     "resume_command": null,
     "stream_modes": ["values", "updates"],

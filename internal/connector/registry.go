@@ -187,13 +187,13 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 	case "api_key":
 		return &CachedToken{
 			AccessToken: c.Config.Auth.APIKey,
-			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // effectively never expires
+			ExpiresAt:   time.Now().Add(StaticCredentialSessionTTL),
 		}, nil
 
 	case "bearer":
 		return &CachedToken{
 			AccessToken: c.Config.Auth.BearerToken,
-			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+			ExpiresAt:   time.Now().Add(StaticCredentialSessionTTL),
 		}, nil
 
 	case "oauth2_client_credentials":

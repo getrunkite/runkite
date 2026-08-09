@@ -19,7 +19,6 @@ type RunAssignment struct {
 	GraphID        string          `json:"graph_id"`
 	Input          json.RawMessage `json:"input"`
 	Config         json.RawMessage `json:"config,omitempty"`
-	Context        json.RawMessage `json:"context,omitempty"`
 	CheckpointRef  *string         `json:"checkpoint_ref"`
 	ResumeCommand  json.RawMessage `json:"resume_command"`
 	StreamModes    []string        `json:"stream_modes"`

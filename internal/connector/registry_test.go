@@ -124,6 +124,20 @@ func TestToolFilter_UnknownConnector(t *testing.T) {
 	}
 }
 
+func assertStaticCredentialExpiresAt(t *testing.T, expiresAt string) {
+	t.Helper()
+	got, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		t.Fatalf("expires_at not RFC3339: %s", expiresAt)
+	}
+	// Advisory remint hint: ~StaticCredentialSessionTTL from now (not ~365d).
+	want := time.Now().Add(StaticCredentialSessionTTL)
+	skew := got.Sub(want)
+	if skew < -5*time.Second || skew > 5*time.Second {
+		t.Fatalf("expires_at = %s, want ~%s (±5s)", got.UTC().Format(time.RFC3339), want.UTC().Format(time.RFC3339))
+	}
+}
+
 func TestSession_APIKey(t *testing.T) {
 	r := NewRegistry(map[string]ConnectorConfig{
 		"myapi": {Auth: AuthConfig{Type: "api_key", APIKey: "secret-key-123"}},
@@ -136,9 +150,7 @@ func TestSession_APIKey(t *testing.T) {
 	if sess.Credentials["access_token"] != "secret-key-123" {
 		t.Fatalf("expected api key in access_token, got %s", sess.Credentials["access_token"])
 	}
-	if sess.ExpiresAt == "" {
-		t.Fatal("expected non-empty expires_at")
-	}
+	assertStaticCredentialExpiresAt(t, sess.ExpiresAt)
 }
 
 func TestSession_Bearer(t *testing.T) {
@@ -153,6 +165,7 @@ func TestSession_Bearer(t *testing.T) {
 	if sess.Credentials["access_token"] != "my-bearer-tok" {
 		t.Fatalf("expected bearer token, got %s", sess.Credentials["access_token"])
 	}
+	assertStaticCredentialExpiresAt(t, sess.ExpiresAt)
 }
 
 func TestSession_ClientCredentials(t *testing.T) {
@@ -296,10 +309,7 @@ func TestSession_ResponseShape(t *testing.T) {
 		t.Fatal("missing 'expires_at' in JSON")
 	}
 
-	// Verify expires_at is valid RFC3339
-	if _, err := time.Parse(time.RFC3339, sess.ExpiresAt); err != nil {
-		t.Fatalf("expires_at not RFC3339: %s", sess.ExpiresAt)
-	}
+	assertStaticCredentialExpiresAt(t, sess.ExpiresAt)
 }
 
 func TestEnvVarExpansion(t *testing.T) {

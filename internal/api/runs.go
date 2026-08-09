@@ -672,24 +672,20 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 
 	// Pre-warm connector sessions if registry is available and connector_needs is non-empty.
 	// This is a hint, not a hard gate — don't block run creation on failure.
+	// Never embed sessions in the assignment payload: raw credentials would sit in
+	// the queue until dequeue, and MCP capability tokens expire too quickly to be
+	// useful. Stock runners call GetSession at use time; this loop warms OAuth
+	// caches and surfaces policy/auth failures in logs early.
 	if s.connectors != nil && len(assignment.ConnectorNeeds) > 0 {
-		sessions := make(map[string]interface{})
 		prewarmCtx := withPolicyAgent(ctx, req.AgentID, runID)
 		for _, name := range assignment.ConnectorNeeds {
 			if dec, deny := s.checkConnectorPolicy(prewarmCtx, policy.StageConnectorSession, name, ""); deny {
 				slog.Warn("connector pre-warm skipped by policy", "connector", name, "run_id", runID, "reason_code", dec.ReasonCode)
 				continue
 			}
-			sess, err := s.connectors.GetSession(prewarmCtx, name, nil)
-			if err != nil {
+			if _, err := s.connectors.GetSession(prewarmCtx, name, nil); err != nil {
 				slog.Warn("connector pre-warm failed", "connector", name, "run_id", runID, "error", err)
-				continue
 			}
-			sessions[name] = sess
-		}
-		if len(sessions) > 0 {
-			ctxData, _ := json.Marshal(sessions)
-			assignment.Context = ctxData
 		}
 	}
 

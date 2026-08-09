@@ -9,7 +9,7 @@
     "graph_id": "approval_agent",
     "input": { "messages": [{ "role": "user", "content": "Send an email to alice@example.com" }] },
     "config": { "configurable": {} },
-    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
     "checkpoint_ref": null,
     "resume_command": null,
     "stream_modes": ["values"],
@@ -75,7 +75,7 @@
     "graph_id": "approval_agent",
     "input": null,
     "config": { "configurable": {} },
-    "context": { "user_id": "test-user", "permissions": ["read", "write"] },
+    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
     "checkpoint_ref": "checkpoint-after-interrupt",
     "resume_command": {
       "interrupt_id": "interrupt-001",
