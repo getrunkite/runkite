@@ -14,7 +14,11 @@ From repo root (requires Docker, `RUNNER_TOKEN` in the environment or `.env`):
 |------|---------|
 | Quick health (minutes) | `make smoke-multi` |
 | 10-minute rehearsal | `make soak-multi-short` (or `SOAK_DURATION=600 make soak-multi`) |
-| Announce laptop bar (30 min) | `SOAK_DURATION=1800 make soak-multi` (default) |
+| Announce laptop bar (30 min) | `make multi-down` then `SOAK_DURATION=1800 make soak-multi` (default) |
+
+**Graded / announce runs:** tear down first (`make multi-down`). The harness
+leaves the stack up; a second soak on the same Postgres accumulates
+`total_runs`, so end-state absolutes are **not** “what this window produced.”
 
 Watch live: http://127.0.0.1:2026/admin/
 
@@ -24,23 +28,30 @@ are optional; they are **not** required for this writeup's pass bar.
 
 ## Pass criteria (announce bar = 30 min)
 
-Evaluate against end-of-run artifacts (`overview-end.json`, `REPORT.md`,
-`samples.log`, compose logs):
+Evaluate against start/end artifacts (`overview-start.json`,
+`overview-end.json`, `REPORT.md`, `samples.log`, compose logs, webhooks):
 
 1. **`/readyz` green** for the duration (stack stays up; smoke/soak refuse a
    colliding host process on `:2026`).
 2. **Soak agents registered** — Admin overview / connectors snapshot shows
    the soak agent set from `examples/soak_multi` (not an empty fleet).
-3. **Error rate** — from end overview run counts:
-   `error / (success + error) < 0.01`. If total terminal runs are tiny
-   (`success + error < 50`), require **zero** errors instead.
+3. **Error rate (delta, not end absolute)** — from
+   `overview-start.json` → `overview-end.json` `runs_by_status`:
+   `Δerror / (Δsuccess + Δerror) < 0.01`, where
+   `Δstatus = end[status] - start[status]` (missing key = 0). If
+   `Δsuccess + Δerror < 50`, require **zero** `Δerror` instead.
+   Cross-check: webhook `run_start` / `run_complete` counts in
+   `webhooks.jsonl` should nearly match `Δsuccess` (small skew from
+   in-flight runs at snapshot time is OK). **Do not** quote end
+   `total_runs` as this window’s throughput if the DB was pre-populated.
 4. **No CP OOM / restart storm** — `samples.log` docker stats and
    `compose-tail.log` show no control-plane OOM kills or crash-loop restarts.
 5. **`REPORT.md` produced** with the filtered metrics section present
    (`runkite_runs_total`, memory samples, etc.).
 
-Paste into an announce note: duration, `OUT_DIR`, error rate, and a short
-excerpt of the metrics filter from `REPORT.md`.
+Paste into an announce note: duration, `OUT_DIR`, **delta** success/error
+(and optionally webhook pairs), not the cumulative end `total_runs`, plus a
+short metrics excerpt from `REPORT.md`.
 
 ## Non-claims
 
