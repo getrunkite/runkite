@@ -1,0 +1,31 @@
+# Kind K2 reclaim overlay — use with values.yaml + values-supported.yaml.
+# Registers slow_agent on the control plane (runner image already has it
+# via Dockerfile.runner → examples/all_agents). Two runners so a reclaimed
+# job has a peer (or a recreated pod) to finish on.
+
+runner:
+  replicaCount: 2
+
+config:
+  langgraphJson: |
+    {
+      "graphs": {
+        "echo_agent": "/app/examples/echo_agent/graph.py:graph",
+        "slow_agent": "/app/examples/slow_agent/graph.py:graph"
+      },
+      "dependencies": [
+        "/app/examples/echo_agent",
+        "/app/examples/slow_agent"
+      ],
+      "auth": {
+        "type": "api_key",
+        "strict_permissions": true,
+        "keys": {
+          "${RUNKITE_API_KEY}": {
+            "name": "operator",
+            "permissions": ["read", "write", "admin"],
+            "tenant_id": "default"
+          }
+        }
+      }
+    }
