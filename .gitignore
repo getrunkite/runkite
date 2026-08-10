@@ -63,3 +63,6 @@ CODE_REVIEW_ANALYSIS*.md
 # Soak run artifacts (logs, metrics snapshots, REPORT.md)
 bench/soak/out/*/
 examples/gemini/**/node_modules/
+
+# Local screenshot scratch
+.tmp-admin-shots/

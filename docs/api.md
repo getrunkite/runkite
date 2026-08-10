@@ -151,6 +151,18 @@ GET    /internal/webhooks/dead-letters   List webhook deliveries that exhausted 
 
 Observational lifecycle webhooks (`webhooks` in config) cannot reject runs. Sync deny-before-create guardrails use `preflight_hooks` — see the `preflight_hooks` section under Configuration above.
 
+### Governance & connector proxy (see other docs)
+
+Plane policy and SQL Admin governance are documented in full elsewhere — this reference is the Agent Protocol / client surface. Pointers:
+
+| Surface | Where |
+|---------|--------|
+| Admin governance APIs (`/admin-api/policy-grants`, `mandatory-hitl`, `pending-actions`, `kill-switches`, `break-glass`, `audit-events`) | [Admin UI](admin.md) · OpenAPI [`spec/openapi-admin.json`](../spec/openapi-admin.json) |
+| Trust boundary, run-binding, reason codes | [Trust & governance](trust-governance.md) |
+| Runner connector session + MCP proxy (`POST /internal/connectors/{name}/session`, `…/mcp`) | [Connectors](connectors.md) · OpenAPI [`spec/openapi-internal.json`](../spec/openapi-internal.json) |
+
+Laptop proof for the governance announce bar: `make smoke-governance`.
+
 ### Custom Routes
 ```
 *      {mount}/*                  Reverse-proxied to custom_routes.url (default mount `/custom`); mount prefix stripped; X-Runkite-* identity headers injected

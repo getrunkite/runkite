@@ -266,6 +266,9 @@ make test-all                # All backends (needs infra-up)
 make test-e2e                # Tier-0 black-box E2E
 make smoke-governance        # Governance announce bar on Postgres (run-bind / deny+audit / HITL)
 make kind-helm-smoke         # Kind Helm install smoke (K8s Compatible packaging)
+make kind-helm-rotate        # Kind runner-token rotation smoke
+make kind-helm-reclaim       # Kind mid-run reclaim smoke
+make kind-helm-net           # Kind Ingress + NetworkPolicy smoke
 make test-matrix             # Framework × backend goldens (nightly CI)
 make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
 make test-protocol-execute   # execute_run → expected_events goldens (Python)
