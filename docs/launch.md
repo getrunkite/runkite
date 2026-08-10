@@ -45,10 +45,11 @@ LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js.
 
 Beyond the ops plane: fail-closed connector grants, durable policy audit,
 connector HITL, kill/pause, and break-glass on SQL backends — with Admin
-pages for each (Postgres Supported). Prove locally with
-`make smoke-governance`. Multi-CP HA is soaked on Compose
-(Postgres+Redis); Helm/kind are packaging smokes — Kubernetes stays
-Compatible until a real-cloud soak.
+pages for each (Postgres Supported). Connector HITL approve is Admin-only
+(not Agent Protocol resume); after approve the agent must retry the tool
+call. Prove locally with `make smoke-governance`. Multi-CP HA is soaked
+on Compose (Postgres+Redis); Helm/kind are packaging smokes — Kubernetes
+stays Compatible until a real-cloud soak.
 
 One static binary + embedded Admin UI. Preview (BUSL).
 
@@ -132,4 +133,5 @@ Adapt the Show HN body; keep non-claims.
 - Not equal governance on Mongo (SQL audit / grants / pending HITL).
 - Not in-graph `AuthorizeTool` / sandboxing native framework tools.
 - Not FinOps dashboards or paid EKS soak; Helm on kind ≠ Supported K8s.
+- Connector HITL is Admin-approve + agent tool retry — not LangGraph interrupt/resume.
 - BUSL preview — self-host freely; no offering as hosted SaaS without a license.

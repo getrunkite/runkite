@@ -5,8 +5,11 @@ import (
 	"time"
 )
 
-// decisionCache is a short-TTL cache keyed on stage/tenant/agent/connector/tool
-// (not run-specific fields) so webhook latency stays bounded.
+// decisionCache is a short-TTL cache keyed on
+// stage/tenant/agent/principal/connector/tool (not run_id/generation) so
+// webhook latency stays bounded without cross-contaminating principals.
+// A BYO PDP may allow Alice and deny Bob for the same tool; omitting
+// Principal from the key would serve Alice's allow to Bob until TTL.
 type decisionCache struct {
 	ttl time.Duration
 	mu  sync.Mutex
@@ -23,7 +26,8 @@ func newDecisionCache(ttl time.Duration) *decisionCache {
 }
 
 func cacheKey(in PolicyInput) string {
-	return in.Stage + "\x00" + in.TenantID + "\x00" + in.AgentID + "\x00" + in.Connector + "\x00" + in.Tool
+	return in.Stage + "\x00" + in.TenantID + "\x00" + in.AgentID + "\x00" +
+		in.Principal + "\x00" + in.Connector + "\x00" + in.Tool
 }
 
 func (c *decisionCache) get(in PolicyInput) (PolicyDecision, bool) {
