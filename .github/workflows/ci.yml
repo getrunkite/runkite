@@ -178,6 +178,13 @@ jobs:
         # (schema/lifecycle invariants) -- no Docker, PR-gate cheap.
         run: go test ./internal/... ./cmd/... ./runner-protocol/tests/ -race -count=1 -v -p 1
 
+      # Named so governance announce-bar coverage cannot disappear via a silent
+      # rename/Skip of TestGovernanceAnnounceBar inside the broad suite above.
+      - name: Governance announce bar (Postgres)
+        env:
+          POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+        run: go test ./internal/api/ -run '^TestGovernanceAnnounceBar$' -race -count=1 -timeout 120s
+
       - name: Python runner unit tests
         env:
           PYTHONPATH: python
