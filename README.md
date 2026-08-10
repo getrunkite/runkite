@@ -2,9 +2,9 @@
 
 **Runkite is what LangSmith Deployments would be if it were open source, framework-agnostic, and shipped as one Go binary — and then some.**
 
-That line is the familiar category (durable agent runs you operate yourself). Runkite goes further: a self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane you own — not a LangSmith API clone, not LangGraph-only. Pluggable runners (LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js), agent-to-agent delegation, embedded Admin UI, and backends beyond a single PG+Redis stack (MySQL, MongoDB, NATS, Kafka, vectors — with honest Supported tiers).
+A self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane you own — not a LangSmith API clone, not LangGraph-only. Pluggable runners (LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js), agent-to-agent delegation, embedded Admin UI, and honest backend tiers beyond a single PG+Redis stack.
 
-**On the plane, not only in the agent:** fail-closed connector grants, durable policy audit, connector HITL, kill/pause, and break-glass on SQL backends — with Admin pages for each ([Trust & governance](docs/trust-governance.md), [Admin UI](docs/admin.md)). Prove the announce bar with `make smoke-governance`. Multi-CP HA is soaked on Compose (`make soak-multi`); kind Helm smokes (`kind-helm-smoke` … `kind-helm-net`) are install/ops proofs — Kubernetes stays Compatible until a real-cloud soak. Not FinOps dashboards; not equal governance on Mongo.
+**On the plane, not only in the agent:** fail-closed connector grants, durable policy audit, connector HITL, kill/pause, and break-glass on SQL backends — with Admin pages for each. Prove the announce bar with `make smoke-governance`. Details: [Trust & governance](docs/trust-governance.md) · [Admin UI](docs/admin.md).
 
 - Website: https://getrunkite.github.io/runkite/
 - Releases / binaries: https://github.com/getrunkite/runkite/releases
@@ -25,9 +25,8 @@ That line is the familiar category (durable agent runs you operate yourself). Ru
 </p>
 
 <p align="center">
-  <b>Admin UI</b> — ops (overview, agents, registry, threads, runs with live SSE, connectors, cron, webhooks)<br/>
-  plus SQL governance: grants, mandatory HITL, pending, kill, break-glass, audit<br/>
-  Open at <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
+  <b>Admin UI</b> — ops + SQL governance (grants, HITL, kill, audit)<br/>
+  <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
 </p>
 
 ---
@@ -38,39 +37,18 @@ That line is the familiar category (durable agent runs you operate yourself). Ru
 |---|---|
 | **Agent Protocol, in Go** | HTTP / SSE / WebSocket, auth, streaming, job dispatch, persistence, connectors — one static binary |
 | **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js over the same gRPC Runner Protocol |
-| **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`) — same Agent Protocol path, with depth limits, cancel cascade, and cost rollup |
+| **Agent-to-agent** | One agent calls another mid-run (`call_agent` / `callAgent`) — [docs/a2a.md](docs/a2a.md) |
 | **Ops without a second deploy** | React Admin UI embedded via `embed.FS` — no Node runtime for end users |
-| **Plane governance** | Run-bound connectors/store/vectors; grants, mandatory HITL, pending HITL, kill, break-glass, audit (SQL Admin). See [Trust & governance](docs/trust-governance.md); prove with `make smoke-governance` |
-| **Honest backends** | **Supported:** Postgres + Redis HA. **Also wired:** SQLite, MySQL, MongoDB, NATS, Kafka, pgvector / Qdrant / Weaviate / Pinecone — with documented tiers, not equal claims |
+| **Plane governance** | Run-bound connectors; grants, HITL, kill, break-glass, audit (SQL). [Trust & governance](docs/trust-governance.md) · `make smoke-governance` |
+| **Honest backends** | **Supported:** Postgres + Redis HA. Also wired: SQLite, MySQL, MongoDB, NATS, Kafka, vectors — [tiers](docs/architecture.md#backend-support-tiers) |
 
 ## Architecture
-
-```mermaid
-flowchart LR
-  classDef client fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
-  classDef cp fill:#BFDBFE,stroke:#1D4ED8,color:#1E3A8A
-  classDef runner fill:#CCFBF1,stroke:#0F766E,color:#134E4A
-  classDef store fill:#F1F5F9,stroke:#64748B,color:#334155
-
-  C[Clients<br/>HTTP · SSE · WS]:::client
-  CP[Control plane<br/>1..N replicas]:::cp
-  R[Runners<br/>Python · TypeScript]:::runner
-  S[(State)]:::store
-  T[(Transport)]:::store
-  V[(Vectors)]:::store
-
-  C -->|Agent Protocol| CP
-  CP -->|gRPC Runner Protocol| R
-  CP --- S
-  CP --- T
-  CP --- V
-```
 
 <p align="center">
   <img src="docs/assets/ecosystem.png" alt="How Runkite fits together: clients to control plane to runners, with pluggable state, transport, and vector backends" width="920" />
 </p>
 
-<p align="center"><b>Catalog of parts</b> — request path on top; state / transport / vectors plug in under the plane</p>
+<p align="center"><b>Catalog of parts</b> — Agent Protocol on top; Runner Protocol to workers; state / transport / vectors under the plane</p>
 
 ### One run on the HA profile
 
@@ -102,25 +80,7 @@ sequenceDiagram
   CP-->>C: SSE / WebSocket live output
 ```
 
-### Agent Protocol vs Runner Protocol
-
-**Creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
-
-**Runner Protocol is not that standard.** It is Runkite’s own internal contract ([`runner-protocol/PROTOCOL.md`](runner-protocol/PROTOCOL.md), gRPC in [`proto/runner.proto`](proto/runner.proto)): how the plane hands work to a worker process and how the worker streams events back. Clients never see it. Rough shape:
-
-| Step | Who → whom | What |
-|------|------------|------|
-| `GetJob` | Runner → plane | Long-poll for the next assignment |
-| `RunAssignment` | Plane → runner | `run_id`, `thread_id`, `graph_id`, `input`, `config`, auth context… |
-| Execute | Runner only | Load LangGraph / CrewAI / … and run the agent (LLM calls live here) |
-| `StreamEvents` | Runner → plane | Progress / messages / values / end |
-| Cancel / HITL | Plane ↔ runner | Side channels on the same protocol |
-
-So: Agent Protocol = “what the product client speaks.” Runner Protocol = “what our workers speak.” The plane translates between them, owns Postgres/Redis, and never imports LangGraph itself.
-
-### Agent-to-agent delegation
-
-An agent can call another agent as a sub-task mid-execution — not a separate wire protocol, the same create-run + wait path, reached from inside the runner via `POST /internal/a2a/runs`. Python `call_agent` and TypeScript `callAgent` forward the parent’s auth context; the plane enforces recursion depth, cascades cancel to children, and can roll up cost across the tree.
+### Agent-to-agent
 
 ```mermaid
 sequenceDiagram
@@ -136,147 +96,53 @@ sequenceDiagram
   CP-->>Coord: child output (wait=True)
 ```
 
-Example: [`examples/a2a_agent/`](examples/a2a_agent/). Details: [docs/a2a.md](docs/a2a.md).
-
-Backend tiers and HA notes: [docs/architecture.md](docs/architecture.md).
+Protocol table, backend tiers, dual-mode notes: [docs/architecture.md](docs/architecture.md) · A2A details: [docs/a2a.md](docs/a2a.md).
 
 ## Quick start
 
-### Install
-
-| Piece | Command |
-|-------|---------|
-| Control plane (binary) | Latest from [GitHub Releases](https://github.com/getrunkite/runkite/releases) · or build from source below |
-| Control plane (Docker) | `docker pull ghcr.io/getrunkite/runkite:latest` |
-| Python runner | `pip install runkite-runner` · [PyPI](https://pypi.org/project/runkite-runner/) |
-| TypeScript runner | `npm install -g runkite-runner` · [npm](https://www.npmjs.com/package/runkite-runner) |
-| Helm | Chart in-repo [`deploy/helm/runkite`](deploy/helm/runkite) (defaults to GHCR images) |
-
-Pin a release when you need reproducibility (`pip install runkite-runner==…`, `npm install runkite-runner@…`, `docker pull …:<tag>`). Badges above show the current published versions.
-
-### From source
+| Piece | Get it |
+|-------|--------|
+| Control plane | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `docker pull ghcr.io/getrunkite/runkite:latest` · or `make build` |
+| Python runner | `pip install runkite-runner` |
+| TypeScript runner | `npm install -g runkite-runner` |
+| Helm | [`deploy/helm/runkite`](deploy/helm/runkite) |
 
 ```bash
-git clone https://github.com/getrunkite/runkite && cd runkite
-make build
-```
+git clone https://github.com/getrunkite/runkite && cd runkite && make build
 
-**Prerequisites:** Go 1.25+, Python 3.12+ (for agents), Docker optional.
-
-**1 — Control plane** (zero-deps: SQLite + in-memory transport)
-
-```bash
+# terminal 1 — zero-deps (SQLite + in-memory)
 ./runkite dev --config examples/echo_agent/langgraph.json
-```
 
-```
-HTTP API:    http://localhost:2026
-gRPC bridge: localhost:50051
-Admin UI:    http://localhost:2026/admin/
-Health:      http://localhost:2026/health
-```
-
-**2 — Runner**
-
-```bash
-# published package (Python)
+# terminal 2
 pip install runkite-runner
 runkite-runner --config examples/echo_agent/langgraph.json \
   --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026
-
-# or from a clone (editable install, then run as a module)
-pip install -e python/
-python -m runkite_runner --config examples/echo_agent/langgraph.json
 ```
 
-TypeScript / LangGraph.js: `npm install -g runkite-runner` — see [docs/runners.md](docs/runners.md).
+Admin: http://localhost:2026/admin/ · Health: http://localhost:2026/health
 
-**3 — Create a run**
-
-```python
-from langgraph_sdk import get_client
-
-client = get_client(url="http://localhost:2026")
-thread = await client.threads.create()
-async for event in client.runs.stream(
-    thread["thread_id"],
-    "echo_agent",
-    input={"messages": [{"role": "user", "content": "hello"}]},
-):
-    print(event.event, event.data)
-```
-
-Full walkthrough: [docs/quickstart.md](docs/quickstart.md) · Client access: [docs/client-sdk.md](docs/client-sdk.md)
-
-```
-runkite dev             Dev mode (SQLite + in-memory)
-runkite serve           Production mode
-runkite db upgrade      Migrations
-runkite agents list     Agents from config
-runkite version         Version info
-```
-
-## Backend support tiers
-
-| Tier | Meaning |
-|------|---------|
-| **Supported** | Multi-replica HA on Postgres + Redis (Compose soak); primary CI/matrix focus |
-| **Compatible** | Same conformance suite; known gaps / thinner soak — includes Helm/kind packaging (not a cloud soak) |
-| **Experimental** | Single-instance or incomplete multi-replica primitives |
-
-| Concern | Supported | Compatible | Experimental |
-|---------|-----------|------------|--------------|
-| **State** | **Postgres** | SQLite, MySQL, MongoDB (replica set) | — |
-| **Transport** | **Redis** | NATS/JetStream, in-process | Kafka queue without Redis |
-| **Mixed** | — | Kafka queue **+ Redis** broker/cancel | — |
-| **Vectors** | **pgvector** | Qdrant, Weaviate, Pinecone | — |
-
-Production default: `POSTGRES_DSN` + `REDIS_URL` (`docker-compose.multi.yml`; Helm chart packages the same *backend* profile — cluster install remains Compatible). Details: [docs/architecture.md](docs/architecture.md).
+Full walkthrough (SDK stream, Postgres/Redis, auth): [docs/quickstart.md](docs/quickstart.md) · [docs/client-sdk.md](docs/client-sdk.md)
 
 ## Documentation
 
 | | |
 |---|---|
-| [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth / TLS / tenants](docs/auth.md) | Getting started |
+| [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) | Getting started |
 | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) | Core |
 | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) | Features |
-| [Deployment](docs/deployment.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [Site](https://getrunkite.github.io/runkite/) · [All docs](docs/README.md) | Ops |
+| [Deployment](docs/deployment.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) | Ops |
 
-## Examples
-
-| Example | What it proves |
-|---------|----------------|
-| [`echo_agent`](examples/echo_agent/) | Minimal bridge |
-| [`react_agent`](examples/react_agent/) | Tool calls (fake LLM) |
-| [`approval_agent`](examples/approval_agent/) | HITL interrupt / resume |
-| [`slow_agent`](examples/slow_agent/) | Streaming + cancel |
-| [`a2a_agent`](examples/a2a_agent/) | Agent-to-agent delegation |
-| [`echo_agent_ts`](examples/echo_agent_ts/) | TypeScript / LangGraph.js |
-| [`vector_agent`](examples/vector_agent/) | Vector store |
-| [`factory_agent`](examples/factory_agent/) | Per-request factory graphs |
-| [`cron_agent`](examples/cron_agent/) · [`store_agent`](examples/store_agent/) · [`custom_routes_agent`](examples/custom_routes_agent/) | Cron, store, custom routes |
-| [`policy_webhook`](examples/policy_webhook/) | Bring-your-own sync policy PDP (deny / pending + HMAC) |
-| [`gemini/`](examples/gemini/) | Real Gemini agents for every claimed runner (needs `.env.llm`) |
+Examples under [`examples/`](examples/) (`echo_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, …).
 
 ## Development
 
 ```bash
-make test                    # SQLite + in-memory + protocol fixtures
-make test-all                # All backends (needs infra-up)
-make test-e2e                # Tier-0 black-box E2E
-make smoke-governance        # Governance announce bar on Postgres (run-bind / deny+audit / HITL)
-make kind-helm-smoke         # Kind Helm install smoke (K8s Compatible packaging)
-make kind-helm-rotate        # Kind runner-token rotation smoke
-make kind-helm-reclaim       # Kind mid-run reclaim smoke
-make kind-helm-net           # Kind Ingress + NetworkPolicy smoke
-make test-matrix             # Framework × backend goldens (nightly CI)
-make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
-make test-protocol-execute   # execute_run → expected_events goldens (Python)
-make test-llm-matrix         # live Gemini N×N (requires gitignored .env.llm)
-make infra-up && make build && make lint
+make test                 # SQLite + in-memory
+make smoke-governance     # governance announce bar (Postgres)
+make test-e2e             # black-box binary + runner
 ```
 
-PR CI: unit / conformance / lint / Tier-0 e2e. Matrix: nightly + `workflow_dispatch`. Guide: [CONTRIBUTING.md](CONTRIBUTING.md) · [docs/deployment.md](docs/deployment.md).
+Full targets, kind Helm smokes, matrix: [CONTRIBUTING.md](CONTRIBUTING.md) · [docs/deployment.md](docs/deployment.md).
 
 ## License
 

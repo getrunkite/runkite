@@ -1,8 +1,22 @@
 # Agent-to-Agent (A2A)
 
-> Deep dive. For a 60-second overview see [Agent-to-agent delegation](../README.md#agent-to-agent-delegation) on the root README.
+> Deep dive. Diagram also on the [root README](../README.md#agent-to-agent); protocol path in [architecture.md](architecture.md#agent-protocol-vs-runner-protocol).
 
 An agent calls another agent as a sub-task, mid-execution -- native sub-agent delegation via the same Agent Protocol API. The mechanism is deliberately **not** a new protocol surface -- it's the exact same `POST /threads/{id}/runs` + wait-for-result path any client already uses, just reachable from inside a runner's own process via one new internal route (`POST /internal/a2a/runs`) instead of a public one.
+
+```mermaid
+sequenceDiagram
+  participant Coord as Coordinator agent
+  participant CP as Control plane
+  participant Work as Worker agent
+
+  Note over Coord,CP: Parent run already executing on a runner
+  Coord->>CP: call_agent / callAgent (internal A2A)
+  CP->>CP: depth check · parent/root bookkeeping
+  CP->>Work: enqueue child run (Runner Protocol)
+  Work-->>CP: result
+  CP-->>Coord: child output (wait=True)
+```
 
 **Python SDK**: `call_agent` (`python/runkite_runner/a2a.py`) is what a node calls, using the exact `config` LangGraph already passes it -- everything needed (the calling run's own `run_id`, the authenticated user to forward) is already there:
 

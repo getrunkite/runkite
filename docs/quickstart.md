@@ -1,6 +1,18 @@
 # Quickstart
 
-End-to-end walkthrough: build the control plane, run an agent, stream results via SDK.
+End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
+
+## Install (published artifacts)
+
+| Piece | Command |
+|-------|---------|
+| Control plane (binary) | Latest from [GitHub Releases](https://github.com/getrunkite/runkite/releases) · or `make build` below |
+| Control plane (Docker) | `docker pull ghcr.io/getrunkite/runkite:latest` |
+| Python runner | `pip install runkite-runner` · [PyPI](https://pypi.org/project/runkite-runner/) |
+| TypeScript runner | `npm install -g runkite-runner` · [npm](https://www.npmjs.com/package/runkite-runner) |
+| Helm | Chart in-repo [`deploy/helm/runkite`](../deploy/helm/runkite) (defaults to GHCR images) |
+
+Pin a release when you need reproducibility (`pip install runkite-runner==…`, `npm install runkite-runner@…`, `docker pull …:<tag>`). Binaries and GHCR images publish on `v*` tags via the Release workflow — not on every `main` push.
 
 ## Prerequisites
 

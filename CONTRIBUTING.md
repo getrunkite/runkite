@@ -49,7 +49,14 @@ make test-mongo
 make test-qdrant
 make test-all        # everything above, in one run
 make test-e2e        # black-box: real binary + real runner + Postgres/Redis
+make smoke-governance # governance announce bar on Postgres (run-bind / deny+audit / HITL)
 make infra-down
+
+# Kind Helm packaging smokes (K8s Compatible — not a cloud soak):
+make kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net
+
+# Framework × backend goldens (also nightly CI):
+make test-matrix
 
 # Runner/adapter tests:
 make test-python     # Python runner unit tests

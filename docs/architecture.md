@@ -1,8 +1,52 @@
 # Architecture
 
-> Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
->
-> Visuals (also in the root README Architecture section): [how it fits together](assets/ecosystem.png) · Mermaid “one run on the HA profile” sequence (Agent Protocol vs Runner Protocol).
+> Deep dive. Diagrams also on the [root README](../README.md#architecture) (ecosystem image, HA run sequence, A2A). Visuals here: [ecosystem.png](assets/ecosystem.png) · Mermaid below.
+
+### One run on the HA profile
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Client / SDK
+  participant LB as Load balancer
+  participant CP as CP replica
+  participant PG as Postgres
+  participant RD as Redis
+  participant R as LangGraph runner
+
+  Note over C,CP: Agent Protocol (HTTP / SSE / WebSocket)
+  C->>LB: POST create thread + run
+  LB->>CP: route to a replica
+  CP->>PG: persist thread + run
+  CP->>RD: enqueue job
+
+  Note over CP,R: Runner Protocol (gRPC) — Runkite-defined
+  R->>CP: GetJob
+  CP->>RD: dequeue
+  CP-->>R: RunAssignment (graph_id, input, config…)
+  Note over R: Runner loads the graph and runs the agent / LLM turn
+  R->>CP: StreamEvents
+  CP->>RD: publish events (multi-replica fan-out)
+
+  Note over C,CP: Agent Protocol again
+  CP-->>C: SSE / WebSocket live output
+```
+
+### Agent Protocol vs Runner Protocol
+
+**Creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
+
+**Runner Protocol is not that standard.** It is Runkite’s own internal contract ([`runner-protocol/PROTOCOL.md`](../runner-protocol/PROTOCOL.md), gRPC in [`proto/runner.proto`](../proto/runner.proto)): how the plane hands work to a worker process and how the worker streams events back. Clients never see it.
+
+| Step | Who → whom | What |
+|------|------------|------|
+| `GetJob` | Runner → plane | Long-poll for the next assignment |
+| `RunAssignment` | Plane → runner | `run_id`, `thread_id`, `graph_id`, `input`, `config`, auth context… |
+| Execute | Runner only | Load LangGraph / CrewAI / … and run the agent (LLM calls live here) |
+| `StreamEvents` | Runner → plane | Progress / messages / values / end |
+| Cancel / HITL | Plane ↔ runner | Side channels on the same protocol |
+
+So: Agent Protocol = “what the product client speaks.” Runner Protocol = “what our workers speak.” The plane translates between them, owns Postgres/Redis, and never imports LangGraph itself. Agent-to-agent delegation: [a2a.md](a2a.md).
 
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP / SSE / WebSocket surface
