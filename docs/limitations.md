@@ -16,6 +16,8 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 | **Rate limits** | Shared cluster-wide only with Redis backend (auto when `REDIS_URL` is set). |
 | **Observability** | OTel/Prometheus emit run + metadata LLM/tool spans — not full prompt/completion capture (use your OTLP backend / Langfuse). AutoGen uses native GenAI span names, not `runkite.llm` / `runkite.tool`. |
 | **Governance on Mongo** | Durable `audit_events` / `policy_grants` / `pending_actions` / `kill_switches` / `break_glass_windows` / `mandatory_hitl_rules` are SQL-only (Postgres / MySQL / SQLite). Mongo skips audit writes; Admin grant/pending/audit/kill/break-glass/mandatory-hitl routes return `501`; webhook `pending` cannot persist. See [Trust & governance](trust-governance.md#governance-durability-sql-backends). |
+| **Kubernetes / Helm** | Chart + kind install/ops smokes (`make kind-helm-smoke` … `kind-helm-net`) prove packaging. Multi-CP HA proof is Compose soak, not a published EKS/cloud soak — treat cluster installs as **Compatible** until then. |
+| **FinOps** | No spend dashboards / chargeback product. Policy hard caps (when enabled later) are not the same as FinOps UI. |
 | **Protocol surface** | Agent Protocol client search is offset-only (Admin lists have keyset cursors). TS / non-LangGraph runners report stub JSON Schema for agents. |
 | **License** | [BUSL-1.1](../LICENSE): self-host freely (including production); no offering Runkite as a hosted SaaS to third parties without a commercial license. Converts to Apache 2.0 on the Change Date. |
 

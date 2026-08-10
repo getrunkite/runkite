@@ -237,6 +237,10 @@ curl -s -X POST "http://localhost:2026/threads/$THREAD/runs/wait" \
 
 ## Next Steps
 
+### Plane governance (optional)
+
+With Postgres (or MySQL/SQLite), enable a `policy` section in `langgraph.json` for fail-closed connector grants, then use Admin **Grants / Pending / Audit** (and kill / break-glass / mandatory HITL). Details: [Trust & governance](trust-governance.md), [Admin UI](admin.md). Laptop proof: `make smoke-governance`.
+
 ### Enable Postgres (persistent state across restarts)
 
 ```bash

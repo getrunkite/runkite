@@ -6,13 +6,13 @@
     <title>Runkite — open, framework-agnostic agent control plane</title>
     <meta
       name="description"
-      content="What LangSmith Deployments would be if it were open source, framework-agnostic, and one Go binary. Agent Protocol API, pluggable runners, embedded Admin, connector grants and audit on the plane."
+      content="Self-hosted Agent Protocol control plane: pluggable runners, embedded Admin (ops + SQL governance), connector grants, audit, and HITL — one Go binary (BUSL preview)."
     />
     <meta name="theme-color" content="#050a0c" />
     <meta property="og:title" content="Runkite — open, framework-agnostic agent control plane" />
     <meta
       property="og:description"
-      content="Open Agent Protocol control plane: any framework runner, embedded Admin, connector grants and audit — one Go binary."
+      content="Self-hosted Agent Protocol control plane: any framework runner, Admin ops + governance, connector grants and audit — one Go binary."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://getrunkite.github.io/runkite/" />
@@ -21,7 +21,7 @@
     <meta name="twitter:title" content="Runkite — open, framework-agnostic agent control plane" />
     <meta
       name="twitter:description"
-      content="Open Agent Protocol control plane: any framework runner, embedded Admin, connector grants and audit — one Go binary."
+      content="Self-hosted Agent Protocol control plane: any framework runner, Admin ops + governance, connector grants and audit — one Go binary."
     />
     <meta name="twitter:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E" />
@@ -572,9 +572,9 @@
             <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
             <img
               src="./assets/admin-walkthrough.gif"
-              alt="Runkite Admin UI — overview, agents, threads, runs with live SSE"
-              width="1840"
-              height="1040"
+              alt="Runkite Admin UI — ops walkthrough (overview, agents, threads, runs); SQL governance pages include grants, pending HITL, kill, break-glass, and audit"
+              width="960"
+              height="600"
             />
           </div>
         </section>
@@ -597,7 +597,7 @@
             <span class="pill cyan">SSE · WebSocket · gRPC</span>
             <span class="pill">Agent-to-agent</span>
             <span class="pill cyan">OTel</span>
-            <span class="pill">Connector grants · audit</span>
+            <span class="pill">Admin grants · HITL · kill · audit</span>
             <span class="pill cyan">pgvector · Qdrant · Pinecone</span>
           </div>
         </section>
@@ -606,17 +606,20 @@
           <p class="section-kicker">$ cat policy.json</p>
           <h2>Govern the plane, not only the prompt.</h2>
           <p class="section-copy">
-            Fail-closed connector grants, durable policy audit, and connector HITL on SQL backends — run-bound
-            so tenant comes from the assignment, not a forged header. Laptop proof:
-            <code style="color: var(--mint)">make smoke-governance</code>. Not Mongo parity, not in-graph tool
-            sandboxing, not a paid cloud soak.
+            Fail-closed connector grants, durable policy audit, connector HITL, kill/pause, break-glass, and
+            mandatory HITL on SQL backends — with Admin pages for each. Run-bound so tenant comes from the
+            assignment, not a forged header. Laptop proof:
+            <code style="color: var(--mint)">make smoke-governance</code>. Not Mongo governance parity, not
+            in-graph tool sandboxing, not FinOps dashboards, not a paid cloud soak.
           </p>
           <div class="pill-row">
             <span class="pill">Run-binding</span>
-            <span class="pill cyan">Static grants</span>
-            <span class="pill">Sync policy webhook</span>
-            <span class="pill cyan">Audit search</span>
-            <span class="pill">Pending HITL</span>
+            <span class="pill cyan">Grants</span>
+            <span class="pill">Mandatory HITL</span>
+            <span class="pill cyan">Pending HITL</span>
+            <span class="pill">Kill</span>
+            <span class="pill cyan">Break-glass</span>
+            <span class="pill">Audit</span>
             <span class="pill cyan">Postgres Supported</span>
           </div>
         </section>
@@ -685,9 +688,9 @@
       (function () {
         const phrases = [
           "LangSmith-style — then more: any framework, your backends, one Go binary.",
-          "Connector grants, durable audit, HITL — governance on the plane you run.",
+          "Admin governance: grants, HITL, kill, break-glass, audit — on the plane.",
           "Agent Protocol API. Pluggable runners. Agent-to-agent. Embedded Admin.",
-          "Postgres + Redis for HA — honest tiers; Kubernetes Compatible for now.",
+          "Postgres + Redis HA (Compose soak); Kubernetes packaging stays Compatible.",
         ];
         const el = document.getElementById("typed");
         let pi = 0;

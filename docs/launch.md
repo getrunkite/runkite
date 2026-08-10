@@ -44,8 +44,9 @@ locked to LangGraph. Runners plug in over a small gRPC protocol:
 LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js.
 
 Beyond the ops plane: fail-closed connector grants, durable policy audit,
-and connector HITL on SQL backends (Postgres Supported). Prove locally
-with `make smoke-governance`. Multi-CP HA is soaked on Compose
+connector HITL, kill/pause, and break-glass on SQL backends — with Admin
+pages for each (Postgres Supported). Prove locally with
+`make smoke-governance`. Multi-CP HA is soaked on Compose
 (Postgres+Redis); Helm/kind are packaging smokes — Kubernetes stays
 Compatible until a real-cloud soak.
 

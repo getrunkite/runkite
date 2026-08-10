@@ -4,7 +4,7 @@
 
 That line is the familiar category (durable agent runs you operate yourself). Runkite goes further: a self-hosted [Agent Protocol](https://github.com/langchain-ai/agent-protocol) control plane you own — not a LangSmith API clone, not LangGraph-only. Pluggable runners (LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js), agent-to-agent delegation, embedded Admin UI, and backends beyond a single PG+Redis stack (MySQL, MongoDB, NATS, Kafka, vectors — with honest Supported tiers).
 
-**On the plane, not only in the agent:** fail-closed connector grants, durable policy audit, and connector HITL on SQL backends ([Trust & governance](docs/trust-governance.md)). Prove with `make smoke-governance`. Multi-CP HA is soaked on Compose (`make soak-multi`); Kubernetes/Helm stays Compatible until a real-cloud soak.
+**On the plane, not only in the agent:** fail-closed connector grants, durable policy audit, connector HITL, kill/pause, and break-glass on SQL backends — with Admin pages for each ([Trust & governance](docs/trust-governance.md), [Admin UI](docs/admin.md)). Prove the announce bar with `make smoke-governance`. Multi-CP HA is soaked on Compose (`make soak-multi`); kind Helm smokes (`kind-helm-smoke` … `kind-helm-net`) are install/ops proofs — Kubernetes stays Compatible until a real-cloud soak. Not FinOps dashboards; not equal governance on Mongo.
 
 - Website: https://getrunkite.github.io/runkite/
 - Releases / binaries: https://github.com/getrunkite/runkite/releases
@@ -25,7 +25,8 @@ That line is the familiar category (durable agent runs you operate yourself). Ru
 </p>
 
 <p align="center">
-  <b>Admin UI</b> — overview, agents, threads, runs (live SSE), connectors, cron, webhooks<br/>
+  <b>Admin UI</b> — ops (overview, agents, registry, threads, runs with live SSE, connectors, cron, webhooks)<br/>
+  plus SQL governance: grants, mandatory HITL, pending, kill, break-glass, audit<br/>
   Open at <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
 </p>
 
@@ -39,7 +40,7 @@ That line is the familiar category (durable agent runs you operate yourself). Ru
 | **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, LangGraph.js over the same gRPC Runner Protocol |
 | **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`) — same Agent Protocol path, with depth limits, cancel cascade, and cost rollup |
 | **Ops without a second deploy** | React Admin UI embedded via `embed.FS` — no Node runtime for end users |
-| **Plane governance** | Run-bound connectors/store/vectors, fail-closed grants, durable audit, connector HITL — on SQL backends. See [Trust & governance](docs/trust-governance.md); prove with `make smoke-governance` |
+| **Plane governance** | Run-bound connectors/store/vectors; grants, mandatory HITL, pending HITL, kill, break-glass, audit (SQL Admin). See [Trust & governance](docs/trust-governance.md); prove with `make smoke-governance` |
 | **Honest backends** | **Supported:** Postgres + Redis HA. **Also wired:** SQLite, MySQL, MongoDB, NATS, Kafka, pgvector / Qdrant / Weaviate / Pinecone — with documented tiers, not equal claims |
 
 ## Architecture
@@ -219,8 +220,8 @@ runkite version         Version info
 
 | Tier | Meaning |
 |------|---------|
-| **Supported** | Multi-replica HA, Helm defaults, primary CI focus |
-| **Compatible** | Same conformance suite; known gaps / thinner soak evidence |
+| **Supported** | Multi-replica HA on Postgres + Redis (Compose soak); primary CI/matrix focus |
+| **Compatible** | Same conformance suite; known gaps / thinner soak — includes Helm/kind packaging (not a cloud soak) |
 | **Experimental** | Single-instance or incomplete multi-replica primitives |
 
 | Concern | Supported | Compatible | Experimental |
@@ -230,7 +231,7 @@ runkite version         Version info
 | **Mixed** | — | Kafka queue **+ Redis** broker/cancel | — |
 | **Vectors** | **pgvector** | Qdrant, Weaviate, Pinecone | — |
 
-Production default: `POSTGRES_DSN` + `REDIS_URL` ([Helm](deploy/helm/runkite), `docker-compose.multi.yml`). Details: [docs/architecture.md](docs/architecture.md).
+Production default: `POSTGRES_DSN` + `REDIS_URL` (`docker-compose.multi.yml`; Helm chart packages the same *backend* profile — cluster install remains Compatible). Details: [docs/architecture.md](docs/architecture.md).
 
 ## Documentation
 
@@ -264,6 +265,7 @@ make test                    # SQLite + in-memory + protocol fixtures
 make test-all                # All backends (needs infra-up)
 make test-e2e                # Tier-0 black-box E2E
 make smoke-governance        # Governance announce bar on Postgres (run-bind / deny+audit / HITL)
+make kind-helm-smoke         # Kind Helm install smoke (K8s Compatible packaging)
 make test-matrix             # Framework × backend goldens (nightly CI)
 make test-protocol-fixtures  # runner-protocol/examples schema + lifecycle
 make test-protocol-execute   # execute_run → expected_events goldens (Python)

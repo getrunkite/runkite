@@ -10,7 +10,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Auth](auth.md) | Auth, TLS/mTLS, multi-tenancy |
 | [Trust & governance](trust-governance.md) | Trust boundary, run-binding, non-goals; `make smoke-governance` |
 | [Launch / announcement](launch.md) | Governance-preview channel copy + pre-flight (maintainer) |
-| [Admin UI](admin.md) | Embedded operator UI |
+| [Admin UI](admin.md) | Embedded ops + SQL governance pages (grants, HITL, kill, audit, …) |
 | [Factory Graphs](factory-graphs.md) | LangGraph SDK factory-graph compatibility |
 | [Vector Store](vector-store.md) | Vector store backends and APIs |
 | [Connectors](connectors.md) | Connectors and custom routes |
@@ -19,7 +19,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Registry](registry.md) | Agent marketplace / registry |
 | [Architecture](architecture.md) | Control plane, backends, dual modes |
 | [Runners](runners.md) | Python and TypeScript runners |
-| [Deployment](deployment.md) | Docker, Helm, local development |
+| [Deployment](deployment.md) | Docker, Helm/kind (Compatible), Compose soak |
 | [API](api.md) | OpenAPI and HTTP API reference |
 | [Known Limitations](limitations.md) | Release summary + full caveats (link from GitHub Releases) |
 | [Test plan crosswalk](test-plan-crosswalk.md) | Internal test-plan IDs → done / mixed / gap (honesty map) |

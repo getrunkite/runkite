@@ -9,7 +9,9 @@
 - State persistence (SQLite default; Postgres Supported; MySQL/Mongo Compatible)
 - Transport layer (in-memory default; Redis Supported; NATS Compatible; Kafka Experimental / Compatible-with-Redis)
 - Auth engine (JWT, API key, webhook, plus a separate runner-token tier for the gRPC bridge)
-- Connector/MCP registry
+- Connector/MCP registry with run-bound session + MCP proxy
+- Plane governance: fail-closed policy grants, durable audit, connector HITL, kill/pause, break-glass, mandatory HITL (SQL durability — see [Trust & governance](trust-governance.md))
+- Embedded Admin UI (ops + SQL governance pages — see [Admin UI](admin.md))
 - Prometheus metrics (`/metrics`)
 - Job dispatch (gRPC long-poll)
 - Multi-replica HA when paired with a shared state + transport profile (see tiers below)
@@ -26,23 +28,23 @@ Not every pluggable backend is equally battle-tested for multi-replica productio
 
 | Tier | Meaning |
 |------|---------|
-| **Supported** | Production profile: multi-replica HA, Helm defaults, primary CI/matrix focus. Residual gaps, if any, are documented and small. |
-| **Compatible** | Passes the same conformance suite and is wired into `serve`, but has known semantic gaps vs Supported, thinner soak evidence, and/or ops caveats. Fine for real use when you accept those gaps. |
+| **Supported** | Production profile: multi-replica HA on Postgres + Redis (Compose soak proof), primary CI/matrix focus. Residual gaps, if any, are documented and small. |
+| **Compatible** | Passes the same conformance suite and is wired into `serve`, but has known semantic gaps vs Supported, thinner soak evidence, and/or ops caveats — including Helm/kind packaging (install smokes, not a cloud soak). Fine for real use when you accept those gaps. |
 | **Experimental** | Works for single-instance / specialized setups; multi-replica or HA behavior has residual races or incomplete primitives. Do not treat as an equal HA alternative to Supported. |
 
-**Recommended production profile:** `POSTGRES_DSN` + `REDIS_URL` (state + full transport triad + shared rate limits + Kafka reclaim leader when Kafka is also used). That is what [`deploy/helm/runkite`](../deploy/helm/runkite) and `docker-compose.multi.yml` assume.
+**Recommended production profile:** `POSTGRES_DSN` + `REDIS_URL` (state + full transport triad + shared rate limits + Kafka reclaim leader when Kafka is also used). That is what `docker-compose.multi.yml` soaks and what [`deploy/helm/runkite`](../deploy/helm/runkite) packages as the Supported *backend* overlay — Kubernetes install itself stays Compatible until a real-cloud soak.
 
 | Concern | Supported | Compatible | Experimental |
 |---------|-----------|------------|--------------|
 | **State** (agents/threads/runs/store/cron) | **Postgres** | SQLite (local/dev, single process), MySQL, MongoDB (replica set required) | — |
-| **Governance durability** (audit / grant overlays / pending HITL) | **Postgres** | MySQL, SQLite (same tables); **Mongo: not implemented** (`501` / skip write) — see [Trust & governance](trust-governance.md#governance-durability-sql-backends) | — |
+| **Governance durability** (audit / grants / pending HITL / kill / break-glass / mandatory HITL) | **Postgres** | MySQL, SQLite (same tables); **Mongo: not implemented** (`501` / skip write) — see [Trust & governance](trust-governance.md#governance-durability-sql-backends) | — |
 | **Transport** (queue + event broker + cancel) | **Redis** (full triad) | NATS/JetStream (full triad; `EventBroker.Close` is a no-op vs Redis), in-process (single replica only) | Kafka **queue-only** without Redis (no cluster reclaim lock) |
 | **Mixed transport** | — | Kafka queue **+ Redis** broker/cancel + Redis reclaim-leader lease | — |
 | **Vector store** | **pgvector** (on Supported Postgres) | Qdrant, Weaviate (filter pagination bound), Pinecone | — |
 
 Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`, `NATS_URL`, and/or `KAFKA_URL`. No code changes. Details and residual-risk notes for each driver live in the sections below (NATS Close gap, Kafka partitions/reclaim, Mongo replica-set requirement, Weaviate filter ceiling, checkpoint direct-mode Postgres-only, etc.).
 
-**Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the Helm/multi-compose topology without extra caveats. MySQL and SQLite share SQL governance tables with Postgres (audit / grants / pending); Mongo does not. NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
+**Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the multi-compose topology without extra caveats. MySQL and SQLite share SQL governance tables with Postgres (audit / grants / pending / kill / break-glass / mandatory HITL); Mongo does not. NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
 
 MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `state.Store` is implementable against a document store, and a template for community backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db downgrade`/`db reset` via `MYSQL_DSN` (Mongo via `MONGO_URI` the same way); DynamoDB remains a documented possible future driver, not built at all.
 

@@ -1,10 +1,12 @@
 # Trust & governance
 
-Runkite is a control plane. Security that fits is **governance of the plane**: who can run which agent, with which tools/secrets, under which budgets, with kill-switches and an audit trail — self-hosted.
+Runkite is a control plane. Security that fits is **governance of the plane**: who can run which agent, with which connectors/tools/secrets, with kill-switches, break-glass, and an audit trail — self-hosted. (Not a FinOps product; spend dashboards are out of scope here.)
 
 This page documents the trust boundary and what is (and is not) enforced today. It deliberately under-promises.
 
 **Announce bar (verify, don’t rebuild):** run-binding, connector policy deny + durable audit, Admin audit search, and connector HITL (pending → approve → one-shot retry) are exercised by `make smoke-governance` on Postgres. That smoke is the laptop proof for those exits — not Mongo parity, not in-graph tool sandboxing, not a paid cloud soak, and not FinOps dashboards.
+
+**Admin UI (SQL):** `/admin/grants`, `/admin/mandatory-hitl`, `/admin/pending`, `/admin/kill`, `/admin/break-glass`, `/admin/audit` — see [Admin UI](admin.md#governance-pages-sql-backends).
 
 ## Trust boundary
 
@@ -86,7 +88,7 @@ Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs
 | OTel `policy.decide` + optional SIEM `policy_decision` | Yes | Yes (not store-backed) |
 | `tool_auth` RunEvents | Yes | Yes |
 
-**Security marketing rule:** claim audit search, Admin grant overlays, connector HITL, kill switches, and break-glass windows for SQL state backends. Mongo is fine for agent runs and connector policy *enforcement* when grants/webhook live in `langgraph.json`, but it is **not** an equal governance proof. Production HA still prefers Postgres + Redis (direct-mode checkpoints, Helm defaults); MySQL/SQLite share the governance tables.
+**Security marketing rule:** claim audit search, Admin grant overlays, connector HITL, kill switches, break-glass, and mandatory HITL for SQL state backends. Mongo is fine for agent runs and connector policy *enforcement* when grants/webhook live in `langgraph.json`, but it is **not** an equal governance proof. Production HA still prefers Postgres + Redis (direct-mode checkpoints; Compose soak); Helm packages that backend profile but cluster install stays Compatible until a cloud soak. MySQL/SQLite share the governance tables.
 
 ## Connector policy
 

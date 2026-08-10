@@ -4,7 +4,7 @@
 
 ![Admin UI walkthrough](assets/admin-walkthrough.gif)
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, webhook dead-letters, durable policy grants, the connector HITL pending queue, and policy audit decisions (SQL state backends).
+A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters — plus SQL governance pages: durable policy grants, mandatory HITL overlays, the connector HITL pending queue, kill/pause switches, break-glass windows, and policy audit search. The walkthrough GIF above is ops-focused; the governance routes are listed in the table below.
 
 ```
 runkite serve --config langgraph.json
@@ -87,5 +87,5 @@ flowchart LR
   A[Login] --> B[Overview]
   B --> C[Inspect run stream]
   C --> D[Cancel run]
-  B --> E[Grants / Pending / Kill / Break-glass / Audit]
+  B --> E[Grants / Mandatory HITL / Pending / Kill / Break-glass / Audit]
 ```
