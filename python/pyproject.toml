@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "runkite-runner"
-version = "0.1.1"
+version = "0.2.0"
 description = "Python runner for Runkite: gRPC Agent Protocol worker for LangGraph (and in-repo adapters)."
 readme = "README.md"
 license = { text = "BUSL-1.1" }
