@@ -15,7 +15,7 @@ Governance-preview cut: plane policy + Admin governance on SQL backends, announc
 - `make smoke-governance` / CI announce-bar coverage on Postgres
 - Kind Helm packaging smokes (`kind-helm-smoke` … `kind-helm-net`)
 - MCP connector session tokens; Redis-shared Admin sessions; Helm pod TLS wiring
-- Launch copy: [`docs/launch.md`](docs/launch.md) · trust notes: [`docs/trust-governance.md`](docs/trust-governance.md)
+- Trust notes: [`docs/trust-governance.md`](docs/trust-governance.md)
 
 ### Fixed
 - Policy decision cache key includes `principal` (no Alice→Bob allow leak when `cache_ttl_ms` > 0)
