@@ -1,6 +1,6 @@
 module github.com/getrunkite/runkite
 
-go 1.25.12
+go 1.25.14
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.0
