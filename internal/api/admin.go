@@ -453,7 +453,8 @@ func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Reques
 	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
-// GET /admin-api/runs?limit=&offset=&cursor= -- optional ?status=&agent_id=&thread_id= filters.
+// GET /admin-api/runs?limit=&offset=&cursor= -- optional
+// ?status=&agent_id=&thread_id=&parent_run_id=&root_run_id= filters.
 func (s *Server) handleAdminListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.SystemContext(r.Context())
 	paging, err := adminListPaging(r)
@@ -468,11 +469,13 @@ func (s *Server) handleAdminListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req := models.RunSearchRequest{
-		Limit:    paging.Limit,
-		Offset:   paging.Offset,
-		Cursor:   paging.Cursor,
-		AgentID:  r.URL.Query().Get("agent_id"),
-		ThreadID: r.URL.Query().Get("thread_id"),
+		Limit:       paging.Limit,
+		Offset:      paging.Offset,
+		Cursor:      paging.Cursor,
+		AgentID:     r.URL.Query().Get("agent_id"),
+		ThreadID:    r.URL.Query().Get("thread_id"),
+		ParentRunID: r.URL.Query().Get("parent_run_id"),
+		RootRunID:   r.URL.Query().Get("root_run_id"),
 	}
 	if status := r.URL.Query().Get("status"); status != "" {
 		st := models.RunStatus(status)

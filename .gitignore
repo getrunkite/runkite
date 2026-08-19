@@ -55,6 +55,13 @@ plans/llm/
 # Contains product-migration narrative that must not ship.
 plans/
 
+# Founder-private deep product walkthroughs (not for the public tree).
+explain_in_details/
+
+# Employer-internal agent clones + local multi-agent Runkite demo.
+# Corporate code -- must never ship to the public Runkite tree.
+rh-agents-demo/
+
 # External audit reports: itemized lists of exactly what's insecure/
 # broken right now, useful while triaging but a real disclosure-timing
 # risk to publish before the findings are actually fixed.

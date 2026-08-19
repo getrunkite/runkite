@@ -74,6 +74,12 @@ export interface AdminRun {
   config?: unknown;
   output?: unknown;
   error?: string;
+  /** Set when this run was created via A2A delegation from another run. */
+  parent_run_id?: string;
+  /** Top of the A2A delegation tree (equals run_id for a root run). */
+  root_run_id?: string;
+  /** 0 for a top-level run; parent.depth + 1 for a delegated child. */
+  depth?: number;
 }
 
 export interface AdminConnector {

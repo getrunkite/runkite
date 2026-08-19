@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -639,12 +640,26 @@ func (c *LangGraphConfig) ParseGraphEntries() ([]GraphEntry, error) {
 
 // FindLangGraphJSON searches for langgraph.json in common locations.
 // Priority: explicit path > CWD > examples/*/langgraph.json
+//
+// If explicit is a directory, every *.json file in that directory is
+// returned (sorted) so one control plane can bootstrap many agent
+// configs — each file may declare its own runner_kind for multi-venv
+// fleets (one runner process per file).
 func FindLangGraphJSON(explicit string) []string {
 	if explicit != "" {
-		if _, err := os.Stat(explicit); err == nil {
-			return []string{explicit}
+		info, err := os.Stat(explicit)
+		if err != nil {
+			return nil
 		}
-		return nil
+		if info.IsDir() {
+			matches, err := filepath.Glob(filepath.Join(explicit, "*.json"))
+			if err != nil || len(matches) == 0 {
+				return nil
+			}
+			sort.Strings(matches)
+			return matches
+		}
+		return []string{explicit}
 	}
 
 	var found []string

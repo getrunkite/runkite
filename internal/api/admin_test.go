@@ -370,6 +370,50 @@ func TestAdminListRuns_FiltersByQueryParams(t *testing.T) {
 	}
 }
 
+// TestAdminListRuns_FiltersByParentAndRootRunID proves the Admin runs list
+// exposes the same A2A delegation filters (?parent_run_id=&root_run_id=)
+// as the client-facing POST /runs/search, so the Admin UI's Run Detail
+// "Agent-to-agent" panel can list a run's direct children.
+func TestAdminListRuns_FiltersByParentAndRootRunID(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+
+	root := "root-run"
+	env.store.CreateRun(ctx, &models.Run{RunID: root, ThreadID: "t1", AgentID: "coordinator", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+	env.store.CreateRun(ctx, &models.Run{RunID: "child-1", ThreadID: "t1", AgentID: "worker", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{}, ParentRunID: &root, RootRunID: &root, Depth: 1, CreatedAt: now, UpdatedAt: now})
+	env.store.CreateRun(ctx, &models.Run{RunID: "child-2", ThreadID: "t1", AgentID: "worker", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{}, ParentRunID: &root, RootRunID: &root, Depth: 1, CreatedAt: now, UpdatedAt: now})
+	env.store.CreateRun(ctx, &models.Run{RunID: "unrelated", ThreadID: "t1", AgentID: "solo", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
+
+	byParent, err := http.Get(env.srv.URL + "/admin-api/runs?parent_run_id=" + root)
+	if err != nil {
+		t.Fatalf("GET ?parent_run_id=: %v", err)
+	}
+	defer byParent.Body.Close()
+	var parentRuns []map[string]interface{}
+	json.NewDecoder(byParent.Body).Decode(&parentRuns)
+	if len(parentRuns) != 2 {
+		t.Fatalf("expected 2 direct children of %s, got %+v", root, parentRuns)
+	}
+	for _, r := range parentRuns {
+		if r["parent_run_id"] != root {
+			t.Errorf("expected parent_run_id=%s, got %+v", root, r)
+		}
+	}
+
+	byRoot, err := http.Get(env.srv.URL + "/admin-api/runs?root_run_id=" + root)
+	if err != nil {
+		t.Fatalf("GET ?root_run_id=: %v", err)
+	}
+	defer byRoot.Body.Close()
+	var rootRuns []map[string]interface{}
+	json.NewDecoder(byRoot.Body).Decode(&rootRuns)
+	if len(rootRuns) != 2 {
+		t.Fatalf("expected 2 runs with root_run_id=%s, got %+v", root, rootRuns)
+	}
+}
+
 // TestAdminList_LimitOffsetPaging proves Admin list endpoints page with
 // ?limit=&offset= (bare array; has-more when len == limit) instead of
 // silently truncating at a hard 1000-row sample.

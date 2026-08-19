@@ -7,6 +7,7 @@ import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
 import type { AdminRun } from "../api/types";
 import { ErrorState, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
+import { adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -40,6 +41,8 @@ const EVENT_COLORS: Record<string, string> = {
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
   const run = useApi<AdminRun>(`/runs/${runId}`, [runId]);
+  const childrenPath = runId ? adminListPath("/runs", undefined, { parent_run_id: runId }) : "";
+  const children = useApi<AdminRun[]>(childrenPath, [runId]);
   const [events, setEvents] = useState<LogEntry[]>([]);
   const [streaming, setStreaming] = useState(true);
   const [cancelling, setCancelling] = useState(false);
@@ -85,6 +88,13 @@ export function RunDetail() {
   if (!run.data) return null;
 
   const isTerminal = TERMINAL_STATUSES.has(run.data.status);
+  const childRuns = children.data ?? [];
+  // Show A2A panel for delegated children immediately; for parents wait until
+  // the child-run query finishes so ordinary runs don't flash an empty card.
+  const showA2A =
+    Boolean(run.data.parent_run_id) ||
+    (run.data.depth ?? 0) > 0 ||
+    (!children.loading && childRuns.length > 0);
 
   return (
     <div>
@@ -153,6 +163,19 @@ export function RunDetail() {
                 <span className="text-muted-foreground">—</span>
               )}
             </DetailRow>
+            {run.data.parent_run_id && (
+              <DetailRow label="Parent run">
+                <Link
+                  to={`/admin/runs/${run.data.parent_run_id}`}
+                  className="font-mono text-xs text-primary hover:underline"
+                >
+                  {run.data.parent_run_id}
+                </Link>
+              </DetailRow>
+            )}
+            {(run.data.depth ?? 0) > 0 && (
+              <DetailRow label="A2A depth">{run.data.depth}</DetailRow>
+            )}
             <DetailRow label="Created">{formatTimestamp(run.data.created_at)}</DetailRow>
             <DetailRow label="Updated" last>
               {formatTimestamp(run.data.updated_at)}
@@ -175,6 +198,71 @@ export function RunDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {showA2A && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Agent-to-agent</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {run.data.parent_run_id ? (
+              <p>
+                This run was delegated from{" "}
+                <Link to={`/admin/runs/${run.data.parent_run_id}`} className="font-mono text-xs text-primary hover:underline">
+                  {run.data.parent_run_id}
+                </Link>
+                {run.data.agent_id ? (
+                  <>
+                    {" "}
+                    (<span className="font-medium">{run.data.agent_id}</span> as child).
+                  </>
+                ) : (
+                  "."
+                )}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Top-level run. Child runs created via A2A show up below when this agent delegated mid-flight.
+              </p>
+            )}
+            {children.loading && <p className="text-muted-foreground">Loading child runs…</p>}
+            {!children.loading && childRuns.length === 0 && !run.data.parent_run_id && (
+              <p className="text-muted-foreground">No child runs for this run.</p>
+            )}
+            {childRuns.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-border/60">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Child run</th>
+                      <th className="px-3 py-2 font-medium">Agent</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {childRuns.map((c) => (
+                      <tr key={c.run_id} className="border-t border-border/60">
+                        <td className="px-3 py-2">
+                          <Link
+                            to={`/admin/runs/${c.run_id}`}
+                            className="font-mono text-xs text-primary hover:underline"
+                          >
+                            {c.run_id}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2">{c.agent_id || "—"}</td>
+                        <td className="px-3 py-2">
+                          <StatusBadge status={c.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
