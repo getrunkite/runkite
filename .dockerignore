@@ -1,13 +1,19 @@
 .git
-.venv
-python/.venv
 *.db
 runkite
 .cursor/
 .github/
 plans/
-node_modules/
 typescript/*/dist/
+# Bare "node_modules/"/".venv" only matched the repo root, not per-example
+# dirs like examples/*/node_modules -- **/ matches at any depth, so a
+# locally-built image (unlike CI's fresh checkout) can't accidentally bake
+# in a dev machine's installed example deps (and their CVEs) alongside the
+# examples/*/langgraph.json files the image genuinely needs.
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/*.pyc
 # admin-ui's source/toolchain isn't needed in the Docker build context --
 # its build output is committed straight into internal/adminui/dist/
 # (see internal/adminui/adminui.go), which the Go build already picks up.
