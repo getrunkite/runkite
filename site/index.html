@@ -562,6 +562,142 @@
         object-position: top left;
       }
 
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.25rem;
+        margin-bottom: 2rem;
+      }
+
+      .scenario-panel {
+        border-radius: 1rem;
+        border: 1px solid var(--line);
+        background: var(--glass);
+        backdrop-filter: blur(10px);
+        padding: 1.25rem 1.2rem 1.35rem;
+        min-height: 100%;
+      }
+
+      .scenario-panel .label {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0 0 0.85rem;
+      }
+
+      .scenario-panel.without .label {
+        color: #ff8f8a;
+      }
+
+      .scenario-panel.with .label {
+        color: var(--mint);
+      }
+
+      .scenario-panel h3 {
+        margin: 0 0 0.65rem;
+        font-size: 1.2rem;
+        letter-spacing: -0.02em;
+        font-weight: 700;
+      }
+
+      .scenario-panel p {
+        margin: 0 0 1rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+
+      .scene-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+
+      .scene-row {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+      }
+
+      .scene-node {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        padding: 0.45rem 0.65rem;
+        border-radius: 0.45rem;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: #d7ffe9;
+      }
+
+      .scenario-panel.without .scene-node {
+        border-color: rgba(255, 143, 138, 0.35);
+        color: #ffd4d1;
+      }
+
+      .scene-node.plane {
+        border-color: rgba(62, 240, 168, 0.45);
+        background: rgba(62, 240, 168, 0.08);
+        color: var(--mint);
+      }
+
+      .scene-node.conn {
+        border-color: rgba(30, 201, 255, 0.45);
+        background: rgba(30, 201, 255, 0.08);
+        color: #9ae7ff;
+      }
+
+      .scene-arrow {
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.8rem;
+      }
+
+      .gain-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .gain-list li {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.75rem;
+        align-items: start;
+        padding: 0.85rem 0;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.98rem;
+        line-height: 1.45;
+      }
+
+      .gain-list li:first-child {
+        border-top: none;
+        padding-top: 0;
+      }
+
+      .gain-list strong {
+        display: block;
+        color: var(--ink);
+        margin-bottom: 0.15rem;
+      }
+
+      .gain-list .mark {
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.68rem;
+        color: #04110c;
+        background: linear-gradient(120deg, var(--mint), var(--mint-2));
+        margin-top: 0.1rem;
+      }
+
       .terminal + .terminal {
         margin-top: 1.15rem;
       }
@@ -638,6 +774,9 @@
         .try-visual {
           grid-template-columns: 1fr;
         }
+        .scenario-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 720px) {
@@ -683,6 +822,7 @@
       <header>
         <a class="logo" href="./">~/ <span>runkite</span></a>
         <nav class="nav">
+          <a href="#scenario">Scenario</a>
           <a href="#try">Try it</a>
           <a class="hide-sm" href="#stack">Stack</a>
           <a class="hide-sm" href="#governance">Governance</a>
@@ -700,7 +840,7 @@
           </p>
           <div class="cta">
             <a class="btn btn-primary" href="#try">Try it in 5 minutes →</a>
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite">Star on GitHub</a>
+            <a class="btn btn-ghost" href="#scenario">Why a plane</a>
           </div>
           <div class="hero-visual">
             <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -713,68 +853,120 @@
           </div>
         </section>
 
-        <section id="stack" class="reveal">
-          <p class="section-kicker">$ cat frameworks.json</p>
-          <h2>Bring your framework. Same control plane.</h2>
+        <section id="scenario" class="reveal">
+          <p class="section-kicker">Scenario · why a plane</p>
+          <h2>Three agents. Two frameworks. One shared connector.</h2>
           <p class="section-copy">
-            LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, and LangGraph.js — one gRPC Runner Protocol,
-            one Go binary, embedded Admin UI. No second deploy for ops.
+            When a single LangGraph script stops being enough: a LangGraph coordinator and worker,
+            plus a second runner kind when you need another framework — same connector secret, not
+            three <code style="color: var(--mint)">.env</code> copies.
           </p>
-          <div class="pill-row">
-            <span class="pill">LangGraph</span>
-            <span class="pill cyan">CrewAI</span>
-            <span class="pill">LlamaIndex</span>
-            <span class="pill cyan">AutoGen</span>
-            <span class="pill">LangChain</span>
-            <span class="pill cyan">LangGraph.js</span>
-            <span class="pill">Postgres + Redis HA</span>
-            <span class="pill cyan">SSE · WebSocket · gRPC</span>
-            <span class="pill">Agent-to-agent</span>
-            <span class="pill cyan">OTel</span>
-            <span class="pill">Admin grants · HITL · kill · audit</span>
-            <span class="pill cyan">pgvector · Qdrant · Pinecone</span>
+          <div class="scenario-grid">
+            <div class="scenario-panel without">
+              <p class="label">Without a control plane</p>
+              <h3>Three scripts, three copies of the secret</h3>
+              <p>Each agent process owns its own env, HITL, and logs. Delegation is ad hoc HTTP. Ops is SSH + grep.</p>
+              <div class="scene-stack">
+                <div class="scene-row">
+                  <span class="scene-node">LangGraph · coordinator</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">GITHUB_TOKEN in .env</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node">LangGraph · worker</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">GITHUB_TOKEN again</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node">CrewAI / LangGraph.js</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">same secret, third place</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node">A2A?</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">custom HTTP glue per pair</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node">Ops?</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">3 dashboards, 3 log streams</span>
+                </div>
+              </div>
+            </div>
+            <div class="scenario-panel with">
+              <p class="label">With Runkite</p>
+              <h3>One plane. Run-bound sessions. Shared Admin.</h3>
+              <p>Clients hit Agent Protocol. Runners pull jobs. Connectors mint credentials from the assignment — not from forged headers.</p>
+              <div class="scene-stack">
+                <div class="scene-row">
+                  <span class="scene-node">Client / SDK</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node plane">Control plane</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node conn">connector session</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node plane">CP</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">LangGraph runner · coordinator + worker</span>
+                </div>
+                <div class="scene-row">
+                  <span class="scene-node plane">CP</span>
+                  <span class="scene-arrow">→</span>
+                  <span class="scene-node">CrewAI / LangGraph.js runner</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <ul class="gain-list">
+            <li>
+              <span class="mark" aria-hidden="true">1</span>
+              <div>
+                <strong>Shared connector, not shared .env</strong>
+                Configure once in the plane. Agents call
+                <code style="color: var(--mint)">get_connector_session</code> /
+                <code style="color: var(--mint)">getConnectorSession</code> under run-binding and optional grants.
+              </div>
+            </li>
+            <li>
+              <span class="mark" aria-hidden="true">2</span>
+              <div>
+                <strong>Agent-to-agent on the same queue</strong>
+                Coordinator delegates with
+                <code style="color: var(--mint)">call_agent</code> /
+                <code style="color: var(--mint)">callAgent</code>
+                — depth limits, cancel cascade, parent/child visible in Admin.
+              </div>
+            </li>
+            <li>
+              <span class="mark" aria-hidden="true">3</span>
+              <div>
+                <strong>Two frameworks, one ops surface</strong>
+                HITL, kill/pause, audit, and threads live on the plane whether the graph is LangGraph or another runner.
+              </div>
+            </li>
+          </ul>
+          <p class="section-copy" style="margin-top: 1.25rem; margin-bottom: 0">
+            In Admin you should see parent/child runs for A2A and one connector grant reused across
+            agents — not three pasted tokens.
+          </p>
+          <div class="cta" style="margin-top: 1.75rem">
+            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/tree/main/examples/a2a_agent"
+              >A2A example (LangGraph) →</a
+            >
+            <a class="btn btn-ghost" href="#try">Try it</a>
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/tree/main/examples/crewai_agent"
+              >CrewAI example</a
+            >
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/tree/main/examples/echo_agent_ts"
+              >LangGraph.js example</a
+            >
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md"
+              >Connectors</a
+            >
           </div>
         </section>
-
-        <section id="governance" class="reveal">
-          <p class="section-kicker">$ cat policy.json</p>
-          <h2>Govern the plane, not only the prompt.</h2>
-          <p class="section-copy">
-            Fail-closed connector grants, durable policy audit, connector HITL, kill/pause, break-glass, and
-            mandatory HITL on SQL backends — with Admin pages for each. Run-bound so tenant comes from the
-            assignment, not a forged header. Laptop proof:
-            <code style="color: var(--mint)">make smoke-governance</code>. Not Mongo governance parity, not
-            in-graph tool sandboxing, not FinOps dashboards, not a paid cloud soak.
-          </p>
-          <div class="pill-row">
-            <span class="pill">Run-binding</span>
-            <span class="pill cyan">Grants</span>
-            <span class="pill">Mandatory HITL</span>
-            <span class="pill cyan">Pending HITL</span>
-            <span class="pill">Kill</span>
-            <span class="pill cyan">Break-glass</span>
-            <span class="pill">Audit</span>
-            <span class="pill cyan">Postgres Supported</span>
-          </div>
-        </section>
-
-        <section id="architecture" class="reveal">
-          <p class="section-kicker">Architecture</p>
-          <h2>Clients → control plane → runners</h2>
-          <p class="section-copy">
-            Pluggable state, transport, and vectors under an honest tier model — Supported for Postgres + Redis,
-            Compatible for the rest. Kubernetes packaging is Compatible until a real-cloud soak.
-          </p>
-          <div class="eco">
-            <img
-              src="./assets/ecosystem.png"
-              alt="Runkite ecosystem: clients to control plane to runners with pluggable backends"
-              width="1840"
-              height="980"
-            />
-          </div>
-        </section>
-
         <section id="try" class="reveal">
           <p class="section-kicker">Try it · 5 minutes</p>
           <h2>Compose up → echo → HITL → done</h2>
@@ -898,6 +1090,70 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
             >
           </div>
         </section>
+
+
+
+        <section id="stack" class="reveal">
+          <p class="section-kicker">$ cat frameworks.json</p>
+          <h2>Bring your framework. Same control plane.</h2>
+          <p class="section-copy">
+            LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, and LangGraph.js — one gRPC Runner Protocol,
+            one Go binary, embedded Admin UI. No second deploy for ops.
+          </p>
+          <div class="pill-row">
+            <span class="pill">LangGraph</span>
+            <span class="pill cyan">CrewAI</span>
+            <span class="pill">LlamaIndex</span>
+            <span class="pill cyan">AutoGen</span>
+            <span class="pill">LangChain</span>
+            <span class="pill cyan">LangGraph.js</span>
+            <span class="pill">Postgres + Redis HA</span>
+            <span class="pill cyan">SSE · WebSocket · gRPC</span>
+            <span class="pill">Agent-to-agent</span>
+            <span class="pill cyan">OTel</span>
+            <span class="pill">Admin grants · HITL · kill · audit</span>
+            <span class="pill cyan">pgvector · Qdrant · Pinecone</span>
+          </div>
+        </section>
+
+        <section id="governance" class="reveal">
+          <p class="section-kicker">$ cat policy.json</p>
+          <h2>Govern the plane, not only the prompt.</h2>
+          <p class="section-copy">
+            Fail-closed connector grants, durable policy audit, connector HITL, kill/pause, break-glass, and
+            mandatory HITL on SQL backends — with Admin pages for each. Run-bound so tenant comes from the
+            assignment, not a forged header. Laptop proof:
+            <code style="color: var(--mint)">make smoke-governance</code>. Not Mongo governance parity, not
+            in-graph tool sandboxing, not FinOps dashboards, not a paid cloud soak.
+          </p>
+          <div class="pill-row">
+            <span class="pill">Run-binding</span>
+            <span class="pill cyan">Grants</span>
+            <span class="pill">Mandatory HITL</span>
+            <span class="pill cyan">Pending HITL</span>
+            <span class="pill">Kill</span>
+            <span class="pill cyan">Break-glass</span>
+            <span class="pill">Audit</span>
+            <span class="pill cyan">Postgres Supported</span>
+          </div>
+        </section>
+
+        <section id="architecture" class="reveal">
+          <p class="section-kicker">Architecture</p>
+          <h2>Clients → control plane → runners</h2>
+          <p class="section-copy">
+            Pluggable state, transport, and vectors under an honest tier model — Supported for Postgres + Redis,
+            Compatible for the rest. Kubernetes packaging is Compatible until a real-cloud soak.
+          </p>
+          <div class="eco">
+            <img
+              src="./assets/ecosystem.png"
+              alt="Runkite ecosystem: clients to control plane to runners with pluggable backends"
+              width="1840"
+              height="980"
+            />
+          </div>
+        </section>
       </main>
 
       <footer>
@@ -907,6 +1163,7 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
           <a href="https://pypi.org/project/runkite-runner/">PyPI</a>
           <a href="https://www.npmjs.com/package/runkite-runner">npm</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">Governance</a>
+          <a href="#scenario">Scenario</a>
           <a href="#try">Try it</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/LICENSE">BUSL-1.1</a>
