@@ -698,6 +698,50 @@
         margin-top: 0.1rem;
       }
 
+      .when-not {
+        margin-top: 1.75rem;
+        padding: 1.15rem 1.2rem 1.2rem;
+        border-radius: 0.9rem;
+        border: 1px dashed rgba(138, 163, 153, 0.45);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .when-not .label {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 0.55rem;
+      }
+
+      .when-not h3 {
+        margin: 0 0 0.55rem;
+        font-size: 1.1rem;
+        letter-spacing: -0.02em;
+        font-weight: 700;
+      }
+
+      .when-not p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        max-width: 42rem;
+      }
+
+      .when-not ul {
+        margin: 0.75rem 0 0;
+        padding: 0 0 0 1.1rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.55;
+      }
+
+      .when-not li {
+        margin: 0.25rem 0;
+      }
+
       .terminal + .terminal {
         margin-top: 1.15rem;
       }
@@ -951,11 +995,26 @@
             In Admin you should see parent/child runs for A2A and one connector grant reused across
             agents — not three pasted tokens.
           </p>
+          <div class="when-not" id="when-not">
+            <p class="label">When not to use Runkite</p>
+            <h3>One agent, one laptop, exploring prompts</h3>
+            <p>
+              Stay in LangGraph / CrewAI / your notebook. A control plane earns its keep when you need
+              a shared HTTP API, HITL that isn’t glued to one process, shared connectors, or more than
+              one runner kind. If that’s not you yet — skip the plane.
+            </p>
+            <ul>
+              <li>Prototyping a single graph with local state</li>
+              <li>No shared secrets, no second agent, no ops surface needed</li>
+              <li>You need a managed cloud plane today (Runkite is self-host first)</li>
+            </ul>
+          </div>
           <div class="cta" style="margin-top: 1.75rem">
             <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/tree/main/examples/a2a_agent"
               >A2A example (LangGraph) →</a
             >
             <a class="btn btn-ghost" href="#try">Try it</a>
+            <a class="btn btn-ghost" href="#when-not">When not to use</a>
             <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/tree/main/examples/crewai_agent"
               >CrewAI example</a
             >
