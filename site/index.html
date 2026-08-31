@@ -447,6 +447,125 @@
         font-size: 0.75rem;
       }
 
+      .terminal .bar .spacer {
+        flex: 1;
+      }
+
+      .copy-btn {
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        cursor: pointer;
+      }
+
+      .copy-btn:hover,
+      .copy-btn.copied {
+        border-color: rgba(62, 240, 168, 0.55);
+        color: var(--mint);
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.75rem;
+        counter-reset: step;
+        margin-bottom: 2rem;
+      }
+
+      .flow-step {
+        position: relative;
+        padding: 1.15rem 1rem 1.05rem;
+        border: 1px solid var(--line);
+        border-radius: 0.9rem;
+        background: var(--glass);
+        backdrop-filter: blur(10px);
+        min-height: 8.5rem;
+        transition:
+          border-color 0.35s,
+          box-shadow 0.35s,
+          transform 0.35s;
+      }
+
+      .flow-step::before {
+        counter-increment: step;
+        content: "0" counter(step);
+        display: block;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        color: var(--mint);
+        margin-bottom: 0.55rem;
+      }
+
+      .flow-step h3 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .flow-step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+
+      .flow-step.active {
+        border-color: rgba(62, 240, 168, 0.55);
+        box-shadow: 0 0 40px rgba(62, 240, 168, 0.12);
+        transform: translateY(-3px);
+      }
+
+      .try-visual {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 1.25rem;
+        align-items: stretch;
+        margin-bottom: 2rem;
+      }
+
+      .try-visual .flow {
+        margin-bottom: 0;
+      }
+
+      .try-admin {
+        border-radius: 0.9rem;
+        border: 1px solid var(--line);
+        overflow: hidden;
+        background: #0b1411;
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+      }
+
+      .try-admin .cap {
+        padding: 0.65rem 0.9rem;
+        border-bottom: 1px solid var(--line);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .try-admin img {
+        display: block;
+        width: 100%;
+        height: auto;
+        flex: 1;
+        object-fit: cover;
+        object-position: top left;
+      }
+
+      .terminal + .terminal {
+        margin-top: 1.15rem;
+      }
+
       .terminal .bar i {
         width: 0.55rem;
         height: 0.55rem;
@@ -512,6 +631,15 @@
         gap: 1rem 1.25rem;
       }
 
+      @media (max-width: 860px) {
+        .flow {
+          grid-template-columns: 1fr 1fr;
+        }
+        .try-visual {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @media (max-width: 720px) {
         .nav .hide-sm {
           display: none;
@@ -522,6 +650,9 @@
         }
         .hero h1 {
           max-width: none;
+        }
+        .flow {
+          grid-template-columns: 1fr;
         }
       }
 
@@ -538,6 +669,9 @@
           transform: none;
           transition: none;
         }
+        .flow-step.active {
+          transform: none;
+        }
       }
     </style>
   </head>
@@ -549,10 +683,10 @@
       <header>
         <a class="logo" href="./">~/ <span>runkite</span></a>
         <nav class="nav">
+          <a href="#try">Try it</a>
           <a class="hide-sm" href="#stack">Stack</a>
           <a class="hide-sm" href="#governance">Governance</a>
           <a class="hide-sm" href="#architecture">Architecture</a>
-          <a class="hide-sm" href="#start">Quick start</a>
           <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite">GitHub</a>
         </nav>
       </header>
@@ -565,8 +699,8 @@
             <span class="typed" id="typed"></span>
           </p>
           <div class="cta">
-            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite">Star on GitHub →</a>
-            <a class="btn btn-ghost" href="#start">Get running in minutes</a>
+            <a class="btn btn-primary" href="#try">Try it in 5 minutes →</a>
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite">Star on GitHub</a>
           </div>
           <div class="hero-visual">
             <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -641,32 +775,127 @@
           </div>
         </section>
 
-        <section id="start" class="reveal">
-          <p class="section-kicker">Quick start</p>
-          <h2>From zero to Admin UI</h2>
+        <section id="try" class="reveal">
+          <p class="section-kicker">Try it · 5 minutes</p>
+          <h2>Compose up → echo → HITL → done</h2>
           <p class="section-copy">
-            Install the latest runners and control plane, then open Admin at localhost:2026/admin/.
+            Zero-dependency stack: control plane + runner, SQLite + in-memory. No Go toolchain, no
+            <code style="color: var(--mint)">.env</code>. Needs Docker and
+            <code style="color: var(--mint)">python3</code> (for the curl JSON one-liners). Laptop demo
+            only — not internet-facing.
           </p>
+          <div class="try-visual">
+            <div class="flow" id="flow">
+              <div class="flow-step" data-step="0">
+                <h3>Compose is up</h3>
+                <p>Plane on :2026. Runner waiting. Admin open.</p>
+              </div>
+              <div class="flow-step" data-step="1">
+                <h3>Echo agent</h3>
+                <p>POST a run. Wait. See the echoed message.</p>
+              </div>
+              <div class="flow-step" data-step="2">
+                <h3>HITL interrupt</h3>
+                <p>approval_agent pauses — status interrupted.</p>
+              </div>
+              <div class="flow-step" data-step="3">
+                <h3>You approve</h3>
+                <p>Resume with {"command":{"resume":true}}. Run completes.</p>
+              </div>
+            </div>
+            <figure class="try-admin">
+              <div class="cap">What you’ll see in Admin</div>
+              <img
+                src="./assets/admin-governance.png"
+                alt="Runkite Admin: governance surfaces — grants, HITL, kill, audit"
+                width="920"
+                height="560"
+              />
+            </figure>
+          </div>
           <div class="terminal">
-            <div class="bar"><i></i><i></i><i></i> ~/runkite</div>
-            <pre><span class="cmt"># runners (latest from PyPI / npm)</span>
-<span class="cmd">pip install</span> runkite-runner
-<span class="cmd">npm install -g</span> runkite-runner
+            <div class="bar">
+              <i></i><i></i><i></i>
+              ~/runkite
+              <span class="spacer"></span>
+              <button
+                type="button"
+                class="copy-btn"
+                data-copy="git clone https://github.com/getrunkite/runkite && cd runkite && docker compose -f docker-compose.dev.yml up -d --build"
+              >
+                Copy
+              </button>
+            </div>
+            <pre><span class="cmt"># needs Docker · first build takes a few minutes</span>
+<span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite
+<span class="cmd">docker compose -f</span> docker-compose.dev.yml <span class="cmd">up -d --build</span>
+<span class="cmd">curl -sf</span> http://localhost:2026/readyz && <span class="cmd">echo</span> OK
+<span class="cmt"># Admin → http://localhost:2026/admin/</span></pre>
+          </div>
+          <div class="terminal">
+            <div class="bar">
+              <i></i><i></i><i></i>
+              echo_agent
+              <span class="spacer"></span>
+              <button
+                type="button"
+                class="copy-btn"
+                data-copy="BASE=http://localhost:2026
+THREAD=$(curl -sf -X POST &quot;$BASE/threads&quot; -H 'Content-Type: application/json' -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)[&quot;thread_id&quot;])')
+curl -sf -X POST &quot;$BASE/threads/$THREAD/runs/wait&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;echo_agent&quot;,&quot;input&quot;:{&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello, Runkite!&quot;}]}}' | python3 -m json.tool"
+              >
+                Copy
+              </button>
+            </div>
+            <pre><span class="cmt"># 1) Echo</span>
+<span class="cmd">BASE=</span>http://localhost:2026
+<span class="cmd">THREAD=</span>$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"Hello, Runkite!"}]}}' \
+  | python3 -m json.tool
+<span class="cmt"># → status success · ai content is the same string: "Hello, Runkite!"</span></pre>
+          </div>
+          <div class="terminal">
+            <div class="bar">
+              <i></i><i></i><i></i>
+              approval_agent · HITL
+              <span class="spacer"></span>
+              <button
+                type="button"
+                class="copy-btn"
+                data-copy="BASE=http://localhost:2026
+THREAD=$(curl -sf -X POST &quot;$BASE/threads&quot; -H 'Content-Type: application/json' -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)[&quot;thread_id&quot;])')
+curl -sf -N -X POST &quot;$BASE/threads/$THREAD/runs/stream&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;approval_agent&quot;,&quot;input&quot;:{&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;send the email&quot;}]}}'
+curl -sf -X POST &quot;$BASE/threads/$THREAD/runs/wait&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;approval_agent&quot;,&quot;command&quot;:{&quot;resume&quot;:true}}' | python3 -m json.tool"
+              >
+                Copy
+              </button>
+            </div>
+            <pre><span class="cmt"># 2) Interrupt — new thread (don't reuse echo's THREAD)</span>
+<span class="cmd">BASE=</span>http://localhost:2026
+<span class="cmd">THREAD=</span>$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+<span class="cmt"># SSE lines stream here; look for "interrupted", then Ctrl-C and run step 3</span>
+curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'
 
-<span class="cmt"># control plane — Docker or GitHub Release binary</span>
-<span class="cmd">docker pull</span> ghcr.io/getrunkite/runkite:latest
-
-<span class="cmt"># from source</span>
-<span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite && <span class="cmd">make build</span>
-<span class="cmd">export</span> RUNKITE_ALLOW_INSECURE_SERVE=1  <span class="cmt"># local demo only</span>
-<span class="cmd">./runkite dev</span> --config examples/echo_agent/langgraph.json
-<span class="cmt"># → http://127.0.0.1:2026/admin/</span></pre>
+<span class="cmt"># 3) Approve / resume</span>
+curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"approval_agent","command":{"resume":true}}' \
+  | python3 -m json.tool
+<span class="cmt"># → status success · "Email sent to alice@example.com successfully!"</span></pre>
           </div>
           <div class="cta" style="margin-top: 1.5rem">
-            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/releases">GitHub Releases</a>
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/releases">GitHub Releases</a>
             <a class="btn btn-ghost" href="https://pypi.org/project/runkite-runner/">PyPI</a>
             <a class="btn btn-ghost" href="https://www.npmjs.com/package/runkite-runner">npm</a>
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite#quick-start">Full quick start</a>
+            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md"
+              >Longer walkthrough</a
+            >
           </div>
         </section>
       </main>
@@ -678,6 +907,7 @@
           <a href="https://pypi.org/project/runkite-runner/">PyPI</a>
           <a href="https://www.npmjs.com/package/runkite-runner">npm</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">Governance</a>
+          <a href="#try">Try it</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
           <a href="https://github.com/getrunkite/runkite/blob/main/LICENSE">BUSL-1.1</a>
         </div>
@@ -687,7 +917,7 @@
     <script>
       (function () {
         const phrases = [
-          "LangSmith-style — then more: any framework, your backends, one Go binary.",
+          "Any framework. Any backend. One control plane — self-hosted.",
           "Admin governance: grants, HITL, kill, break-glass, audit — on the plane.",
           "Agent Protocol API. Pluggable runners. Agent-to-agent. Embedded Admin.",
           "Postgres + Redis HA (Compose soak); Kubernetes packaging stays Compatible.",
@@ -721,6 +951,36 @@
           }
         }
         tick();
+
+        document.querySelectorAll(".copy-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const text = btn.getAttribute("data-copy") || "";
+            try {
+              await navigator.clipboard.writeText(text);
+              const prev = btn.textContent;
+              btn.textContent = "Copied";
+              btn.classList.add("copied");
+              setTimeout(() => {
+                btn.textContent = prev;
+                btn.classList.remove("copied");
+              }, 1400);
+            } catch (_) {
+              btn.textContent = "Select & copy";
+            }
+          });
+        });
+
+        const steps = Array.from(document.querySelectorAll(".flow-step"));
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        let stepIdx = 0;
+        function pulseFlow() {
+          steps.forEach((s, i) => s.classList.toggle("active", i === stepIdx));
+          stepIdx = (stepIdx + 1) % steps.length;
+        }
+        if (steps.length) {
+          pulseFlow();
+          if (!reduceMotion) setInterval(pulseFlow, 2200);
+        }
 
         const reveals = document.querySelectorAll(".reveal");
         const io = new IntersectionObserver(

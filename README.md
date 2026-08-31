@@ -100,6 +100,8 @@ Protocol table, backend tiers, dual-mode notes: [docs/architecture.md](docs/arch
 
 ## Quick start
 
+**Fastest demo (Docker only):** [Try it on the site](https://getrunkite.github.io/runkite/#try) — `docker compose -f docker-compose.dev.yml up -d --build` → echo agent → HITL approve.
+
 | Piece | Get it |
 |-------|--------|
 | Control plane | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `docker pull ghcr.io/getrunkite/runkite:latest` · or `make build` |
