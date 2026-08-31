@@ -21,7 +21,15 @@ RUN GIT_COMMIT=$(cat .git/refs/heads/main 2>/dev/null | cut -c1-7 || echo "docke
 # Keep this on a supported Alpine line so Trivy can assess CVEs (3.20
 # reached EOL 2026-04-01 and produced a false-clean scan).
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates wget && \
+# `apk add` only installs the packages it's given -- it does not touch
+# already-present ones. The base image's own baked-in packages (libssl3,
+# libcrypto3, ...) age between when Docker Hub last rebuilt this tag and
+# whenever this Dockerfile actually runs, so `apk upgrade` first pulls
+# any fix already published for the 3.24 branch (found live: a
+# base-image-only openssl CVE failed the image scan despite the Go
+# binary itself being clean).
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates wget && \
     addgroup -g 65532 -S runkite && \
     adduser -u 65532 -S -G runkite -H -D runkite
 
