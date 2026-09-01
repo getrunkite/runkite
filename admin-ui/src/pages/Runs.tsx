@@ -4,7 +4,7 @@ import { Workflow } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRun } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -113,6 +113,11 @@ export function Runs() {
             status === "all"
               ? "Create a thread and run via the Agent Protocol API, or smoke-test with examples/echo_agent after runkite serve + a runner."
               : `No runs with status “${status}”. Try another filter.`
+          }
+          learnMore={
+            status === "all"
+              ? { href: supportPage("try.html"), label: "5-minute try path →" }
+              : undefined
           }
           action={
             status !== "all" ? (

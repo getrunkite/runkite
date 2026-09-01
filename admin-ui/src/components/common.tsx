@@ -41,11 +41,14 @@ export function EmptyState({
   message,
   icon: Icon = Inbox,
   action,
+  learnMore,
 }: {
   title?: string;
   message: string;
   icon?: typeof Inbox;
   action?: ReactNode;
+  /** Optional deep link into the public support map (GitHub Pages). */
+  learnMore?: { href: string; label: string };
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
@@ -56,9 +59,31 @@ export function EmptyState({
         <p className="text-sm font-medium">{title}</p>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">{message}</p>
       </div>
-      {action && <div className="mt-1">{action}</div>}
+      {(action || learnMore) && (
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-3">
+          {action}
+          {learnMore && (
+            <a
+              href={learnMore.href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              {learnMore.label}
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+/** Public support-map base (GitHub Pages). Used by Admin empty states. */
+export const SUPPORT_BASE = "https://getrunkite.github.io/runkite/support";
+
+export function supportPage(path: string): string {
+  const cleaned = path.replace(/^\//, "");
+  return `${SUPPORT_BASE}/${cleaned}`;
 }
 
 export function ErrorState({ message }: { message: string }) {

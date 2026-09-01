@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminPolicyGrant } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -294,6 +294,11 @@ export function PolicyGrants() {
             hasFilter
               ? "No overlays match these filters."
               : "Create a grant here or seed policy.grants in langgraph.json. Requires a SQL state backend and an enabled policy section."
+          }
+          learnMore={
+            hasFilter
+              ? undefined
+              : { href: supportPage("connectors.html"), label: "How grants & connectors work →" }
           }
           action={
             hasFilter ? (
