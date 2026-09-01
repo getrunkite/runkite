@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The big picture — Runkite chapters</title>
+    <meta name="description" content="What Runkite is, what it is not, and the one-sentence product definition." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">chapters</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Chapters</a>
+          <a class="active" href="./big-picture.html">1 · Big picture</a>
+          <a href="./three-processes.html">2 · Three processes</a>
+          <a href="./two-protocols.html">3 · Two protocols</a>
+          <a href="../decisions/">Decisions</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="./">Chapters</a>
+          <a href="../why.html">Why a plane</a>
+        </div>
+        <h1>1 · The big picture</h1>
+        <p class="lede">Air-traffic control for agents — not another agent framework.</p>
+
+        <h2>What problem does Runkite solve?</h2>
+        <p>
+          You want to run AI agents in production across frameworks (LangGraph, CrewAI,
+          LlamaIndex, AutoGen, …). Each framework has its own runtime, state, and conversation
+          habits. If you run them as loose scripts, you have no shared control: no single place
+          to see work, enforce policy, kill a runaway, require human approval before a dangerous
+          tool call, or mint credentials without copying secrets into every process.
+        </p>
+        <p>
+          Runkite sits in the middle as a <strong>control plane</strong> — one Go binary that
+          coordinates. Agents still do the flying (LLM calls, tools); the plane decides who may
+          fly, with which fuel (credentials), under which rules, with an audit trail.
+        </p>
+
+        <h2>What Runkite is not</h2>
+        <p>
+          It does not import LangGraph or CrewAI. It does not call OpenAI or Anthropic. It does
+          not claim to solve prompt injection or PII redaction as a product. Those are different
+          jobs. The plane <em>coordinates</em>: accept client requests, dispatch to runners,
+          stream results, vend connectors, enforce policy, keep audit. Execution lives in separate
+          runner processes that <em>do</em> import frameworks and call LLMs.
+        </p>
+
+        <h2>One sentence</h2>
+        <p>
+          Runkite is a self-hosted control plane between your application and your agent workers —
+          dispatch, streaming, multi-tenancy, auth, policy, credentials, and observability —
+          regardless of which agent framework the workers use.
+        </p>
+
+        <h2>Where the pieces live (public tree)</h2>
+        <ul>
+          <li>Control plane — Go binary + embedded Admin UI</li>
+          <li>Runners — Python and TypeScript packages speaking Runner Protocol</li>
+          <li>Clients — any Agent Protocol HTTP/SSE/WebSocket client</li>
+        </ul>
+
+        <p class="note">
+          Next: <a href="./three-processes.html">three processes</a> ·
+          <a href="../decisions/why-agent-protocol.html">why Agent Protocol</a>
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

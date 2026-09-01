@@ -7,7 +7,7 @@ Product visuals live in `assets/` (Admin walkthrough GIF + ecosystem diagram).
 
 One-page sections (same nav pattern): `#scenario` · `#try` · `#stack` · `#governance` · `#architecture`.
 
-**Support map (W1):** [`support/`](./support/) — navigable Try → Why → Install → Ops → Protocol → Security → FinOps → Limitations, plus [decisions](./support/decisions/).
+**Support map:** [`support/`](./support/) — Try → Why → Scenario → Install → Checkpoints → Connectors/HITL → Ops → Security → FinOps → Protocol → Limitations, plus [chapters](./support/chapters/) (primers) and [decisions](./support/decisions/) (why opaque CP, fencing, fail-closed, Agent Protocol).
 
 Narrative order: why a plane → 5-minute try → product depth.  
 `#when-not` (inside Scenario) is the thin "when not to use" callout.

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Three processes — Runkite chapters</title>
+    <meta name="description" content="Client, control plane, and runner — what each process does and does not do." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">chapters</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Chapters</a>
+          <a href="./big-picture.html">1 · Big picture</a>
+          <a class="active" href="./three-processes.html">2 · Three processes</a>
+          <a href="./two-protocols.html">3 · Two protocols</a>
+          <a href="../decisions/">Decisions</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="./">Chapters</a>
+        </div>
+        <h1>2 · Three processes</h1>
+        <p class="lede">Client, control plane, runner — understanding each boundary is the foundation.</p>
+
+        <h2>1 · Client (your application)</h2>
+        <p>
+          Speaks Agent Protocol over HTTP, SSE, or WebSocket: create threads, start runs, stream
+          tokens, cancel, resume. The client never sees which runner executed the work, gRPC
+          internals, reclaim generations, or queue keys. Vocabulary is threads, runs, agents,
+          events, store.
+        </p>
+
+        <h2>2 · Control plane (Runkite)</h2>
+        <p>
+          The Go binary (<code>runkite serve</code> / local dev). It authenticates, stores
+          metadata on your configured state backend, enqueues work, fans events back to clients,
+          mints connector sessions, enforces policy, serves Admin, and exposes Runner Protocol to
+          workers.
+        </p>
+        <p>
+          It does <strong>not</strong> import agent frameworks, call LLMs, or execute your Python /
+          TypeScript agent code. Framework-agnostic by construction.
+        </p>
+
+        <h2>3 · Runner (worker)</h2>
+        <p>
+          Python or TypeScript process that connects over gRPC, pulls jobs, runs framework code,
+          calls LLMs, streams events, heartbeats, and watches cancels. It does not serve end-user
+          HTTP, decide tenancy policy, or own durable run metadata — that stays on the plane.
+        </p>
+
+        <h2>Relay (simplified)</h2>
+        <div class="card">
+          <p class="mono">Client --HTTP create run--&gt; Control plane --queue--&gt; Runner
+Runner --events--&gt; Control plane --SSE/WS--&gt; Client</p>
+        </div>
+        <p>
+          Multi-replica detail (which CP holds the SSE vs which enqueued the job) lives in the
+          longer notes; the mental model stays: clients never talk to runners directly.
+        </p>
+
+        <p class="note">
+          Next: <a href="./two-protocols.html">two protocols</a> ·
+          <a href="../decisions/why-fail-closed.html">why fail-closed serve</a>
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

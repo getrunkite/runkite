@@ -298,7 +298,7 @@ export function PolicyGrants() {
           learnMore={
             hasFilter
               ? undefined
-              : { href: supportPage("connectors.html"), label: "How grants & connectors work →" }
+              : { href: supportPage("connectors.html"), label: "Docs: connectors & grants →" }
           }
           action={
             hasFilter ? (

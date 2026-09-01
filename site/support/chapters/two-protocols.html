@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Two protocols — Runkite chapters</title>
+    <meta name="description" content="Agent Protocol for clients vs Runner Protocol for workers — why both exist." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">chapters</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Chapters</a>
+          <a href="./big-picture.html">1 · Big picture</a>
+          <a href="./three-processes.html">2 · Three processes</a>
+          <a class="active" href="./two-protocols.html">3 · Two protocols</a>
+          <a href="../decisions/">Decisions</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="./">Chapters</a>
+          <a href="../protocol.html">Support · Protocols</a>
+        </div>
+        <h1>3 · Two protocols</h1>
+        <p class="lede">Public client surface vs private worker surface — different jobs, different shapes.</p>
+
+        <h2>Agent Protocol (client → plane)</h2>
+        <p>
+          Public HTTP API (plus SSE / WebSocket for streaming). Same conceptual surface many Agent
+          Protocol clients already expect: threads, runs, stream, cancel, resume, store. It never
+          exposes reclaim generations, runner kinds, or queue internals.
+        </p>
+        <ul>
+          <li><strong>HTTP</strong> — create/get/search, store access</li>
+          <li><strong>SSE</strong> — one-way token/event stream to the client</li>
+          <li><strong>WebSocket</strong> — bidirectional streaming + in-band commands</li>
+        </ul>
+
+        <h2>Runner Protocol (plane ↔ runner)</h2>
+        <p>
+          Private gRPC contract for workers. Long-poll for work, stream events, report status,
+          heartbeat, watch cancels. Small RPC surface on purpose; resources during a run
+          (connectors, store, vectors) go over short-lived HTTP to the plane’s internal routes,
+          run-bound.
+        </p>
+        <ul>
+          <li><strong>GetJob</strong> — long-poll assignment</li>
+          <li><strong>StreamEvents</strong> — progress back to the plane</li>
+          <li><strong>ReportStatus</strong> — terminal outcome</li>
+          <li><strong>Heartbeat</strong> — liveness + superseded signal</li>
+          <li><strong>WatchCancels</strong> — cancel stream</li>
+        </ul>
+
+        <h2>Why not one protocol?</h2>
+        <p>
+          Clients need a portable, SDK-friendly runs API. Runners need leases, fencing, and
+          connector minting. Collapsing them either leaks internals to clients or starves workers
+          of the lifecycle primitives a control plane must own. See
+          <a href="../decisions/why-agent-protocol.html">why Agent Protocol on the front</a>.
+        </p>
+
+        <p class="note">
+          Also:
+          <a href="../decisions/why-opaque-checkpoints.html">opaque checkpoints</a>
+          (ThreadState ≠ LangGraph checkpointer) ·
+          <a href="../../design/fencing.html">generation fencing</a>
+        </p>
+      </main>
+    </div>
+  </body>
+</html>
