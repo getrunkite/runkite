@@ -230,7 +230,10 @@ test("putWrites before put creates shell; create-only preserves shell", async ()
       const after = await saver.getTuple(writeCfg);
       assert.ok(after);
       assert.deepEqual(after!.checkpoint.channel_values.messages, ["from-put"]);
-      assert.ok(after!.pendingWrites?.some((w) => w[0] === "t-404"), "shell writes preserved");
+      assert.ok(
+        after!.pendingWrites?.some((w) => w[0] === "t-404"),
+        "shell writes preserved",
+      );
     });
   } finally {
     await saver.close();
@@ -273,17 +276,11 @@ test("list(filter) throws; putWrites without checkpoint_id throws", async () => 
   const saver = new ProxyCheckpointSaver({ httpBaseUrl: mock.baseUrl() });
   try {
     await runWithTenant("default", async () => {
-      await assert.rejects(
-        async () => {
-          for await (const _ of saver.list(
-            { configurable: { thread_id: "thr-x" } },
-            { filter: { source: "loop" } },
-          )) {
-            // drain
-          }
-        },
-        /filter/,
-      );
+      await assert.rejects(async () => {
+        for await (const _ of saver.list({ configurable: { thread_id: "thr-x" } }, { filter: { source: "loop" } })) {
+          // drain
+        }
+      }, /filter/);
       await assert.rejects(
         () =>
           saver.putWrites(
@@ -338,7 +335,6 @@ test("put/putWrites soft-no-op on run_not_inflight", async () => {
     await closeServer(server);
   }
 });
-
 
 test("put CAS retries once on 412 then succeeds", async () => {
   let puts = 0;
@@ -435,7 +431,10 @@ test("cross-saver create-only race preserves putWrites shell", async () => {
       const got = await s1.getTuple(writeCfg);
       assert.ok(got);
       assert.deepEqual(got!.checkpoint.channel_values.messages, ["from-put"]);
-      assert.ok(got!.pendingWrites?.some((w) => w[0] === "task-w"), "shell writes preserved");
+      assert.ok(
+        got!.pendingWrites?.some((w) => w[0] === "task-w"),
+        "shell writes preserved",
+      );
     });
   } finally {
     await s1.close();
@@ -467,12 +466,7 @@ test("update refuses GET 200 without ETag", async () => {
     await runWithTenant("default", async () => {
       await assert.rejects(
         () =>
-          saver.put(
-            { configurable: { thread_id: "thr-x", checkpoint_ns: "" } },
-            checkpoint("cp-x"),
-            metadata(1),
-            {},
-          ),
+          saver.put({ configurable: { thread_id: "thr-x", checkpoint_ns: "" } }, checkpoint("cp-x"), metadata(1), {}),
         /no ETag/,
       );
     });

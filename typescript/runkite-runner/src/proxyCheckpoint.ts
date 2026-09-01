@@ -200,9 +200,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     else {
       // GET 200 without ETag would otherwise become an unconditional PUT
       // and clobber peers (gateway stripping ETag disables CAS).
-      throw new Error(
-        `checkpoint update refused: GET returned no ETag for ${threadId}/${key}`,
-      );
+      throw new Error(`checkpoint update refused: GET returned no ETag for ${threadId}/${key}`);
     }
 
     const init: FetchInit = {
@@ -373,62 +371,62 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     const parentId = config.configurable?.checkpoint_id as string | undefined;
     const headers = this.clientHeaders();
 
-    await this.locks.run(`${threadId}\0${key}`, async () => {
-      for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
-        let existingWrites: unknown[] = [];
-        let etag: string | null = null;
-        let createOnly = false;
-        const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
-        const prev = await fetch(this.url(threadId, key), getInit);
-        if (prev.status === 200) {
-          etag = prev.headers.get("ETag");
-          try {
-            const decoded = await this.decode(new Uint8Array(await prev.arrayBuffer()));
-            existingWrites = (decoded.writes as unknown[]) || [];
-          } catch {
-            existingWrites = [];
-          }
-        } else if (prev.status === 404) {
-          // Same Pregel race as putWrites: a peer may create a writes
-          // shell first. Create-only so we never wipe it with an
-          // unconditional PUT of writes=[].
-          createOnly = true;
-        } else {
-          const body = await prev.text();
-          if (isRunNotInflight(prev.status, body)) throw new RunNotInflight();
-          throw new Error(`GET checkpoint failed: ${prev.status} ${body}`);
-        }
-
-        const blob = {
-          v: 1,
-          checkpoint: await this.serde.dumpsTyped(checkpoint),
-          metadata: await this.serde.dumpsTyped(metadata),
-          parent_checkpoint_id: parentId ?? null,
-          writes: existingWrites,
-        };
-        try {
-          await this.putCas(threadId, key, await this.encode(blob), headers, {
-            etag,
-            createOnly,
-          });
-          return;
-        } catch (err) {
-          if (err instanceof RunNotInflight) throw err;
-          if (err instanceof CASConflict) {
-            if (attempt === CAS_MAX_ATTEMPTS - 1) {
-              throw new Error(
-                `checkpoint CAS failed after ${CAS_MAX_ATTEMPTS} attempts for ${threadId}/${key}`,
-              );
+    await this.locks
+      .run(`${threadId}\0${key}`, async () => {
+        for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+          let existingWrites: unknown[] = [];
+          let etag: string | null = null;
+          let createOnly = false;
+          const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+          const prev = await fetch(this.url(threadId, key), getInit);
+          if (prev.status === 200) {
+            etag = prev.headers.get("ETag");
+            try {
+              const decoded = await this.decode(new Uint8Array(await prev.arrayBuffer()));
+              existingWrites = (decoded.writes as unknown[]) || [];
+            } catch {
+              existingWrites = [];
             }
-            continue;
+          } else if (prev.status === 404) {
+            // Same Pregel race as putWrites: a peer may create a writes
+            // shell first. Create-only so we never wipe it with an
+            // unconditional PUT of writes=[].
+            createOnly = true;
+          } else {
+            const body = await prev.text();
+            if (isRunNotInflight(prev.status, body)) throw new RunNotInflight();
+            throw new Error(`GET checkpoint failed: ${prev.status} ${body}`);
           }
-          throw err;
+
+          const blob = {
+            v: 1,
+            checkpoint: await this.serde.dumpsTyped(checkpoint),
+            metadata: await this.serde.dumpsTyped(metadata),
+            parent_checkpoint_id: parentId ?? null,
+            writes: existingWrites,
+          };
+          try {
+            await this.putCas(threadId, key, await this.encode(blob), headers, {
+              etag,
+              createOnly,
+            });
+            return;
+          } catch (err) {
+            if (err instanceof RunNotInflight) throw err;
+            if (err instanceof CASConflict) {
+              if (attempt === CAS_MAX_ATTEMPTS - 1) {
+                throw new Error(`checkpoint CAS failed after ${CAS_MAX_ATTEMPTS} attempts for ${threadId}/${key}`);
+              }
+              continue;
+            }
+            throw err;
+          }
         }
-      }
-    }).catch((err) => {
-      if (err instanceof RunNotInflight) return;
-      throw err;
-    });
+      })
+      .catch((err) => {
+        if (err instanceof RunNotInflight) return;
+        throw err;
+      });
 
     return {
       configurable: {
@@ -453,63 +451,65 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     const key = blobKey(ns, checkpointId);
     const headers = this.clientHeaders();
 
-    await this.locks.run(`${threadId}\0${key}`, async () => {
-      for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
-        let etag: string | null = null;
-        let createOnly = false;
-        let blob: Record<string, unknown>;
-        const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
-        const resp = await fetch(this.url(threadId, key), getInit);
-        if (resp.status === 404) {
-          // Normal Pregel order: putWrites for the *next* checkpoint_id
-          // lands before put creates that blob. Create a shell with
-          // If-None-Match:* so a concurrent put that already wrote
-          // cannot be overwritten.
-          blob = {
-            v: 1,
-            checkpoint: await this.serde.dumpsTyped({}),
-            metadata: await this.serde.dumpsTyped({}),
-            parent_checkpoint_id: null,
-            writes: [],
-          };
-          createOnly = true;
-        } else if (resp.ok) {
-          etag = resp.headers.get("ETag");
-          blob = await this.decode(new Uint8Array(await resp.arrayBuffer()));
-        } else {
-          const body = await resp.text();
-          if (isRunNotInflight(resp.status, body)) throw new RunNotInflight();
-          throw new Error(`GET checkpoint failed: ${resp.status} ${body}`);
-        }
-
-        const encoded = [...((blob.writes as unknown[]) || [])];
-        for (const [channel, value] of writes) {
-          encoded.push([taskId, channel, await this.serde.dumpsTyped(value)]);
-        }
-        blob.writes = encoded;
-        try {
-          await this.putCas(threadId, key, await this.encode(blob), headers, {
-            etag,
-            createOnly,
-          });
-          return;
-        } catch (err) {
-          if (err instanceof RunNotInflight) throw err;
-          if (err instanceof CASConflict) {
-            if (attempt === CAS_MAX_ATTEMPTS - 1) {
-              throw new Error(
-                `checkpoint writes CAS failed after ${CAS_MAX_ATTEMPTS} attempts for ${threadId}/${key}`,
-              );
-            }
-            continue;
+    await this.locks
+      .run(`${threadId}\0${key}`, async () => {
+        for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+          let etag: string | null = null;
+          let createOnly = false;
+          let blob: Record<string, unknown>;
+          const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+          const resp = await fetch(this.url(threadId, key), getInit);
+          if (resp.status === 404) {
+            // Normal Pregel order: putWrites for the *next* checkpoint_id
+            // lands before put creates that blob. Create a shell with
+            // If-None-Match:* so a concurrent put that already wrote
+            // cannot be overwritten.
+            blob = {
+              v: 1,
+              checkpoint: await this.serde.dumpsTyped({}),
+              metadata: await this.serde.dumpsTyped({}),
+              parent_checkpoint_id: null,
+              writes: [],
+            };
+            createOnly = true;
+          } else if (resp.ok) {
+            etag = resp.headers.get("ETag");
+            blob = await this.decode(new Uint8Array(await resp.arrayBuffer()));
+          } else {
+            const body = await resp.text();
+            if (isRunNotInflight(resp.status, body)) throw new RunNotInflight();
+            throw new Error(`GET checkpoint failed: ${resp.status} ${body}`);
           }
-          throw err;
+
+          const encoded = [...((blob.writes as unknown[]) || [])];
+          for (const [channel, value] of writes) {
+            encoded.push([taskId, channel, await this.serde.dumpsTyped(value)]);
+          }
+          blob.writes = encoded;
+          try {
+            await this.putCas(threadId, key, await this.encode(blob), headers, {
+              etag,
+              createOnly,
+            });
+            return;
+          } catch (err) {
+            if (err instanceof RunNotInflight) throw err;
+            if (err instanceof CASConflict) {
+              if (attempt === CAS_MAX_ATTEMPTS - 1) {
+                throw new Error(
+                  `checkpoint writes CAS failed after ${CAS_MAX_ATTEMPTS} attempts for ${threadId}/${key}`,
+                );
+              }
+              continue;
+            }
+            throw err;
+          }
         }
-      }
-    }).catch((err) => {
-      if (err instanceof RunNotInflight) return;
-      throw err;
-    });
+      })
+      .catch((err) => {
+        if (err instanceof RunNotInflight) return;
+        throw err;
+      });
   }
 
   async deleteThread(threadId: string): Promise<void> {
