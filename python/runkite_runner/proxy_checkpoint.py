@@ -72,6 +72,14 @@ class _CASConflict(Exception):
     """If-Match lost the race; caller should re-read and retry."""
 
 
+class _RunNotInflight(Exception):
+    """Run cancelled/reclaimed/terminal; late checkpoint writes are dropped."""
+
+
+def _is_run_not_inflight(status_code: int, body: str) -> bool:
+    return status_code == 403 and "run_not_inflight" in body
+
+
 def _blob_key(checkpoint_ns: str, checkpoint_id: str) -> str:
     if not checkpoint_ns:
         return checkpoint_id
@@ -117,7 +125,10 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
     ):
         super().__init__()
         self._base = http_base_url.rstrip("/")
-        self._headers: dict[str, str] = {_HEADER_FRAMEWORK: "langgraph"}
+        self._headers: dict[str, str] = {
+            _HEADER_FRAMEWORK: "langgraph",
+            "X-Runner-Kind": "python-langgraph",
+        }
         if runner_token:
             self._headers["Authorization"] = f"Bearer {runner_token}"
             self._headers["X-Runner-Token"] = runner_token
@@ -190,16 +201,18 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
             put_headers["If-None-Match"] = "*"
         elif etag:
             put_headers["If-Match"] = etag
-        put = await client.put(
-            self._url(thread_id, key), content=body, headers=put_headers
-        )
+        else:
+            # GET 200 without ETag would otherwise become an unconditional PUT
+            # and clobber peers (gateway stripping ETag disables CAS).
+            raise RuntimeError(f"checkpoint update refused: GET returned no ETag for {thread_id}/{key}")
+        put = await client.put(self._url(thread_id, key), content=body, headers=put_headers)
         if put.status_code == 412:
             raise _CASConflict()
+        if _is_run_not_inflight(put.status_code, put.text):
+            raise _RunNotInflight()
         put.raise_for_status()
 
-    def _tuple_from_blob(
-        self, config: RunnableConfig, key: str, blob: dict[str, Any]
-    ) -> CheckpointTuple:
+    def _tuple_from_blob(self, config: RunnableConfig, key: str, blob: dict[str, Any]) -> CheckpointTuple:
         ns, cid = _parse_blob_key(key)
         cfg_thread = config["configurable"]["thread_id"]
         parent_id = blob.get("parent_checkpoint_id")
@@ -215,9 +228,7 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
         pending_writes = []
         for item in blob.get("writes") or []:
             task_id, channel, value = item[0], item[1], item[2]
-            pending_writes.append(
-                (task_id, channel, self.serde.loads_typed(_as_typed(value)))
-            )
+            pending_writes.append((task_id, channel, self.serde.loads_typed(_as_typed(value))))
         return CheckpointTuple(
             {
                 "configurable": {
@@ -258,9 +269,7 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
         resp.raise_for_status()
         key = unquote(resp.headers.get("X-Runkite-Checkpoint-Id") or "")
         if not key:
-            return await self._aget_latest_via_list(
-                config, thread_id, ns, headers, client
-            )
+            return await self._aget_latest_via_list(config, thread_id, ns, headers, client)
         return self._tuple_from_blob(config, key, self._decode(resp.content))
 
     async def _aget_latest_via_list(
@@ -299,8 +308,7 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
     ) -> AsyncIterator[CheckpointTuple]:
         if filter:
             raise NotImplementedError(
-                "ProxyCheckpointSaver.alist(filter=...) is not supported; "
-                "omit filter or use POSTGRES_DSN direct mode"
+                "ProxyCheckpointSaver.alist(filter=...) is not supported; omit filter or use POSTGRES_DSN direct mode"
             )
         if config is None:
             return
@@ -375,6 +383,14 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
                     # writes shell first. Create-only so we never wipe it
                     # with an unconditional PUT of writes=[].
                     create_only = True
+                elif _is_run_not_inflight(prev.status_code, prev.text):
+                    return {
+                        "configurable": {
+                            "thread_id": cfg_thread,
+                            "checkpoint_ns": ns,
+                            "checkpoint_id": checkpoint_id,
+                        }
+                    }
                 else:
                     prev.raise_for_status()
 
@@ -396,11 +412,12 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
                         create_only=create_only,
                     )
                     break
+                except _RunNotInflight:
+                    break
                 except _CASConflict:
                     if attempt == _CAS_MAX_ATTEMPTS - 1:
                         raise RuntimeError(
-                            f"checkpoint CAS failed after {_CAS_MAX_ATTEMPTS} attempts "
-                            f"for {thread_id}/{key}"
+                            f"checkpoint CAS failed after {_CAS_MAX_ATTEMPTS} attempts for {thread_id}/{key}"
                         ) from None
                     continue
 
@@ -428,10 +445,7 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
             # Fail loud: a silent no-op would drop mid-superstep channel
             # writes and make HITL / crash resume look "fine" while state
             # is incomplete. LangGraph always supplies checkpoint_id here.
-            raise ValueError(
-                "ProxyCheckpointSaver.aput_writes requires "
-                "configurable.checkpoint_id"
-            )
+            raise ValueError("ProxyCheckpointSaver.aput_writes requires configurable.checkpoint_id")
         key = _blob_key(ns, checkpoint_id)
         headers = self._client_headers()
         lock = await self._lock_for(thread_id, key)
@@ -455,6 +469,8 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
                         "writes": [],
                     }
                     create_only = True
+                elif _is_run_not_inflight(resp.status_code, resp.text):
+                    return
                 else:
                     resp.raise_for_status()
                     etag = resp.headers.get("ETag")
@@ -475,11 +491,12 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
                         create_only=create_only,
                     )
                     return
+                except _RunNotInflight:
+                    return
                 except _CASConflict:
                     if attempt == _CAS_MAX_ATTEMPTS - 1:
                         raise RuntimeError(
-                            f"checkpoint writes CAS failed after {_CAS_MAX_ATTEMPTS} "
-                            f"attempts for {thread_id}/{key}"
+                            f"checkpoint writes CAS failed after {_CAS_MAX_ATTEMPTS} attempts for {thread_id}/{key}"
                         ) from None
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
@@ -495,9 +512,7 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
     ) -> Iterator[CheckpointTuple]:
         async def _collect():
             out = []
-            async for item in self.alist(
-                config, filter=filter, before=before, limit=limit
-            ):
+            async for item in self.alist(config, filter=filter, before=before, limit=limit):
                 out.append(item)
             return out
 

@@ -53,3 +53,19 @@ export function checkpointThreadId(tenantId, threadId) {
         return threadId;
     return `${tid}:${threadId}`;
 }
+/** Bare threads.thread_id for /internal/checkpoints HTTP paths.
+ * Inverse of checkpointThreadId for the active tenant: direct
+ * PostgresSaver needs the prefixed configurable.thread_id (no
+ * tenant column on LangGraph's tables), but proxy mode stores under the
+ * real threads.thread_id PK and run-binding compares against that bare
+ * id. Stripping here keeps both modes correct. */
+export function storageThreadId(configThreadId) {
+    const tenant = currentTenant();
+    if (tenant && tenant !== DEFAULT_TENANT) {
+        const prefix = `${tenant}:`;
+        if (configThreadId.startsWith(prefix)) {
+            return configThreadId.slice(prefix.length);
+        }
+    }
+    return configThreadId;
+}

@@ -106,11 +106,7 @@ def _mock_transport() -> tuple[httpx.MockTransport, dict[tuple[str, str], bytes]
             return httpx.Response(200, content=blob, headers=headers)
 
         if request.method == "GET" and checkpoint_id is None:
-            items = [
-                meta[k]
-                for k in reversed(list(store.keys()))
-                if k[0] == thread_id
-            ]
+            items = [meta[k] for k in reversed(list(store.keys())) if k[0] == thread_id]
             limit = int(request.url.params.get("limit", "1000"))
             return httpx.Response(
                 200,
@@ -158,13 +154,15 @@ async def test_round_trip():
         check("HTTP path used bare thread_id", ("thr-1", "cp-a") in store)
         check("tenant prefix not used as storage key", ("acme:thr-1", "cp-a") not in store)
 
-        got = await saver.aget_tuple({
-            "configurable": {
-                "thread_id": "acme:thr-1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp-a",
+        got = await saver.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": "acme:thr-1",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "cp-a",
+                }
             }
-        })
+        )
         check("aget_tuple finds blob", got is not None)
         assert got is not None
         check("checkpoint values round-trip", got.checkpoint["channel_values"]["messages"] == ["hi"])
@@ -195,9 +193,7 @@ async def test_round_trip():
             {"step": 2, "source": "loop", "writes": {}, "parents": {}},
             {},
         )
-        latest = await saver.aget_tuple(
-            {"configurable": {"thread_id": "acme:thr-1", "checkpoint_ns": ""}}
-        )
+        latest = await saver.aget_tuple({"configurable": {"thread_id": "acme:thr-1", "checkpoint_ns": ""}})
         check("aget latest returns newest", latest is not None and latest.checkpoint["id"] == "cp-b")
 
         listed = []
@@ -291,10 +287,7 @@ async def test_round_trip():
         )
         after_aput = await saver.aget_tuple(write_cfg)
         assert after_aput is not None
-        keep_ok = (
-            after_aput.pending_writes is not None
-            and any(w[0] == "task-keep" for w in after_aput.pending_writes)
-        )
+        keep_ok = after_aput.pending_writes is not None and any(w[0] == "task-keep" for w in after_aput.pending_writes)
         check("aput preserves existing pending_writes", keep_ok)
     finally:
         reset_tenant(token)
@@ -304,12 +297,8 @@ async def test_round_trip():
 async def test_concurrent_pending_writes_cas():
     """Two saver instances (no shared lock) racing aput_writes — both channels survive."""
     transport, _store = _mock_transport()
-    s1 = ProxyCheckpointSaver(
-        http_base_url="http://cp.test", runner_token="tok", transport=transport
-    )
-    s2 = ProxyCheckpointSaver(
-        http_base_url="http://cp.test", runner_token="tok", transport=transport
-    )
+    s1 = ProxyCheckpointSaver(http_base_url="http://cp.test", runner_token="tok", transport=transport)
+    s2 = ProxyCheckpointSaver(http_base_url="http://cp.test", runner_token="tok", transport=transport)
     token = bind_tenant("default")
     try:
         cfg = {"configurable": {"thread_id": "thr-cas", "checkpoint_ns": ""}}
@@ -355,12 +344,8 @@ async def test_aput_create_only_preserves_writes_shell():
     unconditional aput that wipes pending writes.
     """
     transport, _store = _mock_transport()
-    s1 = ProxyCheckpointSaver(
-        http_base_url="http://cp.test", runner_token="tok", transport=transport
-    )
-    s2 = ProxyCheckpointSaver(
-        http_base_url="http://cp.test", runner_token="tok", transport=transport
-    )
+    s1 = ProxyCheckpointSaver(http_base_url="http://cp.test", runner_token="tok", transport=transport)
+    s2 = ProxyCheckpointSaver(http_base_url="http://cp.test", runner_token="tok", transport=transport)
     token = bind_tenant("default")
     try:
         cfg = {"configurable": {"thread_id": "thr-race", "checkpoint_ns": ""}}
@@ -373,9 +358,7 @@ async def test_aput_create_only_preserves_writes_shell():
         }
 
         async def do_writes():
-            await s1.aput_writes(
-                write_cfg, [("messages", "from-writes")], task_id="task-w"
-            )
+            await s1.aput_writes(write_cfg, [("messages", "from-writes")], task_id="task-w")
 
         async def do_aput():
             await s2.aput(
@@ -394,8 +377,7 @@ async def test_aput_create_only_preserves_writes_shell():
         )
         check(
             "race: pending writes from aput_writes shell preserved",
-            got.pending_writes is not None
-            and any(w[0] == "task-w" for w in got.pending_writes),
+            got.pending_writes is not None and any(w[0] == "task-w" for w in got.pending_writes),
         )
     finally:
         reset_tenant(token)
@@ -403,10 +385,52 @@ async def test_aput_create_only_preserves_writes_shell():
         await s2.aclose()
 
 
+async def test_soft_noop_on_run_not_inflight():
+    """Late put/putWrites after cancel must not raise (parity with TS)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            content=json.dumps({"error": "run_not_inflight"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    saver = ProxyCheckpointSaver(
+        http_base_url="http://cp.test",
+        runner_token="tok",
+        transport=httpx.MockTransport(handler),
+    )
+    token = bind_tenant("acme")
+    try:
+        out = await saver.aput(
+            {"configurable": {"thread_id": "thr-x", "checkpoint_ns": ""}},
+            _checkpoint("cp-dead"),
+            {"step": 1, "source": "loop", "writes": {}, "parents": {}},
+            {},
+        )
+        check("aput soft-no-op returns config", out["configurable"]["checkpoint_id"] == "cp-dead")
+        await saver.aput_writes(
+            {
+                "configurable": {
+                    "thread_id": "thr-x",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "cp-dead",
+                }
+            },
+            [("messages", "late")],
+            task_id="t-late",
+        )
+        check("aput_writes soft-no-op returns", True)
+    finally:
+        reset_tenant(token)
+        await saver.aclose()
+
+
 def main():
     asyncio.run(test_round_trip())
     asyncio.run(test_concurrent_pending_writes_cas())
     asyncio.run(test_aput_create_only_preserves_writes_shell())
+    asyncio.run(test_soft_noop_on_run_not_inflight())
     print("all proxy checkpoint checks passed")
 
 

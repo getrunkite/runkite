@@ -51,7 +51,13 @@ function makeMockServer(): {
     void (async () => {
       if (req.method === "GET" && checkpointId === "latest") {
         const ns = url.searchParams.get("ns") || "";
-        for (const k of [...store.keys()].reverse()) {
+        // Match CP ordering: checkpoint_id DESC, not Map insertion order.
+        const candidates = [...store.keys()].sort((a, b) => {
+          const ca = a.split("\0")[1] || "";
+          const cb = b.split("\0")[1] || "";
+          return cb.localeCompare(ca);
+        });
+        for (const k of candidates) {
           const [tid, cid] = k.split("\0") as [string, string];
           if (tid !== threadId) continue;
           const keyNs = cid.includes("\x1f") ? cid.slice(0, cid.indexOf("\x1f")) : "";
@@ -116,7 +122,7 @@ function makeMockServer(): {
       if (req.method === "GET" && checkpointId === undefined) {
         const items = [...meta.entries()]
           .filter(([k]) => k.startsWith(`${threadId}\0`))
-          .reverse()
+          .sort((a, b) => (b[1].checkpoint_id || "").localeCompare(a[1].checkpoint_id || ""))
           .map(([, m]) => m);
         const limit = parseInt(url.searchParams.get("limit") || "1000", 10);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -291,6 +297,188 @@ test("list(filter) throws; putWrites without checkpoint_id throws", async () => 
   } finally {
     await saver.close();
     await closeServer(mock.server);
+  }
+});
+
+test("put/putWrites soft-no-op on run_not_inflight", async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "run_not_inflight" }));
+  });
+  await listen(server);
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("no listen address");
+  const saver = new ProxyCheckpointSaver({
+    httpBaseUrl: `http://127.0.0.1:${addr.port}`,
+    runnerToken: "tok",
+  });
+  try {
+    await runWithTenant("default", async () => {
+      const out = await saver.put(
+        { configurable: { thread_id: "thr-x", checkpoint_ns: "" } },
+        checkpoint("cp-dead"),
+        metadata(1),
+        {},
+      );
+      assert.equal(out.configurable?.checkpoint_id, "cp-dead");
+      await saver.putWrites(
+        {
+          configurable: {
+            thread_id: "thr-x",
+            checkpoint_ns: "",
+            checkpoint_id: "cp-dead",
+          },
+        },
+        [["messages", "late"]],
+        "t-late",
+      );
+    });
+  } finally {
+    await saver.close();
+    await closeServer(server);
+  }
+});
+
+
+test("put CAS retries once on 412 then succeeds", async () => {
+  let puts = 0;
+  const blobs = new Map<string, Buffer>();
+  const vers = new Map<string, number>();
+  const server = http.createServer((req, res) => {
+    const host = req.headers.host || "127.0.0.1";
+    const url = new URL(req.url || "/", `http://${host}`);
+    const rest = decodeURIComponent(url.pathname.replace(/^\/internal\/checkpoints\//, ""));
+    const slash = rest.indexOf("/");
+    const threadId = slash < 0 ? rest : rest.slice(0, slash);
+    const checkpointId = slash < 0 ? undefined : rest.slice(slash + 1);
+    const key = `${threadId}\0${checkpointId}`;
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on("end", () => {
+      if (req.method === "GET" && checkpointId) {
+        const blob = blobs.get(key);
+        if (!blob) {
+          // First GET is 404 → create-only PUT; force that PUT to 412 once.
+          res.writeHead(404);
+          res.end("missing");
+          return;
+        }
+        res.writeHead(200, { ETag: `"${vers.get(key) || 1}"` });
+        res.end(blob);
+        return;
+      }
+      if (req.method === "PUT" && checkpointId) {
+        puts += 1;
+        if (puts === 1) {
+          // Peer won create-only: return 412 so saver retries via GET+merge.
+          blobs.set(key, Buffer.from("peer-shell"));
+          vers.set(key, 1);
+          res.writeHead(412);
+          res.end("exists");
+          return;
+        }
+        const body = Buffer.concat(chunks);
+        blobs.set(key, body);
+        const ver = (vers.get(key) || 0) + 1;
+        vers.set(key, ver);
+        res.writeHead(204, { ETag: `"${ver}"` });
+        res.end();
+        return;
+      }
+      res.writeHead(405);
+      res.end();
+    });
+  });
+  await listen(server);
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("no addr");
+  const saver = new ProxyCheckpointSaver({
+    httpBaseUrl: `http://127.0.0.1:${addr.port}`,
+    runnerToken: "tok",
+  });
+  try {
+    await runWithTenant("default", async () => {
+      const out = await saver.put(
+        { configurable: { thread_id: "thr-cas", checkpoint_ns: "" } },
+        checkpoint("cp-cas", { messages: ["retried"] }),
+        metadata(1),
+        {},
+      );
+      assert.equal(out.configurable?.checkpoint_id, "cp-cas");
+      assert.ok(puts >= 2, `expected CAS retry, puts=${puts}`);
+    });
+  } finally {
+    await saver.close();
+    await closeServer(server);
+  }
+});
+
+test("cross-saver create-only race preserves putWrites shell", async () => {
+  const mock = makeMockServer();
+  await listen(mock.server);
+  const s1 = new ProxyCheckpointSaver({ httpBaseUrl: mock.baseUrl(), runnerToken: "tok" });
+  const s2 = new ProxyCheckpointSaver({ httpBaseUrl: mock.baseUrl(), runnerToken: "tok" });
+  try {
+    await runWithTenant("default", async () => {
+      const writeCfg = {
+        configurable: { thread_id: "thr-race", checkpoint_ns: "", checkpoint_id: "cp-race" },
+      };
+      await Promise.all([
+        s1.putWrites(writeCfg, [["messages", "from-writes"]], "task-w"),
+        s2.put(
+          { configurable: { thread_id: "thr-race", checkpoint_ns: "" } },
+          checkpoint("cp-race", { messages: ["from-put"] }),
+          metadata(1),
+          {},
+        ),
+      ]);
+      const got = await s1.getTuple(writeCfg);
+      assert.ok(got);
+      assert.deepEqual(got!.checkpoint.channel_values.messages, ["from-put"]);
+      assert.ok(got!.pendingWrites?.some((w) => w[0] === "task-w"), "shell writes preserved");
+    });
+  } finally {
+    await s1.close();
+    await s2.close();
+    await closeServer(mock.server);
+  }
+});
+
+test("update refuses GET 200 without ETag", async () => {
+  const server = http.createServer((req, res) => {
+    if (req.method === "GET") {
+      // Valid empty-ish envelope is unnecessary — decode failure yields writes=[].
+      // Critical: 200 without ETag must not become unconditional PUT.
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      res.end(Buffer.from([0]));
+      return;
+    }
+    res.writeHead(500);
+    res.end("should not PUT");
+  });
+  await listen(server);
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("no addr");
+  const saver = new ProxyCheckpointSaver({
+    httpBaseUrl: `http://127.0.0.1:${addr.port}`,
+    runnerToken: "tok",
+  });
+  try {
+    await runWithTenant("default", async () => {
+      await assert.rejects(
+        () =>
+          saver.put(
+            { configurable: { thread_id: "thr-x", checkpoint_ns: "" } },
+            checkpoint("cp-x"),
+            metadata(1),
+            {},
+          ),
+        /no ETag/,
+      );
+    });
+  } finally {
+    await saver.close();
+    await closeServer(server);
   }
 });
 

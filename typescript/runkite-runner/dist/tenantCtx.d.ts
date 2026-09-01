@@ -20,3 +20,10 @@ export declare function tenantHeaders(): Record<string, string>;
  * Empty / "default" → bare threadId (existing single-tenant rows stay
  * reachable). Any other tenant → `${tenantId}:${threadId}`. */
 export declare function checkpointThreadId(tenantId: string | undefined | null, threadId: string): string;
+/** Bare threads.thread_id for /internal/checkpoints HTTP paths.
+ * Inverse of checkpointThreadId for the active tenant: direct
+ * PostgresSaver needs the prefixed configurable.thread_id (no
+ * tenant column on LangGraph's tables), but proxy mode stores under the
+ * real threads.thread_id PK and run-binding compares against that bare
+ * id. Stripping here keeps both modes correct. */
+export declare function storageThreadId(configThreadId: string): string;

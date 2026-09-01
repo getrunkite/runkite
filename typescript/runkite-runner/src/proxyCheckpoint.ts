@@ -64,6 +64,23 @@ class CASConflict extends Error {
   }
 }
 
+/**
+ * Control plane rejects checkpoint I/O once the run is cancelled /
+ * reclaimed / terminal. Late Pregel putWrites after cancel must not
+ * crash the Node process (unhandled throw kills the whole runner and
+ * starves the next matrix scenario in the same cell).
+ */
+class RunNotInflight extends Error {
+  constructor() {
+    super("run_not_inflight");
+    this.name = "RunNotInflight";
+  }
+}
+
+function isRunNotInflight(status: number, body: string): boolean {
+  return status === 403 && body.includes("run_not_inflight");
+}
+
 function blobKey(checkpointNs: string, checkpointId: string): string {
   if (!checkpointNs) return checkpointId;
   return `${checkpointNs}${NS_SEP}${checkpointId}`;
@@ -120,11 +137,13 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
   constructor(opts: ProxyCheckpointSaverOptions) {
     super();
     this.base = opts.httpBaseUrl.replace(/\/+$/, "");
-    this.staticHeaders = { [HEADER_FRAMEWORK]: "langgraph" };
+    this.staticHeaders = {
+      [HEADER_FRAMEWORK]: "langgraph",
+      "X-Runner-Kind": "typescript-langgraphjs",
+    };
     if (opts.runnerToken) {
       this.staticHeaders["Authorization"] = `Bearer ${opts.runnerToken}`;
       this.staticHeaders["X-Runner-Token"] = opts.runnerToken;
-      this.staticHeaders["X-Runner-Kind"] = "typescript-langgraphjs";
     }
   }
 
@@ -178,6 +197,13 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     };
     if (opts.createOnly) putHeaders["If-None-Match"] = "*";
     else if (opts.etag) putHeaders["If-Match"] = opts.etag;
+    else {
+      // GET 200 without ETag would otherwise become an unconditional PUT
+      // and clobber peers (gateway stripping ETag disables CAS).
+      throw new Error(
+        `checkpoint update refused: GET returned no ETag for ${threadId}/${key}`,
+      );
+    }
 
     const init: FetchInit = {
       method: "PUT",
@@ -187,7 +213,11 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     };
     const put = await fetch(this.url(threadId, key), init);
     if (put.status === 412) throw new CASConflict();
-    if (!put.ok) throw new Error(`PUT checkpoint failed: ${put.status} ${await put.text()}`);
+    if (!put.ok) {
+      const body = await put.text();
+      if (isRunNotInflight(put.status, body)) throw new RunNotInflight();
+      throw new Error(`PUT checkpoint failed: ${put.status} ${body}`);
+    }
   }
 
   private async tupleFromBlob(
@@ -364,7 +394,9 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           // unconditional PUT of writes=[].
           createOnly = true;
         } else {
-          throw new Error(`GET checkpoint failed: ${prev.status} ${await prev.text()}`);
+          const body = await prev.text();
+          if (isRunNotInflight(prev.status, body)) throw new RunNotInflight();
+          throw new Error(`GET checkpoint failed: ${prev.status} ${body}`);
         }
 
         const blob = {
@@ -381,6 +413,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           });
           return;
         } catch (err) {
+          if (err instanceof RunNotInflight) throw err;
           if (err instanceof CASConflict) {
             if (attempt === CAS_MAX_ATTEMPTS - 1) {
               throw new Error(
@@ -392,6 +425,9 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           throw err;
         }
       }
+    }).catch((err) => {
+      if (err instanceof RunNotInflight) return;
+      throw err;
     });
 
     return {
@@ -441,7 +477,9 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           etag = resp.headers.get("ETag");
           blob = await this.decode(new Uint8Array(await resp.arrayBuffer()));
         } else {
-          throw new Error(`GET checkpoint failed: ${resp.status} ${await resp.text()}`);
+          const body = await resp.text();
+          if (isRunNotInflight(resp.status, body)) throw new RunNotInflight();
+          throw new Error(`GET checkpoint failed: ${resp.status} ${body}`);
         }
 
         const encoded = [...((blob.writes as unknown[]) || [])];
@@ -456,6 +494,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           });
           return;
         } catch (err) {
+          if (err instanceof RunNotInflight) throw err;
           if (err instanceof CASConflict) {
             if (attempt === CAS_MAX_ATTEMPTS - 1) {
               throw new Error(
@@ -467,23 +506,31 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           throw err;
         }
       }
+    }).catch((err) => {
+      if (err instanceof RunNotInflight) return;
+      throw err;
     });
   }
 
   async deleteThread(threadId: string): Promise<void> {
-    // CP has per-blob DELETE only — list then delete each.
+    // CP has per-blob DELETE only — page through list then delete each.
+    // A single LIST_FETCH_LIMIT page would silently leave overflow blobs.
     const storageId = storageThreadId(threadId);
     const headers = this.clientHeaders();
-    const init: FetchInit = { headers, dispatcher: this.dispatcher };
-    const resp = await fetch(`${this.url(storageId)}?limit=${LIST_FETCH_LIMIT}`, init);
-    if (!resp.ok) throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
-    const items = (await resp.json()) as { checkpoint_id: string }[] | null;
-    for (const item of items || []) {
-      const delInit: FetchInit = { method: "DELETE", headers, dispatcher: this.dispatcher };
-      const del = await fetch(this.url(storageId, item.checkpoint_id), delInit);
-      if (!del.ok && del.status !== 404) {
-        throw new Error(`DELETE checkpoint failed: ${del.status} ${await del.text()}`);
+    for (;;) {
+      const init: FetchInit = { headers, dispatcher: this.dispatcher };
+      const resp = await fetch(`${this.url(storageId)}?limit=${LIST_FETCH_LIMIT}`, init);
+      if (!resp.ok) throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
+      const items = (await resp.json()) as { checkpoint_id: string }[] | null;
+      if (!items || items.length === 0) return;
+      for (const item of items) {
+        const delInit: FetchInit = { method: "DELETE", headers, dispatcher: this.dispatcher };
+        const del = await fetch(this.url(storageId, item.checkpoint_id), delInit);
+        if (!del.ok && del.status !== 404) {
+          throw new Error(`DELETE checkpoint failed: ${del.status} ${await del.text()}`);
+        }
       }
+      if (items.length < LIST_FETCH_LIMIT) return;
     }
   }
 }
