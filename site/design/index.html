@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Engineering notes — Runkite</title>
+    <meta
+      name="description"
+      content="Skimmable design notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim ceiling."
+    />
+    <meta name="theme-color" content="#050a0c" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./story.css" />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+    <div class="shell">
+      <header>
+        <a class="logo" href="../">~/ <span>runkite</span></a>
+        <nav class="nav">
+          <a href="../#architecture">Architecture</a>
+          <a class="active" href="./">Notes</a>
+          <a href="../support/">Support</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="kicker">Engineering notes · set of 4</p>
+      <h1>Crash races, closed doors, one funnel.</h1>
+      <p class="lede">
+        Four short notes on how the plane stays honest under reclaim, streaming races,
+        admission, and cursed jobs. Skim before an interview or an ops incident —
+        not a second copy of the architecture docs.
+      </p>
+
+      <ul class="links" style="list-style: none; padding: 0; margin: 2rem 0; display: grid; gap: 1rem">
+        <li>
+          <a href="./fencing.html" style="color: var(--mint); font-weight: 700; text-decoration: none"
+            >1 · Generation fencing</a
+          >
+          <p style="margin: 0.35rem 0 0; color: var(--muted); font-size: 0.95rem">
+            A stale runner cannot overwrite the winner after reclaim.
+          </p>
+        </li>
+        <li>
+          <a
+            href="./subscribe-before-enqueue.html"
+            style="color: var(--mint); font-weight: 700; text-decoration: none"
+            >2 · Subscribe-before-enqueue</a
+          >
+          <p style="margin: 0.35rem 0 0; color: var(--muted); font-size: 0.95rem">
+            Listen on the event broker before dispatch so early tokens are not lost.
+          </p>
+        </li>
+        <li>
+          <a href="./create-run-ctx.html" style="color: var(--mint); font-weight: 700; text-decoration: none"
+            >3 · createRunCtx / fail-closed serve</a
+          >
+          <p style="margin: 0.35rem 0 0; color: var(--muted); font-size: 0.95rem">
+            One admission funnel; production serve refuses an insecure posture.
+          </p>
+        </li>
+        <li>
+          <a href="./poison-pill.html" style="color: var(--mint); font-weight: 700; text-decoration: none"
+            >4 · Poison pill / reclaim ceiling</a
+          >
+          <p style="margin: 0.35rem 0 0; color: var(--muted); font-size: 0.95rem">
+            Crash-loop jobs stop reclaiming after a hard max_retries ceiling.
+          </p>
+        </li>
+      </ul>
+
+      <p style="color: var(--muted); font-size: 0.9rem">
+        Related:
+        <a href="../support/decisions/" style="color: var(--mint)">decision write-ups</a>
+        ·
+        <a href="../support/chapters/" style="color: var(--mint)">public chapters</a>
+        ·
+        <a href="../support/ops.html" style="color: var(--mint)">Support · Ops</a>
+      </p>
+    </div>
+  </body>
+</html>
