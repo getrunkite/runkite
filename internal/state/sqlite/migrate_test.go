@@ -21,24 +21,47 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 8 {
-		t.Fatalf("version after Init = %d, %v; want 8", cur, err)
+	if err != nil || cur != 10 {
+		t.Fatalf("version after Init = %d, %v; want 10", cur, err)
 	}
-	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches", "break_glass_windows", "mandatory_hitl_rules"} {
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches", "break_glass_windows", "mandatory_hitl_rules", "opaque_checkpoints"} {
 		if !tableExists(t, s, tbl) {
 			t.Fatalf("%s missing after Init", tbl)
 		}
+	}
+	if !columnExists(t, s, "opaque_checkpoints", "version") {
+		t.Fatal("opaque_checkpoints.version missing after Init")
 	}
 
 	if err := s.Init(ctx); err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 8 {
-		t.Fatalf("version after second Init = %d, want 8", cur)
+	if cur != 10 {
+		t.Fatalf("version after second Init = %d, want 10", cur)
 	}
 
-	// v8→v7 (mandatory_hitl) then v7→v6 (break_glass) then v6→v5 (index) then v5→v4→v3→v2→v1→0 (tables)
+	// v10→v9 (opaque_checkpoint_version) then v9→v8 (opaque_checkpoints) then …
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade to 9: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 9 {
+		t.Fatalf("version after Downgrade = %d, want 9", cur)
+	}
+	if columnExists(t, s, "opaque_checkpoints", "version") {
+		t.Fatal("opaque_checkpoints.version still present after v10 Down")
+	}
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade to 8: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 8 {
+		t.Fatalf("version after Downgrade = %d, want 8", cur)
+	}
+	if tableExists(t, s, "opaque_checkpoints") {
+		t.Fatal("opaque_checkpoints still present after v9 Down")
+	}
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatalf("Downgrade to 7: %v", err)
 	}
@@ -87,13 +110,16 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("re-Init after downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 8 {
-		t.Fatalf("version after re-Init = %d, want 8", cur)
+	if cur != 10 {
+		t.Fatalf("version after re-Init = %d, want 10", cur)
 	}
-	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches", "break_glass_windows", "mandatory_hitl_rules"} {
+	for _, tbl := range []string{"audit_events", "policy_grants", "pending_actions", "kill_switches", "break_glass_windows", "mandatory_hitl_rules", "opaque_checkpoints"} {
 		if !tableExists(t, s, tbl) {
 			t.Fatalf("%s missing after re-Init", tbl)
 		}
+	}
+	if !columnExists(t, s, "opaque_checkpoints", "version") {
+		t.Fatal("opaque_checkpoints.version missing after re-Init")
 	}
 }
 
@@ -136,11 +162,14 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 8 {
-		t.Fatalf("stamped version = %d, %v; want 8", cur, err)
+	if err != nil || cur != 10 {
+		t.Fatalf("stamped version = %d, %v; want 10", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")
+	}
+	if !columnExists(t, s, "opaque_checkpoints", "version") {
+		t.Fatal("opaque_checkpoints.version must exist after legacy upgrade")
 	}
 }
 

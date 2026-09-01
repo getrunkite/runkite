@@ -280,6 +280,27 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 9,
+			Name:    "opaque_checkpoints",
+			Up: func(ctx context.Context) error {
+				return s.upOpaqueCheckpoints(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS opaque_checkpoints`)
+				return err
+			},
+		},
+		{
+			Version: 10,
+			Name:    "opaque_checkpoint_version",
+			Up: func(ctx context.Context) error {
+				return s.upOpaqueCheckpointVersion(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				return s.downOpaqueCheckpointVersion(ctx, db)
+			},
+		},
 	}
 }
 
@@ -314,7 +335,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
-		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
+		"webhook_dead_letters", "store_items", "opaque_checkpoints", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
 	} {
@@ -460,6 +481,21 @@ func (s *Store) baselineUp(ctx context.Context, db migrate.DB) error {
 			created_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 			PRIMARY KEY (checkpoint_id),
 			KEY idx_checkpoints_thread (thread_id, created_at),
+			FOREIGN KEY (thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE
+		) ENGINE=InnoDB CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS opaque_checkpoints (
+			tenant_id     VARCHAR(255) NOT NULL DEFAULT 'default',
+			thread_id     VARCHAR(255) NOT NULL,
+			checkpoint_id VARCHAR(255) NOT NULL,
+			framework     VARCHAR(255) NOT NULL DEFAULT '',
+			data          LONGBLOB NOT NULL,
+			-- CAS token: every successful put bumps this so concurrent
+			-- proxy writers can If-Match and avoid silent lost updates.
+			version       BIGINT NOT NULL DEFAULT 1,
+			created_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			PRIMARY KEY (tenant_id, thread_id, checkpoint_id),
+			KEY idx_opaque_checkpoints_thread (thread_id, created_at),
 			FOREIGN KEY (thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
 
@@ -631,7 +667,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	defer conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck // best-effort reset before the connection returns to the pool
 
 	tables := []string{
-		"store_items", "runs", "thread_checkpoints", "threads",
+		"store_items", "runs", "opaque_checkpoints", "thread_checkpoints", "threads",
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
 		"webhook_dead_letters", "audit_events", "policy_grants", "pending_actions",
@@ -2277,6 +2313,286 @@ func (s *Store) PruneCheckpoints(ctx context.Context, keepLast int) (int64, erro
 			) ranked
 			WHERE rn > ?
 		)`
+	result, err := s.db.ExecContext(ctx, query, tenantArg, tenantArg, keepLast)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// --------------------------------------------------------------------------
+// Opaque runner checkpoints (proxy-mode BaseCheckpointSaver blobs)
+// --------------------------------------------------------------------------
+
+func (s *Store) upOpaqueCheckpoints(ctx context.Context, db migrate.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS opaque_checkpoints (
+			tenant_id     VARCHAR(255) NOT NULL DEFAULT 'default',
+			thread_id     VARCHAR(255) NOT NULL,
+			checkpoint_id VARCHAR(255) NOT NULL,
+			framework     VARCHAR(255) NOT NULL DEFAULT '',
+			data          LONGBLOB NOT NULL,
+			-- CAS token: every successful put bumps this so concurrent
+			-- proxy writers can If-Match and avoid silent lost updates.
+			version       BIGINT NOT NULL DEFAULT 1,
+			created_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			PRIMARY KEY (tenant_id, thread_id, checkpoint_id),
+			KEY idx_opaque_checkpoints_thread (thread_id, created_at),
+			FOREIGN KEY (thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE
+		) ENGINE=InnoDB CHARSET=utf8mb4`)
+	return err
+}
+
+// upOpaqueCheckpointVersion adds the CAS version column for installs that
+// already created opaque_checkpoints before version existed.
+func (s *Store) upOpaqueCheckpointVersion(ctx context.Context, db migrate.DB) error {
+	return s.addColumnIfMissing(ctx, db, "opaque_checkpoints", "version", "BIGINT NOT NULL DEFAULT 1")
+}
+
+func (s *Store) downOpaqueCheckpointVersion(ctx context.Context, db migrate.DB) error {
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'opaque_checkpoints' AND COLUMN_NAME = 'version'
+	`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check column opaque_checkpoints.version: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+	_, err = db.ExecContext(ctx, `ALTER TABLE opaque_checkpoints DROP COLUMN version`)
+	return err
+}
+
+func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+	if len(data) > models.MaxOpaqueCheckpointBytes {
+		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	now := time.Now().UTC()
+	tid := tenant.FromContext(ctx)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	// Create-only (If-None-Match: *): INSERT, conflict if the row exists.
+	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
+			VALUES (?, ?, ?, ?, ?, LAST_INSERT_ID(1), ?)
+		`, tid, threadID, checkpointID, framework, data, now)
+		if err != nil {
+			if isDuplicateKeyError(err) {
+				return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "already exists"}
+			}
+			return 0, err
+		}
+		var newVersion int64
+		if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&newVersion); err != nil {
+			return 0, fmt.Errorf("mysql: read back opaque checkpoint version: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		return newVersion, nil
+	}
+
+	// ifMatch set: UPDATE-only CAS. No upsert -- a missing row or stale
+	// version both surface as ErrConflict so the caller re-reads rather
+	// than silently creating under a mismatched ETag. Always keyed by
+	// the caller's tenant (same as the upsert path below).
+	if ifMatch != nil {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE opaque_checkpoints SET framework = ?, data = ?, created_at = ?, version = LAST_INSERT_ID(version + 1)
+			WHERE tenant_id = ? AND thread_id = ? AND checkpoint_id = ? AND version = ?
+		`, framework, data, now, tid, threadID, checkpointID, *ifMatch)
+		if err != nil {
+			return 0, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "version mismatch"}
+		}
+		var newVersion int64
+		if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&newVersion); err != nil {
+			return 0, fmt.Errorf("mysql: read back opaque checkpoint version: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		return newVersion, nil
+	}
+
+	// Unconditional upsert: insert starts at version=1; overwrite bumps
+	// via LAST_INSERT_ID(version + 1).
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
+		VALUES (?, ?, ?, ?, ?, LAST_INSERT_ID(1), ?)
+		ON DUPLICATE KEY UPDATE
+			framework = VALUES(framework),
+			data = VALUES(data),
+			-- Bump created_at on overwrite so list/prune treat a rewritten
+			-- checkpoint_id as fresh (same id reused by aput_writes merges).
+			created_at = VALUES(created_at),
+			version = LAST_INSERT_ID(version + 1)
+	`, tid, threadID, checkpointID, framework, data, now)
+	if err != nil {
+		return 0, err
+	}
+	var newVersion int64
+	if err := tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&newVersion); err != nil {
+		return 0, fmt.Errorf("mysql: read back opaque checkpoint version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+func (s *Store) GetOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) (*models.OpaqueCheckpoint, error) {
+	query := `SELECT thread_id, checkpoint_id, framework, data, version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ? AND checkpoint_id = ?`
+	args := []interface{}{threadID, checkpointID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	var oc models.OpaqueCheckpoint
+	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &oc.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+		}
+		return nil, err
+	}
+	if oc.Data == nil {
+		oc.Data = []byte{}
+	}
+	return &oc, nil
+}
+
+// GetLatestOpaqueCheckpoint returns the newest opaque blob for threadID.
+// namespace "" = root graph keys (checkpoint_id with no "\x1f"); otherwise
+// keys prefixed with namespace+"\x1f" (LangGraph folds checkpoint_ns into
+// the opaque path key this way).
+func (s *Store) GetLatestOpaqueCheckpoint(ctx context.Context, threadID, namespace string) (*models.OpaqueCheckpoint, error) {
+	const nsSep = "\x1f"
+	query := `SELECT thread_id, checkpoint_id, framework, data, version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if namespace == "" {
+		query += ` AND INSTR(checkpoint_id, ?) = 0`
+		args = append(args, nsSep)
+	} else {
+		query += ` AND checkpoint_id LIKE ?`
+		args = append(args, namespace+nsSep+"%")
+	}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	// checkpoint_id DESC matches LangGraph (not created_at — see Store interface).
+	query += ` ORDER BY checkpoint_id DESC LIMIT 1`
+	row := s.db.QueryRowContext(ctx, query, args...)
+	var oc models.OpaqueCheckpoint
+	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &oc.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: threadID}
+		}
+		return nil, err
+	}
+	if oc.Data == nil {
+		oc.Data = []byte{}
+	}
+	return &oc, nil
+}
+
+func (s *Store) ListOpaqueCheckpoints(ctx context.Context, threadID string, limit int) ([]models.OpaqueCheckpointMeta, error) {
+	if limit <= 0 {
+		// High default: proxy "latest" / alist must see full thread history.
+		limit = 1000
+	}
+	query := `SELECT checkpoint_id, framework, LENGTH(data), version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY checkpoint_id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.OpaqueCheckpointMeta{}
+	for rows.Next() {
+		var m models.OpaqueCheckpointMeta
+		if err := rows.Scan(&m.CheckpointID, &m.Framework, &m.SizeBytes, &m.Version, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) error {
+	query := `DELETE FROM opaque_checkpoints WHERE thread_id = ? AND checkpoint_id = ?`
+	args := []interface{}{threadID, checkpointID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+	}
+	return nil
+}
+
+func (s *Store) PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64, error) {
+	if keepLast <= 0 {
+		return 0, nil
+	}
+	var tenantArg interface{}
+	if !tenant.IsSystem(ctx) {
+		tenantArg = tenant.FromContext(ctx)
+	}
+	// Multi-table DELETE JOIN avoids MySQL's "can't specify target table
+	// for update in FROM clause" for the composite PK (same derived-table
+	// materialization trick PruneCheckpoints relies on).
+	query := `
+		DELETE oc FROM opaque_checkpoints oc
+		INNER JOIN (
+			SELECT tenant_id, thread_id, checkpoint_id FROM (
+				SELECT tenant_id, thread_id, checkpoint_id,
+					ROW_NUMBER() OVER (PARTITION BY tenant_id, thread_id ORDER BY created_at DESC) AS rn
+				FROM opaque_checkpoints
+				WHERE (? IS NULL OR tenant_id = ?)
+			) ranked
+			WHERE rn > ?
+		) doomed ON oc.tenant_id = doomed.tenant_id
+			AND oc.thread_id = doomed.thread_id
+			AND oc.checkpoint_id = doomed.checkpoint_id`
 	result, err := s.db.ExecContext(ctx, query, tenantArg, tenantArg, keepLast)
 	if err != nil {
 		return 0, err

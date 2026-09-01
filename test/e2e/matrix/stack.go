@@ -207,6 +207,13 @@ type cell struct {
 
 	serveLog  *syncBuffer
 	runnerLog *syncBuffer
+
+	// Mutable runner process so hitl_restart can kill + relaunch without
+	// leaving the original t.Cleanup pointing at a stale Cmd. Protected
+	// by mu because cleanup and restart can interleave with test failure.
+	mu        sync.Mutex
+	runnerCmd *exec.Cmd
+	launchEnv launchEnv
 }
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -263,16 +270,28 @@ func startCell(t *testing.T, backend BackendSpec, runner RunnerSpec) *cell {
 		t.Fatalf("control plane never became healthy: %v\n--- control plane output ---\n%s", err, serveLog.String())
 	}
 
-	proc, err := runner.Launch(launchEnv{
+	lenv := launchEnv{
 		RepoRoot:   repoRoot,
 		ConfigPath: configPath,
 		GRPCAddr:   "localhost:" + grpcPort,
 		HTTPAddr:   baseURL,
-	})
+	}
+	proc, err := runner.Launch(lenv)
 	if err != nil {
 		t.Fatalf("start %s runner: %v", runner.Name, err)
 	}
-	t.Cleanup(func() { killProcessGroup(proc.Cmd) })
+
+	c := &cell{
+		t:         t,
+		baseURL:   baseURL,
+		runner:    runner,
+		backend:   backend,
+		serveLog:  serveLog,
+		runnerLog: proc.Log,
+		runnerCmd: proc.Cmd,
+		launchEnv: lenv,
+	}
+	t.Cleanup(func() { c.killRunner() })
 
 	if err := waitForAgent(baseURL, runner.AgentID, runner.StartupTimeout); err != nil {
 		t.Fatalf("agent never registered: %v\n--- control plane output ---\n%s\n--- runner output ---\n%s",
@@ -291,14 +310,48 @@ func startCell(t *testing.T, backend BackendSpec, runner RunnerSpec) *cell {
 	// ../adapters/main_test.go both use after agent registration.
 	time.Sleep(2 * time.Second)
 
-	return &cell{
-		t:         t,
-		baseURL:   baseURL,
-		runner:    runner,
-		backend:   backend,
-		serveLog:  serveLog,
-		runnerLog: proc.Log,
+	return c
+}
+
+// killRunner SIGKILLs the current runner process group (if any).
+func (c *cell) killRunner() {
+	c.mu.Lock()
+	cmd := c.runnerCmd
+	c.runnerCmd = nil
+	c.mu.Unlock()
+	killProcessGroup(cmd)
+}
+
+// restartRunner kills the current runner (crash simulation -- no graceful
+// flush) and starts a fresh process against the same control plane. Used
+// by hitl_restart to prove proxy opaque checkpoints survive a runner
+// process boundary on SQLite/MySQL/etc. (no runner POSTGRES_DSN).
+func (c *cell) restartRunner() {
+	c.t.Helper()
+	c.killRunner()
+	// Wait past the reclaim maxAge (6s) plus one reclaim tick (~2s) so a
+	// Redis-transport cell under load cannot race a stale in-flight
+	// reclaim against the resume dispatch. Also covers the CP dropping
+	// the dead runner's GetJob long-poll. 5s was too tight — hitl_restart
+	// flaked on postgres_redis + mongo_redis when both ran in one process.
+	time.Sleep(10 * time.Second)
+
+	proc, err := c.runner.Launch(c.launchEnv)
+	if err != nil {
+		c.t.Fatalf("restart %s runner: %v", c.runner.Name, err)
 	}
+	c.mu.Lock()
+	c.runnerCmd = proc.Cmd
+	c.runnerLog = proc.Log
+	c.mu.Unlock()
+
+	if err := waitForAgent(c.baseURL, c.runner.AgentID, c.runner.StartupTimeout); err != nil {
+		c.t.Fatalf("agent never re-registered after restart: %v\n%s", err, c.diagnostics())
+	}
+	if err := proc.Cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		c.t.Fatalf("restarted runner exited during startup: %v\n%s", err, c.diagnostics())
+	}
+	time.Sleep(2 * time.Second)
 }
 
 // killProcessGroup sends SIGKILL to the whole process group cmd was

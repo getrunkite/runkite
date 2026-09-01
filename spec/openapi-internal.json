@@ -803,6 +803,265 @@
         }
       }
     },
+    "/internal/checkpoints/{thread_id}": {
+      "get": {
+        "tags": [
+          "Checkpoints"
+        ],
+        "summary": "List opaque checkpoints for a thread (proxy mode)",
+        "description": "Returns newest-first metadata for framework-owned opaque blobs. Requires run binding; path thread_id must match the in-flight assignment.",
+        "operationId": "internal_list_checkpoints",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "checkpoint_id",
+                      "created_at"
+                    ],
+                    "properties": {
+                      "checkpoint_id": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "framework": {
+                        "type": "string"
+                      },
+                      "size_bytes": {
+                        "type": "integer"
+                      },
+                      "version": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Run binding required"
+          },
+          "403": {
+            "description": "thread_id does not match run binding"
+          }
+        }
+      }
+    },
+    "/internal/checkpoints/{thread_id}/{checkpoint_id}": {
+      "put": {
+        "tags": [
+          "Checkpoints"
+        ],
+        "summary": "Put opaque checkpoint blob (proxy mode)",
+        "description": "Stores framework-owned bytes. Soft size cap 16 MiB (413 if exceeded). checkpoint_id is opaque (may contain framework encoding such as namespace prefixes).",
+        "operationId": "internal_put_checkpoint",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Checkpoint-Framework",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Strong numeric ETag from a prior GET/PUT. Weak (W/\"\u2026\") or malformed \u2192 400. Mismatch \u2192 412."
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Use * for create-only. If the checkpoint_id already exists \u2192 412. Cannot combine with If-Match."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Stored",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "New version token"
+              }
+            }
+          },
+          "401": {
+            "description": "Run binding required"
+          },
+          "403": {
+            "description": "thread_id does not match run binding"
+          },
+          "413": {
+            "description": "Blob exceeds size cap"
+          },
+          "412": {
+            "description": "If-Match version mismatch, or If-None-Match:* when the id already exists"
+          },
+          "400": {
+            "description": "Reserved checkpoint_id \"latest\"; weak/malformed If-Match; or If-Match combined with If-None-Match:*"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Checkpoints"
+        ],
+        "summary": "Get opaque checkpoint blob (proxy mode)",
+        "operationId": "internal_get_checkpoint",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blob",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Run binding required"
+          },
+          "403": {
+            "description": "thread_id does not match run binding"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Checkpoints"
+        ],
+        "summary": "Delete opaque checkpoint blob (proxy mode)",
+        "operationId": "internal_delete_checkpoint",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Run binding required"
+          },
+          "403": {
+            "description": "thread_id does not match run binding"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/internal/a2a/runs": {
       "post": {
         "tags": [
@@ -841,6 +1100,70 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/internal/checkpoints/{thread_id}/latest": {
+      "get": {
+        "tags": [
+          "Checkpoints"
+        ],
+        "summary": "Get latest opaque checkpoint for a namespace (proxy mode)",
+        "description": "Returns the newest blob for the thread. Optional ns selects subgraph namespace (empty = root). X-Runkite-Checkpoint-Id is path-escaped.",
+        "operationId": "internal_get_latest_checkpoint",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Checkpoint namespace; empty/absent = root graph"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blob",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Runkite-Checkpoint-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Path-escaped checkpoint_id"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Run binding required"
+          },
+          "403": {
+            "description": "thread_id does not match run binding"
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }

@@ -1,0 +1,10 @@
+{
+  "event_types": [
+    "lifecycle",
+    "input.requested",
+    "end",
+    "runner_restarted",
+    "resume_via_wait"
+  ],
+  "final_status": "success"
+}

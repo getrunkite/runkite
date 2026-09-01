@@ -151,17 +151,40 @@ func (s *Store) Downgrade(ctx context.Context) error {
 }
 
 func (s *Store) migrations() []migrate.Migration {
-	return []migrate.Migration{{
-		Version: 1,
-		Name:    "baseline",
-		Up:      s.baselineUp,
-		Down:    s.baselineDown,
-	}}
+	return []migrate.Migration{
+		{
+			Version: 1,
+			Name:    "baseline",
+			Up:      s.baselineUp,
+			Down:    s.baselineDown,
+		},
+		{
+			Version: 2,
+			Name:    "opaque_checkpoints",
+			Up:      s.upOpaqueCheckpoints,
+			Down: func(ctx context.Context) error {
+				if err := s.db.Collection("opaque_checkpoints").Drop(ctx); err != nil {
+					return fmt.Errorf("drop collection opaque_checkpoints: %w", err)
+				}
+				return nil
+			},
+		},
+		{
+			Version: 3,
+			Name:    "opaque_checkpoint_version",
+			Up:      s.upOpaqueCheckpointVersion,
+			Down: func(ctx context.Context) error {
+				_, err := s.col("opaque_checkpoints").UpdateMany(ctx, bson.M{},
+					bson.M{"$unset": bson.M{"version": ""}})
+				return err
+			},
+		},
+	}
 }
 
 func (s *Store) baselineDown(ctx context.Context) error {
 	for _, c := range []string{
-		"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
+		"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints", "opaque_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
 		"terminal_hook_claims", "registry_entries", "registry_entry_versions",
 	} {
@@ -206,6 +229,9 @@ func (s *Store) baselineUp(ctx context.Context) error {
 		{"runs", bson.D{{Key: "parent_run_id", Value: 1}}, false},
 		{"thread_checkpoints", bson.D{{Key: "checkpoint_id", Value: 1}}, true},
 		{"thread_checkpoints", bson.D{{Key: "thread_id", Value: 1}, {Key: "created_at", Value: -1}}, false},
+		// Composite unique key matches SQL PRIMARY KEY (tenant_id, thread_id, checkpoint_id).
+		{"opaque_checkpoints", bson.D{{Key: "tenant_id", Value: 1}, {Key: "thread_id", Value: 1}, {Key: "checkpoint_id", Value: 1}}, true},
+		{"opaque_checkpoints", bson.D{{Key: "thread_id", Value: 1}, {Key: "created_at", Value: -1}}, false},
 		{"store_items", bson.D{{Key: "tenant_id", Value: 1}, {Key: "namespace", Value: 1}, {Key: "key", Value: 1}}, true},
 		{"webhook_dead_letters", bson.D{{Key: "id", Value: 1}}, true},
 		{"webhook_dead_letters", bson.D{{Key: "failed_at", Value: -1}}, false},
@@ -255,7 +281,7 @@ func (s *Store) Ping(ctx context.Context) error {
 
 // TruncateAll removes all documents from all collections. For testing only.
 func (s *Store) TruncateAll(ctx context.Context) error {
-	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints",
+	for _, c := range []string{"agents", "agent_versions", "agent_schemas", "threads", "runs", "thread_checkpoints", "opaque_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache", "cron_schedules", "cron_claims",
 		"terminal_hook_claims", "registry_entries", "registry_entry_versions"} {
 		if _, err := s.col(c).DeleteMany(ctx, bson.D{}); err != nil {
@@ -1002,6 +1028,9 @@ func (s *Store) DeleteThread(ctx context.Context, threadID string) error {
 	if _, err := s.col("thread_checkpoints").DeleteMany(ctx, bson.M{"thread_id": threadID}); err != nil {
 		return err
 	}
+	if _, err := s.col("opaque_checkpoints").DeleteMany(ctx, bson.M{"thread_id": threadID}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1273,6 +1302,299 @@ func (s *Store) PruneCheckpoints(ctx context.Context, keepLast int) (int64, erro
 			continue
 		}
 		res, err := s.col("thread_checkpoints").DeleteMany(ctx, bson.M{"checkpoint_id": bson.M{"$in": toDelete}})
+		if err != nil {
+			return total, err
+		}
+		total += res.DeletedCount
+	}
+	return total, nil
+}
+
+func (s *Store) upOpaqueCheckpoints(ctx context.Context) error {
+	indexes := []struct {
+		keys   bson.D
+		unique bool
+	}{
+		{bson.D{{Key: "tenant_id", Value: 1}, {Key: "thread_id", Value: 1}, {Key: "checkpoint_id", Value: 1}}, true},
+		{bson.D{{Key: "thread_id", Value: 1}, {Key: "created_at", Value: -1}}, false},
+	}
+	for _, i := range indexes {
+		opts := options.Index()
+		if i.unique {
+			opts.SetUnique(true)
+		}
+		if _, err := s.col("opaque_checkpoints").Indexes().CreateOne(ctx, mongo.IndexModel{Keys: i.keys, Options: opts}); err != nil {
+			return fmt.Errorf("create index on opaque_checkpoints: %w", err)
+		}
+	}
+	return nil
+}
+
+// upOpaqueCheckpointVersion backfills the CAS version field on docs written
+// before version existed (defaults to 1, matching SQL DEFAULT 1).
+func (s *Store) upOpaqueCheckpointVersion(ctx context.Context) error {
+	_, err := s.col("opaque_checkpoints").UpdateMany(ctx,
+		bson.M{"version": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"version": int64(1)}},
+	)
+	return err
+}
+
+type opaqueCheckpointDoc struct {
+	TenantID     string    `bson:"tenant_id"`
+	ThreadID     string    `bson:"thread_id"`
+	CheckpointID string    `bson:"checkpoint_id"`
+	Framework    string    `bson:"framework"`
+	Data         []byte    `bson:"data"`
+	Version      int64     `bson:"version"`
+	CreatedAt    time.Time `bson:"created_at"`
+}
+
+func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+	if len(data) > models.MaxOpaqueCheckpointBytes {
+		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	tid := tenant.FromContext(ctx)
+	now := time.Now().UTC()
+
+	// Create-only (If-None-Match: *): InsertOne, conflict if the doc exists.
+	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {
+		doc := opaqueCheckpointDoc{
+			TenantID:     tid,
+			ThreadID:     threadID,
+			CheckpointID: checkpointID,
+			Framework:    framework,
+			Data:         data,
+			Version:      1,
+			CreatedAt:    now,
+		}
+		_, err := s.col("opaque_checkpoints").InsertOne(ctx, doc)
+		if err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "already exists"}
+			}
+			return 0, err
+		}
+		return 1, nil
+	}
+
+	// ifMatch set: UPDATE-only CAS. No upsert -- a missing doc or stale
+	// version both surface as ErrConflict so the caller re-reads rather
+	// than silently creating under a mismatched ETag.
+	if ifMatch != nil {
+		var doc opaqueCheckpointDoc
+		err := s.col("opaque_checkpoints").FindOneAndUpdate(ctx,
+			bson.M{
+				"tenant_id": tid, "thread_id": threadID, "checkpoint_id": checkpointID,
+				"version": *ifMatch,
+			},
+			bson.M{
+				"$set": bson.M{"framework": framework, "data": data, "created_at": now},
+				"$inc": bson.M{"version": 1},
+			},
+			options.FindOneAndUpdate().SetReturnDocument(options.After),
+		).Decode(&doc)
+		if err == mongo.ErrNoDocuments {
+			return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "version mismatch"}
+		}
+		if err != nil {
+			return 0, err
+		}
+		return doc.Version, nil
+	}
+
+	// Unconditional upsert. $inc version: insert yields 1 (0+1); overwrite
+	// bumps. created_at is always $set (not setOnInsert) so list/prune treat
+	// a rewritten checkpoint_id as fresh -- same as the SQL backends.
+	// FindOneAndUpdate + ReturnDocument(After) returns the real post-write
+	// version atomically (not an in-memory guess).
+	var doc opaqueCheckpointDoc
+	err := s.col("opaque_checkpoints").FindOneAndUpdate(ctx,
+		bson.M{"tenant_id": tid, "thread_id": threadID, "checkpoint_id": checkpointID},
+		bson.M{
+			"$set": bson.M{"framework": framework, "data": data, "created_at": now},
+			"$setOnInsert": bson.M{
+				"tenant_id": tid, "thread_id": threadID, "checkpoint_id": checkpointID,
+			},
+			"$inc": bson.M{"version": 1},
+		},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After),
+	).Decode(&doc)
+	if err != nil {
+		return 0, err
+	}
+	return doc.Version, nil
+}
+
+func (s *Store) GetOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) (*models.OpaqueCheckpoint, error) {
+	var doc opaqueCheckpointDoc
+	err := s.col("opaque_checkpoints").FindOne(ctx,
+		tenantFilter(ctx, bson.M{"thread_id": threadID, "checkpoint_id": checkpointID}),
+	).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	data := doc.Data
+	if data == nil {
+		data = []byte{}
+	}
+	return &models.OpaqueCheckpoint{
+		ThreadID: doc.ThreadID, CheckpointID: doc.CheckpointID,
+		Framework: doc.Framework, Data: data, Version: doc.Version, CreatedAt: doc.CreatedAt,
+	}, nil
+}
+
+// GetLatestOpaqueCheckpoint returns the newest opaque blob for threadID.
+// namespace "" = root graph keys (checkpoint_id with no "\x1f"); otherwise
+// keys prefixed with namespace+"\x1f" (LangGraph folds checkpoint_ns into
+// the opaque path key this way).
+func (s *Store) GetLatestOpaqueCheckpoint(ctx context.Context, threadID, namespace string) (*models.OpaqueCheckpoint, error) {
+	const nsSep = "\x1f"
+	filter := tenantFilter(ctx, bson.M{"thread_id": threadID})
+	if namespace == "" {
+		filter["checkpoint_id"] = bson.M{"$not": bson.M{"$regex": regexQuoteMeta(nsSep)}}
+	} else {
+		filter["checkpoint_id"] = bson.M{"$regex": "^" + regexQuoteMeta(namespace+nsSep)}
+	}
+	var doc opaqueCheckpointDoc
+	// checkpoint_id DESC matches LangGraph (not created_at — see Store interface).
+	err := s.col("opaque_checkpoints").FindOne(ctx, filter,
+		options.FindOne().SetSort(bson.D{{Key: "checkpoint_id", Value: -1}}),
+	).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: threadID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	data := doc.Data
+	if data == nil {
+		data = []byte{}
+	}
+	return &models.OpaqueCheckpoint{
+		ThreadID: doc.ThreadID, CheckpointID: doc.CheckpointID,
+		Framework: doc.Framework, Data: data, Version: doc.Version, CreatedAt: doc.CreatedAt,
+	}, nil
+}
+
+func (s *Store) ListOpaqueCheckpoints(ctx context.Context, threadID string, limit int) ([]models.OpaqueCheckpointMeta, error) {
+	if limit <= 0 {
+		// High default: proxy "latest" / alist must see full thread history.
+		limit = 1000
+	}
+	filter := tenantFilter(ctx, bson.M{"thread_id": threadID})
+	// Aggregation so SizeBytes does not require loading full blobs into the driver.
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$sort", Value: bson.D{{Key: "checkpoint_id", Value: -1}}}},
+		{{Key: "$limit", Value: int64(limit)}},
+		{{Key: "$project", Value: bson.M{
+			"checkpoint_id": 1,
+			"framework":     1,
+			"version":       1,
+			"created_at":    1,
+			"size_bytes":    bson.M{"$binarySize": "$data"},
+		}}},
+	}
+	cur, err := s.col("opaque_checkpoints").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	out := []models.OpaqueCheckpointMeta{}
+	for cur.Next(ctx) {
+		var doc struct {
+			CheckpointID string    `bson:"checkpoint_id"`
+			Framework    string    `bson:"framework"`
+			Version      int64     `bson:"version"`
+			SizeBytes    int       `bson:"size_bytes"`
+			CreatedAt    time.Time `bson:"created_at"`
+		}
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		out = append(out, models.OpaqueCheckpointMeta{
+			CheckpointID: doc.CheckpointID,
+			Framework:    doc.Framework,
+			Version:      doc.Version,
+			SizeBytes:    doc.SizeBytes,
+			CreatedAt:    doc.CreatedAt,
+		})
+	}
+	return out, cur.Err()
+}
+
+func (s *Store) DeleteOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) error {
+	res, err := s.col("opaque_checkpoints").DeleteOne(ctx,
+		tenantFilter(ctx, bson.M{"thread_id": threadID, "checkpoint_id": checkpointID}),
+	)
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+	}
+	return nil
+}
+
+func (s *Store) PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64, error) {
+	if keepLast <= 0 {
+		return 0, nil
+	}
+	filter := tenantFilter(ctx, bson.M{})
+	var threadIDs []interface{}
+	if err := s.col("opaque_checkpoints").Distinct(ctx, "thread_id", filter).Decode(&threadIDs); err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, raw := range threadIDs {
+		threadID, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		threadFilter := bson.M{}
+		for k, v := range filter {
+			threadFilter[k] = v
+		}
+		threadFilter["thread_id"] = threadID
+		cur, err := s.col("opaque_checkpoints").Find(ctx, threadFilter,
+			options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetSkip(int64(keepLast)).
+				SetProjection(bson.M{"tenant_id": 1, "thread_id": 1, "checkpoint_id": 1}))
+		if err != nil {
+			return total, err
+		}
+		type key struct {
+			TenantID     string `bson:"tenant_id"`
+			ThreadID     string `bson:"thread_id"`
+			CheckpointID string `bson:"checkpoint_id"`
+		}
+		var toDelete []key
+		for cur.Next(ctx) {
+			var doc key
+			if err := cur.Decode(&doc); err != nil {
+				cur.Close(ctx)
+				return total, err
+			}
+			toDelete = append(toDelete, doc)
+		}
+		cur.Close(ctx)
+		if len(toDelete) == 0 {
+			continue
+		}
+		ors := make([]bson.M, 0, len(toDelete))
+		for _, d := range toDelete {
+			ors = append(ors, bson.M{
+				"tenant_id": d.TenantID, "thread_id": d.ThreadID, "checkpoint_id": d.CheckpointID,
+			})
+		}
+		res, err := s.col("opaque_checkpoints").DeleteMany(ctx, bson.M{"$or": ors})
 		if err != nil {
 			return total, err
 		}

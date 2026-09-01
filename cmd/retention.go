@@ -132,6 +132,15 @@ func runRetentionTick(ctx context.Context, store state.Store, rc *retentionConfi
 		} else if n > 0 {
 			slog.Info("retention: pruned excess checkpoints", "count", n, "keep_last", rc.checkpointsKeepLast)
 		}
+		// Same keep_last window for opaque proxy blobs (LangGraph
+		// ProxyCheckpointSaver etc.) -- otherwise MemorySaver replacement
+		// would grow unbounded while ThreadState history was pruned.
+		n, err = store.PruneOpaqueCheckpoints(sysCtx, rc.checkpointsKeepLast)
+		if err != nil {
+			slog.Error("retention: PruneOpaqueCheckpoints failed", "error", err)
+		} else if n > 0 {
+			slog.Info("retention: pruned excess opaque checkpoints", "count", n, "keep_last", rc.checkpointsKeepLast)
+		}
 	}
 	if rc.cronClaimsMaxAge > 0 {
 		cutoff := time.Now().UTC().Add(-rc.cronClaimsMaxAge)

@@ -89,3 +89,20 @@ def checkpoint_thread_id(tenant_id: str | None, thread_id: str) -> str:
     if tid == _DEFAULT:
         return thread_id
     return f"{tid}:{thread_id}"
+
+
+def storage_thread_id(config_thread_id: str) -> str:
+    """Bare threads.thread_id for /internal/checkpoints HTTP paths.
+
+    Inverse of checkpoint_thread_id for the active tenant: direct
+    AsyncPostgresSaver needs the prefixed configurable.thread_id (no
+    tenant column on LangGraph's tables), but proxy mode stores under the
+    real threads.thread_id PK and run-binding compares against that bare
+    id. Stripping here keeps both modes correct.
+    """
+    tenant = current_tenant()
+    if tenant and tenant != _DEFAULT:
+        prefix = f"{tenant}:"
+        if config_thread_id.startswith(prefix):
+            return config_thread_id[len(prefix) :]
+    return config_thread_id

@@ -7,15 +7,15 @@ survives runner restarts. Correct only when the control plane also uses
 POSTGRES_DSN against the same database; MySQL/Mongo/SQLite control planes
 must unset POSTGRES_DSN on the runner (see README Checkpoint dual mode).
 
-Local mode (no POSTGRES_DSN -- zero-dependency dev default): falls back to
-LangGraph's in-memory MemorySaver. This is honestly ephemeral -- state does
-NOT survive a runner restart. That's an accepted trade-off for the
-zero-dependency default (same spirit as the control plane's own in-process
-transport), not a hidden gap. Proxy mode (opaque-blob checkpoints via the
-control plane's HTTP API, for non-Python runners or runners without DB
-credentials) is not implemented by this Python runner -- it always has
-direct DB access when Postgres is available, so proxy mode has no benefit
-here; it exists in the protocol for other-language runners.
+Proxy mode (no POSTGRES_DSN, RUNKITE_HTTP_URL set): opaque blobs via
+PUT/GET /internal/checkpoints/* (ProxyCheckpointSaver). Survives runner
+restarts against any CP backend without giving the runner DB credentials.
+
+Local mode (no POSTGRES_DSN and no HTTP URL -- zero-dependency fallback):
+LangGraph's in-memory MemorySaver. Ephemeral -- state does NOT survive a
+runner restart. Blank / whitespace-only HTTP URLs count as "no URL" so a
+misconfigured empty RUNKITE_HTTP_URL falls through to MemorySaver with a
+clear warning instead of failing on proxy connection errors.
 
 Connection pooling (runner-side concurrency): a runner process can now
 process multiple jobs at once (see worker.py's --concurrency), so `start`
@@ -57,6 +57,7 @@ mid-statement between polls, so it never blocks the winner's
 
 import asyncio
 import logging
+import os
 
 logger = logging.getLogger("runkite.runner")
 
@@ -67,6 +68,19 @@ logger = logging.getLogger("runkite.runner")
 _CHECKPOINT_SETUP_ADVISORY_LOCK_KEY = 894127002
 _LOCK_POLL_INTERVAL_S = 0.2
 _LOCK_POLL_TIMEOUT_S = 60.0
+
+
+def resolve_checkpoint_http_url(http_address: str | None = None) -> str | None:
+    """HTTP base for proxy checkpointer, or None → MemorySaver.
+
+    Prefer an explicit RUNKITE_HTTP_URL (including empty → memory). Fall
+    back to the worker --http-address only when that env var is unset.
+    Blank / whitespace never selects proxy — that path used to turn a
+    missing CP into opaque connection errors instead of in-memory mode.
+    """
+    if "RUNKITE_HTTP_URL" in os.environ:
+        return (os.environ.get("RUNKITE_HTTP_URL") or "").strip() or None
+    return (http_address or "").strip() or None
 
 
 class CheckpointerManager:
@@ -87,7 +101,17 @@ class CheckpointerManager:
         self._attached: list = []  # graphs whose .checkpointer we own
         self.mode = "none"
 
-    async def start(self, postgres_dsn: str | None, pool_size: int = 4):
+    async def start(
+        self,
+        postgres_dsn: str | None,
+        pool_size: int = 4,
+        *,
+        http_base_url: str | None = None,
+        runner_token: str | None = None,
+    ):
+        # Defense in depth: callers should already pass None for blank, but
+        # never let whitespace select ProxyCheckpointSaver by accident.
+        http_base_url = (http_base_url or "").strip() or None
         if postgres_dsn:
             import psycopg
 
@@ -129,8 +153,21 @@ class CheckpointerManager:
                 "checkpoint mode: direct (postgres, pool_size=%s) -- LangGraph tables on "
                 "POSTGRES_DSN; requires the control plane to use the same Postgres database "
                 "(Supported profile). If the control plane is MySQL/Mongo/SQLite, unset "
-                "POSTGRES_DSN on this runner and set RUNKITE_HTTP_URL for store proxy mode.",
+                "POSTGRES_DSN on this runner and set RUNKITE_HTTP_URL for proxy mode.",
                 pool_size,
+            )
+        elif http_base_url:
+            from .proxy_checkpoint import ProxyCheckpointSaver
+
+            self._checkpointer = ProxyCheckpointSaver(
+                http_base_url=http_base_url,
+                runner_token=runner_token,
+            )
+            self.mode = "proxy-http"
+            logger.info(
+                "checkpoint mode: proxy (HTTP opaque blobs via %s) -- "
+                "persists across runner restarts without POSTGRES_DSN",
+                http_base_url.rstrip("/"),
             )
         else:
             from langgraph.checkpoint.memory import MemorySaver
@@ -138,9 +175,9 @@ class CheckpointerManager:
             self._checkpointer = MemorySaver()
             self.mode = "memory"
             logger.warning(
-                "checkpoint mode: in-memory (no POSTGRES_DSN set) -- "
+                "checkpoint mode: in-memory (no POSTGRES_DSN and no RUNKITE_HTTP_URL) -- "
                 "thread state will NOT survive a runner restart. "
-                "Set POSTGRES_DSN for production persistence."
+                "Set POSTGRES_DSN (direct) or RUNKITE_HTTP_URL (proxy) for persistence."
             )
 
     async def _open_pool(self) -> None:

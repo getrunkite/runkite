@@ -207,7 +207,7 @@ var runners = []RunnerSpec{
 		AgentID:        "echo_agent",
 		CancelAgentID:  "slow_agent",
 		ApprovalAgent:  "approval_agent",
-		Scenarios:      []ScenarioKind{ScenarioHappyPath, ScenarioCancel, ScenarioHITL},
+		Scenarios:      []ScenarioKind{ScenarioHappyPath, ScenarioCancel, ScenarioHITL, ScenarioHITLRestart},
 		Launch:         launchPythonModule("runkite_runner", "", "python/.venv"),
 		StartupTimeout: 20 * time.Second,
 	},

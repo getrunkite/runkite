@@ -173,6 +173,33 @@ type ThreadState struct {
 	Interrupts       []interface{}          `json:"interrupts"`
 }
 
+// OpaqueCheckpoint is a framework-owned blob stored by the control plane
+// for proxy-mode checkpointers. The CP never parses Data.
+type OpaqueCheckpoint struct {
+	ThreadID     string    `json:"thread_id"`
+	CheckpointID string    `json:"checkpoint_id"`
+	Framework    string    `json:"framework,omitempty"`
+	Data         []byte    `json:"data"`
+	// Version is a monotonic CAS token (ETag). Starts at 1; every successful
+	// PUT bumps it. Proxy writers send If-Match to avoid silent lost updates
+	// across processes/replicas.
+	Version   int64     `json:"version"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// OpaqueCheckpointMeta is list-response metadata (no blob body).
+type OpaqueCheckpointMeta struct {
+	CheckpointID string    `json:"checkpoint_id"`
+	Framework    string    `json:"framework,omitempty"`
+	SizeBytes    int       `json:"size_bytes"`
+	Version      int64     `json:"version"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// MaxOpaqueCheckpointBytes caps a single proxy PUT. Frameworks that need
+// larger state should use POSTGRES_DSN (direct DB checkpointer) instead.
+const MaxOpaqueCheckpointBytes = 16 << 20 // 16 MiB
+
 // ThreadUpdateStateResponse is the response for POST /threads/{id}/state.
 type ThreadUpdateStateResponse struct {
 	Checkpoint ThreadCheckpoint `json:"checkpoint"`

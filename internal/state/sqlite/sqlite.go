@@ -188,6 +188,24 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 9,
+			Name:    "opaque_checkpoints",
+			Up:      s.upOpaqueCheckpoints,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS opaque_checkpoints`)
+				return err
+			},
+		},
+		{
+			Version: 10,
+			Name:    "opaque_checkpoint_version",
+			Up:      s.upOpaqueCheckpointVersion,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `ALTER TABLE opaque_checkpoints DROP COLUMN version`)
+				return err
+			},
+		},
 	}
 }
 
@@ -197,7 +215,7 @@ func (s *SQLiteStore) baselineDown(ctx context.Context) error {
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
-		"webhook_dead_letters", "store_items", "thread_checkpoints", "runs",
+		"webhook_dead_letters", "store_items", "opaque_checkpoints", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
 	} {
@@ -329,6 +347,22 @@ func (s *SQLiteStore) baselineUp(ctx context.Context) error {
 		created_at      TEXT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_checkpoints_thread ON thread_checkpoints(thread_id, created_at DESC);
+
+	-- Framework-owned proxy checkpointer blobs (distinct from
+	-- thread_checkpoints Agent Protocol history).
+	CREATE TABLE IF NOT EXISTS opaque_checkpoints (
+		tenant_id      TEXT NOT NULL DEFAULT 'default',
+		thread_id      TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+		checkpoint_id  TEXT NOT NULL,
+		framework      TEXT NOT NULL DEFAULT '',
+		data           BLOB NOT NULL,
+		-- CAS token: every successful put bumps this so concurrent
+		-- proxy writers can If-Match and avoid silent lost updates.
+		version        INTEGER NOT NULL DEFAULT 1,
+		created_at     TEXT NOT NULL,
+		PRIMARY KEY (tenant_id, thread_id, checkpoint_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_opaque_checkpoints_thread ON opaque_checkpoints(thread_id, created_at DESC);
 
 	CREATE TABLE IF NOT EXISTS store_items (
 		tenant_id TEXT NOT NULL DEFAULT 'default',
@@ -1707,6 +1741,266 @@ func (s *SQLiteStore) PruneCheckpoints(ctx context.Context, keepLast int) (int64
 	if !tenant.IsSystem(ctx) {
 		tenantArg = tenant.FromContext(ctx)
 	}
+	result, err := s.db.ExecContext(ctx, query, tenantArg, tenantArg, keepLast)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// --------------------------------------------------------------------------
+// Opaque runner checkpoints (proxy-mode BaseCheckpointSaver blobs)
+// --------------------------------------------------------------------------
+
+func (s *SQLiteStore) upOpaqueCheckpoints(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS opaque_checkpoints (
+			tenant_id      TEXT NOT NULL DEFAULT 'default',
+			thread_id      TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+			checkpoint_id  TEXT NOT NULL,
+			framework      TEXT NOT NULL DEFAULT '',
+			data           BLOB NOT NULL,
+			-- CAS token: every successful put bumps this so concurrent
+			-- proxy writers can If-Match and avoid silent lost updates.
+			version        INTEGER NOT NULL DEFAULT 1,
+			created_at     TEXT NOT NULL,
+			PRIMARY KEY (tenant_id, thread_id, checkpoint_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_opaque_checkpoints_thread ON opaque_checkpoints(thread_id, created_at DESC);
+	`)
+	return err
+}
+
+// upOpaqueCheckpointVersion adds the CAS version column for installs that
+// already created opaque_checkpoints before version existed.
+func (s *SQLiteStore) upOpaqueCheckpointVersion(ctx context.Context) error {
+	return addColumnIfMissing(ctx, s.db, "opaque_checkpoints", "version", "INTEGER NOT NULL DEFAULT 1")
+}
+
+func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+	if len(data) > models.MaxOpaqueCheckpointBytes {
+		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	// Fixed-width fractional seconds so lexicographic ORDER BY created_at
+	// matches chronology even when several puts land in the same wall-clock
+	// second. Plain RFC3339 collapses to the second; Go's RFC3339Nano trims
+	// trailing zeros and breaks lexicographic ordering (same trap as the
+	// store_items expires_at formatter elsewhere in this file).
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z07:00")
+	tid := tenant.FromContext(ctx)
+
+	// Create-only (If-None-Match: *): INSERT, conflict if the row exists.
+	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {
+		var newVersion int64
+		err := s.db.QueryRowContext(ctx, `
+			INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
+			VALUES (?, ?, ?, ?, ?, 1, ?)
+			RETURNING version
+		`, tid, threadID, checkpointID, framework, data, now).Scan(&newVersion)
+		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint") {
+				return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "already exists"}
+			}
+			return 0, err
+		}
+		return newVersion, nil
+	}
+
+	// ifMatch set: UPDATE-only CAS. No upsert -- a missing row or stale
+	// version both surface as ErrConflict so the caller re-reads rather
+	// than silently creating under a mismatched ETag. Always keyed by
+	// the caller's tenant (same as the upsert path below).
+	if ifMatch != nil {
+		var newVersion int64
+		err := s.db.QueryRowContext(ctx, `
+			UPDATE opaque_checkpoints SET framework = ?, data = ?, created_at = ?, version = version + 1
+			WHERE tenant_id = ? AND thread_id = ? AND checkpoint_id = ? AND version = ?
+			RETURNING version
+		`, framework, data, now, tid, threadID, checkpointID, *ifMatch).Scan(&newVersion)
+		if err == sql.ErrNoRows {
+			return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "version mismatch"}
+		}
+		if err != nil {
+			return 0, err
+		}
+		return newVersion, nil
+	}
+
+	// Unconditional upsert: insert starts at version=1; overwrite bumps
+	// version in the DB (not a guessed in-memory +1) so concurrent writers
+	// each observe a distinct ETag via RETURNING.
+	var newVersion int64
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
+		VALUES (?, ?, ?, ?, ?, 1, ?)
+		ON CONFLICT(tenant_id, thread_id, checkpoint_id) DO UPDATE SET
+			framework = excluded.framework,
+			data = excluded.data,
+			-- Bump created_at on overwrite so list/prune treat a rewritten
+			-- checkpoint_id as fresh (same id reused by aput_writes merges).
+			created_at = excluded.created_at,
+			version = opaque_checkpoints.version + 1
+		RETURNING version
+	`, tid, threadID, checkpointID, framework, data, now).Scan(&newVersion)
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+func (s *SQLiteStore) GetOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) (*models.OpaqueCheckpoint, error) {
+	query := `SELECT thread_id, checkpoint_id, framework, data, version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ? AND checkpoint_id = ?`
+	args := []interface{}{threadID, checkpointID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
+	var oc models.OpaqueCheckpoint
+	var createdStr string
+	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &createdStr); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+		}
+		return nil, err
+	}
+	if oc.Data == nil {
+		oc.Data = []byte{}
+	}
+	oc.CreatedAt = parseSQLiteOpaqueTime(createdStr)
+	return &oc, nil
+}
+
+// GetLatestOpaqueCheckpoint returns the newest opaque blob for threadID.
+// namespace "" = root graph keys (checkpoint_id with no "\x1f"); otherwise
+// keys prefixed with namespace+"\x1f" (LangGraph folds checkpoint_ns into
+// the opaque path key this way).
+func (s *SQLiteStore) GetLatestOpaqueCheckpoint(ctx context.Context, threadID, namespace string) (*models.OpaqueCheckpoint, error) {
+	const nsSep = "\x1f"
+	query := `SELECT thread_id, checkpoint_id, framework, data, version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if namespace == "" {
+		query += ` AND instr(checkpoint_id, ?) = 0`
+		args = append(args, nsSep)
+	} else {
+		query += ` AND checkpoint_id LIKE ?`
+		args = append(args, namespace+nsSep+"%")
+	}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	// checkpoint_id DESC matches LangGraph (not created_at — see Store interface).
+	query += ` ORDER BY checkpoint_id DESC LIMIT 1`
+	row := s.db.QueryRowContext(ctx, query, args...)
+	var oc models.OpaqueCheckpoint
+	var createdStr string
+	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &createdStr); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: threadID}
+		}
+		return nil, err
+	}
+	if oc.Data == nil {
+		oc.Data = []byte{}
+	}
+	oc.CreatedAt = parseSQLiteOpaqueTime(createdStr)
+	return &oc, nil
+}
+
+func (s *SQLiteStore) ListOpaqueCheckpoints(ctx context.Context, threadID string, limit int) ([]models.OpaqueCheckpointMeta, error) {
+	if limit <= 0 {
+		// High default: proxy "latest" / alist must see full thread history.
+		// Callers that want a short page pass an explicit limit.
+		limit = 1000
+	}
+	query := `SELECT checkpoint_id, framework, length(data), version, created_at
+		FROM opaque_checkpoints WHERE thread_id = ?`
+	args := []interface{}{threadID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	query += ` ORDER BY checkpoint_id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.OpaqueCheckpointMeta{}
+	for rows.Next() {
+		var m models.OpaqueCheckpointMeta
+		var createdStr string
+		if err := rows.Scan(&m.CheckpointID, &m.Framework, &m.SizeBytes, &m.Version, &createdStr); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = parseSQLiteOpaqueTime(createdStr)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func parseSQLiteOpaqueTime(s string) time.Time {
+	if t, err := time.Parse("2006-01-02T15:04:05.000000000Z07:00", s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+func (s *SQLiteStore) DeleteOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) error {
+	query := `DELETE FROM opaque_checkpoints WHERE thread_id = ? AND checkpoint_id = ?`
+	args := []interface{}{threadID, checkpointID}
+	if !tenant.IsSystem(ctx) {
+		query += ` AND tenant_id = ?`
+		args = append(args, tenant.FromContext(ctx))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64, error) {
+	if keepLast <= 0 {
+		return 0, nil
+	}
+	var tenantArg interface{}
+	if !tenant.IsSystem(ctx) {
+		tenantArg = tenant.FromContext(ctx)
+	}
+	query := `
+		DELETE FROM opaque_checkpoints
+		WHERE (tenant_id, thread_id, checkpoint_id) IN (
+			SELECT tenant_id, thread_id, checkpoint_id FROM (
+				SELECT tenant_id, thread_id, checkpoint_id,
+					ROW_NUMBER() OVER (PARTITION BY tenant_id, thread_id ORDER BY created_at DESC) AS rn
+				FROM opaque_checkpoints
+				WHERE (? IS NULL OR tenant_id = ?)
+			) ranked
+			WHERE rn > ?
+		)`
 	result, err := s.db.ExecContext(ctx, query, tenantArg, tenantArg, keepLast)
 	if err != nil {
 		return 0, err

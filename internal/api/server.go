@@ -352,6 +352,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /internal/vectors/items", s.handleDeleteVectorItem)
 	mux.HandleFunc("POST /internal/vectors/search", s.handleSearchVectors)
 
+	// Opaque checkpoint proxy (runner-protocol §6.2) -- framework-owned
+	// blobs for ProxyCheckpointSaver when the runner has no POSTGRES_DSN.
+	// Distinct from Agent Protocol /threads/{id}/history (ThreadState).
+	mux.HandleFunc("PUT /internal/checkpoints/{threadID}/{checkpointID}", s.handlePutOpaqueCheckpoint)
+	// /latest must be registered before /{checkpointID} so the literal path
+	// is not captured as a checkpoint id.
+	mux.HandleFunc("GET /internal/checkpoints/{threadID}/latest", s.handleGetLatestOpaqueCheckpoint)
+	mux.HandleFunc("GET /internal/checkpoints/{threadID}/{checkpointID}", s.handleGetOpaqueCheckpoint)
+	mux.HandleFunc("DELETE /internal/checkpoints/{threadID}/{checkpointID}", s.handleDeleteOpaqueCheckpoint)
+	mux.HandleFunc("GET /internal/checkpoints/{threadID}", s.handleListOpaqueCheckpoints)
+
 	// Webhook dead-letters (event hooks / webhook delivery) -- inspection,
 	// not replay. A failed-after-all-retries delivery is persisted (see
 	// internal/hooks.WebhookSink) instead of only logged and lost; this is

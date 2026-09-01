@@ -3,6 +3,7 @@
 package conformance
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,6 +27,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
 	t.Run("checkpoints", func(t *testing.T) { runCheckpointTests(t, factory) })
+	t.Run("opaque_checkpoints", func(t *testing.T) { runOpaqueCheckpointTests(t, factory) })
 	t.Run("webhook_dead_letters", func(t *testing.T) { runWebhookDeadLetterTests(t, factory) })
 	t.Run("run_cache", func(t *testing.T) { runRunCacheTests(t, factory) })
 	t.Run("cron_schedules", func(t *testing.T) { runCronScheduleTests(t, factory) })
@@ -408,6 +410,17 @@ func runEmptyListTests(t *testing.T, factory StoreFactory) {
 		}
 		if got == nil {
 			t.Fatal("ListCheckpoints returned nil slice for zero results, want non-nil empty slice")
+		}
+	})
+
+	t.Run("ListOpaqueCheckpoints", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.ListOpaqueCheckpoints(ctx, "nonexistent-thread", 10)
+		if err != nil {
+			t.Fatalf("ListOpaqueCheckpoints: %v", err)
+		}
+		if got == nil {
+			t.Fatal("ListOpaqueCheckpoints returned nil slice for zero results, want non-nil empty slice")
 		}
 	})
 
@@ -2216,6 +2229,387 @@ func runCheckpointTests(t *testing.T, factory StoreFactory) {
 		_, err := s.GetLatestCheckpoint(ctx, "t-cp7")
 		if err == nil {
 			t.Error("checkpoints should be deleted when thread is deleted (CASCADE)")
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// Opaque runner checkpoints (proxy-mode BaseCheckpointSaver blobs)
+// --------------------------------------------------------------------------
+
+func runOpaqueCheckpointTests(t *testing.T, factory StoreFactory) {
+	t.Run("put_get_roundtrip", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc1", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		payload := []byte(`{"channel_values":{"messages":["hi"]}}`)
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc1", "oc-1", payload, "langgraph", nil); err != nil {
+			t.Fatalf("PutOpaqueCheckpoint: %v", err)
+		}
+		got, err := s.GetOpaqueCheckpoint(ctx, "t-oc1", "oc-1")
+		if err != nil {
+			t.Fatalf("GetOpaqueCheckpoint: %v", err)
+		}
+		if got.ThreadID != "t-oc1" || got.CheckpointID != "oc-1" {
+			t.Errorf("ids = %q/%q, want t-oc1/oc-1", got.ThreadID, got.CheckpointID)
+		}
+		if got.Framework != "langgraph" {
+			t.Errorf("Framework = %q, want langgraph", got.Framework)
+		}
+		if !bytes.Equal(got.Data, payload) {
+			t.Errorf("Data = %q, want %q", got.Data, payload)
+		}
+		if got.CreatedAt.IsZero() {
+			t.Error("CreatedAt should be set")
+		}
+	})
+
+	t.Run("put_allows_empty_data", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-empty", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-empty", "oc-empty", nil, "", nil); err != nil {
+			t.Fatalf("PutOpaqueCheckpoint(nil): %v", err)
+		}
+		got, err := s.GetOpaqueCheckpoint(ctx, "t-oc-empty", "oc-empty")
+		if err != nil {
+			t.Fatalf("GetOpaqueCheckpoint: %v", err)
+		}
+		if got.Data == nil || len(got.Data) != 0 {
+			t.Errorf("Data = %#v, want non-nil empty slice", got.Data)
+		}
+	})
+
+	t.Run("put_rejects_oversized_blob", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-big", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		big := make([]byte, models.MaxOpaqueCheckpointBytes+1)
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-big", "oc-big", big, "langgraph", nil); err == nil {
+			t.Fatal("expected error for oversized opaque checkpoint")
+		}
+	})
+
+	t.Run("list_order_newest_first_and_limit", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-list", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		for i := 0; i < 5; i++ {
+			id := fmt.Sprintf("oc-%d", i)
+			if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-list", id, []byte(id), "lg", nil); err != nil {
+				t.Fatalf("PutOpaqueCheckpoint %s: %v", id, err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		all, err := s.ListOpaqueCheckpoints(ctx, "t-oc-list", 100)
+		if err != nil {
+			t.Fatalf("ListOpaqueCheckpoints: %v", err)
+		}
+		if len(all) != 5 {
+			t.Fatalf("got %d, want 5", len(all))
+		}
+		if all[0].CheckpointID != "oc-4" || all[4].CheckpointID != "oc-0" {
+			t.Errorf("order = %v, want oc-4 ... oc-0", []string{all[0].CheckpointID, all[4].CheckpointID})
+		}
+		if all[0].SizeBytes != len("oc-4") {
+			t.Errorf("SizeBytes = %d, want %d", all[0].SizeBytes, len("oc-4"))
+		}
+		limited, err := s.ListOpaqueCheckpoints(ctx, "t-oc-list", 2)
+		if err != nil {
+			t.Fatalf("ListOpaqueCheckpoints(limit=2): %v", err)
+		}
+		if len(limited) != 2 {
+			t.Fatalf("limit=2 returned %d", len(limited))
+		}
+		// limit <= 0 defaults to 10
+		def, err := s.ListOpaqueCheckpoints(ctx, "t-oc-list", 0)
+		if err != nil {
+			t.Fatalf("ListOpaqueCheckpoints(limit=0): %v", err)
+		}
+		if len(def) != 5 {
+			t.Errorf("limit=0 defaulted poorly: got %d, want all 5", len(def))
+		}
+	})
+
+	t.Run("upsert_overwrites_same_checkpoint_id", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-up", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-up", "same", []byte("v1"), "lg", nil); err != nil {
+			t.Fatalf("put v1: %v", err)
+		}
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-up", "same", []byte("v2"), "crewai", nil); err != nil {
+			t.Fatalf("put v2: %v", err)
+		}
+		got, err := s.GetOpaqueCheckpoint(ctx, "t-oc-up", "same")
+		if err != nil {
+			t.Fatalf("GetOpaqueCheckpoint: %v", err)
+		}
+		if !bytes.Equal(got.Data, []byte("v2")) {
+			t.Errorf("Data = %q, want v2", got.Data)
+		}
+		if got.Framework != "crewai" {
+			t.Errorf("Framework = %q, want crewai", got.Framework)
+		}
+		listed, _ := s.ListOpaqueCheckpoints(ctx, "t-oc-up", 10)
+		if len(listed) != 1 {
+			t.Errorf("upsert should keep one row, got %d", len(listed))
+		}
+	})
+
+	t.Run("delete_and_get_missing", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-del", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		s.PutOpaqueCheckpoint(ctx, "t-oc-del", "oc-x", []byte("x"), "lg", nil)
+
+		if err := s.DeleteOpaqueCheckpoint(ctx, "t-oc-del", "oc-x"); err != nil {
+			t.Fatalf("DeleteOpaqueCheckpoint: %v", err)
+		}
+		_, err := s.GetOpaqueCheckpoint(ctx, "t-oc-del", "oc-x")
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Fatalf("expected ErrNotFound after delete, got %T: %v", err, err)
+		}
+		err = s.DeleteOpaqueCheckpoint(ctx, "t-oc-del", "oc-x")
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Fatalf("expected ErrNotFound on second delete, got %T: %v", err, err)
+		}
+		_, err = s.GetOpaqueCheckpoint(ctx, "t-oc-del", "never")
+		if _, ok := err.(*state.ErrNotFound); !ok {
+			t.Fatalf("expected ErrNotFound for missing id, got %T: %v", err, err)
+		}
+	})
+
+	t.Run("prune_keeps_last_N_per_thread", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-prune", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		for i := 0; i < 5; i++ {
+			id := fmt.Sprintf("p-%d", i)
+			if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-prune", id, []byte(id), "lg", nil); err != nil {
+				t.Fatalf("PutOpaqueCheckpoint %s: %v", id, err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		n, err := s.PruneOpaqueCheckpoints(tenant.SystemContext(ctx), 2)
+		if err != nil {
+			t.Fatalf("PruneOpaqueCheckpoints: %v", err)
+		}
+		if n != 3 {
+			t.Errorf("expected 3 pruned, got %d", n)
+		}
+		remaining, err := s.ListOpaqueCheckpoints(ctx, "t-oc-prune", 10)
+		if err != nil {
+			t.Fatalf("ListOpaqueCheckpoints: %v", err)
+		}
+		if len(remaining) != 2 {
+			t.Fatalf("expected 2 remaining, got %d", len(remaining))
+		}
+		for _, m := range remaining {
+			if m.CheckpointID == "p-0" || m.CheckpointID == "p-1" || m.CheckpointID == "p-2" {
+				t.Errorf("old checkpoint %q should have been pruned", m.CheckpointID)
+			}
+		}
+	})
+
+	t.Run("prune_zero_or_negative_is_noop", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-noop", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		s.PutOpaqueCheckpoint(ctx, "t-oc-noop", "only", []byte("x"), "lg", nil)
+		for _, keep := range []int{0, -1} {
+			n, err := s.PruneOpaqueCheckpoints(tenant.SystemContext(ctx), keep)
+			if err != nil {
+				t.Fatalf("PruneOpaqueCheckpoints(%d): %v", keep, err)
+			}
+			if n != 0 {
+				t.Errorf("keepLast=%d should no-op, pruned %d", keep, n)
+			}
+		}
+		remaining, _ := s.ListOpaqueCheckpoints(ctx, "t-oc-noop", 10)
+		if len(remaining) != 1 {
+			t.Errorf("expected checkpoint to survive no-op prune, got %d", len(remaining))
+		}
+	})
+
+	t.Run("tenant_isolation", func(t *testing.T) {
+		s := factory(t)
+		ctxA := tenant.WithContext(context.Background(), "tenant-a")
+		ctxB := tenant.WithContext(context.Background(), "tenant-b")
+		now := time.Now().UTC()
+		// Distinct thread_ids: threads.thread_id is globally unique across
+		// tenants (same as the rest of the Store), so isolation is on the
+		// opaque row's tenant_id filter, not on colliding thread PKs.
+		s.CreateThread(ctxA, &models.Thread{ThreadID: "t-oc-a", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		s.CreateThread(ctxB, &models.Thread{ThreadID: "t-oc-b", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+		if _, err := s.PutOpaqueCheckpoint(ctxA, "t-oc-a", "shared-cp", []byte("a"), "lg", nil); err != nil {
+			t.Fatalf("put A: %v", err)
+		}
+		if _, err := s.PutOpaqueCheckpoint(ctxB, "t-oc-b", "shared-cp", []byte("b"), "lg", nil); err != nil {
+			t.Fatalf("put B: %v", err)
+		}
+
+		gotA, err := s.GetOpaqueCheckpoint(ctxA, "t-oc-a", "shared-cp")
+		if err != nil {
+			t.Fatalf("Get A: %v", err)
+		}
+		if !bytes.Equal(gotA.Data, []byte("a")) {
+			t.Errorf("tenant A saw %q", gotA.Data)
+		}
+		if _, err := s.GetOpaqueCheckpoint(ctxB, "t-oc-a", "shared-cp"); err == nil {
+			t.Error("tenant B must not read tenant A's opaque checkpoint via A's thread_id")
+		}
+		listB, err := s.ListOpaqueCheckpoints(ctxB, "t-oc-a", 10)
+		if err != nil {
+			t.Fatalf("List B on A's thread: %v", err)
+		}
+		if len(listB) != 0 {
+			t.Errorf("tenant B listed %d of A's opaque checkpoints", len(listB))
+		}
+	})
+
+	t.Run("put_cas_if_match_rejects_stale_version", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-cas", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		v1, err := s.PutOpaqueCheckpoint(ctx, "t-oc-cas", "cas-1", []byte("a"), "lg", nil)
+		if err != nil {
+			t.Fatalf("put: %v", err)
+		}
+		if v1 != 1 {
+			t.Fatalf("first version=%d want 1", v1)
+		}
+		v2, err := s.PutOpaqueCheckpoint(ctx, "t-oc-cas", "cas-1", []byte("b"), "lg", &v1)
+		if err != nil {
+			t.Fatalf("cas put: %v", err)
+		}
+		if v2 != 2 {
+			t.Fatalf("second version=%d want 2", v2)
+		}
+		_, err = s.PutOpaqueCheckpoint(ctx, "t-oc-cas", "cas-1", []byte("stale"), "lg", &v1)
+		if _, ok := err.(*state.ErrConflict); !ok {
+			t.Fatalf("stale ifMatch: want ErrConflict, got %T %v", err, err)
+		}
+		got, err := s.GetOpaqueCheckpoint(ctx, "t-oc-cas", "cas-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got.Data, []byte("b")) || got.Version != 2 {
+			t.Fatalf("after stale write data=%q version=%d", got.Data, got.Version)
+		}
+	})
+
+	t.Run("put_create_only_rejects_existing", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-co", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		createOnly := state.OpaqueCreateOnly
+		v1, err := s.PutOpaqueCheckpoint(ctx, "t-oc-co", "co-1", []byte("shell"), "lg", &createOnly)
+		if err != nil {
+			t.Fatalf("create-only on new id: %v", err)
+		}
+		if v1 != 1 {
+			t.Fatalf("create-only version=%d want 1", v1)
+		}
+
+		_, err = s.PutOpaqueCheckpoint(ctx, "t-oc-co", "co-1", []byte("clobber"), "lg", &createOnly)
+		if _, ok := err.(*state.ErrConflict); !ok {
+			t.Fatalf("create-only on existing: want ErrConflict, got %T %v", err, err)
+		}
+		got, err := s.GetOpaqueCheckpoint(ctx, "t-oc-co", "co-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got.Data, []byte("shell")) {
+			t.Fatalf("create-only conflict clobbered data=%q want shell", got.Data)
+		}
+	})
+
+	t.Run("get_latest_by_namespace", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-latest", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-latest", "root-1", []byte("r1"), "lg", nil); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-latest", "root-2", []byte("r2"), "lg", nil); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+		nsKey := "node:sub\x1fcp-ns"
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-latest", nsKey, []byte("ns"), "lg", nil); err != nil {
+			t.Fatal(err)
+		}
+
+		root, err := s.GetLatestOpaqueCheckpoint(ctx, "t-oc-latest", "")
+		if err != nil {
+			t.Fatalf("latest root: %v", err)
+		}
+		if root.CheckpointID != "root-2" || !bytes.Equal(root.Data, []byte("r2")) {
+			t.Fatalf("latest root = %s %q", root.CheckpointID, root.Data)
+		}
+		sub, err := s.GetLatestOpaqueCheckpoint(ctx, "t-oc-latest", "node:sub")
+		if err != nil {
+			t.Fatalf("latest ns: %v", err)
+		}
+		if sub.CheckpointID != nsKey || !bytes.Equal(sub.Data, []byte("ns")) {
+			t.Fatalf("latest ns = %s %q", sub.CheckpointID, sub.Data)
+		}
+	})
+
+	// LangGraph orders by checkpoint_id DESC (time-sortable UUIDs). A
+	// parent blob often receives late aput_writes that bump created_at
+	// after the tip was written; created_at ordering would wrongly
+	// revive the parent. Mongo Date is also only ms-precise so concurrent
+	// tip/parent writes routinely tie. This test puts the lexicographically
+	// newer id first, then a smaller id later (fresher created_at), and
+	// asserts latest still follows checkpoint_id.
+	t.Run("get_latest_prefers_checkpoint_id_over_created_at", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		s.CreateThread(ctx, &models.Thread{ThreadID: "t-oc-idorder", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now})
+
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-idorder", "z-tip", []byte("tip"), "lg", nil); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if _, err := s.PutOpaqueCheckpoint(ctx, "t-oc-idorder", "a-parent", []byte("parent"), "lg", nil); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := s.GetLatestOpaqueCheckpoint(ctx, "t-oc-idorder", "")
+		if err != nil {
+			t.Fatalf("latest: %v", err)
+		}
+		if got.CheckpointID != "z-tip" || !bytes.Equal(got.Data, []byte("tip")) {
+			t.Fatalf("latest = %s %q, want z-tip/tip (checkpoint_id DESC, not created_at)", got.CheckpointID, got.Data)
+		}
+
+		listed, err := s.ListOpaqueCheckpoints(ctx, "t-oc-idorder", 10)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(listed) < 2 || listed[0].CheckpointID != "z-tip" {
+			t.Fatalf("list[0] = %v, want z-tip first", listed)
 		}
 	})
 }

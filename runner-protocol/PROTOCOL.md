@@ -271,9 +271,21 @@ Base URL: the control plane's internal API root.
 ```
 PUT /internal/checkpoints/{thread_id}/{checkpoint_id}
 Content-Type: application/octet-stream
+If-Match: "<version>"   # optional; omit for unconditional write
+If-None-Match: *        # optional; create-only (fails with 412 if the id exists)
 Body: <opaque checkpoint bytes>
 
 Response: 204 No Content
+ETag: "<new-version>"
+
+Response: 400 Bad Request
+  - checkpoint_id is the reserved literal "latest" (conflicts with GET .../latest)
+  - If-Match is weak (W/"…") or malformed (must be a strong numeric ETag)
+  - If-Match and If-None-Match:* are both set
+
+Response: 412 Precondition Failed
+  - If-Match did not match the current version
+  - If-None-Match:* and the checkpoint_id already exists
 ```
 
 **Load checkpoint:**
@@ -282,10 +294,24 @@ GET /internal/checkpoints/{thread_id}/{checkpoint_id}
 
 Response: 200 OK
 Content-Type: application/octet-stream
+ETag: "<version>"
 Body: <opaque checkpoint bytes>
 
 Response: 404 Not Found (if no checkpoint exists)
 ```
+
+**Latest checkpoint for a namespace (proxy "resume without id"):**
+```
+GET /internal/checkpoints/{thread_id}/latest?ns=<checkpoint_ns>
+
+Response: 200 OK
+ETag: "<version>"
+X-Runkite-Checkpoint-Id: <path-escaped checkpoint_id>
+Body: <opaque checkpoint bytes>
+
+Response: 404 Not Found
+```
+`ns` empty/absent selects root keys (no `\x1f` in `checkpoint_id`). Non-empty `ns` selects keys prefixed with `{ns}\x1f`.
 
 **List checkpoints for a thread:**
 ```
@@ -294,7 +320,7 @@ GET /internal/checkpoints/{thread_id}
 Response: 200 OK
 Content-Type: application/json
 Body: [
-  { "checkpoint_id": "string", "created_at": "ISO 8601 timestamp" },
+  { "checkpoint_id": "string", "created_at": "ISO 8601 timestamp", "version": 1 },
   ...
 ]
 ```
@@ -302,10 +328,14 @@ Body: [
 ### 6.3 Rules
 
 - In direct mode, the runner uses its framework's native checkpoint driver. The control plane does not participate in checkpoint read/write during execution.
-- In proxy mode, checkpoint data is opaque bytes. The control plane stores and returns them without parsing.
+- In proxy mode, checkpoint data is opaque bytes. The control plane stores and returns them without parsing. Soft size cap: 16 MiB per blob (`413` if exceeded).
+- LangGraph's Python `ProxyCheckpointSaver` packs checkpoint + metadata + pending writes (`aput_writes`) into each blob. HITL interrupt→resume and mid-superstep pending writes are full-fidelity in proxy mode (same resume path as direct mode). Concurrent writers MUST use conditional PUT: `If-None-Match: *` for first create (both `aput` and `aput_writes` on 404 — create-only, `412` if the id already exists) and `If-Match` / ETag for updates, retrying on `412` so pending channels are not silently dropped. Paths the saver cannot support MUST fail loud (e.g. `alist(filter=...)`).
+- Proxy mode `/internal/checkpoints/*` requires run binding (`X-Runkite-Run-Id` + `X-Runkite-Generation`); the path `thread_id` MUST match the in-flight assignment's `thread_id` (`403 run_thread_mismatch` otherwise). Path `thread_id` is the assignment's bare thread id (not a tenant-prefixed LangGraph checkpointer key).
+- The path `checkpoint_id` is an opaque string owned by the framework. Clients MAY encode framework-specific structure inside it (e.g. LangGraph folds `checkpoint_ns` as `{ns}\x1f{checkpoint_id}`); the control plane MUST treat it as an opaque key and MUST NOT parse it.
 - The control plane stores checkpoint identity (`thread_id` + `checkpoint_id`) for its own bookkeeping and forwards a client-chosen past checkpoint via `RunAssignment.checkpoint_ref` for time-travel resume. HITL resume uses `resume_command` (optionally combined with `checkpoint_ref`); without `checkpoint_ref`, HITL resumes from the thread's latest checkpoint.
 - The runner MUST write a checkpoint after each node step if the agent framework supports it. This enables crash recovery and HITL resume at the correct position.
-- Direct mode requires the runner to have database credentials (`DATABASE_URL`). Proxy mode does not.
+- Direct mode requires the runner to have database credentials (`DATABASE_URL` / `POSTGRES_DSN`). Proxy mode does not.
+- Retention `checkpoints_keep_last` prunes both Agent Protocol `thread_checkpoints` history and opaque proxy blobs.
 
 ---
 

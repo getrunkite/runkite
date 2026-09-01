@@ -43,7 +43,7 @@ func TestInit_CreatesCoreAndGovernanceTablesIdempotently(t *testing.T) {
 	want := []string{
 		"agents", "agent_versions", "agent_schemas",
 		"registry_entries", "registry_entry_versions",
-		"threads", "runs", "thread_checkpoints",
+		"threads", "runs", "thread_checkpoints", "opaque_checkpoints",
 		"store_items", "webhook_dead_letters", "run_cache",
 		"cron_schedules", "cron_claims",
 		"audit_events", "policy_grants", "pending_actions",

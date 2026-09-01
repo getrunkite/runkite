@@ -22,7 +22,7 @@ import grpc
 
 # Generated protobuf stubs
 from . import runner_pb2, runner_pb2_grpc
-from .checkpoint import CheckpointerManager
+from .checkpoint import CheckpointerManager, resolve_checkpoint_http_url
 from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
@@ -518,13 +518,19 @@ async def run_worker(
     # loads the graph itself) and why factory graphs are skipped.
     await report_agent_schemas(adapter.graphs, http_address, runner_token, runner_kind)
 
-    # Checkpoint dual mode: direct-mode Postgres when the
-    # runner has the same DATABASE_URL the control plane uses, so thread
-    # state survives runner restarts; falls back to in-memory (explicitly
-    # ephemeral) otherwise. See checkpoint.py for the full rationale.
+    # Checkpoint dual/tri mode: direct Postgres, HTTP opaque proxy, or
+    # in-memory. See checkpoint.py for the full rationale. Proxy URL comes
+    # from resolve_checkpoint_http_url (blank RUNKITE_HTTP_URL → memory),
+    # not raw --http-address, so an empty env does not force proxy errors.
     postgres_dsn = os.environ.get("POSTGRES_DSN")
+    checkpoint_http = None if postgres_dsn else resolve_checkpoint_http_url(http_address)
     checkpointer_manager = CheckpointerManager()
-    await checkpointer_manager.start(postgres_dsn, pool_size=concurrency)
+    await checkpointer_manager.start(
+        postgres_dsn,
+        pool_size=concurrency,
+        http_base_url=checkpoint_http,
+        runner_token=runner_token if checkpoint_http else None,
+    )
     adapter.attach_checkpointer(checkpointer_manager)
 
     # Store dual mode: same direct/proxy split as checkpoints, but for the

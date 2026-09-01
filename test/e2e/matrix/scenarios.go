@@ -49,6 +49,11 @@ const (
 	// interrupt payload visible, then resume it and verify it completes.
 	// LangGraph-only today (approval_agent).
 	ScenarioHITL ScenarioKind = "hitl"
+	// ScenarioHITLRestart: same as HITL, but the runner process is hard-
+	// killed between interrupt and resume. Proves proxy opaque
+	// checkpoints on the control plane (SQLite/MySQL/…) survive a runner
+	// crash with no runner POSTGRES_DSN -- the P2a-4 exit criterion.
+	ScenarioHITLRestart ScenarioKind = "hitl_restart"
 )
 
 // runScenario dispatches to the right scenario implementation and
@@ -62,6 +67,8 @@ func runScenario(t *testing.T, c *cell, kind ScenarioKind) NormalizedRun {
 		return scenarioCancel(t, c)
 	case ScenarioHITL:
 		return scenarioHITL(t, c)
+	case ScenarioHITLRestart:
+		return scenarioHITLRestart(t, c)
 	default:
 		t.Fatalf("unknown scenario kind %q", kind)
 		return NormalizedRun{}
@@ -186,6 +193,66 @@ func scenarioHITL(t *testing.T, c *cell) NormalizedRun {
 
 	return NormalizedRun{
 		EventTypes:  []string{"lifecycle", "input.requested", "end", "resume_via_wait"},
+		FinalStatus: finalStatus,
+	}
+}
+
+// scenarioHITLRestart is scenarioHITL with a hard runner kill between
+// interrupt and resume. Control plane stays up; the new runner process
+// must reload opaque checkpoint state via /internal/checkpoints (proxy
+// mode -- runnerLaunchEnv blanks every backend DSN). This is the P2a-4
+// proof: multi-turn LangGraph on SQLite/MySQL CP with no runner Postgres.
+func scenarioHITLRestart(t *testing.T, c *cell) NormalizedRun {
+	t.Helper()
+	threadID := c.createThread(t)
+	resp := c.postJSON(t, "/threads/"+threadID+"/runs/stream", map[string]any{
+		"agent_id": c.runner.ApprovalAgent,
+		"input": map[string]any{
+			"messages": []map[string]string{{"role": "user", "content": "send the email"}},
+			"approved": false,
+		},
+	})
+	events := parseSSE(t, c, resp)
+	resp.Body.Close()
+	types := eventTypesOf(events)
+
+	if !containsAll(types, []string{"lifecycle", "input.requested"}) {
+		t.Fatalf("expected an interrupt (lifecycle + input.requested), got %v\n%s", types, c.diagnostics())
+	}
+	hasInterruptedEnd := false
+	for _, e := range events {
+		if e.Event == "end" && e.Data["status"] == "interrupted" {
+			hasInterruptedEnd = true
+		}
+	}
+	if !hasInterruptedEnd {
+		t.Fatalf("expected run to end with status=interrupted, got events %v\n%s", types, c.diagnostics())
+	}
+
+	c.pollThreadNotBusy(t, threadID, 5*time.Second)
+
+	// Crash the runner; CP + opaque blobs remain.
+	c.restartRunner()
+
+	resumeResp := c.postJSON(t, "/threads/"+threadID+"/runs/wait", map[string]any{
+		"agent_id": c.runner.ApprovalAgent,
+		"command":  map[string]any{"resume": true},
+	})
+	var result map[string]any
+	c.decodeJSON(t, resumeResp, &result)
+	resumedRun, _ := result["run"].(map[string]any)
+	finalStatus, _ := resumedRun["status"].(string)
+	if finalStatus != "success" {
+		t.Fatalf("expected resume after runner restart to succeed, got %v\n%s", result, c.diagnostics())
+	}
+
+	// runner_restarted / resume_via_wait are scenario metadata baked into
+	// the golden, not SSE event names the control plane emits. The stream
+	// phase only produces lifecycle / input.requested / end; resume uses
+	// /runs/wait (no SSE). Keep them so the golden documents the full
+	// interrupt → kill → resume shape.
+	return NormalizedRun{
+		EventTypes:  []string{"lifecycle", "input.requested", "end", "runner_restarted", "resume_via_wait"},
 		FinalStatus: finalStatus,
 	}
 }

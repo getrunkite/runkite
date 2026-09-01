@@ -28,6 +28,7 @@ const (
 	ReasonRunNotInflight           = "run_not_inflight"
 	ReasonRunGenerationMismatch    = "run_generation_mismatch"
 	ReasonRunBindingLookupFailed   = "run_binding_lookup_failed"
+	ReasonRunThreadMismatch        = "run_thread_mismatch"
 )
 
 // InflightLookup resolves the currently in-flight RunAssignment for a
@@ -68,7 +69,9 @@ func RunBindingFromContext(ctx context.Context) *RunBinding {
 // metadata) stay runner-token-only -- they are not always issued under
 // an in-flight assignment.
 func requiresRunBinding(path string) bool {
-	if strings.HasPrefix(path, "/internal/store") || strings.HasPrefix(path, "/internal/vectors") {
+	if strings.HasPrefix(path, "/internal/store") ||
+		strings.HasPrefix(path, "/internal/vectors") ||
+		strings.HasPrefix(path, "/internal/checkpoints") {
 		return true
 	}
 	if strings.HasPrefix(path, "/internal/connectors/") {

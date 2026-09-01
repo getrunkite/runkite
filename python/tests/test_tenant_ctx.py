@@ -29,6 +29,7 @@ from runkite_runner.tenant_ctx import (  # noqa: E402
     current_tenant,
     reset_run,
     reset_tenant,
+    storage_thread_id,
     tenant_headers,
 )
 
@@ -98,6 +99,32 @@ def test_checkpoint_thread_id_encoding():
     check("acme tenant → prefixed", checkpoint_thread_id("acme", "t1") == "acme:t1")
 
 
+def test_storage_thread_id_strips_active_tenant_prefix():
+    """Proxy HTTP paths must use bare assignment thread_id (LLM2 blocker)."""
+    token = bind_tenant("acme")
+    try:
+        check(
+            "strips active tenant prefix",
+            storage_thread_id("acme:t1") == "t1",
+        )
+        check(
+            "leaves unrelated prefix alone",
+            storage_thread_id("other:t1") == "other:t1",
+        )
+        check("bare id unchanged", storage_thread_id("t1") == "t1")
+    finally:
+        reset_tenant(token)
+
+    token = bind_tenant("default")
+    try:
+        check(
+            "default tenant does not strip 'default:' literally from keys",
+            storage_thread_id("default:t1") == "default:t1",
+        )
+    finally:
+        reset_tenant(token)
+
+
 def test_run_binding_headers():
     check("no run headers by default", HEADER_RUN_ID not in tenant_headers())
     token = bind_run("run-1", 3)
@@ -116,6 +143,7 @@ def main():
     test_empty_binds_default()
     test_concurrent_jobs_do_not_clobber()
     test_checkpoint_thread_id_encoding()
+    test_storage_thread_id_strips_active_tenant_prefix()
     test_run_binding_headers()
     print("\nAll checks passed.")
 

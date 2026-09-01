@@ -85,6 +85,24 @@ func TestMiddleware_RunBindingGenerationMismatch(t *testing.T) {
 	}
 }
 
+func TestMiddleware_RunBindingRequiredOnCheckpoints(t *testing.T) {
+	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: mapInflight{}},
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("PUT", "/internal/checkpoints/thr-1/cp-1", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unbound checkpoint call: status %d, want 401", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["reason_code"] != auth.ReasonRunBindingRequired {
+		t.Fatalf("reason_code=%q", body["reason_code"])
+	}
+}
+
 func TestMiddleware_RunBindingNotInflight(t *testing.T) {
 	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: mapInflight{}},
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))

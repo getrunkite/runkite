@@ -65,10 +65,39 @@ type Store interface {
 	// bump Thread.Version (same as SetThreadStatus/TryClaimThread).
 	ReleaseThreadIfNoOtherActive(ctx context.Context, threadID, excludeRunID string, status models.ThreadStatus) (bool, error)
 
-	// --- Checkpoints ---
+	// --- Checkpoints (Agent Protocol thread history / time-travel view) ---
 	SaveCheckpoint(ctx context.Context, threadID string, state *models.ThreadState) error
 	GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error)
 	ListCheckpoints(ctx context.Context, threadID string, limit int, before string) ([]*models.ThreadState, error)
+
+	// --- Opaque runner checkpoints (proxy-mode BaseCheckpointSaver blobs) ---
+	// Distinct from ThreadState history above: these are framework-owned
+	// bytes the control plane never parses (LangGraph ProxyCheckpointSaver,
+	// future CrewAI adapters, etc.). See runner-protocol §6.2.
+	//
+	// PutOpaqueCheckpoint upserts the blob and returns the new version
+	// (ETag). When ifMatch is non-nil:
+	//   - *ifMatch >= 1: UPDATE-only CAS (version must equal *ifMatch)
+	//   - *ifMatch == OpaqueCreateOnly (0): INSERT-only (If-None-Match: *);
+	//     returns *ErrConflict if the row already exists
+	// nil ifMatch = unconditional upsert (bumps version when the row
+	// already existed).
+	PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error)
+	GetOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) (*models.OpaqueCheckpoint, error)
+	// GetLatestOpaqueCheckpoint returns the newest blob for threadID,
+	// ordered by checkpoint_id DESC (LangGraph time-sortable UUIDs —
+	// same as AsyncPostgresSaver). Not by created_at: parent blobs often
+	// receive late aput_writes that bump write time, and Mongo Date is
+	// only ms-precise so concurrent tip/parent writes routinely tie.
+	// namespace "" matches root keys (checkpoint_id with no "\x1f");
+	// a non-empty namespace matches keys prefixed with namespace+"\x1f".
+	GetLatestOpaqueCheckpoint(ctx context.Context, threadID, namespace string) (*models.OpaqueCheckpoint, error)
+	ListOpaqueCheckpoints(ctx context.Context, threadID string, limit int) ([]models.OpaqueCheckpointMeta, error)
+	DeleteOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string) error
+	// PruneOpaqueCheckpoints keeps only keepLast most recent opaque
+	// checkpoints per thread (by created_at), deleting older ones.
+	// Same retention knob as PruneCheckpoints (checkpoints_keep_last).
+	PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64, error)
 
 	// --- Runs ---
 	CreateRun(ctx context.Context, run *models.Run) error
@@ -277,10 +306,15 @@ func (e *ErrNotFound) Error() string {
 }
 
 // ErrConflict is returned for any conflicting write a caller should see as
-// HTTP 409 -- both "already exists" (e.g. duplicate thread_id) and other
-// conflict shapes like an optimistic-concurrency version mismatch, which
-// don't fit "already exists" at all (the resource already existed and this
-// write lost a race, it didn't newly appear).
+// OpaqueCreateOnly is the ifMatch sentinel for INSERT-only puts
+// (HTTP If-None-Match: *). Real opaque versions always start at 1, so 0
+// cannot collide with a CAS If-Match value.
+const OpaqueCreateOnly int64 = 0
+
+// ErrConflict is returned for optimistic-concurrency failures and
+// "already exists" collisions (e.g. duplicate thread_id, or create-only
+// put when the opaque checkpoint row is already present). Mapped to
+// HTTP 409 or 412 depending on the route.
 type ErrConflict struct {
 	Resource string
 	ID       string

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -65,6 +67,56 @@ func cleanupSharedBackends() {
 			fmt.Fprintf(os.Stderr, "test/e2e/matrix: mongo cleanup failed (non-fatal): %v\n", err)
 		}
 	}
+	// Redis is shared across every redis-transport cell and across
+	// successive `go test -count=N` / local matrix invocations. Leftover
+	// queue / inflight / cancel keys from a prior cell (or a crashed
+	// run) make HITL resume flake: the runner dequeues a stale job and
+	// the graph re-interrupts instead of applying Command(resume=...).
+	// Caught live as "hitl fails after happy_path/cancel on mongo_redis
+	// but passes alone on a flushed Redis". Flush only rk:* so we do
+	// not touch unrelated keys if someone pointed REDIS_URL at a shared
+	// instance.
+	if url := os.Getenv("REDIS_URL"); url != "" {
+		if err := cleanupRedis(ctx, url); err != nil {
+			fmt.Fprintf(os.Stderr, "test/e2e/matrix: redis cleanup failed (non-fatal): %v\n", err)
+		}
+	}
+}
+
+// cleanupRedis deletes every rk:* key (queues, inflight zset/hashes,
+// cancel markers). SCAN + DEL rather than FLUSHALL so a mis-pointed
+// REDIS_URL cannot wipe an entire shared Redis.
+func cleanupRedis(ctx context.Context, redisURL string) error {
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return fmt.Errorf("parse REDIS_URL: %w", err)
+	}
+	rdb := redis.NewClient(opt)
+	defer rdb.Close()
+
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := rdb.Ping(cctx).Err(); err != nil {
+		return fmt.Errorf("ping: %w", err)
+	}
+
+	var cursor uint64
+	for {
+		keys, next, err := rdb.Scan(cctx, cursor, "rk:*", 200).Result()
+		if err != nil {
+			return fmt.Errorf("scan: %w", err)
+		}
+		if len(keys) > 0 {
+			if err := rdb.Del(cctx, keys...).Err(); err != nil {
+				return fmt.Errorf("del: %w", err)
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
 }
 
 // cleanupSQL handles both Postgres (pgx, "$1"-style placeholders, IN

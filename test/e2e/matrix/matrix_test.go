@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 		fmt.Println("test/e2e/matrix: RUNKITE_RUN_MATRIX not set -- skipping (see `make test-matrix`)")
 		os.Exit(0)
 	}
+	// Start clean too: a previous crashed matrix / manual redis-cli
+	// experiment leaves rk:* keys that flake redis-transport HITL on
+	// the very first cell (see cleanupRedis).
+	cleanupSharedBackends()
 	code := m.Run()
 	// Runs regardless of pass/fail -- a failing matrix run still
 	// registered agents in the shared backends and still needs to leave
