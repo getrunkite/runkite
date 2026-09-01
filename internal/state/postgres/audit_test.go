@@ -37,8 +37,8 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	}
 	bk := migrate.NewPgx(s.pool)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 8 {
-		t.Fatalf("version after Init = %d, %v; want 8", cur, err)
+	if err != nil || cur != 10 {
+		t.Fatalf("version after Init = %d, %v; want 10", cur, err)
 	}
 	if !tableExists(t, ctx, s, "audit_events") {
 		t.Fatal("audit_events missing after Init")
@@ -55,10 +55,31 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	if !tableExists(t, ctx, s, "mandatory_hitl_rules") {
 		t.Fatal("mandatory_hitl_rules missing after Init")
 	}
+	if !tableExists(t, ctx, s, "opaque_checkpoints") {
+		t.Fatal("opaque_checkpoints missing after Init")
+	}
 
-	// Downgrade v8→v7 (mandatory_hitl) then v7→v6 (break_glass) then v6→v5 (index)
+	// Downgrade v10→v9 (opaque version col) then v9→v8 (opaque table) then
+	// v8→v7 (mandatory_hitl) then v7→v6 (break_glass) then v6→v5 (index)
 	// then v5→v4→v3→v2→v1: drop kill_switches, pending_actions, policy_grants,
 	// then audit_events; re-Init restores all.
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade v10→v9: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 9 {
+		t.Fatalf("version after Downgrade = %d, want 9", cur)
+	}
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade v9→v8: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 8 {
+		t.Fatalf("version after Downgrade = %d, want 8", cur)
+	}
+	if tableExists(t, ctx, s, "opaque_checkpoints") {
+		t.Fatal("opaque_checkpoints still present after v9 Down")
+	}
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatalf("Downgrade v8→v7: %v", err)
 	}
@@ -130,11 +151,11 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 		t.Fatalf("re-Init after Downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 8 {
-		t.Fatalf("version after re-Init = %d, want 8", cur)
+	if cur != 10 {
+		t.Fatalf("version after re-Init = %d, want 10", cur)
 	}
-	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") || !tableExists(t, ctx, s, "kill_switches") || !tableExists(t, ctx, s, "break_glass_windows") || !tableExists(t, ctx, s, "mandatory_hitl_rules") {
-		t.Fatal("audit_events/policy_grants/pending_actions/kill_switches/break_glass_windows/mandatory_hitl_rules missing after re-Init")
+	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") || !tableExists(t, ctx, s, "kill_switches") || !tableExists(t, ctx, s, "break_glass_windows") || !tableExists(t, ctx, s, "mandatory_hitl_rules") || !tableExists(t, ctx, s, "opaque_checkpoints") {
+		t.Fatal("audit_events/policy_grants/pending_actions/kill_switches/break_glass_windows/mandatory_hitl_rules/opaque_checkpoints missing after re-Init")
 	}
 
 	ts := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
