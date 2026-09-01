@@ -213,7 +213,6 @@ func authStrictPermissions(configPath string) bool {
 	return cfg.Auth.EffectiveStrictPermissions()
 }
 
-
 func startServer(opts serverOpts) {
 	setupLogging()
 	checkProductionAdmission(opts)

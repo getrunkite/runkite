@@ -79,9 +79,9 @@ func TestAdmissionProblems(t *testing.T) {
 			opts: serverOpts{devMode: false, configPath: withAuthConfig},
 			env: map[string]string{
 				"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x",
-				"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
-				"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
-				"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":       "tok-py",
+				"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS": "tok-ts",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH":     "default",
 			},
 			wantProblems: 1,
 		},

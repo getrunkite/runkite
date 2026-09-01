@@ -147,18 +147,18 @@ func TestRunnerTokens_TenantAllowListsComplete(t *testing.T) {
 		t.Fatal("token without tenants must be incomplete")
 	}
 	withEnv(t, map[string]string{
-		"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
-		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
-		"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":       "tok-py",
+		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS": "tok-ts",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH":     "default",
 	})
 	rt = auth.LoadRunnerTokensFromEnv()
 	if rt.TenantAllowListsComplete() {
 		t.Fatal("partial tenant lists across kinds must be incomplete")
 	}
 	withEnv(t, map[string]string{
-		"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
-		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
-		"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":         "tok-py",
+		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":   "tok-ts",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH":       "default",
 		"RUNNER_TENANTS_TYPESCRIPT_LANGGRAPHJS": "acme",
 	})
 	rt = auth.LoadRunnerTokensFromEnv()
