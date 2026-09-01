@@ -12,6 +12,7 @@ import {
   HEADER_TENANT_ID,
   runWithBinding,
   runWithTenant,
+  storageThreadId,
   tenantHeaders,
 } from "./tenantCtx.js";
 
@@ -52,6 +53,16 @@ test("checkpointThreadId encodes non-default tenants", () => {
   assert.equal(checkpointThreadId("default", "t1"), "t1");
   assert.equal(checkpointThreadId("  ", "t1"), "t1");
   assert.equal(checkpointThreadId("acme", "t1"), "acme:t1");
+});
+
+test("storageThreadId strips tenant prefix for non-default tenants", async () => {
+  assert.equal(storageThreadId("t1"), "t1");
+  assert.equal(storageThreadId("acme:t1"), "acme:t1"); // default tenant: leave alone
+  await runWithTenant("acme", async () => {
+    assert.equal(storageThreadId("acme:t1"), "t1");
+    assert.equal(storageThreadId("t1"), "t1");
+    assert.equal(storageThreadId("other:t1"), "other:t1");
+  });
 });
 
 test("runWithBinding adds run id + generation headers", async () => {

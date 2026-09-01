@@ -9,7 +9,7 @@ import { Metadata, type ClientWritableStream } from "@grpc/grpc-js";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { LangGraphAdapter, loadCustomAppConfig } from "./adapter.js";
-import { CheckpointerManager } from "./checkpoint.js";
+import { CheckpointerManager, resolveCheckpointHttpUrl } from "./checkpoint.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
@@ -204,8 +204,14 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
   const poolSize = Math.max(concurrency, 10);
 
   const postgresDsn = process.env.POSTGRES_DSN;
+  // Proxy URL from resolveCheckpointHttpUrl (blank RUNKITE_HTTP_URL → memory),
+  // not raw --http-address, so an empty env does not force proxy errors.
+  const checkpointHttp = postgresDsn ? undefined : resolveCheckpointHttpUrl(opts.httpAddress);
   const checkpointerManager = new CheckpointerManager();
-  await checkpointerManager.start(postgresDsn, poolSize);
+  await checkpointerManager.start(postgresDsn, poolSize, {
+    httpBaseUrl: checkpointHttp,
+    runnerToken: checkpointHttp ? runnerToken || undefined : undefined,
+  });
   adapter.attachCheckpointer(checkpointerManager);
 
   const store = new RunkiteStore({
