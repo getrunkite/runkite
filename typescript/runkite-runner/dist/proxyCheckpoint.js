@@ -330,7 +330,8 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         const key = blobKey(ns, checkpointId);
         const parentId = config.configurable?.checkpoint_id;
         const headers = this.clientHeaders();
-        await this.locks.run(`${threadId}\0${key}`, async () => {
+        await this.locks
+            .run(`${threadId}\0${key}`, async () => {
             for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
                 let existingWrites = [];
                 let etag = null;
@@ -385,7 +386,8 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
                     throw err;
                 }
             }
-        }).catch((err) => {
+        })
+            .catch((err) => {
             if (err instanceof RunNotInflight)
                 return;
             throw err;
@@ -411,7 +413,8 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         }
         const key = blobKey(ns, checkpointId);
         const headers = this.clientHeaders();
-        await this.locks.run(`${threadId}\0${key}`, async () => {
+        await this.locks
+            .run(`${threadId}\0${key}`, async () => {
             for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
                 let etag = null;
                 let createOnly = false;
@@ -466,7 +469,8 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
                     throw err;
                 }
             }
-        }).catch((err) => {
+        })
+            .catch((err) => {
             if (err instanceof RunNotInflight)
                 return;
             throw err;
