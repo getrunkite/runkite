@@ -20,6 +20,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Runners](runners.md) | Python and TypeScript runners |
 | [Runner Protocol](../runner-protocol/README.md) | Worker contract (gRPC + opaque checkpoints) |
 | [Deployment](deployment.md) | Docker, Helm/kind (Compatible), Compose soak |
+| [Ops runbook](ops-runbook.md) | Supported install, reclaim, kill, secrets |
 | [API](api.md) | OpenAPI and HTTP API reference |
 | [Known Limitations](limitations.md) | Release summary + full caveats (link from GitHub Releases) |
 | [Test plan crosswalk](test-plan-crosswalk.md) | Internal test-plan IDs → done / mixed / gap (honesty map) |

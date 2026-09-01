@@ -1,6 +1,6 @@
 # Deployment
 
-> Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
+> Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md). For Supported install / reclaim / kill / secrets in one page, see the [Ops runbook](ops-runbook.md).
 
 ## Docker
 

@@ -133,7 +133,7 @@ Full walkthrough (SDK stream, Postgres/Redis, auth): [docs/quickstart.md](docs/q
 | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) | Core |
 | [Runner Protocol](runner-protocol/README.md) · [`PROTOCOL.md`](runner-protocol/PROTOCOL.md) | Worker contract (gRPC + opaque checkpoints) |
 | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) | Features |
-| [Deployment](docs/deployment.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) | Ops |
+| [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) | Ops |
 
 Examples under [`examples/`](examples/) (`echo_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, …).
 
