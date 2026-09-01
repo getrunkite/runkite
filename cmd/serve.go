@@ -265,18 +265,18 @@ func startServer(opts serverOpts) {
 	// sites -- it must be polled periodically to reflect current state.
 	go pollQueueDepth(ctx, queue)
 
-	// Reclaim jobs dequeued by a runner that then died before Ack
-	// (zombie GetJob long-poll / crash between Dequeue and first event).
-	// Passes rdb so Kafka+Redis HA can elect a single reclaim leader
-	// (see tryAcquireReclaimLeader) -- closes Kafka's dual-reaper
-	// double-dispatch window when Redis is present.
-	go reclaimStaleJobs(ctx, queue, rdb)
-
 	// Bootstrap agents and connectors from langgraph.json files
 	bootstrapAgents(store, opts.configPath)
 
 	// HTTP API server
 	apiServer := api.NewServer(store, queue, broker, cancelBus)
+
+	// Reclaim jobs dequeued by a runner that then died before Ack
+	// (zombie GetJob long-poll / crash between Dequeue and first event).
+	// Starts after apiServer so StatusCallback can mark poison-pill
+	// deaths. Passes rdb so Kafka+Redis HA can elect a single reclaim
+	// leader (see tryAcquireReclaimLeader).
+	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxRetries(opts.configPath), apiServer.StatusCallback())
 
 	// Wire connector registry if configured
 	if reg := bootstrapConnectors(opts.configPath); reg != nil {

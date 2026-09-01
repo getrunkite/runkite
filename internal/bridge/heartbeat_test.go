@@ -170,7 +170,7 @@ func TestStreamEvents_TerminalEventFromSupersededGenerationIsDropped(t *testing.
 	// A second runner reclaims the job (generation bumps to 2) and is
 	// dispatched the redelivered work -- mirrors a genuine transient
 	// blip that made the first runner miss the reaper's window.
-	if n, err := queue.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := queue.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 	}
 	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {
@@ -257,7 +257,7 @@ func TestHeartbeat_SupersededGenerationSignalsRunnerToStop(t *testing.T) {
 	// reclaims and redispatches the job (generation bumps to 2) to a
 	// second runner, before this original runner's own Heartbeat call
 	// arrives.
-	if n, err := queue.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := queue.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 	}
 	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {
@@ -312,7 +312,7 @@ func TestReportStatus_SupersededGenerationIsIgnoredNotAppliedToRunState(t *testi
 		t.Fatalf("GetJob: %v", err)
 	}
 
-	if n, err := queue.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := queue.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 	}
 	if _, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1}); err != nil {

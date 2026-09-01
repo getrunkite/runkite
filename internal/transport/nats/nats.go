@@ -412,16 +412,17 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 // configured with, and a deterministic, on-demand way to force a
 // reclaim (what the shared conformance suite's own fencing tests rely
 // on) rather than only ever waiting out a real timer.
-func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	cutoff := nowMillis() - maxAge.Milliseconds()
 	keys, err := q.inflight.Keys(ctx)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrNoKeysFound) {
-			return 0, nil
+			return 0, nil, nil
 		}
-		return 0, err
+		return 0, nil, err
 	}
 	reclaimed := 0
+	var dead []transport.PoisonPill
 	for _, key := range keys {
 		kve, err := q.inflight.Get(ctx, key)
 		if err != nil {
@@ -434,6 +435,23 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 		if entry.TouchedAtUnixMilli > cutoff {
 			continue
 		}
+		newGen := entry.Generation + 1
+		if maxRetries > 0 && newGen > int64(maxRetries) {
+			// Terminally fail: Ack (remove from JetStream) instead of NAK
+			// so the crash-looping message is not redelivered.
+			_ = q.nc.Publish(entry.Reply, []byte("+ACK"))
+			if err := q.inflight.Delete(ctx, key, jetstream.LastRevision(kve.Revision())); err == nil {
+				var job transport.RunAssignment
+				_ = json.Unmarshal(entry.Job, &job)
+				dead = append(dead, transport.PoisonPill{
+					RunID:      key,
+					Generation: newGen,
+					AgentID:    job.GraphID,
+					TenantID:   job.TenantID,
+				})
+			}
+			continue
+		}
 		if err := q.nc.Publish(entry.Reply, []byte("-NAK")); err != nil {
 			continue
 		}
@@ -441,7 +459,7 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 			reclaimed++
 		}
 	}
-	return reclaimed, nil
+	return reclaimed, dead, nil
 }
 
 // Len sums NumPending (delivered-to-nobody-yet, matching Redis's own

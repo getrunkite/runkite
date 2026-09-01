@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/getrunkite/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/transport"
 )
 
@@ -68,10 +72,37 @@ func tryAcquireReclaimLeader(ctx context.Context, rdb *goredis.Client, holder st
 
 // staleReclaimer is implemented by in-process, Redis, NATS, and Kafka queues.
 type staleReclaimer interface {
-	ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error)
+	ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error)
 }
 
-func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client) {
+// defaultReclaimMaxRetries matches plans/poison_pill_max_retries.md and
+// PROTOCOL.md §13: original attempt + limited reclaims before permanent
+// failure. Explicit reclaim.max_retries=0 (or env 0) means unlimited.
+const defaultReclaimMaxRetries = 3
+
+// initReclaimMaxRetries reads langgraph.json "reclaim.max_retries" from
+// the first discovered config file, then applies RUNKITE_RECLAIM_MAX_RETRIES
+// if set. Absent config → default 3.
+func initReclaimMaxRetries(configPath string) int {
+	maxRetries := defaultReclaimMaxRetries
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) > 0 {
+		if cfg, err := config.LoadLangGraphJSON(paths[0]); err == nil && cfg.Reclaim != nil && cfg.Reclaim.MaxRetries != nil {
+			maxRetries = *cfg.Reclaim.MaxRetries
+		}
+	}
+	if v := os.Getenv("RUNKITE_RECLAIM_MAX_RETRIES"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			slog.Error("RUNKITE_RECLAIM_MAX_RETRIES invalid; keeping prior value", "value", v, "using", maxRetries)
+		} else {
+			maxRetries = n
+		}
+	}
+	return maxRetries
+}
+
+func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxRetries int, statusCallback func(runID, status, errorMsg string)) {
 	r, ok := queue.(staleReclaimer)
 	if !ok {
 		return
@@ -95,6 +126,7 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 	if holder == "" {
 		holder = "runkite"
 	}
+	slog.Info("reclaim loop started", "max_retries", maxRetries, "max_age", maxAge)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -112,13 +144,38 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 			if !won {
 				continue
 			}
-			n, err := r.ReclaimStale(ctx, maxAge)
+			n, dead, err := r.ReclaimStale(ctx, maxAge, maxRetries)
 			if err != nil {
 				slog.Warn("failed to reclaim stale jobs", "error", err)
 				continue
 			}
+			for _, pill := range dead {
+				msg := fmt.Sprintf(
+					"max retries exceeded (generation %d): runner crashed %d times without completing",
+					pill.Generation, pill.Generation,
+				)
+				slog.Warn("poison pill detected",
+					"run_id", pill.RunID,
+					"generation", pill.Generation,
+					"max_retries", maxRetries,
+					"agent_id", pill.AgentID,
+					"tenant_id", pill.TenantID,
+				)
+				agent := pill.AgentID
+				if agent == "" {
+					agent = "unknown"
+				}
+				tenant := pill.TenantID
+				if tenant == "" {
+					tenant = "default"
+				}
+				metrics.PoisonPillTotal.WithLabelValues(agent, tenant).Inc()
+				if statusCallback != nil {
+					statusCallback(pill.RunID, "error", msg)
+				}
+			}
 			if n > 0 {
-				slog.Info("reclaimed stale jobs", "count", n, "max_age", maxAge)
+				slog.Info("reclaimed stale jobs", "count", n)
 			}
 		}
 	}

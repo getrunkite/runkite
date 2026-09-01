@@ -51,7 +51,7 @@ func TestSharedInflight_AckFromDifferentInstanceThanDequeue(t *testing.T) {
 	// EITHER instance) must find nothing to reclaim -- the old bug would
 	// have instanceA's local map still holding the entry, since its own
 	// Ack was never called.
-	n, err := instanceA.ReclaimStale(ctx, 0)
+	n, _, err := instanceA.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestSharedInflight_ReclaimFromDifferentInstanceThanDequeue(t *testing.T) {
 	// it might have held, is simply gone -- we never call anything on it
 	// again). instanceB, a surviving replica, must still be able to
 	// reclaim the job instanceA dequeued and never Ack'd.
-	n, err := instanceB.ReclaimStale(ctx, 0)
+	n, _, err := instanceB.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestSharedInflight_ConcurrentReclaimAcrossInstancesReclaimsExactlyOnce(t *t
 		wg.Add(1)
 		go func(i int, inst *redistransport.Queue) {
 			defer wg.Done()
-			n, err := inst.ReclaimStale(ctx, 0)
+			n, _, err := inst.ReclaimStale(ctx, 0, 0)
 			if err != nil {
 				t.Errorf("replica %d reclaim: %v", i, err)
 				return

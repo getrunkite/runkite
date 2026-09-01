@@ -35,7 +35,7 @@ func TestDequeue_PendingOrphanRecoveredByReclaim(t *testing.T) {
 	}
 
 	q := redistransport.NewQueue(rdb)
-	n, err := q.ReclaimStale(ctx, time.Hour) // maxAge irrelevant for drain; no zset entries yet
+	n, _, err := q.ReclaimStale(ctx, time.Hour, 0) // maxAge irrelevant for drain; no zset entries yet
 	if err != nil {
 		t.Fatalf("ReclaimStale: %v", err)
 	}

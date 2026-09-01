@@ -29,7 +29,7 @@ func TestReclaimStale_ReenqueuesUnackedJob(t *testing.T) {
 	}
 
 	// Not Ack'd — reclaim with a zero maxAge should pick it up immediately.
-	n, err := q.ReclaimStale(ctx, 0)
+	n, _, err := q.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestAck_PreventsReclaim(t *testing.T) {
 		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 
-	n, err := q.ReclaimStale(ctx, 0)
+	n, _, err := q.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

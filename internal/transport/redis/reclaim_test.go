@@ -39,7 +39,7 @@ func TestRedisReclaimStale_ReenqueuesUnackedJob(t *testing.T) {
 	}
 
 	// Not Ack'd -- reclaim with a zero maxAge should pick it up immediately.
-	n, err := q.ReclaimStale(ctx, 0)
+	n, _, err := q.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRedisAck_PreventsReclaim(t *testing.T) {
 		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 
-	n, err := q.ReclaimStale(ctx, 0)
+	n, _, err := q.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestRedisReclaimStale_SkipsCanceledJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := q.ReclaimStale(ctx, 0)
+	n, _, err := q.ReclaimStale(ctx, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestRedisReclaimStale_PreservesEmptyArrayFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n, err := q.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := q.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 	}
 
@@ -263,7 +263,7 @@ func TestRedisReclaimStale_NestedGenerationInInputDoesNotConfuseTheBump(t *testi
 		t.Fatal(err)
 	}
 
-	if n, err := q.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := q.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 	}
 
@@ -317,11 +317,61 @@ func TestRedisReclaimStale_RespectsMaxAge(t *testing.T) {
 	}
 
 	// Job was just dequeued -- a generous maxAge must not reclaim it yet.
-	n, err := q.ReclaimStale(ctx, time.Hour)
+	n, _, err := q.ReclaimStale(ctx, time.Hour, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
 		t.Fatalf("reclaimed %d fresh in-flight jobs, want 0", n)
+	}
+}
+
+func TestRedisReclaimStale_MaxRetriesPoisonPill(t *testing.T) {
+	rdb := getRedisClient(t)
+	defer rdb.Close()
+	redistransport.FlushAll(context.Background(), rdb)
+	q := redistransport.NewQueue(rdb)
+	ctx := context.Background()
+
+	job := &transport.RunAssignment{
+		RunID:      "run-pill",
+		ThreadID:   "t1",
+		GraphID:    "echo",
+		RunnerKind: "test-runner",
+		Generation: 1,
+		TenantID:   "acme",
+	}
+	if err := q.Enqueue(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	const maxRetries = 2
+	n, dead, err := q.ReclaimStale(ctx, 0, maxRetries)
+	if err != nil || n != 1 || len(dead) != 0 {
+		t.Fatalf("first reclaim: n=%d dead=%d err=%v", n, len(dead), err)
+	}
+	if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	n, dead, err = q.ReclaimStale(ctx, 0, maxRetries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 || len(dead) != 1 {
+		t.Fatalf("ceiling: n=%d dead=%d want n=0 dead=1", n, len(dead))
+	}
+	if dead[0].RunID != "run-pill" || dead[0].Generation != 3 {
+		t.Fatalf("pill=%+v want run-pill gen 3", dead[0])
+	}
+	if dead[0].TenantID != "acme" || dead[0].AgentID != "echo" {
+		t.Fatalf("pill labels=%+v", dead[0])
+	}
+	extra, _ := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
+	if extra != nil {
+		t.Fatalf("poisoned job reappeared: %+v", extra)
 	}
 }

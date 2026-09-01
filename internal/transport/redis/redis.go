@@ -562,9 +562,11 @@ local gen_key = KEYS[4]
 local cutoff = ARGV[1]
 local now_ms = tonumber(ARGV[2])
 local canceled_ttl_ms = tonumber(ARGV[3])
+local max_retries = tonumber(ARGV[4])
 
 local stale_ids = redis.call('ZRANGEBYSCORE', zset_key, '-inf', cutoff)
 local reclaimed = 0
+local dead = {}
 
 for _, run_id in ipairs(stale_ids) do
     local job_json = redis.call('HGET', data_key, run_id)
@@ -582,16 +584,21 @@ for _, run_id in ipairs(stale_ids) do
           end
         end
         if not is_canceled then
-            local job = cjson.decode(job_json)
             local new_gen = redis.call('HINCRBY', gen_key, run_id, 1)
-            -- Go's json.Marshal never emits trailing whitespace, so a
-            -- compact JSON object's very last byte is always '}' --
-            -- anchoring on that (not searching for any existing
-            -- "generation" text) is what makes this append safe
-            -- regardless of what the rest of the payload contains.
-            local new_job_json = job_json:gsub('}$', ',"generation":' .. new_gen .. '}')
-            redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
-            reclaimed = reclaimed + 1
+            if max_retries > 0 and new_gen > max_retries then
+                redis.call('HDEL', gen_key, run_id)
+                table.insert(dead, run_id .. ':' .. tostring(new_gen) .. ':' .. job_json)
+            else
+                local job = cjson.decode(job_json)
+                -- Go's json.Marshal never emits trailing whitespace, so a
+                -- compact JSON object's very last byte is always '}' --
+                -- anchoring on that (not searching for any existing
+                -- "generation" text) is what makes this append safe
+                -- regardless of what the rest of the payload contains.
+                local new_job_json = job_json:gsub('}$', ',"generation":' .. new_gen .. '}')
+                redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
+                reclaimed = reclaimed + 1
+            end
         else
             redis.call('HDEL', gen_key, run_id)
         end
@@ -601,31 +608,86 @@ end
 -- Trim expired cancel markers opportunistically on every reclaim tick.
 redis.call('ZREMRANGEBYSCORE', canceled_key, '-inf', tostring(now_ms - canceled_ttl_ms))
 
-return reclaimed
+return {reclaimed, dead}
 `
 
 // ReclaimStale re-enqueues jobs dequeued more than maxAge ago without Ack.
 // Safe to call concurrently from multiple control-plane replicas -- see
 // reclaimStaleScript's own doc comment for why. Also drains any orphan
 // payloads left on rk:inflight:pending (crash between BLMOVE and promote).
-func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+//
+// maxRetries is the poison-pill ceiling: when the next generation would
+// exceed it, the job is removed from inflight and returned in dead
+// instead of re-enqueued. 0 means unlimited (legacy behavior).
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	if _, err := q.drainPending(ctx); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	now := nowMillis()
 	cutoff := now - maxAge.Milliseconds()
 	result, err := q.rdb.Eval(ctx, reclaimStaleScript,
 		[]string{inflightZSetKey, inflightDataKey, canceledZSetKey, inflightGenKey},
-		cutoff, now, canceledMemberTTL.Milliseconds(),
+		cutoff, now, canceledMemberTTL.Milliseconds(), maxRetries,
 	).Result()
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	n, ok := result.(int64)
+	arr, ok := result.([]interface{})
+	if !ok || len(arr) != 2 {
+		return 0, nil, fmt.Errorf("unexpected reclaim script result type %T", result)
+	}
+	n, ok := arr[0].(int64)
 	if !ok {
-		return 0, fmt.Errorf("unexpected reclaim script result type %T", result)
+		return 0, nil, fmt.Errorf("unexpected reclaim count type %T", arr[0])
 	}
-	return int(n), nil
+	var dead []transport.PoisonPill
+	if deadRaw, ok := arr[1].([]interface{}); ok {
+		for _, item := range deadRaw {
+			s, _ := item.(string)
+			pill, perr := parseDeadEntry(s)
+			if perr != nil {
+				continue
+			}
+			dead = append(dead, pill)
+		}
+	}
+	return int(n), dead, nil
+}
+
+func parseDeadEntry(s string) (transport.PoisonPill, error) {
+	// run_id:generation:job_json — run_id is UUID (no colon); generation is int.
+	first := -1
+	second := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == ':' {
+			if first < 0 {
+				first = i
+			} else {
+				second = i
+				break
+			}
+		}
+	}
+	if first < 0 || second < 0 {
+		return transport.PoisonPill{}, fmt.Errorf("bad dead entry")
+	}
+	runID := s[:first]
+	genStr := s[first+1 : second]
+	jobJSON := s[second+1:]
+	var gen int64
+	for _, c := range genStr {
+		if c < '0' || c > '9' {
+			return transport.PoisonPill{}, fmt.Errorf("bad generation")
+		}
+		gen = gen*10 + int64(c-'0')
+	}
+	pill := transport.PoisonPill{RunID: runID, Generation: gen}
+	var job transport.RunAssignment
+	if json.Unmarshal([]byte(jobJSON), &job) == nil {
+		pill.AgentID = job.GraphID
+		pill.TenantID = job.TenantID
+	}
+	return pill, nil
 }
 
 func (q *Queue) Len(ctx context.Context) (int64, error) {

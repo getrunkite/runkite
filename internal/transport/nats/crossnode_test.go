@@ -117,7 +117,7 @@ func TestNATSQueue_RenewFromDifferentConnectionThanDequeue(t *testing.T) {
 	// Job must still be genuinely in-flight after that cross-connection
 	// Renew -- proven via ReclaimStale(0), which only reclaims something
 	// still tracked.
-	if n, err := queueA.ReclaimStale(ctx, 0); err != nil || n != 1 {
+	if n, _, err := queueA.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 		t.Fatalf("expected the still-in-flight job to be reclaimable after cross-connection Renew, got n=%d err=%v", n, err)
 	}
 }

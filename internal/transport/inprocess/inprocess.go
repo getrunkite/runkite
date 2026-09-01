@@ -195,20 +195,25 @@ func (q *Queue) Ping(ctx context.Context) error {
 // ReclaimStale re-enqueues jobs that were dequeued more than maxAge ago
 // without being Ack'd. This recovers jobs stolen by a dead runner's
 // zombie GetJob long-poll (or any crash between Dequeue and first event).
-func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	cutoff := time.Now().Add(-maxAge)
 	q.mu.Lock()
 	var stale []*transport.RunAssignment
+	var dead []transport.PoisonPill
 	for runID, entry := range q.inflight {
 		if entry.dequeuedAt.Before(cutoff) {
-			// Bump generation before redispatching -- see
-			// RunAssignment.Generation's own doc comment for why:
-			// whichever runner Dequeues this next receives the
-			// incremented value, so the ORIGINAL runner's own later
-			// Heartbeat/ReportStatus (if its blip was transient and it
-			// finishes anyway) presents the OLD generation and gets
-			// rejected instead of clobbering this new attempt's work.
-			entry.job.Generation++
+			newGen := entry.job.Generation + 1
+			if maxRetries > 0 && newGen > int64(maxRetries) {
+				dead = append(dead, transport.PoisonPill{
+					RunID:      runID,
+					Generation: newGen,
+					AgentID:    entry.job.GraphID,
+					TenantID:   entry.job.TenantID,
+				})
+				delete(q.inflight, runID)
+				continue
+			}
+			entry.job.Generation = newGen
 			stale = append(stale, entry.job)
 			delete(q.inflight, runID)
 		}
@@ -217,10 +222,17 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 
 	for _, job := range stale {
 		if err := q.Enqueue(ctx, job); err != nil {
-			return 0, err
+			return 0, dead, err
 		}
 	}
-	return len(stale), nil
+	return len(stale), dead, nil
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // --------------------------------------------------------------------------

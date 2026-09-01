@@ -347,7 +347,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 
 		if r, ok := q.(staleReclaimer); ok {
-			n, err := r.ReclaimStale(ctx, 0)
+			n, _, err := r.ReclaimStale(ctx, 0, 0)
 			if err != nil {
 				t.Fatalf("ReclaimStale failed: %v", err)
 			}
@@ -384,7 +384,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if !ok {
 			t.Skip("backend doesn't implement ReclaimStale")
 		}
-		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		if n, _, err := r.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 		}
 
@@ -430,7 +430,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if !ok {
 			t.Skip("backend doesn't implement ReclaimStale")
 		}
-		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		if n, _, err := r.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 		}
 		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
@@ -572,7 +572,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if !ok {
 			t.Skip("backend doesn't implement ReclaimStale")
 		}
-		if n, err := r.ReclaimStale(ctx, 0); err != nil || n != 1 {
+		if n, _, err := r.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
 			t.Fatalf("ReclaimStale: n=%d err=%v", n, err)
 		}
 
@@ -604,13 +604,63 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("LookupInflight tenant=%q, want acme", looked.TenantID)
 		}
 	})
+
+	t.Run("poison_pill_max_retries_stops_reenqueue", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-poison", "test-runner", "echo")
+		job.Generation = 1
+		job.TenantID = "acme"
+		_ = q.Enqueue(ctx, job)
+		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+
+		r, ok := q.(staleReclaimer)
+		if !ok {
+			t.Skip("backend doesn't implement ReclaimStale")
+		}
+
+		const maxRetries = 2
+		// gen 1 → reclaim to 2 (allowed) → dequeue → reclaim would go to 3 > 2 → dead
+		n, dead, err := r.ReclaimStale(ctx, 0, maxRetries)
+		if err != nil {
+			t.Fatalf("first ReclaimStale: %v", err)
+		}
+		if n != 1 || len(dead) != 0 {
+			t.Fatalf("first reclaim want n=1 dead=0, got n=%d dead=%d", n, len(dead))
+		}
+		again, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || again == nil {
+			t.Fatalf("redequeue: %v %v", again, err)
+		}
+
+		n, dead, err = r.ReclaimStale(ctx, 0, maxRetries)
+		if err != nil {
+			t.Fatalf("ceiling ReclaimStale: %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("ceiling reclaim must not re-enqueue, got n=%d", n)
+		}
+		if len(dead) != 1 || dead[0].RunID != "run-poison" {
+			t.Fatalf("want one poison pill for run-poison, got %+v", dead)
+		}
+		if dead[0].Generation <= int64(maxRetries) {
+			t.Fatalf("dead generation %d must be > maxRetries %d", dead[0].Generation, maxRetries)
+		}
+
+		extra, _ := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
+		if extra != nil {
+			t.Fatalf("poisoned job must not reappear on queue, got %+v", extra)
+		}
+	})
 }
 
 // staleReclaimer mirrors cmd/serve.go's own interface -- implemented by
 // both queue backends but not part of the core transport.JobQueue
 // interface, since it's a reaper-specific capability.
 type staleReclaimer interface {
-	ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error)
+	ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error)
 }
 
 // --------------------------------------------------------------------------

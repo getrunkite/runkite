@@ -656,7 +656,7 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 // exclusion is NOT provided here -- use cmd's Redis reclaim-leader
 // lock when REDIS_URL is set. The local re-check before produce only
 // skips work already reflected in this process's materialized view.
-func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, error) {
+func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	cutoff := nowMillis() - maxAge.Milliseconds()
 
 	q.stateMu.RLock()
@@ -675,15 +675,26 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 	q.stateMu.RUnlock()
 
 	reclaimed := 0
+	var dead []transport.PoisonPill
 	for _, s := range stale {
-		// Soft local re-check: another replica's putState may already
-		// have been consumed into our map since the snapshot. Does NOT
-		// close dual-replica races (both can still produce before either
-		// putState lands) -- that is the reclaim-leader lock's job.
 		if cur, ok := q.getState(s.runID); !ok || cur.Canceled || cur.Generation != s.entry.Generation || cur.TouchedAtUnixMilli > cutoff {
 			continue
 		}
 		newGen := s.entry.Generation + 1
+		if maxRetries > 0 && newGen > int64(maxRetries) {
+			if err := q.putState(ctx, s.runID, nil); err != nil {
+				continue
+			}
+			var job transport.RunAssignment
+			_ = json.Unmarshal(s.entry.Job, &job)
+			dead = append(dead, transport.PoisonPill{
+				RunID:      s.runID,
+				Generation: newGen,
+				AgentID:    job.GraphID,
+				TenantID:   job.TenantID,
+			})
+			continue
+		}
 		payload, err := bumpGeneration(s.entry.Job, newGen)
 		if err != nil {
 			continue
@@ -695,16 +706,12 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration) (int, er
 		}); err != nil {
 			continue
 		}
-		// Tombstone like Nack: nothing is in-flight until the next
-		// Dequeue re-records state from the re-produced message.
-		// Leaving a bumped-generation entry here made LookupInflight
-		// report an assignment no runner had claimed yet.
 		if err := q.putState(ctx, s.runID, nil); err != nil {
 			continue
 		}
 		reclaimed++
 	}
-	return reclaimed, nil
+	return reclaimed, dead, nil
 }
 
 // Len sums each of this namespace's own job topics' consumer-group lag

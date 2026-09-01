@@ -73,6 +73,18 @@ var (
 		[]string{"event_type"},
 	)
 
+	// PoisonPillTotal counts runs permanently failed by the reclaim
+	// generation ceiling (max_retries) -- a crash-looping job that would
+	// otherwise sacrifice healthy runners forever. Labels identify the
+	// agent/tenant when known from the assignment payload.
+	PoisonPillTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "runkite_poison_pill_total",
+			Help: "Runs killed by reclaim max_retries (poison-pill generation ceiling)",
+		},
+		[]string{"agent_id", "tenant_id"},
+	)
+
 	// StatusTransitionErrorsTotal counts fire-and-forget thread/run
 	// status writes that still failed after one retry. A rising rate
 	// usually means threads stuck busy (permanent client 409s) or runs
@@ -92,6 +104,7 @@ func init() {
 		RunsTotal, RunDuration, ActiveRuns,
 		QueueDepth, ActiveSSEConnections,
 		WebhookQueueDroppedTotal,
+		PoisonPillTotal,
 		StatusTransitionErrorsTotal,
 	)
 }

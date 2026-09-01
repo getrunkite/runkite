@@ -92,6 +92,11 @@ type LangGraphConfig struct {
 	// unbounded storage growth with no way to bound it short of manual
 	// deletion). Opt-in, same convention as everything else here.
 	Retention *RetentionEntry `json:"retention,omitempty"`
+	// Reclaim caps how many times a crashed job may be re-enqueued
+	// (generation ceiling / poison-pill defense). Control-plane-wide,
+	// first-file (see initReclaimMaxRetries in cmd/reclaim.go). Absent
+	// means default max_retries=3; explicit 0 means unlimited (legacy).
+	Reclaim *ReclaimEntry `json:"reclaim,omitempty"`
 	// RunTimeout is control-plane-wide, same first-file convention as
 	// Retention (see initRunTimeoutConfig in cmd/run_timeout.go).
 	// Absent means no automatic run deadline -- a hung agent (alive but
@@ -235,6 +240,18 @@ type RunTimeoutEntry struct {
 	// IntervalSeconds controls how often the background sweep looks
 	// for overdue runs. Defaults to 15 if omitted or <= 0.
 	IntervalSeconds int `json:"interval_seconds,omitempty"`
+}
+
+// ReclaimEntry is the "reclaim" section of langgraph.json -- poison-pill
+// generation ceiling for crash-looping jobs.
+type ReclaimEntry struct {
+	// MaxRetries caps how many generations a job may reach via reclaim
+	// before it is permanently failed. When the next reclaim would bump
+	// generation above this value, the job is removed from inflight and
+	// marked error instead of re-enqueued. Default 3 when the reclaim
+	// section (or this field) is absent. Explicit 0 means unlimited
+	// (pre-ceiling behavior). Overridable by RUNKITE_RECLAIM_MAX_RETRIES.
+	MaxRetries *int `json:"max_retries,omitempty"`
 }
 
 // RetentionEntry is the "retention" section of langgraph.json.
