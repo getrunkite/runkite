@@ -338,6 +338,10 @@ Body: [
 - Direct mode requires the runner to have database credentials (`DATABASE_URL` / `POSTGRES_DSN`). Proxy mode does not.
 - Retention `checkpoints_keep_last` prunes both Agent Protocol `thread_checkpoints` history and opaque proxy blobs.
 
+### 6.4 Threat model (proxy checkpoints)
+
+Proxy checkpoint I/O is run-bound, not a free blob store: every `/internal/checkpoints/*` request must present an active assignment (`X-Runkite-Run-Id` + `X-Runkite-Generation`, plus `X-Runner-Kind` / `X-Runner-Token` when production runner auth is enabled). Missing or non-dispatched assignment → `403 run_not_inflight`; live assignment whose bare `thread_id` does not match the path → `403 run_thread_mismatch`. Tenant is taken from the assignment, never trusted from a free-form path prefix. The control plane treats bodies as opaque octets up to **16 MiB** (`413` above that) and does not parse LangGraph envelopes; a corrupt or cross-runtime blob is the runner's problem (serde decode fails the run; the CP still returns the bytes unchanged). Savers MUST soft-no-op late writes after cancel/reclaim and MUST refuse updates when a GET 200 lacks an ETag, so a cancelled run or ETag-stripping proxy cannot crash the worker or silently disable CAS.
+
 ---
 
 ## 7. Store API
