@@ -228,13 +228,6 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 	return len(stale), dead, nil
 }
 
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 // --------------------------------------------------------------------------
 // EventBroker
 // --------------------------------------------------------------------------
