@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Poison pill / reclaim ceiling — Runkite engineering</title>
+    <meta
+      name="description"
+      content="How Runkite stops crash-loop jobs from reclaiming forever — reclaim.max_retries as a hard ceiling on Redis, NATS, and Kafka."
+    />
+    <meta name="theme-color" content="#050a0c" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./story.css" />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+    <div class="shell">
+      <header>
+        <a class="logo" href="../">~/ <span>runkite</span></a>
+        <nav class="nav">
+          <a href="../support/ops.html">Support · Ops</a>
+          <a class="active" href="./poison-pill.html">Poison pill</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="kicker">Engineering note · 4 of 4</p>
+      <h1>Crash loops must <em>end</em>.</h1>
+      <p class="lede">
+        Generation fencing stops a <em>late</em> runner from winning. The poison pill
+        stops a <em>cursed</em> job from reclaiming forever — after
+        <code>reclaim.max_retries</code>, the run is terminal error, the thread is
+        released, and hooks fire. No infinite re-enqueue.
+      </p>
+
+      <h2>What “poison” means here</h2>
+      <p>
+        Not content filtering. A job that keeps killing runners (OOM, bad tool, broken
+        graph) would otherwise bounce reclaim → dequeue → crash → reclaim…
+        forever, burning capacity and drowning operators in noise.
+      </p>
+      <div class="diagram" role="img" aria-label="Reclaim ceiling sequence">
+        <pre>
+<span class="dim">attempt 1</span>  dequeue · crash · reclaim   <span class="ok">generation++</span>
+<span class="dim">attempt 2</span>  dequeue · crash · reclaim   <span class="ok">generation++</span>
+<span class="dim">attempt 3</span>  dequeue · crash · next reclaim would be 4th
+
+<span class="ok">ceiling (default 3):</span>  mark <span class="bad">error</span> · release thread · terminal event · <span class="bad">do not re-enqueue</span>
+        </pre>
+      </div>
+
+      <h2>Config</h2>
+      <ul>
+        <li>
+          <code>reclaim.max_retries</code> in agent config (default <strong>3</strong>).
+        </li>
+        <li>Missing field → default 3. Explicit <code>0</code> → unlimited (legacy escape).</li>
+        <li>Env override at process start: <code>RUNKITE_RECLAIM_MAX_RETRIES</code>.</li>
+      </ul>
+      <p>
+        Applies on <strong>Redis, NATS, and Kafka</strong> — same ceiling, no
+        transport-only asymmetry. Distinct from live <strong>cancel</strong> and from
+        Admin <strong>kill switches</strong>.
+      </p>
+
+      <h2>How it pairs with fencing</h2>
+      <p>
+        Fencing answers: “which attempt is allowed to write?” The poison pill answers:
+        “how many attempts are allowed at all?” You need both — otherwise a
+        well-fenced crash loop still never dies.
+      </p>
+
+      <div class="takeaway">
+        <p>
+          Operators get a hard stop they can explain: “it failed after N reclaims,”
+          not “the queue is haunted.”
+        </p>
+      </div>
+
+      <div class="siblings">
+        <a href="./fencing.html">← Fencing</a>
+        <a class="here" href="./poison-pill.html">Poison pill</a>
+        <a href="./subscribe-before-enqueue.html">Subscribe-before-enqueue →</a>
+        <a href="./create-run-ctx.html">createRunCtx →</a>
+      </div>
+
+      <footer>
+        <div>© Runkite · engineering notes</div>
+        <div>
+          <a href="../">Landing</a> ·
+          <a href="../support/ops.html">Support · Ops</a> ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">Ops runbook</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Why opaque checkpoints — Runkite</title>
+    <meta
+      name="description"
+      content="Why Runkite stores opaque checkpoint blobs on the control plane instead of forcing runner Postgres."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">decisions</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Decisions</a>
+          <a class="active" href="./why-opaque-checkpoints.html">Opaque checkpoints</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="../">Support</a>
+          <a href="../checkpoints.html">Checkpoint modes</a>
+        </div>
+        <h1>Why opaque checkpoints on the plane?</h1>
+        <p class="lede">
+          Framework checkpointers that require direct Postgres make the control plane’s
+          backend choice a lie.
+        </p>
+        <h2>Decision</h2>
+        <p>
+          The plane stores <strong>opaque bytes</strong> keyed by tenant/thread. Runners
+          serialize; the plane never parses framework internals. An HTTP proxy with
+          CAS/ETag keeps multi-replica writers honest.
+        </p>
+        <h2>Consequences</h2>
+        <ul>
+          <li>
+            Durable multi-turn can sit on whatever state backend the plane already uses
+            (Postgres / MySQL / SQLite / Mongo) — not “Postgres-only because LangGraph said so.”
+          </li>
+          <li>Runners need not hold DB credentials in proxy mode.</li>
+          <li>
+            CrewAI (and other frameworks) already run on the plane as adapters; sharing this
+            <em>opaque checkpoint</em> contract with them is planned next — LangGraph proxy is what
+            ships today.
+          </li>
+        </ul>
+        <h2>Rejected alternatives</h2>
+        <ul>
+          <li>
+            Reuse Agent Protocol thread state as a LangGraph saver — different shape;
+            wrong abstraction.
+          </li>
+          <li>Force Postgres everywhere — contradicts multi-backend positioning.</li>
+        </ul>
+        <p class="note">
+          See
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">architecture.md</a>
+          and
+          <a href="https://github.com/getrunkite/runkite/blob/main/runner-protocol/README.md">runner-protocol</a>.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

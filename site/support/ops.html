@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ops — Runkite Support</title>
+    <meta name="description" content="Reclaim, kill, secrets." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">support map</p>
+        <nav>
+
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="./try.html">Try it</a>
+          <a  href="./why.html">Why a plane</a>
+          <a  href="./scenario.html">Scenario</a>
+          <div class="nav-group">Use</div>
+          <a  href="./install.html">Install</a>
+          <a  href="./checkpoints.html">Checkpoints</a>
+          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <div class="nav-group">Operate</div>
+          <a class="active" href="./ops.html">Ops</a>
+          <a  href="./security.html">Security</a>
+          <a  href="./finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Deep</div>
+          <a  href="./protocol.html">Protocols</a>
+          <a  href="./decisions/">Decisions</a>
+          <a  href="./limitations.html">Limitations</a>
+
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="./">Support home</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <h1>Operate the plane</h1>
+        <p class="lede">Reclaim ceilings, kill/pause, where secrets live.</p>
+        <ul class="links">
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">docs/ops-runbook.md</a></li>
+          <li><a href="../design/fencing.html">Design: generation fencing</a></li>
+          <li><a href="../design/poison-pill.html">Design: poison pill / reclaim ceiling</a></li>
+          <li><a href="../design/subscribe-before-enqueue.html">Design: subscribe-before-enqueue</a></li>
+          <li><a href="../design/create-run-ctx.html">Design: createRunCtx / fail-closed</a></li>
+        </ul>
+
+      </main>
+    </div>
+  </body>
+</html>

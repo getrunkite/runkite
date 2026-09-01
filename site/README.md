@@ -7,6 +7,8 @@ Product visuals live in `assets/` (Admin walkthrough GIF + ecosystem diagram).
 
 One-page sections (same nav pattern): `#scenario` · `#try` · `#stack` · `#governance` · `#architecture`.
 
+**Support map (W1):** [`support/`](./support/) — navigable Try → Why → Install → Ops → Protocol → Security → FinOps → Limitations, plus [decisions](./support/decisions/).
+
 Narrative order: why a plane → 5-minute try → product depth.  
 `#when-not` (inside Scenario) is the thin "when not to use" callout.
 
@@ -15,6 +17,7 @@ Narrative order: why a plane → 5-minute try → product depth.
 Engineering notes (skimmable “wow” pages under `design/`):
 
 - [Generation fencing](./design/fencing.html)
+- [Poison pill / reclaim ceiling](./design/poison-pill.html)
 - [Subscribe-before-enqueue](./design/subscribe-before-enqueue.html)
 - [createRunCtx / fail-closed](./design/create-run-ctx.html)
 
