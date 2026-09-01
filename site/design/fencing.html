@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Generation fencing — Runkite engineering</title>
+    <meta
+      name="description"
+      content="How Runkite stops a revived runner from clobbering the winner after reclaim — generation fencing on heartbeats, status, and terminal events."
+    />
+    <meta name="theme-color" content="#050a0c" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./story.css" />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+    <div class="shell">
+      <header>
+        <a class="logo" href="../">~/ <span>runkite</span></a>
+        <nav class="nav">
+          <a href="../#architecture">Architecture</a>
+          <a class="active" href="./fencing.html">Fencing</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="kicker">Engineering note · 1 of 3</p>
+      <h1>A stale runner <em>cannot</em> win.</h1>
+      <p class="lede">
+        When a job is reclaimed, the next attempt gets a higher generation. Every later
+        heartbeat, status report, and terminal event from the old attempt is rejected —
+        so a network blip cannot rewrite the winner’s result.
+      </p>
+
+      <h2>The race that breaks queues</h2>
+      <p>
+        Runner A takes a job. Heartbeats stop (pause, partition, OOM). After ~6s the
+        reclaim loop bumps generation and requeues. Runner B finishes successfully.
+        Then A wakes up and tries to report success.
+      </p>
+      <div class="diagram" role="img" aria-label="Without fencing, A overwrites B">
+        <pre>
+<span class="dim">t=0</span>   A dequeues  <span class="ok">generation=1</span>
+<span class="dim">t=6</span>   reclaim → B dequeues  <span class="ok">generation=2</span>  · B reports success
+<span class="dim">t=?</span>   A recovers · ReportStatus(gen=1)
+
+<span class="bad">without fencing:</span>  A’s late Ack overwrites B  →  corrupt final status
+<span class="ok">with fencing:</span>     Ack(gen=1) rejected · Heartbeat returns superseded=true
+        </pre>
+      </div>
+
+      <h2>What generation actually gates</h2>
+      <ul>
+        <li>
+          <strong>Heartbeat</strong> — control plane answers with
+          <code>superseded: true</code>; the runner cancels local work.
+        </li>
+        <li>
+          <strong>ReportStatus / Ack</strong> — non-current generation is ignored; the
+          thread stays on B’s terminal state.
+        </li>
+        <li>
+          <strong>Terminal StreamEvents</strong> — completion events from a superseded
+          generation are dropped before publish.
+        </li>
+      </ul>
+      <p>
+        Progress tokens from a dying runner can still slip through until the next
+        heartbeat — only the <strong>final status</strong> is iron-fenced. That trade
+        is deliberate and documented.
+      </p>
+
+      <h2>Same idea, three transports</h2>
+      <p>
+        Redis bumps a hand-rolled counter on reclaim. NATS reuses JetStream
+        <code>NumDelivered</code>. Kafka stores generation in the compacted state topic
+        and bumps it on every re-produce. The Runner Protocol surface is identical:
+        carry generation on every bound RPC.
+      </p>
+
+      <div class="takeaway">
+        <p>
+          Think boarding-pass versions: if reclaim reissued seat gen=2, your gen=1 pass
+          cannot board — even if you arrive late with a smile.
+        </p>
+      </div>
+
+      <div class="siblings">
+        <a class="here" href="./fencing.html">Fencing</a>
+        <a href="./subscribe-before-enqueue.html">Subscribe-before-enqueue →</a>
+        <a href="./create-run-ctx.html">createRunCtx / fail-closed →</a>
+      </div>
+
+      <footer>
+        <div>© Runkite · engineering notes</div>
+        <div>
+          <a href="../">Landing</a> ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">Architecture docs</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
