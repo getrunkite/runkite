@@ -176,10 +176,10 @@ type ThreadState struct {
 // OpaqueCheckpoint is a framework-owned blob stored by the control plane
 // for proxy-mode checkpointers. The CP never parses Data.
 type OpaqueCheckpoint struct {
-	ThreadID     string    `json:"thread_id"`
-	CheckpointID string    `json:"checkpoint_id"`
-	Framework    string    `json:"framework,omitempty"`
-	Data         []byte    `json:"data"`
+	ThreadID     string `json:"thread_id"`
+	CheckpointID string `json:"checkpoint_id"`
+	Framework    string `json:"framework,omitempty"`
+	Data         []byte `json:"data"`
 	// Version is a monotonic CAS token (ETag). Starts at 1; every successful
 	// PUT bumps it. Proxy writers send If-Match to avoid silent lost updates
 	// across processes/replicas.

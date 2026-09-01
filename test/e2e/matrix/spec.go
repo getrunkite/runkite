@@ -212,11 +212,11 @@ var runners = []RunnerSpec{
 		StartupTimeout: 20 * time.Second,
 	},
 	{
-		Name:           "typescript-langgraphjs",
-		ConfigRelPath:  "examples/echo_agent_ts/langgraph.json",
-		AgentID:        "echo_agent_ts",
-		CancelAgentID:  "slow_agent_ts",
-		ApprovalAgent:  "approval_agent_ts",
+		Name:          "typescript-langgraphjs",
+		ConfigRelPath: "examples/echo_agent_ts/langgraph.json",
+		AgentID:       "echo_agent_ts",
+		CancelAgentID: "slow_agent_ts",
+		ApprovalAgent: "approval_agent_ts",
 		// Same LangGraph HITL surface as python-langgraph: proxy opaque
 		// blobs (no runner POSTGRES_DSN) must survive interrupt → resume
 		// and interrupt → kill runner → resume (P3 parity with P2a-4/5).
