@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Why Agent Protocol — Runkite</title>
+    <meta
+      name="description"
+      content="Why Runkite fronts Agent Protocol for clients and a separate Runner Protocol for workers."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">decisions</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Decisions</a>
+          <a href="./why-opaque-checkpoints.html">Opaque checkpoints</a>
+          <a href="./why-fencing.html">Generation fencing</a>
+          <a href="./why-fail-closed.html">Fail-closed serve</a>
+          <a class="active" href="./why-agent-protocol.html">Agent Protocol</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="../">Support</a>
+          <a href="../protocol.html">Protocols</a>
+        </div>
+        <h1>Why Agent Protocol on the front?</h1>
+        <p class="lede">
+          Clients need a portable runs/threads/streaming surface. Workers need a different
+          contract: leases, heartbeats, fencing, connector sessions.
+        </p>
+        <h2>Decision</h2>
+        <p>
+          <strong>Clients</strong> speak Agent Protocol (HTTP/SSE) to the plane.
+          <strong>Runners</strong> speak Runner Protocol (gRPC) to the plane. The plane is
+          the only place those worlds meet — grants, HITL, kill, audit, and opaque
+          checkpoints live there, not in each framework SDK.
+        </p>
+        <h2>Consequences</h2>
+        <ul>
+          <li>Any Agent Protocol client can drive the plane without learning Runkite-only APIs first.</li>
+          <li>Framework adapters stay thin: implement Runner Protocol, not a second control plane.</li>
+          <li>
+            We do not pretend ThreadState is a LangGraph checkpointer —
+            see <a href="./why-opaque-checkpoints.html">opaque checkpoints</a>.
+          </li>
+        </ul>
+        <h2>Rejected alternatives</h2>
+        <ul>
+          <li>Expose only a proprietary admin API — kills portability and client ecosystem.</li>
+          <li>Make runners speak Agent Protocol — wrong shape for reclaim/fencing/connector minting.</li>
+        </ul>
+        <p class="note">
+          Map:
+          <a href="../protocol.html">Support · Protocols</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/runner-protocol/README.md">runner-protocol/</a>.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

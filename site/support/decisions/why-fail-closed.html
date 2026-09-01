@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Why fail-closed serve — Runkite</title>
+    <meta
+      name="description"
+      content="Why Runkite refuses to boot serve when durable store, transport, tokens, auth, or runner tenant allow-lists are missing."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">decisions</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Decisions</a>
+          <a href="./why-opaque-checkpoints.html">Opaque checkpoints</a>
+          <a href="./why-fencing.html">Generation fencing</a>
+          <a class="active" href="./why-fail-closed.html">Fail-closed serve</a>
+          <a href="./why-agent-protocol.html">Agent Protocol</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="../">Support</a>
+          <a href="../../design/create-run-ctx.html">Design note</a>
+        </div>
+        <h1>Why fail-closed <code>serve</code>?</h1>
+        <p class="lede">
+          A control plane that boots “mostly configured” is worse than one that refuses —
+          operators think governance is on when it is not.
+        </p>
+        <h2>Decision</h2>
+        <p>
+          Production <code>serve</code> admits only when durable store, shared transport,
+          runner tokens, client auth, and complete <code>RUNNER_TENANTS_*</code> allow-lists
+          (when tokens + client auth are on) are present. Local <code>dev</code> stays open.
+          Escape hatch is explicit and ugly on purpose.
+        </p>
+        <h2>Consequences</h2>
+        <ul>
+          <li>Misconfig fails at boot, not at 2am under load.</li>
+          <li>Create paths share one gate (<a href="../../design/create-run-ctx.html"><code>createRunCtx</code></a>) so “open” APIs cannot bypass admission.</li>
+          <li>Tenant allow-lists cannot be forgotten once multi-tenant auth is enabled.</li>
+        </ul>
+        <h2>Rejected alternatives</h2>
+        <ul>
+          <li>Warn-and-continue — warnings are ignored; prod looks healthy.</li>
+          <li>Per-route half-wiring — N slightly different security postures.</li>
+        </ul>
+        <p class="note">
+          Skimmable story:
+          <a href="../../design/create-run-ctx.html">design/create-run-ctx.html</a>.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Why generation fencing — Runkite</title>
+    <meta
+      name="description"
+      content="Why Runkite bumps a generation on reclaim and rejects late heartbeats and status from superseded runners."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">decisions</p>
+        <nav>
+          <div class="nav-group">Deep</div>
+          <a href="../">Support home</a>
+          <a href="./">Decisions</a>
+          <a href="./why-opaque-checkpoints.html">Opaque checkpoints</a>
+          <a class="active" href="./why-fencing.html">Generation fencing</a>
+          <a href="./why-fail-closed.html">Fail-closed serve</a>
+          <a href="./why-agent-protocol.html">Agent Protocol</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="../">Support</a>
+          <a href="../../design/fencing.html">Design note</a>
+        </div>
+        <h1>Why generation fencing?</h1>
+        <p class="lede">
+          Without a generation, a runner that blipped offline can reclaim → lose the job →
+          wake up → and still “succeed,” overwriting the winner.
+        </p>
+        <h2>Decision</h2>
+        <p>
+          Every reclaim bumps a <strong>generation</strong>. Heartbeats, status, and terminal
+          events from an older generation are rejected. The superseded runner learns on the
+          next heartbeat and stops cooperatively.
+        </p>
+        <h2>Consequences</h2>
+        <ul>
+          <li>Final status belongs to the current attempt only.</li>
+          <li>Same rule on Redis, NATS, and Kafka — no transport-only honesty gap.</li>
+          <li>
+            Pairs with the
+            <a href="../../design/poison-pill.html">poison-pill ceiling</a>
+            (how many attempts) — fencing is which attempt may write.
+          </li>
+        </ul>
+        <h2>Rejected alternatives</h2>
+        <ul>
+          <li>Trust wall-clock leases alone — late writers still win races.</li>
+          <li>Fence only terminal Ack — zombies keep working and emit noisy progress.</li>
+        </ul>
+        <p class="note">
+          Skimmable story:
+          <a href="../../design/fencing.html">design/fencing.html</a>.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>
