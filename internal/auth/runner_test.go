@@ -136,6 +136,37 @@ func TestRunnerTokens_AllowsTenant_DefaultExplicit(t *testing.T) {
 	}
 }
 
+func TestRunnerTokens_TenantAllowListsComplete(t *testing.T) {
+	var nilRT *auth.RunnerTokens
+	if !nilRT.TenantAllowListsComplete() {
+		t.Fatal("nil receiver is complete (local mode)")
+	}
+	withEnv(t, map[string]string{"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"})
+	rt := auth.LoadRunnerTokensFromEnv()
+	if rt.TenantAllowListsComplete() {
+		t.Fatal("token without tenants must be incomplete")
+	}
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
+		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+	})
+	rt = auth.LoadRunnerTokensFromEnv()
+	if rt.TenantAllowListsComplete() {
+		t.Fatal("partial tenant lists across kinds must be incomplete")
+	}
+	withEnv(t, map[string]string{
+		"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
+		"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+		"RUNNER_TENANTS_TYPESCRIPT_LANGGRAPHJS": "acme",
+	})
+	rt = auth.LoadRunnerTokensFromEnv()
+	if !rt.TenantAllowListsComplete() {
+		t.Fatal("every tokenized kind listed must be complete")
+	}
+}
+
 func TestRunnerTokens_AllowsTenant_LocalMode(t *testing.T) {
 	var rt *auth.RunnerTokens
 	if !rt.AllowsTenant("python-langgraph", "anything") {

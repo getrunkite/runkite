@@ -15,6 +15,7 @@
 #   REDIS_URL
 #   RUNNER_TOKEN                 # runner Deployment
 #   RUNNER_TOKEN_PYTHON_LANGGRAPH  # control plane (may equal RUNNER_TOKEN)
+#   RUNNER_TENANTS_PYTHON_LANGGRAPH  # required with client auth; use default for single-tenant
 #   RUNKITE_API_KEY              # default langgraphJson api_key auth
 #
 # Compose multi/soak is the Supported correctness proof path. This overlay

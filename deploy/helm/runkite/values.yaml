@@ -156,9 +156,9 @@ config:
 # fields exist so `helm install --set` smoke tests stay one-shot.
 secrets:
   # Name of an existing Secret whose keys include POSTGRES_DSN, REDIS_URL,
-  # RUNNER_TOKEN_PYTHON_LANGGRAPH, RUNNER_TOKEN, and (when using the
-  # default langgraphJson) RUNKITE_API_KEY. When set, the chart does not
-  # create its own Secret.
+  # RUNNER_TOKEN_PYTHON_LANGGRAPH, RUNNER_TENANTS_PYTHON_LANGGRAPH,
+  # RUNNER_TOKEN, and (when using the default langgraphJson) RUNKITE_API_KEY.
+  # When set, the chart does not create its own Secret.
   existingSecret: ""
   postgresDsn: ""
   redisUrl: ""
@@ -171,6 +171,10 @@ secrets:
   # Runner pods still receive only secrets.runnerToken (one secret).
   # See chart README "Runner token allowlist".
   runnerTokenAllowlist: ""
+  # Tenant allow-list for the stock python-langgraph kind (comma-separated).
+  # Defaults to "default" in the generated Secret. Required by serve admission
+  # when client auth + RUNNER_TOKEN_* are set; override for multi-tenant.
+  runnerTenants: "default"
   # Substituted into the default langgraphJson as ${RUNKITE_API_KEY}.
   # Required for the stock quick-start; unused if your langgraphJson
   # does not reference that env var.

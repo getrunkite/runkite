@@ -340,5 +340,6 @@ a single `RUNNER_TOKEN` via gRPC metadata / `X-Runner-*` headers — see
 
 ```bash
 export RUNNER_TOKEN_PYTHON_LANGGRAPH="your-secret-token"
+export RUNNER_TENANTS_PYTHON_LANGGRAPH="default"   # required with client auth; list tenants for multi-tenant
 ./runkite serve --config langgraph.json
 ```

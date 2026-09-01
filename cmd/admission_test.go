@@ -13,19 +13,20 @@ func clearAdmissionEnv(t *testing.T) {
 		"POSTGRES_DSN", "MYSQL_DSN", "MONGO_URI",
 		"REDIS_URL", "NATS_URL", "KAFKA_URL",
 		"RUNNER_TOKEN_PYTHON_LANGGRAPH", "RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS",
+		"RUNNER_TENANTS_PYTHON_LANGGRAPH", "RUNNER_TENANTS_TYPESCRIPT_LANGGRAPHJS",
 		"RUNKITE_MODE", "RUNKITE_ALLOW_INSECURE_SERVE",
 	} {
 		t.Setenv(name, "")
 	}
 }
 
-// TestAdmissionProblems locks the four checkProductionAdmission
-// requirements (durable state, shared transport, runner tokens,
-// client-facing auth) and the three bypasses (dev mode, RUNKITE_MODE=test,
-// RUNKITE_ALLOW_INSECURE_SERVE) -- found by an external audit that bare
-// `serve` silently accepted SQLite + open auth + trusted runners; see
-// checkProductionAdmission's own doc comment for the live-verified
-// symptom this closes.
+// TestAdmissionProblems locks checkProductionAdmission requirements
+// (durable state, shared transport, runner tokens, client-facing auth,
+// runner-tenant allow-lists when auth+tokens are both on) and the three
+// bypasses (dev mode, RUNKITE_MODE=test, RUNKITE_ALLOW_INSECURE_SERVE) --
+// found by an external audit that bare `serve` silently accepted SQLite +
+// open auth + trusted runners; see checkProductionAdmission's own doc
+// comment for the live-verified symptom this closes.
 func TestAdmissionProblems(t *testing.T) {
 	noAuthConfig := writeLangGraphJSON(t, t.TempDir(), `{"graphs":{"echo_agent":"./graph.py:graph"}}`)
 	withAuthConfig := writeLangGraphJSON(t, t.TempDir(), `{"graphs":{"echo_agent":"./graph.py:graph"},"auth":{"type":"api_key","keys":{"sk-test":{"name":"tester"}}}}`)
@@ -59,9 +60,30 @@ func TestAdmissionProblems(t *testing.T) {
 			opts: serverOpts{devMode: false, configPath: withAuthConfig},
 			env: map[string]string{
 				"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x",
-				"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH": "default",
 			},
 			wantProblems: 0,
+		},
+		{
+			name: "auth+tokens without RUNNER_TENANTS fail closed",
+			opts: serverOpts{devMode: false, configPath: withAuthConfig},
+			env: map[string]string{
+				"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok",
+			},
+			wantProblems: 1,
+		},
+		{
+			name: "partial RUNNER_TENANTS across kinds fail closed",
+			opts: serverOpts{devMode: false, configPath: withAuthConfig},
+			env: map[string]string{
+				"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":        "tok-py",
+				"RUNNER_TOKEN_TYPESCRIPT_LANGGRAPHJS":  "tok-ts",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH":      "default",
+			},
+			wantProblems: 1,
 		},
 		{
 			name:         "bare serve with nothing configured has all four problems",
@@ -78,24 +100,36 @@ func TestAdmissionProblems(t *testing.T) {
 			name:         "MySQL also counts as a durable backend",
 			opts:         serverOpts{devMode: false, configPath: noAuthConfig},
 			env:          map[string]string{"MYSQL_DSN": "root@/x", "REDIS_URL": "redis://x", "RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"},
-			wantProblems: 1, // auth still unmet
+			wantProblems: 1, // auth still unmet (no tenant check without client auth)
 		},
 		{
-			name:         "Mongo also counts as a durable backend",
-			opts:         serverOpts{devMode: false, configPath: withAuthConfig},
-			env:          map[string]string{"MONGO_URI": "mongodb://x", "NATS_URL": "nats://x", "RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"},
+			name: "Mongo also counts as a durable backend",
+			opts: serverOpts{devMode: false, configPath: withAuthConfig},
+			env: map[string]string{
+				"MONGO_URI": "mongodb://x", "NATS_URL": "nats://x",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH": "default",
+			},
 			wantProblems: 0,
 		},
 		{
-			name:         "Kafka also counts as shared transport",
-			opts:         serverOpts{devMode: false, configPath: withAuthConfig},
-			env:          map[string]string{"POSTGRES_DSN": "postgres://x", "KAFKA_URL": "localhost:9092", "RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"},
+			name: "Kafka also counts as shared transport",
+			opts: serverOpts{devMode: false, configPath: withAuthConfig},
+			env: map[string]string{
+				"POSTGRES_DSN": "postgres://x", "KAFKA_URL": "localhost:9092",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH": "default",
+			},
 			wantProblems: 0,
 		},
 		{
-			name:         "admin_keys alone (no primary auth.type) counts as client-facing auth",
-			opts:         serverOpts{devMode: false, configPath: withAdminKeysOnlyConfig},
-			env:          map[string]string{"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x", "RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok"},
+			name: "admin_keys alone (no primary auth.type) counts as client-facing auth",
+			opts: serverOpts{devMode: false, configPath: withAdminKeysOnlyConfig},
+			env: map[string]string{
+				"POSTGRES_DSN": "postgres://x", "REDIS_URL": "redis://x",
+				"RUNNER_TOKEN_PYTHON_LANGGRAPH":   "tok",
+				"RUNNER_TENANTS_PYTHON_LANGGRAPH": "default",
+			},
 			wantProblems: 0,
 		},
 		{

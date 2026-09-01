@@ -81,6 +81,7 @@ apply_creds() {
     --from-literal=REDIS_URL="${REDIS_URL}" \
     --from-literal=RUNNER_TOKEN="${runner_tok}" \
     --from-literal=RUNNER_TOKEN_PYTHON_LANGGRAPH="${cp_allow}" \
+    --from-literal=RUNNER_TENANTS_PYTHON_LANGGRAPH=default \
     --from-literal=RUNKITE_API_KEY="${API_KEY}" \
     --dry-run=client -o yaml | kubectl apply -f -
 }

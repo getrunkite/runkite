@@ -77,7 +77,8 @@ dispatch via the Python (or TypeScript) runner.
 
    Prefer the project’s documented venv paths if they differ. For
    production `serve`, set `POSTGRES_DSN`, `REDIS_URL`,
-   `RUNNER_TOKEN_PYTHON_LANGGRAPH`, and client `auth` (or
+   `RUNNER_TOKEN_PYTHON_LANGGRAPH`, `RUNNER_TENANTS_PYTHON_LANGGRAPH`
+   (use `default` for single-tenant), and client `auth` (or
    `RUNKITE_ALLOW_INSECURE_SERVE=1` for a deliberate insecure quick
    demo) — see `docs/deployment.md`.
 

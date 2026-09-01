@@ -30,6 +30,7 @@ kubectl create secret generic runkite-creds \
   --from-literal=POSTGRES_DSN='...' \
   --from-literal=REDIS_URL='...' \
   --from-literal=RUNNER_TOKEN_PYTHON_LANGGRAPH='...' \
+  --from-literal=RUNNER_TENANTS_PYTHON_LANGGRAPH='default' \
   --from-literal=RUNNER_TOKEN='...' \
   --from-literal=RUNKITE_API_KEY='...'
 

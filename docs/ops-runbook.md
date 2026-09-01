@@ -31,6 +31,7 @@ kubectl create secret generic runkite-creds \
   --from-literal=POSTGRES_DSN='postgres://…' \
   --from-literal=REDIS_URL='redis://…' \
   --from-literal=RUNNER_TOKEN_PYTHON_LANGGRAPH='…' \
+  --from-literal=RUNNER_TENANTS_PYTHON_LANGGRAPH='default' \
   --from-literal=RUNNER_TOKEN='…' \
   --from-literal=RUNKITE_API_KEY='…'
 
@@ -52,7 +53,7 @@ Details: [Deployment](deployment.md) · [Helm README](../deploy/helm/runkite/REA
 | `/readyz` | Dependencies reachable — **LB / readinessProbe** |
 | `/health` | Legacy alias; prefer `/readyz` for routing |
 
-`serve` refuses to boot without durable store + shared transport + runner tokens + client auth unless `RUNKITE_ALLOW_INSECURE_SERVE=1`. `runkite dev` stays open for local work.
+`serve` refuses to boot without durable store + shared transport + runner tokens + client auth + `RUNNER_TENANTS_*` for each tokenized kind (use `default` for single-tenant) unless `RUNKITE_ALLOW_INSECURE_SERVE=1`. `runkite dev` stays open for local work.
 
 ## 2. Reclaim (crash-loop ceiling)
 
@@ -86,6 +87,7 @@ Mongo: kill/break-glass Admin APIs return `501` — governance durability is SQL
 |--------|-------|--------|
 | `POSTGRES_DSN` / `REDIS_URL` | CP env or K8s Secret | Required for Supported; never bake into images |
 | `RUNNER_TOKEN_<KIND>` | CP env | Kind encoding: `PYTHON_LANGGRAPH` → `python-langgraph`. Value may be a **comma-separated allowlist** for rotation |
+| `RUNNER_TENANTS_<KIND>` | CP env | Required with client auth + runner tokens; tenant allow-list for unbound `/internal/*` (use `default` for single-tenant) |
 | `RUNNER_TOKEN` | Runner env | Single token the runner presents; must match one allowlisted value for its kind |
 | Client `auth` (API key / JWT) | `langgraph.json` + env substitution | `serve` admission requires this in production (`RUNKITE_API_KEY` in the stock Helm config) |
 | Connector OAuth / API keys | Connector YAML via `${ENV}` | Prefer env refs; MCP session tokens are short-lived and run-bound |

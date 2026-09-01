@@ -60,7 +60,7 @@ Stable `reason_code` values on denials include:
 |---------|--------|
 | Local (`runkite dev`) | Runner auth off; fine for single-user laptops |
 | Production baseline | Durable store + shared transport + `RUNNER_TOKEN_*` (optional comma allowlist per kind for fleets/rotation) + client `auth` (admission refuses bare `serve`) |
-| Multi-tenant | Client auth + run-binding on proxy paths; set `RUNNER_TENANTS_<KIND>` so unbound `/internal/*` routes cannot claim arbitrary tenants |
+| Multi-tenant | Client auth + run-binding on proxy paths; `serve` requires `RUNNER_TENANTS_<KIND>` for every tokenized kind so unbound `/internal/*` routes cannot claim arbitrary tenants |
 
 ## Explicit non-goals (today)
 

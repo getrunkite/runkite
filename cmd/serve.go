@@ -162,11 +162,19 @@ func admissionProblems(opts serverOpts) []string {
 	if os.Getenv("REDIS_URL") == "" && os.Getenv("NATS_URL") == "" && os.Getenv("KAFKA_URL") == "" {
 		problems = append(problems, "no shared transport configured (REDIS_URL, NATS_URL, or KAFKA_URL) -- serve would default to in-process transport, which cannot coordinate multiple replicas at all")
 	}
-	if !auth.LoadRunnerTokensFromEnv().Enabled() {
+	runnerTokens := auth.LoadRunnerTokensFromEnv()
+	if !runnerTokens.Enabled() {
 		problems = append(problems, "no RUNNER_TOKEN_* configured -- any process that can reach the gRPC bridge would be trusted as a runner")
 	}
-	if !hasClientFacingAuthConfigured(opts.configPath) {
+	clientAuth := hasClientFacingAuthConfigured(opts.configPath)
+	if !clientAuth {
 		problems = append(problems, `no client-facing auth configured ("auth" in langgraph.json) -- every REST/WebSocket/admin-api endpoint would be open with no credentials required`)
+	}
+	// Client auth + runner tokens without per-kind tenant allow-lists leaves
+	// unbound /internal/* able to claim any X-Runkite-Tenant-Id after a kind
+	// token check. Fail closed; single-tenant sets RUNNER_TENANTS_<KIND>=default.
+	if clientAuth && runnerTokens.Enabled() && !runnerTokens.TenantAllowListsComplete() {
+		problems = append(problems, "client-facing auth and RUNNER_TOKEN_* are set, but RUNNER_TENANTS_* is missing or incomplete for a tokenized runner kind -- a leaked kind token could claim arbitrary tenants on unbound /internal/* routes (set RUNNER_TENANTS_<KIND> for each tokenized kind, or RUNNER_TENANTS_<KIND>=default for single-tenant)")
 	}
 	return problems
 }
@@ -205,22 +213,6 @@ func authStrictPermissions(configPath string) bool {
 	return cfg.Auth.EffectiveStrictPermissions()
 }
 
-// warnRunnerTenantsIfNeeded logs when client-facing auth is configured and
-// runner tokens are on, but no RUNNER_TENANTS_* allow-list is set for any
-// kind. Run-binding now derives tenant from the assignment on proxy paths,
-// yet kind tokens without an allow-list can still reach unbound /internal/*
-// routes and claim any tenant header there. Not a hard admission failure
-// (single-tenant deployments are fine) -- operators with real multi-tenant
-// auth should set the allow-lists.
-func warnRunnerTenantsIfNeeded(configPath string, runnerTokens *auth.RunnerTokens) {
-	if !hasClientFacingAuthConfigured(configPath) || !runnerTokens.Enabled() {
-		return
-	}
-	if runnerTokens.HasTenantAllowList() {
-		return
-	}
-	slog.Warn("auth: client-facing auth is configured and RUNNER_TOKEN_* is set, but no RUNNER_TENANTS_* allow-list is configured for any runner kind -- consider setting RUNNER_TENANTS_<KIND> so a leaked kind token cannot claim arbitrary tenants on unbound /internal/* routes")
-}
 
 func startServer(opts serverOpts) {
 	setupLogging()
@@ -546,7 +538,6 @@ func startServer(opts serverOpts) {
 	if authOpts.StrictPermissions {
 		slog.Info("auth: strict_permissions enabled (empty permissions deny)")
 	}
-	warnRunnerTenantsIfNeeded(opts.configPath, runnerTokens)
 	rateLimited := ratelimit.Middleware(rateLimiter, apiServer.Handler())
 	authedAPI := auth.MiddlewareWithOpts(authProvider, adminAuthProvider, runnerTokens, authOpts, rateLimited)
 

@@ -124,7 +124,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 | `PINECONE_API_KEY` | (unset) | Fallback for `vector_store.api_key`; required for a real Pinecone account, ignored entirely by Pinecone Local |
 | `LANGGRAPH_CONFIG` | (unset) | Path to langgraph.json (alternative to --config flag) |
 | `RUNNER_TOKEN_<kind>` | (unset) | Runner auth for that kind (e.g. `RUNNER_TOKEN_PYTHON_LANGGRAPH`). One token or comma-separated allowlist (fleet/rotation); runners send a single `RUNNER_TOKEN`. Soft max 16 tokens/kind. |
-| `RUNNER_TENANTS_<kind>` | (unset) | Optional comma-separated tenant allow-list for that kind's `X-Runkite-Tenant-Id` on `/internal/*` (e.g. `RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta`). Unset = any tenant after kind-token auth. Missing header counts as `default`. |
+| `RUNNER_TENANTS_<kind>` | (required when client auth + `RUNNER_TOKEN_*`) | Comma-separated tenant allow-list for that kind's `X-Runkite-Tenant-Id` on unbound `/internal/*` (e.g. `RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta`). With client-facing auth and runner tokens, **every** tokenized kind must have a list or `serve` refuses to start; use `default` for single-tenant. Missing header counts as `default`. |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` (case-insensitive). Same variable, same values, on the control plane and both runners. |
 | `LOG_FORMAT` | `text` | `text`\|`json`. `json` is the shape a log aggregator (Datadog, Grafana Loki, etc.) expects -- see [Logging](api.md#logging) below. |
 | `TLS_*` / `GRPC_TLS_*` / `RUNKITE_TLS_*` | (unset) | Pod/process TLS and mTLS — see [Auth → TLS](auth.md#tls--mtls). Helm chart `tls:` mounts Secrets and sets these; see [chart README](../deploy/helm/runkite/README.md#pod-tls--mtls). |

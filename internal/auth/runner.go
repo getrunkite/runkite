@@ -23,12 +23,13 @@ import (
 // routes that vend connector credentials and run status -- surfaces the
 // client-facing auth middleware always lets through.
 //
-// Optional per-kind tenant allow-lists (RUNNER_TENANTS_*) restrict which
+// Per-kind tenant allow-lists (RUNNER_TENANTS_*) restrict which
 // X-Runkite-Tenant-Id values a kind token may claim on /internal/*. When
-// unset for a kind, any tenant header is still accepted (today's shared
-// multi-tenant runner pool). When set, a missing header is treated as
-// "default" for the allow check. Tenant lists are per-kind, not per fleet
-// token.
+// unset for a kind, AllowsTenant still accepts any tenant (runtime). With
+// client-facing auth + RUNNER_TOKEN_*, serve admission requires every
+// tokenized kind to have a non-empty list (use "default" for single-tenant).
+// A missing header is treated as "default" for the allow check. Tenant lists
+// are per-kind, not per fleet token.
 type RunnerTokens struct {
 	tokens  map[string][]string            // runner_kind -> accepted tokens (allowlist)
 	tenants map[string]map[string]struct{} // runner_kind -> allowed tenant ids (absent/empty = unrestricted)
@@ -39,8 +40,9 @@ type RunnerTokens struct {
 // The value may be a single token or a comma-separated allowlist.
 const EnvPrefix = "RUNNER_TOKEN_"
 
-// TenantsEnvPrefix is the optional allow-list for X-Runkite-Tenant-Id on
-// /internal/*, e.g. RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta.
+// TenantsEnvPrefix is the allow-list for X-Runkite-Tenant-Id on
+// /internal/*, e.g. RUNNER_TENANTS_PYTHON_LANGGRAPH=acme,beta. Required by
+// serve admission when client auth and RUNNER_TOKEN_* are both set.
 const TenantsEnvPrefix = "RUNNER_TENANTS_"
 
 // maxRunnerTokensPerKind is a soft ceiling for the comma-separated
@@ -163,17 +165,20 @@ func (rt *RunnerTokens) AllowsTenant(runnerKind, tenantID string) bool {
 	return ok
 }
 
-// HasTenantAllowList reports whether any RUNNER_TENANTS_* allow-list is
-// configured for a kind that also has a token. Used for a startup warning
-// when client-facing auth is on but tenant allow-lists are absent.
-func (rt *RunnerTokens) HasTenantAllowList() bool {
-	if rt == nil {
-		return false
+// TenantAllowListsComplete reports whether every kind that has a runner
+// token also has a non-empty RUNNER_TENANTS_* allow-list. True when runner
+// tokens are disabled (local mode). Used by serve admission so client-facing
+// auth + RUNNER_TOKEN_* cannot start with open tenant claiming on unbound
+// /internal/* routes — set RUNNER_TENANTS_<KIND>=default for single-tenant.
+func (rt *RunnerTokens) TenantAllowListsComplete() bool {
+	if rt == nil || len(rt.tokens) == 0 {
+		return true
 	}
 	for kind := range rt.tokens {
-		if allow, ok := rt.tenants[kind]; ok && len(allow) > 0 {
-			return true
+		allow, ok := rt.tenants[kind]
+		if !ok || len(allow) == 0 {
+			return false
 		}
 	}
-	return false
+	return true
 }
