@@ -94,7 +94,8 @@ class FrameworkAdapter(Protocol):
     ``checkpoint_framework`` to a non-empty string (e.g. ``"llamaindex"``)
     and implement ``prepare_checkpoint_input`` / ``serialize_checkpoint``.
     When RUNKITE_HTTP_URL (or the worker http address) is set, generic_worker
-    loads GET .../latest before execute and PUTs after success/interrupted.
+    loads GET .../adapter-state before execute and PUTs that same id after
+    success/interrupted (never .../latest — that path is lexicographic).
     """
 
     async def load_config(self, config_path: str) -> None:
@@ -501,7 +502,7 @@ async def _execute_with_opaque_checkpoint(
         await send_event(event)
 
     if use_cp and http_base:
-        framework = str(getattr(adapter, "checkpoint_framework")).strip()
+        framework = str(adapter.checkpoint_framework).strip()
         client = OpaqueCheckpointClient(
             http_base_url=http_base,
             framework=framework,
@@ -509,14 +510,20 @@ async def _execute_with_opaque_checkpoint(
             runner_token=runner_token or None,
         )
         thread_id = assignment.get("thread_id") or ""
+        # Work on a shallow copy so callers still see the raw client input
+        # on the original assignment dict after this returns.
+        assignment = {**assignment}
+        prior = None
         try:
-            prior = await client.get_latest(thread_id) if thread_id else None
+            # Load the fixed adapter-state id — never GET .../latest
+            # (checkpoint_id DESC can return a LangGraph UUID blob).
+            prior = await client.get(thread_id) if thread_id else None
+            prepare = getattr(adapter, "prepare_checkpoint_input", None)
+            if callable(prepare):
+                assignment["input"] = prepare(prior, assignment.get("input") or {})
         except Exception:
-            logger.exception("opaque checkpoint load failed; continuing without prior state")
-            prior = None
-        prepare = getattr(adapter, "prepare_checkpoint_input", None)
-        if callable(prepare):
-            assignment["input"] = prepare(prior, assignment.get("input") or {})
+            logger.exception("opaque checkpoint load/prepare failed; continuing without prior state")
+            # Leave assignment["input"] as the raw client payload.
 
     status = "error"
     try:

@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
 BLOB_VERSION = 1
 
 
@@ -33,14 +32,15 @@ def decode_messages_checkpoint(data: bytes | None) -> list:
 def merge_messages_input(prior_messages: list, input_data: dict) -> dict:
     """Prepend restored history when the client sends only the new turn(s).
 
-    If the client already sent a longer history than the checkpoint, prefer
-    the client payload (explicit full history still works).
+    If the client already sent a history at least as long as the checkpoint,
+    prefer the client payload (explicit full history — avoids double-prepend
+    when lengths match).
     """
     incoming = list((input_data or {}).get("messages") or [])
     if not prior_messages:
         return dict(input_data or {})
-    if len(incoming) > len(prior_messages):
-        # Likely full client-managed history — don't double-prepend.
+    if len(incoming) >= len(prior_messages):
+        # Client-managed history (equal or longer) — don't double-prepend.
         return dict(input_data or {})
     merged = {**(input_data or {}), "messages": list(prior_messages) + incoming}
     return merged
@@ -55,9 +55,7 @@ def format_messages_as_context(messages: list) -> str:
         role = msg.get("role") or msg.get("type") or "user"
         content = msg.get("content")
         if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
-            )
+            content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
         if content is None:
             content = ""
         lines.append(f"{role}: {content}")

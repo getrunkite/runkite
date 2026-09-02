@@ -69,6 +69,15 @@ def test_merge_prefers_longer_client_history():
     check("prefer client full history", merged["messages"] == incoming["messages"])
 
 
+def test_merge_equal_length_prefers_client():
+    """Equal length must not double-prepend (client already has full history)."""
+    prior = [{"role": "human", "content": "a"}, {"role": "ai", "content": "b"}]
+    incoming = {"messages": [{"role": "human", "content": "a"}, {"role": "ai", "content": "b"}]}
+    merged = merge_messages_input(prior, incoming)
+    check("equal length uses client", merged["messages"] == incoming["messages"])
+    check("no double length", len(merged["messages"]) == 2)
+
+
 def test_context_prompt_includes_prior():
     msgs = [
         {"role": "human", "content": "hi"},
@@ -91,21 +100,33 @@ def test_adapter_supports_checkpoints():
 
 
 class _FakeTransport:
-    """Minimal ASGI-like responder via httpx MockTransport."""
+    """Minimal responder via httpx MockTransport.
+
+    Stores per checkpoint_id. GET .../latest returns the lexicographically
+    greatest id (mirrors Postgres ORDER BY checkpoint_id DESC) so tests can
+    prove adapters must not use /latest when a LangGraph UUID also exists.
+    """
 
     def __init__(self):
         self.store: dict[str, bytes] = {}
+        self.get_paths: list[str] = []
 
     def handler(self, request):
         import httpx
 
         path = request.url.path
-        if request.method == "GET" and path.endswith("/latest"):
-            if not self.store:
-                return httpx.Response(404, text="missing")
-            # Return any blob (single key in this fake).
-            data = next(iter(self.store.values()))
-            return httpx.Response(200, content=data)
+        if request.method == "GET":
+            self.get_paths.append(path)
+            cid = path.rsplit("/", 1)[-1]
+            if cid == "latest":
+                if not self.store:
+                    return httpx.Response(404, text="missing")
+                # Lexicographic max — LangGraph UUIDs often win over adapter-state.
+                best = max(self.store.keys())
+                return httpx.Response(200, content=self.store[best])
+            if cid in self.store:
+                return httpx.Response(200, content=self.store[cid])
+            return httpx.Response(404, text="missing")
         if request.method == "PUT":
             cid = path.rsplit("/", 1)[-1]
             self.store[cid] = request.content
@@ -130,13 +151,117 @@ def test_opaque_client_get_put():
                 framework="llamaindex",
                 transport=transport,
             )
-            check("miss", await client.get_latest("thr_1") is None)
+            check("miss", await client.get("thr_1") is None)
             blob = encode_messages_checkpoint([{"role": "human", "content": "x"}])
             await client.put("thr_1", blob)
             check("id reserved name", ADAPTER_CHECKPOINT_ID != "latest")
-            got = await client.get_latest("thr_1")
+            got = await client.get("thr_1")
             check("hit", decode_messages_checkpoint(got)[0]["content"] == "x")
+            check("get used adapter-state", fake.get_paths[-1].endswith("/" + ADAPTER_CHECKPOINT_ID))
             await client.aclose()
+        finally:
+            reset_run(rt)
+            reset_tenant(tt)
+
+    asyncio.run(_run())
+
+
+def test_get_ignores_lexicographically_newer_langgraph_blob():
+    """Regression: shared thread with LangGraph UUID must not poison adapter load."""
+    import httpx
+
+    fake = _FakeTransport()
+    # UUID sorts above "adapter-state" under checkpoint_id DESC.
+    fake.store["f47ac10b-58cc-4372-a567-0e02b2c3d479"] = b"\xfflanggraph-binary-not-json"
+    adapter_blob = encode_messages_checkpoint([{"role": "human", "content": "adapter-ok"}])
+    fake.store[ADAPTER_CHECKPOINT_ID] = adapter_blob
+    transport = httpx.MockTransport(fake.handler)
+
+    async def _run():
+        from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+
+        tt = bind_tenant("default")
+        rt = bind_run("run-1", 1)
+        try:
+            client = OpaqueCheckpointClient(
+                http_base_url="http://cp.test",
+                framework="llamaindex",
+                transport=transport,
+            )
+            # /latest would return the LangGraph blob (lexicographic max).
+            # Adapter get() must return adapter-state only.
+            got = await client.get("thr_shared")
+            check("got adapter blob not LG", decode_messages_checkpoint(got)[0]["content"] == "adapter-ok")
+            check("path was adapter-state", "/adapter-state" in fake.get_paths[-1])
+            check("never hit /latest", not any(p.endswith("/latest") for p in fake.get_paths))
+            await client.aclose()
+        finally:
+            reset_run(rt)
+            reset_tenant(tt)
+
+    asyncio.run(_run())
+
+
+def test_execute_soft_fails_corrupt_prepare():
+    """Corrupt blob / prepare raising must not kill the run."""
+    import httpx
+
+    fake = _FakeTransport()
+    fake.store[ADAPTER_CHECKPOINT_ID] = b"\xffnot-json"
+    transport = httpx.MockTransport(fake.handler)
+
+    class FragileAdapter:
+        checkpoint_framework = "crewai"
+        saw_input = None
+
+        def prepare_checkpoint_input(self, prior, input_data):
+            # Same path adapters use: decode then merge — raises on binary LG blob.
+            return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+        def serialize_checkpoint(self, assignment, values, status):
+            return None
+
+        async def load_config(self, config_path: str) -> None:
+            return None
+
+        async def execute(self, assignment, event_callback, cancel_event):
+            FragileAdapter.saw_input = assignment.get("input")
+            await event_callback({"method": "end", "data": {"status": "success"}, "seq": 1})
+            return "success"
+
+    async def _run():
+        from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+
+        def resolve(_http):
+            return "http://cp.test"
+
+        def client_factory(**kwargs):
+            return OpaqueCheckpointClient(**kwargs, transport=transport)
+
+        tt = bind_tenant("default")
+        rt = bind_run("run-c", 1)
+        try:
+            raw = {"messages": [{"role": "human", "content": "only-new"}]}
+            a = {"run_id": "run-c", "thread_id": "thr_y", "graph_id": "g", "input": raw}
+
+            async def send(_e):
+                return None
+
+            st = await _execute_with_opaque_checkpoint(
+                FragileAdapter(),
+                a,
+                send,
+                asyncio.Event(),
+                http_address="http://cp.test",
+                runner_kind="python-crewai",
+                runner_token="",
+                resolve_http_url=resolve,
+                OpaqueCheckpointClient=client_factory,
+                adapter_supports_checkpoints=adapter_supports_checkpoints,
+            )
+            check("status success despite corrupt prior", st == "success")
+            check("raw client input kept", FragileAdapter.saw_input == raw)
+            check("original assignment input unchanged", a["input"] == raw)
         finally:
             reset_run(rt)
             reset_tenant(tt)
@@ -214,6 +339,7 @@ def test_execute_with_opaque_two_turns():
             )
             check("turn1 status", st1 == "success")
             check("turn1 reply len", any("n=1" in json.dumps(e) for e in events1))
+            check("put adapter-state", ADAPTER_CHECKPOINT_ID in fake.store)
         finally:
             reset_run(rt)
             reset_tenant(tt)
@@ -246,6 +372,8 @@ def test_execute_with_opaque_two_turns():
             n_msgs = len(vals[0]["data"]["messages"])
             check("turn2 restored history (4 msgs after reply)", n_msgs == 4)
             check("turn2 reply sees n=3 input turns", "n=3" in vals[0]["data"]["messages"][-1]["content"])
+            check("loads used adapter-state not latest", any("/adapter-state" in p for p in fake.get_paths))
+            check("never used /latest for load", not any(p.endswith("/latest") for p in fake.get_paths))
         finally:
             reset_run(rt)
             reset_tenant(tt)
@@ -257,8 +385,11 @@ if __name__ == "__main__":
     test_messages_blob_roundtrip()
     test_merge_prepends_when_client_sends_new_turn_only()
     test_merge_prefers_longer_client_history()
+    test_merge_equal_length_prefers_client()
     test_context_prompt_includes_prior()
     test_adapter_supports_checkpoints()
     test_opaque_client_get_put()
+    test_get_ignores_lexicographically_newer_langgraph_blob()
+    test_execute_soft_fails_corrupt_prepare()
     test_execute_with_opaque_two_turns()
     print("all adapter checkpoint checks passed")

@@ -72,9 +72,7 @@ async def _seed_model_context(agent: Any, prior_messages: list) -> None:
         role = msg.get("role") or msg.get("type") or "user"
         content = msg.get("content") or ""
         if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
-            )
+            content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
         source = "user" if role in ("human", "user") else "assistant"
         try:
             await model_context.add_message(TextMessage(content=str(content), source=source))

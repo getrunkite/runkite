@@ -85,10 +85,12 @@
         <p>
           Non-LangGraph runners opt in via <code>checkpoint_framework</code> on the adapter. With
           <code>RUNKITE_HTTP_URL</code> (or the worker’s http address) set, the generic worker
-          <code>GET .../latest</code> before execute and <code>PUT</code> after success — so the client
-          can send only the new message on the next run. LlamaIndex restores native
-          <code>chat_history</code>; other adapters fold prior turns into the next invoke string /
-          AutoGen model context. <code>checkpoint_ref</code> time-travel stays LangGraph-only.
+          <code>GET .../adapter-state</code> before execute and <code>PUT</code> that same id after
+          success — so the client can send only the new message on the next run (not
+          <code>.../latest</code>, which is ordered by checkpoint id and can return a LangGraph
+          blob on a shared thread). LlamaIndex restores native <code>chat_history</code>; other
+          adapters fold prior turns into the next invoke string / AutoGen model context.
+          <code>checkpoint_ref</code> time-travel stays LangGraph-only.
         </p>
         <h2>Why opaque</h2>
         <p>

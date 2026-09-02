@@ -110,7 +110,9 @@ async def test_extracts_last_human_message_as_input():
         callback,
         None,
     )
-    check("crew.akickoff called with {'input': <last human text>}", fake.last_inputs == {"input": "the real ask"})
+    check("invoke uses input key", set(fake.last_inputs.keys()) == {"input"})
+    check("current ask present", "the real ask" in fake.last_inputs["input"])
+    check("prior turn folded into prompt", "ignored" in fake.last_inputs["input"])
 
 
 async def test_unknown_graph_id_reports_error():

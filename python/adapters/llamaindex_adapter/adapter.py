@@ -69,7 +69,7 @@ def _extract_text(result: Any) -> str:
 class LlamaIndexAdapter:
     """Loads LlamaIndex chat engines and executes them against the Runner Protocol."""
 
-    # Opt into opaque multi-turn via generic_worker (GET latest / PUT adapter-state).
+    # Opt into opaque multi-turn via generic_worker (GET/PUT adapter-state).
     checkpoint_framework = "llamaindex"
 
     def __init__(self) -> None:
