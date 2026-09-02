@@ -88,8 +88,10 @@ func (s *Server) maybeCancelInflightAfterTerminal(ctx context.Context, run *mode
 		}
 		return snap, nil
 	}
-	// Prefer agent-scoped drain when the agent cap is the one that tipped;
-	// otherwise drain the whole tenant.
+	// Match admission order: tenant hard → tenant-wide drain; else agent
+	// hard → agent-scoped drain. Checking agent first would stop early on
+	// an agent tip and leave sibling agents running even when the same
+	// tip also breaches the tenant day cap.
 	drainAgent := ""
 	hard := false
 	for _, pair := range []struct {
@@ -97,8 +99,8 @@ func (s *Server) maybeCancelInflightAfterTerminal(ctx context.Context, run *mode
 		agent string
 		scope string
 	}{
-		{agentCap, agentID, "agent"},
 		{tenantCap, "", "tenant"},
+		{agentCap, agentID, "agent"},
 	} {
 		if pair.cap == nil {
 			continue
