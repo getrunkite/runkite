@@ -9,7 +9,7 @@
     radial-gradient(ellipse 55% 40% at 15% 20%, rgba(109, 124, 255, 0.26), transparent 60%),
     radial-gradient(ellipse 45% 35% at 85% 10%, rgba(139, 154, 255, 0.16), transparent 55%),
     radial-gradient(ellipse 50% 40% at 50% 100%, rgba(109, 124, 255, 0.12), transparent 55%);
-  animation: atmosphere-drift 26s ease-in-out infinite alternate;
+  animation: atmosphere-drift 14s ease-in-out infinite alternate;
 }
 
 @keyframes atmosphere-drift {

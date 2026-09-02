@@ -255,6 +255,48 @@
   margin: 1rem 0;
 }
 
+.code-block {
+  position: relative;
+  margin: 1rem 0;
+}
+
+.code-block .mono-block {
+  margin: 0;
+  padding-top: 2.35rem;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.55rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.copy-btn.is-copied {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+table.matrix td.pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
 @media (max-width: 860px) {
   .layout {
     grid-template-columns: 1fr;
