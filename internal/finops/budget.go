@@ -29,6 +29,9 @@ type AlertsConfig struct {
 type ReservationConfig struct {
 	USDPerRun    float64
 	TokensPerRun int64
+	// HoldTTL, when > 0, expires open usage_holds older than this age
+	// so a crashed runner that never releases cannot pin day caps forever.
+	HoldTTL time.Duration
 }
 
 // RoutingConfig rewrites aliases to cheaper agents near soft_pct.

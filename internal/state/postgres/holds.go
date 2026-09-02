@@ -73,3 +73,16 @@ func (s *Store) SumUsageHolds(ctx context.Context, tenantID, agentID string, sin
 	err = s.pool.QueryRow(ctx, q, args...).Scan(&usd, &tokens, &count)
 	return
 }
+
+// ExpireUsageHolds deletes open holds with created_at strictly before olderThan.
+func (s *Store) ExpireUsageHolds(ctx context.Context, olderThan time.Time) (int64, error) {
+	if olderThan.IsZero() {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM usage_holds WHERE created_at < $1`, olderThan.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+

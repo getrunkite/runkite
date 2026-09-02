@@ -355,7 +355,11 @@ func startServer(opts serverOpts) {
 		slog.Info("finops: configured",
 			"pricebook_models", len(fc.Pricebook),
 			"budget_tenants", len(fc.Budgets.Tenants),
-			"budget_agents", len(fc.Budgets.Agents))
+			"budget_agents", len(fc.Budgets.Agents),
+			"reservation_hold_ttl", fc.Reservation.HoldTTL)
+		if fc.Reservation.HoldTTL > 0 {
+			go runUsageHoldTTLSweep(ctx, store, fc.Reservation.HoldTTL)
+		}
 	}
 
 	// A/B deployment routing, built on top of full agent versioning.
@@ -856,6 +860,49 @@ func runStoreTTLSweep(ctx context.Context, store state.Store) {
 		}
 	}
 }
+
+// usageHoldExpirer is implemented by SQL backends that store usage_holds.
+type usageHoldExpirer interface {
+	ExpireUsageHolds(ctx context.Context, olderThan time.Time) (int64, error)
+}
+
+// runUsageHoldTTLSweep drops open usage_holds older than ttl so a crashed
+// runner that never releases cannot pin day caps forever. Opt-in via
+// finops.reservation.hold_ttl. Same cadence pattern as runStoreTTLSweep.
+func runUsageHoldTTLSweep(ctx context.Context, store state.Store, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	exp, ok := store.(usageHoldExpirer)
+	if !ok {
+		slog.Warn("finops: reservation.hold_ttl set but state backend has no usage_holds sweeper")
+		return
+	}
+	const interval = 5 * time.Minute
+	sweep := func() {
+		n, err := exp.ExpireUsageHolds(ctx, time.Now().UTC().Add(-ttl))
+		if err != nil {
+			slog.Warn("usage hold TTL sweep failed", "error", err)
+			return
+		}
+		if n > 0 {
+			slog.Info("usage hold TTL sweep", "holds_deleted", n, "ttl", ttl)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+
 
 // --- Shared helpers ---
 
@@ -1394,6 +1441,14 @@ func initFinOps(configPath string) *finops.Config {
 		out.Reservation = finops.ReservationConfig{
 			USDPerRun:    cfg.FinOps.Reservation.USDPerRun,
 			TokensPerRun: cfg.FinOps.Reservation.TokensPerRun,
+		}
+		if ttl := strings.TrimSpace(cfg.FinOps.Reservation.HoldTTL); ttl != "" && ttl != "0" {
+			d, err := time.ParseDuration(ttl)
+			if err != nil {
+				slog.Error("finops: invalid reservation.hold_ttl; hold sweeper disabled", "value", ttl, "error", err)
+			} else if d > 0 {
+				out.Reservation.HoldTTL = d
+			}
 		}
 	}
 	if cfg.FinOps.Routing != nil {

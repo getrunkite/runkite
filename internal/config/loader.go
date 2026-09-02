@@ -223,6 +223,9 @@ type FinOpsAlertsEntry struct {
 type FinOpsReservationEntry struct {
 	USDPerRun    float64 `json:"usd_per_run,omitempty"`
 	TokensPerRun int64   `json:"tokens_per_run,omitempty"`
+	// HoldTTL is a Go duration (e.g. "24h"). Open holds older than this
+	// are deleted by a background sweeper (0 / omit = no sweeper).
+	HoldTTL string `json:"hold_ttl,omitempty"`
 }
 
 // FinOpsRoutingEntry rewrites agent aliases to cheaper targets when

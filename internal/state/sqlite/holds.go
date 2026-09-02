@@ -74,3 +74,18 @@ func (s *SQLiteStore) SumUsageHolds(ctx context.Context, tenantID, agentID strin
 	err = s.db.QueryRowContext(ctx, q, args...).Scan(&usd, &tokens, &count)
 	return
 }
+
+// ExpireUsageHolds deletes open holds with created_at strictly before olderThan.
+// Releases budget pin for abandoned runs that never reached a terminal status
+// callback (crash, lost runner). Returns rows deleted.
+func (s *SQLiteStore) ExpireUsageHolds(ctx context.Context, olderThan time.Time) (int64, error) {
+	if olderThan.IsZero() {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM usage_holds WHERE created_at < ?`, formatTS(olderThan))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
