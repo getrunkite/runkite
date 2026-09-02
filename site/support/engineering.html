@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Engineering notes — Runkite Docs</title>
+    <meta
+      name="description"
+      content="Skimmable design notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim ceiling."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="admin-login.html">Admin login</a>
+          <a href="credentials.html">Credentials map</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="production.html">Production day-0</a>
+          <a href="first-agent.html">First agent</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="migrate-agents.html">Migrate agents</a>
+          <a href="frameworks.html">Framework matrix</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <a href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <a href="runner-auth.html">Runner auth</a>
+          <a href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="hitl-ops.html">HITL ops</a>
+          <a href="policy.html">PDP / Cedar</a>
+          <a href="kill.html">Kill &amp; break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="multi-tenant.html">Multi-tenant keys</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="feature-map.html">Feature map</a>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a class="active" href="./engineering.html">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <h1>Engineering notes</h1>
+        <p class="lede">
+          Four short notes on how the plane stays honest under reclaim, streaming races,
+          admission, and cursed jobs. Skim before an interview or an ops incident — not a
+          second copy of the architecture docs.
+        </p>
+
+        <ul class="links">
+          <li>
+            <a href="../design/fencing.html">1 · Generation fencing</a>
+            — A stale runner cannot overwrite the winner after reclaim.
+          </li>
+          <li>
+            <a href="../design/subscribe-before-enqueue.html">2 · Subscribe-before-enqueue</a>
+            — Listen on the event broker before dispatch so early tokens are not lost.
+          </li>
+          <li>
+            <a href="../design/create-run-ctx.html">3 · createRunCtx / fail-closed serve</a>
+            — One admission funnel; production serve refuses an insecure posture.
+          </li>
+          <li>
+            <a href="../design/poison-pill.html">4 · Poison pill / reclaim ceiling</a>
+            — Crash-loop jobs stop reclaiming after a hard max_retries ceiling.
+          </li>
+        </ul>
+
+        <p class="note">
+          Opening a note uses the long-form story layout (Product / Docs / Notes header).
+          This index stays inside the Docs sidebar so handbook navigation does not vanish.
+          Related:
+          <a href="./decisions/">decision write-ups</a>
+          ·
+          <a href="./chapters/">public chapters</a>
+          ·
+          <a href="./ops.html">Ops</a>
+        </p>
+      </main>
+    </div>
+    <script src="./docs.js" defer></script>
+  </body>
+</html>

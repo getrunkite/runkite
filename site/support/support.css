@@ -82,7 +82,11 @@
 
 .main {
   padding: 1.5rem clamp(1.25rem, 4vw, 2.5rem) 3rem;
-  max-width: 68rem;
+  /* Fill the layout's 1fr column; constrain prose separately so cards/rows aren't skinny. */
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .topbar {
@@ -132,6 +136,9 @@
   border-radius: var(--radius-lg);
   padding: 1.2rem 1.25rem;
   margin: 1rem 0 1.75rem;
+  max-width: 56rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .card strong {
@@ -145,61 +152,77 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  display: grid;
-  gap: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .task-list li {
   margin: 0;
   padding: 0;
+  width: 100%;
 }
 
+/* Whole row is one control — flex, not nested grids (avoids crushed columns). */
 .task-list .task-row {
-  display: grid;
-  grid-template-columns: 2.2rem 1fr auto;
-  gap: 0.65rem;
-  align-items: baseline;
-  padding: 0.55rem 0.65rem;
-  margin: 0 -0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--bg);
   color: var(--ink);
   text-decoration: none;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .task-list .task-row .n {
+  flex: 0 0 2rem;
   font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--accent);
   font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .task-list .task-row .label {
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  text-underline-offset: 0.18em;
-}
-
-.task-list .task-row .go {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--accent);
-  opacity: 0.75;
-}
-
-.task-list .task-row:hover {
-  background: var(--accent-soft);
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--ink);
   text-decoration: none;
 }
 
-.task-list .task-row:hover .label {
-  color: var(--accent-2);
-  text-decoration-color: var(--accent-2);
+.task-list .task-row .go {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--accent);
+  opacity: 0.85;
 }
 
-.task-list .task-row:hover .go {
+.task-list .task-row:hover,
+.task-list .task-row:focus-visible {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--ink);
+  text-decoration: none;
+  outline: none;
+}
+
+.task-list .task-row:hover .label,
+.task-list .task-row:focus-visible .label {
+  color: var(--accent-2);
+}
+
+.task-list .task-row:hover .go,
+.task-list .task-row:focus-visible .go {
   opacity: 1;
   color: var(--accent-2);
 }
@@ -336,8 +359,19 @@ table.matrix td.pending {
   .sidebar {
     position: relative;
     height: auto;
+    max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+  /* Keep a compact jump back to nav when the long sidebar scrolls away. */
+  .main .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 0.65rem 0;
+    margin: -0.25rem 0 1.25rem;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
   }
 }
 
