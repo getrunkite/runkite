@@ -565,6 +565,9 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 			// is terminal (success/error/interrupt/timeout), even when
 			// Output.usage was empty so ingest was a no-op.
 			s.releaseUsageHold(ctx, runID)
+			// If this terminal tipped a hard day cap, optionally drain
+			// remaining inflight (finops.on_hard_breach=cancel_inflight).
+			s.maybeCancelInflightAfterTerminal(ctx, run)
 		}
 
 		if status == models.RunStatusSuccess && cachedVals != nil {

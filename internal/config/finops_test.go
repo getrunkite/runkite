@@ -75,7 +75,8 @@ func TestLoadLangGraphJSON_FinOpsContinuum(t *testing.T) {
 				"enabled": true,
 				"soft_pct": 70,
 				"aliases": {"premium": ["economy"]}
-			}
+			},
+			"on_hard_breach": "cancel_inflight"
 		}
 	}`
 	path := filepath.Join(dir, "langgraph.json")
@@ -94,5 +95,8 @@ func TestLoadLangGraphJSON_FinOpsContinuum(t *testing.T) {
 	}
 	if cfg.FinOps.Routing == nil || !cfg.FinOps.Routing.Enabled || cfg.FinOps.Routing.Aliases["premium"][0] != "economy" {
 		t.Fatalf("routing = %+v", cfg.FinOps.Routing)
+	}
+	if cfg.FinOps.OnHardBreach != "cancel_inflight" {
+		t.Fatalf("on_hard_breach = %q", cfg.FinOps.OnHardBreach)
 	}
 }

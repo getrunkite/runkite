@@ -202,11 +202,12 @@ type PolicySIEMEntry struct {
 
 // FinOpsEntry is the "finops" section of langgraph.json.
 type FinOpsEntry struct {
-	Pricebook   map[string]FinOpsModelPrice `json:"pricebook,omitempty"`
-	Budgets     *FinOpsBudgetsEntry         `json:"budgets,omitempty"`
-	Alerts      *FinOpsAlertsEntry          `json:"alerts,omitempty"`
-	Reservation *FinOpsReservationEntry     `json:"reservation,omitempty"`
-	Routing     *FinOpsRoutingEntry         `json:"routing,omitempty"`
+	Pricebook    map[string]FinOpsModelPrice `json:"pricebook,omitempty"`
+	Budgets      *FinOpsBudgetsEntry         `json:"budgets,omitempty"`
+	Alerts       *FinOpsAlertsEntry          `json:"alerts,omitempty"`
+	Reservation  *FinOpsReservationEntry     `json:"reservation,omitempty"`
+	Routing      *FinOpsRoutingEntry         `json:"routing,omitempty"`
+	OnHardBreach string                      `json:"on_hard_breach,omitempty"`
 }
 
 // FinOpsAlertsEntry controls spend-alert soft_pct approaches (webhook

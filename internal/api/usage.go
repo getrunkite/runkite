@@ -100,6 +100,14 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		if v.Hard {
 			s.writeAdmissionDenyAudit(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, v.Reason)
 			s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, &v, true)
+			if s.finops.CancelInflightOnHardBreach() {
+				drainAgent := ""
+				if pair.scope == "agent" {
+					drainAgent = agentID
+				}
+				// Async so admission latency stays low; drain reuses kill-switch cancel.
+				go s.cancelInflightForBudget(context.WithoutCancel(ctx), tenantID, drainAgent, "admission")
+			}
 			return false, v.Reason
 		}
 		if v.Soft && soft == nil {

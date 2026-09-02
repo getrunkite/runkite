@@ -663,3 +663,89 @@ func TestAdmission_ReservationDoesNotDoubleCountRuns(t *testing.T) {
 		t.Fatalf("3rd create want 403 at max_runs=2, got %d", c)
 	}
 }
+
+
+func TestAdmission_CancelInflightOnHardBreach(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{
+		ThreadID: "t-inflight", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-inflight", ThreadID: "t-inflight", AgentID: "echo",
+		Status: models.RunStatusRunning, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteUsageEvent(ctx, &models.UsageEvent{
+		ID: "u-cap", TS: now, TenantID: "acme", RunID: "spent", AgentID: "echo",
+		USDEstimate: 1.0, Source: models.UsageSourceTerminalOutput,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/echo": {MaxUSDPerDay: 1},
+			},
+		},
+		OnHardBreach: finops.OnHardBreachCancelInflight,
+	})
+	d := hooks.NewDispatcher()
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(p, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	body := []byte(`{"assistant_id":"echo","input":{}}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/t-new/runs", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer op")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 403 hard deny, got %d %s", resp.StatusCode, b)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		run, err := store.GetRun(acme, "run-inflight")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.Status == models.RunStatusInterrupted {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("inflight run not cancelled; status=%s", run.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

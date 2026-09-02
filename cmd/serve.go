@@ -1403,6 +1403,7 @@ func initFinOps(configPath string) *finops.Config {
 			Aliases: cfg.FinOps.Routing.Aliases,
 		}
 	}
+	out.OnHardBreach = cfg.FinOps.OnHardBreach
 	if len(out.Pricebook) == 0 && !out.Enabled() {
 		return nil
 	}

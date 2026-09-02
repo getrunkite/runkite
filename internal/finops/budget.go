@@ -38,13 +38,23 @@ type RoutingConfig struct {
 	Aliases map[string][]string
 }
 
+// OnHardBreach controls what happens when a hard day cap is already
+// breached. Empty / "deny_only" keeps today's behavior (refuse new
+// creates). "cancel_inflight" also drains pending/running runs in the
+// breached scope via the same cancel path as kill-switch drain.
+const (
+	OnHardBreachDenyOnly       = ""
+	OnHardBreachCancelInflight = "cancel_inflight"
+)
+
 // Config is the runtime finops section (pricebook + budgets + F3+).
 type Config struct {
-	Pricebook   Pricebook          `json:"pricebook,omitempty"`
-	Budgets     Budgets            `json:"budgets,omitempty"`
-	Alerts      AlertsConfig       `json:"alerts,omitempty"`
-	Reservation ReservationConfig  `json:"reservation,omitempty"`
-	Routing     RoutingConfig      `json:"routing,omitempty"`
+	Pricebook    Pricebook         `json:"pricebook,omitempty"`
+	Budgets      Budgets           `json:"budgets,omitempty"`
+	Alerts       AlertsConfig      `json:"alerts,omitempty"`
+	Reservation  ReservationConfig `json:"reservation,omitempty"`
+	Routing      RoutingConfig     `json:"routing,omitempty"`
+	OnHardBreach string            `json:"on_hard_breach,omitempty"`
 }
 
 // SoftPct returns the configured approach threshold (default 80).
@@ -66,6 +76,11 @@ func (c *Config) RoutingSoftPct() float64 {
 // ReservationEnabled is true when any hold amount is configured.
 func (c *Config) ReservationEnabled() bool {
 	return c != nil && (c.Reservation.USDPerRun > 0 || c.Reservation.TokensPerRun > 0)
+}
+
+// CancelInflightOnHardBreach is true when on_hard_breach is cancel_inflight.
+func (c *Config) CancelInflightOnHardBreach() bool {
+	return c != nil && c.OnHardBreach == OnHardBreachCancelInflight
 }
 
 // Enabled reports whether any budget cap is configured.

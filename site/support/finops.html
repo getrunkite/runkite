@@ -83,7 +83,7 @@
           <li>
             Optional <code>finops</code> in <code>langgraph.json</code>: UTC-day
             budgets, <code>alerts.soft_pct</code>, <code>reservation</code> holds,
-            and <code>routing.aliases</code> cheaper-agent rewrite near soft threshold.
+            and <code>routing.aliases</code> cheaper-agent rewrite near soft threshold. Optional <code>on_hard_breach: cancel_inflight</code> cancels pending/running runs when a hard day cap is already breached.
           </li>
           <li>
             Terminal <code>Output.usage</code> → SQL <code>usage_events</code>
@@ -98,7 +98,7 @@
         </ul>
         <h2>What is not shipped yet</h2>
         <ul>
-          <li>Mid-run kill when a budget is breached mid-execution.</li>
+          <li>Streaming mid-run token metering (kill of inflight is opt-in via <code>on_hard_breach: cancel_inflight</code>, not continuous spend tracking).</li>
           <li>Auto-building a pricebook from vendor billing APIs; multi-currency / warehouse BI.</li>
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>

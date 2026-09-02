@@ -50,6 +50,7 @@ const (
 	ReasonBudgetExceeded       = "budget_exceeded"
 	ReasonBudgetSoft           = "budget_soft"
 	ReasonBudgetAlert          = "budget_alert" // soft_pct approach (under hard cap)
+	ReasonBudgetKill           = "budget_kill"  // cancel_inflight on hard breach
 )
 
 // PolicyInput is the decision context for one gate check.

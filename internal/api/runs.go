@@ -869,6 +869,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		}
 		s.ingestTerminalUsage(ctx, run)
 		s.releaseUsageHold(ctx, runID)
+		s.maybeCancelInflightAfterTerminal(ctx, run)
 	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "cache_hit").Inc()
 
