@@ -242,7 +242,7 @@ export function Spend() {
         <h2 className="mb-2 text-lg font-semibold">Alerts</h2>
         <p className="mb-3 text-sm text-muted-foreground">
           Recent budget_soft / budget_exceeded / budget_alert / budget_route audit rows. Subscribe webhooks to{" "}
-          <code>budget_alert</code> for outbound delivery.
+          <code>budget_alert</code> for outbound delivery. Approach (`budget_alert`) audits are emitted at most once per tenant/agent/scope/kind/UTC day per control-plane process.
         </p>
         {(!alerts || alerts.length === 0) && (
           <p className="text-sm text-muted-foreground">No budget alerts for this filter yet.</p>

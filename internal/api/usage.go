@@ -138,23 +138,30 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		})
 		s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetSoft, soft, false)
 	} else if approach != nil {
-		s.writeSecurityAudit(ctx, &models.AuditEvent{
-			TenantID:     tenantID,
-			Action:       policy.StageRunCreate,
-			ResourceType: "agent",
-			ResourceID:   agentID,
-			Decision:     policy.EffectAllow,
-			ReasonCode:   policy.ReasonBudgetAlert,
-			AgentID:      agentID,
-			RunID:        runID,
-			Attrs: map[string]interface{}{
-				"reason":   approach.Reason,
-				"scope":    approach.Scope,
-				"kind":     approach.CapKind,
-				"soft_pct": softPct,
-			},
-		})
-		s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetAlert, approach, false)
+		// Approach alerts fire on every create while spend sits in the
+		// soft_pct..hard band; without dedupe that spams webhooks/Admin.
+		// Once per tenant/agent/scope/kind/UTC-day in this process is enough
+		// signal (soft/hard still emit every time). Multi-replica may still
+		// duplicate — intentional best-effort, not a cluster lock.
+		if s.shouldEmitApproachAlert(tenantID, agentID, approach.Scope, approach.CapKind, time.Now().UTC()) {
+			s.writeSecurityAudit(ctx, &models.AuditEvent{
+				TenantID:     tenantID,
+				Action:       policy.StageRunCreate,
+				ResourceType: "agent",
+				ResourceID:   agentID,
+				Decision:     policy.EffectAllow,
+				ReasonCode:   policy.ReasonBudgetAlert,
+				AgentID:      agentID,
+				RunID:        runID,
+				Attrs: map[string]interface{}{
+					"reason":   approach.Reason,
+					"scope":    approach.Scope,
+					"kind":     approach.CapKind,
+					"soft_pct": softPct,
+				},
+			})
+			s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetAlert, approach, false)
+		}
 	}
 	return true, ""
 }
@@ -186,6 +193,19 @@ func (s *Server) emitBudgetAlert(ctx context.Context, tenantID, agentID, runID, 
 		},
 	})
 }
+
+// shouldEmitApproachAlert is true the first time this process sees an
+// approach key for the UTC day. Soft/hard callers must not use this.
+func (s *Server) shouldEmitApproachAlert(tenantID, agentID, scope, kind string, now time.Time) bool {
+	if s == nil {
+		return true
+	}
+	day := now.UTC().Format("2006-01-02")
+	key := tenantID + "|" + agentID + "|" + scope + "|" + kind + "|" + day
+	_, loaded := s.approachAlertSeen.LoadOrStore(key, struct{}{})
+	return !loaded
+}
+
 
 // ingestTerminalUsage writes a usage_events row from run Output when
 // present. Best-effort; no-ops on Mongo or empty/zero usage.

@@ -55,6 +55,9 @@ type Server struct {
 	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
 	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
 	finops            *finops.Config                  // nil = no pricebook / budget caps
+	// approachAlertSeen dedupes budget_alert approach audits/webhooks
+	// once per tenant|agent|scope|kind|UTC-day in this process.
+	approachAlertSeen sync.Map
 	aliases           *AliasResolver                  // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means

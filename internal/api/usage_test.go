@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -747,5 +748,91 @@ func TestAdmission_CancelInflightOnHardBreach(t *testing.T) {
 			t.Fatalf("inflight run not cancelled; status=%s", run.Status)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+
+func TestAdmission_ApproachAlertDedupedPerDay(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{
+		ThreadID: "t-approach", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 8 of 10 day-cap runs used → next creates sit in the default 80% approach band.
+	for i := 0; i < 8; i++ {
+		if err := store.CreateRun(acme, &models.Run{
+			RunID: fmt.Sprintf("prior-%d", i), ThreadID: "t-approach", AgentID: "echo",
+			Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/echo": {MaxRunsPerDay: 10},
+			},
+		},
+	})
+	d := hooks.NewDispatcher()
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	authP := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(authP, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	mk := func(thread string) int {
+		body := []byte(`{"assistant_id":"echo","input":{}}`)
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/"+thread+"/runs", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer op")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := mk("t-a1"); c < 200 || c >= 300 {
+		t.Fatalf("1st approach create want 2xx, got %d", c)
+	}
+	if c := mk("t-a2"); c < 200 || c >= 300 {
+		t.Fatalf("2nd approach create want 2xx, got %d", c)
+	}
+
+	events, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, ev := range events {
+		if ev.ReasonCode == policy.ReasonBudgetAlert {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want 1 approach audit for the UTC day, got %d (%#v)", n, events)
 	}
 }
