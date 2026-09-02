@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Registry — Runkite Docs</title>
-    <meta name="description" content="Publish and search agent definitions — a catalog, not a package installer." />
+    <title>HITL ops — Runkite Docs</title>
+    <meta name="description" content="Graph interrupt/resume vs connector Pending queue — two different human gates." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +17,7 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                        <nav>
+                <nav>
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
@@ -34,7 +34,7 @@
           <a  href="frameworks.html">Framework matrix</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
-          <a class="active" href="registry.html">Registry</a>
+          <a  href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
           <a  href="runs.html">Runs &amp; threads</a>
           <a  href="cron.html">Cron</a>
@@ -44,7 +44,7 @@
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
           <a  href="grants.html">Grants &amp; HITL</a>
-          <a  href="hitl-ops.html">HITL ops</a>
+          <a class="active" href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
           <a  href="kill.html">Kill &amp; break-glass</a>
           <a  href="security.html">Security</a>
@@ -67,62 +67,60 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Build</p>
-        <h1>Registry</h1>
-        <p class="lede">A tenant-scoped catalog of agent definitions: publish, search, version history. Metadata + <code>source_ref</code> — not auto-deploy.</p>
+        <p class="kicker">Govern</p>
+        <h1>HITL ops</h1>
+        <p class="lede">Two human gates look similar in demos and are easy to mix up: <strong>graph interrupt/resume</strong> (agent protocol) vs <strong>connector Pending</strong> (plane policy). Operators need both; they are not the same button.</p>
 
         <div class="guide-grid">
           <section>
-            <h2>What it is</h2>
+            <h2>Graph interrupt</h2>
             <p>
-              Entries carry display name, tags, author, and a <code>source_ref</code> (git URL, plain URL, or inline config snippet).
-              Version bumps write immutable snapshots when content changes.
+              The agent graph pauses (<code>interrupted</code>). Client or Admin resumes with
+              <code>{"command":{"resume":…}}</code> on the same thread/run. Used by Try’s <code>approval_agent</code>.
+              No connector grant required.
             </p>
           </section>
           <section>
-            <h2>Why it is here</h2>
+            <h2>Connector Pending</h2>
             <p>
-              Teams need a discoverable list of agents without turning the plane into a package manager that fetches and runs arbitrary code.
+              A tool call hits grants / mandatory HITL / PDP <code>pending</code>. Row appears in Admin → Pending.
+              Approve mints a one-shot capability; deny blocks. SQL backends only (Mongo → 501).
             </p>
           </section>
         </div>
 
-        <h2>How to implement</h2>
+        <h2>How to operate</h2>
         <ol class="steps">
-          <li><code>PUT /registry/entries/{name}</code> with metadata + <code>source_type</code> / <code>source_ref</code>.</li>
-          <li><code>POST /registry/search</code> by name substring, tags (all must match), or author.</li>
-          <li>Browse history via <code>GET /registry/entries/{name}/versions</code>.</li>
-          <li>Wire the source into a runner config yourself — publishing does not register a live agent.</li>
+          <li><strong>Interrupted run</strong> — open Run detail / stream; resume via API or continue the client session. Not the Pending page.</li>
+          <li><strong>Pending row</strong> — Admin → Pending → Approve or Deny. Agent retries the tool after approve.</li>
+          <li><strong>Mandatory HITL</strong> — rules force pending even when a grant would allow; configure under Mandatory HITL.</li>
+          <li><strong>Audit</strong> — policy decisions searchable on SQL.</li>
         </ol>
-        <pre class="mono-block">PUT /registry/entries/sales-qualifier
-{
-  "display_name": "Sales Qualifier",
-  "description": "Qualifies inbound leads",
-  "author": "alice",
-  "tags": ["sales", "lead-gen"],
-  "source_type": "git",
-  "source_ref": "https://github.com/example/sales-qualifier@main"
-}</pre>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Registry — catalog entries</div>
-          <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
+          <div class="cap">Admin governance — Grants, mandatory HITL, Pending, Audit</div>
+          <img src="../assets/admin-governance.png" alt="Runkite Admin governance" width="960" height="600" />
+        </figure>
+        <figure class="shot">
+          <div class="cap">Run detail — use this surface for graph interrupt / event replay</div>
+          <img src="../assets/admin-ui-review-runs.png" alt="Runkite Admin run review" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Tenant-private</strong> — not a cross-tenant public marketplace.</li>
-          <li><strong>No review queue</strong> — publish is immediately visible in-tenant.</li>
-          <li><strong>Admin name collisions</strong> — use <code>?tenant_id=</code> when two tenants share a name.</li>
+          <li><strong>Empty Pending</strong> — normal if you only used graph interrupt (Try path).</li>
+          <li><strong>Approve is one-shot</strong> — next matching call needs a new decision unless grants change.</li>
+          <li><strong>Break-glass</strong> — can skip Decide (and mandatory HITL); kill/authz/limits still apply.</li>
         </ul>
         <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md">docs/registry.md</a>
-          · <a href="./agents.html">Agents</a>
+          <a href="./grants.html">Grants &amp; HITL</a>
+          · <a href="./try.html">Try</a>
+          · <a href="./kill.html">Kill &amp; break-glass</a>
         </p>
 
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+    <script src="./docs.js" defer></script>
   </body>
 </html>

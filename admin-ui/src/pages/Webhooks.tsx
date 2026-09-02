@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminWebhookDeadLetter } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -117,6 +117,8 @@ export function Webhooks() {
           icon={WebhookIcon}
           title="No dead-letters"
           message="Good — nothing exhausted retries. Failed deliveries land here after the webhook pipeline gives up; empty means healthy or no webhooks configured."
+        
+          learnMore={{ href: supportPage("webhooks.html"), label: "Docs: webhooks →" }}
         />
       )}
       {(data === null || (data && data.length > 0)) && (

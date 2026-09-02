@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminKillSwitch, AdminKillSwitchCreateResponse } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -265,6 +265,7 @@ export function KillSwitches() {
               </Button>
             )
           }
+          learnMore={{ href: supportPage("kill.html"), label: "Docs: kill & break-glass →" }}
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

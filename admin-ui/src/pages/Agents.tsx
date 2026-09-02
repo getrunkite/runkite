@@ -3,7 +3,7 @@ import { Bot, Search } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminAgent } from "../api/types";
-import { EmptyState, ErrorState, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -70,7 +70,9 @@ export function Agents() {
               icon={Bot}
               title="No agents registered"
               message="Start the control plane with a graph config, then attach a runner. Try: runkite dev --config examples/echo_agent/langgraph.json"
-            />
+            
+          learnMore={{ href: supportPage("agents.html"), label: "Docs: agents →" }}
+        />
           ) : filtered && filtered.length === 0 ? (
             <EmptyState
               title="No matches"

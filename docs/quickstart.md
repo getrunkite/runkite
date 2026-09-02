@@ -290,6 +290,16 @@ Then pass the key in requests:
 curl -H "Authorization: Bearer sk-my-secret-key-1" http://localhost:2026/agents/echo_agent
 ```
 
+**Admin UI:** the samples above are not enough for `/admin/` — the dashboard requires the `admin`
+permission (or an `auth.admin_keys` entry). Example operator key:
+
+```json
+"sk-ops-admin": {"name": "ops", "permissions": ["read", "write", "admin"]}
+```
+
+See the public handbook: [Admin login](../site/support/admin-login.html) (or the deployed Docs site).
+
+
 ### Add a connector
 
 Create `connectors/github.yaml`:

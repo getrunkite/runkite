@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Registry — Runkite Docs</title>
-    <meta name="description" content="Publish and search agent definitions — a catalog, not a package installer." />
+    <title>Feature map — Runkite Docs</title>
+    <meta name="description" content="Admin page ↔ Docs guide matrix for operators and implementers." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +17,7 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                        <nav>
+                <nav>
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
@@ -34,7 +34,7 @@
           <a  href="frameworks.html">Framework matrix</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
-          <a class="active" href="registry.html">Registry</a>
+          <a  href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
           <a  href="runs.html">Runs &amp; threads</a>
           <a  href="cron.html">Cron</a>
@@ -54,7 +54,7 @@
           <a  href="a2a.html">A2A coordination</a>
           <a  href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
-          <a  href="feature-map.html">Feature map</a>
+          <a class="active" href="feature-map.html">Feature map</a>
           <a  href="chapters/">Chapters</a>
           <a  href="decisions/">Decisions</a>
           <a href="../design/">Engineering notes</a>
@@ -67,62 +67,38 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Build</p>
-        <h1>Registry</h1>
-        <p class="lede">A tenant-scoped catalog of agent definitions: publish, search, version history. Metadata + <code>source_ref</code> — not auto-deploy.</p>
+        <p class="kicker">Deep</p>
+        <h1>Feature map</h1>
+        <p class="lede">Every Admin surface and the handbook page that explains it — so empty states and reviews never strand you.</p>
 
-        <div class="guide-grid">
-          <section>
-            <h2>What it is</h2>
-            <p>
-              Entries carry display name, tags, author, and a <code>source_ref</code> (git URL, plain URL, or inline config snippet).
-              Version bumps write immutable snapshots when content changes.
-            </p>
-          </section>
-          <section>
-            <h2>Why it is here</h2>
-            <p>
-              Teams need a discoverable list of agents without turning the plane into a package manager that fetches and runs arbitrary code.
-            </p>
-          </section>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead><tr><th>Admin</th><th>Docs guide</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>Login</td><td><a href="./admin-login.html">Admin login</a></td><td>Needs <code>admin</code> or <code>admin_keys</code></td></tr>
+              <tr><td>Overview</td><td><a href="./">Docs overview</a></td><td>Cross-tenant counts</td></tr>
+              <tr><td>Agents</td><td><a href="./agents.html">Agents</a> · <a href="./first-agent.html">First agent</a></td><td></td></tr>
+              <tr><td>Registry</td><td><a href="./registry.html">Registry</a></td><td>Catalog, not deploy</td></tr>
+              <tr><td>Threads / Runs</td><td><a href="./runs.html">Runs &amp; threads</a></td><td></td></tr>
+              <tr><td>Connectors</td><td><a href="./connectors.html">Connectors</a> · <a href="./secrets.html">Secrets</a></td><td></td></tr>
+              <tr><td>Cron</td><td><a href="./cron.html">Cron</a></td><td></td></tr>
+              <tr><td>Webhooks</td><td><a href="./webhooks.html">Webhooks</a></td><td>Dead letters</td></tr>
+              <tr><td>Grants / Mandatory HITL / Pending / Audit</td><td><a href="./grants.html">Grants</a> · <a href="./hitl-ops.html">HITL ops</a></td><td>SQL only</td></tr>
+              <tr><td>Kill / Break-glass</td><td><a href="./kill.html">Kill &amp; break-glass</a></td><td></td></tr>
+              <tr><td>—</td><td><a href="./credentials.html">Credentials</a> · <a href="./runner-auth.html">Runner auth</a> · <a href="./multi-tenant.html">Multi-tenant</a></td><td>No Admin CRUD for keys</td></tr>
+              <tr><td>—</td><td><a href="./production.html">Production day-0</a> · <a href="./migrate-agents.html">Migrate</a></td><td>Enterprise path</td></tr>
+            </tbody>
+          </table>
         </div>
 
-        <h2>How to implement</h2>
-        <ol class="steps">
-          <li><code>PUT /registry/entries/{name}</code> with metadata + <code>source_type</code> / <code>source_ref</code>.</li>
-          <li><code>POST /registry/search</code> by name substring, tags (all must match), or author.</li>
-          <li>Browse history via <code>GET /registry/entries/{name}/versions</code>.</li>
-          <li>Wire the source into a runner config yourself — publishing does not register a live agent.</li>
-        </ol>
-        <pre class="mono-block">PUT /registry/entries/sales-qualifier
-{
-  "display_name": "Sales Qualifier",
-  "description": "Qualifies inbound leads",
-  "author": "alice",
-  "tags": ["sales", "lead-gen"],
-  "source_type": "git",
-  "source_ref": "https://github.com/example/sales-qualifier@main"
-}</pre>
-
-        <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Registry — catalog entries</div>
-          <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
+          <div class="cap">Admin walkthrough across primary surfaces</div>
+          <img src="../assets/admin-walkthrough.gif" alt="Runkite Admin walkthrough" width="960" height="600" />
         </figure>
-
-        <h2>What to expect</h2>
-        <ul class="expect">
-          <li><strong>Tenant-private</strong> — not a cross-tenant public marketplace.</li>
-          <li><strong>No review queue</strong> — publish is immediately visible in-tenant.</li>
-          <li><strong>Admin name collisions</strong> — use <code>?tenant_id=</code> when two tenants share a name.</li>
-        </ul>
-        <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md">docs/registry.md</a>
-          · <a href="./agents.html">Agents</a>
-        </p>
+        <p class="note">Empty states in Admin deep-link into this handbook via GitHub Pages.</p>
 
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+    <script src="./docs.js" defer></script>
   </body>
 </html>

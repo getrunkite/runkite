@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Registry — Runkite Docs</title>
-    <meta name="description" content="Publish and search agent definitions — a catalog, not a package installer." />
+    <title>Multi-tenant keys — Runkite Docs</title>
+    <meta name="description" content="tenant_id on API keys and JWT claims; Admin is cross-tenant." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +17,7 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                        <nav>
+                <nav>
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
@@ -34,7 +34,7 @@
           <a  href="frameworks.html">Framework matrix</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
-          <a class="active" href="registry.html">Registry</a>
+          <a  href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
           <a  href="runs.html">Runs &amp; threads</a>
           <a  href="cron.html">Cron</a>
@@ -48,7 +48,7 @@
           <a  href="policy.html">PDP / Cedar</a>
           <a  href="kill.html">Kill &amp; break-glass</a>
           <a  href="security.html">Security</a>
-          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a class="active" href="multi-tenant.html">Multi-tenant keys</a>
           <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Connect</div>
           <a  href="a2a.html">A2A coordination</a>
@@ -67,62 +67,54 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Build</p>
-        <h1>Registry</h1>
-        <p class="lede">A tenant-scoped catalog of agent definitions: publish, search, version history. Metadata + <code>source_ref</code> — not auto-deploy.</p>
+        <p class="kicker">Govern</p>
+        <h1>Multi-tenant keys</h1>
+        <p class="lede">Flat <code>tenant_id</code> scoping. Client keys see one tenant. Admin sees every tenant. There is no tenant CRUD UI — a tenant exists when resources are tagged with it.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              Entries carry display name, tags, author, and a <code>source_ref</code> (git URL, plain URL, or inline config snippet).
-              Version bumps write immutable snapshots when content changes.
+              On <code>api_key</code> entries set <code>tenant_id</code>. On JWT set <code>tenant_claim</code> (default <code>tenant_id</code>).
+              Agents, threads, runs, store, cron are filtered by tenant. Cross-tenant ID access returns 404.
             </p>
           </section>
           <section>
             <h2>Why it is here</h2>
             <p>
-              Teams need a discoverable list of agents without turning the plane into a package manager that fetches and runs arbitrary code.
+              Enterprises need isolation without waiting on a full org/workspace hierarchy. Flat claim-driven tenancy ships today; hierarchy can layer later.
             </p>
           </section>
         </div>
 
         <h2>How to implement</h2>
         <ol class="steps">
-          <li><code>PUT /registry/entries/{name}</code> with metadata + <code>source_type</code> / <code>source_ref</code>.</li>
-          <li><code>POST /registry/search</code> by name substring, tags (all must match), or author.</li>
-          <li>Browse history via <code>GET /registry/entries/{name}/versions</code>.</li>
-          <li>Wire the source into a runner config yourself — publishing does not register a live agent.</li>
+          <li>Pick stable tenant ids (<code>acme</code>, <code>default</code>). Avoid <code>:</code> inside ids (checkpoint encoding).</li>
+          <li>Map each client key to a tenant; issue JWTs with the claim for SSO.</li>
+          <li>Bootstrap graphs from config land in <code>default</code> — create per-tenant agents via API under that tenant’s credential.</li>
+          <li>When client auth + runner tokens are on, set <code>RUNNER_TENANTS_&lt;kind&gt;</code> allow-lists.</li>
+          <li>Operators use Admin (admin permission) for cross-tenant visibility — not a tenant-scoped key.</li>
         </ol>
-        <pre class="mono-block">PUT /registry/entries/sales-qualifier
-{
-  "display_name": "Sales Qualifier",
-  "description": "Qualifies inbound leads",
-  "author": "alice",
-  "tags": ["sales", "lead-gen"],
-  "source_type": "git",
-  "source_ref": "https://github.com/example/sales-qualifier@main"
+        <pre class="mono-block">"keys": {
+  "sk-acme": {"name": "acme-app", "permissions": ["read", "write"], "tenant_id": "acme"},
+  "sk-ops": {"name": "ops", "permissions": ["read", "write", "admin"], "tenant_id": "default"}
 }</pre>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Registry — catalog entries</div>
-          <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
+          <div class="cap">Admin lists show tenant_id per row across tenants</div>
+          <img src="../assets/ui-threads.png" alt="Runkite Admin Threads with tenants" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Tenant-private</strong> — not a cross-tenant public marketplace.</li>
-          <li><strong>No review queue</strong> — publish is immediately visible in-tenant.</li>
-          <li><strong>Admin name collisions</strong> — use <code>?tenant_id=</code> when two tenants share a name.</li>
+          <li><strong>No POST /tenants</strong> — documented limitation; visibility is via Admin columns.</li>
+          <li><strong>404 not 403</strong> — cross-tenant probe by id does not confirm existence.</li>
+          <li><strong>Next</strong> — <a href="./admin-login.html">Admin login</a>, <a href="./runner-auth.html">runner auth</a>, <a href="./credentials.html">credentials</a>.</li>
         </ul>
-        <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md">docs/registry.md</a>
-          · <a href="./agents.html">Agents</a>
-        </p>
 
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+    <script src="./docs.js" defer></script>
   </body>
 </html>

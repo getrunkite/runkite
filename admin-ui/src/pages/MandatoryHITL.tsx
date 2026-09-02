@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminMandatoryHITLRule } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -298,6 +298,7 @@ export function MandatoryHITL() {
               </Button>
             )
           }
+          learnMore={{ href: supportPage("hitl-ops.html"), label: "Docs: HITL ops →" }}
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

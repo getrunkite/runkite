@@ -3,7 +3,7 @@ import { Package } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
-import { EmptyState, ErrorState, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -77,6 +77,8 @@ export function Registry() {
           icon={Package}
           title="Registry is empty"
           message="Optional catalog. Publish with PUT /registry/entries/{name} when you want discoverable agent definitions across tenants — see docs/registry.md."
+        
+          learnMore={{ href: supportPage("registry.html"), label: "Docs: registry →" }}
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

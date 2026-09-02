@@ -229,7 +229,7 @@ export function PendingActions() {
           learnMore={
             hasFilter
               ? undefined
-              : { href: supportPage("connectors.html"), label: "Docs: connectors & HITL →" }
+              : { href: supportPage("hitl-ops.html"), label: "Docs: HITL ops →" }
           }
           action={
             hasFilter ? (

@@ -116,7 +116,7 @@ export function Runs() {
           }
           learnMore={
             status === "all"
-              ? { href: supportPage("try.html"), label: "Docs: try path →" }
+              ? { href: supportPage("first-agent.html"), label: "Docs: first agent →" }
               : undefined
           }
           action={

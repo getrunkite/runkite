@@ -4,7 +4,7 @@ import { MessagesSquare } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminThread } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -66,6 +66,8 @@ export function Threads() {
           icon={MessagesSquare}
           title="No threads yet"
           message="A thread is created when a client POSTs /threads (or starts a run that allocates one). Empty is normal on a fresh deploy."
+        
+          learnMore={{ href: supportPage("runs.html"), label: "Docs: runs & threads →" }}
         />
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (

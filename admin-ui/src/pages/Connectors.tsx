@@ -2,7 +2,7 @@ import { Plug } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminConnector } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, StatusBadge } from "../components/common";
+import { EmptyState, ErrorState, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 
 const columns: ColumnDef<AdminConnector, unknown>[] = [
@@ -41,6 +41,8 @@ export function Connectors() {
           icon={Plug}
           title="No connectors"
           message="Optional. Add a connectors block to langgraph.json when agents need pre-warmed OAuth or MCP sessions — see docs/connectors.md."
+        
+          learnMore={{ href: supportPage("connectors.html"), label: "Docs: connectors →" }}
         />
       )}
       {(data === null || (data && data.length > 0)) && (

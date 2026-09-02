@@ -2,7 +2,7 @@ import { Clock } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminCronSchedule } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader } from "../components/common";
+import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -61,6 +61,8 @@ export function Cron() {
           icon={Clock}
           title="No cron schedules"
           message="Optional. Declare schedules in langgraph.json (or via the cron API) when an agent should wake on a cadence — empty is fine for interactive-only deployments."
+        
+          learnMore={{ href: supportPage("cron.html"), label: "Docs: cron →" }}
         />
       )}
       {(data === null || (data && data.length > 0)) && (
