@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ops — Runkite Support</title>
-    <meta name="description" content="Reclaim, kill, secrets." />
+    <meta name="description" content="Reclaim, kill, secrets, and day-2 operations." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,46 +24,62 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a class="active" href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a class="active" href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Operate the plane</h1>
-        <p class="lede">Reclaim ceilings, kill/pause, where secrets live.</p>
-        <ul class="links">
-          <li><a href="../design/">Engineering notes hub</a> — fencing · subscribe · createRunCtx · poison pill</li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">docs/ops-runbook.md</a></li>
-          <li><a href="../design/fencing.html">Design: generation fencing</a></li>
-          <li><a href="../design/poison-pill.html">Design: poison pill / reclaim ceiling</a></li>
-          <li><a href="../design/subscribe-before-enqueue.html">Design: subscribe-before-enqueue</a></li>
-          <li><a href="../design/create-run-ctx.html">Design: createRunCtx / fail-closed</a></li>
-        </ul>
+        <h1>Ops</h1>
+        <p class="lede">Reclaim, kill, and secrets are plane responsibilities — not SSH folklore.</p>
+        <h2>Reclaim &amp; fencing</h2>
+        <p>
+          If a runner dies mid-job, the plane reclaims and bumps a generation. The stale
+          runner’s later write is fenced out so it cannot overwrite the winner.
+        </p>
+        <h2>Kill / cancel</h2>
+        <p>
+          Cancel from Admin or Agent Protocol. Runners see the assignment go non-current;
+          side effects should stop. Break-glass exists for emergency override windows.
+        </p>
+        <h2>Secrets</h2>
+        <p>
+          Provider credentials live with connector config / secret store — minted into
+          run-bound sessions, not copied into every agent env.
+        </p>
+        <h2>Poison pill</h2>
+        <p>
+          Crash-loop jobs stop reclaiming after a hard <code>max_retries</code> ceiling so
+          one cursed graph cannot spin forever.
+        </p>
+        <p class="note">
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">docs/ops-runbook.md</a>
+          ·
+          <a href="../design/fencing.html">Fencing note</a>
+          ·
+          <a href="../design/poison-pill.html">Poison-pill note</a>
+        </p>
 
       </main>
     </div>

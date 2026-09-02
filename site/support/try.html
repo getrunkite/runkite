@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Try it — Runkite Support</title>
-    <meta name="description" content="5-minute Docker path." />
+    <meta name="description" content="5-minute Docker path: compose, echo, HITL." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,52 +24,96 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a class="active" href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a class="active" href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Try it in ~5 minutes</h1>
-        <p class="lede">Docker only. This is also the cold-tester path.</p>
-        <div class="card">
-          <strong>Compose</strong>
-          <p class="mono">git clone https://github.com/getrunkite/runkite && cd runkite
-docker compose -f docker-compose.dev.yml up -d --build</p>
+        <h1 class="one-line">Compose → echo → HITL</h1>
+        <p class="lede">Docker only. Same cold-tester path as the product landing.</p>
+
+        <div class="try-visual">
+          <div class="flow-grid">
+            <div class="flow-card"><span class="n">01</span><h3>Compose is up</h3><p>Plane on :2026. Runner waiting. Admin open.</p></div>
+            <div class="flow-card"><span class="n">02</span><h3>Echo agent</h3><p>POST a run. Wait. See the echoed message.</p></div>
+            <div class="flow-card"><span class="n">03</span><h3>HITL interrupt</h3><p><code>approval_agent</code> pauses — status interrupted.</p></div>
+            <div class="flow-card"><span class="n">04</span><h3>You approve</h3><p>Resume with <code>{"command":{"resume":true}}</code>. Run completes.</p></div>
+          </div>
+          <figure class="try-admin">
+            <div class="cap">What you’ll see in Admin</div>
+            <img src="../assets/admin-governance.png" alt="Runkite Admin: grants, HITL, kill, audit" width="960" height="600" />
+          </figure>
         </div>
+
+
+        <h2>1. Bring the plane up</h2>
+        <pre class="mono-block">git clone https://github.com/getrunkite/runkite && cd runkite
+docker compose -f docker-compose.dev.yml up -d --build
+curl -sf http://localhost:2026/readyz && echo OK
+# Admin → http://localhost:2026/admin/</pre>
         <p>
-          When healthy: open Admin at <code>http://localhost:2026/admin/</code>, create a run
-          against the echo agent, then exercise a connector HITL approve/deny if you want
-          the governance path. Full command list stays in quickstart.
+          Dev compose is SQLite + in-memory transport — no Postgres/Redis required.
+          First build takes a few minutes.
         </p>
-        <ul class="links">
-          <li><a href="../#try">Product #try strip</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md">docs/quickstart.md</a></li>
+
+        <h2>2. Echo</h2>
+        <pre class="mono-block">BASE=http://localhost:2026
+THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"Hello, Runkite!"}]}}' \
+  | python3 -m json.tool</pre>
+        <p>Expect <code>status: success</code> and an AI message that echoes your string.</p>
+
+        <h2>3. HITL interrupt + resume</h2>
+        <p>Use a <em>new</em> thread — do not reuse the echo thread id.</p>
+        <pre class="mono-block">THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+# Stream until you see interrupted, then Ctrl-C
+curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'
+
+# Resume
+curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"approval_agent","command":{"resume":true}}' \
+  | python3 -m json.tool</pre>
+
+        <h2>What you should have seen</h2>
+        <ul>
+          <li>Dispatch through the plane (client never talks to the runner).</li>
+          <li>Streaming / wait semantics on Agent Protocol.</li>
+          <li>A human gate before a side-effecting step continues.</li>
         </ul>
+        <p class="note">
+          Longer walkthrough:
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md">docs/quickstart.md</a>
+          · Product: <a href="../">landing</a>
+        </p>
 
       </main>
     </div>

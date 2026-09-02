@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Scenario — Runkite Support</title>
-    <meta name="description" content="Multi-agent path with shared connectors." />
+    <meta name="description" content="Multi-agent fleet path that needs a plane." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,43 +24,48 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a class="active" href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a class="active" href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Scenario: shared plane</h1>
-        <p class="lede">Coordinator + worker sharing connectors and HITL — not three copies of the same token.</p>
-        <ul class="links">
-          <li><a href="../#scenario">Product scenario</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/a2a.md">docs/a2a.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">docs/connectors.md</a></li>
+        <h1>Scenario: one shared connector</h1>
+        <p class="lede">Three agents, two frameworks, one credential surface — without copying secrets into every process.</p>
+        <h2>Without a plane</h2>
+        <p>
+          Each agent process loads provider keys from env. HITL is a custom HTTP callback in one
+          framework. Kill means SSH. Audit is whoever remembered to log.
+        </p>
+        <h2>With Runkite</h2>
+        <ul>
+          <li>Clients create threads/runs via Agent Protocol.</li>
+          <li>Runners pull assignments via Runner Protocol.</li>
+          <li>Connectors mint <em>run-bound</em> sessions — workers never hold long-lived provider secrets.</li>
+          <li>HITL, kill, and audit live on the plane Admin surface.</li>
         </ul>
+        <p class="note">Product framing: <a href="../#scenario">landing scenario</a> · Try path: <a href="./try.html">Try it</a></p>
 
       </main>
     </div>

@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Checkpoints — Runkite Support</title>
-    <meta name="description" content="Direct Postgres vs opaque proxy through the plane." />
+    <meta name="description" content="Opaque checkpoint modes on the plane." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,45 +24,58 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a class="active" href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a class="active" href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Checkpoint modes</h1>
-        <p class="lede">Durable multi-turn should not force every runner to hold DB credentials.</p>
-        <div class="card"><strong>Proxy mode</strong><p>Runners call the plane; opaque blobs land on your configured state backend.</p></div>
-        <div class="card"><strong>Direct LangGraph + Postgres</strong><p>Still supported when the runner may hold Postgres.</p></div>
-        <ul class="links">
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">docs/architecture.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/runner-protocol/README.md">runner-protocol/</a></li>
-          <li><a href="./decisions/why-opaque-checkpoints.html">Decision: why opaque</a></li>
+        <h1>Checkpoints</h1>
+        <p class="lede">The plane stores opaque blobs. Frameworks own the bytes; Runkite owns durability and tenancy keys.</p>
+        <h2>Modes</h2>
+        <ul>
+          <li><strong>Direct Postgres</strong> — LangGraph AsyncPostgresSaver against your DSN.</li>
+          <li><strong>HTTP proxy</strong> — opaque blobs via <code>/internal/checkpoints</code> (any CP backend).</li>
+          <li><strong>Memory</strong> — fallback when neither DSN nor HTTP URL is set. Demo only.</li>
         </ul>
+        <h2>Why opaque</h2>
+        <p>
+          The plane must not parse framework checkpoint schemas. That keeps Agent Protocol
+          clients framework-agnostic and avoids silent breakage when LangGraph/CrewAI change
+          serde.
+        </p>
+        <h2>How to choose</h2>
+        <ul>
+          <li><strong>Supported HA</strong> — Postgres direct or HTTP proxy against a durable store.</li>
+          <li><strong>Demo</strong> — memory mode from <code>docker-compose.dev.yml</code> (lost on restart).</li>
+          <li>Never put production traffic on memory just because health checks are green.</li>
+        </ul>
+        <p class="note">
+          <a href="./decisions/why-opaque-checkpoints.html">Why opaque checkpoints</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">architecture.md</a>
+        </p>
 
       </main>
     </div>

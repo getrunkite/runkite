@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Spend (FinOps) — Runkite Support</title>
-    <meta name="description" content="Plane spend governance." />
+    <meta name="description" content="Spend governance living on the plane." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,40 +24,56 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a class="active" href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a class="active" href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Spend governance (FinOps)</h1>
-        <p class="lede">Metering and budgets on the plane — not a billing company. In progress this release train.</p>
-        <div class="card"><strong>In scope</strong><p>Usage events → budgets → dashboards → alerts + chargeback export → optional opt-in price-aware routing with visible substitution.</p></div>
-        <div class="card"><strong>Out of scope</strong><p>Invoicing, tax, payment collection, guaranteeing cloud-bill match.</p></div>
+        <h1>Spend (FinOps)</h1>
+        <p class="lede">Governance hooks for spend — not a chargeback dashboard product.</p>
+        <h2>What the plane should own</h2>
+        <ul>
+          <li>Hard caps / deny on expensive connectors (policy next to grants).</li>
+          <li>Mandatory HITL before high-cost tool classes fire.</li>
+          <li>Durable audit of mint / approve / deny — exportable into your FinOps stack.</li>
+        </ul>
+        <h2>What v0.3 does <em>not</em> ship</h2>
+        <ul>
+          <li>No spend UI, budgets board, or chargeback product.</li>
+          <li>No automatic USD metering of every LLM token (bring your own exporter).</li>
+        </ul>
+        <h2>Practical stance</h2>
+        <p>
+          Keep cost controls on the plane beside grants and HITL. Ship audit to the system
+          you already trust for money. Don’t wait on a Runkite “FinOps product.”
+        </p>
+        <p class="note">
+          Related: <a href="./security.html">Security</a> ·
+          <a href="./connectors.html">Connectors &amp; HITL</a> ·
+          <a href="./limitations.html">Limitations</a>
+        </p>
 
       </main>
     </div>

@@ -1,0 +1,356 @@
+/* Landing — cinematic product surface on brand.css */
+
+.atmosphere {
+  position: fixed;
+  inset: -15% -10%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 55% 40% at 15% 20%, rgba(109, 124, 255, 0.26), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 85% 10%, rgba(139, 154, 255, 0.16), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(109, 124, 255, 0.12), transparent 55%);
+  animation: atmosphere-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes atmosphere-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-3%, 3%) scale(1.08);
+  }
+  100% {
+    transform: translate(3%, -2%) scale(1);
+  }
+}
+
+#stars {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  padding: clamp(3rem, 9vw, 5.5rem) 0 2.5rem;
+  text-align: center;
+}
+
+.hero .brand-mark {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin: 0 0 1rem;
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 5.5vw, 3.6rem);
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0 auto 1rem;
+  max-width: none;
+}
+
+.hero h1 em {
+  font-style: italic;
+  background: linear-gradient(120deg, var(--accent-2), #a8b4ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero .lede {
+  margin: 0 auto 1.75rem;
+  max-width: 36rem;
+  color: var(--muted);
+  font-size: 1.12rem;
+  min-height: 1.7em;
+}
+
+.hero .lede .typed::after {
+  content: "";
+  display: inline-block;
+  width: 0.55ch;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.1em;
+  background: var(--accent);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 2.5rem;
+}
+
+.hero-visual {
+  position: relative;
+  width: min(960px, 100%);
+  margin: 0 auto;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(109, 124, 255, 0.12);
+  background: var(--bg-elev);
+}
+
+.hero-visual .chrome {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.hero-visual .chrome i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3f3f46;
+}
+
+.hero-visual .chrome i:nth-child(1) {
+  background: #f87171;
+}
+.hero-visual .chrome i:nth-child(2) {
+  background: #fbbf24;
+}
+.hero-visual .chrome i:nth-child(3) {
+  background: #34d399;
+}
+
+.hero-visual img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.section {
+  padding: clamp(3rem, 7vw, 5rem) 0;
+  border-top: 1px solid var(--line);
+}
+
+.section h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3.2vw, 2.25rem);
+  font-weight: 550;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.75rem;
+  max-width: none;
+  line-height: 1.12;
+}
+
+.section-copy {
+  color: var(--muted);
+  max-width: 40rem;
+  margin: 0 0 2rem;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.3rem;
+}
+
+.panel .label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+}
+
+.panel h3 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.panel p {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.95rem;
+}
+
+.panel.bad {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+
+.panel.good {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-elev)),
+    var(--bg-elev)
+  );
+}
+
+.gov-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.gov-item {
+  padding: 1.1rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.gov-item strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin-bottom: 0.35rem;
+}
+
+.gov-item span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+
+.arch-links {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.arch-links a {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.arch-links a:hover {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+
+.arch-links a span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.cta-band {
+  padding: clamp(2.5rem, 6vw, 4rem) 0;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.cta-band h2 {
+  margin-inline: auto;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .split,
+  .gov-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atmosphere {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .hero .lede .typed::after {
+    animation: none;
+  }
+}
+
+
+/* Prefer one-line titles on desktop */
+.nowrap-lg {
+  max-width: none !important;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .nowrap-lg {
+    white-space: normal;
+  }
+}
+
+.try-cta {
+  text-align: center;
+  padding: 0.5rem 0 0.25rem;
+}
+.try-cta .section-copy {
+  margin-inline: auto;
+}
+.try-cta .btn {
+  margin-top: 0.5rem;
+}
+
+/* Full-width architecture diagram */
+.eco {
+  margin: 1.5rem 0 1.25rem;
+  border-radius: 1.1rem;
+  border: 1px solid var(--line);
+  background: #dce6f5;
+  padding: 1rem;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.eco img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.7rem;
+}

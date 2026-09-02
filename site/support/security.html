@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Security — Runkite Support</title>
-    <meta name="description" content="Auth, tenancy, grants." />
+    <meta name="description" content="Grants, audit, tenancy, fail-closed admission." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,43 +24,60 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a class="active" href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a class="active" href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Security on the plane</h1>
-        <p class="lede">Identity → authz → policy at choke points → kill → audit. Not “we sanitize every LLM token.”</p>
-        <ul class="links">
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/auth.md">docs/auth.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a></li>
-          <li><a href="./finops.html">Spend governance (FinOps — in progress this train)</a></li>
+        <h1>Security</h1>
+        <p class="lede">Governance of the plane: who can run what, with which connectors, with an audit trail.</p>
+        <h2>What the plane enforces</h2>
+        <ul>
+          <li>Client auth (API key / JWT) and route-level read/write/admin.</li>
+          <li>Optional <code>agents:&lt;id&gt;:run</code> grants on run-create.</li>
+          <li>Connector policy deny + durable audit (SQL backends).</li>
+          <li>Fail-closed serve: production refuses an insecure posture.</li>
         </ul>
+        <h2>Tenancy</h2>
+        <p>
+          Flat <code>tenant_id</code> scope today — not a full org/team hierarchy. Checkpoint
+          isolation is by key prefix. With runner tokens, configure <code>RUNNER_TENANTS_*</code>
+          per kind.
+        </p>
+        <h2>What the plane does not see</h2>
+        <p>
+          Raw LLM prompts/completions (unless you add your own proxy), and framework-native
+          tools that bypass connectors.
+        </p>
+        <p class="note">
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/auth.md">docs/auth.md</a>
+          ·
+          <a href="./decisions/why-fail-closed.html">Why fail-closed</a>
+        </p>
 
       </main>
     </div>

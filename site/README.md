@@ -1,24 +1,24 @@
 # Runkite landing (GitHub Pages)
 
-Animated product landing served from this folder via `.github/workflows/pages.yml`.
-Product visuals live in `assets/` (Admin walkthrough GIF + ecosystem diagram).
+Product site served from this folder via `.github/workflows/pages.yml`.
+Visuals live in `assets/`.
 
 **Live:** https://getrunkite.github.io/runkite/
 
-One-page sections (same nav pattern): `#scenario` · `#try` · `#stack` · `#governance` · `#architecture`.
+**Brand system (W2):** [`brand.css`](./brand.css) — dark cinematic canvas, Fraunces + IBM Plex Sans + JetBrains Mono, cobalt accent (not mint-on-black). Shared by landing, support, and design notes.
 
-**Support map:** [`support/`](./support/) — Try → Why → Scenario → Install → Checkpoints → Connectors/HITL → Ops → Security → FinOps → Protocol → Limitations, plus [chapters](./support/chapters/) (primers), [decisions](./support/decisions/), and [engineering notes](./design/) (fencing, subscribe-before-enqueue, createRunCtx, poison pill).
+**Routes (uniform multi-page nav):**
+- [`/`](./index.html) — product landing
+- [`/support/try.html`](./support/try.html) — try path
+- [`/support/`](./support/) — support map + chapters + decisions
+- [`/design/`](./design/) — engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
 
-Narrative order: why a plane → 5-minute try → product depth.  
-`#when-not` (inside Scenario) is the thin "when not to use" callout.
+`try.html` at the site root redirects to `/support/try.html`.
 
-`try.html` redirects to `/#try` so older links still work.
+Local preview:
 
-Engineering notes hub: [`design/`](./design/) — skimmable crash/admission set:
+```bash
+cd site && python3 -m http.server 8765
+```
 
-- [Generation fencing](./design/fencing.html)
-- [Subscribe-before-enqueue](./design/subscribe-before-enqueue.html)
-- [createRunCtx / fail-closed](./design/create-run-ctx.html)
-- [Poison pill / reclaim ceiling](./design/poison-pill.html)
-
-Local preview: open `site/index.html` in a browser (or any static file server).
+Then open http://127.0.0.1:8765/

@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Protocols — Runkite Support</title>
-    <meta name="description" content="Agent Protocol and Runner Protocol." />
+    <meta name="description" content="Agent Protocol vs Runner Protocol." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,43 +24,67 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a  href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a class="active" href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a class="active" href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Protocols</h1>
-        <p class="lede">Clients speak Agent Protocol. Runners speak Runner Protocol.</p>
-        <ul class="links">
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md">docs/api.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/runner-protocol/README.md">runner-protocol/</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/client-sdk.md">docs/client-sdk.md</a></li>
+        <h1>Two protocols</h1>
+        <p class="lede">Clients never speak Runner Protocol. Runners never expose Agent Protocol.</p>
+        <h2>Agent Protocol (front door)</h2>
+        <p>
+          Threads, runs, streaming — the public, framework-agnostic client API. SDKs and
+          HTTP clients live here. This is what product UIs and automations call.
+        </p>
+        <ul>
+          <li>Create thread → create run → wait or stream</li>
+          <li>Cancel / interrupt / resume for HITL</li>
+          <li>No knowledge of which runner pod holds the job</li>
         </ul>
+        <h2>Runner Protocol (back door)</h2>
+        <p>
+          Runkite’s internal contract: pull job, stream events, heartbeat, reclaim/fencing.
+          Workers authenticate with runner tokens and never publish a public Agent surface.
+        </p>
+        <ul>
+          <li>Dequeue assignment with generation / fencing token</li>
+          <li>Heartbeat; on <code>superseded: true</code> cancel local work</li>
+          <li>Report status / stream events; stale generation is ignored</li>
+        </ul>
+        <h2>Why not one protocol</h2>
+        <p>
+          Collapsing them either leaks reclaim/fencing internals to every client, or starves
+          workers of the semantics they need to fail closed under partition. Keep the seam.
+        </p>
+        <p class="note">
+          <a href="./chapters/two-protocols.html">Chapter: two protocols</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/runner-protocol/PROTOCOL.md">runner-protocol/PROTOCOL.md</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md">docs/api.md</a>
+        </p>
 
       </main>
     </div>

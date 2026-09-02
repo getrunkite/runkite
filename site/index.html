@@ -3,1382 +3,338 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Runkite — open, framework-agnostic agent control plane</title>
+    <title>Runkite — open agent control plane</title>
     <meta
       name="description"
-      content="Self-hosted Agent Protocol control plane: pluggable runners, embedded Admin (ops + SQL governance), connector grants, audit, and HITL — one Go binary (BUSL preview)."
+      content="Self-hosted control plane for agents: Agent Protocol clients, Runner Protocol workers, connectors, HITL, fencing, and audit — one Go binary."
     />
-    <meta name="theme-color" content="#050a0c" />
-    <meta property="og:title" content="Runkite — open, framework-agnostic agent control plane" />
+    <meta name="theme-color" content="#09090b" />
+    <meta property="og:title" content="Runkite — open agent control plane" />
     <meta
       property="og:description"
-      content="Self-hosted Agent Protocol control plane: any framework runner, Admin ops + governance, connector grants and audit — one Go binary."
+      content="Any framework. One self-hosted control plane — dispatch, connectors, HITL, fencing, audit."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://getrunkite.github.io/runkite/" />
     <meta property="og:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Runkite — open, framework-agnostic agent control plane" />
-    <meta
-      name="twitter:description"
-      content="Self-hosted Agent Protocol control plane: any framework runner, Admin ops + governance, connector grants and audit — one Go binary."
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
     />
-    <meta name="twitter:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <style>
-      :root {
-        --bg: #050a0c;
-        --ink: #f2faf6;
-        --muted: #8aa399;
-        --mint: #3ef0a8;
-        --mint-2: #1ec9ff;
-        --line: rgba(242, 250, 246, 0.12);
-        --glass: rgba(10, 22, 18, 0.55);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html {
-        scroll-behavior: smooth;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100%;
-        color: var(--ink);
-        background: var(--bg);
-        font-family: Outfit, sans-serif;
-        overflow-x: hidden;
-      }
-
-      #stars {
-        position: fixed;
-        inset: 0;
-        z-index: 0;
-        pointer-events: none;
-      }
-
-      .aurora {
-        position: fixed;
-        inset: -20% -10%;
-        z-index: 0;
-        pointer-events: none;
-        background:
-          radial-gradient(ellipse 50% 40% at 70% 10%, rgba(62, 240, 168, 0.22), transparent 60%),
-          radial-gradient(ellipse 45% 35% at 15% 30%, rgba(30, 201, 255, 0.16), transparent 55%),
-          radial-gradient(ellipse 40% 30% at 50% 85%, rgba(62, 240, 168, 0.1), transparent 60%);
-        animation: aurora-drift 18s ease-in-out infinite alternate;
-        filter: blur(8px);
-      }
-
-      @keyframes aurora-drift {
-        from {
-          transform: translate3d(-2%, -1%, 0) scale(1);
-        }
-        to {
-          transform: translate3d(3%, 2%, 0) scale(1.06);
-        }
-      }
-
-      .shell {
-        position: relative;
-        z-index: 1;
-      }
-
-      header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 1.25rem 1.5rem;
-      }
-
-      .logo {
-        font-family: "JetBrains Mono", monospace;
-        font-weight: 600;
-        font-size: 0.95rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--ink);
-        text-decoration: none;
-      }
-
-      .logo span {
-        background: linear-gradient(120deg, var(--mint), var(--mint-2));
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-      }
-
-      .nav {
-        display: flex;
-        align-items: center;
-        gap: 1.25rem;
-      }
-
-      .nav a {
-        color: var(--muted);
-        text-decoration: none;
-        font-size: 0.92rem;
-        font-weight: 500;
-        transition: color 0.2s;
-      }
-
-      .nav a:hover {
-        color: var(--ink);
-      }
-
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.45rem;
-        padding: 0.8rem 1.2rem;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.95rem;
-        text-decoration: none;
-        border: 1px solid transparent;
-        transition:
-          transform 0.2s,
-          box-shadow 0.2s,
-          border-color 0.2s,
-          background 0.2s;
-      }
-
-      .btn:hover {
-        transform: translateY(-2px);
-      }
-
-      .btn-primary {
-        color: #04110c;
-        background: linear-gradient(120deg, var(--mint), #7cffd0 45%, var(--mint-2));
-        box-shadow: 0 0 0 1px rgba(62, 240, 168, 0.25), 0 10px 40px rgba(62, 240, 168, 0.25);
-      }
-
-      .btn-primary:hover {
-        box-shadow: 0 0 0 1px rgba(62, 240, 168, 0.45), 0 14px 50px rgba(30, 201, 255, 0.28);
-      }
-
-      .btn-ghost {
-        color: var(--ink);
-        border-color: var(--line);
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(8px);
-      }
-
-      .btn-ghost:hover {
-        border-color: rgba(62, 240, 168, 0.45);
-      }
-
-      .hero {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 2.5rem 1.5rem 1rem;
-        min-height: calc(100vh - 4.5rem);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-      }
-
-      .brand-mark {
-        font-family: "JetBrains Mono", monospace;
-        font-size: clamp(0.95rem, 2vw, 1.1rem);
-        letter-spacing: 0.28em;
-        text-transform: uppercase;
-        margin: 0 0 1rem;
-        background: linear-gradient(120deg, var(--mint), var(--mint-2), var(--mint));
-        background-size: 200% auto;
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-        animation: sheen 5s linear infinite;
-      }
-
-      @keyframes sheen {
-        to {
-          background-position: 200% center;
-        }
-      }
-
-      .hero h1 {
-        margin: 0 0 1rem;
-        font-size: clamp(2.6rem, 7vw, 4.6rem);
-        line-height: 0.98;
-        letter-spacing: -0.045em;
-        font-weight: 800;
-        max-width: 14ch;
-      }
-
-      .hero h1 em {
-        font-style: normal;
-        background: linear-gradient(120deg, #fff 20%, var(--mint) 55%, var(--mint-2));
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-      }
-
-      .lede {
-        margin: 0 0 1.75rem;
-        max-width: 34rem;
-        font-size: 1.15rem;
-        line-height: 1.55;
-        color: var(--muted);
-      }
-
-      .lede .typed::after {
-        content: "";
-        display: inline-block;
-        width: 0.55ch;
-        height: 1.05em;
-        margin-left: 0.15em;
-        vertical-align: -0.12em;
-        background: var(--mint);
-        animation: blink 0.9s steps(1) infinite;
-      }
-
-      @keyframes blink {
-        50% {
-          opacity: 0;
-        }
-      }
-
-      .cta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.8rem;
-        margin-bottom: 2.5rem;
-      }
-
-      .hero-visual {
-        position: relative;
-        border-radius: 1.1rem;
-        overflow: hidden;
-        border: 1px solid rgba(62, 240, 168, 0.28);
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-          0 30px 80px rgba(0, 0, 0, 0.55),
-          0 0 80px rgba(62, 240, 168, 0.12);
-        animation: float-in 1s ease both;
-      }
-
-      .hero-visual::before {
-        content: "";
-        position: absolute;
-        inset: -2px;
-        border-radius: inherit;
-        background: linear-gradient(120deg, transparent, rgba(62, 240, 168, 0.55), rgba(30, 201, 255, 0.45), transparent);
-        background-size: 200% 200%;
-        z-index: 0;
-        animation: border-run 6s linear infinite;
-        opacity: 0.7;
-        pointer-events: none;
-      }
-
-      @keyframes border-run {
-        to {
-          background-position: 200% 0;
-        }
-      }
-
-      @keyframes float-in {
-        from {
-          opacity: 0;
-          transform: translateY(24px) scale(0.985);
-        }
-        to {
-          opacity: 1;
-          transform: none;
-        }
-      }
-
-      .hero-visual img {
-        display: block;
-        width: 100%;
-        height: auto;
-        position: relative;
-        z-index: 1;
-        background: #0b1411;
-      }
-
-      .hero-visual .chrome {
-        position: absolute;
-        z-index: 2;
-        top: 0.7rem;
-        left: 0.85rem;
-        display: flex;
-        gap: 0.35rem;
-      }
-
-      .hero-visual .chrome i {
-        width: 0.55rem;
-        height: 0.55rem;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.18);
-      }
-
-      .hero-visual .chrome i:nth-child(1) {
-        background: #ff5f57;
-      }
-      .hero-visual .chrome i:nth-child(2) {
-        background: #febc2e;
-      }
-      .hero-visual .chrome i:nth-child(3) {
-        background: #28c840;
-      }
-
-      section {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 4.5rem 1.5rem;
-      }
-
-      .section-kicker {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.8rem;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--mint);
-        margin: 0 0 0.75rem;
-      }
-
-      section h2 {
-        margin: 0 0 0.75rem;
-        font-size: clamp(1.8rem, 4vw, 2.6rem);
-        letter-spacing: -0.03em;
-        font-weight: 800;
-      }
-
-      .section-copy {
-        margin: 0 0 2rem;
-        max-width: 40rem;
-        color: var(--muted);
-        font-size: 1.05rem;
-        line-height: 1.55;
-      }
-
-      .reveal {
-        opacity: 0;
-        transform: translateY(28px);
-        transition:
-          opacity 0.7s ease,
-          transform 0.7s ease;
-      }
-
-      .reveal.in {
-        opacity: 1;
-        transform: none;
-      }
-
-      .eco {
-        border-radius: 1.1rem;
-        border: 1px solid var(--line);
-        background: var(--glass);
-        backdrop-filter: blur(12px);
-        padding: 1rem;
-        overflow: hidden;
-      }
-
-      .eco img {
-        display: block;
-        width: 100%;
-        height: auto;
-        border-radius: 0.7rem;
-      }
-
-      .pill-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.55rem;
-      }
-
-      .pill {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.78rem;
-        padding: 0.45rem 0.75rem;
-        border-radius: 999px;
-        border: 1px solid rgba(62, 240, 168, 0.28);
-        background: rgba(62, 240, 168, 0.06);
-        color: #d7ffe9;
-        transition:
-          transform 0.2s,
-          border-color 0.2s,
-          background 0.2s,
-          box-shadow 0.2s;
-      }
-
-      .pill:hover {
-        transform: translateY(-2px);
-        border-color: rgba(30, 201, 255, 0.55);
-        background: rgba(30, 201, 255, 0.1);
-        box-shadow: 0 0 24px rgba(30, 201, 255, 0.18);
-      }
-
-      .pill.cyan {
-        border-color: rgba(30, 201, 255, 0.3);
-        background: rgba(30, 201, 255, 0.07);
-      }
-
-      .terminal {
-        border-radius: 1rem;
-        border: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(12, 24, 20, 0.95), rgba(6, 12, 10, 0.98));
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-        overflow: hidden;
-      }
-
-      .terminal .bar {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.75rem 1rem;
-        border-bottom: 1px solid var(--line);
-        color: var(--muted);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.75rem;
-      }
-
-      .terminal .bar .spacer {
-        flex: 1;
-      }
-
-      .copy-btn {
-        padding: 0.35rem 0.7rem;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        background: transparent;
-        color: var(--ink);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        cursor: pointer;
-      }
-
-      .copy-btn:hover,
-      .copy-btn.copied {
-        border-color: rgba(62, 240, 168, 0.55);
-        color: var(--mint);
-      }
-
-      .flow {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.75rem;
-        counter-reset: step;
-        margin-bottom: 2rem;
-      }
-
-      .flow-step {
-        position: relative;
-        padding: 1.15rem 1rem 1.05rem;
-        border: 1px solid var(--line);
-        border-radius: 0.9rem;
-        background: var(--glass);
-        backdrop-filter: blur(10px);
-        min-height: 8.5rem;
-        transition:
-          border-color 0.35s,
-          box-shadow 0.35s,
-          transform 0.35s;
-      }
-
-      .flow-step::before {
-        counter-increment: step;
-        content: "0" counter(step);
-        display: block;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        letter-spacing: 0.12em;
-        color: var(--mint);
-        margin-bottom: 0.55rem;
-      }
-
-      .flow-step h3 {
-        margin: 0 0 0.4rem;
-        font-size: 1rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
-
-      .flow-step p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.9rem;
-        line-height: 1.45;
-      }
-
-      .flow-step.active {
-        border-color: rgba(62, 240, 168, 0.55);
-        box-shadow: 0 0 40px rgba(62, 240, 168, 0.12);
-        transform: translateY(-3px);
-      }
-
-      .try-visual {
-        display: grid;
-        grid-template-columns: 1.15fr 0.85fr;
-        gap: 1.25rem;
-        align-items: stretch;
-        margin-bottom: 2rem;
-      }
-
-      .try-visual .flow {
-        margin-bottom: 0;
-      }
-
-      .try-admin {
-        border-radius: 0.9rem;
-        border: 1px solid var(--line);
-        overflow: hidden;
-        background: #0b1411;
-        display: flex;
-        flex-direction: column;
-        min-height: 100%;
-      }
-
-      .try-admin .cap {
-        padding: 0.65rem 0.9rem;
-        border-bottom: 1px solid var(--line);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .try-admin img {
-        display: block;
-        width: 100%;
-        height: auto;
-        flex: 1;
-        object-fit: cover;
-        object-position: top left;
-      }
-
-      .scenario-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.25rem;
-        margin-bottom: 2rem;
-      }
-
-      .scenario-panel {
-        border-radius: 1rem;
-        border: 1px solid var(--line);
-        background: var(--glass);
-        backdrop-filter: blur(10px);
-        padding: 1.25rem 1.2rem 1.35rem;
-        min-height: 100%;
-      }
-
-      .scenario-panel .label {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        margin: 0 0 0.85rem;
-      }
-
-      .scenario-panel.without .label {
-        color: #ff8f8a;
-      }
-
-      .scenario-panel.with .label {
-        color: var(--mint);
-      }
-
-      .scenario-panel h3 {
-        margin: 0 0 0.65rem;
-        font-size: 1.2rem;
-        letter-spacing: -0.02em;
-        font-weight: 700;
-      }
-
-      .scenario-panel p {
-        margin: 0 0 1rem;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.5;
-      }
-
-      .scene-stack {
-        display: flex;
-        flex-direction: column;
-        gap: 0.55rem;
-      }
-
-      .scene-row {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        flex-wrap: wrap;
-      }
-
-      .scene-node {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        padding: 0.45rem 0.65rem;
-        border-radius: 0.45rem;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.03);
-        color: #d7ffe9;
-      }
-
-      .scenario-panel.without .scene-node {
-        border-color: rgba(255, 143, 138, 0.35);
-        color: #ffd4d1;
-      }
-
-      .scene-node.plane {
-        border-color: rgba(62, 240, 168, 0.45);
-        background: rgba(62, 240, 168, 0.08);
-        color: var(--mint);
-      }
-
-      .scene-node.conn {
-        border-color: rgba(30, 201, 255, 0.45);
-        background: rgba(30, 201, 255, 0.08);
-        color: #9ae7ff;
-      }
-
-      .scene-arrow {
-        color: var(--muted);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.8rem;
-      }
-
-      .gain-list {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        display: grid;
-        gap: 0.75rem;
-      }
-
-      .gain-list li {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.75rem;
-        align-items: start;
-        padding: 0.85rem 0;
-        border-top: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 0.98rem;
-        line-height: 1.45;
-      }
-
-      .gain-list li:first-child {
-        border-top: none;
-        padding-top: 0;
-      }
-
-      .gain-list strong {
-        display: block;
-        color: var(--ink);
-        margin-bottom: 0.15rem;
-      }
-
-      .gain-list .mark {
-        width: 1.55rem;
-        height: 1.55rem;
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.68rem;
-        color: #04110c;
-        background: linear-gradient(120deg, var(--mint), var(--mint-2));
-        margin-top: 0.1rem;
-      }
-
-      .when-not {
-        margin-top: 1.75rem;
-        padding: 1.15rem 1.2rem 1.2rem;
-        border-radius: 0.9rem;
-        border: 1px dashed rgba(138, 163, 153, 0.45);
-        background: rgba(255, 255, 255, 0.02);
-      }
-
-      .when-not .label {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.72rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin: 0 0 0.55rem;
-      }
-
-      .when-not h3 {
-        margin: 0 0 0.55rem;
-        font-size: 1.1rem;
-        letter-spacing: -0.02em;
-        font-weight: 700;
-      }
-
-      .when-not p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.5;
-        max-width: 42rem;
-      }
-
-      .when-not ul {
-        margin: 0.75rem 0 0;
-        padding: 0 0 0 1.1rem;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.55;
-      }
-
-      .when-not li {
-        margin: 0.25rem 0;
-      }
-
-      .terminal + .terminal {
-        margin-top: 1.15rem;
-      }
-
-      .terminal .bar i {
-        width: 0.55rem;
-        height: 0.55rem;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.18);
-      }
-
-      .terminal .bar i:nth-child(1) {
-        background: #ff5f57;
-      }
-      .terminal .bar i:nth-child(2) {
-        background: #febc2e;
-      }
-      .terminal .bar i:nth-child(3) {
-        background: #28c840;
-      }
-
-      .terminal pre {
-        margin: 0;
-        padding: 1.15rem 1.2rem 1.35rem;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.86rem;
-        line-height: 1.65;
-        color: #c9f5df;
-        white-space: pre-wrap;
-        overflow-x: auto;
-      }
-
-      .terminal .cmt {
-        color: #5f7a6d;
-      }
-
-      .terminal .cmd {
-        color: var(--mint);
-      }
-
-      footer {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 2rem 1.5rem 3rem;
-        border-top: 1px solid var(--line);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem 1.5rem;
-        align-items: center;
-        justify-content: space-between;
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-
-      footer a {
-        color: var(--muted);
-        text-decoration: none;
-      }
-
-      footer a:hover {
-        color: var(--mint);
-      }
-
-      footer .links {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem 1.25rem;
-      }
-
-      @media (max-width: 860px) {
-        .flow {
-          grid-template-columns: 1fr 1fr;
-        }
-        .try-visual {
-          grid-template-columns: 1fr;
-        }
-        .scenario-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 720px) {
-        .nav .hide-sm {
-          display: none;
-        }
-        .hero {
-          min-height: auto;
-          padding-top: 1.5rem;
-        }
-        .hero h1 {
-          max-width: none;
-        }
-        .flow {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .aurora,
-        .brand-mark,
-        .hero-visual,
-        .hero-visual::before,
-        .lede .typed::after {
-          animation: none !important;
-        }
-        .reveal {
-          opacity: 1;
-          transform: none;
-          transition: none;
-        }
-        .flow-step.active {
-          transform: none;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="./brand.css" />
+    <link rel="stylesheet" href="./landing.css" />
   </head>
   <body>
     <canvas id="stars" aria-hidden="true"></canvas>
-    <div class="aurora" aria-hidden="true"></div>
+    <div class="atmosphere" aria-hidden="true"></div>
 
     <div class="shell">
-      <header>
-        <a class="logo" href="./">~/ <span>runkite</span></a>
-        <nav class="nav">
-          <a href="#scenario">Scenario</a>
-          <a href="#try">Try it</a>
+      <header class="site-header">
+        <a class="site-logo" href="./">~/ <span>runkite</span></a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="./" aria-current="page">Product</a>
+          <a href="./support/try.html">Try</a>
           <a href="./support/">Support</a>
-          <a class="hide-sm" href="#stack">Stack</a>
-          <a class="hide-sm" href="#governance">Governance</a>
-          <a class="hide-sm" href="#architecture">Architecture</a>
-          <a class="hide-sm" href="./design/">Notes</a>
-          <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite">GitHub</a>
+          <a class="nav-hide-sm" href="./design/">Notes</a>
+          <a class="nav-hide-sm" href="#architecture">Architecture</a>
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/getrunkite/runkite"
+            style="padding: 0.4rem 0.9rem; font-size: 0.85rem"
+            >GitHub</a
+          >
         </nav>
       </header>
 
       <main>
         <section class="hero">
-          <p class="brand-mark">Runkite</p>
-          <h1>Open, framework-agnostic <em>agent control plane</em></h1>
-          <p class="lede">
-            <span class="typed" id="typed"></span>
-          </p>
-          <div class="cta">
-            <a class="btn btn-primary" href="#try">Try it in 5 minutes →</a>
-            <a class="btn btn-ghost" href="#scenario">Why a plane</a>
-          </div>
-          <div class="hero-visual">
-            <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
-            <img
-              src="./assets/admin-walkthrough.gif"
-              alt="Runkite Admin UI walkthrough: Overview, Agents, Registry, Threads, Runs, Connectors, Cron, Webhooks, Grants, Mandatory HITL, Pending, Kill, Break-glass, Audit"
-              width="960"
-              height="600"
-            />
+          <div class="wrap">
+            <p class="brand-mark">Runkite</p>
+            <h1>Open <em>agent control plane</em></h1>
+            <p class="lede"><span class="typed" id="typed"></span></p>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="./support/try.html">Try it in 5 minutes →</a>
+              <a class="btn btn-ghost" href="./support/why.html">Why a plane</a>
+            </div>
+            <div class="hero-visual">
+              <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+              <img
+                src="./assets/admin-walkthrough.gif"
+                alt="Runkite Admin walkthrough: overview, agents, runs, connectors, grants, HITL, kill, audit"
+                width="960"
+                height="600"
+              />
+            </div>
           </div>
         </section>
 
-        <section id="scenario" class="reveal">
-          <p class="section-kicker">Scenario · why a plane</p>
-          <h2>Three agents. Two frameworks. One shared connector.</h2>
-          <p class="section-copy">
-            When a single LangGraph script stops being enough: a LangGraph coordinator and worker,
-            plus a second runner kind when you need another framework — same connector secret, not
-            three <code style="color: var(--mint)">.env</code> copies.
-          </p>
-          <div class="scenario-grid">
-            <div class="scenario-panel without">
-              <p class="label">Without a control plane</p>
-              <h3>Three scripts, three copies of the secret</h3>
-              <p>Each agent process owns its own env, HITL, and logs. Delegation is ad hoc HTTP. Ops is SSH + grep.</p>
-              <div class="scene-stack">
-                <div class="scene-row">
-                  <span class="scene-node">LangGraph · coordinator</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">GITHUB_TOKEN in .env</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node">LangGraph · worker</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">GITHUB_TOKEN again</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node">CrewAI / LangGraph.js</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">same secret, third place</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node">A2A?</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">custom HTTP glue per pair</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node">Ops?</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">3 dashboards, 3 log streams</span>
-                </div>
-              </div>
+        <section class="section reveal" id="scenario">
+          <div class="wrap">
+            <p class="kicker">Scenario</p>
+            <h2 class="nowrap-lg">Three agents. Two frameworks. One connector.</h2>
+            <p class="section-copy">
+              When one script stops being enough: coordinators and workers still need one
+              place for credentials, HITL, kill, and audit.
+            </p>
+            <div class="split">
+              <article class="panel bad">
+                <p class="label">Without a plane</p>
+                <h3>Three scripts, three copies of the secret</h3>
+                <p>
+                  Each process owns its env, HITL, and logs. Delegation is ad-hoc HTTP. Ops
+                  is SSH and grep.
+                </p>
+              </article>
+              <article class="panel good">
+                <p class="label">With Runkite</p>
+                <h3>One plane. Run-bound sessions. Shared Admin.</h3>
+                <p>
+                  Clients speak Agent Protocol. Runners pull jobs. Connectors mint
+                  credentials from the assignment — not from forged headers.
+                </p>
+              </article>
             </div>
-            <div class="scenario-panel with">
-              <p class="label">With Runkite</p>
-              <h3>One plane. Run-bound sessions. Shared Admin.</h3>
-              <p>Clients hit Agent Protocol. Runners pull jobs. Connectors mint credentials from the assignment — not from forged headers.</p>
-              <div class="scene-stack">
-                <div class="scene-row">
-                  <span class="scene-node">Client / SDK</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node plane">Control plane</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node conn">connector session</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node plane">CP</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">LangGraph runner · coordinator + worker</span>
-                </div>
-                <div class="scene-row">
-                  <span class="scene-node plane">CP</span>
-                  <span class="scene-arrow">→</span>
-                  <span class="scene-node">CrewAI / LangGraph.js runner</span>
-                </div>
+          </div>
+        </section>
+
+        <section class="section reveal" id="try">
+          <div class="wrap try-cta">
+            <p class="kicker">Try it · 5 minutes</p>
+            <h2>See it on your laptop</h2>
+            <p class="section-copy">
+              Docker-only cold path: compose, echo, HITL interrupt, resume. Full commands
+              and Admin preview live on Support.
+            </p>
+            <a class="btn btn-primary" href="./support/try.html">Open the try guide →</a>
+          </div>
+        </section>
+
+        <section class="section reveal">
+          <div class="wrap">
+            <p class="kicker">On the plane</p>
+            <h2>Governance that fails closed</h2>
+            <p class="section-copy">
+              Grants, HITL, fencing, and reclaim ceilings live on the plane — not as
+              afterthought middleware in every script.
+            </p>
+            <div class="gov-strip">
+              <div class="gov-item">
+                <strong>Connectors</strong>
+                <span>Minted per run. Workers never hold long-lived provider secrets.</span>
+              </div>
+              <div class="gov-item">
+                <strong>HITL</strong>
+                <span>Approve or deny before a marked connector call proceeds.</span>
+              </div>
+              <div class="gov-item">
+                <strong>Fencing</strong>
+                <span>A superseded runner cannot overwrite the winner after reclaim.</span>
+              </div>
+              <div class="gov-item">
+                <strong>Poison pill</strong>
+                <span>Crash-loop jobs stop reclaiming after a hard ceiling.</span>
               </div>
             </div>
           </div>
-          <ul class="gain-list">
-            <li>
-              <span class="mark" aria-hidden="true">1</span>
-              <div>
-                <strong>Shared connector, not shared .env</strong>
-                Configure once in the plane. Agents call
-                <code style="color: var(--mint)">get_connector_session</code> /
-                <code style="color: var(--mint)">getConnectorSession</code> under run-binding and optional grants.
-              </div>
-            </li>
-            <li>
-              <span class="mark" aria-hidden="true">2</span>
-              <div>
-                <strong>Agent-to-agent on the same queue</strong>
-                Coordinator delegates with
-                <code style="color: var(--mint)">call_agent</code> /
-                <code style="color: var(--mint)">callAgent</code>
-                — depth limits, cancel cascade, parent/child visible in Admin.
-              </div>
-            </li>
-            <li>
-              <span class="mark" aria-hidden="true">3</span>
-              <div>
-                <strong>Two frameworks, one ops surface</strong>
-                HITL, kill/pause, audit, and threads live on the plane whether the graph is LangGraph or another runner.
-              </div>
-            </li>
-          </ul>
-          <p class="section-copy" style="margin-top: 1.25rem; margin-bottom: 0">
-            In Admin you should see parent/child runs for A2A and one connector grant reused across
-            agents — not three pasted tokens.
-          </p>
-          <div class="when-not" id="when-not">
-            <p class="label">When not to use Runkite</p>
-            <h3>One agent, one laptop, exploring prompts</h3>
-            <p>
-              Stay in LangGraph / CrewAI / your notebook. A control plane earns its keep when you need
-              a shared HTTP API, HITL that isn’t glued to one process, shared connectors, or more than
-              one runner kind. If that’s not you yet — skip the plane.
+        </section>
+
+
+        <section class="section reveal" id="architecture">
+          <div class="wrap">
+            <p class="kicker">Architecture</p>
+            <h2 class="nowrap-lg">Clients never talk to runners</h2>
+            <p class="section-copy">
+              Agent Protocol on the front. Runner Protocol on the back. The plane owns
+              lifecycle, policy, and proof. Pluggable state, transport, and vectors under an
+              honest tier model — Supported for Postgres + Redis; Compatible for the rest.
             </p>
-            <ul>
-              <li>Prototyping a single graph with local state</li>
-              <li>No shared secrets, no second agent, no ops surface needed</li>
-              <li>You need a managed cloud plane today (Runkite is self-host first)</li>
+            <div class="eco">
+              <img
+                src="./assets/ecosystem.png"
+                alt="Runkite ecosystem: clients to control plane to runners with pluggable backends"
+                width="1840"
+                height="1240"
+              />
+            </div>
+            <ul class="arch-links">
+              <li>
+                <a href="./design/"
+                  >Engineering notes <span>fencing · subscribe · createRunCtx · poison</span></a
+                >
+              </li>
+              <li>
+                <a href="./support/chapters/"
+                  >Public chapters <span>picture · processes · protocols</span></a
+                >
+              </li>
+              <li>
+                <a href="./support/decisions/"
+                  >Decisions <span>opaque CP · fail-closed · Agent Protocol</span></a
+                >
+              </li>
             </ul>
           </div>
-          <div class="cta" style="margin-top: 1.75rem">
-            <a class="btn btn-primary" href="https://github.com/getrunkite/runkite/tree/main/examples/a2a_agent"
-              >A2A example (LangGraph) →</a
-            >
-            <a class="btn btn-ghost" href="#try">Try it</a>
-            <a class="btn btn-ghost" href="#when-not">When not to use</a>
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/tree/main/examples/crewai_agent"
-              >CrewAI example</a
-            >
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/tree/main/examples/echo_agent_ts"
-              >LangGraph.js example</a
-            >
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md"
-              >Connectors</a
-            >
-          </div>
-        </section>
-        <section id="try" class="reveal">
-          <p class="section-kicker">Try it · 5 minutes</p>
-          <h2>Compose up → echo → HITL → done</h2>
-          <p class="section-copy">
-            Zero-dependency stack: control plane + runner, SQLite + in-memory. No Go toolchain, no
-            <code style="color: var(--mint)">.env</code>. Needs Docker and
-            <code style="color: var(--mint)">python3</code> (for the curl JSON one-liners). Laptop demo
-            only — not internet-facing.
-          </p>
-          <div class="try-visual">
-            <div class="flow" id="flow">
-              <div class="flow-step" data-step="0">
-                <h3>Compose is up</h3>
-                <p>Plane on :2026. Runner waiting. Admin open.</p>
-              </div>
-              <div class="flow-step" data-step="1">
-                <h3>Echo agent</h3>
-                <p>POST a run. Wait. See the echoed message.</p>
-              </div>
-              <div class="flow-step" data-step="2">
-                <h3>HITL interrupt</h3>
-                <p>approval_agent pauses — status interrupted.</p>
-              </div>
-              <div class="flow-step" data-step="3">
-                <h3>You approve</h3>
-                <p>Resume with {"command":{"resume":true}}. Run completes.</p>
-              </div>
-            </div>
-            <figure class="try-admin">
-              <div class="cap">What you’ll see in Admin</div>
-              <img
-                src="./assets/admin-governance.png"
-                alt="Runkite Admin: governance surfaces — grants, HITL, kill, audit"
-                width="920"
-                height="560"
-              />
-            </figure>
-          </div>
-          <div class="terminal">
-            <div class="bar">
-              <i></i><i></i><i></i>
-              ~/runkite
-              <span class="spacer"></span>
-              <button
-                type="button"
-                class="copy-btn"
-                data-copy="git clone https://github.com/getrunkite/runkite && cd runkite && docker compose -f docker-compose.dev.yml up -d --build"
-              >
-                Copy
-              </button>
-            </div>
-            <pre><span class="cmt"># needs Docker · first build takes a few minutes</span>
-<span class="cmd">git clone</span> https://github.com/getrunkite/runkite && <span class="cmd">cd</span> runkite
-<span class="cmd">docker compose -f</span> docker-compose.dev.yml <span class="cmd">up -d --build</span>
-<span class="cmd">curl -sf</span> http://localhost:2026/readyz && <span class="cmd">echo</span> OK
-<span class="cmt"># Admin → http://localhost:2026/admin/</span></pre>
-          </div>
-          <div class="terminal">
-            <div class="bar">
-              <i></i><i></i><i></i>
-              echo_agent
-              <span class="spacer"></span>
-              <button
-                type="button"
-                class="copy-btn"
-                data-copy="BASE=http://localhost:2026
-THREAD=$(curl -sf -X POST &quot;$BASE/threads&quot; -H 'Content-Type: application/json' -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)[&quot;thread_id&quot;])')
-curl -sf -X POST &quot;$BASE/threads/$THREAD/runs/wait&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;echo_agent&quot;,&quot;input&quot;:{&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello, Runkite!&quot;}]}}' | python3 -m json.tool"
-              >
-                Copy
-              </button>
-            </div>
-            <pre><span class="cmt"># 1) Echo</span>
-<span class="cmd">BASE=</span>http://localhost:2026
-<span class="cmd">THREAD=</span>$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
-curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"Hello, Runkite!"}]}}' \
-  | python3 -m json.tool
-<span class="cmt"># → status success · ai content is the same string: "Hello, Runkite!"</span></pre>
-          </div>
-          <div class="terminal">
-            <div class="bar">
-              <i></i><i></i><i></i>
-              approval_agent · HITL
-              <span class="spacer"></span>
-              <button
-                type="button"
-                class="copy-btn"
-                data-copy="BASE=http://localhost:2026
-THREAD=$(curl -sf -X POST &quot;$BASE/threads&quot; -H 'Content-Type: application/json' -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)[&quot;thread_id&quot;])')
-curl -sf -N -X POST &quot;$BASE/threads/$THREAD/runs/stream&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;approval_agent&quot;,&quot;input&quot;:{&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;send the email&quot;}]}}'
-curl -sf -X POST &quot;$BASE/threads/$THREAD/runs/wait&quot; -H 'Content-Type: application/json' -d '{&quot;agent_id&quot;:&quot;approval_agent&quot;,&quot;command&quot;:{&quot;resume&quot;:true}}' | python3 -m json.tool"
-              >
-                Copy
-              </button>
-            </div>
-            <pre><span class="cmt"># 2) Interrupt — new thread (don't reuse echo's THREAD)</span>
-<span class="cmd">BASE=</span>http://localhost:2026
-<span class="cmd">THREAD=</span>$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
-<span class="cmt"># SSE lines stream here; look for "interrupted", then Ctrl-C and run step 3</span>
-curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'
-
-<span class="cmt"># 3) Approve / resume</span>
-curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"approval_agent","command":{"resume":true}}' \
-  | python3 -m json.tool
-<span class="cmt"># → status success · "Email sent to alice@example.com successfully!"</span></pre>
-          </div>
-          <div class="cta" style="margin-top: 1.5rem">
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/releases">GitHub Releases</a>
-            <a class="btn btn-ghost" href="https://pypi.org/project/runkite-runner/">PyPI</a>
-            <a class="btn btn-ghost" href="https://www.npmjs.com/package/runkite-runner">npm</a>
-            <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md"
-              >Longer walkthrough</a
-            >
-          </div>
         </section>
 
-
-
-        <section id="stack" class="reveal">
-          <p class="section-kicker">$ cat frameworks.json</p>
-          <h2>Bring your framework. Same control plane.</h2>
-          <p class="section-copy">
-            LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, and LangGraph.js — one gRPC Runner Protocol,
-            one Go binary, embedded Admin UI. No second deploy for ops.
-          </p>
-          <div class="pill-row">
-            <span class="pill">LangGraph</span>
-            <span class="pill cyan">CrewAI</span>
-            <span class="pill">LlamaIndex</span>
-            <span class="pill cyan">AutoGen</span>
-            <span class="pill">LangChain</span>
-            <span class="pill cyan">LangGraph.js</span>
-            <span class="pill">Postgres + Redis HA</span>
-            <span class="pill cyan">SSE · WebSocket · gRPC</span>
-            <span class="pill">Agent-to-agent</span>
-            <span class="pill cyan">OTel</span>
-            <span class="pill">Admin grants · HITL · kill · audit</span>
-            <span class="pill cyan">pgvector · Qdrant · Pinecone</span>
+        <section class="cta-band">
+          <div class="wrap">
+            <p class="kicker">Start</p>
+            <h2 class="nowrap-lg">Try it in five minutes</h2>
+            <p class="section-copy" style="margin-inline: auto; text-align: center">
+              Docker-only path. Same route cold testers use.
+            </p>
+            <div class="hero-cta" style="justify-content: center">
+              <a class="btn btn-primary" href="./support/try.html">Open the try path →</a>
+              <a class="btn btn-ghost" href="https://github.com/getrunkite/runkite">GitHub</a>
+            </div>
           </div>
-        </section>
-
-        <section id="governance" class="reveal">
-          <p class="section-kicker">$ cat policy.json</p>
-          <h2>Govern the plane, not only the prompt.</h2>
-          <p class="section-copy">
-            Fail-closed connector grants, durable policy audit, connector HITL, kill/pause, break-glass, and
-            mandatory HITL on SQL backends — with Admin pages for each. Run-bound so tenant comes from the
-            assignment, not a forged header. Laptop proof:
-            <code style="color: var(--mint)">make smoke-governance</code>. Not Mongo governance parity, not
-            in-graph tool sandboxing, not FinOps dashboards, not a paid cloud soak.
-          </p>
-          <div class="pill-row">
-            <span class="pill">Run-binding</span>
-            <span class="pill cyan">Grants</span>
-            <span class="pill">Mandatory HITL</span>
-            <span class="pill cyan">Pending HITL</span>
-            <span class="pill">Kill</span>
-            <span class="pill cyan">Break-glass</span>
-            <span class="pill">Audit</span>
-            <span class="pill cyan">Postgres Supported</span>
-          </div>
-        </section>
-
-        <section id="architecture" class="reveal">
-          <p class="section-kicker">Architecture</p>
-          <h2>Clients → control plane → runners</h2>
-          <p class="section-copy">
-            Pluggable state, transport, and vectors under an honest tier model — Supported for Postgres + Redis,
-            Compatible for the rest. Kubernetes packaging is Compatible until a real-cloud soak.
-          </p>
-          <div class="eco">
-            <img
-              src="./assets/ecosystem.png"
-              alt="Runkite ecosystem: clients to control plane to runners with pluggable backends"
-              width="1840"
-              height="980"
-            />
-          </div>
-          <p class="section-copy" style="margin-top: 1.5rem">
-            Four skimmable engineering notes:
-            <a href="./design/fencing.html" style="color: var(--mint)">generation fencing</a>,
-            <a href="./design/subscribe-before-enqueue.html" style="color: var(--mint)">subscribe-before-enqueue</a>,
-            <a href="./design/create-run-ctx.html" style="color: var(--mint)">createRunCtx / fail-closed</a>,
-            <a href="./design/poison-pill.html" style="color: var(--mint)">poison pill / reclaim ceiling</a>.
-          </p>
         </section>
       </main>
 
-      <footer>
-        <div>© Runkite · self-hosted Agent Protocol</div>
-        <div class="links">
-          <a href="https://github.com/getrunkite/runkite">GitHub</a>
-          <a href="https://pypi.org/project/runkite-runner/">PyPI</a>
-          <a href="https://www.npmjs.com/package/runkite-runner">npm</a>
-          <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">Governance</a>
-          <a href="#scenario">Scenario</a>
-          <a href="#try">Try it</a>
+      <footer class="site-footer">
+        <div>Runkite — open agent control plane</div>
+        <div>
+          <a href="./support/try.html">Try</a>
           <a href="./support/">Support</a>
-          <a href="./design/">Engineering notes</a>
-          <a href="https://github.com/getrunkite/runkite/blob/main/docs/README.md">Docs</a>
-          <a href="https://github.com/getrunkite/runkite/blob/main/LICENSE">BUSL-1.1</a>
+          <a href="./design/">Notes</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
       </footer>
     </div>
 
     <script>
       (function () {
-        const phrases = [
-          "Any framework. Any backend. One control plane — self-hosted.",
-          "Admin governance: grants, HITL, kill, break-glass, audit — on the plane.",
-          "Agent Protocol API. Pluggable runners. Agent-to-agent. Embedded Admin.",
-          "Postgres + Redis HA (Compose soak); Kubernetes packaging stays Compatible.",
-        ];
-        const el = document.getElementById("typed");
-        let pi = 0;
-        let ci = 0;
-        let deleting = false;
-
-        function tick() {
-          const full = phrases[pi];
-          if (!deleting) {
-            ci++;
-            el.textContent = full.slice(0, ci);
-            if (ci === full.length) {
-              deleting = true;
-              setTimeout(tick, 1800);
-              return;
+        // Ambient starfield: soft drifting dots behind the product surface.
+        // Landing-only — support/docs stay quiet for reading.
+        var c = document.getElementById("stars");
+        if (c && c.getContext && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          var ctx = c.getContext("2d");
+          var stars = [];
+          function resize() {
+            c.width = window.innerWidth;
+            c.height = window.innerHeight;
+            stars = [];
+            var area = c.width * c.height;
+            var n = Math.min(220, Math.max(95, Math.floor(area / 8500)));
+            for (var i = 0; i < n; i++) {
+              var bright = Math.random() < 0.12;
+              stars.push({
+                x: Math.random() * c.width,
+                y: Math.random() * c.height,
+                r: bright ? Math.random() * 1.6 + 1.1 : Math.random() * 1.1 + 0.25,
+                base: bright ? Math.random() * 0.35 + 0.45 : Math.random() * 0.35 + 0.18,
+                phase: Math.random() * Math.PI * 2,
+                speed: Math.random() * 0.7 + 0.25,
+                vx: (Math.random() - 0.5) * (bright ? 0.04 : 0.08),
+                vy: (Math.random() - 0.5) * (bright ? 0.03 : 0.07),
+                cobalt: Math.random() < 0.28,
+                glow: bright,
+              });
             }
-            setTimeout(tick, 28);
-          } else {
-            ci--;
-            el.textContent = full.slice(0, ci);
-            if (ci === 0) {
-              deleting = false;
+          }
+          function draw(t) {
+            ctx.clearRect(0, 0, c.width, c.height);
+            for (var i = 0; i < stars.length; i++) {
+              var s = stars[i];
+              s.x += s.vx;
+              s.y += s.vy;
+              if (s.x < -4) s.x = c.width + 4;
+              if (s.x > c.width + 4) s.x = -4;
+              if (s.y < -4) s.y = c.height + 4;
+              if (s.y > c.height + 4) s.y = -4;
+              var a = s.base + Math.sin(t * 0.001 * s.speed + s.phase) * s.base * 0.55;
+              a = Math.max(0.08, Math.min(0.95, a));
+              if (s.glow) {
+                var g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
+                g.addColorStop(0, s.cobalt ? "rgba(109,124,255," + a * 0.55 + ")" : "rgba(200,210,255," + a * 0.5 + ")");
+                g.addColorStop(1, "rgba(109,124,255,0)");
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+              ctx.fillStyle = s.cobalt
+                ? "rgba(139,154,255," + a + ")"
+                : "rgba(220,228,255," + a + ")";
+              ctx.fill();
+            }
+            requestAnimationFrame(draw);
+          }
+          resize();
+          requestAnimationFrame(draw);
+          window.addEventListener("resize", resize);
+        }
+
+        var phrases = [
+          "Any framework. One self-hosted control plane.",
+          "Dispatch, connectors, HITL, fencing, audit.",
+          "Clients never talk to runners directly.",
+        ];
+        var el = document.getElementById("typed");
+        if (el) {
+          var pi = 0,
+            ci = 0,
+            del = false;
+          function tick() {
+            var p = phrases[pi];
+            el.textContent = p.slice(0, ci);
+            if (!del && ci < p.length) {
+              ci++;
+              setTimeout(tick, 28);
+            } else if (!del && ci === p.length) {
+              del = true;
+              setTimeout(tick, 1600);
+            } else if (del && ci > 0) {
+              ci--;
+              setTimeout(tick, 16);
+            } else {
+              del = false;
               pi = (pi + 1) % phrases.length;
               setTimeout(tick, 320);
-              return;
             }
-            setTimeout(tick, 16);
+          }
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            el.textContent = phrases[0];
+          } else {
+            tick();
           }
         }
-        tick();
 
-        document.querySelectorAll(".copy-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const text = btn.getAttribute("data-copy") || "";
-            try {
-              await navigator.clipboard.writeText(text);
-              const prev = btn.textContent;
-              btn.textContent = "Copied";
-              btn.classList.add("copied");
-              setTimeout(() => {
-                btn.textContent = prev;
-                btn.classList.remove("copied");
-              }, 1400);
-            } catch (_) {
-              btn.textContent = "Select & copy";
-            }
-          });
-        });
-
-        const steps = Array.from(document.querySelectorAll(".flow-step"));
-        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        let stepIdx = 0;
-        function pulseFlow() {
-          steps.forEach((s, i) => s.classList.toggle("active", i === stepIdx));
-          stepIdx = (stepIdx + 1) % steps.length;
-        }
-        if (steps.length) {
-          pulseFlow();
-          if (!reduceMotion) setInterval(pulseFlow, 2200);
-        }
-
-        const reveals = document.querySelectorAll(".reveal");
-        const io = new IntersectionObserver(
-          (entries) => {
-            entries.forEach((e) => {
-              if (e.isIntersecting) {
-                e.target.classList.add("in");
-                io.unobserve(e.target);
-              }
+        var nodes = document.querySelectorAll(".reveal");
+        if (nodes.length) {
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            nodes.forEach(function (n) {
+              n.classList.add("in");
             });
-          },
-          { threshold: 0.15 },
-        );
-        reveals.forEach((n) => io.observe(n));
-
-        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        const canvas = document.getElementById("stars");
-        const ctx = canvas.getContext("2d");
-        let stars, raf;
-
-        function resize() {
-          canvas.width = window.innerWidth * devicePixelRatio;
-          canvas.height = window.innerHeight * devicePixelRatio;
-          canvas.style.width = window.innerWidth + "px";
-          canvas.style.height = window.innerHeight + "px";
-          ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-          stars = Array.from({ length: Math.min(140, Math.floor(window.innerWidth / 10)) }, () => ({
-            x: Math.random() * window.innerWidth,
-            y: Math.random() * window.innerHeight,
-            r: Math.random() * 1.4 + 0.2,
-            a: Math.random() * 0.6 + 0.15,
-            v: Math.random() * 0.25 + 0.05,
-          }));
-        }
-
-        function paint(animate) {
-          ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-          for (const s of stars) {
-            if (animate) {
-              s.y += s.v;
-              if (s.y > window.innerHeight) {
-                s.y = 0;
-                s.x = Math.random() * window.innerWidth;
-              }
+          } else {
+            var io = new IntersectionObserver(
+              function (entries) {
+                entries.forEach(function (e) {
+                  if (e.isIntersecting) {
+                    e.target.classList.add("in");
+                    io.unobserve(e.target);
+                  }
+                });
+              },
+              { threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
+            );
+            nodes.forEach(function (n) {
+              io.observe(n);
+            });
+            // Hash / in-page jumps can land past the observer's first paint.
+            if (location.hash) {
+              var jump = document.querySelector(location.hash);
+              if (jump) jump.classList.add("in");
             }
-            ctx.beginPath();
-            ctx.fillStyle = `rgba(180, 255, 220, ${s.a})`;
-            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-            ctx.fill();
           }
         }
-
-        function draw() {
-          paint(true);
-          raf = requestAnimationFrame(draw);
-        }
-
-        resize();
-        if (reduce) {
-          paint(false);
-        } else {
-          draw();
-          document.addEventListener("visibilitychange", () => {
-            if (document.hidden) cancelAnimationFrame(raf);
-            else draw();
-          });
-        }
-        window.addEventListener("resize", () => {
-          resize();
-          if (reduce) paint(false);
-        });
       })();
     </script>
   </body>

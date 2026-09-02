@@ -1,0 +1,221 @@
+/* Runkite public brand — one system for landing / support / design.
+   Dark cinematic. Cobalt accent. No mint-on-black. */
+
+:root {
+  --bg: #09090b;
+  --bg-elev: #121217;
+  --bg-soft: #1a1a22;
+  --ink: #f4f4f5;
+  --ink-dim: #d4d4d8;
+  --muted: #a1a1aa;
+  --line: rgba(244, 244, 245, 0.22);
+  --line-strong: rgba(244, 244, 245, 0.36);
+  --accent: #6d7cff;
+  --accent-2: #8b9aff;
+  --accent-soft: rgba(109, 124, 255, 0.14);
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --radius: 6px;
+  --radius-lg: 14px;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --max: 1120px;
+  --nav-h: 4rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: var(--accent-2);
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: #c7ceff;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.wrap {
+  width: min(var(--max), calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 clamp(1rem, 4vw, 2rem);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.site-logo {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-logo span {
+  color: var(--accent);
+}
+
+.site-logo:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.7rem, 2vw, 1.25rem);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.site-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.site-nav a:hover,
+.site-nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
+.site-nav a[aria-current="page"] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.site-footer {
+  padding: 2.5rem clamp(1rem, 4vw, 2rem) 3rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.site-footer a {
+  color: var(--ink-dim);
+  text-decoration: none;
+  margin-right: 1rem;
+}
+
+.site-footer a:hover {
+  color: var(--accent-2);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.75rem 1.2rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(109, 124, 255, 0.22);
+}
+
+.btn-primary:hover {
+  background: var(--accent-2);
+  color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.btn-ghost:hover {
+  border-color: var(--ink-dim);
+  color: var(--ink);
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .nav-hide-sm {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn:hover {
+    transform: none;
+  }
+}

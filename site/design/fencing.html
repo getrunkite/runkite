@@ -8,15 +8,15 @@
       name="description"
       content="How Runkite stops a revived runner from clobbering the winner after reclaim — generation fencing on heartbeats, status, and terminal events."
     />
-    <meta name="theme-color" content="#050a0c" />
+    <meta name="theme-color" content="#09090b" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050a0c'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' font-weight='700' fill='%233ef0a8'%3ERK%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./story.css" />
@@ -24,13 +24,13 @@
   <body>
     <div class="aurora" aria-hidden="true"></div>
     <div class="shell">
-      <header>
-        <a class="logo" href="../">~/ <span>runkite</span></a>
-        <nav class="nav">
-          <a href="../#architecture">Architecture</a>
-          <a href="./">Notes</a>
-          <a class="active" href="./fencing.html">Fencing</a>
+      <header class="note-header">
+        <a class="site-logo" href="../">run<span>kite</span></a>
+        <nav class="note-nav" aria-label="Primary">
+          <a href="../">Product</a>
+          <a href="../support/try.html">Try</a>
           <a href="../support/">Support</a>
+          <a class="active" href="./">Notes</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </nav>
       </header>
@@ -103,7 +103,7 @@
         <a href="./poison-pill.html">Poison pill</a>
       </div>
 
-      <footer>
+      <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
           <a href="../">Landing</a> ·

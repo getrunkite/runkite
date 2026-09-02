@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Connectors & HITL — Runkite Support</title>
-    <meta name="description" content="Grants, HITL, Admin." />
+    <meta name="description" content="Run-bound connector sessions and human gates." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
@@ -16,54 +24,61 @@
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">support map</p>
         <nav>
-
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
-          <a  href="./try.html">Try it</a>
-          <a  href="./why.html">Why a plane</a>
-          <a  href="./scenario.html">Scenario</a>
+          <a  href="try.html">Try it</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
           <div class="nav-group">Use</div>
-          <a  href="./install.html">Install</a>
-          <a  href="./checkpoints.html">Checkpoints</a>
-          <a class="active" href="./connectors.html">Connectors &amp; HITL</a>
+          <a  href="install.html">Install</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a class="active" href="connectors.html">Connectors &amp; HITL</a>
           <div class="nav-group">Operate</div>
-          <a  href="./ops.html">Ops</a>
-          <a  href="./security.html">Security</a>
-          <a  href="./finops.html">Spend (FinOps)</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="security.html">Security</a>
+          <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Deep</div>
-          <a href="./chapters/">Chapters</a>
-          <a  href="./protocol.html">Protocols</a>
-          <a  href="./decisions/">Decisions</a>
-          <a href="../design/">Engineering notes</a>
-          <a  href="./limitations.html">Limitations</a>
-
+          <a  href="chapters/">Chapters</a>
+          <a  href="protocol.html">Protocols</a>
+          <a  href="decisions/">Decisions</a>
+          <a  href="../design/">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
         <div class="topbar">
           <a href="../">← Product</a>
-          <a href="./">Support home</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
         <h1>Connectors &amp; HITL</h1>
-        <p class="lede">Fail-closed grants, durable audit, connector HITL — on the plane.</p>
+        <p class="lede">Plane-minted credentials for a run. Workers never hold long-lived provider secrets.</p>
+        <h2>Run-binding</h2>
         <p>
-          Connectors are plane-minted credentials for a run — workers never hold long-lived
-          provider secrets. A grant must allow the agent + connector pair or the mint
-          <strong>fails closed</strong> (no silent allow).
+          <code>POST /internal/connectors/{name}/session</code> and MCP proxy calls require an
+          in-flight run (<code>X-Runkite-Run-Id</code> + generation). A bare runner token without
+          those headers gets <code>401 run_binding_required</code>.
         </p>
+        <h2>From agent code</h2>
+        <pre class="mono-block"># Python (inside a graph node)
+from runkite_runner.connectors import get_connector_session
+
+async def my_node(state, config):
+    sess = await get_connector_session(config, "salesforce")
+    ...</pre>
+        <h2>HITL</h2>
         <p>
-          When a connector is marked for human-in-the-loop, the runner pauses and Admin
-          (or the HITL API) must approve or deny before the call proceeds. Pending actions
-          and grants live in Admin under Policy.
+          Mark a connector/tool as requiring approval. The run interrupts; Admin (or API)
+          approves or denies; the plane resumes or fails closed. Mandatory HITL rules can
+          force a human gate for a connector class.
         </p>
-        <ul class="links">
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">docs/connectors.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a></li>
-        </ul>
-        <p class="note">Laptop proof: <code>make smoke-governance</code>.</p>
+        <p class="note">
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">docs/connectors.md</a>
+          ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
+          ·
+          <a href="./try.html">Try HITL path</a>
+        </p>
 
       </main>
     </div>
