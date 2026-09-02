@@ -100,8 +100,8 @@
       var td = cells[i];
       if (td.textContent.trim() !== "Not yet") continue;
       td.classList.add("pending");
-      td.title = "Tracked: universal checkpoints for non-LangGraph adapters (U2)";
-      td.setAttribute("data-pending", "u2-checkpoints");
+      td.title = "Known gap, on the roadmap: universal checkpoints for non-LangGraph adapters.";
+      td.setAttribute("data-pending", "adapter-checkpoints");
     }
   }
 
