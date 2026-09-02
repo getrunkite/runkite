@@ -34,6 +34,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Default GITHUB_TOKEN is written into http.extraheader and would
+          # override the mirror PAT on push (403 as github-actions[bot]).
+          persist-credentials: false
 
       - name: Subtree split and push
         env:
@@ -42,6 +45,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Belt-and-suspenders if a prior step re-enabled checkout credentials.
+          git config --unset-all http.https://github.com/.extraheader || true
           SPLIT_BRANCH="protocol-publish-$$"
           git subtree split --prefix=runner-protocol -b "$SPLIT_BRANCH"
           # One-way publish mirror: subtree history is not a fast-forward of
