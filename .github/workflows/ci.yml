@@ -174,9 +174,12 @@ jobs:
         # internal/state/mysql package's own conformance suite in
         # isolation -- serve wiring and conformance testing are two
         # separate things that can each be individually forgotten.
-        # runner-protocol/tests validates committed examples/*.json fixtures
-        # (schema/lifecycle invariants) -- no Docker, PR-gate cheap.
-        run: go test ./internal/... ./cmd/... ./runner-protocol/tests/ -race -count=1 -v -p 1
+        run: go test ./internal/... ./cmd/... -race -count=1 -v -p 1
+
+      # Separate module (runner-protocol/go.mod). Schema/lifecycle fixtures —
+      # no Docker, PR-gate cheap.
+      - name: Runner protocol fixtures
+        run: cd runner-protocol && go test ./... -count=1 -v
 
       # Named so governance announce-bar coverage cannot disappear via a silent
       # rename/Skip of TestGovernanceAnnounceBar inside the broad suite above.

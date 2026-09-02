@@ -27,12 +27,14 @@ vet:
 # Default: SQLite + in-memory only (no external services needed).
 # Explicitly unset backend env vars so inherited shell env doesn't leak.
 test:
-	POSTGRES_DSN= REDIS_URL= go test ./internal/... ./runner-protocol/tests/ -race -count=1
+	POSTGRES_DSN= REDIS_URL= go test ./internal/... -race -count=1
+	$(MAKE) test-protocol-fixtures
 
 # Runner Protocol example fixtures (schema + lifecycle invariants).
+# Separate module (runner-protocol/go.mod) — run from that directory.
 # Does not execute a runner — see runner-protocol/tests/fixtures_test.go.
 test-protocol-fixtures:
-	go test ./runner-protocol/tests/ -count=1
+	cd runner-protocol && go test ./... -count=1
 
 # Runner Protocol execute goldens: real execute_run + deterministic mock
 # agent, diffed against examples/*/expected_events (PROTOCOL.md §14.3).

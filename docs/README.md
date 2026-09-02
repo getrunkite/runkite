@@ -18,7 +18,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Registry](registry.md) | Agent marketplace / registry |
 | [Architecture](architecture.md) | Control plane, backends, dual modes |
 | [Runners](runners.md) | Python and TypeScript runners |
-| [Runner Protocol](../runner-protocol/README.md) | Worker contract (gRPC + opaque checkpoints) |
+| [Runner Protocol](../runner-protocol/README.md) ([public mirror](https://github.com/getrunkite/runner-protocol)) | Worker contract (gRPC + opaque checkpoints) |
 | [Deployment](deployment.md) | Docker, Helm/kind (Compatible), Compose soak |
 | [Ops runbook](ops-runbook.md) | Supported install, reclaim, kill, secrets |
 | [API](api.md) | OpenAPI and HTTP API reference |

@@ -1,0 +1,50 @@
+# Mirror runner-protocol/ from this monorepo to getrunkite/runner-protocol.
+# Requires repo secret RUNNER_PROTOCOL_MIRROR_TOKEN: a PAT (or fine-grained token)
+# with contents:write on getrunkite/runner-protocol.
+name: Publish runner-protocol
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "runner-protocol/**"
+      - ".github/workflows/publish-runner-protocol.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-runner-protocol
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check mirror token
+        env:
+          TOKEN: ${{ secrets.RUNNER_PROTOCOL_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Missing secret RUNNER_PROTOCOL_MIRROR_TOKEN (contents:write on getrunkite/runner-protocol)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Subtree split and push
+        env:
+          TOKEN: ${{ secrets.RUNNER_PROTOCOL_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          SPLIT_BRANCH="protocol-publish-$$"
+          git subtree split --prefix=runner-protocol -b "$SPLIT_BRANCH"
+          git push --force-with-lease \
+            "https://x-access-token:${TOKEN}@github.com/getrunkite/runner-protocol.git" \
+            "${SPLIT_BRANCH}:main"
+          git branch -D "$SPLIT_BRANCH"

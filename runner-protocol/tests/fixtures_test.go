@@ -16,19 +16,16 @@ import (
 	"testing"
 )
 
-func repoRoot(t *testing.T) string {
+// protocolDir is the runner-protocol package root (parent of tests/).
+// Works both in the Runkite monorepo (…/runkite/runner-protocol) and in the
+// standalone github.com/getrunkite/runner-protocol clone (repo root).
+func protocolDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	// runner-protocol/tests -> runner-protocol -> repo root
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-}
-
-func protocolDir(t *testing.T) string {
-	t.Helper()
-	return filepath.Join(repoRoot(t), "runner-protocol")
+	return filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
 }
 
 func loadJSON(t *testing.T, path string) map[string]any {
