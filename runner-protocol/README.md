@@ -8,10 +8,11 @@ control plane never imports an agent framework; a runner never serves Agent
 Protocol HTTP/SSE.
 
 **Published:** [github.com/getrunkite/runner-protocol](https://github.com/getrunkite/runner-protocol)
-(mirror). **Canonical edits** land in the
+(read-only mirror). **Canonical edits** land in the
 [Runkite](https://github.com/getrunkite/runkite) monorepo under `runner-protocol/`
-and are mirrored here on `main`. Spec issues/PRs are welcome in this repo;
-Runkite *implementation* issues stay on `runkite`.
+and are force-mirrored here on `main` — do not open PRs against this repo; they
+would be overwritten. Spec *issues* (discussion) are welcome here; patches and
+Runkite *implementation* issues go to [`getrunkite/runkite`](https://github.com/getrunkite/runkite).
 
 ## Contents
 
@@ -50,7 +51,9 @@ Live end-to-end proof of these extensions against Runkite’s control plane is
 # From this clone (or from runkite/runner-protocol after a mirror):
 go test ./...
 
-# Manual republish from the Runkite monorepo (CI also does this on main):
+# Manual republish from the Runkite monorepo (CI also does this on main).
+# One-way mirror: history is rewritten to match the monorepo subtree tip.
 git subtree split --prefix=runner-protocol -b protocol-publish
-git push git@github.com:getrunkite/runner-protocol.git protocol-publish:main
+git push --force \
+  git@github.com:getrunkite/runner-protocol.git protocol-publish:main
 ```

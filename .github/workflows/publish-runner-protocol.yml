@@ -44,7 +44,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           SPLIT_BRANCH="protocol-publish-$$"
           git subtree split --prefix=runner-protocol -b "$SPLIT_BRANCH"
-          git push --force-with-lease \
+          # One-way publish mirror: subtree history is not a fast-forward of
+          # the public main tip, so lease without a prior fetch does nothing
+          # useful — plain --force is the intended semantics.
+          git push --force \
             "https://x-access-token:${TOKEN}@github.com/getrunkite/runner-protocol.git" \
             "${SPLIT_BRANCH}:main"
           git branch -D "$SPLIT_BRANCH"
