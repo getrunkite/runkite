@@ -61,6 +61,7 @@ from runkite_runner.adapter_checkpoint import (  # noqa: E402
     merge_messages_input,
     messages_from_values_event,
 )
+from runkite_runner.usage import usage_from_metrics, values_with_usage
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable  # noqa: E402
 
 from .otel_events import attach_otel_listeners  # noqa: E402
@@ -159,7 +160,10 @@ class CrewAIAdapter:
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            await event_callback(make_event("values", {"messages": output_messages}))
+            # CrewAI writes token totals onto the shared Crew after kickoff.
+            usage = usage_from_metrics(getattr(crew, "usage_metrics", None))
+            values = values_with_usage({"messages": output_messages}, usage)
+            await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))
             return "success"
         except RunCancelled:

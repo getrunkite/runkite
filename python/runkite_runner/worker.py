@@ -486,6 +486,11 @@ async def execute_run(
                 if usage and last_values is not None:
                     enriched = {**last_values, "usage": usage}
                     await event_callback(make_event("values", enriched))
+                elif usage:
+                    # No "values" stream mode — still emit a values event
+                    # carrying usage so the control plane can meter Output
+                    # (same fallback as the TypeScript runner).
+                    await event_callback(make_event("values", {"usage": usage}))
                 await event_callback(make_event("end", {"status": "success"}))
                 return "success"
 

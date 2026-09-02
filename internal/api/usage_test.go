@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,5 +348,318 @@ func TestBreakGlass_DoesNotBypassHardBudget(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("want budget_exceeded under active break-glass; got %#v", events)
+	}
+}
+
+func TestAdmission_BudgetAlertHookOnHardDeny(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "ta", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "prior-alert", ThreadID: "ta", AgentID: "echo", Status: models.RunStatusSuccess,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/echo": {MaxRunsPerDay: 1},
+			},
+		},
+	})
+	d := hooks.NewDispatcher()
+	sink := &testSink{}
+	d.Register(sink)
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(p, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	body := []byte(`{"assistant_id":"echo","input":{}}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/tb/runs", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer op")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 403, got %d %s", resp.StatusCode, b)
+	}
+	evs := waitForHookCount(t, sink, 1)
+	found := false
+	for _, e := range evs {
+		if e.Type == hooks.BudgetAlert {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("want budget_alert hook, got %#v", evs)
+	}
+}
+
+func TestUsage_ExportCSV(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteUsageEvent(ctx, &models.UsageEvent{
+		ID: "u-exp", TS: time.Now().UTC(), TenantID: "acme", RunID: "r1", AgentID: "echo",
+		TokensIn: 10, TokensOut: 5, USDEstimate: 0.01, Source: models.UsageSourceTerminalOutput,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/export?tenant_id=acme&format=csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("export: %d %s", resp.StatusCode, b)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	body := string(b)
+	if !bytes.Contains(b, []byte("day,tenant_id,agent_id")) && !bytes.Contains(b, []byte("day,tenant_id,agent_id,tokens_in")) {
+		// header may use tokens_in naming from admin_usage
+		if !strings.Contains(body, "tenant_id") || !strings.Contains(body, "usd") {
+			t.Fatalf("unexpected CSV header/body: %s", body)
+		}
+	}
+	if !strings.Contains(body, "acme") {
+		t.Fatalf("CSV missing row: %s", body)
+	}
+}
+
+func TestAdmission_UsageHoldBlocksSecondCreate(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/echo": {MaxUSDPerDay: 1},
+			},
+		},
+		Reservation: finops.ReservationConfig{USDPerRun: 1},
+	})
+	d := hooks.NewDispatcher()
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(p, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	mk := func(thread string) *http.Response {
+		body := []byte(`{"assistant_id":"echo","input":{}}`)
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/"+thread+"/runs", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer op")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	r1 := mk("th1")
+	defer r1.Body.Close()
+	if r1.StatusCode < 200 || r1.StatusCode >= 300 {
+		b, _ := io.ReadAll(r1.Body)
+		t.Fatalf("first create should allow, got %d %s", r1.StatusCode, b)
+	}
+	r2 := mk("th2")
+	defer r2.Body.Close()
+	if r2.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(r2.Body)
+		t.Fatalf("second create should hard-deny on open hold, got %d %s", r2.StatusCode, b)
+	}
+}
+
+func TestFinOps_RoutingRewritesNearSoftPct(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	for _, id := range []string{"pricey", "cheap"} {
+		if err := store.UpsertAgent(acme, &models.Agent{
+			AgentID: id, Name: id, Capabilities: map[string]interface{}{},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.WriteUsageEvent(ctx, &models.UsageEvent{
+		ID: "u-route", TS: time.Now().UTC(), TenantID: "acme", RunID: "old", AgentID: "pricey",
+		USDEstimate: 0.85, Source: models.UsageSourceTerminalOutput,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/pricey": {MaxUSDPerDay: 1},
+			},
+		},
+		Alerts:  finops.AlertsConfig{SoftPct: 80},
+		Routing: finops.RoutingConfig{
+			Enabled: true,
+			SoftPct: 80,
+			Aliases: map[string][]string{"pricey": {"cheap"}},
+		},
+	})
+	d := hooks.NewDispatcher()
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(p, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	body := []byte(`{"assistant_id":"pricey","input":{}}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/tr/runs", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer op")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create should allow after rewrite, got %d %s", resp.StatusCode, b)
+	}
+	var run models.Run
+	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
+		t.Fatal(err)
+	}
+	if run.AgentID != "cheap" {
+		t.Fatalf("want routed agent cheap, got %q", run.AgentID)
+	}
+}
+
+
+// Reservation holds must not inflate the run dimension: CountRunsSince
+// already includes in-flight creates, so adding open-hold count would
+// ~2× max_runs_per_day and deny prematurely.
+func TestAdmission_ReservationDoesNotDoubleCountRuns(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetFinOps(&finops.Config{
+		Budgets: finops.Budgets{
+			Agents: map[string]finops.BudgetCap{
+				"acme/echo": {MaxRunsPerDay: 2},
+			},
+		},
+		Reservation: finops.ReservationConfig{USDPerRun: 0.01},
+	})
+	d := hooks.NewDispatcher()
+	apiServer.SetHookDispatcher(d)
+	apiServer.RegisterAdmissionGate(d)
+
+	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"op": {Permissions: []string{"write"}, TenantID: "acme"},
+	})
+	h := auth.Middleware(p, nil, nil, apiServer.Handler())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	mk := func(thread string) int {
+		body := []byte(`{"assistant_id":"echo","input":{}}`)
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/threads/"+thread+"/runs", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer op")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := mk("tr1"); c < 200 || c >= 300 {
+		t.Fatalf("1st create want 2xx, got %d", c)
+	}
+	if c := mk("tr2"); c < 200 || c >= 300 {
+		t.Fatalf("2nd create want 2xx (cap=2); hold must not consume a run slot, got %d", c)
+	}
+	if c := mk("tr3"); c != http.StatusForbidden {
+		t.Fatalf("3rd create want 403 at max_runs=2, got %d", c)
 	}
 }

@@ -430,6 +430,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/kill-switches/{id}", s.handleAdminGetKillSwitch)
 	mux.HandleFunc("DELETE /admin-api/kill-switches/{id}", s.handleAdminDeleteKillSwitch)
 	mux.HandleFunc("GET /admin-api/usage/summary", s.handleAdminUsageSummary)
+	mux.HandleFunc("GET /admin-api/usage/alerts", s.handleAdminUsageAlerts)
+	mux.HandleFunc("GET /admin-api/usage/export", s.handleAdminUsageExport)
+	mux.HandleFunc("GET /admin-api/usage/holds", s.handleAdminUsageHolds)
 	mux.HandleFunc("GET /admin-api/break-glass", s.handleAdminListBreakGlass)
 	mux.HandleFunc("POST /admin-api/break-glass", s.handleAdminCreateBreakGlass)
 	mux.HandleFunc("GET /admin-api/break-glass/{id}", s.handleAdminGetBreakGlass)
@@ -558,6 +561,10 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 				run.Output = outputJSON
 			}
 			s.ingestTerminalUsage(ctx, run)
+			// Always drop the optimistic create-time hold once the run
+			// is terminal (success/error/interrupt/timeout), even when
+			// Output.usage was empty so ingest was a no-op.
+			s.releaseUsageHold(ctx, runID)
 		}
 
 		if status == models.RunStatusSuccess && cachedVals != nil {
@@ -614,6 +621,11 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // error fail-opens (still dispatches) so a DB blip cannot silence every
 // terminal webhook.
 func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) {
+	// Cancel/timeout may finish without StatusCallback ever releasing the
+	// create-time hold. DELETE is idempotent with the status-path release.
+	if isTerminalStatus(status) {
+		s.releaseUsageHold(tenant.WithContext(context.Background(), tenantID), runID)
+	}
 	if v, ok := s.runSpans.LoadAndDelete(runID); ok {
 		span := v.(trace.Span)
 		span.SetAttributes(attribute.String("run.status", string(status)))

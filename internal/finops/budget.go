@@ -19,10 +19,53 @@ type Budgets struct {
 	Agents  map[string]BudgetCap `json:"agents,omitempty"`
 }
 
-// Config is the runtime finops section (pricebook + budgets).
+// AlertsConfig controls soft_pct approach alerts. Soft/hard budget
+// trips always emit budget_alert hooks; SoftPct adds approaches.
+type AlertsConfig struct {
+	SoftPct float64 // 0 → default 80
+}
+
+// ReservationConfig is optimistic per-create hold amounts.
+type ReservationConfig struct {
+	USDPerRun    float64
+	TokensPerRun int64
+}
+
+// RoutingConfig rewrites aliases to cheaper agents near soft_pct.
+type RoutingConfig struct {
+	Enabled bool
+	SoftPct float64 // 0 → alerts SoftPct / 80
+	Aliases map[string][]string
+}
+
+// Config is the runtime finops section (pricebook + budgets + F3+).
 type Config struct {
-	Pricebook Pricebook `json:"pricebook,omitempty"`
-	Budgets   Budgets   `json:"budgets,omitempty"`
+	Pricebook   Pricebook          `json:"pricebook,omitempty"`
+	Budgets     Budgets            `json:"budgets,omitempty"`
+	Alerts      AlertsConfig       `json:"alerts,omitempty"`
+	Reservation ReservationConfig  `json:"reservation,omitempty"`
+	Routing     RoutingConfig      `json:"routing,omitempty"`
+}
+
+// SoftPct returns the configured approach threshold (default 80).
+func (c *Config) SoftPct() float64 {
+	if c != nil && c.Alerts.SoftPct > 0 {
+		return c.Alerts.SoftPct
+	}
+	return 80
+}
+
+// RoutingSoftPct returns routing threshold (routing > alerts > 80).
+func (c *Config) RoutingSoftPct() float64 {
+	if c != nil && c.Routing.SoftPct > 0 {
+		return c.Routing.SoftPct
+	}
+	return c.SoftPct()
+}
+
+// ReservationEnabled is true when any hold amount is configured.
+func (c *Config) ReservationEnabled() bool {
+	return c != nil && (c.Reservation.USDPerRun > 0 || c.Reservation.TokensPerRun > 0)
 }
 
 // Enabled reports whether any budget cap is configured.
@@ -128,6 +171,43 @@ func EvaluateCap(cap *BudgetCap, snap UsageSnapshot, scope string) BudgetVerdict
 }
 
 // UTCDayWindow returns [start, end) for the UTC calendar day containing t.
+
+// ApproachCap reports a soft-style verdict when snap is at/above softPct
+// of a hard (non-Soft) cap but not yet over the cap. softPct in (0,100];
+// 0 means 80. Soft caps are ignored here (they already warn at 100%).
+func ApproachCap(cap *BudgetCap, snap UsageSnapshot, scope string, softPct float64) *BudgetVerdict {
+	if cap == nil || cap.Soft {
+		return nil
+	}
+	if softPct <= 0 {
+		softPct = 80
+	}
+	if softPct > 100 {
+		softPct = 100
+	}
+	frac := softPct / 100
+	check := func(kind string, used, max float64) *BudgetVerdict {
+		if max <= 0 || used < max*frac || used >= max {
+			return nil
+		}
+		return &BudgetVerdict{
+			Allow: true, Soft: true,
+			Reason: scope + " " + kind + " budget approaching",
+			Scope: scope, CapKind: kind,
+		}
+	}
+	if v := check("usd", snap.USD, cap.MaxUSDPerDay); v != nil {
+		return v
+	}
+	if v := check("tokens", float64(snap.Tokens()), float64(cap.MaxTokensPerDay)); v != nil {
+		return v
+	}
+	if v := check("runs", float64(snap.Runs), float64(cap.MaxRunsPerDay)); v != nil {
+		return v
+	}
+	return nil
+}
+
 func UTCDayWindow(t time.Time) (since, until time.Time) {
 	utc := t.UTC()
 	since = time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)

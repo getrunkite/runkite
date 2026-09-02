@@ -312,6 +312,17 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 12,
+			Name:    "usage_holds",
+			Up: func(ctx context.Context) error {
+				return s.upUsageHolds(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS usage_holds`)
+				return err
+			},
+		},
 	}
 }
 

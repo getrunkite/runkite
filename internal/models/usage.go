@@ -41,3 +41,22 @@ type UsageSummaryRow struct {
 	USDEstimate float64 `json:"usd_estimate"`
 	RunCount    int64   `json:"run_count"`
 }
+
+
+// UsageHold is an optimistic reservation counted toward UTC-day budgets
+// until the run terminates (SQL backends).
+type UsageHold struct {
+	RunID      string    `json:"run_id"`
+	TenantID   string    `json:"tenant_id"`
+	AgentID    string    `json:"agent_id,omitempty"`
+	USDHold    float64   `json:"usd_hold"`
+	TokensHold int64     `json:"tokens_hold"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// UsageHoldsSummary is open-hold totals for Admin Spend KPIs.
+type UsageHoldsSummary struct {
+	Count      int64   `json:"count"`
+	USDHold    float64 `json:"usd_hold"`
+	TokensHold int64   `json:"tokens_hold"`
+}

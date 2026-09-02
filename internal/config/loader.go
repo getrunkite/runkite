@@ -202,8 +202,37 @@ type PolicySIEMEntry struct {
 
 // FinOpsEntry is the "finops" section of langgraph.json.
 type FinOpsEntry struct {
-	Pricebook map[string]FinOpsModelPrice `json:"pricebook,omitempty"`
-	Budgets   *FinOpsBudgetsEntry         `json:"budgets,omitempty"`
+	Pricebook   map[string]FinOpsModelPrice `json:"pricebook,omitempty"`
+	Budgets     *FinOpsBudgetsEntry         `json:"budgets,omitempty"`
+	Alerts      *FinOpsAlertsEntry          `json:"alerts,omitempty"`
+	Reservation *FinOpsReservationEntry     `json:"reservation,omitempty"`
+	Routing     *FinOpsRoutingEntry         `json:"routing,omitempty"`
+}
+
+// FinOpsAlertsEntry controls spend-alert soft_pct approaches (webhook
+// delivery reuses top-level webhooks subscribed to budget_alert).
+type FinOpsAlertsEntry struct {
+	// SoftPct is the percent of a hard daily cap at which admission emits
+	// a budget_alert (default 80). Soft/hard trips always alert.
+	SoftPct float64 `json:"soft_pct,omitempty"`
+}
+
+// FinOpsReservationEntry holds optimistic per-create holds counted
+// toward UTC-day budgets until the run terminates.
+type FinOpsReservationEntry struct {
+	USDPerRun    float64 `json:"usd_per_run,omitempty"`
+	TokensPerRun int64   `json:"tokens_per_run,omitempty"`
+}
+
+// FinOpsRoutingEntry rewrites agent aliases to cheaper targets when
+// soft_pct of a hard day cap is exceeded.
+type FinOpsRoutingEntry struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// SoftPct defaults to alerts.soft_pct or 80 when unset.
+	SoftPct float64 `json:"soft_pct,omitempty"`
+	// Aliases maps a client-facing alias (or agent_id) to ordered cheaper
+	// real agent_ids tried when near budget.
+	Aliases map[string][]string `json:"aliases,omitempty"`
 }
 
 // FinOpsModelPrice is USD per 1k tokens for one model id.
@@ -427,7 +456,7 @@ type CacheEntry struct {
 type WebhookEntry struct {
 	URL    string   `json:"url"`
 	Secret string   `json:"secret,omitempty"` // HMAC-SHA256 signing secret, sent as X-Runkite-Signature
-	Events []string `json:"events,omitempty"` // event type names (run_start, run_complete, tool_call, error, interrupt); empty means all
+	Events []string `json:"events,omitempty"` // event type names (run_start, run_complete, tool_call, error, interrupt, policy_decision, budget_alert); empty means all
 }
 
 // PreflightHookEntry is one entry in langgraph.json's "preflight_hooks"

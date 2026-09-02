@@ -30,6 +30,7 @@ const (
 	Error          EventType = "error"
 	Interrupt      EventType = "interrupt"
 	PolicyDecision EventType = "policy_decision" // async SIEM / observational export
+	BudgetAlert    EventType = "budget_alert"    // soft warn / hard deny / soft_pct approach
 	BeforeRun      EventType = "before_run"      // sync pre-flight only (Gate), not Dispatch/Sink
 )
 

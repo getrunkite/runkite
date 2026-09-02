@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/getrunkite/runkite/internal/finops"
+	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 )
@@ -17,6 +18,13 @@ type usageStore interface {
 	SumUsage(ctx context.Context, tenantID, agentID string, since, until time.Time) (tokensIn, tokensOut int64, usd float64, err error)
 	CountRunsSince(ctx context.Context, tenantID, agentID string, since time.Time) (int64, error)
 	SearchUsageSummary(ctx context.Context, req *models.UsageSummaryRequest) ([]models.UsageSummaryRow, error)
+}
+
+// usageHoldStore is optional; SQL backends that migrated usage_holds implement it.
+type usageHoldStore interface {
+	UpsertUsageHold(ctx context.Context, h *models.UsageHold) error
+	ReleaseUsageHold(ctx context.Context, runID string) error
+	SumUsageHolds(ctx context.Context, tenantID, agentID string, since, until time.Time) (usd float64, tokens int64, count int64, err error)
 }
 
 func (s *Server) usageEvents() (usageStore, bool) {
@@ -54,10 +62,24 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		if err != nil {
 			return finops.UsageSnapshot{}, err
 		}
-		return finops.UsageSnapshot{TokensIn: tin, TokensOut: tout, USD: usd, Runs: runs}, nil
+		snap := finops.UsageSnapshot{TokensIn: tin, TokensOut: tout, USD: usd, Runs: runs}
+		if hs, ok := s.store.(usageHoldStore); ok {
+			holdUSD, holdTok, _, herr := hs.SumUsageHolds(ctx, tenantID, agent, since, until)
+			if herr != nil {
+				return finops.UsageSnapshot{}, herr
+			}
+			snap.USD += holdUSD
+			snap.TokensIn += holdTok // reservation is undifferentiated tokens
+			// Do not add hold count to Runs: CountRunsSince already includes
+			// in-flight creates, so counting open holds again would ~2× the
+			// run dimension whenever reservation is paired with max_runs_per_day.
+		}
+		return snap, nil
 	}
 
 	var soft *finops.BudgetVerdict
+	var approach *finops.BudgetVerdict
+	softPct := s.finops.SoftPct()
 	for _, pair := range []struct {
 		cap   *finops.BudgetCap
 		agent string
@@ -77,11 +99,17 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		v := finops.EvaluateCap(pair.cap, snap, pair.scope)
 		if v.Hard {
 			s.writeAdmissionDenyAudit(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, v.Reason)
+			s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, &v, true)
 			return false, v.Reason
 		}
 		if v.Soft && soft == nil {
 			cp := v
 			soft = &cp
+		}
+		if soft == nil && approach == nil {
+			if a := finops.ApproachCap(pair.cap, snap, pair.scope, softPct); a != nil {
+				approach = a
+			}
 		}
 	}
 	if soft != nil {
@@ -100,8 +128,55 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 				"kind":   soft.CapKind,
 			},
 		})
+		s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetSoft, soft, false)
+	} else if approach != nil {
+		s.writeSecurityAudit(ctx, &models.AuditEvent{
+			TenantID:     tenantID,
+			Action:       policy.StageRunCreate,
+			ResourceType: "agent",
+			ResourceID:   agentID,
+			Decision:     policy.EffectAllow,
+			ReasonCode:   policy.ReasonBudgetAlert,
+			AgentID:      agentID,
+			RunID:        runID,
+			Attrs: map[string]interface{}{
+				"reason":   approach.Reason,
+				"scope":    approach.Scope,
+				"kind":     approach.CapKind,
+				"soft_pct": softPct,
+			},
+		})
+		s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetAlert, approach, false)
 	}
 	return true, ""
+}
+
+
+// emitBudgetAlert dispatches hooks.BudgetAlert and is nil-safe when no sinks.
+func (s *Server) emitBudgetAlert(ctx context.Context, tenantID, agentID, runID, reasonCode string, v *finops.BudgetVerdict, hard bool) {
+	if s == nil || v == nil || s.hooks == nil || !s.hooks.HasSinks() {
+		return
+	}
+	severity := "soft"
+	if hard {
+		severity = "hard"
+	} else if reasonCode == policy.ReasonBudgetAlert {
+		severity = "approach"
+	}
+	s.hooks.Dispatch(hooks.Event{
+		Type:      hooks.BudgetAlert,
+		RunID:     runID,
+		AgentID:   agentID,
+		TenantID:  tenantID,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]interface{}{
+			"reason_code": reasonCode,
+			"reason":      v.Reason,
+			"scope":       v.Scope,
+			"kind":        v.CapKind,
+			"severity":  severity,
+		},
+	})
 }
 
 // ingestTerminalUsage writes a usage_events row from run Output when
@@ -164,3 +239,138 @@ func extractRunUsageWithModel(output json.RawMessage) (RunUsage, string) {
 	}
 	return u, parsed.Usage.Model
 }
+
+
+func (s *Server) usageHolds() (usageHoldStore, bool) {
+	hs, ok := s.store.(usageHoldStore)
+	return hs, ok
+}
+
+func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
+	if s == nil || run == nil || s.finops == nil || !s.finops.ReservationEnabled() {
+		return
+	}
+	hs, ok := s.usageHolds()
+	if !ok {
+		return
+	}
+	h := &models.UsageHold{
+		RunID:      run.RunID,
+		TenantID:   run.TenantID,
+		AgentID:    run.AgentID,
+		USDHold:    s.finops.Reservation.USDPerRun,
+		TokensHold: s.finops.Reservation.TokensPerRun,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := hs.UpsertUsageHold(ctx, h); err != nil {
+		slog.Warn("usage hold upsert failed", "run_id", run.RunID, "error", err)
+	}
+}
+
+func (s *Server) releaseUsageHold(ctx context.Context, runID string) {
+	hs, ok := s.usageHolds()
+	if !ok {
+		return
+	}
+	if err := hs.ReleaseUsageHold(ctx, runID); err != nil {
+		slog.Warn("usage hold release failed", "run_id", runID, "error", err)
+	}
+}
+
+// applyFinOpsRouting rewrites agentID to a cheaper configured target when
+// soft_pct of a hard day cap is exceeded. Returns (agentID, routedFrom).
+// aliasKey is the pre-resolve client agent_id (may equal agentID). Map
+// lookup tries aliasKey first so operators can key prefer_cheaper maps
+// by the public alias name.
+func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, aliasKey string) (string, string) {
+	if s == nil || s.finops == nil || !s.finops.Routing.Enabled || len(s.finops.Routing.Aliases) == 0 {
+		return agentID, ""
+	}
+	var targets []string
+	for _, key := range []string{aliasKey, agentID} {
+		if key == "" {
+			continue
+		}
+		if t := s.finops.Routing.Aliases[key]; len(t) > 0 {
+			targets = t
+			break
+		}
+	}
+	if len(targets) == 0 {
+		return agentID, ""
+	}
+	store, ok := s.usageEvents()
+	if !ok {
+		return agentID, ""
+	}
+	since, until := finops.UTCDayWindow(time.Now().UTC())
+	tenantCap, agentCap := s.finops.LookupCaps(tenantID, agentID)
+	load := func(agent string) (finops.UsageSnapshot, error) {
+		tin, tout, usd, err := store.SumUsage(ctx, tenantID, agent, since, until)
+		if err != nil {
+			return finops.UsageSnapshot{}, err
+		}
+		runs, err := store.CountRunsSince(ctx, tenantID, agent, since)
+		if err != nil {
+			return finops.UsageSnapshot{}, err
+		}
+		snap := finops.UsageSnapshot{TokensIn: tin, TokensOut: tout, USD: usd, Runs: runs}
+		if hs, ok := s.usageHolds(); ok {
+			hu, ht, _, herr := hs.SumUsageHolds(ctx, tenantID, agent, since, until)
+			if herr == nil {
+				snap.USD += hu
+				snap.TokensIn += ht
+				// Runs already counted via CountRunsSince; see admission loadSnap.
+			}
+		}
+		return snap, nil
+	}
+	near := false
+	pct := s.finops.RoutingSoftPct()
+	for _, pair := range []struct {
+		cap   *finops.BudgetCap
+		agent string
+		scope string
+	}{
+		{tenantCap, "", "tenant"},
+		{agentCap, agentID, "agent"},
+	} {
+		if pair.cap == nil {
+			continue
+		}
+		snap, err := load(pair.agent)
+		if err != nil {
+			continue
+		}
+		if finops.ApproachCap(pair.cap, snap, pair.scope, pct) != nil {
+			near = true
+			break
+		}
+		// also treat soft-tripped as near
+		v := finops.EvaluateCap(pair.cap, snap, pair.scope)
+		if v.Soft || v.Hard {
+			near = true
+			break
+		}
+	}
+	if !near {
+		return agentID, ""
+	}
+	from := agentID
+	to := targets[0]
+	s.writeSecurityAudit(ctx, &models.AuditEvent{
+		TenantID:     tenantID,
+		Action:       policy.StageRunCreate,
+		ResourceType: "agent",
+		ResourceID:   to,
+		Decision:     policy.EffectAllow,
+		ReasonCode:   "budget_route",
+		AgentID:      to,
+		Attrs: map[string]interface{}{
+			"from_agent_id": from,
+			"to_agent_id":   to,
+		},
+	})
+	return to, from
+}
+

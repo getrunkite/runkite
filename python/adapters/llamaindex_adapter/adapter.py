@@ -32,6 +32,7 @@ from runkite_runner.adapter_checkpoint import (
     merge_messages_input,
     messages_from_values_event,
 )
+from runkite_runner.usage import usage_from_metrics, values_with_usage
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 
 from .otel_events import attach_otel_job
@@ -144,7 +145,16 @@ class LlamaIndexAdapter:
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            await event_callback(make_event("values", {"messages": output_messages}))
+            # Best-effort: ChatResponse.raw / additional_kwargs / token_counts.
+            usage = usage_from_metrics(
+                getattr(result, "additional_kwargs", None)
+                or getattr(result, "raw", None)
+                or getattr(result, "meta", None)
+            )
+            if usage is None:
+                usage = usage_from_metrics(getattr(result, "token_counts", None))
+            values = values_with_usage({"messages": output_messages}, usage)
+            await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))
             return "success"
         except RunCancelled:

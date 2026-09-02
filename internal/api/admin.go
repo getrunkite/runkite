@@ -541,13 +541,14 @@ func (s *Server) handleAdminListAuditEvents(w http.ResponseWriter, r *http.Reque
 		Limit:     paging.Limit,
 		Offset:    paging.Offset,
 		Cursor:    paging.Cursor,
-		TenantID:  q.Get("tenant_id"),
-		Decision:  q.Get("decision"),
-		Action:    q.Get("action"),
-		RunID:     q.Get("run_id"),
-		AgentID:   q.Get("agent_id"),
-		Connector: q.Get("connector"),
-		Tool:      q.Get("tool"),
+		TenantID:   q.Get("tenant_id"),
+		Decision:   q.Get("decision"),
+		Action:     q.Get("action"),
+		ReasonCode: q.Get("reason_code"),
+		RunID:      q.Get("run_id"),
+		AgentID:    q.Get("agent_id"),
+		Connector:  q.Get("connector"),
+		Tool:       q.Get("tool"),
 	}
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)

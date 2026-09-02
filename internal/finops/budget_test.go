@@ -51,3 +51,25 @@ func abs(f float64) float64 {
 	}
 	return f
 }
+
+func TestApproachCap(t *testing.T) {
+	cap := &finops.BudgetCap{MaxUSDPerDay: 100}
+	snap := finops.UsageSnapshot{USD: 85}
+	v := finops.ApproachCap(cap, snap, "tenant", 80)
+	if v == nil {
+		t.Fatal("expected approach verdict at 85% of hard cap")
+	}
+	if v.Hard || !v.Soft {
+		t.Fatalf("want soft approach, got %+v", v)
+	}
+	if finops.ApproachCap(cap, finops.UsageSnapshot{USD: 50}, "tenant", 80) != nil {
+		t.Fatal("under threshold should not approach")
+	}
+	if finops.ApproachCap(cap, finops.UsageSnapshot{USD: 100}, "tenant", 80) != nil {
+		t.Fatal("at/over hard cap is EvaluateCap territory, not ApproachCap")
+	}
+	soft := &finops.BudgetCap{MaxUSDPerDay: 100, Soft: true}
+	if finops.ApproachCap(soft, finops.UsageSnapshot{USD: 85}, "tenant", 80) != nil {
+		t.Fatal("soft caps do not emit approach alerts")
+	}
+}

@@ -266,6 +266,15 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		requestedAlias = req.AgentID
 		req.AgentID = resolved
 	}
+	// FinOps cheaper-alias rewrite when near soft_pct of a hard day cap.
+	// Pass requestedAlias so finops.routing.aliases keys may be client-facing
+	// alias names (looked up before A/B resolve rewrote AgentID).
+	if routed, from := s.applyFinOpsRouting(ctx, tenant.FromContext(ctx), req.AgentID, requestedAlias); from != "" {
+		if requestedAlias == "" {
+			requestedAlias = from
+		}
+		req.AgentID = routed
+	}
 
 	// Fail fast on an unknown agent_id, before claiming/creating anything.
 	// Without this, a typo'd agent_id still got a 200 with a pending run
@@ -577,6 +586,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		return nil, nil, err
 	}
 	created = true // pending run owns the claim; do not idle the thread on later returns
+	s.placeUsageHold(ctx, run)
 
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "created").Inc()
 	metrics.ActiveRuns.Inc()
@@ -842,11 +852,15 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	if err := s.createRunRespectingLimits(ctx, run, now); err != nil {
 		return nil, false, err
 	}
+	s.placeUsageHold(ctx, run)
 	// CreateRun's INSERT has no output column (output is normally only
 	// known after the run finishes) -- a cache hit already has it at
 	// creation time, so persist it in a separate, explicit update.
 	if err := s.store.UpdateRunStatus(ctx, runID, models.RunStatusSuccess, outputJSON, ""); err != nil {
 		slog.Error("failed to persist cached run output", "run_id", runID, "error", err)
+		// Still drop the create-time hold — this run is terminal for
+		// budgeting purposes either way (cache hit has no further work).
+		s.releaseUsageHold(ctx, runID)
 	} else {
 		run.Status = models.RunStatusSuccess
 		run.Output = outputJSON
@@ -854,6 +868,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 			run.TenantID = tenant.FromContext(ctx)
 		}
 		s.ingestTerminalUsage(ctx, run)
+		s.releaseUsageHold(ctx, runID)
 	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "cache_hit").Inc()
 

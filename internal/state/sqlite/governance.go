@@ -152,6 +152,10 @@ func (s *SQLiteStore) SearchAuditEvents(ctx context.Context, req *models.AuditSe
 		where = append(where, "action = ?")
 		args = append(args, req.Action)
 	}
+	if req.ReasonCode != "" {
+		where = append(where, "reason_code = ?")
+		args = append(args, req.ReasonCode)
+	}
 	if req.RunID != "" {
 		where = append(where, "run_id = ?")
 		args = append(args, req.RunID)

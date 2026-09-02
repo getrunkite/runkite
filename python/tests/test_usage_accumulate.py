@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 
-from runkite_runner.usage import accumulate_usage, usage_payload
+from runkite_runner.usage import accumulate_usage, usage_from_metrics, usage_payload, values_with_usage
 
 
 class TestUsageAccumulate(unittest.TestCase):
@@ -104,5 +104,30 @@ class TestUsageAccumulate(unittest.TestCase):
         self.assertIsNone(usage_payload({}))
 
 
+class TestUsageFromMetrics(unittest.TestCase):
+    def test_crewai_style_dict(self):
+        u = usage_from_metrics({"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18})
+        self.assertEqual(u["prompt_tokens"], 11)
+        self.assertEqual(u["completion_tokens"], 7)
+        self.assertEqual(u["total_tokens"], 18)
+
+    def test_object_attrs(self):
+        class M:
+            prompt_tokens = 3
+            completion_tokens = 2
+        u = usage_from_metrics(M())
+        self.assertEqual(u["total_tokens"], 5)
+
+    def test_values_with_usage(self):
+        base = {"messages": []}
+        self.assertEqual(values_with_usage(base, None), base)
+        out = values_with_usage(base, {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1})
+        self.assertIn("usage", out)
+
+
+# Must stay at EOF: unittest.main() discovers classes already defined in
+# module globals. Placing it between TestUsageAccumulate and
+# TestUsageFromMetrics silently drops the metrics tests when CI runs
+# ``python python/tests/test_usage_accumulate.py``.
 if __name__ == "__main__":
     unittest.main()

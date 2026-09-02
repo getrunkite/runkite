@@ -124,3 +124,68 @@ def usage_payload(totals: dict[str, Any]) -> dict[str, Any] | None:
     if totals.get("model"):
         out["model"] = totals["model"]
     return out
+
+
+def usage_from_metrics(obj: Any) -> dict[str, Any] | None:
+    """Normalize CrewAI/LlamaIndex/framework usage objects into Output.usage.
+
+    Accepts dicts or objects with prompt/completion/total token attributes
+    (CrewAI ``usage_metrics``, LlamaIndex response usage, etc.).
+    """
+    if obj is None:
+        return None
+    if not isinstance(obj, dict):
+        # duck-type UsageMetrics / TokenUsage objects
+        d: dict[str, Any] = {}
+        for src, dest in (
+            ("prompt_tokens", "prompt_tokens"),
+            ("completion_tokens", "completion_tokens"),
+            ("total_tokens", "total_tokens"),
+            ("input_tokens", "prompt_tokens"),
+            ("output_tokens", "completion_tokens"),
+            ("successful_requests", None),
+        ):
+            if dest is None:
+                continue
+            if hasattr(obj, src):
+                d[dest] = getattr(obj, src)
+            elif isinstance(getattr(obj, "__dict__", None), dict) and src in obj.__dict__:
+                d[dest] = obj.__dict__[src]
+        # nested .token_usage
+        tu = getattr(obj, "token_usage", None)
+        if tu is not None and not d:
+            return usage_from_metrics(tu)
+        obj = d
+    if not isinstance(obj, dict) or not obj:
+        return None
+    totals: dict[str, Any] = {}
+    # map common keys into accumulate shape via a synthetic usage dict
+    um = {
+        "prompt_tokens": obj.get("prompt_tokens") or obj.get("input_tokens") or 0,
+        "completion_tokens": obj.get("completion_tokens") or obj.get("output_tokens") or 0,
+        "total_tokens": obj.get("total_tokens") or 0,
+        "model": obj.get("model") or "",
+    }
+    p = _as_int(um["prompt_tokens"])
+    c = _as_int(um["completion_tokens"])
+    if not p and not c:
+        total = _as_int(um["total_tokens"])
+        if total:
+            p = total
+    if not p and not c:
+        return None
+    totals["prompt_tokens"] = p
+    totals["completion_tokens"] = c
+    if um.get("model"):
+        totals["model"] = str(um["model"])
+    return usage_payload(totals)
+
+
+def values_with_usage(base: dict[str, Any], usage: dict[str, Any] | None) -> dict[str, Any]:
+    """Return *base* values dict with top-level usage attached when present."""
+    if not usage:
+        return base
+    out = dict(base)
+    out["usage"] = usage
+    return out
+

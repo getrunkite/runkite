@@ -37,6 +37,7 @@ from runkite_runner.adapter_checkpoint import (
     merge_messages_input,
     messages_from_values_event,
 )
+from runkite_runner.usage import usage_from_metrics, values_with_usage
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 
 
@@ -160,7 +161,9 @@ class AutoGenAdapter:
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            await event_callback(make_event("values", {"messages": output_messages}))
+            usage = usage_from_metrics(result)
+            values = values_with_usage({"messages": output_messages}, usage)
+            await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))
             return "success"
         except RunCancelled:

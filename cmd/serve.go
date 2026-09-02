@@ -1387,6 +1387,22 @@ func initFinOps(configPath string) *finops.Config {
 			}
 		}
 	}
+	if cfg.FinOps.Alerts != nil {
+		out.Alerts = finops.AlertsConfig{SoftPct: cfg.FinOps.Alerts.SoftPct}
+	}
+	if cfg.FinOps.Reservation != nil {
+		out.Reservation = finops.ReservationConfig{
+			USDPerRun:    cfg.FinOps.Reservation.USDPerRun,
+			TokensPerRun: cfg.FinOps.Reservation.TokensPerRun,
+		}
+	}
+	if cfg.FinOps.Routing != nil {
+		out.Routing = finops.RoutingConfig{
+			Enabled: cfg.FinOps.Routing.Enabled,
+			SoftPct: cfg.FinOps.Routing.SoftPct,
+			Aliases: cfg.FinOps.Routing.Aliases,
+		}
+	}
 	if len(out.Pricebook) == 0 && !out.Enabled() {
 		return nil
 	}

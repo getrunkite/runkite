@@ -49,6 +49,7 @@ const (
 	ReasonAuthzDeny            = "authz_deny"
 	ReasonBudgetExceeded       = "budget_exceeded"
 	ReasonBudgetSoft           = "budget_soft"
+	ReasonBudgetAlert          = "budget_alert" // soft_pct approach (under hard cap)
 )
 
 // PolicyInput is the decision context for one gate check.

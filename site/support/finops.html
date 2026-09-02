@@ -76,36 +76,32 @@
         <h1>Spend (FinOps)</h1>
         <p class="lede">
           See spend in Admin and stop spend at admission —
-          not a full chargeback product yet.
+          export and alerts included; not a full BI warehouse.
         </p>
-        <h2>What ships now (F0 + metering + Admin Spend)</h2>
+        <h2>What ships now</h2>
         <ul>
           <li>
             Optional <code>finops</code> in <code>langgraph.json</code>: UTC-day
-            budgets per tenant / <code>tenant/agent</code>
-            (<code>max_usd_per_day</code>, <code>max_tokens_per_day</code>,
-            <code>max_runs_per_day</code>) — soft allow + audit, or hard deny
-            (<code>budget_exceeded</code>). Break-glass does <strong>not</strong>
-            bypass hard caps.
+            budgets, <code>alerts.soft_pct</code>, <code>reservation</code> holds,
+            and <code>routing.aliases</code> cheaper-agent rewrite near soft threshold.
           </li>
           <li>
-            Terminal runs with top-level <code>Output.usage</code> write SQL
-            <code>usage_events</code> (pricebook when <code>cost_usd</code> absent).
-            The Python LangGraph runner sums <code>AIMessage.usage_metadata</code>
-            into that object.
+            Terminal <code>Output.usage</code> → SQL <code>usage_events</code>
+            (LangGraph Python/TS; CrewAI/LlamaIndex/LangChain/AutoGen adapters when metrics exist).
+            Webhook event <code>budget_alert</code> + Admin alerts strip.
           </li>
           <li>
-            Admin: <code>/admin/spend</code> UI and
-            <code>GET /admin-api/usage/summary</code> (SQL backends only).
+            Admin <code>/admin/spend</code>: summary, date filters, CSV/JSON export,
+            open-holds KPI, alerts, routing banner.
+            APIs: <code>/admin-api/usage/{summary,alerts,holds,export}</code>.
           </li>
         </ul>
         <h2>What is not shipped yet</h2>
         <ul>
-          <li>Chargeback export, spend alerts, price-aware model routing (F3–F4).</li>
-          <li>
-            Typed Runner Protocol usage events for every framework — non-LangGraph
-            adapters still need to emit <code>Output.usage</code> themselves.
-          </li>
+          <li>Mid-run kill when a budget is breached mid-execution.</li>
+          <li>Auto-building a pricebook from vendor billing APIs; multi-currency / warehouse BI.</li>
+          <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
+          <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>
         </ul>
         <h2>Practical stance</h2>
         <p>

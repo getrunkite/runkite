@@ -12,6 +12,7 @@ import type { FactoryGraphBuild, RunFactoryContext } from "./factoryGraph.js";
 import { logger } from "./logger.js";
 import { checkpointThreadId } from "./tenantCtx.js";
 import { makeRunCallbacks } from "./tracing.js";
+import { accumulateUsage, usagePayload, type UsageTotals } from "./usage.js";
 
 export interface RunEvent {
   event_id: string;
@@ -210,6 +211,8 @@ export async function executeRun(
 
     let hasInterrupt = false;
     const seenToolCallIds = new Set<string>();
+    let lastValues: unknown = null;
+    const usageTotals: UsageTotals = {};
 
     // Factory graph (for LangGraph SDK/ServerRuntime compatibility) --
     // built fresh for this run alone, with
@@ -277,12 +280,35 @@ export async function executeRun(
           return "interrupted";
         }
 
+        // Mirror Python: keep last values snapshot; accumulate non-values
+        // incrementally so stream_mode without "values" still meters.
+        if (mode === "values" && data && typeof data === "object") {
+          lastValues = data;
+        } else if (mode !== "values") {
+          accumulateUsage(usageTotals, data);
+        }
         await emit(makeEvent(mode, data));
       }
 
       if (hasInterrupt) {
         await emit(makeEvent("end", { status: "interrupted" }));
         return "interrupted";
+      }
+      // Enrich final values with top-level usage so FinOps can meter Output
+      // (same once-at-end discipline as the Python LangGraph runner).
+      let totals: UsageTotals = { ...usageTotals };
+      if (lastValues != null) {
+        // Prefer once-at-end from the last cumulative values snapshot.
+        totals = {};
+        accumulateUsage(totals, lastValues);
+      }
+      const usage = usagePayload(totals);
+      if (usage && lastValues != null) {
+        await emit(makeEvent("values", { ...(lastValues as object), usage }));
+      } else if (usage) {
+        // No values mode — still emit a values event carrying usage so the
+        // control plane can meter Output the same way as Python.
+        await emit(makeEvent("values", { usage }));
       }
       await emit(makeEvent("end", { status: "success" }));
       return "success";

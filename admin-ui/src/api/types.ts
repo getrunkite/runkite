@@ -213,3 +213,11 @@ export interface AdminUsageSummaryRow {
   usd_estimate: number;
   run_count: number;
 }
+
+
+/** Open reservation totals from GET /admin-api/usage/holds. */
+export interface AdminUsageHoldsSummary {
+  count: number;
+  usd_hold: number;
+  tokens_hold: number;
+}

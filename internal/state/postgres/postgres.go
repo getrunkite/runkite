@@ -218,6 +218,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 12,
+			Name:    "usage_holds",
+			Up: func(ctx context.Context) error {
+				return s.upUsageHolds(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS usage_holds`)
+				return err
+			},
+		},
 	}
 }
 
@@ -229,6 +240,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			cron_schedules,
 			run_cache,
 			usage_events,
+			usage_holds,
 			webhook_dead_letters,
 			audit_events,
 			policy_grants,
@@ -670,7 +682,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, mandatory_hitl_rules, usage_events, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, mandatory_hitl_rules, usage_events, usage_holds, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -2638,6 +2650,11 @@ func (s *Store) SearchAuditEvents(ctx context.Context, req *models.AuditSearchRe
 	if req.Action != "" {
 		where = append(where, fmt.Sprintf("action = $%d", argN))
 		args = append(args, req.Action)
+		argN++
+	}
+	if req.ReasonCode != "" {
+		where = append(where, fmt.Sprintf("reason_code = $%d", argN))
+		args = append(args, req.ReasonCode)
 		argN++
 	}
 	if req.RunID != "" {

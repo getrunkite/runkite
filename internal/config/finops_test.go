@@ -63,3 +63,36 @@ func TestLoadLangGraphJSON_NoFinOpsIsNil(t *testing.T) {
 		t.Errorf("expected nil FinOps, got %+v", cfg.FinOps)
 	}
 }
+
+func TestLoadLangGraphJSON_FinOpsContinuum(t *testing.T) {
+	dir := t.TempDir()
+	content := `{
+		"graphs": {"echo": "graph.py:graph"},
+		"finops": {
+			"alerts": {"soft_pct": 75},
+			"reservation": {"usd_per_run": 0.05, "tokens_per_run": 1000},
+			"routing": {
+				"enabled": true,
+				"soft_pct": 70,
+				"aliases": {"premium": ["economy"]}
+			}
+		}
+	}`
+	path := filepath.Join(dir, "langgraph.json")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadLangGraphJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.FinOps.Alerts == nil || cfg.FinOps.Alerts.SoftPct != 75 {
+		t.Fatalf("alerts = %+v", cfg.FinOps.Alerts)
+	}
+	if cfg.FinOps.Reservation == nil || cfg.FinOps.Reservation.USDPerRun != 0.05 {
+		t.Fatalf("reservation = %+v", cfg.FinOps.Reservation)
+	}
+	if cfg.FinOps.Routing == nil || !cfg.FinOps.Routing.Enabled || cfg.FinOps.Routing.Aliases["premium"][0] != "economy" {
+		t.Fatalf("routing = %+v", cfg.FinOps.Routing)
+	}
+}
