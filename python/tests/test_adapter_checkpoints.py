@@ -381,6 +381,148 @@ def test_execute_with_opaque_two_turns():
     asyncio.run(_run())
 
 
+def test_execute_opaque_survives_fresh_client():
+    """Restart proof: turn2 uses a new HTTP client; history comes only from CP store.
+
+    Same process may keep a live OpaqueCheckpointClient across turns in production.
+    This test drops the client after turn1 and builds a new one against the same
+    fake store so continuity cannot be explained by in-process cache.
+    """
+    import httpx
+
+    fake = _FakeTransport()
+
+    class EchoAdapter:
+        checkpoint_framework = "crewai"
+
+        def prepare_checkpoint_input(self, prior, input_data):
+            return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+        def serialize_checkpoint(self, assignment, values, status):
+            msgs = values.get("messages")
+            return encode_messages_checkpoint(msgs) if msgs else None
+
+        async def load_config(self, config_path: str) -> None:
+            return None
+
+        async def execute(self, assignment, event_callback, cancel_event):
+            messages = list((assignment.get("input") or {}).get("messages") or [])
+            reply = f"echo:{messages[-1]['content']}|n={len(messages)}"
+            out = messages + [{"role": "ai", "content": reply}]
+            await event_callback({"method": "values", "data": {"messages": out}, "seq": 1})
+            await event_callback({"method": "end", "data": {"status": "success"}, "seq": 2})
+            return "success"
+
+    async def _run():
+        from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+
+        adapter = EchoAdapter()
+        events2: list = []
+
+        def resolve(_http):
+            return "http://cp.test"
+
+        # --- turn 1: client A ---
+        transport_a = httpx.MockTransport(fake.handler)
+        clients_a: list = []
+
+        def client_factory_a(**kwargs):
+            c = OpaqueCheckpointClient(**kwargs, transport=transport_a)
+            clients_a.append(c)
+            return c
+
+        tt = bind_tenant("default")
+        rt = bind_run("run-restart-a", 1)
+        try:
+            async def send1(_e):
+                return None
+
+            st1 = await _execute_with_opaque_checkpoint(
+                adapter,
+                {
+                    "run_id": "run-restart-a",
+                    "thread_id": "thr_restart",
+                    "graph_id": "g",
+                    "input": {"messages": [{"role": "human", "content": "one"}]},
+                },
+                send1,
+                asyncio.Event(),
+                http_address="http://cp.test",
+                runner_kind="python-crewai",
+                runner_token="",
+                resolve_http_url=resolve,
+                OpaqueCheckpointClient=client_factory_a,
+                adapter_supports_checkpoints=adapter_supports_checkpoints,
+            )
+            check("restart turn1 status", st1 == "success")
+            check("restart blob in store", ADAPTER_CHECKPOINT_ID in fake.store)
+        finally:
+            reset_run(rt)
+            reset_tenant(tt)
+            for c in clients_a:
+                await c.aclose()
+            clients_a.clear()
+
+        # Simulate runner death: drop transport A; only bytes in fake.store remain.
+        blob_after_t1 = fake.store[ADAPTER_CHECKPOINT_ID]
+        fake.get_paths.clear()
+
+        # --- turn 2: brand-new client B (no shared httpx client) ---
+        transport_b = httpx.MockTransport(fake.handler)
+
+        def client_factory_b(**kwargs):
+            return OpaqueCheckpointClient(**kwargs, transport=transport_b)
+
+        async def send2(e):
+            events2.append(e)
+
+        tt = bind_tenant("default")
+        rt = bind_run("run-restart-b", 1)
+        try:
+            st2 = await _execute_with_opaque_checkpoint(
+                adapter,
+                {
+                    "run_id": "run-restart-b",
+                    "thread_id": "thr_restart",
+                    "graph_id": "g",
+                    "input": {"messages": [{"role": "human", "content": "two"}]},
+                },
+                send2,
+                asyncio.Event(),
+                http_address="http://cp.test",
+                runner_kind="python-crewai",
+                runner_token="",
+                resolve_http_url=resolve,
+                OpaqueCheckpointClient=client_factory_b,
+                adapter_supports_checkpoints=adapter_supports_checkpoints,
+            )
+            check("restart turn2 status", st2 == "success")
+            vals = [e for e in events2 if e.get("method") == "values"]
+            check("restart turn2 has values", bool(vals))
+            n_msgs = len(vals[0]["data"]["messages"])
+            check("restart restored history (4 msgs)", n_msgs == 4)
+            check(
+                "restart reply sees n=3 from store only",
+                "n=3" in vals[0]["data"]["messages"][-1]["content"],
+            )
+            check(
+                "restart load hit adapter-state",
+                any(p.endswith("/" + ADAPTER_CHECKPOINT_ID) for p in fake.get_paths),
+            )
+            # Turn1 blob was durable in the store before turn2 (not client-local).
+            check(
+                "restart turn1 blob was messages",
+                len(decode_messages_checkpoint(blob_after_t1)) == 2,
+            )
+            after = decode_messages_checkpoint(fake.store[ADAPTER_CHECKPOINT_ID])
+            check("restart put wrote 4 msgs", len(after) == 4)
+        finally:
+            reset_run(rt)
+            reset_tenant(tt)
+
+    asyncio.run(_run())
+
+
 if __name__ == "__main__":
     test_messages_blob_roundtrip()
     test_merge_prepends_when_client_sends_new_turn_only()
@@ -392,4 +534,5 @@ if __name__ == "__main__":
     test_get_ignores_lexicographically_newer_langgraph_blob()
     test_execute_soft_fails_corrupt_prepare()
     test_execute_with_opaque_two_turns()
+    test_execute_opaque_survives_fresh_client()
     print("all adapter checkpoint checks passed")

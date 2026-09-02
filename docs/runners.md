@@ -76,6 +76,8 @@ Live-verified end to end against a real control plane: the TypeScript runner dyn
 
 ### Framework Adapters
 
+**Opaque multi-turn (proxy):** when an adapter sets `checkpoint_framework` and `RUNKITE_HTTP_URL` (or the worker http address) is set, `generic_worker` loads `GET /internal/checkpoints/{thread}/adapter-state` before execute and `PUT`s that same id after success/interrupted — so clients can send only the new turn. This is **message continuity**, not LangGraph channel-state HITL: LlamaIndex restores native chat history; CrewAI / LangChain typically fold prior turns into the next prompt; AutoGen seeds model context. Not full CrewAI crew-memory restore. `checkpoint_ref` stays LangGraph-only (adapters reject it). Without an HTTP base URL, adapters stay single-shot. Same `/internal/checkpoints` surface as LangGraph proxy mode; adapters must not use `.../latest` on shared threads. See Runner Protocol §6.5 and `docs/limitations.md`.
+
 Four more Python runners (`python/adapters/{crewai_adapter,llamaindex_adapter,autogen_adapter,langchain_adapter}/`), each proving the control plane never assumed LangGraph -- built on a new shared, framework-agnostic loop (`runkite_runner.generic_worker`, extracted from but not replacing `worker.py`'s LangGraph-specific one) that handles only the gRPC polling/streaming/status-reporting mechanics. Each adapter is a thin translation layer implementing just two methods (`load_config`, `execute`) -- a small framework-adapter shim:
 
 | | CrewAI | LlamaIndex | AutoGen | Plain LangChain |

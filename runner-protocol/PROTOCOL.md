@@ -342,6 +342,16 @@ Body: [
 
 Proxy checkpoint I/O is run-bound, not a free blob store: every `/internal/checkpoints/*` request must present an active assignment (`X-Runkite-Run-Id` + `X-Runkite-Generation`, plus `X-Runner-Kind` / `X-Runner-Token` when production runner auth is enabled). Missing or non-dispatched assignment → `403 run_not_inflight`; live assignment whose bare `thread_id` does not match the path → `403 run_thread_mismatch`. Tenant is taken from the assignment, never trusted from a free-form path prefix. The control plane treats bodies as opaque octets up to **16 MiB** (`413` above that) and does not parse LangGraph envelopes; a corrupt or cross-runtime blob is the runner's problem (serde decode fails the run; the CP still returns the bytes unchanged). Savers MUST soft-no-op late writes after cancel/reclaim and MUST refuse updates when a GET 200 lacks an ETag, so a cancelled run or ETag-stripping proxy cannot crash the worker or silently disable CAS.
 
+### 6.5 Non-LangGraph (adapter) opaque state
+
+LangGraph proxy savers (§6.3) own many checkpoint ids per thread (one per step / namespace) and require conditional PUT for HITL fidelity. **Framework adapters** (CrewAI, LlamaIndex, AutoGen, plain LangChain, and equivalents) MAY use the same `/internal/checkpoints/*` surface for **message continuity** across runs on a thread, with different rules:
+
+- **Stable id.** Adapters that opt in MUST read and write a framework-owned concrete `checkpoint_id` (Runkite's Python generic worker uses `adapter-state`). They MUST NOT load via `GET .../latest` on a thread that may also hold LangGraph UUID blobs — `latest` is ordered by `checkpoint_id` and can return the wrong framework's bytes.
+- **Fidelity ceiling.** Adapter blobs are **message-continuity** state (prior turns for the next invoke), **not** LangGraph channel-state / mid-superstep pending writes / crew-memory graphs. LlamaIndex MAY restore a native chat history; CrewAI / LangChain typically fold prior turns into the next prompt string; AutoGen typically seeds model context. This is not full-fidelity HITL interrupt→resume for those frameworks.
+- **`checkpoint_ref`.** Time-travel via `RunAssignment.checkpoint_ref` remains LangGraph-only. Adapters MUST reject a non-empty `checkpoint_ref` rather than silently ignore it.
+- **Writes.** A single-id adapter MAY overwrite with unconditional PUT (no `If-Match` required). Soft size cap and run-binding (§6.3–6.4) still apply. Load / prepare / save failures SHOULD soft-fail (run continues with the client-supplied input) rather than crash the worker.
+- **Envelope.** Bytes remain opaque to the control plane. Cross-framework or cross-language resume of adapter blobs is unsupported unless an adapter explicitly documents a shared schema.
+
 ---
 
 ## 7. Store API
