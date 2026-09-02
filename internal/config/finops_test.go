@@ -70,7 +70,7 @@ func TestLoadLangGraphJSON_FinOpsContinuum(t *testing.T) {
 		"graphs": {"echo": "graph.py:graph"},
 		"finops": {
 			"alerts": {"soft_pct": 75},
-			"reservation": {"usd_per_run": 0.05, "tokens_per_run": 1000, "hold_ttl": "24h"},
+			"reservation": {"usd_per_run": 0.05, "tokens_per_run": 1000, "hold_ttl": "24h", "agents": {"acme/premium": {"usd_per_run": 0.5}}},
 			"routing": {
 				"enabled": true,
 				"soft_pct": 70,
@@ -92,6 +92,9 @@ func TestLoadLangGraphJSON_FinOpsContinuum(t *testing.T) {
 	}
 	if cfg.FinOps.Reservation == nil || cfg.FinOps.Reservation.USDPerRun != 0.05 || cfg.FinOps.Reservation.HoldTTL != "24h" {
 		t.Fatalf("reservation = %+v", cfg.FinOps.Reservation)
+	}
+	if cfg.FinOps.Reservation.Agents["acme/premium"].USDPerRun != 0.5 {
+		t.Fatalf("reservation.agents = %+v", cfg.FinOps.Reservation.Agents)
 	}
 	if cfg.FinOps.Routing == nil || !cfg.FinOps.Routing.Enabled || cfg.FinOps.Routing.Aliases["premium"][0] != "economy" {
 		t.Fatalf("routing = %+v", cfg.FinOps.Routing)

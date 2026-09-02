@@ -73,3 +73,34 @@ func TestApproachCap(t *testing.T) {
 		t.Fatal("soft caps do not emit approach alerts")
 	}
 }
+
+func TestReservationFor(t *testing.T) {
+	cfg := &finops.Config{Reservation: finops.ReservationConfig{
+		USDPerRun: 0.05, TokensPerRun: 1000,
+		Agents: map[string]finops.ReservationAmount{
+			"acme/premium": {USDPerRun: 0.5, TokensPerRun: 20000},
+			"acme/free":    {USDPerRun: 0, TokensPerRun: 0},
+		},
+	}}
+	usd, tok := cfg.ReservationFor("acme", "echo")
+	if usd != 0.05 || tok != 1000 {
+		t.Fatalf("global fallback = %v/%d", usd, tok)
+	}
+	usd, tok = cfg.ReservationFor("acme", "premium")
+	if usd != 0.5 || tok != 20000 {
+		t.Fatalf("premium override = %v/%d", usd, tok)
+	}
+	usd, tok = cfg.ReservationFor("acme", "free")
+	if usd != 0 || tok != 0 {
+		t.Fatalf("explicit zero override = %v/%d", usd, tok)
+	}
+	if !cfg.ReservationEnabled() {
+		t.Fatal("expected enabled via global")
+	}
+	onlyAgent := &finops.Config{Reservation: finops.ReservationConfig{
+		Agents: map[string]finops.ReservationAmount{"acme/x": {USDPerRun: 1}},
+	}}
+	if !onlyAgent.ReservationEnabled() {
+		t.Fatal("expected enabled via agent-only map")
+	}
+}

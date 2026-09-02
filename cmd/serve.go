@@ -1442,6 +1442,14 @@ func initFinOps(configPath string) *finops.Config {
 			USDPerRun:    cfg.FinOps.Reservation.USDPerRun,
 			TokensPerRun: cfg.FinOps.Reservation.TokensPerRun,
 		}
+		if len(cfg.FinOps.Reservation.Agents) > 0 {
+			out.Reservation.Agents = make(map[string]finops.ReservationAmount, len(cfg.FinOps.Reservation.Agents))
+			for k, a := range cfg.FinOps.Reservation.Agents {
+				out.Reservation.Agents[k] = finops.ReservationAmount{
+					USDPerRun: a.USDPerRun, TokensPerRun: a.TokensPerRun,
+				}
+			}
+		}
 		if ttl := strings.TrimSpace(cfg.FinOps.Reservation.HoldTTL); ttl != "" && ttl != "0" {
 			d, err := time.ParseDuration(ttl)
 			if err != nil {

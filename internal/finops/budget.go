@@ -25,6 +25,12 @@ type AlertsConfig struct {
 	SoftPct float64 // 0 → default 80
 }
 
+// ReservationAmount is one static hold size (global or per-agent).
+type ReservationAmount struct {
+	USDPerRun    float64
+	TokensPerRun int64
+}
+
 // ReservationConfig is optimistic per-create hold amounts.
 type ReservationConfig struct {
 	USDPerRun    float64
@@ -32,6 +38,10 @@ type ReservationConfig struct {
 	// HoldTTL, when > 0, expires open usage_holds older than this age
 	// so a crashed runner that never releases cannot pin day caps forever.
 	HoldTTL time.Duration
+	// Agents maps "tenant_id/agent_id" → override amounts. When present,
+	// that entry fully replaces the global USD/token holds for the agent
+	// (0 on a dimension means no hold on that dimension for that agent).
+	Agents map[string]ReservationAmount
 }
 
 // RoutingConfig rewrites aliases to cheaper agents near soft_pct.
@@ -76,9 +86,39 @@ func (c *Config) RoutingSoftPct() float64 {
 	return c.SoftPct()
 }
 
-// ReservationEnabled is true when any hold amount is configured.
+// ReservationEnabled is true when any hold amount is configured
+// (global or per-agent override).
 func (c *Config) ReservationEnabled() bool {
-	return c != nil && (c.Reservation.USDPerRun > 0 || c.Reservation.TokensPerRun > 0)
+	if c == nil {
+		return false
+	}
+	if c.Reservation.USDPerRun > 0 || c.Reservation.TokensPerRun > 0 {
+		return true
+	}
+	for _, a := range c.Reservation.Agents {
+		if a.USDPerRun > 0 || a.TokensPerRun > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// ReservationFor returns the hold amounts for a create. Per-agent
+// overrides (key "tenant_id/agent_id") replace the global defaults when
+// present; otherwise the global USD/token holds are used.
+func (c *Config) ReservationFor(tenantID, agentID string) (usd float64, tokens int64) {
+	if c == nil {
+		return 0, 0
+	}
+	usd, tokens = c.Reservation.USDPerRun, c.Reservation.TokensPerRun
+	if agentID == "" || len(c.Reservation.Agents) == 0 {
+		return usd, tokens
+	}
+	key := tenantID + "/" + agentID
+	if a, ok := c.Reservation.Agents[key]; ok {
+		return a.USDPerRun, a.TokensPerRun
+	}
+	return usd, tokens
 }
 
 // CancelInflightOnHardBreach is true when on_hard_breach is cancel_inflight.

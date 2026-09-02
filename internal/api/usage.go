@@ -282,12 +282,16 @@ func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
 	if !ok {
 		return
 	}
+	usd, tokens := s.finops.ReservationFor(run.TenantID, run.AgentID)
+	if usd <= 0 && tokens <= 0 {
+		return
+	}
 	h := &models.UsageHold{
 		RunID:      run.RunID,
 		TenantID:   run.TenantID,
 		AgentID:    run.AgentID,
-		USDHold:    s.finops.Reservation.USDPerRun,
-		TokensHold: s.finops.Reservation.TokensPerRun,
+		USDHold:    usd,
+		TokensHold: tokens,
 		CreatedAt:  time.Now().UTC(),
 	}
 	if err := hs.UpsertUsageHold(ctx, h); err != nil {
