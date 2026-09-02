@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A2A coordination — Runkite Docs</title>
+    <meta name="description" content="Agent-to-agent calls through the plane — same Agent Protocol, internal path." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs & threads</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants & HITL</a>
+          <a href="kill.html">Kill & break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a class="active" href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Connect</p>
+        <h1>A2A coordination</h1>
+        <p class="lede">One agent delegates to another mid-run — via the plane, not ad-hoc HTTP between runner pods.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              Native sub-agent delegation: <code>call_agent</code> / <code>callAgent</code> from inside a run.
+              Same create-run semantics clients use, reached over an internal A2A route with depth and parent bookkeeping.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              Multi-agent systems need shared credentials, HITL, and audit on child work too — not a side channel that bypasses the plane.
+            </p>
+          </section>
+        </div>
+
+        <h2>How to implement</h2>
+        <ol class="steps">
+          <li>Register coordinator and worker agents on runners attached to the same plane.</li>
+          <li>From a graph node, call the SDK helper with the run’s <code>config</code>.</li>
+          <li>Child run is enqueued like any other job; wait or async per API.</li>
+          <li>Observe both runs in Admin → Runs / Threads.</li>
+        </ol>
+        <pre class="mono-block"># Python
+from runkite_runner.a2a import call_agent
+
+async def coordinator_node(state, config):
+    result = await call_agent(config, "worker_agent", {"messages": [...]}, wait=True)
+    ...
+
+# TypeScript
+import { callAgent } from "runkite-runner";
+const result = await callAgent(config, "worker_agent", { messages: [...] }, { wait: true });</pre>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Child and parent runs show up as normal runs on the plane</div>
+          <img src="../assets/admin-walkthrough.gif" alt="Runkite Admin runs walkthrough" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Depth limits</strong> — unbounded recursion is rejected by plane bookkeeping.</li>
+          <li><strong>Same governance</strong> — child runs still hit connectors/HITL/grants.</li>
+          <li><strong>Not a new public protocol</strong> — it’s Agent Protocol used as a sub-call.</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/a2a.md">docs/a2a.md</a>
+          · <a href="./scenario.html">Scenario</a>
+          · <a href="./protocol.html">Protocols</a>
+        </p>
+
+      </main>
+    </div>
+  </body>
+</html>

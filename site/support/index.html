@@ -4,45 +4,47 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Support — Runkite Support</title>
-    <meta name="description" content="Task-oriented front door into Runkite docs." />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
-    />
+    <title>Docs — Runkite Docs</title>
+    <meta name="description" content="Product guide: every Runkite capability — what, why, how, Admin, expect." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./support.css" />
   </head>
   <body>
     <div class="layout">
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
-        <p class="brand-sub">support map</p>
+        <p class="brand-sub">docs</p>
         <nav>
           <div class="nav-group">Start</div>
           <a class="active" href="./">Overview</a>
-          <a  href="try.html">Try it</a>
-          <a  href="why.html">Why a plane</a>
-          <a  href="scenario.html">Scenario</a>
-          <div class="nav-group">Use</div>
-          <a  href="install.html">Install</a>
-          <a  href="checkpoints.html">Checkpoints</a>
-          <a  href="connectors.html">Connectors &amp; HITL</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
           <div class="nav-group">Operate</div>
-          <a  href="ops.html">Ops</a>
-          <a  href="security.html">Security</a>
-          <a  href="finops.html">Spend (FinOps)</a>
+          <a href="runs.html">Runs & threads</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants & HITL</a>
+          <a href="kill.html">Kill & break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
-          <a  href="chapters/">Chapters</a>
-          <a  href="protocol.html">Protocols</a>
-          <a  href="decisions/">Decisions</a>
-          <a  href="../design/">Engineering notes</a>
-          <a  href="limitations.html">Limitations</a>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
@@ -51,38 +53,63 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>How do I use Runkite?</h1>
+        <h1>Runkite Docs</h1>
         <p class="lede">
-          Task-oriented front door — each page answers one job. Deep links into
-          <code>docs/</code> when you need the full reference.
+          One place for what the plane does, why each feature exists, how to implement it,
+          how it looks in Admin, and what you should expect. Reference markdown still lives in
+          <code>docs/</code> on GitHub — these pages are the product guide.
         </p>
 
         <div class="card">
-          <strong>Top 5 tasks</strong>
+          <strong>Start here</strong>
           <ol class="task-list">
             <li><span class="n">01</span><a href="./try.html">5-minute Docker demo</a></li>
-            <li><span class="n">02</span><a href="./why.html">Decide if you need a plane</a></li>
-            <li><span class="n">03</span><a href="./install.html">Install Supported profile</a></li>
-            <li><span class="n">04</span><a href="./connectors.html">Connectors / HITL</a></li>
-            <li><span class="n">05</span><a href="./checkpoints.html">Checkpoint mode</a></li>
+            <li><span class="n">02</span><a href="./agents.html">Load an agent (Python / JS)</a></li>
+            <li><span class="n">03</span><a href="./grants.html">Grants &amp; HITL</a></li>
+            <li><span class="n">04</span><a href="./runs.html">Watch runs &amp; threads</a></li>
+            <li><span class="n">05</span><a href="./kill.html">Kill &amp; break-glass</a></li>
           </ol>
         </div>
 
-        <h2>Map</h2>
+        <h2>Build</h2>
         <ul class="links">
-          <li><a href="./try.html">Try</a> — compose → echo → HITL</li>
-          <li><a href="./why.html">Why</a> — plane vs one script</li>
-          <li><a href="./scenario.html">Scenario</a> — multi-agent path</li>
-          <li><a href="./install.html">Install</a> — Supported profile</li>
-          <li><a href="./ops.html">Ops</a> — reclaim, kill, secrets</li>
-          <li><a href="./protocol.html">Protocol</a> — Agent + Runner</li>
-          <li><a href="./security.html">Security</a> — grants, audit, tenancy</li>
-          <li><a href="./finops.html">FinOps</a> — spend governance on the plane</li>
-          <li><a href="./limitations.html">Limitations</a> — Supported vs Compatible</li>
-          <li><a href="./chapters/">Chapters</a> — big picture, processes, protocols</li>
-          <li><a href="./decisions/">Decisions</a> — why opaque CP, fencing, fail-closed</li>
-          <li><a href="../design/">Engineering notes</a> — fencing, subscribe, createRunCtx, poison</li>
+          <li><a href="./install.html">Install</a> — Supported profile, compose, Helm</li>
+          <li><a href="./agents.html">Agents</a> — register &amp; run Python / TypeScript graphs</li>
+          <li><a href="./checkpoints.html">Checkpoints</a> — opaque durable state</li>
+          <li><a href="./connectors.html">Connectors</a> — run-bound sessions &amp; MCP proxy</li>
         </ul>
+
+        <h2>Operate</h2>
+        <ul class="links">
+          <li><a href="./runs.html">Runs &amp; threads</a> — monitor, stream, cancel</li>
+          <li><a href="./webhooks.html">Webhooks</a> — outbound events &amp; dead letters</li>
+          <li><a href="./ops.html">Ops</a> — reclaim, secrets, day-2</li>
+        </ul>
+
+        <h2>Govern</h2>
+        <ul class="links">
+          <li><a href="./grants.html">Grants &amp; HITL</a> — policy, pending queue, approve/deny</li>
+          <li><a href="./kill.html">Kill &amp; break-glass</a> — emergency stop &amp; timed bypass</li>
+          <li><a href="./security.html">Security</a> — tenancy, auth, audit posture</li>
+          <li><a href="./finops.html">Spend (FinOps)</a> — spend controls on the plane</li>
+        </ul>
+
+        <h2>Connect</h2>
+        <ul class="links">
+          <li><a href="./a2a.html">A2A coordination</a> — agent calls agent via the plane</li>
+          <li><a href="./protocol.html">Protocols</a> — Agent Protocol vs Runner Protocol</li>
+        </ul>
+
+        <h2>Deep</h2>
+        <ul class="links">
+          <li><a href="./why.html">Why a plane</a> · <a href="./scenario.html">Scenario</a> · <a href="./limitations.html">Limitations</a></li>
+          <li><a href="./chapters/">Chapters</a> · <a href="./decisions/">Decisions</a> · <a href="../design/">Engineering notes</a></li>
+        </ul>
+
+        <p class="note">
+          Phase 1 of the handbook — more surfaces (cron, registry, PDP/Cedar detail, per-framework matrix)
+          and dedicated screenshots land next. Template on every guide: What · Why · How · In product · Expect.
+        </p>
 
       </main>
     </div>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agents (Python / JS) — Runkite Docs</title>
+    <meta name="description" content="Register and run agents on Runkite — Python and TypeScript runners." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a class="active" href="agents.html">Agents (Py / JS)</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs & threads</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants & HITL</a>
+          <a href="kill.html">Kill & break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Build</p>
+        <h1>Agents</h1>
+        <p class="lede">An agent is a graph (or adapter) the plane can dispatch. Clients never talk to the runner process — they create runs on the plane; runners pull jobs.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              Agents are declared in a runner config (<code>langgraph.json</code> or adapter config).
+              Each agent has an <code>agent_id</code>. Python and TypeScript runners implement the same
+              Runner Protocol against one Go control plane — mixed fleets are normal.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              Without a plane, every agent process owns secrets, HITL, and logs. With Runkite, many
+              agents share connectors, grants, kill, and audit while staying framework-native inside the runner.
+            </p>
+          </section>
+        </div>
+
+        <h2>How to implement</h2>
+        <ol class="steps">
+          <li><strong>Python (LangGraph)</strong> — install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
+          <li><strong>TypeScript (LangGraph.js)</strong> — install the TS runner, same config shape, same plane.</li>
+          <li><strong>Adapters</strong> — CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
+          <li><strong>Verify</strong> — Admin → Agents shows registered ids; create a thread + run with that <code>agent_id</code>.</li>
+        </ol>
+        <pre class="mono-block"># Python
+pip install runkite-runner
+runkite-runner --config path/to/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026
+
+# TypeScript
+npm install -g runkite-runner
+runkite-runner --config path/to/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026</pre>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Admin → Agents / Runs — registered agents and live run status</div>
+          <img src="../assets/admin-walkthrough.gif" alt="Runkite Admin walkthrough including Agents and Runs" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Success</strong> — agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
+          <li><strong>Routing</strong> — jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
+          <li><strong>Limits</strong> — framework adapters differ on concurrency safety; see runners doc.</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>
+          · <a href="./try.html">Try path</a>
+          · <a href="./protocol.html">Protocols</a>
+        </p>
+
+      </main>
+    </div>
+  </body>
+</html>

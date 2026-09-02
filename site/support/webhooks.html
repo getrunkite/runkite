@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webhooks — Runkite Docs</title>
+    <meta name="description" content="Outbound event delivery and dead-letter handling on the plane." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs & threads</a>
+          <a class="active" href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants & HITL</a>
+          <a href="kill.html">Kill & break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Operate</p>
+        <h1>Webhooks</h1>
+        <p class="lede">The plane can notify your systems when runs change — with dead-letter visibility when delivery fails.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              Configured HTTP callbacks for run lifecycle (and related) events. Failed deliveries land in a
+              dead-letter view in Admin so ops is not guessing from runner logs.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              Product UIs and automations need push, not only poll. Keeping delivery on the plane means one audit trail and one retry story.
+            </p>
+          </section>
+        </div>
+
+        <h2>How to implement</h2>
+        <ol class="steps">
+          <li>Configure webhook endpoints in plane config (see deployment / configuration docs).</li>
+          <li>Expose an HTTPS receiver that acknowledges quickly (2xx).</li>
+          <li>Watch Admin → Webhooks / dead-letters for failures.</li>
+          <li>Fix the receiver or auth, then replay/retry per ops runbook.</li>
+        </ol>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Admin walkthrough includes Webhooks among ops surfaces</div>
+          <img src="../assets/admin-walkthrough.gif" alt="Runkite Admin walkthrough" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Success</strong> — your endpoint gets signed/authenticated POSTs as runs progress.</li>
+          <li><strong>Failure</strong> — dead-letters accumulate instead of silent drop.</li>
+          <li><strong>Limits</strong> — treat receivers as idempotent; at-least-once delivery is the honest model.</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>
+          · <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
+          · <a href="./ops.html">Ops</a>
+        </p>
+
+      </main>
+    </div>
+  </body>
+</html>

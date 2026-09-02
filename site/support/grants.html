@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grants & HITL — Runkite Docs</title>
+    <meta name="description" content="Policy grants, mandatory HITL, and the pending approval queue." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs & threads</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a class="active" href="grants.html">Grants & HITL</a>
+          <a href="kill.html">Kill & break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Govern</p>
+        <h1>Grants &amp; HITL</h1>
+        <p class="lede">Who may use which connector/tool — and when a human must approve before a side effect proceeds.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              <strong>Grants</strong> are durable allow rules (tenant/agent/connector). <strong>Mandatory HITL</strong>
+              forces matching tool calls to pending even when a grant would allow. <strong>Pending</strong> is the operator queue to approve or deny.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              Secrets and side effects must not rely on “the agent was careful.” Governance sits on the plane next to minting and audit.
+            </p>
+          </section>
+        </div>
+
+        <h2>How to implement</h2>
+        <ol class="steps">
+          <li>Define connector policy / grants (config defaults + Admin overlays on SQL).</li>
+          <li>Add mandatory HITL rules for high-risk tools.</li>
+          <li>Run an agent that hits a gated tool — status becomes interrupted / pending.</li>
+          <li>Admin → Pending → approve or deny; agent retries the tool call after approve.</li>
+        </ol>
+        <pre class="mono-block"># From the try path — approval_agent pauses until resume
+curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'</pre>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Admin → Grants, mandatory HITL, pending, audit</div>
+          <img src="../assets/admin-governance.png" alt="Runkite Admin governance: grants, HITL, kill, audit" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Deny</strong> — tool never reaches the downstream connector.</li>
+          <li><strong>Pending</strong> — operator must act; approve is one-shot for the next matching call.</li>
+          <li><strong>Audit</strong> — decisions are queryable on SQL backends.</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
+          · <a href="./connectors.html">Connectors</a>
+          · <a href="./try.html">Try HITL</a>
+        </p>
+
+      </main>
+    </div>
+  </body>
+</html>

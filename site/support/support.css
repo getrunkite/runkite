@@ -1,4 +1,4 @@
-/* Support docs — same brand system as landing */
+/* Docs handbook — same brand system as landing */
 @import url("../brand.css");
 
 .layout {
@@ -332,5 +332,113 @@
 @media (min-width: 1180px) {
   h1.one-line {
     white-space: nowrap;
+  }
+}
+
+/* Feature guide template */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.55rem;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.25rem 0 1.75rem;
+}
+
+.guide-grid section {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+}
+
+.guide-grid h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.guide-grid p {
+  margin-bottom: 0;
+  font-size: 0.95rem;
+}
+
+.steps {
+  margin: 0 0 1.5rem;
+  padding-left: 1.2rem;
+  color: var(--ink-dim);
+  max-width: 42rem;
+}
+
+.steps li {
+  margin: 0.55rem 0;
+}
+
+.shot {
+  margin: 1rem 0 1.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-elev);
+}
+
+.shot .cap {
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.expect {
+  margin: 0 0 1.5rem;
+  padding-left: 1.2rem;
+  color: var(--ink-dim);
+  max-width: 42rem;
+}
+
+.expect li {
+  margin: 0.45rem 0;
+}
+
+.catalog {
+  display: grid;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 1.75rem;
+}
+
+.catalog a {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--accent-2);
+}
+
+.catalog a:hover {
+  color: #c7ceff;
+  text-decoration: underline;
+}
+
+.catalog span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 860px) {
+  .guide-grid {
+    grid-template-columns: 1fr;
   }
 }
