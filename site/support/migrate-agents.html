@@ -92,7 +92,7 @@
           <li><strong>Inventory</strong> — list agent entrypoints, checkpoint stores, tools that need secrets, HITL points, cron/triggers.</li>
           <li><strong>Pick runner kind</strong> — LangGraph stay on LangGraph runners; others use <code>python/adapters/*</code> (see <a href="./frameworks.html">matrix</a>).</li>
           <li><strong>Wire config</strong> — <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
-          <li><strong>Checkpoints</strong> — LangGraph: direct Postgres or HTTP opaque proxy. Adapters: durable multi-turn via universal checkpoints is <span class="pending">Not yet</span> (on the roadmap) — plan client history or accept single-shot until then.</li>
+          <li><strong>Checkpoints</strong> — LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts — clients can send only the new turn.</li>
           <li><strong>Secrets</strong> — stop baking tokens in agent env long-term; move side-effect tools to connectors + grants.</li>
           <li><strong>Cutover</strong> — run shadow traffic on the plane; compare outputs; switch clients to plane base URL + API keys.</li>
         </ol>

@@ -104,7 +104,7 @@
               <tr><td>Dispatch via plane</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
               <tr><td>Cancel (WatchCancels)</td><td>Yes</td><td>Yes*</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
               <tr><td>HITL interrupt / resume</td><td>Yes</td><td>Yes*</td><td>Limited</td><td>Limited</td><td>Limited</td><td>Limited</td></tr>
-              <tr><td>Opaque checkpoint proxy</td><td>Yes</td><td>Yes</td><td>Not yet</td><td>Not yet</td><td>Not yet</td><td>Not yet</td></tr>
+              <tr><td>Opaque checkpoint proxy</td><td>Yes</td><td>Yes</td><td>Yes†</td><td>Yes</td><td>Yes†</td><td>Yes†</td></tr>
               <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
               <tr><td>True --concurrency N</td><td>Yes</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td></tr>
               <tr><td>Isolated adapter venv</td><td>—</td><td>—</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Shared</td></tr>
@@ -113,14 +113,16 @@
           </table>
         </div>
         <p class="note">* TypeScript cancel/HITL verified live; matrix CI scenarios today lean on LangGraph-Python example agents.
-          <strong>Not yet</strong> cells (italic in the matrix) are a deliberate, known gap — universal opaque checkpoints for CrewAI / LlamaIndex / AutoGen / LangChain are on the roadmap, not missing docs links.</p>
+          † CrewAI / AutoGen / LangChain restore a message transcript on the plane and fold prior turns into the next invoke
+          (not a full framework-native memory graph). LlamaIndex restores <code>chat_history</code> natively. LangGraph keeps
+          its own saver (direct Postgres or HTTP proxy). <code>checkpoint_ref</code> time-travel remains LangGraph-only.</p>
 
         <h2>How to implement</h2>
         <ol class="steps">
           <li>LangGraph — <code>runkite-runner</code> (Py) or TS runner with <code>langgraph.json</code>.</li>
           <li>Adapters — install each adapter’s deps (isolated venv for CrewAI / LI / AutoGen), then <code>PYTHONPATH=python:python/adapters</code> and <code>python -m crewai_adapter</code> (etc.).</li>
           <li>Clients keep the same Agent Protocol shape: last human message in, AI message out.</li>
-          <li>See <a href="./agents.html">Agents</a> for register/run; <a href="./checkpoints.html">Checkpoints</a> for LangGraph durable state.</li>
+          <li>See <a href="./agents.html">Agents</a> for register/run; <a href="./checkpoints.html">Checkpoints</a> for durable state (LangGraph + adapters).</li>
         </ol>
 
         <h2>In the product</h2>
@@ -132,7 +134,7 @@
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Same plane features</strong> — connectors, grants, kill, webhooks apply regardless of framework.</li>
-          <li><strong>Honest limits</strong> — durable multi-turn checkpoints are LangGraph today; universal adapter checkpoints are the next engineering track.</li>
+          <li><strong>Honest limits</strong> — adapter opaque checkpoints need <code>RUNKITE_HTTP_URL</code> (or the worker http address); they store message transcripts, not LangGraph channel state. Time-travel <code>checkpoint_ref</code> is LangGraph-only.</li>
           <li><strong>Dependency isolation</strong> — don’t install CrewAI into the LangGraph venv (protobuf pin fights).</li>
         </ul>
         <p class="note">

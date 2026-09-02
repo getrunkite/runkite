@@ -100,8 +100,8 @@
       var td = cells[i];
       if (td.textContent.trim() !== "Not yet") continue;
       td.classList.add("pending");
-      td.title = "Known gap, on the roadmap: universal checkpoints for non-LangGraph adapters.";
-      td.setAttribute("data-pending", "adapter-checkpoints");
+      td.title = "Known gap — not yet implemented for this framework.";
+      td.setAttribute("data-pending", "matrix-gap");
     }
   }
 

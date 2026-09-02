@@ -10,31 +10,14 @@ Config convention matches LangGraphAdapter's langgraph.json shape
 every other adapter: switching frameworks changes `runner_kind`, not
 the config format.
 
-Input/output convention: same as every other adapter -- extracts the
-last human/user message's text from `RunAssignment.input.messages` and
-calls `agent.run(task=<text>)`, using AutoGen's own native async run
-(no thread-pool wrapping needed).
+Input/output: with opaque checkpoints, prior thread messages are restored
+into the agent's model_context before `run(task=new_text)` so clients can
+send only the new turn. Without checkpoints, context is cleared each run
+(no cross-thread leak) and only the last human text is forwarded as task.
 
-Concurrency / isolation note: an `AssistantAgent` keeps conversation
-history in `self._model_context` (a `ChatCompletionContext`, e.g.
-`UnboundedChatCompletionContext`), a single shared, mutable object
-appended to on every `run()` call. That creates two problems for a
-long-lived agent shared across every run on a graph_id:
-
-1. Concurrent `run()` calls would interleave appends -- same shape as
-   CrewAI's shared `Crew.usage_metrics`. A per-graph_id lock below
-   serializes those calls (correctness over parallelism; AutoGen runs
-   sharing a graph_id don't get real `--concurrency > 1` overlap the
-   way LangGraph/LangChain/LlamaIndex do).
-2. Sequential runs would otherwise LEAK history across unrelated
-   threads/tenants (run B's model sees run A's turns). LlamaIndex's
-   adapter avoids the equivalent by reconstructing `chat_history` per
-   call; here we `await model_context.clear()` before each `run()` so
-   each Agent Protocol invocation starts from a clean slate. Multi-turn
-   continuity within a thread is still the caller's job via the
-   messages array (we only forward the last human text as `task=`,
-   same last-message convention as CrewAI) -- clear does not try to
-   rebuild AutoGen's context from prior messages.
+Concurrency: an `AssistantAgent` keeps conversation history in
+`self._model_context`. Concurrent `run()` calls would interleave appends,
+so a per-graph_id lock serializes them (correctness over parallelism).
 """
 
 from __future__ import annotations
@@ -47,20 +30,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from runkite_runner.adapter_checkpoint import (
+    decode_messages_checkpoint,
+    encode_messages_checkpoint,
+    last_human_text,
+    merge_messages_input,
+    messages_from_values_event,
+)
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
-
-
-def _last_human_text(messages: list) -> str:
-    for msg in reversed(messages):
-        role = msg.get("role") or msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
-        if role in ("human", "user"):
-            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-                return " ".join(parts)
-    return ""
 
 
 def _extract_text(result: Any) -> str:
@@ -76,10 +53,42 @@ def _extract_text(result: Any) -> str:
     return str(result)
 
 
+async def _seed_model_context(agent: Any, prior_messages: list) -> None:
+    """Clear then replay prior turns into AutoGen's ChatCompletionContext."""
+    model_context = getattr(agent, "_model_context", None) or getattr(agent, "model_context", None)
+    if model_context is None:
+        return
+    if hasattr(model_context, "clear"):
+        await model_context.clear()
+    if not prior_messages or not hasattr(model_context, "add_message"):
+        return
+    try:
+        from autogen_agentchat.messages import TextMessage
+    except ImportError:
+        return
+    for msg in prior_messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role") or msg.get("type") or "user"
+        content = msg.get("content") or ""
+        if isinstance(content, list):
+            content = " ".join(
+                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+            )
+        source = "user" if role in ("human", "user") else "assistant"
+        try:
+            await model_context.add_message(TextMessage(content=str(content), source=source))
+        except Exception:
+            # Best-effort seed; run still proceeds with task= last human text.
+            break
+
+
 class AutoGenAdapter:
     """Loads AutoGen AssistantAgents from a config file and executes
     them against the Runner Protocol. See module docstring for
     conventions."""
+
+    checkpoint_framework = "autogen"
 
     def __init__(self) -> None:
         self.agents: dict[str, Any] = {}
@@ -89,6 +98,15 @@ class AutoGenAdapter:
         # defaultdict so concurrent first-uses of a graph_id can't race
         # to create two different Lock objects for it.
         self._agent_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+    def prepare_checkpoint_input(self, prior: bytes | None, input_data: dict) -> dict:
+        return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+    def serialize_checkpoint(self, assignment: dict, values: dict, status: str) -> bytes | None:
+        msgs = messages_from_values_event(values)
+        if not msgs:
+            return None
+        return encode_messages_checkpoint(msgs)
 
     async def load_config(self, config_path: str) -> None:
         path = Path(config_path)
@@ -134,14 +152,12 @@ class AutoGenAdapter:
         await event_callback(make_event("lifecycle", {"event": "running"}))
         try:
             messages = list(input_data.get("messages", []))
-            text = _last_human_text(messages)
+            text = last_human_text(messages)
+            prior = messages[:-1] if len(messages) > 1 else []
 
-            # See module docstring: lock (no concurrent run() on one
-            # agent) + clear (no sequential cross-run history leak).
+            # Lock (no concurrent run() on one agent) + seed or clear context.
             async with self._agent_locks[graph_id]:
-                model_context = getattr(agent, "_model_context", None) or getattr(agent, "model_context", None)
-                if model_context is not None and hasattr(model_context, "clear"):
-                    await model_context.clear()
+                await _seed_model_context(agent, prior)
                 result = await run_cancellable(agent.run(task=text), cancel_event)
             reply = _extract_text(result)
 

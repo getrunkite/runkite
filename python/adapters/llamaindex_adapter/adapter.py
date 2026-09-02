@@ -10,15 +10,11 @@ Config convention matches LangGraphAdapter's langgraph.json shape
 reasoning as langchain_adapter/crewai_adapter.
 
 Input/output convention: extracts every message from
-`RunAssignment.input.messages` (not just the last one, unlike
-langchain_adapter/crewai_adapter) because a LlamaIndex ChatEngine object
-is typically SHARED across every run dispatched to this runner process,
-so its own internal `.chat_history` must never be relied on for
-per-thread state -- doing so would leak one thread's conversation into
-another's. Instead, this adapter reconstructs the full prior history
-from RunAssignment.input every call and passes it explicitly via
-`achat(message, chat_history=...)`, which every real chat-engine/agent
-class in LlamaIndex accepts for exactly this reason.
+`RunAssignment.input.messages`. When opaque checkpoints are available
+(RUNKITE_HTTP_URL / worker http address), generic_worker restores prior
+thread messages so clients can send only the new turn. Without a
+checkpoint, the client must still send full history each call (engines
+are shared across runs and must not rely on in-process chat_history).
 """
 
 from __future__ import annotations
@@ -30,6 +26,12 @@ from pathlib import Path
 from typing import Any
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
+from runkite_runner.adapter_checkpoint import (
+    decode_messages_checkpoint,
+    encode_messages_checkpoint,
+    merge_messages_input,
+    messages_from_values_event,
+)
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 
 from .otel_events import attach_otel_job
@@ -60,19 +62,27 @@ def _extract_text(result: Any) -> str:
     .response; fall back to str() for anything else a custom engine
     might return."""
     if hasattr(result, "response"):
-        return result.response
-    if isinstance(result, str):
-        return result
+        return str(result.response)
     return str(result)
 
 
 class LlamaIndexAdapter:
-    """Loads LlamaIndex chat engines/agents from a config file and
-    executes them against the Runner Protocol. See module docstring for
-    conventions, especially the per-call chat_history reconstruction."""
+    """Loads LlamaIndex chat engines and executes them against the Runner Protocol."""
+
+    # Opt into opaque multi-turn via generic_worker (GET latest / PUT adapter-state).
+    checkpoint_framework = "llamaindex"
 
     def __init__(self) -> None:
         self.engines: dict[str, Any] = {}
+
+    def prepare_checkpoint_input(self, prior: bytes | None, input_data: dict) -> dict:
+        return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+    def serialize_checkpoint(self, assignment: dict, values: dict, status: str) -> bytes | None:
+        msgs = messages_from_values_event(values)
+        if not msgs:
+            return None
+        return encode_messages_checkpoint(msgs)
 
     async def load_config(self, config_path: str) -> None:
         path = Path(config_path)
@@ -122,6 +132,10 @@ class LlamaIndexAdapter:
             last_text = (
                 messages[-1].get("content") if isinstance(messages[-1], dict) else getattr(messages[-1], "content", "")
             )
+            if isinstance(last_text, list):
+                last_text = " ".join(
+                    b.get("text", "") for b in last_text if isinstance(b, dict) and b.get("type") == "text"
+                )
             prior_history = _to_chat_messages(messages[:-1])
 
             # Nest runkite.llm/tool under the active runkite.run (no-op when OTEL is off).

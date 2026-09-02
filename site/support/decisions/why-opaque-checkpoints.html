@@ -94,9 +94,9 @@
           </li>
           <li>Runners need not hold DB credentials in proxy mode.</li>
           <li>
-            CrewAI (and other frameworks) already run on the plane as adapters; sharing this
-            <em>opaque checkpoint</em> contract with them is planned next — LangGraph proxy is what
-            ships today.
+            CrewAI / LlamaIndex / AutoGen / LangChain adapters use the same
+            <code>/internal/checkpoints</code> HTTP contract for message-transcript continuity
+            (set <code>RUNKITE_HTTP_URL</code>). LangGraph keeps its richer saver (direct Postgres or proxy).
           </li>
         </ul>
         <h2>Rejected alternatives</h2>

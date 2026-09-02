@@ -88,7 +88,14 @@ async def run_cancellable(coro, cancel_event: asyncio.Event | None):
 class FrameworkAdapter(Protocol):
     """What generic_worker needs from a framework-specific adapter -- an
     adapter shim that translates between the framework's own execution API
-    and RunAssignment/RunEvent."""
+    and RunAssignment/RunEvent.
+
+    Optional opaque checkpoints (non-LangGraph multi-turn): set
+    ``checkpoint_framework`` to a non-empty string (e.g. ``"llamaindex"``)
+    and implement ``prepare_checkpoint_input`` / ``serialize_checkpoint``.
+    When RUNKITE_HTTP_URL (or the worker http address) is set, generic_worker
+    loads GET .../latest before execute and PUTs after success/interrupted.
+    """
 
     async def load_config(self, config_path: str) -> None:
         """Load agent definitions from langgraph.json (or equivalent)."""
@@ -301,6 +308,10 @@ async def _handle_job(
     rationale (identical structure, generalized to call
     adapter.execute(...) instead of the LangGraph-specific
     execute_run(...))."""
+    from .checkpoint import resolve_checkpoint_http_url
+    from .opaque_checkpoint import OpaqueCheckpointClient, adapter_supports_checkpoints
+    from .tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+
     run_id = None
     stream_task = None
     status = "error"
@@ -321,112 +332,129 @@ async def _handle_job(
         if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
             return
 
-        with run_span(
-            run_id,
-            graph_id=assignment.get("graph_id", ""),
-            thread_id=assignment.get("thread_id", ""),
-            tenant_id=assignment.get("tenant_id") or "",
-            trace_context=assignment.get("trace_context"),
-        ) as span:
-            event_queue: asyncio.Queue = asyncio.Queue()
+        tenant_token = bind_tenant(assignment.get("tenant_id"))
+        run_token = bind_run(run_id, generation)
+        try:
+            with run_span(
+                run_id,
+                graph_id=assignment.get("graph_id", ""),
+                thread_id=assignment.get("thread_id", ""),
+                tenant_id=assignment.get("tenant_id") or "",
+                trace_context=assignment.get("trace_context"),
+            ) as span:
+                event_queue: asyncio.Queue = asyncio.Queue()
 
-            async def event_generator():
-                while True:
-                    item = await event_queue.get()
-                    if item is None:
-                        return
-                    yield item
+                async def event_generator():
+                    while True:
+                        item = await event_queue.get()
+                        if item is None:
+                            return
+                        yield item
 
-            async def send_event(event: dict):
-                await event_queue.put(
-                    runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+                async def send_event(event: dict):
+                    await event_queue.put(
+                        runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+                    )
+
+                cancel_event = await register_run(
+                    pending_cancels,
+                    pre_cancelled,
+                    pending_cancels_lock,
+                    run_id,
                 )
 
-            cancel_event = await register_run(
-                pending_cancels,
-                pre_cancelled,
-                pending_cancels_lock,
-                run_id,
-            )
+                # Started as soon as run_id is known, before StreamEvents' first
+                # message -- see worker.py's mirrored change / heartbeat.py.
+                # Shares cancel_event with adapter.execute below -- a superseded
+                # heartbeat sets the SAME event a real cancel signal would.
+                heartbeat_task = asyncio.create_task(
+                    heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+                )
 
-            # Started as soon as run_id is known, before StreamEvents' first
-            # message -- see worker.py's mirrored change / heartbeat.py.
-            # Shares cancel_event with adapter.execute below -- a superseded
-            # heartbeat sets the SAME event a real cancel signal would.
-            heartbeat_task = asyncio.create_task(
-                heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
-            )
-
-            stream_task = None
-            status = "error"
-            try:
-                stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
-                stream_task = asyncio.ensure_future(stream_call)
-
+                stream_task = None
+                status = "error"
                 try:
-                    # Non-LangGraph frameworks have no checkpoint_id
-                    # resume path. Fail loudly rather than silently
-                    # ignoring checkpoint_ref (the audit finding that
-                    # previously bit the LangGraph runners).
-                    cref = assignment.get("checkpoint_ref")
-                    if isinstance(cref, str) and cref.strip():
-                        make_event = make_event_factory(run_id)
-                        await send_event(
-                            make_event(
-                                "error",
-                                {
-                                    "message": (
-                                        "checkpoint_ref is only supported by LangGraph runners "
-                                        "(python-langgraph / typescript-langgraphjs); "
-                                        f"this runner_kind ({runner_kind or 'generic'}) cannot time-travel"
-                                    ),
-                                    "type": "CheckpointRefUnsupported",
-                                },
+                    stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
+                    stream_task = asyncio.ensure_future(stream_call)
+
+                    try:
+                        # Non-LangGraph frameworks have no checkpoint_id
+                        # resume path. Fail loudly rather than silently
+                        # ignoring checkpoint_ref (the audit finding that
+                        # previously bit the LangGraph runners).
+                        cref = assignment.get("checkpoint_ref")
+                        if isinstance(cref, str) and cref.strip():
+                            make_event = make_event_factory(run_id)
+                            await send_event(
+                                make_event(
+                                    "error",
+                                    {
+                                        "message": (
+                                            "checkpoint_ref is only supported by LangGraph runners "
+                                            "(python-langgraph / typescript-langgraphjs); "
+                                            f"this runner_kind ({runner_kind or 'generic'}) cannot time-travel"
+                                        ),
+                                        "type": "CheckpointRefUnsupported",
+                                    },
+                                )
                             )
-                        )
+                            status = "error"
+                        else:
+                            status = await _execute_with_opaque_checkpoint(
+                                adapter,
+                                assignment,
+                                send_event,
+                                cancel_event,
+                                http_address=http_address,
+                                runner_kind=runner_kind,
+                                runner_token=runner_token,
+                                resolve_http_url=resolve_checkpoint_http_url,
+                                OpaqueCheckpointClient=OpaqueCheckpointClient,
+                                adapter_supports_checkpoints=adapter_supports_checkpoints,
+                            )
+                    except Exception as e:
+                        # A misbehaving adapter that raises instead of returning
+                        # a status must not leave the run stuck "running"
+                        # forever from the control plane's perspective -- see
+                        # FrameworkAdapter.execute's doc comment.
+                        logger.exception(f"Run {run_id} failed in adapter.execute: {e}")
+                        make_event = make_event_factory(run_id)
+                        await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
                         status = "error"
-                    else:
-                        status = await adapter.execute(assignment, send_event, cancel_event)
-                except Exception as e:
-                    # A misbehaving adapter that raises instead of returning
-                    # a status must not leave the run stuck "running"
-                    # forever from the control plane's perspective -- see
-                    # FrameworkAdapter.execute's doc comment.
-                    logger.exception(f"Run {run_id} failed in adapter.execute: {e}")
-                    make_event = make_event_factory(run_id)
-                    await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
-                    status = "error"
-            finally:
-                heartbeat_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat_task
-                # Always clear the cancel registration, even on an
-                # unexpected failure above -- otherwise it leaks an entry in
-                # pending_cancels for every job that hits this path.
-                async with pending_cancels_lock:
-                    pending_cancels.pop(run_id, None)
+                finally:
+                    heartbeat_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await heartbeat_task
+                    # Always clear the cancel registration, even on an
+                    # unexpected failure above -- otherwise it leaks an entry in
+                    # pending_cancels for every job that hits this path.
+                    async with pending_cancels_lock:
+                        pending_cancels.pop(run_id, None)
 
-            await event_queue.put(None)
-            if stream_task is not None:
-                try:
-                    await stream_task
-                except Exception as e:
-                    logger.error(f"Stream finalization error: {e}")
+                await event_queue.put(None)
+                if stream_task is not None:
+                    try:
+                        await stream_task
+                    except Exception as e:
+                        logger.error(f"Stream finalization error: {e}")
 
-            # Always report once run_id is known -- StreamEvents setup
-            # failures used to skip this and leave the run "running" forever.
-            await stub.ReportStatus(
-                runner_pb2.ReportStatusRequest(
-                    run_id=run_id,
-                    status=status,
-                    error_message="" if status != "error" else "see error event",
-                    generation=generation,
-                ),
-                metadata=auth_metadata,
-            )
+                # Always report once run_id is known -- StreamEvents setup
+                # failures used to skip this and leave the run "running" forever.
+                await stub.ReportStatus(
+                    runner_pb2.ReportStatusRequest(
+                        run_id=run_id,
+                        status=status,
+                        error_message="" if status != "error" else "see error event",
+                        generation=generation,
+                    ),
+                    metadata=auth_metadata,
+                )
 
-            set_run_status(span, status)
-            logger.info(f"Run completed: run_id={run_id} status={status}")
+                set_run_status(span, status)
+                logger.info(f"Run completed: run_id={run_id} status={status}")
+        finally:
+            reset_run(run_token)
+            reset_tenant(tenant_token)
 
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
@@ -445,6 +473,68 @@ async def _handle_job(
                 )
             except Exception:
                 pass
+
+
+async def _execute_with_opaque_checkpoint(
+    adapter: FrameworkAdapter,
+    assignment: dict,
+    send_event: EventCallback,
+    cancel_event: asyncio.Event,
+    *,
+    http_address: str,
+    runner_kind: str,
+    runner_token: str,
+    resolve_http_url,
+    OpaqueCheckpointClient,
+    adapter_supports_checkpoints,
+) -> str:
+    """Load/save opaque checkpoints around adapter.execute when opted in."""
+    use_cp = adapter_supports_checkpoints(adapter)
+    http_base = resolve_http_url(http_address) if use_cp else None
+    client = None
+    last_values: dict = {}
+
+    async def capturing_send(event: dict):
+        if event.get("method") == "values" and isinstance(event.get("data"), dict):
+            last_values.clear()
+            last_values.update(event["data"])
+        await send_event(event)
+
+    if use_cp and http_base:
+        framework = str(getattr(adapter, "checkpoint_framework")).strip()
+        client = OpaqueCheckpointClient(
+            http_base_url=http_base,
+            framework=framework,
+            runner_kind=runner_kind,
+            runner_token=runner_token or None,
+        )
+        thread_id = assignment.get("thread_id") or ""
+        try:
+            prior = await client.get_latest(thread_id) if thread_id else None
+        except Exception:
+            logger.exception("opaque checkpoint load failed; continuing without prior state")
+            prior = None
+        prepare = getattr(adapter, "prepare_checkpoint_input", None)
+        if callable(prepare):
+            assignment["input"] = prepare(prior, assignment.get("input") or {})
+
+    status = "error"
+    try:
+        status = await adapter.execute(assignment, capturing_send if client else send_event, cancel_event)
+    finally:
+        if client is not None:
+            try:
+                if status in ("success", "interrupted"):
+                    serialize = getattr(adapter, "serialize_checkpoint", None)
+                    if callable(serialize):
+                        blob = serialize(assignment, last_values, status)
+                        if blob:
+                            await client.put(assignment.get("thread_id") or "", blob)
+            except Exception:
+                logger.exception("opaque checkpoint save failed")
+            await client.aclose()
+
+    return status
 
 
 async def _poll_loop(

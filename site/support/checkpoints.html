@@ -78,9 +78,18 @@
         <h2>Modes</h2>
         <ul>
           <li><strong>Direct Postgres</strong> — LangGraph AsyncPostgresSaver against your DSN.</li>
-          <li><strong>HTTP proxy</strong> — opaque blobs via <code>/internal/checkpoints</code> (any CP backend).</li>
+          <li><strong>HTTP proxy</strong> — opaque blobs via <code>/internal/checkpoints</code> (any CP backend). Used by LangGraph when DSN is unset, and by CrewAI / LlamaIndex / AutoGen / LangChain adapters for multi-turn continuity.</li>
           <li><strong>Memory</strong> — fallback when neither DSN nor HTTP URL is set. Demo only.</li>
         </ul>
+        <h2>Adapter multi-turn</h2>
+        <p>
+          Non-LangGraph runners opt in via <code>checkpoint_framework</code> on the adapter. With
+          <code>RUNKITE_HTTP_URL</code> (or the worker’s http address) set, the generic worker
+          <code>GET .../latest</code> before execute and <code>PUT</code> after success — so the client
+          can send only the new message on the next run. LlamaIndex restores native
+          <code>chat_history</code>; other adapters fold prior turns into the next invoke string /
+          AutoGen model context. <code>checkpoint_ref</code> time-travel stays LangGraph-only.
+        </p>
         <h2>Why opaque</h2>
         <p>
           The plane must not parse framework checkpoint schemas. That keeps Agent Protocol

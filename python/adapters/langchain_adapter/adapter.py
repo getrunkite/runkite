@@ -1,8 +1,8 @@
 """Plain-LangChain adapter -- proves the Runner Protocol works for a
 LangChain `Runnable` (a prompt|llm|parser pipe, an `AgentExecutor`, any
 `Runnable`-satisfying chain) with NONE of LangGraph's platform-hosting
-machinery: no StateGraph, no checkpointing, no Factory Graph convention.
-Deliberately the simplest possible adapter -- see
+machinery: no StateGraph, no LangGraph checkpointer, no Factory Graph
+convention. Deliberately the simplest possible adapter -- see
 runkite_runner.generic_worker.FrameworkAdapter for the two methods any
 adapter must implement.
 
@@ -11,12 +11,10 @@ Config convention matches LangGraphAdapter's langgraph.json shape
 switching from LangGraph to a plain chain doesn't need to learn a new
 config format -- only `runner_kind` in that file changes.
 
-Input/output convention: this adapter extracts the last human/user
-message's text from `RunAssignment.input.messages` and invokes the
-Runnable with `{"input": <text>}` (LangChain's own common prompt-template
-variable name) -- the SAME `{"messages": [...]}` client-facing shape the
-LangGraph runner uses, so client code built against one runner_kind
-doesn't need to change to talk to the other.
+Input/output convention: extracts text from `RunAssignment.input.messages`
+and invokes the Runnable with `{"input": <text>}`. With opaque checkpoints,
+prior turns are restored and folded into that string so clients can send
+only the new message.
 """
 
 from __future__ import annotations
@@ -27,22 +25,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from runkite_runner.adapter_checkpoint import (
+    context_prompt_from_messages,
+    decode_messages_checkpoint,
+    encode_messages_checkpoint,
+    merge_messages_input,
+    messages_from_values_event,
+)
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 from runkite_runner.tracing import make_run_callbacks
-
-
-def _last_human_text(messages: list) -> str:
-    for msg in reversed(messages):
-        role = msg.get("role") or msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
-        if role in ("human", "user"):
-            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                # Chat-API content blocks: [{"type": "text", "text": "..."}]
-                parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-                return " ".join(parts)
-    return ""
 
 
 def _extract_text(result: Any) -> str:
@@ -61,8 +52,19 @@ class LangChainAdapter:
     them against the Runner Protocol. See module docstring for the
     config/input/output conventions."""
 
+    checkpoint_framework = "langchain"
+
     def __init__(self) -> None:
         self.runnables: dict[str, Any] = {}
+
+    def prepare_checkpoint_input(self, prior: bytes | None, input_data: dict) -> dict:
+        return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+    def serialize_checkpoint(self, assignment: dict, values: dict, status: str) -> bytes | None:
+        msgs = messages_from_values_event(values)
+        if not msgs:
+            return None
+        return encode_messages_checkpoint(msgs)
 
     async def load_config(self, config_path: str) -> None:
         path = Path(config_path)
@@ -109,7 +111,7 @@ class LangChainAdapter:
         await event_callback(make_event("lifecycle", {"event": "running"}))
         try:
             messages = list(input_data.get("messages", []))
-            text = _last_human_text(messages)
+            text = context_prompt_from_messages(messages)
 
             # Only pass config when we have callbacks -- a bare ainvoke(input)
             # keeps working for minimal/test Runnables that don't take config.

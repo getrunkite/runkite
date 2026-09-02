@@ -9,10 +9,12 @@ Config convention matches LangGraphAdapter's langgraph.json shape
 langchain_adapter: an agent author switching frameworks doesn't need a
 new config format, only `runner_kind` changes.
 
-Input/output convention: same as langchain_adapter -- extracts the last
-human/user message's text from `RunAssignment.input.messages` and calls
-`crew.akickoff(inputs={"input": <text>})`, using CrewAI's own native
-async kickoff (no thread-pool wrapping needed).
+Input/output convention: extracts human/user text from
+`RunAssignment.input.messages` and calls `crew.akickoff(inputs={"input":
+<text>})`. With opaque checkpoints enabled, prior turns are restored and
+folded into the input string so clients can send only the new message
+(CrewAI itself has no LangGraph-style checkpointer; this is plane-owned
+message continuity, not full crew-memory restore).
 
 Concurrency note (runner-side concurrency spot-check): unlike a
 LangGraph compiled graph or a plain LangChain Runnable, a CrewAI `Crew`
@@ -52,22 +54,16 @@ from typing import Any
 # depend on TTY detection succeeding.
 os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
 
+from runkite_runner.adapter_checkpoint import (  # noqa: E402
+    context_prompt_from_messages,
+    decode_messages_checkpoint,
+    encode_messages_checkpoint,
+    merge_messages_input,
+    messages_from_values_event,
+)
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable  # noqa: E402
 
 from .otel_events import attach_otel_listeners  # noqa: E402
-
-
-def _last_human_text(messages: list) -> str:
-    for msg in reversed(messages):
-        role = msg.get("role") or msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
-        if role in ("human", "user"):
-            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-                return " ".join(parts)
-    return ""
 
 
 def _extract_text(result: Any) -> str:
@@ -85,6 +81,8 @@ class CrewAIAdapter:
     """Loads CrewAI Crews from a config file and executes them against
     the Runner Protocol. See module docstring for conventions."""
 
+    checkpoint_framework = "crewai"
+
     def __init__(self) -> None:
         self.crews: dict[str, Any] = {}
         # Serializes concurrent akickoff() calls per graph_id -- see this
@@ -92,6 +90,15 @@ class CrewAIAdapter:
         # invoke concurrently. defaultdict so concurrent first-uses of a
         # graph_id can't race to create two different Lock objects for it.
         self._crew_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+    def prepare_checkpoint_input(self, prior: bytes | None, input_data: dict) -> dict:
+        return merge_messages_input(decode_messages_checkpoint(prior), input_data)
+
+    def serialize_checkpoint(self, assignment: dict, values: dict, status: str) -> bytes | None:
+        msgs = messages_from_values_event(values)
+        if not msgs:
+            return None
+        return encode_messages_checkpoint(msgs)
 
     async def load_config(self, config_path: str) -> None:
         path = Path(config_path)
@@ -137,7 +144,7 @@ class CrewAIAdapter:
         await event_callback(make_event("lifecycle", {"event": "running"}))
         try:
             messages = list(input_data.get("messages", []))
-            text = _last_human_text(messages)
+            text = context_prompt_from_messages(messages)
 
             # See module docstring: a shared Crew instance's akickoff()
             # isn't safe to run concurrently with itself, so concurrent

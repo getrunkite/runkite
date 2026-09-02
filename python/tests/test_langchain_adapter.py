@@ -134,7 +134,11 @@ async def test_extracts_last_human_message_and_passes_input_key():
         callback,
         None,
     )
-    check("runnable invoked with {'input': <last human text>}", fake.last_input == {"input": "the real question"})
+    # Prior turns are folded into the invoke string for opaque multi-turn continuity.
+    text = fake.last_input["input"]
+    check("invoke uses input key", set(fake.last_input.keys()) == {"input"})
+    check("current question present", "the real question" in text)
+    check("prior turn folded in", "earlier reply" in text)
 
 
 async def test_basemessage_output_normalized_to_text():

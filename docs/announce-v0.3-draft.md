@@ -27,7 +27,7 @@ What it’s for:
 
 - Several agents / more than one framework, shared connector secrets
 - Ops that isn’t SSH + three log streams
-- Persistence that doesn’t pretend ThreadState is a LangGraph checkpointer (opaque proxy store + LangGraph adapters; CrewAI runs on the plane today — opaque-checkpoint share is next)
+- Persistence that doesn’t pretend ThreadState is a LangGraph checkpointer (opaque proxy store for LangGraph + CrewAI / LlamaIndex / AutoGen / LangChain message continuity)
 - A proper support surface + redesign — not only a README
 - Hosted control plane when you don’t want to run the CP yourself (BYO runner in the first hosted slice)
 - Spend control on the plane: per-tenant/agent budgets, cost dashboards, alerts, chargeback export, optional price-aware routing
