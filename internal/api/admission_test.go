@@ -74,6 +74,24 @@ func TestAdmission_AgentScopedAuthz(t *testing.T) {
 		b, _ := io.ReadAll(resp2.Body)
 		t.Fatalf("key-b echo: want 403, got %d body=%s", resp2.StatusCode, b)
 	}
+
+	events, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{
+		Decision: "deny",
+		Limit:    20,
+	})
+	if err != nil {
+		t.Fatalf("SearchAuditEvents: %v", err)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.ReasonCode == "authz_deny" && ev.AgentID == "echo" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("want durable authz_deny audit row for echo; got %#v", events)
+	}
 }
 
 func TestAdmission_KillSwitchRefusesCreate(t *testing.T) {
@@ -125,6 +143,24 @@ func TestAdmission_KillSwitchRefusesCreate(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("want 403 under kill, got %d body=%s", resp.StatusCode, b)
 	}
+
+	events, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{
+		Decision: "deny",
+		Limit:    20,
+	})
+	if err != nil {
+		t.Fatalf("SearchAuditEvents: %v", err)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.ReasonCode == "kill_active" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("want durable kill_active audit; got %#v", events)
+	}
 }
 
 func TestKillSwitch_CRUDAndFind(t *testing.T) {
@@ -170,6 +206,23 @@ func TestKillSwitch_CRUDAndFind(t *testing.T) {
 		t.Fatalf("want tenant-wide empty agent_id, got %q", k.AgentID)
 	}
 
+	activateAudits, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{
+		Action: "kill.activate", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activateOK := false
+	for _, ev := range activateAudits {
+		if ev.ReasonCode == "kill_activate" && ev.ResourceID == k.ID {
+			activateOK = true
+			break
+		}
+	}
+	if !activateOK {
+		t.Fatalf("want kill_activate audit for %s; got %#v", k.ID, activateAudits)
+	}
+
 	dreq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/admin-api/kill-switches/"+k.ID, nil)
 	dresp, err := http.DefaultClient.Do(dreq)
 	if err != nil {
@@ -182,6 +235,23 @@ func TestKillSwitch_CRUDAndFind(t *testing.T) {
 	k2, err := store.FindActiveKill(ctx, "acme", "any-agent")
 	if err != nil || k2 != nil {
 		t.Fatalf("after delete want nil, got %#v err=%v", k2, err)
+	}
+
+	clearAudits, err := store.SearchAuditEvents(tenant.SystemContext(ctx), &models.AuditSearchRequest{
+		Action: "kill.clear", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearOK := false
+	for _, ev := range clearAudits {
+		if ev.ReasonCode == "kill_clear" && ev.ResourceID == k.ID {
+			clearOK = true
+			break
+		}
+	}
+	if !clearOK {
+		t.Fatalf("want kill_clear audit for %s; got %#v", k.ID, clearAudits)
 	}
 }
 

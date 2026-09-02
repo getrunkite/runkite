@@ -39,6 +39,7 @@ import (
 	"github.com/getrunkite/runkite/internal/connector"
 	"github.com/getrunkite/runkite/internal/cors"
 	"github.com/getrunkite/runkite/internal/customroutes"
+	"github.com/getrunkite/runkite/internal/finops"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
@@ -347,6 +348,14 @@ func startServer(opts serverOpts) {
 			"tenant_daily", lim.TenantDaily,
 			"agent_concurrent", lim.AgentConcurrent,
 			"agent_daily", lim.AgentDaily)
+	}
+
+	if fc := initFinOps(opts.configPath); fc != nil {
+		apiServer.SetFinOps(fc)
+		slog.Info("finops: configured",
+			"pricebook_models", len(fc.Pricebook),
+			"budget_tenants", len(fc.Budgets.Tenants),
+			"budget_agents", len(fc.Budgets.Agents))
 	}
 
 	// A/B deployment routing, built on top of full agent versioning.
@@ -1331,6 +1340,54 @@ func initAdmissionLimits(configPath string) *api.AdmissionLimits {
 		}
 	}
 	if !out.Enabled() {
+		return nil
+	}
+	return out
+}
+
+// initFinOps reads the "finops" section from the first langgraph.json.
+// Returns nil when absent.
+func initFinOps(configPath string) *finops.Config {
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg, err := config.LoadLangGraphJSON(paths[0])
+	if err != nil || cfg.FinOps == nil {
+		return nil
+	}
+	out := &finops.Config{
+		Pricebook: finops.Pricebook{},
+		Budgets: finops.Budgets{
+			Tenants: map[string]finops.BudgetCap{},
+			Agents:  map[string]finops.BudgetCap{},
+		},
+	}
+	for model, p := range cfg.FinOps.Pricebook {
+		out.Pricebook[model] = finops.ModelPrice{
+			InputPer1k:  p.InputPer1k,
+			OutputPer1k: p.OutputPer1k,
+		}
+	}
+	if cfg.FinOps.Budgets != nil {
+		for k, c := range cfg.FinOps.Budgets.Tenants {
+			out.Budgets.Tenants[k] = finops.BudgetCap{
+				MaxUSDPerDay:    c.MaxUSDPerDay,
+				MaxTokensPerDay: c.MaxTokensPerDay,
+				MaxRunsPerDay:   c.MaxRunsPerDay,
+				Soft:            c.Soft,
+			}
+		}
+		for k, c := range cfg.FinOps.Budgets.Agents {
+			out.Budgets.Agents[k] = finops.BudgetCap{
+				MaxUSDPerDay:    c.MaxUSDPerDay,
+				MaxTokensPerDay: c.MaxTokensPerDay,
+				MaxRunsPerDay:   c.MaxRunsPerDay,
+				Soft:            c.Soft,
+			}
+		}
+	}
+	if len(out.Pricebook) == 0 && !out.Enabled() {
 		return nil
 	}
 	return out

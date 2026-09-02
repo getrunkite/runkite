@@ -34,6 +34,7 @@ from .tenant_ctx import checkpoint_thread_id
 from .tls_utils import grpc_channel_credentials
 from .tracing import init as init_tracing
 from .tracing import make_run_callbacks, run_span, set_run_status
+from .usage import accumulate_usage, usage_payload
 
 logger = logging.getLogger("runkite.runner")
 
@@ -300,6 +301,8 @@ async def execute_run(
         }
 
     seen_tool_call_ids: set = set()
+    usage_totals: dict = {}
+    last_values: dict | None = None
 
     try:
         # Emitted BEFORE building the graph, not after: for a factory
@@ -444,6 +447,17 @@ async def execute_run(
                 if mode == "custom" and isinstance(data, dict) and data.get("name"):
                     method = f"custom:{data['name']}"
 
+                # Track last values for FinOps. Default stream_mode includes
+                # "values", and each values chunk is a *full* state snapshot
+                # (messages history grows). Summing usage on every chunk would
+                # re-count prior AIMessage.usage_metadata — accumulate once
+                # from the final snapshot after the loop (or incrementally
+                # from non-values modes when values were never streamed).
+                if mode == "values" and isinstance(data, dict):
+                    last_values = data
+                elif mode != "values":
+                    accumulate_usage(usage_totals, data)
+
                 await event_callback(make_event(method, data, namespace=namespace))
 
                 # Cancel is checked after emitting the chunk that was in
@@ -462,6 +476,16 @@ async def execute_run(
                 await event_callback(make_event("end", {"status": "interrupted"}))
                 return "interrupted"
             else:
+                # Enrich final values with top-level usage so the control
+                # plane can meter Output (FinOps usage_events / budgets).
+                if last_values is not None:
+                    # Prefer once-at-end from the last cumulative snapshot.
+                    usage_totals = {}
+                    accumulate_usage(usage_totals, last_values)
+                usage = usage_payload(usage_totals)
+                if usage and last_values is not None:
+                    enriched = {**last_values, "usage": usage}
+                    await event_callback(make_event("values", enriched))
                 await event_callback(make_event("end", {"status": "success"}))
                 return "success"
 
@@ -830,7 +854,13 @@ async def _run_assigned_job(
     stream_task = None
 
     # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
-    if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
+    if await should_skip_run(
+        http_address,
+        run_id,
+        runner_kind=runner_kind,
+        runner_token=runner_token,
+        tenant_id=assignment.get("tenant_id") or "",
+    ):
         return None
 
     # Open one persistent client-stream per run.

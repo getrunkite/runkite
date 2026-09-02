@@ -43,6 +43,12 @@ const (
 	ReasonPolicyPending        = "policy_pending"
 	ReasonPolicyAdmissionDeny  = "policy_admission_deny"
 	ReasonBreakGlass           = "break_glass"
+	ReasonKillActive           = "kill_active"
+	ReasonKillActivate         = "kill_activate"
+	ReasonKillClear            = "kill_clear"
+	ReasonAuthzDeny            = "authz_deny"
+	ReasonBudgetExceeded       = "budget_exceeded"
+	ReasonBudgetSoft           = "budget_soft"
 )
 
 // PolicyInput is the decision context for one gate check.

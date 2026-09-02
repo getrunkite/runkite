@@ -6,6 +6,9 @@
 #   Phase 0 — unbound store/session/vector → run_binding_required
 #   Phase 1 — tenant B denied on connector Y + durable audit row
 #   Phase 2 — Admin audit query + mandatory HITL approve one-shot
+#   Phase 3 — admission authz/kill deny (+ activate) write durable audit
+#             (covered by TestAdmission_* in the same package when run via
+#             make test / go test ./internal/api/ -run 'TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind')
 #
 # Usage (from repo root):
 #   make smoke-governance
@@ -44,7 +47,7 @@ echo "    Phase 1: tenant B connector deny + audit write"
 echo "    Phase 2: Admin audit query + HITL approve one-shot"
 
 set +e
-go test ./internal/api/ -run TestGovernanceAnnounceBar -count=1 -timeout 120s
+go test ./internal/api/ -run 'TestGovernanceAnnounceBar|TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind' -count=1 -timeout 120s
 rc=$?
 set -e
 
@@ -55,12 +58,13 @@ fi
 
 cat <<EOF
 
-PASS — governance announce bar (Phases 0–2).
+PASS — governance announce bar (Phases 0–2) + Phase 3 admission audit closeout.
 
-  proof:     make smoke-governance / TestGovernanceAnnounceBar
+  proof:     make smoke-governance / TestGovernanceAnnounceBar + TestAdmission_*
   docs:      docs/trust-governance.md
   infra:     left up$(if (( STARTED_INFRA )); then echo " (started by this script; make infra-down to tear down)"; fi)
 
 Non-claims: not Mongo governance parity; not in-graph / AuthorizeTool;
-not paid EKS soak; not FinOps dashboards; not Vault secret_ref.
+not paid EKS soak; not FinOps dashboards (F2); not Vault secret_ref.
+F0 cost caps + usage_events metering ship separately from this smoke.
 EOF

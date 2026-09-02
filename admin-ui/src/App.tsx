@@ -19,6 +19,7 @@ import { KillSwitches } from "./pages/KillSwitches";
 import { BreakGlass } from "./pages/BreakGlass";
 import { MandatoryHITL } from "./pages/MandatoryHITL";
 import { Audit } from "./pages/Audit";
+import { Spend } from "./pages/Spend";
 
 function Gate() {
   const { status } = useAuth();
@@ -60,6 +61,7 @@ function Gate() {
         <Route path="kill" element={<KillSwitches />} />
         <Route path="break-glass" element={<BreakGlass />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="spend" element={<Spend />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>

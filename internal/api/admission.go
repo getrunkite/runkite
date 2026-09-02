@@ -28,13 +28,14 @@ func (s *Server) killSwitches() (killSwitchStore, bool) {
 
 // admissionGate is a hooks.Gate registered into the same CheckBeforeRun
 // pipeline as webhook preflight_hooks. Order: kill → agent authz →
-// optional policy Decide(run.create). First deny wins.
+// optional policy Decide(run.create) → optional finops budget. First
+// deny wins. Break-glass bypasses policy only — not hard budgets.
 type admissionGate struct {
 	server *Server
 }
 
 // RegisterAdmissionGate installs the run-admission Gate on dispatcher.
-// Safe when policy is nil (authz + kill still apply).
+// Safe when policy is nil (authz + kill + budgets still apply).
 func (s *Server) RegisterAdmissionGate(d *hooks.Dispatcher) {
 	if s == nil || d == nil {
 		return
@@ -70,14 +71,17 @@ func (g *admissionGate) Decide(ctx context.Context, event hooks.Event) hooks.Dec
 			if k.PauseOnly {
 				reason = "enqueue paused: " + reason
 			}
+			s.writeAdmissionDenyAudit(ctx, tenantID, agentID, event.RunID, policy.ReasonKillActive, reason)
 			return hooks.Decision{Allow: false, Reason: reason}
 		}
 	}
 
 	if !auth.CanRunAgent(auth.FromContext(ctx), agentID) {
+		reason := fmt.Sprintf("missing permission %s", auth.AgentRunPermission(agentID))
+		s.writeAdmissionDenyAudit(ctx, tenantID, agentID, event.RunID, policy.ReasonAuthzDeny, reason)
 		return hooks.Decision{
 			Allow:  false,
-			Reason: fmt.Sprintf("missing permission %s", auth.AgentRunPermission(agentID)),
+			Reason: reason,
 		}
 	}
 
@@ -94,19 +98,24 @@ func (g *admissionGate) Decide(ctx context.Context, event hooks.Event) hooks.Dec
 			Principal: principal,
 		}
 		if s.tryBreakGlassBypass(ctx, in) {
-			return hooks.Decision{Allow: true}
-		}
-		dec := s.policy.Decide(ctx, in)
-		if dec.Effect != policy.EffectAllow {
-			reason := dec.Reason
-			if reason == "" {
-				reason = dec.ReasonCode
+			// Break-glass skips policy only; budgets still apply below.
+		} else {
+			dec := s.policy.Decide(ctx, in)
+			if dec.Effect != policy.EffectAllow {
+				reason := dec.Reason
+				if reason == "" {
+					reason = dec.ReasonCode
+				}
+				if reason == "" {
+					reason = "run.create denied by policy"
+				}
+				return hooks.Decision{Allow: false, Reason: reason}
 			}
-			if reason == "" {
-				reason = "run.create denied by policy"
-			}
-			return hooks.Decision{Allow: false, Reason: reason}
 		}
+	}
+
+	if allow, reason := s.checkBudgetAdmission(ctx, tenantID, agentID, event.RunID); !allow {
+		return hooks.Decision{Allow: false, Reason: reason}
 	}
 
 	return hooks.Decision{Allow: true}

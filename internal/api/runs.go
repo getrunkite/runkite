@@ -847,6 +847,13 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	// creation time, so persist it in a separate, explicit update.
 	if err := s.store.UpdateRunStatus(ctx, runID, models.RunStatusSuccess, outputJSON, ""); err != nil {
 		slog.Error("failed to persist cached run output", "run_id", runID, "error", err)
+	} else {
+		run.Status = models.RunStatusSuccess
+		run.Output = outputJSON
+		if run.TenantID == "" {
+			run.TenantID = tenant.FromContext(ctx)
+		}
+		s.ingestTerminalUsage(ctx, run)
 	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "cache_hit").Inc()
 

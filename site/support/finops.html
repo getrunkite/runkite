@@ -74,27 +74,60 @@
         </div>
 
         <h1>Spend (FinOps)</h1>
-        <p class="lede">Governance hooks for spend — not a chargeback dashboard product.</p>
-        <h2>What the plane should own</h2>
+        <p class="lede">
+          See spend in Admin and stop spend at admission —
+          not a full chargeback product yet.
+        </p>
+        <h2>What ships now (F0 + metering + Admin Spend)</h2>
         <ul>
-          <li>Hard caps / deny on expensive connectors (policy next to grants).</li>
-          <li>Mandatory HITL before high-cost tool classes fire.</li>
-          <li>Durable audit of mint / approve / deny — exportable into your FinOps stack.</li>
+          <li>
+            Optional <code>finops</code> in <code>langgraph.json</code>: UTC-day
+            budgets per tenant / <code>tenant/agent</code>
+            (<code>max_usd_per_day</code>, <code>max_tokens_per_day</code>,
+            <code>max_runs_per_day</code>) — soft allow + audit, or hard deny
+            (<code>budget_exceeded</code>). Break-glass does <strong>not</strong>
+            bypass hard caps.
+          </li>
+          <li>
+            Terminal runs with top-level <code>Output.usage</code> write SQL
+            <code>usage_events</code> (pricebook when <code>cost_usd</code> absent).
+            The Python LangGraph runner sums <code>AIMessage.usage_metadata</code>
+            into that object.
+          </li>
+          <li>
+            Admin: <code>/admin/spend</code> UI and
+            <code>GET /admin-api/usage/summary</code> (SQL backends only).
+          </li>
         </ul>
-        <h2>What v0.3 does <em>not</em> ship</h2>
+        <h2>What is not shipped yet</h2>
         <ul>
-          <li>No spend UI, budgets board, or chargeback product.</li>
-          <li>No automatic USD metering of every LLM token (bring your own exporter).</li>
+          <li>Chargeback export, spend alerts, price-aware model routing (F3–F4).</li>
+          <li>
+            Typed Runner Protocol usage events for every framework — non-LangGraph
+            adapters still need to emit <code>Output.usage</code> themselves.
+          </li>
         </ul>
         <h2>Practical stance</h2>
         <p>
-          Keep cost controls on the plane beside grants and HITL. Ship audit to the system
-          you already trust for money. Don’t wait on a Runkite “FinOps product.”
+          Cost caps and metering sit next to kill, grants, and HITL. Wire
+          <code>finops</code> in config, watch <code>/admin/spend</code>, and hard-deny
+          when a day budget is gone.
         </p>
+        <figure class="shot">
+          <img
+            id="ui-spend"
+            src="../assets/ui-spend.png"
+            width="960"
+            height="600"
+            alt="Admin Spend page showing USD and token rollups by tenant and agent"
+          />
+          <figcaption>Admin → Spend — UTC-day rollups from <code>usage_events</code>.</figcaption>
+        </figure>
         <p class="note">
           Related: <a href="./security.html">Security</a> ·
-          <a href="./connectors.html">Connectors &amp; HITL</a> ·
-          <a href="./limitations.html">Limitations</a>
+          <a href="./kill.html">Kill &amp; break-glass</a> ·
+          <a href="./limitations.html">Limitations</a> ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
         </p>
 
       </main>

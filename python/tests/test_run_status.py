@@ -44,6 +44,21 @@ class TestShouldSkipRun(unittest.TestCase):
         with _patch_get(404, {}):
             self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1")))
 
+    def test_sends_tenant_header(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "pending"}
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        with patch("runkite_runner.run_status.httpx.AsyncClient", return_value=client):
+            self.assertFalse(
+                _run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme"))
+            )
+        kwargs = client.get.await_args.kwargs
+        self.assertEqual(kwargs["headers"].get("X-Runkite-Tenant-Id"), "acme")
+
 
 if __name__ == "__main__":
     unittest.main()

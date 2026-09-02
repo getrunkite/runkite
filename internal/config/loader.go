@@ -125,6 +125,12 @@ type LangGraphConfig struct {
 	// present, connector.session / tool.call default to deny unless a
 	// grant matches (see internal/policy).
 	Policy *PolicyEntry `json:"policy,omitempty"`
+	// FinOps is control-plane-wide, first-file (see initFinOps in
+	// cmd/serve.go). Optional model pricebook for usage_events USD
+	// estimates and optional tenant/agent daily budget caps enforced at
+	// run admission (after kill + authz; break-glass does not bypass
+	// hard budgets).
+	FinOps *FinOpsEntry `json:"finops,omitempty"`
 }
 
 // PolicyEntry is the "policy" section of langgraph.json.
@@ -192,6 +198,33 @@ type PolicyWebhookEntry struct {
 type PolicySIEMEntry struct {
 	URL    string `json:"url"`
 	Secret string `json:"secret,omitempty"`
+}
+
+// FinOpsEntry is the "finops" section of langgraph.json.
+type FinOpsEntry struct {
+	Pricebook map[string]FinOpsModelPrice `json:"pricebook,omitempty"`
+	Budgets   *FinOpsBudgetsEntry         `json:"budgets,omitempty"`
+}
+
+// FinOpsModelPrice is USD per 1k tokens for one model id.
+type FinOpsModelPrice struct {
+	InputPer1k  float64 `json:"input_per_1k"`
+	OutputPer1k float64 `json:"output_per_1k"`
+}
+
+// FinOpsBudgetsEntry holds optional tenant and agent daily caps.
+// Agent keys are "tenant_id/agent_id".
+type FinOpsBudgetsEntry struct {
+	Tenants map[string]FinOpsBudgetCap `json:"tenants,omitempty"`
+	Agents  map[string]FinOpsBudgetCap `json:"agents,omitempty"`
+}
+
+// FinOpsBudgetCap is one daily ceiling. Zero fields are unlimited.
+type FinOpsBudgetCap struct {
+	MaxUSDPerDay    float64 `json:"max_usd_per_day,omitempty"`
+	MaxTokensPerDay int64   `json:"max_tokens_per_day,omitempty"`
+	MaxRunsPerDay   int64   `json:"max_runs_per_day,omitempty"`
+	Soft            bool    `json:"soft,omitempty"`
 }
 
 // AgentAliasEntry is one entry in langgraph.json's "agent_aliases"

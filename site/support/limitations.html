@@ -82,8 +82,8 @@
           <li>Agent Protocol MCP sessions are process-local (sticky routing).</li>
           <li>Authz is route-level (+ optional agent run grants), not per-tool ACLs outside connector policy.</li>
           <li>Tenancy is flat <code>tenant_id</code> — no org/team UI.</li>
-          <li>Governance durability (audit/grants/pending/kill) is SQL-only; Mongo returns 501 on those Admin routes.</li>
-          <li>No built-in FinOps dashboards.</li>
+          <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
+          <li>FinOps F0 caps + metering + Admin Spend (<code>/admin/spend</code>) on SQL. No chargeback export or alerts yet. USD/token caps can overshoot in-flight spend (completed events only).</li>
           <li>Kubernetes/Helm is Compatible until a named cloud soak exists (Compose proves multi-CP HA today).</li>
         </ul>
         <p class="note">

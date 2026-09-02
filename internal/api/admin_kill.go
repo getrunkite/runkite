@@ -10,6 +10,7 @@ import (
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
+	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -141,6 +142,22 @@ func (s *Server) handleAdminCreateKillSwitch(w http.ResponseWriter, r *http.Requ
 		handleStoreError(w, err)
 		return
 	}
+	s.writeSecurityAudit(ctx, &models.AuditEvent{
+		TenantID:     body.TenantID,
+		Actor:        createdBy,
+		Action:       "kill.activate",
+		ResourceType: "kill_switch",
+		ResourceID:   id,
+		Decision:     policy.EffectAllow,
+		ReasonCode:   policy.ReasonKillActivate,
+		RuleID:       id,
+		AgentID:      body.AgentID,
+		Attrs: map[string]interface{}{
+			"reason":     body.Reason,
+			"pause_only": body.PauseOnly,
+			"cancelled":  cancelled,
+		},
+	})
 	slog.Info("kill switch activated",
 		"id", id, "tenant_id", body.TenantID, "agent_id", body.AgentID,
 		"pause_only", body.PauseOnly, "cancelled", cancelled)
@@ -159,7 +176,8 @@ func (s *Server) handleAdminDeleteKillSwitch(w http.ResponseWriter, r *http.Requ
 	}
 	ctx := tenant.SystemContext(r.Context())
 	id := r.PathValue("id")
-	if _, err := store.GetKillSwitch(ctx, id); err != nil {
+	existing, err := store.GetKillSwitch(ctx, id)
+	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
@@ -167,6 +185,24 @@ func (s *Server) handleAdminDeleteKillSwitch(w http.ResponseWriter, r *http.Requ
 		handleStoreError(w, err)
 		return
 	}
+	actor := ""
+	if ar := auth.FromContext(r.Context()); ar != nil {
+		actor = ar.Identity
+	}
+	s.writeSecurityAudit(ctx, &models.AuditEvent{
+		TenantID:     existing.TenantID,
+		Actor:        actor,
+		Action:       "kill.clear",
+		ResourceType: "kill_switch",
+		ResourceID:   id,
+		Decision:     policy.EffectAllow,
+		ReasonCode:   policy.ReasonKillClear,
+		RuleID:       id,
+		AgentID:      existing.AgentID,
+		Attrs: map[string]interface{}{
+			"reason": existing.Reason,
+		},
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

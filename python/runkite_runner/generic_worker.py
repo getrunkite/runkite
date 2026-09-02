@@ -330,7 +330,13 @@ async def _handle_job(
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
         _log_trace_context(run_id, assignment.get("trace_context"))
 
-        if await should_skip_run(http_address, run_id, runner_kind=runner_kind, runner_token=runner_token):
+        if await should_skip_run(
+            http_address,
+            run_id,
+            runner_kind=runner_kind,
+            runner_token=runner_token,
+            tenant_id=assignment.get("tenant_id") or "",
+        ):
             return
 
         tenant_token = bind_tenant(assignment.get("tenant_id"))

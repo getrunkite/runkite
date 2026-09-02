@@ -24,6 +24,7 @@ import (
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
 	"github.com/getrunkite/runkite/internal/customroutes"
+	"github.com/getrunkite/runkite/internal/finops"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
@@ -53,6 +54,7 @@ type Server struct {
 	a2aMaxDepth       int                             // 0 means "use the default" -- see SetA2AMaxDepth
 	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
 	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
+	finops            *finops.Config                  // nil = no pricebook / budget caps
 	aliases           *AliasResolver                  // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
@@ -162,6 +164,12 @@ func (s *Server) a2aMaxBreadthOrDefault() int {
 // admission_limits config. Nil or all-zero disables checks.
 func (s *Server) SetAdmissionLimits(l *AdmissionLimits) {
 	s.admissionLimits = l
+}
+
+// SetFinOps attaches optional pricebook + budget caps from finops config.
+// Nil disables budget admission and leaves usd_estimate at cost_usd / 0.
+func (s *Server) SetFinOps(cfg *finops.Config) {
+	s.finops = cfg
 }
 
 // SetAliasResolver attaches A/B deployment routing (see alias.go).
@@ -421,6 +429,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin-api/kill-switches", s.handleAdminCreateKillSwitch)
 	mux.HandleFunc("GET /admin-api/kill-switches/{id}", s.handleAdminGetKillSwitch)
 	mux.HandleFunc("DELETE /admin-api/kill-switches/{id}", s.handleAdminDeleteKillSwitch)
+	mux.HandleFunc("GET /admin-api/usage/summary", s.handleAdminUsageSummary)
 	mux.HandleFunc("GET /admin-api/break-glass", s.handleAdminListBreakGlass)
 	mux.HandleFunc("POST /admin-api/break-glass", s.handleAdminCreateBreakGlass)
 	mux.HandleFunc("GET /admin-api/break-glass/{id}", s.handleAdminGetBreakGlass)
@@ -532,10 +541,23 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 			slog.Error("status callback: failed to replay events for checkpoint", "run_id", runID, "error", replayErr)
 		}
 
+		var outputJSON []byte
+		if cachedVals != nil {
+			outputJSON, _ = json.Marshal(cachedVals)
+		}
+
 		if !tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
-			return s.store.UpdateRunStatus(ctx, runID, status, nil, errorMsg)
+			return s.store.UpdateRunStatus(ctx, runID, status, outputJSON, errorMsg)
 		}) {
 			return
+		}
+
+		if isTerminalStatus(status) {
+			run.Status = status
+			if len(outputJSON) > 0 {
+				run.Output = outputJSON
+			}
+			s.ingestTerminalUsage(ctx, run)
 		}
 
 		if status == models.RunStatusSuccess && cachedVals != nil {

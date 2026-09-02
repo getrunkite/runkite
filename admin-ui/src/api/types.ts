@@ -202,3 +202,14 @@ export interface AdminBreakGlassWindow {
   created_at?: string;
   updated_at?: string;
 }
+
+/** Usage rollup row from GET /admin-api/usage/summary. */
+export interface AdminUsageSummaryRow {
+  day: string;
+  tenant_id: string;
+  agent_id: string;
+  tokens_in: number;
+  tokens_out: number;
+  usd_estimate: number;
+  run_count: number;
+}

@@ -13,6 +13,7 @@ import logging
 
 import httpx
 
+from .tenant_ctx import HEADER_TENANT_ID
 from .tls_utils import httpx_tls_kwargs
 
 logger = logging.getLogger("runkite.runner")
@@ -27,10 +28,17 @@ async def should_skip_run(
     *,
     runner_kind: str = "",
     runner_token: str = "",
+    tenant_id: str = "",
 ) -> bool:
     """Return True when the assignment must be discarded without executing."""
     base = http_address.rstrip("/")
     headers: dict[str, str] = {}
+    # Runs are tenant-scoped; without this header GetRun resolves to
+    # tenant "default" and a non-default assignment looks like a 404 miss
+    # (then discarded forever until reclaim exhausts).
+    tid = (tenant_id or "").strip()
+    if tid:
+        headers[HEADER_TENANT_ID] = tid
     if runner_token:
         headers["X-Runner-Kind"] = runner_kind or "python-langgraph"
         headers["X-Runner-Token"] = runner_token
