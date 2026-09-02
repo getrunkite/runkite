@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Runs & threads — Runkite Docs</title>
-    <meta name="description" content="Monitor threads and runs — the operational heart of the plane." />
+    <title>PDP / Cedar — Runkite Docs</title>
+    <meta name="description" content="Bring your own policy decision point — OPA, Cedar, or a small webhook." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,13 +31,13 @@
           <a href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
-          <a class="active" href="runs.html">Runs &amp; threads</a>
+          <a href="runs.html">Runs &amp; threads</a>
           <a href="cron.html">Cron</a>
           <a href="webhooks.html">Webhooks</a>
           <a href="ops.html">Ops</a>
           <div class="nav-group">Govern</div>
           <a href="grants.html">Grants &amp; HITL</a>
-          <a href="policy.html">PDP / Cedar</a>
+          <a class="active" href="policy.html">PDP / Cedar</a>
           <a href="kill.html">Kill &amp; break-glass</a>
           <a href="security.html">Security</a>
           <a href="finops.html">Spend (FinOps)</a>
@@ -57,60 +57,59 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Operate</p>
-        <h1>Runs &amp; threads</h1>
-        <p class="lede">Threads hold conversation/state continuity. Runs are units of work the plane dispatches, fences, streams, and audits.</p>
+        <p class="kicker">Govern</p>
+        <h1>PDP / Cedar</h1>
+        <p class="lede">Runkite does not ship a proprietary policy product. Point <code>policy.webhook</code> at your PDP; the plane fail-closes and enforces allow / deny / pending on connectors.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              Clients create threads, then create runs (wait or stream). Admin lists runs across tenants,
-              opens a run detail with event log, and can cancel. Threads group related runs.
+              A sync decision webhook: the plane POSTs <code>policy.decide</code> JSON (optional HMAC), expects allow / deny / pending,
+              and applies the result on connector tool paths. Cedar, OPA, ABAC, or a 50-line script all work if they speak the envelope.
             </p>
           </section>
           <section>
             <h2>Why it is here</h2>
             <p>
-              Ops needs one place to answer “what is running, for whom, and why did it stop?” — without SSH into every runner.
+              Enterprises already have a PDP. The plane’s job is to gate side effects and audit — not to replace your policy stack.
+              Mandatory HITL still overrides an “allow” for defense in depth.
             </p>
           </section>
         </div>
 
-        <h2>How to use it</h2>
+        <h2>How to implement</h2>
         <ol class="steps">
-          <li>Create a thread via Agent Protocol <code>POST /threads</code>.</li>
-          <li>Start a run with <code>POST /threads/&#123;id&#125;/runs/wait</code> or <code>.../stream</code>.</li>
-          <li>In Admin → Threads / Runs, filter by status, agent, tenant.</li>
-          <li>Open a run for the SSE event log; cancel from Admin or API if needed.</li>
+          <li>Enable <code>policy</code> (presence of the section fail-closes connector access).</li>
+          <li>Set <code>policy.webhook.url</code> (+ optional secret / timeout).</li>
+          <li>Start from <code>examples/policy_webhook/</code> (deny / pending + HMAC self-check).</li>
+          <li>Layer grants + mandatory HITL in Admin; watch Pending / Audit when the PDP returns pending.</li>
         </ol>
+        <pre class="mono-block">"policy": {
+  "default_effect": "deny",
+  "webhook": {
+    "url": "http://127.0.0.1:8099/decide",
+    "secret": "dev-policy-secret",
+    "timeout_ms": 2000
+  }
+}</pre>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Runs — status, agent, thread, tenant</div>
-          <img src="../assets/ui-runs.png" alt="Runkite Admin Runs" width="960" height="600" />
-        </figure>
-
-        
-        <figure class="shot">
-          <div class="cap">Admin → Threads — conversation / cron thread list</div>
-          <img src="../assets/ui-threads.png" alt="Runkite Admin Threads" width="960" height="600" />
-        </figure>
-        <figure class="shot">
-          <div class="cap">Admin → Run detail — live / replayed event log</div>
-          <img src="../assets/ui-run-detail.png" alt="Runkite Admin run detail" width="960" height="600" />
+          <div class="cap">Admin → Grants / HITL / Pending / Audit — enforcement surfaces next to your PDP</div>
+          <img src="../assets/admin-governance.png" alt="Runkite Admin governance next to BYO PDP" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Statuses</strong> — pending → running → success / error / interrupted (HITL).</li>
-          <li><strong>Streaming</strong> — same events Admin replays are what clients see on the stream.</li>
-          <li><strong>Reclaim</strong> — if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
+          <li><strong>Fail-closed</strong> — webhook errors and timeouts deny (or pending per contract), never open the gate silently.</li>
+          <li><strong>Scope</strong> — governs connectors / admission on the plane, not arbitrary in-graph tools that never call a connector.</li>
+          <li><strong>Break-glass</strong> — timed bypass skips Decide; audit notes when mandatory HITL would have matched.</li>
         </ul>
         <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>
-          · <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md">docs/api.md</a>
-          · <a href="../design/fencing.html">Generation fencing</a>
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
+          · <a href="./grants.html">Grants &amp; HITL</a>
+          · <a href="./kill.html">Kill &amp; break-glass</a>
         </p>
 
       </main>

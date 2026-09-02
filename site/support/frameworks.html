@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Framework matrix — Runkite Docs</title>
+    <meta name="description" content="What each runner kind supports today — LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                <nav>
+          <div class="nav-group">Start</div>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="install.html">Install</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a class="active" href="frameworks.html">Framework matrix</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <a href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="policy.html">PDP / Cedar</a>
+          <a href="kill.html">Kill &amp; break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="chapters/">Chapters</a>
+          <a href="decisions/">Decisions</a>
+          <a href="../design/">Engineering notes</a>
+          <a href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Build</p>
+        <h1>Framework matrix</h1>
+        <p class="lede">Same control plane, many runners. The plane never assumes LangGraph — adapters share a generic worker loop and speak Runner Protocol.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              Python LangGraph + TypeScript LangGraph.js are first-class. CrewAI, LlamaIndex, AutoGen, and plain LangChain ship as thin adapters under <code>python/adapters/</code>.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              “Framework-agnostic” only counts if dispatch, cancel, HITL, and connectors work the same way for every runner kind — with honest gaps called out.
+            </p>
+          </section>
+        </div>
+
+        <h2>Support matrix</h2>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>LangGraph (Py)</th>
+                <th>LangGraph.js</th>
+                <th>CrewAI</th>
+                <th>LlamaIndex</th>
+                <th>AutoGen</th>
+                <th>LangChain</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Dispatch via plane</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+              <tr><td>Cancel (WatchCancels)</td><td>Yes</td><td>Yes*</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+              <tr><td>HITL interrupt / resume</td><td>Yes</td><td>Yes*</td><td>Limited</td><td>Limited</td><td>Limited</td><td>Limited</td></tr>
+              <tr><td>Opaque checkpoint proxy</td><td>Yes</td><td>Yes</td><td>Not yet</td><td>Not yet</td><td>Not yet</td><td>Not yet</td></tr>
+              <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>True --concurrency N</td><td>Yes</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td></tr>
+              <tr><td>Isolated adapter venv</td><td>—</td><td>—</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Shared</td></tr>
+              <tr><td>E2E in CI matrix</td><td>Yes</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Yes</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">* TypeScript cancel/HITL verified live; matrix CI scenarios today lean on LangGraph-Python example agents.</p>
+
+        <h2>How to implement</h2>
+        <ol class="steps">
+          <li>LangGraph — <code>runkite-runner</code> (Py) or TS runner with <code>langgraph.json</code>.</li>
+          <li>Adapters — install each adapter’s deps (isolated venv for CrewAI / LI / AutoGen), then <code>PYTHONPATH=python:python/adapters</code> and <code>python -m crewai_adapter</code> (etc.).</li>
+          <li>Clients keep the same Agent Protocol shape: last human message in, AI message out.</li>
+          <li>See <a href="./agents.html">Agents</a> for register/run; <a href="./checkpoints.html">Checkpoints</a> for LangGraph durable state.</li>
+        </ol>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Admin → Agents — registered ids across runner kinds</div>
+          <img src="../assets/ui-agents.png" alt="Runkite Admin Agents list" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Same plane features</strong> — connectors, grants, kill, webhooks apply regardless of framework.</li>
+          <li><strong>Honest limits</strong> — durable multi-turn checkpoints are LangGraph today; universal adapter checkpoints are the next engineering track.</li>
+          <li><strong>Dependency isolation</strong> — don’t install CrewAI into the LangGraph venv (protobuf pin fights).</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>
+          · <a href="./protocol.html">Protocols</a>
+        </p>
+
+      </main>
+    </div>
+  </body>
+</html>

@@ -10,7 +10,7 @@ Visuals live in `assets/`.
 **Routes (uniform multi-page nav):**
 - [`/`](./index.html) — product landing
 - [`/support/try.html`](./support/try.html) — try path
-- [`/support/`](./support/) — Docs catalog + chapters + decisions
+- [`/support/`](./support/) — Docs handbook (catalog + feature guides + chapters + decisions)
 - [`/design/`](./design/) — engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
 
 `try.html` at the site root redirects to `/support/try.html`.

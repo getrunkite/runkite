@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Runs & threads — Runkite Docs</title>
-    <meta name="description" content="Monitor threads and runs — the operational heart of the plane." />
+    <title>Cron — Runkite Docs</title>
+    <meta name="description" content="Schedule agent runs on the plane with multi-replica-safe claims." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,8 +31,8 @@
           <a href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
-          <a class="active" href="runs.html">Runs &amp; threads</a>
-          <a href="cron.html">Cron</a>
+          <a href="runs.html">Runs &amp; threads</a>
+          <a class="active" href="cron.html">Cron</a>
           <a href="webhooks.html">Webhooks</a>
           <a href="ops.html">Ops</a>
           <div class="nav-group">Govern</div>
@@ -58,59 +58,57 @@
         </div>
 
         <p class="kicker">Operate</p>
-        <h1>Runs &amp; threads</h1>
-        <p class="lede">Threads hold conversation/state continuity. Runs are units of work the plane dispatches, fences, streams, and audits.</p>
+        <h1>Cron</h1>
+        <p class="lede">Fire agents on a schedule from the control plane — same enqueue path as a client-created run, with exactly-once claims across replicas.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              Clients create threads, then create runs (wait or stream). Admin lists runs across tenants,
-              opens a run detail with event log, and can cancel. Threads group related runs.
+              Named schedules in <code>langgraph.json</code> (5-field cron + optional IANA timezone).
+              Each fire creates a run on a fixed thread <code>cron:&lt;schedule-name&gt;</code> so history stays browsable as one thread.
             </p>
           </section>
           <section>
             <h2>Why it is here</h2>
             <p>
-              Ops needs one place to answer “what is running, for whom, and why did it stop?” — without SSH into every runner.
+              Scheduled work must not depend on a laptop cron or a sidecar that bypasses grants, kill, and audit.
+              The plane owns the fire; runners only execute jobs.
             </p>
           </section>
         </div>
 
-        <h2>How to use it</h2>
+        <h2>How to implement</h2>
         <ol class="steps">
-          <li>Create a thread via Agent Protocol <code>POST /threads</code>.</li>
-          <li>Start a run with <code>POST /threads/&#123;id&#125;/runs/wait</code> or <code>.../stream</code>.</li>
-          <li>In Admin → Threads / Runs, filter by status, agent, tenant.</li>
-          <li>Open a run for the SSE event log; cancel from Admin or API if needed.</li>
+          <li>Add a <code>cron</code> block to a discovered config (schedules bootstrap from every file, like graphs).</li>
+          <li>Point <code>agent_id</code> at a registered agent; set <code>expression</code> and optional <code>timezone</code> / <code>input</code>.</li>
+          <li>Confirm the schedule in Admin → Cron (or <code>GET /internal/cron</code>).</li>
+          <li>After a fire, open thread <code>cron:&lt;name&gt;</code> and the run stream like any other run.</li>
         </ol>
+        <pre class="mono-block">"cron": {
+  "daily-report": {
+    "agent_id": "my_agent",
+    "expression": "0 9 * * *",
+    "timezone": "America/New_York",
+    "input": { "messages": [{ "role": "human", "content": "generate the daily report" }] }
+  }
+}</pre>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Runs — status, agent, thread, tenant</div>
-          <img src="../assets/ui-runs.png" alt="Runkite Admin Runs" width="960" height="600" />
-        </figure>
-
-        
-        <figure class="shot">
-          <div class="cap">Admin → Threads — conversation / cron thread list</div>
-          <img src="../assets/ui-threads.png" alt="Runkite Admin Threads" width="960" height="600" />
-        </figure>
-        <figure class="shot">
-          <div class="cap">Admin → Run detail — live / replayed event log</div>
-          <img src="../assets/ui-run-detail.png" alt="Runkite Admin run detail" width="960" height="600" />
+          <div class="cap">Admin → Cron — schedules across tenants</div>
+          <img src="../assets/ui-cron.png" alt="Runkite Admin Cron schedules" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Statuses</strong> — pending → running → success / error / interrupted (HITL).</li>
-          <li><strong>Streaming</strong> — same events Admin replays are what clients see on the stream.</li>
-          <li><strong>Reclaim</strong> — if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
+          <li><strong>Multi-replica</strong> — <code>cron_claims</code> ensures one dispatch per fire when replicas share Postgres.</li>
+          <li><strong>Missed fires</strong> — restarting schedules catch the latest miss only (no backlog storm); brand-new schedules start from registration time.</li>
+          <li><strong>Overlap</strong> — if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
         </ul>
         <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>
-          · <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md">docs/api.md</a>
-          · <a href="../design/fencing.html">Generation fencing</a>
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
+          · <a href="./runs.html">Runs &amp; threads</a>
         </p>
 
       </main>
