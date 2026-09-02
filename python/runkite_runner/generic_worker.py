@@ -387,24 +387,11 @@ async def _handle_job(
                     try:
                         # Non-LangGraph frameworks have no checkpoint_id
                         # resume path. Fail loudly rather than silently
-                        # ignoring checkpoint_ref (the audit finding that
-                        # previously bit the LangGraph runners).
-                        cref = assignment.get("checkpoint_ref")
-                        if isinstance(cref, str) and cref.strip():
+                        # ignoring checkpoint_ref.
+                        ref_err = checkpoint_ref_unsupported_error(assignment, runner_kind)
+                        if ref_err is not None:
                             make_event = make_event_factory(run_id)
-                            await send_event(
-                                make_event(
-                                    "error",
-                                    {
-                                        "message": (
-                                            "checkpoint_ref is only supported by LangGraph runners "
-                                            "(python-langgraph / typescript-langgraphjs); "
-                                            f"this runner_kind ({runner_kind or 'generic'}) cannot time-travel"
-                                        ),
-                                        "type": "CheckpointRefUnsupported",
-                                    },
-                                )
-                            )
+                            await send_event(make_event("error", ref_err))
                             status = "error"
                         else:
                             status = await _execute_with_opaque_checkpoint(
@@ -482,6 +469,25 @@ async def _handle_job(
                 pass
 
 
+def checkpoint_ref_unsupported_error(assignment: dict, runner_kind: str) -> dict | None:
+    """Return error-event data if adapters must reject checkpoint_ref.
+
+    Time-travel via checkpoint_ref is LangGraph-only. Adapters must fail
+    loudly rather than silently ignore a non-empty ref.
+    """
+    cref = assignment.get("checkpoint_ref")
+    if not (isinstance(cref, str) and cref.strip()):
+        return None
+    return {
+        "message": (
+            "checkpoint_ref is only supported by LangGraph runners "
+            "(python-langgraph / typescript-langgraphjs); "
+            f"this runner_kind ({runner_kind or 'generic'}) cannot time-travel"
+        ),
+        "type": "CheckpointRefUnsupported",
+    }
+
+
 async def _execute_with_opaque_checkpoint(
     adapter: FrameworkAdapter,
     assignment: dict,
@@ -527,8 +533,14 @@ async def _execute_with_opaque_checkpoint(
             prepare = getattr(adapter, "prepare_checkpoint_input", None)
             if callable(prepare):
                 assignment["input"] = prepare(prior, assignment.get("input") or {})
-        except Exception:
-            logger.exception("opaque checkpoint load/prepare failed; continuing without prior state")
+        except Exception as e:
+            # Soft-fail: keep a one-line warning (no traceback spam in CI /
+            # operator logs). Corrupt LG blobs on a shared thread are expected.
+            logger.warning(
+                "opaque checkpoint load/prepare failed (%s: %s); continuing without prior state",
+                type(e).__name__,
+                e,
+            )
             # Leave assignment["input"] as the raw client payload.
 
     status = "error"
@@ -543,8 +555,12 @@ async def _execute_with_opaque_checkpoint(
                         blob = serialize(assignment, last_values, status)
                         if blob:
                             await client.put(assignment.get("thread_id") or "", blob)
-            except Exception:
-                logger.exception("opaque checkpoint save failed")
+            except Exception as e:
+                logger.warning(
+                    "opaque checkpoint save failed (%s: %s)",
+                    type(e).__name__,
+                    e,
+                )
             await client.aclose()
 
     return status

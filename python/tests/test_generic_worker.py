@@ -31,6 +31,7 @@ from runkite_runner import runner_pb2  # noqa: E402
 from runkite_runner.generic_worker import (  # noqa: E402
     RunCancelled,
     _poll_loop,
+    checkpoint_ref_unsupported_error,
     make_event_factory,
     register_run,
     run_cancellable,
@@ -236,6 +237,58 @@ async def test_poll_loop_reports_error_when_adapter_raises():
 
     check("status reported as error when adapter.execute raises", stub.reported_status == "error")
     check("a synthetic error event was still forwarded", any(e["method"] == "error" for e in stub.sent_events))
+
+
+def test_checkpoint_ref_unsupported_error_helper():
+    check(
+        "non-empty ref rejected",
+        checkpoint_ref_unsupported_error({"checkpoint_ref": "cp-1"}, "python-crewai")["type"]
+        == "CheckpointRefUnsupported",
+    )
+    check(
+        "whitespace-only ref allowed",
+        checkpoint_ref_unsupported_error({"checkpoint_ref": "   "}, "python-crewai") is None,
+    )
+    check(
+        "missing ref allowed",
+        checkpoint_ref_unsupported_error({}, "python-crewai") is None,
+    )
+    check(
+        "null ref allowed",
+        checkpoint_ref_unsupported_error({"checkpoint_ref": None}, "python-crewai") is None,
+    )
+
+
+async def test_poll_loop_rejects_checkpoint_ref_for_adapters():
+    """Adapters must emit CheckpointRefUnsupported and never call execute."""
+
+    class TrackingAdapter:
+        called = False
+
+        async def load_config(self, config_path):
+            pass
+
+        async def execute(self, assignment, event_callback, cancel_event):
+            TrackingAdapter.called = True
+            return "success"
+
+    assignment = {
+        "run_id": "r-ref",
+        "thread_id": "t1",
+        "graph_id": "g1",
+        "checkpoint_ref": "past-cp-42",
+    }
+    stub = _FakeStub(assignment)
+    await _run_one_iteration(stub, TrackingAdapter())
+
+    check("execute never called", TrackingAdapter.called is False)
+    check("status reported as error", stub.reported_status == "error")
+    err_events = [e for e in stub.sent_events if e.get("method") == "error"]
+    check("error event emitted", bool(err_events))
+    check(
+        "CheckpointRefUnsupported type",
+        err_events[0].get("data", {}).get("type") == "CheckpointRefUnsupported",
+    )
 
 
 async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
@@ -534,8 +587,10 @@ async def _slow_coro(value, delay):
 async def main():
     test_make_event_factory_shape_and_sequencing()
     test_make_event_factory_serializes_pydantic_like_objects()
+    test_checkpoint_ref_unsupported_error_helper()
     await test_poll_loop_dispatches_and_reports_success()
     await test_poll_loop_reports_error_when_adapter_raises()
+    await test_poll_loop_rejects_checkpoint_ref_for_adapters()
     await test_poll_loop_runs_jobs_concurrently_at_concurrency_2()
     await test_poll_loop_concurrency_1_is_sequential_by_default()
     await test_cancel_isolation_under_concurrency()
