@@ -27,29 +27,22 @@ export function Login() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
-      {/* Soft radial glow behind the card -- the kind of subtle depth
-          that separates a "designed" auth screen from a bare form. */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-40"
-        style={{
-          background:
-            "radial-gradient(600px circle at 50% 0%, var(--color-primary), transparent 60%)",
-        }}
-      />
-      <Card className="relative w-full max-w-sm shadow-2xl">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4">
+      <Card className="relative w-full max-w-sm border-border">
         <CardHeader className="items-center text-center">
           <img
             src={`${import.meta.env.BASE_URL}logo.svg`}
             alt=""
             width={44}
             height={44}
-            className="mb-2 size-11 rounded-xl shadow-lg shadow-primary/30"
+            className="mb-2 size-11 rounded-sm"
           />
-          <CardTitle className="text-lg">Runkite Admin</CardTitle>
+          <CardTitle className="font-mono text-sm tracking-widest uppercase">
+            ~/ <span className="text-primary">runkite</span> · Admin
+          </CardTitle>
           <CardDescription>
             Sign in with an API key or JWT that has the{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">admin</code> permission.
+            <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">admin</code> permission.
           </CardDescription>
         </CardHeader>
         <CardContent>

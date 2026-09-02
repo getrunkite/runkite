@@ -1,24 +1,25 @@
 /* Runkite public brand — one system for landing / support / design.
-   Dark cinematic. Cobalt accent. No mint-on-black. */
+   Dark rack/ops (NOC language), not cinematic AI.
+   Amber signal. Hard edges. No aurora / stars / cobalt glow. */
 
 :root {
-  --bg: #09090b;
-  --bg-elev: #121217;
-  --bg-soft: #1a1a22;
+  --bg: #0a0a0b;
+  --bg-elev: #121214;
+  --bg-soft: #1a1a1d;
   --ink: #f4f4f5;
   --ink-dim: #d4d4d8;
   --muted: #a1a1aa;
-  --line: rgba(244, 244, 245, 0.22);
-  --line-strong: rgba(244, 244, 245, 0.36);
-  --accent: #6d7cff;
-  --accent-2: #8b9aff;
-  --accent-soft: rgba(109, 124, 255, 0.14);
+  --line: rgba(244, 244, 245, 0.18);
+  --line-strong: rgba(244, 244, 245, 0.32);
+  --accent: #f5a524;
+  --accent-2: #ffc857;
+  --accent-soft: rgba(245, 165, 36, 0.12);
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
-  --radius: 6px;
-  --radius-lg: 14px;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --radius: 2px;
+  --radius-lg: 4px;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.55);
   --font-display: "Fraunces", Georgia, serif;
   --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -58,7 +59,7 @@ a {
 }
 
 a:hover {
-  color: #c7ceff;
+  color: #ffe0a0;
 }
 
 code,
@@ -82,10 +83,9 @@ code,
   justify-content: space-between;
   gap: 1rem;
   padding: 0 clamp(1rem, 4vw, 2rem);
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line-strong);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
 }
 
 .site-logo {
@@ -165,24 +165,22 @@ code,
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .btn:hover {
   text-decoration: none;
-  transform: translateY(-1px);
 }
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(109, 124, 255, 0.22);
+  color: #14110a;
+  border-color: var(--accent);
 }
 
 .btn-primary:hover {
   background: var(--accent-2);
-  color: #fff;
+  color: #14110a;
 }
 
 .btn-ghost {
@@ -192,7 +190,7 @@ code,
 }
 
 .btn-ghost:hover {
-  border-color: var(--ink-dim);
+  border-color: var(--accent);
   color: var(--ink);
 }
 
@@ -214,8 +212,5 @@ code,
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-  .btn:hover {
-    transform: none;
   }
 }

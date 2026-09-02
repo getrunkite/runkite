@@ -51,8 +51,8 @@ export function EmptyState({
   learnMore?: { href: string; label: string };
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-border py-16 text-center">
+      <div className="flex size-12 items-center justify-center rounded-sm bg-muted">
         <Icon className="size-6 text-muted-foreground" />
       </div>
       <div>
@@ -88,7 +88,7 @@ export function supportPage(path: string): string {
 
 export function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+    <div className="flex items-start gap-3 rounded-sm border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
       <AlertTriangle className="mt-0.5 size-4 shrink-0" />
       <span>{message}</span>
     </div>

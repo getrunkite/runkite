@@ -5,7 +5,7 @@ Visuals live in `assets/`.
 
 **Live:** https://getrunkite.github.io/runkite/
 
-**Brand system (W2):** [`brand.css`](./brand.css) — dark cinematic canvas, Fraunces + IBM Plex Sans + JetBrains Mono, cobalt accent (not mint-on-black). Shared by landing, support, and design notes.
+**Brand system (W2):** [`brand.css`](./brand.css) — dark rack/ops canvas, Fraunces + IBM Plex Sans + JetBrains Mono, amber signal (no aurora/stars/cobalt glow). Shared by landing, support, and design notes.
 
 **Routes (uniform multi-page nav):**
 - [`/`](./index.html) — product landing

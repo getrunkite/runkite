@@ -8,7 +8,7 @@
       name="description"
       content="Self-hosted control plane for agents: Agent Protocol clients, Runner Protocol workers, connectors, HITL, fencing, and audit — one Go binary."
     />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="theme-color" content="#0a0a0b" />
     <meta property="og:title" content="Runkite — open agent control plane" />
     <meta
       property="og:description"
@@ -18,7 +18,7 @@
     <meta property="og:image" content="https://getrunkite.github.io/runkite/assets/ecosystem.png" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%236d7cff'%3ERK%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -30,9 +30,6 @@
     <link rel="stylesheet" href="./landing.css" />
   </head>
   <body>
-    <canvas id="stars" aria-hidden="true"></canvas>
-    <div class="atmosphere" aria-hidden="true"></div>
-
     <div class="shell">
       <header class="site-header">
         <a class="site-logo" href="./">~/ <span>runkite</span></a>
@@ -41,7 +38,6 @@
           <a href="./support/try.html">Try</a>
           <a href="./support/">Docs</a>
           <a class="nav-hide-sm" href="./design/">Notes</a>
-          <a class="nav-hide-sm" href="#architecture">Architecture</a>
           <a
             class="btn btn-ghost"
             href="https://github.com/getrunkite/runkite"
@@ -62,7 +58,7 @@
               <a class="btn btn-ghost" href="./support/why.html">Why a plane</a>
             </div>
             <div class="hero-visual">
-              <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="chrome" aria-hidden="true"></div>
               <img
                 src="./assets/admin-walkthrough.gif"
                 alt="Runkite Admin walkthrough: overview, agents, runs, connectors, grants, HITL, kill, audit"
@@ -209,69 +205,6 @@
 
     <script>
       (function () {
-        // Ambient starfield: soft drifting dots behind the product surface.
-        // Landing-only — support/docs stay quiet for reading.
-        var c = document.getElementById("stars");
-        if (c && c.getContext && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          var ctx = c.getContext("2d");
-          var stars = [];
-          function resize() {
-            c.width = window.innerWidth;
-            c.height = window.innerHeight;
-            stars = [];
-            var area = c.width * c.height;
-            var n = Math.min(220, Math.max(95, Math.floor(area / 8500)));
-            for (var i = 0; i < n; i++) {
-              var bright = Math.random() < 0.12;
-              stars.push({
-                x: Math.random() * c.width,
-                y: Math.random() * c.height,
-                r: bright ? Math.random() * 1.6 + 1.1 : Math.random() * 1.1 + 0.25,
-                base: bright ? Math.random() * 0.35 + 0.45 : Math.random() * 0.35 + 0.18,
-                phase: Math.random() * Math.PI * 2,
-                speed: Math.random() * 1.4 + 0.55,
-                vx: (Math.random() - 0.5) * (bright ? 0.14 : 0.28),
-                vy: (Math.random() - 0.5) * (bright ? 0.11 : 0.24),
-                cobalt: Math.random() < 0.28,
-                glow: bright,
-              });
-            }
-          }
-          function draw(t) {
-            ctx.clearRect(0, 0, c.width, c.height);
-            for (var i = 0; i < stars.length; i++) {
-              var s = stars[i];
-              s.x += s.vx;
-              s.y += s.vy;
-              if (s.x < -4) s.x = c.width + 4;
-              if (s.x > c.width + 4) s.x = -4;
-              if (s.y < -4) s.y = c.height + 4;
-              if (s.y > c.height + 4) s.y = -4;
-              var a = s.base + Math.sin(t * 0.0028 * s.speed + s.phase) * s.base * 0.55;
-              a = Math.max(0.08, Math.min(0.95, a));
-              if (s.glow) {
-                var g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
-                g.addColorStop(0, s.cobalt ? "rgba(109,124,255," + a * 0.55 + ")" : "rgba(200,210,255," + a * 0.5 + ")");
-                g.addColorStop(1, "rgba(109,124,255,0)");
-                ctx.fillStyle = g;
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
-                ctx.fill();
-              }
-              ctx.beginPath();
-              ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-              ctx.fillStyle = s.cobalt
-                ? "rgba(139,154,255," + a + ")"
-                : "rgba(220,228,255," + a + ")";
-              ctx.fill();
-            }
-            requestAnimationFrame(draw);
-          }
-          resize();
-          requestAnimationFrame(draw);
-          window.addEventListener("resize", resize);
-        }
-
         var phrases = [
           "Any framework. One self-hosted control plane.",
           "Dispatch, connectors, HITL, fencing, audit.",

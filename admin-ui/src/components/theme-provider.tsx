@@ -10,12 +10,11 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = "runkite_admin_theme";
 
-/** Dark by default — matches the public brand (dark cinematic + cobalt,
+/** Dark by default — matches the public brand (dark rack/ops + amber,
  * see site/brand.css), so a prospect clicking from the marketing site into
  * Admin isn't hit with a jarring light-theme flip. Also the same dark-first
  * convention as Datadog/Grafana/Linear/Vercel for a tool watched over long
- * ops sessions. The warm-paper light theme (see index.css) is one click
- * away for anyone who prefers it. */
+ * ops sessions. The light theme (see index.css) is one click away. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);

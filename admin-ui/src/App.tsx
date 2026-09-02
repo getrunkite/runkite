@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router";
-import { Loader2, Rocket } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -26,8 +26,8 @@ function Gate() {
   if (status === "checking") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
-        <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
-          <Rocket className="size-5" />
+        <div className="flex size-11 items-center justify-center rounded-sm border border-primary bg-background font-mono text-xs font-bold tracking-wider text-primary">
+          RK
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />

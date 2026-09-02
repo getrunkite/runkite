@@ -83,10 +83,10 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
-                    "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+                    "group flex items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_var(--sidebar-primary)]"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
                   )
                 }
               >
@@ -103,16 +103,18 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function SidebarBrand() {
   return (
-    <div className="flex h-14 items-center gap-2 px-4">
+    <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
       <img
         src={`${import.meta.env.BASE_URL}logo.svg`}
         alt=""
         width={28}
         height={28}
-        className="size-7 rounded-md"
+        className="size-7 rounded-sm"
       />
-      <span className="text-sm font-semibold tracking-tight">Runkite</span>
-      <span className="ml-auto rounded-full border border-sidebar-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span className="font-mono text-xs font-semibold tracking-widest uppercase">
+        ~/ <span className="text-primary">runkite</span>
+      </span>
+      <span className="ml-auto rounded-sm border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
         Admin
       </span>
     </div>

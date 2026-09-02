@@ -584,7 +584,7 @@ table.matrix th {
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
-  background: rgba(109, 124, 255, 0.06);
+  background: var(--accent-soft);
 }
 
 table.matrix tbody tr:last-child td {

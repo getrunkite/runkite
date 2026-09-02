@@ -1,39 +1,5 @@
-/* Design notes — shared brand tokens */
+/* Design notes — shared brand tokens (dark rack/ops; no aurora) */
 @import url("../brand.css");
-
-/* Slow cobalt drift behind the notes -- decorative only (aria-hidden),
-   not the old static mint aurora (brand.css: "No mint-on-black"). Kept
-   subtle and blurred so it never competes with body-copy contrast. */
-.aurora {
-  position: fixed;
-  inset: -20% -10%;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 50% 40% at 70% 10%, var(--accent-soft), transparent 60%),
-    radial-gradient(ellipse 45% 35% at 15% 30%, rgba(139, 154, 255, 0.1), transparent 55%),
-    radial-gradient(ellipse 40% 30% at 50% 85%, rgba(109, 124, 255, 0.08), transparent 60%);
-  filter: blur(60px);
-  animation: aurora-drift 36s ease-in-out infinite alternate;
-}
-
-@keyframes aurora-drift {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-3%, 4%) scale(1.06);
-  }
-  100% {
-    transform: translate(4%, -3%) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .aurora {
-    animation: none;
-  }
-}
 
 .shell {
   position: relative;

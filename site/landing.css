@@ -1,43 +1,15 @@
-/* Landing — cinematic product surface on brand.css */
-
-.atmosphere {
-  position: fixed;
-  inset: -15% -10%;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 55% 40% at 15% 20%, rgba(109, 124, 255, 0.26), transparent 60%),
-    radial-gradient(ellipse 45% 35% at 85% 10%, rgba(139, 154, 255, 0.16), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(109, 124, 255, 0.12), transparent 55%);
-  animation: atmosphere-drift 14s ease-in-out infinite alternate;
-}
-
-@keyframes atmosphere-drift {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-3%, 3%) scale(1.08);
-  }
-  100% {
-    transform: translate(3%, -2%) scale(1);
-  }
-}
-
-#stars {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
+/* Landing — dark rack/ops product surface on brand.css.
+   No stars, aurora, or cobalt glow. Terminal-panel hero. */
 
 .shell {
   position: relative;
   z-index: 1;
+  background:
+    linear-gradient(180deg, var(--bg) 0%, #0c0c0e 40%, var(--bg) 100%);
 }
 
 .hero {
-  padding: clamp(3rem, 9vw, 5.5rem) 0 2.5rem;
+  padding: clamp(2.75rem, 8vw, 4.5rem) 0 2.25rem;
   text-align: center;
 }
 
@@ -46,7 +18,7 @@
   font-size: 0.78rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent-2);
+  color: var(--accent);
   margin: 0 0 1rem;
 }
 
@@ -58,14 +30,15 @@
   line-height: 1.05;
   margin: 0 auto 1rem;
   max-width: none;
+  color: var(--ink);
 }
 
 .hero h1 em {
   font-style: italic;
-  background: linear-gradient(120deg, var(--accent-2), #a8b4ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent-2);
+  font-weight: 500;
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  padding-bottom: 0.02em;
 }
 
 .hero .lede {
@@ -101,40 +74,46 @@
   margin-bottom: 2.5rem;
 }
 
+/* Rack console bezel around the product GIF */
 .hero-visual {
   position: relative;
   width: min(960px, 100%);
   margin: 0 auto;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow), 0 0 0 1px rgba(109, 124, 255, 0.12);
+  box-shadow: var(--shadow);
   background: var(--bg-elev);
 }
 
 .hero-visual .chrome {
   display: flex;
-  gap: 0.4rem;
-  padding: 0.7rem 0.9rem;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.85rem;
   border-bottom: 1px solid var(--line);
   background: var(--bg-soft);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-.hero-visual .chrome i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3f3f46;
+.hero-visual .chrome::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: 10px 0 0 #3f3f46, 20px 0 0 #3f3f46;
+  flex-shrink: 0;
 }
 
-.hero-visual .chrome i:nth-child(1) {
-  background: #f87171;
-}
-.hero-visual .chrome i:nth-child(2) {
-  background: #fbbf24;
-}
-.hero-visual .chrome i:nth-child(3) {
-  background: #34d399;
+.hero-visual .chrome::after {
+  content: "admin · /console";
+  margin-left: auto;
+  color: var(--ink-dim);
 }
 
 .hero-visual img {
@@ -173,7 +152,7 @@
 .panel {
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   padding: 1.4rem 1.3rem;
 }
 
@@ -200,16 +179,12 @@
 }
 
 .panel.bad {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
 }
 
 .panel.good {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--accent) 10%, var(--bg-elev)),
-    var(--bg-elev)
-  );
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev));
 }
 
 .gov-strip {
@@ -222,7 +197,7 @@
   padding: 1.1rem;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
 }
 
 .gov-item strong {
@@ -237,7 +212,6 @@
   font-size: 0.88rem;
   line-height: 1.4;
 }
-
 
 .arch-links {
   list-style: none;
@@ -285,8 +259,8 @@
 
 .reveal {
   opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.55s ease, transform 0.55s ease;
+  transform: translateY(10px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .reveal.in {
@@ -302,9 +276,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .atmosphere {
-    animation: none;
-  }
   .reveal {
     opacity: 1;
     transform: none;
@@ -315,8 +286,6 @@
   }
 }
 
-
-/* Prefer one-line titles on desktop */
 .nowrap-lg {
   max-width: none !important;
   white-space: nowrap;
@@ -338,19 +307,18 @@
   margin-top: 0.5rem;
 }
 
-/* Full-width architecture diagram */
 .eco {
   margin: 1.5rem 0 1.25rem;
-  border-radius: 1.1rem;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: #dce6f5;
-  padding: 1rem;
+  padding: 0.75rem;
   overflow: hidden;
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .eco img {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 0.7rem;
+  border-radius: 2px;
 }
