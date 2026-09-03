@@ -50,11 +50,11 @@ func New(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
 		return nil, fmt.Errorf("pgxpool.ParseConfig: %w", err)
 	}
 	if s.rlsEnabled {
-		cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+		cfg.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
 			if err := applyTenantGUC(ctx, conn); err != nil {
-				return false
+				return false, err
 			}
-			return true
+			return true, nil
 		}
 		cfg.AfterRelease = func(conn *pgx.Conn) bool {
 			clearTenantGUC(conn)
