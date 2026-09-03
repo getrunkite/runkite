@@ -175,12 +175,12 @@ func (u UsageSnapshot) Tokens() int64 {
 
 // BudgetVerdict is the result of checking one or more caps.
 type BudgetVerdict struct {
-	Allow      bool
-	Soft       bool   // true when Allow and at least one soft cap tripped
-	Hard       bool   // true when !Allow due to a hard cap
-	Reason     string
-	Scope      string // "tenant" or "agent"
-	CapKind    string // "usd" | "tokens" | "runs"
+	Allow   bool
+	Soft    bool // true when Allow and at least one soft cap tripped
+	Hard    bool // true when !Allow due to a hard cap
+	Reason  string
+	Scope   string // "tenant" or "agent"
+	CapKind string // "usd" | "tokens" | "runs"
 }
 
 // EvaluateCap compares a snapshot against one cap. Empty cap → allow.
@@ -251,7 +251,7 @@ func ApproachCap(cap *BudgetCap, snap UsageSnapshot, scope string, softPct float
 		return &BudgetVerdict{
 			Allow: true, Soft: true,
 			Reason: scope + " " + kind + " budget approaching",
-			Scope: scope, CapKind: kind,
+			Scope:  scope, CapKind: kind,
 		}
 	}
 	if v := check("usd", snap.USD, cap.MaxUSDPerDay); v != nil {

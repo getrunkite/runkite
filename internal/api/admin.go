@@ -538,9 +538,9 @@ func (s *Server) handleAdminListAuditEvents(w http.ResponseWriter, r *http.Reque
 	}
 	q := r.URL.Query()
 	req := models.AuditSearchRequest{
-		Limit:     paging.Limit,
-		Offset:    paging.Offset,
-		Cursor:    paging.Cursor,
+		Limit:      paging.Limit,
+		Offset:     paging.Offset,
+		Cursor:     paging.Cursor,
 		TenantID:   q.Get("tenant_id"),
 		Decision:   q.Get("decision"),
 		Action:     q.Get("action"),

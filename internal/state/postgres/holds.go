@@ -85,4 +85,3 @@ func (s *Store) ExpireUsageHolds(ctx context.Context, olderThan time.Time) (int6
 	}
 	return tag.RowsAffected(), nil
 }
-

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -83,4 +83,3 @@ func (s *Store) ExpireUsageHolds(ctx context.Context, olderThan time.Time) (int6
 	}
 	return res.RowsAffected()
 }
-

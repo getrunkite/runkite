@@ -88,4 +88,3 @@ func (s *SQLiteStore) ExpireUsageHolds(ctx context.Context, olderThan time.Time)
 	}
 	return res.RowsAffected()
 }
-

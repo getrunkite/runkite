@@ -166,7 +166,6 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 	return true, ""
 }
 
-
 // emitBudgetAlert dispatches hooks.BudgetAlert and is nil-safe when no sinks.
 func (s *Server) emitBudgetAlert(ctx context.Context, tenantID, agentID, runID, reasonCode string, v *finops.BudgetVerdict, hard bool) {
 	if s == nil || v == nil || s.hooks == nil || !s.hooks.HasSinks() {
@@ -189,7 +188,7 @@ func (s *Server) emitBudgetAlert(ctx context.Context, tenantID, agentID, runID, 
 			"reason":      v.Reason,
 			"scope":       v.Scope,
 			"kind":        v.CapKind,
-			"severity":  severity,
+			"severity":    severity,
 		},
 	})
 }
@@ -205,7 +204,6 @@ func (s *Server) shouldEmitApproachAlert(tenantID, agentID, scope, kind string, 
 	_, loaded := s.approachAlertSeen.LoadOrStore(key, struct{}{})
 	return !loaded
 }
-
 
 // ingestTerminalUsage writes a usage_events row from run Output when
 // present. Best-effort; no-ops on Mongo or empty/zero usage.
@@ -267,7 +265,6 @@ func extractRunUsageWithModel(output json.RawMessage) (RunUsage, string) {
 	}
 	return u, parsed.Usage.Model
 }
-
 
 func (s *Server) usageHolds() (usageHoldStore, bool) {
 	hs, ok := s.store.(usageHoldStore)
@@ -405,4 +402,3 @@ func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, alia
 	})
 	return to, from
 }
-

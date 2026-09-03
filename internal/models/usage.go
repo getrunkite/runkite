@@ -42,7 +42,6 @@ type UsageSummaryRow struct {
 	RunCount    int64   `json:"run_count"`
 }
 
-
 // UsageHold is an optimistic reservation counted toward UTC-day budgets
 // until the run terminates (SQL backends).
 type UsageHold struct {

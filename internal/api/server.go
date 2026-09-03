@@ -58,7 +58,7 @@ type Server struct {
 	// approachAlertSeen dedupes budget_alert approach audits/webhooks
 	// once per tenant|agent|scope|kind|UTC-day in this process.
 	approachAlertSeen sync.Map
-	aliases           *AliasResolver                  // nil-safe: nil Resolve is a pass-through
+	aliases           *AliasResolver // nil-safe: nil Resolve is a pass-through
 	// wsOriginPatterns, when non-empty, restricts WebSocket upgrades to
 	// those Origin values (same list as cors.allow_origins). Empty means
 	// coder/websocket's default any-Origin accept (token auth still applies).

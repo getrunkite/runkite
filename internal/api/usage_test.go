@@ -561,7 +561,7 @@ func TestFinOps_RoutingRewritesNearSoftPct(t *testing.T) {
 				"acme/pricey": {MaxUSDPerDay: 1},
 			},
 		},
-		Alerts:  finops.AlertsConfig{SoftPct: 80},
+		Alerts: finops.AlertsConfig{SoftPct: 80},
 		Routing: finops.RoutingConfig{
 			Enabled: true,
 			SoftPct: 80,
@@ -600,7 +600,6 @@ func TestFinOps_RoutingRewritesNearSoftPct(t *testing.T) {
 		t.Fatalf("want routed agent cheap, got %q", run.AgentID)
 	}
 }
-
 
 // Reservation holds must not inflate the run dimension: CountRunsSince
 // already includes in-flight creates, so adding open-hold count would
@@ -664,7 +663,6 @@ func TestAdmission_ReservationDoesNotDoubleCountRuns(t *testing.T) {
 		t.Fatalf("3rd create want 403 at max_runs=2, got %d", c)
 	}
 }
-
 
 func TestAdmission_CancelInflightOnHardBreach(t *testing.T) {
 	ctx := context.Background()
@@ -750,7 +748,6 @@ func TestAdmission_CancelInflightOnHardBreach(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
-
 
 func TestAdmission_ApproachAlertDedupedPerDay(t *testing.T) {
 	ctx := context.Background()
