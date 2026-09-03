@@ -19,8 +19,9 @@
 #   RUNKITE_API_KEY              # default langgraphJson api_key auth
 #
 # Compose multi/soak is the Supported correctness proof path. This overlay
-# packages the same topology for Kubernetes; a green cluster soak (kind/EKS)
-# is not claimed yet — treat K8s as Compatible until then.
+# packages the same topology for Kubernetes. Kind K0–K3 ops proofs exist
+# (make kind-helm-all; docs/k8s-kind-proof.md). No published EKS/cloud soak
+# (K4) yet — treat production cluster installs as Compatible until then.
 #
 # Optional pod TLS: also -f values-tls.yaml (and supply TLS Secrets).
 

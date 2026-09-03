@@ -46,12 +46,13 @@ the TLS Secrets named there, or override the names). See
 
 **Proof posture:** `make smoke-multi` / `make soak-multi` on
 `docker-compose.multi.yml` is the Supported correctness path (see
-[`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). Kind smokes:
-`make kind-helm-smoke` (install), `make kind-helm-rotate` (token rotation),
-`make kind-helm-reclaim` (mid-run reclaim), `make kind-helm-net` (Ingress +
-NetworkPolicy). Those are **install / ops smokes**, not a soak. A paid EKS
-(or equivalent) soak is **deferred** until named demand and budget; cluster
-installs stay **Compatible** until then.
+[`bench/soak/WRITEUP.md`](../../../bench/soak/WRITEUP.md)). Kind K0–K3
+ops proofs: `make kind-helm-all` (or individual `kind-helm-*` targets) —
+install, token rotation, mid-run reclaim, Ingress + NetworkPolicy — see
+[`docs/k8s-kind-proof.md`](../../../docs/k8s-kind-proof.md). Those are
+**install / ops smokes**, not a soak. A paid EKS (or equivalent) soak
+(K4) is still open; cluster installs stay **Compatible** for
+production-cloud claims until then.
 
 ## Install
 

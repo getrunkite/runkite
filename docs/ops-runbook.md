@@ -41,7 +41,7 @@ helm upgrade --install runkite ./deploy/helm/runkite \
   --set secrets.existingSecret=runkite-creds
 ```
 
-Ops smokes (not a soak): `make kind-helm-smoke` / `kind-helm-rotate` / `kind-helm-reclaim` / `kind-helm-net`.
+Ops smokes (not a soak): `make kind-helm-all` (K0–K3) or the individual `kind-helm-smoke` / `kind-helm-rotate` / `kind-helm-reclaim` / `kind-helm-net` targets. Results: [k8s-kind-proof.md](k8s-kind-proof.md).
 
 Details: [Deployment](deployment.md) · [Helm README](../deploy/helm/runkite/README.md#supported-profile).
 

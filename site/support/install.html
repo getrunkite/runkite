@@ -102,8 +102,10 @@ curl -sf http://localhost:2026/readyz && echo OK</pre>
   -f deploy/helm/runkite/values.yaml \
   -f deploy/helm/runkite/values-supported.yaml</pre>
         <p>
-          Kind smokes prove packaging; multi-CP HA proof today is Compose soak — treat bare
-          cluster installs as Compatible until a named cloud soak exists.
+          Kind K0–K3 ops proofs (<code>make kind-helm-all</code>) cover install, token
+          rotate, mid-run reclaim, and Ingress+NetworkPolicy. Multi-CP HA proof today is
+          Compose soak — treat production cluster installs as Compatible until a named
+          cloud soak (K4) exists.
         </p>
         <p class="note">
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/deployment.md">docs/deployment.md</a>

@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -472,3 +472,12 @@ kind-helm-reclaim:
 # via :8080, echo_agent success, runner deny-inbound probe.
 kind-helm-net:
 	@bash scripts/kind-helm-net.sh
+
+# K0–K3 kind Helm suite (sequential). See docs/k8s-kind-proof.md.
+# Not an EKS soak; cluster installs stay Compatible until K4.
+kind-helm-all:
+	@$(MAKE) kind-helm-smoke
+	@$(MAKE) kind-helm-rotate
+	@$(MAKE) kind-helm-reclaim
+	@$(MAKE) kind-helm-net
+	@echo "PASS — kind-helm-all (K0–K3). See docs/k8s-kind-proof.md"

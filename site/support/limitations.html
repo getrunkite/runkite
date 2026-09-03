@@ -84,7 +84,7 @@
           <li>Tenancy is flat <code>tenant_id</code> — no org/team UI.</li>
           <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) with alerts, export, holds, and alias routing on SQL. Overshoot possible when reservation is unset or estimates are wrong; no mid-run budget kill.</li>
-          <li>Kubernetes/Helm is Compatible until a named cloud soak exists (Compose proves multi-CP HA today).</li>
+          <li>Kubernetes/Helm: kind K0–K3 ops-proven; Compatible for production cloud until a named soak (K4). Compose proves multi-CP HA today.</li>
         </ul>
         <p class="note">
           Full list:

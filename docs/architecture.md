@@ -73,10 +73,10 @@ Not every pluggable backend is equally battle-tested for multi-replica productio
 | Tier | Meaning |
 |------|---------|
 | **Supported** | Production profile: multi-replica HA on Postgres + Redis (Compose soak proof), primary CI/matrix focus. Residual gaps, if any, are documented and small. |
-| **Compatible** | Passes the same conformance suite and is wired into `serve`, but has known semantic gaps vs Supported, thinner soak evidence, and/or ops caveats — including Helm/kind packaging (install smokes, not a cloud soak). Fine for real use when you accept those gaps. |
+| **Compatible** | Passes the same conformance suite and is wired into `serve`, but has known semantic gaps vs Supported, thinner soak evidence, and/or ops caveats — including Helm/Kubernetes (kind K0–K3 ops-proven; no published cloud soak yet — see [k8s-kind-proof.md](k8s-kind-proof.md)). Fine for real use when you accept those gaps. |
 | **Experimental** | Works for single-instance / specialized setups; multi-replica or HA behavior has residual races or incomplete primitives. Do not treat as an equal HA alternative to Supported. |
 
-**Recommended production profile:** `POSTGRES_DSN` + `REDIS_URL` (state + full transport triad + shared rate limits + Kafka reclaim leader when Kafka is also used). That is what `docker-compose.multi.yml` soaks and what [`deploy/helm/runkite`](../deploy/helm/runkite) packages as the Supported *backend* overlay — Kubernetes install itself stays Compatible until a real-cloud soak.
+**Recommended production profile:** `POSTGRES_DSN` + `REDIS_URL` (state + full transport triad + shared rate limits + Kafka reclaim leader when Kafka is also used). That is what `docker-compose.multi.yml` soaks and what [`deploy/helm/runkite`](../deploy/helm/runkite) packages as the Supported *backend* overlay — Kubernetes install itself stays Compatible for production-cloud claims until a real-cloud soak (K4; see [k8s-kind-proof.md](k8s-kind-proof.md)).
 
 | Concern | Supported | Compatible | Experimental |
 |---------|-----------|------------|--------------|
