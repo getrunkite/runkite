@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blog — Runkite Docs</title>
+    <meta
+      name="description"
+      content="Writing about the agent control plane: why it exists, how runners attach, and what we publish on Medium."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../support.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="../">Overview</a>
+          <a href="../try.html">Try it</a>
+          <a href="../admin-login.html">Admin login</a>
+          <a href="../credentials.html">Credentials map</a>
+          <a href="../why.html">Why a plane</a>
+          <a href="../scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="../install.html">Install</a>
+          <a href="../production.html">Production day-0</a>
+          <a href="../first-agent.html">First agent</a>
+          <a href="../agents.html">Agents (Py / JS)</a>
+          <a href="../migrate-agents.html">Migrate agents</a>
+          <a href="../frameworks.html">Framework matrix</a>
+          <a href="../checkpoints.html">Checkpoints</a>
+          <a href="../connectors.html">Connectors</a>
+          <a href="../registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a href="../runs.html">Runs &amp; threads</a>
+          <a href="../cron.html">Cron</a>
+          <a href="../webhooks.html">Webhooks</a>
+          <a href="../ops.html">Ops</a>
+          <a href="../runner-auth.html">Runner auth</a>
+          <a href="../secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="../grants.html">Grants &amp; HITL</a>
+          <a href="../hitl-ops.html">HITL ops</a>
+          <a href="../policy.html">PDP / Cedar</a>
+          <a href="../kill.html">Kill &amp; break-glass</a>
+          <a href="../security.html">Security</a>
+          <a href="../multi-tenant.html">Multi-tenant keys</a>
+          <a href="../finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="../a2a.html">A2A coordination</a>
+          <a href="../protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="../feature-map.html">Feature map</a>
+          <a href="../chapters/">Chapters</a>
+          <a class="active" href="../blog/">Blog</a>
+          <a href="../decisions/">Decisions</a>
+          <a href="../engineering.html">Engineering notes</a>
+          <a href="../limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Deep</p>
+        <h1>Blog</h1>
+        <p class="lede">
+          Short posts that explain the plane to people who already run agents.
+          Site index stays here; longer cuts also go to Medium at train-done.
+        </p>
+
+        <h2>Published / ready</h2>
+        <ul class="links">
+          <li>
+            <a href="./why-a-plane.html">Why your agents need a control plane</a>
+            — the Medium #1 cut (draft on-site; publish when the train tags)
+          </li>
+        </ul>
+
+        <h2>Series outline (C1)</h2>
+        <ol class="steps">
+          <li>
+            <strong>Why a plane</strong> — when one script stops being enough; shared
+            connectors, HITL, kill, audit. <em>Ready on-site.</em>
+          </li>
+          <li>
+            <strong>Two protocols, one plane</strong> — Agent Protocol clients vs Runner
+            Protocol workers; why the split is the product boundary.
+          </li>
+          <li>
+            <strong>BYO runner, governed secrets</strong> — runners stay yours;
+            <code>secret_ref</code> / Vault patterns keep long-lived creds out of agent env.
+          </li>
+          <li>
+            <strong>Spend without becoming a billco</strong> — FinOps as plane governance
+            (budgets, holds, export) — not Stripe rails.
+          </li>
+        </ol>
+
+        <h2>Medium (C2)</h2>
+        <p>
+          At train-done: publish post 1 on Medium, link back here. Until then this index
+          is the canonical outline + draft home. Related:
+          <a href="../chapters/">chapters</a>,
+          <a href="../decisions/">decisions</a>,
+          <a href="../why.html">why a plane</a>.
+        </p>
+      </main>
+    </div>
+    <script src="../docs.js" defer></script>
+  </body>
+</html>
