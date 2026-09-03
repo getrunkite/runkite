@@ -245,6 +245,282 @@ func TestUsage_TerminalIngest(t *testing.T) {
 	}
 }
 
+// TestUsage_UnpricedAlertsOnMissingPricebookRow proves a terminal run with
+// real tokens but no matching pricebook entry (and no reported cost_usd)
+// surfaces a usage_unpriced audit event instead of silently showing $0 —
+// the failure mode that makes an under-maintained pricebook look like the
+// run was free.
+func TestUsage_UnpricedAlertsOnMissingPricebookRow(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu2", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-unpriced", ThreadID: "tu2", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	// Pricebook has rates, but not for the model this run reports — the
+	// realistic "admin swapped models, forgot to update the pricebook" case.
+	s.SetFinOps(&finops.Config{
+		Pricebook: finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}},
+	})
+
+	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"some-new-model-v9"}}`)
+	if err := broker.Publish(acme, "run-unpriced", &transport.RunEvent{
+		EventID: "run-unpriced_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-unpriced", "success", "")
+
+	// Usage is still recorded (tokens matter even at $0)...
+	tin, tout, usd, err := store.SumUsage(ctx, "acme", "echo", now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tin != 1000 || tout != 500 || usd != 0 {
+		t.Fatalf("ingested usage = %d/%d/%v want 1000/500/0", tin, tout, usd)
+	}
+
+	// ...and the gap is surfaced via /admin-api/usage/alerts, not silent.
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("alerts: %d %s", resp.StatusCode, b)
+	}
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range events {
+		if e.ReasonCode == "usage_unpriced" && e.RunID == "run-unpriced" {
+			found = true
+			if e.Attrs["model"] != "some-new-model-v9" {
+				t.Fatalf("usage_unpriced attrs missing model: %#v", e.Attrs)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("want a usage_unpriced alert for run-unpriced, got %#v", events)
+	}
+}
+
+// TestUsage_NoUnpricedAlertWhenPricebookEmpty: tokens-only metering (no
+// pricebook configured) must not spam usage_unpriced on every run.
+func TestUsage_NoUnpricedAlertWhenPricebookEmpty(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu-empty-pb", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-empty-pb", ThreadID: "tu-empty-pb", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	s.SetFinOps(&finops.Config{Pricebook: finops.Pricebook{}})
+
+	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"gpt-4o-mini"}}`)
+	if err := broker.Publish(acme, "run-empty-pb", &transport.RunEvent{
+		EventID: "run-empty-pb_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-empty-pb", "success", "")
+
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.ReasonCode == "usage_unpriced" {
+			t.Fatalf("empty pricebook must not emit usage_unpriced, got %#v", e)
+		}
+	}
+}
+
+// TestUsage_NoUnpricedAlertWhenZeroRateRow: a present pricebook row with
+// $0 rates is intentional free tier, not a missing-model gap.
+func TestUsage_NoUnpricedAlertWhenZeroRateRow(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu-zero", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-zero-rate", ThreadID: "tu-zero", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	s.SetFinOps(&finops.Config{
+		Pricebook: finops.Pricebook{"free-model": {InputPer1k: 0, OutputPer1k: 0}},
+	})
+
+	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"free-model"}}`)
+	if err := broker.Publish(acme, "run-zero-rate", &transport.RunEvent{
+		EventID: "run-zero-rate_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-zero-rate", "success", "")
+
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.ReasonCode == "usage_unpriced" {
+			t.Fatalf("$0-rate pricebook row must not emit usage_unpriced, got %#v", e)
+		}
+	}
+}
+
+// TestUsage_NoUnpricedAlertWhenPricebookMatches is the negative case: a
+// normal, correctly-priced run must not trip the unpriced alert.
+func TestUsage_NoUnpricedAlertWhenPricebookMatches(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu3", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-priced", ThreadID: "tu3", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	s.SetFinOps(&finops.Config{
+		Pricebook: finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}},
+	})
+
+	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"gpt-4o-mini"}}`)
+	if err := broker.Publish(acme, "run-priced", &transport.RunEvent{
+		EventID: "run-priced_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-priced", "success", "")
+
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.ReasonCode == "usage_unpriced" {
+			t.Fatalf("did not expect usage_unpriced for a correctly-priced run, got %#v", e)
+		}
+	}
+}
+
 func TestUsage_AdminNonSQL501(t *testing.T) {
 	srv := httptest.NewServer(api.NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus()).Handler())
 	t.Cleanup(srv.Close)

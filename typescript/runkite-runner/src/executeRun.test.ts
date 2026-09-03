@@ -103,6 +103,81 @@ test("executeRun detects __interrupt__ and emits lifecycle interrupted + input.r
   assert.deepEqual(events[3].data, { status: "interrupted" });
 });
 
+test("executeRun captures usage from AI turns that ran before an interrupt", async () => {
+  // A HITL pause must not drop tokens already spent getting there: the
+  // first chunk is a normal AI turn carrying real usage_metadata, the
+  // second chunk interrupts. Those tokens were already billed by the
+  // provider before the pause happened.
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        {
+          messages: [{ type: "ai", content: "thinking...", usage_metadata: { input_tokens: 120, output_tokens: 40 } }],
+        },
+        { __interrupt__: [{ id: "abc123", value: { question: "approve?" } }] },
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
+
+  assert.equal(status, "interrupted");
+  assert.equal(events.at(-1)?.method, "end");
+  assert.deepEqual(events.at(-1)?.data, { status: "interrupted" });
+
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  assert.equal(usageEvents.length, 1, "expected exactly one values event carrying usage before the interrupted end");
+  const usage = (usageEvents[0].data as any).usage;
+  assert.equal(usage.prompt_tokens, 120);
+  assert.equal(usage.completion_tokens, 40);
+
+  // The usage-carrying event must land before "end", not after.
+  const usageIdx = events.indexOf(usageEvents[0]);
+  assert.ok(usageIdx < events.length - 1, "usage event must precede the final end event");
+});
+
+test("executeRun captures usage before interrupt with stream_modes updates only", async () => {
+  // Same metering contract as the values-mode interrupt test, but with
+  // stream_modes: ["updates"] alone — no lastValues snapshot ever exists,
+  // so usage must come from incremental usageTotals, and the updates
+  // chunk is wrapped as {nodeName: {messages: [...]}} (no top-level
+  // messages key). Regression for both the fallback and the walker.
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([
+        {
+          agent: {
+            messages: [
+              { type: "ai", content: "thinking...", usage_metadata: { input_tokens: 77, output_tokens: 33 } },
+            ],
+          },
+        },
+        { __interrupt__: [{ id: "abc123", value: { question: "approve?" } }] },
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment({ stream_modes: ["updates"] }),
+    async (e) => void events.push(e),
+    () => false,
+  );
+
+  assert.equal(status, "interrupted");
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  assert.equal(usageEvents.length, 1, "expected usage via incremental updates-mode fallback");
+  const usage = (usageEvents[0].data as any).usage;
+  assert.equal(usage.prompt_tokens, 77);
+  assert.equal(usage.completion_tokens, 33);
+  assert.ok(events.indexOf(usageEvents[0]) < events.length - 1, "usage event must precede end");
+});
+
 test("executeRun falls back to ns-based interrupt_id when id is absent", async () => {
   const graph: RunnableGraph = {
     async stream() {

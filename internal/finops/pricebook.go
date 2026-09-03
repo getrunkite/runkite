@@ -23,16 +23,7 @@ func (p Pricebook) EstimateUSD(model string, tokensIn, tokensOut int64, costUSD 
 	if costUSD > 0 {
 		return costUSD
 	}
-	if len(p) == 0 || model == "" {
-		return 0
-	}
-	mp, ok := p[model]
-	if !ok {
-		// Soft match: trim common provider prefixes (openai/gpt-4o-mini).
-		if i := strings.LastIndex(model, "/"); i >= 0 && i+1 < len(model) {
-			mp, ok = p[model[i+1:]]
-		}
-	}
+	mp, ok := p.lookup(model)
 	if !ok {
 		return 0
 	}
@@ -44,4 +35,28 @@ func (p Pricebook) EstimateUSD(model string, tokensIn, tokensOut int64, costUSD 
 		usd += float64(tokensOut) / 1000.0 * mp.OutputPer1k
 	}
 	return usd
+}
+
+// HasModel reports whether model (or its provider-suffix soft match) has a
+// pricebook row. Used to distinguish "intentionally free / tokens-only"
+// (empty book, or row with $0 rates) from "admin forgot this model".
+func (p Pricebook) HasModel(model string) bool {
+	_, ok := p.lookup(model)
+	return ok
+}
+
+func (p Pricebook) lookup(model string) (ModelPrice, bool) {
+	if len(p) == 0 || model == "" {
+		return ModelPrice{}, false
+	}
+	mp, ok := p[model]
+	if ok {
+		return mp, true
+	}
+	// Soft match: trim common provider prefixes (openai/gpt-4o-mini).
+	if i := strings.LastIndex(model, "/"); i >= 0 && i+1 < len(model) {
+		mp, ok = p[model[i+1:]]
+		return mp, ok
+	}
+	return ModelPrice{}, false
 }

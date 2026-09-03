@@ -6,9 +6,21 @@ token counts on ``AIMessage.usage_metadata`` (or legacy
 ``response_metadata["token_usage"]``); we sum those across the run and
 emit the Agent Protocol–convention shape::
 
-    {"prompt_tokens": N, "completion_tokens": M, "total_tokens": N+M, "model": "..."}
+    {"prompt_tokens": N, "completion_tokens": M, "total_tokens": N+M, "model": "...", "cost_usd": X}
 
-cost_usd is left unset here — the control plane pricebook fills USD.
+cost_usd is normally left unset here — the control plane pricebook fills
+USD from tokens. The one exception: an LLM gateway sitting in front of the
+provider (OpenRouter, and OpenAI-compatible gateways that follow the same
+convention) can return an authoritative per-call cost inline in the same
+usage object as the token counts (OpenRouter: ``usage.cost``, in USD).
+LangChain's OpenAI-compatible client generally passes an unrecognized key
+like this straight through into ``response_metadata.token_usage`` /
+``usage_metadata`` without stripping it, so we opportunistically look for
+it and — when present and non-zero — sum it into ``cost_usd``, which the
+control plane's ``Pricebook.EstimateUSD`` already prefers over any
+tokens × pricebook estimate. Gateways that report cost out-of-band instead
+of inline (e.g. Portkey headers, Helicone's async dashboard) are not
+covered by this — there is nothing in the message object to read.
 """
 
 from __future__ import annotations
@@ -23,10 +35,18 @@ def _as_int(v: Any) -> int:
         return 0
 
 
-def _usage_from_message(msg: Any) -> tuple[int, int, str]:
-    """Return (prompt, completion, model) from one message-like object."""
+def _as_float(v: Any) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _usage_from_message(msg: Any) -> tuple[int, int, str, float]:
+    """Return (prompt, completion, model, cost_usd) from one message-like object."""
     prompt = completion = 0
     model = ""
+    cost = 0.0
 
     um = None
     if isinstance(msg, dict):
@@ -56,8 +76,13 @@ def _usage_from_message(msg: Any) -> tuple[int, int, str]:
                 prompt = total
         if not model:
             model = str(um.get("model") or "")
+        # Gateway-reported cost (OpenRouter: "cost"; some others: "total_cost").
+        # 0/absent is the overwhelmingly common case (direct provider, no
+        # gateway) — that is not an error, it just means the pricebook path
+        # is what prices this run, same as before this field existed.
+        cost = _as_float(um.get("cost") or um.get("total_cost"))
 
-    return prompt, completion, model
+    return prompt, completion, model, cost
 
 
 def _walk_messages(obj: Any) -> list[Any]:
@@ -70,13 +95,27 @@ def _walk_messages(obj: Any) -> list[Any]:
             out.extend(_walk_messages(item))
         return out
     if isinstance(obj, dict):
-        # Stream "messages" mode often yields (message, metadata) tuples
-        # already unpacked; dict may be a state with messages key.
-        if "messages" in obj:
-            out.extend(_walk_messages(obj["messages"]))
-        # Serialized AIMessage dict
+        # Serialized AIMessage dict — check this first: an AIMessage's own
+        # dict form can itself contain a "messages"-named field in rare
+        # framework-specific serializations, and this check must not be
+        # skipped just because that key happens to exist.
         if obj.get("type") in ("ai", "AIMessage") or "usage_metadata" in obj:
             out.append(obj)
+            return out
+        # "values" mode: a state dict with a top-level "messages" key.
+        if "messages" in obj:
+            out.extend(_walk_messages(obj["messages"]))
+            return out
+        # "updates" mode: LangGraph wraps a superstep's changes as
+        # {node_name: {...state changes...}}, one key per node that ran
+        # (multiple keys when nodes fan out in parallel). There is no
+        # "messages" key at this level — it is one level down, inside each
+        # node's own update — so without this fallback, every run using
+        # stream_modes=["updates"] alone reported zero usage regardless of
+        # outcome (success, error, or interrupted): the messages were real,
+        # accumulate_usage just never saw them under the wrong key.
+        for v in obj.values():
+            out.extend(_walk_messages(v))
         return out
     # LangChain BaseMessage
     t = getattr(obj, "type", None) or getattr(obj, "role", None)
@@ -94,10 +133,12 @@ def accumulate_usage(totals: dict[str, Any], data: Any) -> None:
     so summing each snapshot double-counts prior AIMessage usage.
     """
     for msg in _walk_messages(data):
-        p, c, model = _usage_from_message(msg)
+        p, c, model, cost = _usage_from_message(msg)
         if p or c:
             totals["prompt_tokens"] = int(totals.get("prompt_tokens") or 0) + p
             totals["completion_tokens"] = int(totals.get("completion_tokens") or 0) + c
+        if cost:
+            totals["cost_usd"] = float(totals.get("cost_usd") or 0) + cost
         if model and not totals.get("model"):
             totals["model"] = model
 
@@ -115,6 +156,8 @@ def usage_payload(totals: dict[str, Any]) -> dict[str, Any] | None:
     }
     if totals.get("model"):
         out["model"] = totals["model"]
+    if totals.get("cost_usd"):
+        out["cost_usd"] = totals["cost_usd"]
     return out
 
 

@@ -257,6 +257,33 @@ def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
     return found
 
 
+async def _emit_interrupted(event_callback, make_event, last_values: dict | None, usage_totals: dict) -> str:
+    """Emit the usage-enriched values event (if we have any usage to report)
+    followed by end:interrupted, and return "interrupted".
+
+    A HITL pause or a cancel mid-run still burns real, already-spent LLM
+    tokens on every turn that ran before the interrupt/cancel — those turns
+    are not hypothetical, they were already billed by the provider. Every
+    exit path that reports "interrupted" shares this so a paused run's
+    tokens don't just vanish from FinOps until (if ever) it resumes to a
+    terminal status.
+    """
+    # Same once-at-end discipline as the success path: prefer the last
+    # cumulative values snapshot; fall back to incremental totals when
+    # stream_modes never included "values".
+    totals: dict = {}
+    if last_values is not None:
+        accumulate_usage(totals, last_values)
+    else:
+        totals = dict(usage_totals)
+    usage = usage_payload(totals)
+    if usage:
+        base = dict(last_values) if last_values is not None else {}
+        await event_callback(make_event("values", {**base, "usage": usage}))
+    await event_callback(make_event("end", {"status": "interrupted"}))
+    return "interrupted"
+
+
 async def execute_run(
     adapter: LangGraphAdapter, assignment: dict, event_callback, cancel_event: asyncio.Event | None = None
 ) -> str:
@@ -479,8 +506,7 @@ async def execute_run(
                     if clean_data:
                         await event_callback(make_event(mode, clean_data, namespace=namespace))
                     if cancel_event is not None and cancel_event.is_set():
-                        await event_callback(make_event("end", {"status": "interrupted"}))
-                        return "interrupted"
+                        return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
                     continue
 
                 # Named custom channels become method "custom:<name>" so
@@ -509,15 +535,12 @@ async def execute_run(
                 # before emit (or only when another chunk arrives) dropped
                 # cancels that landed after the agent's last stream item.
                 if cancel_event is not None and cancel_event.is_set():
-                    await event_callback(make_event("end", {"status": "interrupted"}))
-                    return "interrupted"
+                    return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
 
             if cancel_event is not None and cancel_event.is_set():
-                await event_callback(make_event("end", {"status": "interrupted"}))
-                return "interrupted"
+                return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
             if has_interrupt:
-                await event_callback(make_event("end", {"status": "interrupted"}))
-                return "interrupted"
+                return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
             else:
                 # Enrich final values with top-level usage so the control
                 # plane can meter Output (FinOps usage_events / budgets).
@@ -538,8 +561,7 @@ async def execute_run(
                 return "success"
 
     except asyncio.CancelledError:
-        await event_callback(make_event("end", {"status": "interrupted"}))
-        return "interrupted"
+        return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
     except Exception as e:
         logger.exception(f"Run {run_id} failed: {e}")
         await event_callback(

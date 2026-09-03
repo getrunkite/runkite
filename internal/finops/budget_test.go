@@ -22,6 +22,23 @@ func TestPricebook_EstimateUSD(t *testing.T) {
 	if got := (finops.Pricebook{}).EstimateUSD("gpt-4o-mini", 1000, 1000, 0); got != 0 {
 		t.Fatalf("empty book without cost_usd → 0, got %v", got)
 	}
+	if got := pb.EstimateUSD("openai/gpt-4o-mini", 1000, 0, 0); abs(got-0.00015) > 1e-12 {
+		t.Fatalf("soft-match provider prefix: got %v", got)
+	}
+}
+
+func TestPricebook_HasModel(t *testing.T) {
+	pb := finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}}
+	if !pb.HasModel("gpt-4o-mini") || !pb.HasModel("openai/gpt-4o-mini") {
+		t.Fatal("expected HasModel exact + soft match")
+	}
+	if pb.HasModel("unknown-model") || (finops.Pricebook{}).HasModel("gpt-4o-mini") {
+		t.Fatal("expected HasModel false for missing / empty book")
+	}
+	free := finops.Pricebook{"free": {}}
+	if !free.HasModel("free") {
+		t.Fatal("zero-rate row still counts as HasModel")
+	}
 }
 
 func TestEvaluateCap_HardAndSoft(t *testing.T) {

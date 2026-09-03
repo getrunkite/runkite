@@ -56,7 +56,7 @@ func (s *Server) handleAdminUsageSummary(w http.ResponseWriter, r *http.Request)
 }
 
 // GET /admin-api/usage/alerts?tenant_id=&agent_id=&limit=
-// Returns recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route audit rows.
+// Returns recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route / usage_unpriced audit rows.
 func (s *Server) handleAdminUsageAlerts(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(auditEventStore)
 	if !ok {
@@ -71,7 +71,10 @@ func (s *Server) handleAdminUsageAlerts(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	ctx := tenant.SystemContext(r.Context())
-	codes := []string{policy.ReasonBudgetSoft, policy.ReasonBudgetExceeded, policy.ReasonBudgetAlert, policy.ReasonBudgetKill, "budget_route"}
+	codes := []string{
+		policy.ReasonBudgetSoft, policy.ReasonBudgetExceeded, policy.ReasonBudgetAlert, policy.ReasonBudgetKill,
+		"budget_route", policy.ReasonUsageUnpriced,
+	}
 	var out []*models.AuditEvent
 	for _, code := range codes {
 		req := models.AuditSearchRequest{

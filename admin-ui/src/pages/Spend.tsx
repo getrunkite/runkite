@@ -8,6 +8,19 @@ import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
+
+const USD_METHODOLOGY =
+  "Estimated, not an invoice: token counts come from the model response; USD is tokens × your configured finops.pricebook rate, or a gateway-reported cost_usd when the runner has one. With a non-empty pricebook, a model id that has no row → $0 plus a usage_unpriced alert (empty pricebook stays tokens-only, no alert).";
+
+function UsdHeader() {
+  return (
+    <Tooltip>
+      <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-4">Est. USD</TooltipTrigger>
+      <TooltipContent className="max-w-xs">{USD_METHODOLOGY}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 const columns: ColumnDef<AdminUsageSummaryRow, unknown>[] = [
   {
@@ -30,7 +43,7 @@ const columns: ColumnDef<AdminUsageSummaryRow, unknown>[] = [
   },
   {
     accessorKey: "usd_estimate",
-    header: "USD",
+    header: () => <UsdHeader />,
     cell: ({ getValue }) => {
       const n = getValue() as number;
       return <span className="font-mono text-sm font-medium tabular-nums">${Number(n || 0).toFixed(4)}</span>;
@@ -168,7 +181,12 @@ export function Spend() {
 
       <div className="mb-4 grid gap-3 sm:grid-cols-5">
         <div className="rounded-sm border border-border bg-card px-3 py-2">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">USD (filter)</p>
+          <Tooltip>
+            <TooltipTrigger className="cursor-help text-[11px] uppercase tracking-wide text-muted-foreground underline decoration-dotted underline-offset-4">
+              Est. USD (filter)
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{USD_METHODOLOGY}</TooltipContent>
+          </Tooltip>
           <p className="font-mono text-lg font-semibold tabular-nums text-primary">${totals.usd.toFixed(4)}</p>
         </div>
         <div className="rounded-sm border border-border bg-card px-3 py-2">
@@ -241,8 +259,11 @@ export function Spend() {
       <div className="mt-10">
         <h2 className="mb-2 text-lg font-semibold">Alerts</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route audit rows. Subscribe webhooks to{" "}
-          <code>budget_alert</code> for outbound delivery. Approach (`budget_alert`) audits are emitted at most once per tenant/agent/scope/kind/UTC day per control-plane process.
+          Recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route / usage_unpriced audit rows. Subscribe
+          webhooks to <code>budget_alert</code> for outbound delivery. Approach (`budget_alert`) audits are emitted at most once
+          per tenant/agent/scope/kind/UTC day per control-plane process. <code>usage_unpriced</code> means a run reported real
+          tokens with no <code>cost_usd</code>, and your non-empty pricebook has no row for that model id (empty pricebook =
+          tokens-only mode, no alert; a present $0-rate row is intentional free tier).
         </p>
         {(!alerts || alerts.length === 0) && (
           <p className="text-sm text-muted-foreground">No budget alerts for this filter yet.</p>

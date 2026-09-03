@@ -49,8 +49,9 @@ const (
 	ReasonAuthzDeny            = "authz_deny"
 	ReasonBudgetExceeded       = "budget_exceeded"
 	ReasonBudgetSoft           = "budget_soft"
-	ReasonBudgetAlert          = "budget_alert" // soft_pct approach (under hard cap)
-	ReasonBudgetKill           = "budget_kill"  // cancel_inflight on hard breach
+	ReasonBudgetAlert          = "budget_alert"   // soft_pct approach (under hard cap)
+	ReasonBudgetKill           = "budget_kill"    // cancel_inflight on hard breach
+	ReasonUsageUnpriced        = "usage_unpriced" // tokens > 0, no cost_usd, non-empty pricebook missing this model
 )
 
 // PolicyInput is the decision context for one gate check.

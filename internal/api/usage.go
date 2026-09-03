@@ -227,6 +227,28 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 		pb = s.finops.Pricebook
 	}
 	usd := pb.EstimateUSD(model, usage.PromptTokens, usage.CompletionTokens, usage.CostUSD)
+	if usage.CostUSD == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) &&
+		len(pb) > 0 && !pb.HasModel(model) {
+		// Pricebook is configured but this model id is missing — the
+		// "admin swapped models, forgot to update the pricebook" case.
+		// Empty pricebook stays quiet (tokens-only metering). A present
+		// row with $0 rates is intentional free tier, not unpriced.
+		s.writeSecurityAudit(ctx, &models.AuditEvent{
+			TenantID:     run.TenantID,
+			Action:       policy.StageRunCreate,
+			ResourceType: "agent",
+			ResourceID:   run.AgentID,
+			Decision:     policy.EffectAllow,
+			ReasonCode:   policy.ReasonUsageUnpriced,
+			AgentID:      run.AgentID,
+			RunID:        run.RunID,
+			Attrs: map[string]interface{}{
+				"model":             model,
+				"prompt_tokens":     usage.PromptTokens,
+				"completion_tokens": usage.CompletionTokens,
+			},
+		})
+	}
 	id := "usage-" + run.RunID
 	ev := &models.UsageEvent{
 		ID:          id,

@@ -95,6 +95,66 @@ class TestUsageAccumulate(unittest.TestCase):
     def test_empty_usage_returns_none(self):
         self.assertIsNone(usage_payload({}))
 
+    def test_gateway_reported_cost_is_captured(self):
+        """OpenRouter (and OpenAI-compatible gateways following the same
+        convention) return usage.cost inline with the token counts.
+        LangChain passes unrecognized keys through untouched, so this must
+        survive accumulate_usage -> usage_payload as cost_usd, which the
+        control plane's Pricebook.EstimateUSD already prefers over any
+        tokens x pricebook estimate."""
+        totals: dict = {}
+        accumulate_usage(
+            totals,
+            {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "usage_metadata": {
+                            "input_tokens": 194,
+                            "output_tokens": 2,
+                            "cost": 0.00095,
+                        },
+                        "response_metadata": {"model_name": "openai/gpt-4o-mini"},
+                    }
+                ]
+            },
+        )
+        u = usage_payload(totals)
+        self.assertEqual(u["prompt_tokens"], 194)
+        self.assertAlmostEqual(u["cost_usd"], 0.00095)
+
+    def test_gateway_cost_sums_across_turns(self):
+        totals: dict = {}
+        accumulate_usage(totals, {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 1, "cost": 0.001}}]})
+        accumulate_usage(totals, {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 1, "cost": 0.002}}]})
+        self.assertAlmostEqual(usage_payload(totals)["cost_usd"], 0.003)
+
+    def test_accumulate_descends_into_updates_mode_node_wrapper(self):
+        """LangGraph 'updates' mode has no top-level 'messages' key -- it is
+        nested one level down under the node name that produced the update.
+        Regression: this used to silently find nothing for
+        stream_modes=["updates"] alone, on both success and interrupted runs.
+        """
+        totals: dict = {}
+        accumulate_usage(
+            totals,
+            {"agent": {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 77, "output_tokens": 33}}]}},
+        )
+        u = usage_payload(totals)
+        self.assertEqual(u["prompt_tokens"], 77)
+        self.assertEqual(u["completion_tokens"], 33)
+
+    def test_no_cost_field_means_no_cost_usd_key(self):
+        """The overwhelmingly common case (direct provider, no gateway) must
+        not gain a spurious cost_usd: 0 key that could be misread as 'this
+        run was free' instead of 'no gateway reported a cost'."""
+        totals: dict = {}
+        accumulate_usage(
+            totals, {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 10, "output_tokens": 5}}]}
+        )
+        u = usage_payload(totals)
+        self.assertNotIn("cost_usd", u)
+
 
 class TestUsageFromMetrics(unittest.TestCase):
     def test_crewai_style_dict(self):

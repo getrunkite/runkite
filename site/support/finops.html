@@ -90,18 +90,29 @@
           <li>
             Terminal <code>Output.usage</code> → SQL <code>usage_events</code>
             (LangGraph Python/TS; CrewAI/LlamaIndex/LangChain/AutoGen adapters when metrics exist).
+            A HITL pause or a mid-run cancel still meters whatever tokens ran before the
+            pause/cancel — it does not wait for a terminal <code>success</code> to record them.
             Webhook event <code>budget_alert</code> + Admin alerts strip (approach alerts deduped once per UTC day per process).
           </li>
           <li>
-            Admin <code>/admin/spend</code>: summary, date filters, CSV/JSON export,
-            open-holds KPI, alerts, routing banner.
+            Admin <code>/admin/spend</code> labels dollars <strong>Estimated USD</strong>, not
+            "Cost": tokens are exact (from the model response), dollars are tokens ×
+            your <code>finops.pricebook</code> rate — unless the runner is talking to an LLM
+            gateway that reports cost inline with usage (OpenRouter's <code>usage.cost</code>,
+            and OpenAI-compatible gateways following the same convention), in which case that
+            reported figure is used instead and the pricebook is skipped for that run. With a
+            non-empty pricebook, a terminal run with real tokens, no reported cost, and a model
+            id missing from the book raises a <code>usage_unpriced</code> alert instead of
+            silently looking free (empty pricebook = tokens-only, no alert; a present
+            <code>$0</code>-rate row is intentional free tier).
             APIs: <code>/admin-api/usage/{summary,alerts,holds,export}</code>.
           </li>
         </ul>
         <h2>What is not shipped yet</h2>
         <ul>
-          <li>Streaming mid-run token metering (kill of inflight is opt-in via <code>on_hard_breach: cancel_inflight</code>, not continuous spend tracking).</li>
-          <li>Auto-building a pricebook from vendor billing APIs; multi-currency / warehouse BI.</li>
+          <li>Streaming mid-run token metering (kill of inflight is opt-in via <code>on_hard_breach: cancel_inflight</code>, not continuous spend tracking) — usage is still only recorded once a run reaches a terminal or interrupted status.</li>
+          <li>Reconciling against a provider's account-level billing API (OpenAI/Anthropic Costs/Usage endpoints) after the fact; multi-currency / warehouse BI.</li>
+          <li>Reading cost from gateways that report it out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard) — routing calls through one works today (it's a plain client <code>base_url</code> change, nothing Runkite-specific), but its cost won't reach Runkite unless it inlines cost the way OpenRouter does; those runs price from tokens × pricebook like any direct-provider run.</li>
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>
         </ul>

@@ -151,6 +151,37 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
             ts: Date.now(),
         };
     };
+    // Declared outside try/catch (not just outside the stream loop) so the
+    // outer catch's own "interrupted" path -- a cancel racing an exception --
+    // can still report whatever usage was captured before the exception,
+    // the same as every in-loop "interrupted" exit.
+    let lastValues = null;
+    const usageTotals = {};
+    // A HITL pause or a cancel mid-run still burns real, already-spent LLM
+    // tokens on every turn that ran before the interrupt/cancel -- those
+    // turns were already billed by the provider. Every "interrupted" exit
+    // path shares this so a paused run's tokens don't just vanish from
+    // FinOps until (if ever) it resumes to a terminal status. Mirrors the
+    // Python runner's _emit_interrupted helper.
+    const emitInterrupted = async () => {
+        // Same once-at-end discipline as the success path: prefer the last
+        // cumulative values snapshot; fall back to incremental totals when
+        // stream_modes never included "values".
+        let totals = {};
+        if (lastValues != null) {
+            accumulateUsage(totals, lastValues);
+        }
+        else {
+            totals = { ...usageTotals };
+        }
+        const usage = usagePayload(totals);
+        if (usage) {
+            const base = lastValues != null && typeof lastValues === "object" ? { ...lastValues } : {};
+            await emit(makeEvent("values", { ...base, usage }));
+        }
+        await emit(makeEvent("end", { status: "interrupted" }));
+        return "interrupted";
+    };
     try {
         // Emitted BEFORE building the graph, not after: for a factory graph
         // (see factoryGraph.ts) this construction runs fresh, on the
@@ -168,8 +199,6 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
         const lgStreamMode = streamMode.length > 0 ? streamMode : ["values"];
         let hasInterrupt = false;
         const seenToolCallIds = new Set();
-        let lastValues = null;
-        const usageTotals = {};
         // Factory graph (for LangGraph SDK/ServerRuntime compatibility) --
         // built fresh for this run alone, with
         // checkpointer/store attached to THIS instance, not the shared one
@@ -256,8 +285,7 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
                     continue;
                 }
                 if (isCancelled()) {
-                    await emit(makeEvent("end", { status: "interrupted" }));
-                    return "interrupted";
+                    return await emitInterrupted();
                 }
                 // Mirror Python: keep last values snapshot; accumulate non-values
                 // incrementally so stream_mode without "values" still meters.
@@ -270,8 +298,7 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
                 await emit(makeEvent(mode, data));
             }
             if (hasInterrupt) {
-                await emit(makeEvent("end", { status: "interrupted" }));
-                return "interrupted";
+                return await emitInterrupted();
             }
             // Enrich final values with top-level usage so FinOps can meter Output
             // (same once-at-end discipline as the Python LangGraph runner).
@@ -300,8 +327,7 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
     }
     catch (err) {
         if (isCancelled()) {
-            await emit(makeEvent("end", { status: "interrupted" }));
-            return "interrupted";
+            return await emitInterrupted();
         }
         logger.error(`Run ${runId} failed:`, err);
         await emit(makeEvent("error", {

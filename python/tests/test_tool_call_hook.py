@@ -352,6 +352,140 @@ async def test_execute_run_denies_after_empty_name_chunk():
     check("ToolNode never ran (no crash from tools_node)", "error" in methods)
 
 
+async def test_execute_run_captures_usage_before_interrupt():
+    """A HITL pause must not drop tokens already spent getting there.
+
+    agent node appends an AIMessage carrying real usage_metadata, then a
+    separate gate node unconditionally interrupts. The tokens from the
+    agent step were already billed by the provider before the pause ever
+    happens -- execute_run must surface them on a "values" event before
+    "end": {"status": "interrupted"}, not silently drop them until (if
+    ever) the run resumes to a terminal status.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import interrupt
+
+    class _InterruptState(TypedDict):
+        messages: Annotated[list, add_messages]
+
+    def agent_with_usage(state):
+        msg = AIMessage(
+            content="thinking...",
+            usage_metadata={"input_tokens": 120, "output_tokens": 40, "total_tokens": 160},
+        )
+        return {"messages": [msg]}
+
+    def gate(state):
+        interrupt({"question": "approve?"})
+        return {"messages": [AIMessage(content="resumed")]}
+
+    builder = StateGraph(_InterruptState)
+    builder.add_node("agent", agent_with_usage)
+    builder.add_node("gate", gate)
+    builder.add_edge(START, "agent")
+    builder.add_edge("agent", "gate")
+    builder.add_edge("gate", END)
+    compiled = builder.compile(checkpointer=MemorySaver())
+
+    class _InterruptAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    assignment = {
+        "run_id": "r-interrupt-usage",
+        "thread_id": "t-interrupt-usage",
+        "graph_id": "gate_agent",
+        "input": {"messages": [{"role": "human", "content": "do the thing"}]},
+        "stream_modes": ["values"],
+    }
+    status = await execute_run(_InterruptAdapter(), assignment, event_callback)
+
+    check("run reports interrupted", status == "interrupted")
+    methods = [e["method"] for e in events]
+    check("end status is interrupted", events[-1]["data"].get("status") == "interrupted")
+
+    values_with_usage = [e for e in events if e["method"] == "values" and e["data"].get("usage")]
+    check("a values event carried usage before the interrupted end", len(values_with_usage) == 1)
+    if values_with_usage:
+        usage = values_with_usage[0]["data"]["usage"]
+        check("prompt_tokens captured from the pre-interrupt AI turn", usage.get("prompt_tokens") == 120)
+        check("completion_tokens captured from the pre-interrupt AI turn", usage.get("completion_tokens") == 40)
+    # The usage-carrying values event must land before "end", not after.
+    check(
+        "usage event precedes end", methods.index("end") == len(methods) - 1 and "values" in methods[: len(methods) - 1]
+    )
+
+
+async def test_execute_run_captures_usage_before_interrupt_updates_mode_only():
+    """Same proof as test_execute_run_captures_usage_before_interrupt, but
+    with stream_modes=["updates"] instead of ["values"] -- exercises the
+    incremental usage_totals fallback (no last_values snapshot ever exists
+    in this mode) combined with "updates" mode's {node_name: {...}}
+    envelope, which accumulate_usage previously could not see into at all.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import interrupt
+
+    class _InterruptState(TypedDict):
+        messages: Annotated[list, add_messages]
+
+    def agent_with_usage(state):
+        msg = AIMessage(
+            content="thinking...",
+            usage_metadata={"input_tokens": 77, "output_tokens": 33, "total_tokens": 110},
+        )
+        return {"messages": [msg]}
+
+    def gate(state):
+        interrupt({"question": "approve?"})
+        return {"messages": [AIMessage(content="resumed")]}
+
+    builder = StateGraph(_InterruptState)
+    builder.add_node("agent", agent_with_usage)
+    builder.add_node("gate", gate)
+    builder.add_edge(START, "agent")
+    builder.add_edge("agent", "gate")
+    builder.add_edge("gate", END)
+    compiled = builder.compile(checkpointer=MemorySaver())
+
+    class _InterruptAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    assignment = {
+        "run_id": "r-interrupt-usage-updates",
+        "thread_id": "t-interrupt-usage-updates",
+        "graph_id": "gate_agent",
+        "input": {"messages": [{"role": "human", "content": "do the thing"}]},
+        "stream_modes": ["updates"],
+    }
+    status = await execute_run(_InterruptAdapter(), assignment, event_callback)
+
+    check("run reports interrupted", status == "interrupted")
+    values_with_usage = [e for e in events if e["method"] == "values" and e["data"].get("usage")]
+    check("usage captured via incremental updates-mode fallback", len(values_with_usage) == 1)
+    if values_with_usage:
+        usage = values_with_usage[0]["data"]["usage"]
+        check("prompt_tokens captured (updates mode)", usage.get("prompt_tokens") == 77)
+        check("completion_tokens captured (updates mode)", usage.get("completion_tokens") == 33)
+
+
 def main():
     test_find_new_tool_calls_extracts_from_ai_message()
     test_find_new_tool_calls_dedups_by_id()
@@ -362,6 +496,8 @@ def main():
     asyncio.run(test_execute_run_does_not_duplicate_tool_call_across_stream_modes())
     asyncio.run(test_execute_run_denies_disallowed_tool())
     asyncio.run(test_execute_run_denies_after_empty_name_chunk())
+    asyncio.run(test_execute_run_captures_usage_before_interrupt())
+    asyncio.run(test_execute_run_captures_usage_before_interrupt_updates_mode_only())
     print("\nAll checks passed.")
 
 
