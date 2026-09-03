@@ -16,6 +16,13 @@ const rlsAppRole = "runkite_app"
 
 // Tables that carry tenant_id and should be covered when RLS is enabled.
 // terminal_hook_claims is intentionally omitted (run_id PK only; no tenant column).
+// vector_items is created by the pgvector package's own Init, not this
+// package's — but it lives in the same Postgres database in any real
+// deployment, has a real tenant_id column, and deserves the same RLS
+// coverage as every other tenant-scoped table. ensureRLS's per-statement
+// "does not exist" tolerance already handles a deployment that never
+// touches pgvector (RLS setup for this table is skipped, not an error);
+// do not drop it from this list to "fix" that — it isn't broken.
 // Keep in sync with ensureRLS / TestRLS_TableListMatchesTenantColumns.
 var rlsTables = []string{
 	"agents",
@@ -28,6 +35,7 @@ var rlsTables = []string{
 	"thread_checkpoints",
 	"opaque_checkpoints",
 	"store_items",
+	"vector_items",
 	"webhook_dead_letters",
 	"audit_events",
 	"run_cache",

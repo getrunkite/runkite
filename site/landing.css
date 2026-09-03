@@ -9,8 +9,74 @@
 }
 
 .hero {
+  position: relative;
   padding: clamp(2.75rem, 8vw, 4.5rem) 0 2.25rem;
   text-align: center;
+  overflow: hidden;
+}
+
+/* Faint moving grid — reads as "live console," not a cinematic glow.
+   Two layered gradients drift at different speeds so it never repeats
+   in an obviously loopy way. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -10% -10% auto -10%;
+  height: 130%;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 42px 42px;
+  opacity: 0.05;
+  animation: grid-drift 40s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Slow horizontal sweep, like a status scan — amber, low-opacity, never
+   a full-bleed glow. */
+.hero::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -30%;
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 10%, transparent), transparent);
+  animation: hero-sweep 9s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero > .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 84px 42px, 42px 84px;
+  }
+}
+
+@keyframes hero-sweep {
+  0%,
+  100% {
+    left: -30%;
+  }
+  50% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero::before,
+  .hero::after {
+    animation: none;
+  }
 }
 
 .hero .brand-mark {
@@ -24,13 +90,19 @@
 
 .hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(2.1rem, 5.5vw, 3.6rem);
+  /* Lower floor than a straight clamp would suggest: at narrow phone
+     widths the 5.5vw term drops below almost any reasonable floor, so
+     the floor itself is what has to keep the headline from overflowing
+     the wrap. 2.1rem was locked in from ~611px down to phone widths,
+     leaving no room to shrink further as the viewport kept narrowing. */
+  font-size: clamp(1.65rem, 5.5vw, 3.6rem);
   font-weight: 550;
   letter-spacing: -0.035em;
-  line-height: 1.05;
+  line-height: 1.1;
   margin: 0 auto 1rem;
   max-width: none;
   color: var(--ink);
+  overflow-wrap: break-word;
 }
 
 .hero h1 em {
@@ -154,6 +226,20 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1.4rem 1.3rem;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.panel:hover {
+  transform: translateY(-3px);
+}
+
+.panel.bad:hover {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+}
+
+.panel.good:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .panel .label {
@@ -198,6 +284,12 @@
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.gov-item:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
 }
 
 .gov-item strong {
@@ -233,11 +325,13 @@
   text-decoration: none;
   color: var(--ink);
   font-weight: 500;
+  transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .arch-links a:hover {
   border-color: var(--accent);
   color: var(--accent-2);
+  transform: translateX(3px);
 }
 
 .arch-links a span {
@@ -284,6 +378,20 @@
   .hero .lede .typed::after {
     animation: none;
   }
+  .panel,
+  .gov-item,
+  .arch-links a,
+  .eco-box,
+  .eco-col {
+    transition: none;
+  }
+  .panel:hover,
+  .gov-item:hover,
+  .arch-links a:hover,
+  .eco-box:hover,
+  .eco-col:hover {
+    transform: none;
+  }
 }
 
 .nowrap-lg {
@@ -308,17 +416,152 @@
 }
 
 .eco {
-  margin: 1.5rem 0 1.25rem;
-  border-radius: var(--radius);
+  margin: 1.75rem 0 1.5rem;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  background: #dce6f5;
-  padding: 0.75rem;
-  overflow: hidden;
-  box-shadow: none;
+  background: var(--bg-elev);
+  padding: clamp(1rem, 2.5vw, 1.75rem);
 }
-.eco img {
-  display: block;
+
+.eco-row {
+  display: grid;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.eco-top {
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+}
+
+.eco-bottom {
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 0.5rem;
+}
+
+.eco-box,
+.eco-col {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.eco-box:hover,
+.eco-col:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
+.eco-box-accent {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.eco-box-title,
+.eco-col-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.eco-box-sub,
+.eco-col-sub {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0 0 0.3rem;
+}
+
+.eco-chip {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.eco-chip-ghost {
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.eco-chip-tier-supported {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--ink);
+}
+
+.eco-chip-tier-supported span {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1a1002;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.eco-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  position: relative;
+}
+
+.eco-arrow::before {
+  content: "";
   width: 100%;
-  height: auto;
-  border-radius: 2px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-strong) 30%, var(--line-strong) 70%, transparent);
+  position: absolute;
+  top: 50%;
+}
+
+.eco-arrow span {
+  position: relative;
+  background: var(--bg-elev);
+  padding: 0.15rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.eco-caption {
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 1.25rem 0 0.5rem;
+}
+
+@media (max-width: 860px) {
+  .eco-top {
+    grid-template-columns: 1fr;
+  }
+  .eco-arrow {
+    transform: rotate(90deg);
+    padding: 0.25rem 0;
+  }
+  .eco-bottom {
+    grid-template-columns: 1fr;
+  }
 }

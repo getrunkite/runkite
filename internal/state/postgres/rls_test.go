@@ -92,6 +92,12 @@ func TestRLS_MissingAppFilterStillIsolates(t *testing.T) {
 
 // TestRLS_TableListMatchesTenantColumns keeps rlsTables aligned with every
 // public table that has a tenant_id column (minus known intentional skips).
+//
+// rlsTables may list tables created outside this package (e.g. vector_items
+// from pgvector Init). Those are optional here: if the table is absent,
+// ensureRLS already skips it. If it is present (CI runs pgvector + postgres
+// against one shared DSN), it must be listed — otherwise FORCE RLS never
+// covers it after a full deploy that enables vectors.
 func TestRLS_TableListMatchesTenantColumns(t *testing.T) {
 	dsn := os.Getenv("POSTGRES_DSN")
 	if dsn == "" {
@@ -141,8 +147,25 @@ func TestRLS_TableListMatchesTenantColumns(t *testing.T) {
 	want := map[string]bool{}
 	for _, name := range rlsTables {
 		want[name] = true
+		// Listed but not present: optional (created by another package).
+		// Present without tenant_id would be a schema bug — have[] only
+		// contains tenant_id tables, so a listed existing table missing
+		// from have means the column disappeared.
 		if !have[name] {
-			t.Errorf("rlsTables lists %q but information_schema has no tenant_id column (or table missing)", name)
+			var exists bool
+			err := s.pool.QueryRow(sys,
+				`SELECT EXISTS (
+					SELECT 1 FROM information_schema.tables
+					WHERE table_schema = 'public' AND table_name = $1
+				)`, name,
+			).Scan(&exists)
+			if err != nil {
+				t.Fatalf("exists %s: %v", name, err)
+			}
+			if exists {
+				t.Errorf("rlsTables lists %q which exists but has no tenant_id column", name)
+			}
+			continue
 		}
 	}
 	for name := range have {

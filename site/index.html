@@ -26,8 +26,8 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./brand.css" />
-    <link rel="stylesheet" href="./landing.css" />
+    <link rel="stylesheet" href="./brand.css?v=20260903" />
+    <link rel="stylesheet" href="./landing.css?v=20260903" />
   </head>
   <body>
     <div class="shell">
@@ -37,7 +37,7 @@
           <a href="./" aria-current="page">Product</a>
           <a href="./support/try.html">Try</a>
           <a href="./support/">Docs</a>
-          <a href="./support/blog/">Blog</a>
+          <a class="nav-hide-xs" href="./support/blog/">Blog</a>
           <a class="nav-hide-sm" href="./design/">Notes</a>
           <a
             class="btn btn-ghost"
@@ -150,13 +150,60 @@
               lifecycle, policy, and proof. Pluggable state, transport, and vectors under an
               honest tier model — Supported for Postgres + Redis; Compatible for the rest.
             </p>
-            <div class="eco">
-              <img
-                src="./assets/ecosystem.png"
-                alt="Runkite ecosystem: clients to control plane to runners with pluggable backends"
-                width="1840"
-                height="1240"
-              />
+            <div class="eco" role="img" aria-label="Runkite architecture: clients call the control plane over Agent Protocol, runners pull jobs over Runner Protocol, and state, transport, and vector stores plug in underneath">
+              <div class="eco-row eco-top">
+                <div class="eco-box">
+                  <p class="eco-box-title">1 · Clients</p>
+                  <p class="eco-box-sub">Agent Protocol</p>
+                  <div class="eco-chip">HTTP</div>
+                  <div class="eco-chip">SSE · WebSocket</div>
+                  <div class="eco-chip eco-chip-ghost">+ your UI / SDK</div>
+                </div>
+                <div class="eco-arrow" aria-hidden="true">
+                  <span>Agent Protocol</span>
+                </div>
+                <div class="eco-box eco-box-accent">
+                  <p class="eco-box-title">2 · Control plane</p>
+                  <p class="eco-box-sub">Go · multi-replica · Admin UI</p>
+                  <div class="eco-chip">Replica 1</div>
+                  <div class="eco-chip">Replica N</div>
+                  <div class="eco-chip eco-chip-ghost">HTTP :2026 + Admin · gRPC :50051</div>
+                </div>
+                <div class="eco-arrow" aria-hidden="true">
+                  <span>Runner Protocol</span>
+                </div>
+                <div class="eco-box">
+                  <p class="eco-box-title">3 · Runners</p>
+                  <p class="eco-box-sub">Pull jobs · run agents</p>
+                  <div class="eco-chip">LangGraph / LangChain</div>
+                  <div class="eco-chip">CrewAI · LlamaIndex</div>
+                  <div class="eco-chip eco-chip-ghost">AutoGen + frameworks …</div>
+                </div>
+              </div>
+              <p class="eco-caption">Pluggable backends attach under the plane</p>
+              <div class="eco-row eco-bottom">
+                <div class="eco-col">
+                  <p class="eco-col-title">State</p>
+                  <p class="eco-col-sub">threads · runs · checkpoints</p>
+                  <div class="eco-chip eco-chip-tier-supported">Postgres <span>HA</span></div>
+                  <div class="eco-chip">MySQL</div>
+                  <div class="eco-chip">SQLite</div>
+                  <div class="eco-chip">MongoDB</div>
+                </div>
+                <div class="eco-col">
+                  <p class="eco-col-title">Transport</p>
+                  <p class="eco-col-sub">queue · events · cancel</p>
+                  <div class="eco-chip eco-chip-tier-supported">Redis <span>HA</span></div>
+                  <div class="eco-chip">NATS / JetStream</div>
+                  <div class="eco-chip">Kafka</div>
+                </div>
+                <div class="eco-col">
+                  <p class="eco-col-title">Vectors</p>
+                  <p class="eco-col-sub">optional retrieval</p>
+                  <div class="eco-chip eco-chip-tier-supported">pgvector <span>HA</span></div>
+                  <div class="eco-chip">Qdrant · Weaviate · Pinecone</div>
+                </div>
+              </div>
             </div>
             <ul class="arch-links">
               <li>
