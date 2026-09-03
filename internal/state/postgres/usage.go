@@ -131,7 +131,6 @@ func (s *Store) SearchUsageSummary(ctx context.Context, req *models.UsageSummary
 	if req.To != nil {
 		where = append(where, fmt.Sprintf("ts < $%d", argN))
 		args = append(args, req.To.UTC())
-		argN++
 	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")

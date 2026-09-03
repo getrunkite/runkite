@@ -94,6 +94,7 @@
           <li>Bootstrap graphs from config land in <code>default</code> — create per-tenant agents via API under that tenant’s credential.</li>
           <li>When client auth + runner tokens are on, set <code>RUNNER_TENANTS_&lt;kind&gt;</code> allow-lists.</li>
           <li>Operators use Admin (admin permission) for cross-tenant visibility — not a tenant-scoped key.</li>
+          <li>Optional hardening: set <code>RUNKITE_POSTGRES_RLS=true</code> so Postgres FORCE RLS also filters by <code>app.tenant_id</code> even if an application query forgets <code>WHERE tenant_id</code>. Admin / system paths use <code>app.is_system</code>. Postgres only; off by default.</li>
         </ol>
         <pre class="mono-block">"keys": {
   "sk-acme": {"name": "acme-app", "permissions": ["read", "write"], "tenant_id": "acme"},

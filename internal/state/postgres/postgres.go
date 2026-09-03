@@ -23,20 +23,55 @@ import (
 
 // Store implements state.Store with a PostgreSQL database.
 type Store struct {
-	pool *pgxpool.Pool
+	pool       *pgxpool.Pool
+	rlsEnabled bool
+}
+
+// Option configures optional Postgres store behavior.
+type Option func(*Store)
+
+// WithRLS enables opt-in Postgres row-level security: FORCE RLS policies on
+// tenant-scoped tables plus per-acquire app.tenant_id / app.is_system GUCs
+// derived from context. Off by default — application WHERE clauses remain
+// the primary isolation mechanism.
+func WithRLS(enabled bool) Option {
+	return func(s *Store) { s.rlsEnabled = enabled }
 }
 
 // New creates a new Postgres store from a connection string (DSN).
-func New(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+func New(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
+	s := &Store{}
+	for _, o := range opts {
+		o(s)
+	}
+
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("pgxpool.New: %w", err)
+		return nil, fmt.Errorf("pgxpool.ParseConfig: %w", err)
+	}
+	if s.rlsEnabled {
+		cfg.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+			if err := applyTenantGUC(ctx, conn); err != nil {
+				return false
+			}
+			return true
+		}
+		cfg.AfterRelease = func(conn *pgx.Conn) bool {
+			clearTenantGUC(conn)
+			return true
+		}
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool.NewWithConfig: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}
-	return &Store{pool: pool}, nil
+	s.pool = pool
+	return s, nil
 }
 
 // initAdvisoryLockKey is an arbitrary constant used as a Postgres session
@@ -58,17 +93,29 @@ const initAdvisoryLockKey = 894127001
 // constraint \"pg_type_typname_nsp_index\"" when 3 replicas started
 // together against a fresh database).
 func (s *Store) Init(ctx context.Context) error {
-	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
+	// Schema DDL must see every row; stamp system GUC when RLS hooks are on.
+	ctx = tenant.SystemContext(ctx)
+	err := s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
 		bk := migrate.NewPgx(conn)
 		return migrate.Upgrade(ctx, bk, s.migrations(conn), func(ctx context.Context) (bool, error) {
 			return migrate.PgxTableExists(ctx, conn, "agents")
 		})
 	})
+	if err != nil {
+		return err
+	}
+	if s.rlsEnabled {
+		if err := s.ensureRLS(ctx); err != nil {
+			return fmt.Errorf("enable postgres RLS: %w", err)
+		}
+	}
+	return nil
 }
 
 // Downgrade rolls back the most recently applied migration under the
 // same advisory lock Init uses.
 func (s *Store) Downgrade(ctx context.Context) error {
+	ctx = tenant.SystemContext(ctx)
 	return s.withSchemaLock(ctx, func(ctx context.Context, conn *pgxpool.Conn) error {
 		bk := migrate.NewPgx(conn)
 		return migrate.Downgrade(ctx, bk, s.migrations(conn))

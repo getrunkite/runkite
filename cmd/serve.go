@@ -936,7 +936,12 @@ func checkpointDualModeWarning() string {
 func initStore(ctx context.Context) state.Store {
 	postgresDSN := os.Getenv("POSTGRES_DSN")
 	if postgresDSN != "" {
-		pg, err := pgstore.New(ctx, postgresDSN)
+		var opts []pgstore.Option
+		if envTruthy(os.Getenv("RUNKITE_POSTGRES_RLS")) {
+			opts = append(opts, pgstore.WithRLS(true))
+			slog.Info("postgres RLS enabled (RUNKITE_POSTGRES_RLS)")
+		}
+		pg, err := pgstore.New(ctx, postgresDSN, opts...)
 		if err != nil {
 			slog.Error("failed to connect to postgres", "error", err)
 			os.Exit(1)
@@ -1189,6 +1194,15 @@ func envOrDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envTruthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // resolvePort returns the flag value if set, else env var, else fallback default.
