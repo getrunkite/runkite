@@ -17,6 +17,10 @@
     {
       "name": "Vectors",
       "description": "Proxy-mode vector store access for runners."
+    },
+    {
+      "name": "Checkpoints",
+      "description": "Opaque framework checkpoint blobs (proxy mode)."
     }
   ],
   "security": [
@@ -803,6 +807,48 @@
         }
       }
     },
+    "/internal/a2a/runs": {
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Create A2A Delegated Run",
+        "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.",
+        "operationId": "create_a2a_run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2ARunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (depth exceeded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/checkpoints/{thread_id}": {
       "get": {
         "tags": [
@@ -813,12 +859,14 @@
         "operationId": "internal_list_checkpoints",
         "parameters": [
           {
-            "name": "thread_id",
-            "in": "path",
+            "description": "Thread ID.",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Thread Id"
+            },
+            "name": "thread_id",
+            "in": "path"
           },
           {
             "name": "limit",
@@ -886,20 +934,24 @@
         "operationId": "internal_put_checkpoint",
         "parameters": [
           {
-            "name": "thread_id",
-            "in": "path",
+            "description": "Thread ID.",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Thread Id"
+            },
+            "name": "thread_id",
+            "in": "path"
           },
           {
-            "name": "checkpoint_id",
-            "in": "path",
+            "description": "Opaque checkpoint ID (may include framework namespace encoding).",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Checkpoint Id"
+            },
+            "name": "checkpoint_id",
+            "in": "path"
           },
           {
             "name": "X-Runkite-Checkpoint-Framework",
@@ -916,7 +968,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Strong numeric ETag from a prior GET/PUT. Weak (W/\"\u2026\") or malformed \u2192 400. Mismatch \u2192 412."
+            "description": "Strong numeric ETag from a prior GET/PUT. Weak (W/\"…\") or malformed → 400. Mismatch → 412."
           },
           {
             "name": "If-None-Match",
@@ -925,7 +977,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Use * for create-only. If the checkpoint_id already exists \u2192 412. Cannot combine with If-Match."
+            "description": "Use * for create-only. If the checkpoint_id already exists → 412. Cannot combine with If-Match."
           }
         ],
         "requestBody": {
@@ -976,20 +1028,24 @@
         "operationId": "internal_get_checkpoint",
         "parameters": [
           {
-            "name": "thread_id",
-            "in": "path",
+            "description": "Thread ID.",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Thread Id"
+            },
+            "name": "thread_id",
+            "in": "path"
           },
           {
-            "name": "checkpoint_id",
-            "in": "path",
+            "description": "Opaque checkpoint ID (may include framework namespace encoding).",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Checkpoint Id"
+            },
+            "name": "checkpoint_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1030,20 +1086,24 @@
         "operationId": "internal_delete_checkpoint",
         "parameters": [
           {
-            "name": "thread_id",
-            "in": "path",
+            "description": "Thread ID.",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Thread Id"
+            },
+            "name": "thread_id",
+            "in": "path"
           },
           {
-            "name": "checkpoint_id",
-            "in": "path",
+            "description": "Opaque checkpoint ID (may include framework namespace encoding).",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Checkpoint Id"
+            },
+            "name": "checkpoint_id",
+            "in": "path"
           }
         ],
         "responses": {
@@ -1062,48 +1122,6 @@
         }
       }
     },
-    "/internal/a2a/runs": {
-      "post": {
-        "tags": [
-          "Runner"
-        ],
-        "summary": "Create A2A Delegated Run",
-        "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.",
-        "operationId": "create_a2a_run",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/A2ARunRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request (depth exceeded)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/internal/checkpoints/{thread_id}/latest": {
       "get": {
         "tags": [
@@ -1114,12 +1132,14 @@
         "operationId": "internal_get_latest_checkpoint",
         "parameters": [
           {
-            "name": "thread_id",
-            "in": "path",
+            "description": "Thread ID.",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "title": "Thread Id"
+            },
+            "name": "thread_id",
+            "in": "path"
           },
           {
             "name": "ns",

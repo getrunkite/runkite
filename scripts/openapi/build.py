@@ -1153,6 +1153,30 @@ def _build_admin_spec() -> dict:
                     "required": ["tenant_id", "reason", "expires_at"],
                     "title": "BreakGlassWindow",
                 },
+                "UsageSummaryRow": {
+                    "type": "object",
+                    "properties": {
+                        "day": {"type": "string", "description": "UTC calendar day YYYY-MM-DD"},
+                        "tenant_id": {"type": "string"},
+                        "agent_id": {"type": "string"},
+                        "tokens_in": {"type": "integer"},
+                        "tokens_out": {"type": "integer"},
+                        "usd_estimate": {"type": "number"},
+                        "run_count": {"type": "integer"},
+                    },
+                    "required": ["day", "tenant_id", "agent_id", "tokens_in", "tokens_out", "usd_estimate", "run_count"],
+                    "title": "UsageSummaryRow",
+                },
+                "UsageHoldsSummary": {
+                    "type": "object",
+                    "properties": {
+                        "count": {"type": "integer"},
+                        "usd_hold": {"type": "number"},
+                        "tokens_hold": {"type": "integer"},
+                    },
+                    "required": ["count", "usd_hold", "tokens_hold"],
+                    "title": "UsageHoldsSummary",
+                },
             },
         },
         "paths": {
@@ -1382,6 +1406,45 @@ def _build_admin_spec() -> dict:
             "/admin-api/connectors": {"get": {"tags": ["Admin"], "summary": "List Connectors (admin)", "operationId": "admin_list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/admin-api/connectors/{name}": {"get": {"tags": ["Admin"], "summary": "Get Connector (admin)", "operationId": "admin_get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorInfo")), "404": _ERR_404}}},
             "/admin-api/cron": {"get": {"tags": ["Admin"], "summary": "List Cron Schedules (admin)", "operationId": "admin_list_cron", "responses": {**_json_response("200", "Success", _array_of(_ref("CronSchedule")))}}},
+            "/admin-api/usage/summary": {"get": {"tags": ["Admin"], "summary": "Usage Summary", "description": "Per-day token/cost rollups from usage_events. SQL state backends only.", "operationId": "admin_usage_summary", "parameters": [
+                {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "from", "in": "query", "required": False, "schema": {"type": "string", "format": "date-time"}, "description": "Inclusive lower bound on event ts (RFC3339)."},
+                {"name": "to", "in": "query", "required": False, "schema": {"type": "string", "format": "date-time"}, "description": "Exclusive upper bound on event ts (RFC3339)."},
+            ], "responses": {
+                "200": {"description": "Success", "content": {"application/json": {"schema": _array_of(_ref("UsageSummaryRow"))}}},
+                "400": {"description": "Invalid from/to", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is Mongo (usage requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+            }}},
+            "/admin-api/usage/alerts": {"get": {"tags": ["Admin"], "summary": "Usage Budget Alerts", "description": "Recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route audit rows.", "operationId": "admin_usage_alerts", "parameters": [
+                {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50, "maximum": 200}},
+            ], "responses": {
+                "200": {"description": "Success", "content": {"application/json": {"schema": _array_of(_ref("AuditEvent"))}}},
+                "501": {"description": "State backend is Mongo (usage alerts require SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+            }}},
+            "/admin-api/usage/export": {"get": {"tags": ["Admin"], "summary": "Export Usage Summary", "description": "Same rollup as /usage/summary as CSV (default) or JSON attachment.", "operationId": "admin_usage_export", "parameters": [
+                {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "from", "in": "query", "required": False, "schema": {"type": "string", "format": "date-time"}},
+                {"name": "to", "in": "query", "required": False, "schema": {"type": "string", "format": "date-time"}},
+                {"name": "format", "in": "query", "required": False, "schema": {"type": "string", "enum": ["csv", "json"]}, "description": "Defaults to csv unless Accept prefers JSON."},
+            ], "responses": {
+                "200": {"description": "CSV or JSON attachment", "content": {
+                    "text/csv": {"schema": {"type": "string"}},
+                    "application/json": {"schema": _array_of(_ref("UsageSummaryRow"))},
+                }},
+                "400": {"description": "Invalid from/to", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is Mongo (usage requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+            }}},
+            "/admin-api/usage/holds": {"get": {"tags": ["Admin"], "summary": "Open Usage Holds", "description": "Optimistic reservation totals for the current UTC day (open holds only).", "operationId": "admin_usage_holds", "parameters": [
+                {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+            ], "responses": {
+                "200": {"description": "Success", "content": {"application/json": {"schema": _ref("UsageHoldsSummary")}}},
+                "501": {"description": "State backend is Mongo (usage holds require SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+            }}},
             "/admin-api/webhooks/dead-letters": {"get": {"tags": ["Admin"], "summary": "List Dead Letters", "operationId": "admin_list_dead_letters", "parameters": [{"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50}}], "responses": {**_json_response("200", "Success", _array_of(_ref("WebhookDeadLetter")))}}},
             "/admin-api/webhooks/dead-letters/{id}/redeliver": {"post": {"tags": ["Admin"], "summary": "Redeliver Dead Letter", "operationId": "admin_redeliver_dead_letter", "parameters": [dl_id], "responses": {**_json_response("200", "Success", _ref("RedeliverWebhookResponse")), "404": _ERR_404}}},
         },
@@ -1398,6 +1461,20 @@ def _build_internal_spec() -> dict:
     a_id = _path_param("agent_id", "Agent ID.", fmt="")
     n_param = _path_param("name", "Connector name.", fmt="")
 
+    t_id = _path_param("thread_id", "Thread ID.", fmt="")
+    cp_id = _path_param("checkpoint_id", "Opaque checkpoint ID (may include framework namespace encoding).", fmt="")
+    meta_list = {
+        "type": "object",
+        "required": ["checkpoint_id", "created_at"],
+        "properties": {
+            "checkpoint_id": {"type": "string"},
+            "created_at": {"type": "string", "format": "date-time"},
+            "framework": {"type": "string"},
+            "size_bytes": {"type": "integer"},
+            "version": {"type": "integer"},
+        },
+    }
+
     return {
         "openapi": "3.1.0",
         "info": {"title": "Runkite Internal (Runner) API", "version": "0.1.0", "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers."},
@@ -1405,6 +1482,7 @@ def _build_internal_spec() -> dict:
             {"name": "Runner", "description": "Endpoints consumed by runner processes."},
             {"name": "Store", "description": "Proxy-mode store access for runners."},
             {"name": "Vectors", "description": "Proxy-mode vector store access for runners."},
+            {"name": "Checkpoints", "description": "Opaque framework checkpoint blobs (proxy mode)."},
         ],
         "security": [{"RunnerAuth": []}],
         "components": {
@@ -1509,6 +1587,121 @@ def _build_internal_spec() -> dict:
             "/internal/vectors/search": {"post": {"tags": ["Vectors"], "summary": "Search Vectors (internal)", "operationId": "internal_search_vectors", "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"})}}},
             "/internal/webhooks/dead-letters": {"get": {"tags": ["Runner"], "summary": "List Dead Letters", "operationId": "list_dead_letters", "parameters": [{"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50}}], "responses": {**_json_response("200", "Success", _array_of(_ref("WebhookDeadLetter")))}}},
             "/internal/a2a/runs": {"post": {"tags": ["Runner"], "summary": "Create A2A Delegated Run", "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.", "operationId": "create_a2a_run", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("A2ARunRequest")}}}, "responses": {**_json_response("200", "Success", _ref("Run")), "400": {"description": "Bad Request (depth exceeded)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
+            "/internal/checkpoints/{thread_id}": {
+                "get": {
+                    "tags": ["Checkpoints"],
+                    "summary": "List opaque checkpoints for a thread (proxy mode)",
+                    "description": "Returns newest-first metadata for framework-owned opaque blobs. Requires run binding; path thread_id must match the in-flight assignment.",
+                    "operationId": "internal_list_checkpoints",
+                    "parameters": [
+                        t_id,
+                        {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1, "default": 1000}},
+                    ],
+                    "responses": {
+                        "200": {"description": "Success", "content": {"application/json": {"schema": _array_of(meta_list)}}},
+                        "401": {"description": "Run binding required"},
+                        "403": {"description": "thread_id does not match run binding"},
+                    },
+                }
+            },
+            "/internal/checkpoints/{thread_id}/{checkpoint_id}": {
+                "put": {
+                    "tags": ["Checkpoints"],
+                    "summary": "Put opaque checkpoint blob (proxy mode)",
+                    "description": "Stores framework-owned bytes. Soft size cap 16 MiB (413 if exceeded). checkpoint_id is opaque (may contain framework encoding such as namespace prefixes).",
+                    "operationId": "internal_put_checkpoint",
+                    "parameters": [
+                        t_id,
+                        cp_id,
+                        {"name": "X-Runkite-Checkpoint-Framework", "in": "header", "required": False, "schema": {"type": "string"}},
+                        {
+                            "name": "If-Match",
+                            "in": "header",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": 'Strong numeric ETag from a prior GET/PUT. Weak (W/"…") or malformed → 400. Mismatch → 412.',
+                        },
+                        {
+                            "name": "If-None-Match",
+                            "in": "header",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Use * for create-only. If the checkpoint_id already exists → 412. Cannot combine with If-Match.",
+                        },
+                    ],
+                    "requestBody": {"required": True, "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
+                    "responses": {
+                        "204": {"description": "Stored", "headers": {"ETag": {"schema": {"type": "string"}, "description": "New version token"}}},
+                        "401": {"description": "Run binding required"},
+                        "403": {"description": "thread_id does not match run binding"},
+                        "413": {"description": "Blob exceeds size cap"},
+                        "412": {"description": "If-Match version mismatch, or If-None-Match:* when the id already exists"},
+                        "400": {"description": 'Reserved checkpoint_id "latest"; weak/malformed If-Match; or If-Match combined with If-None-Match:*'},
+                    },
+                },
+                "get": {
+                    "tags": ["Checkpoints"],
+                    "summary": "Get opaque checkpoint blob (proxy mode)",
+                    "operationId": "internal_get_checkpoint",
+                    "parameters": [t_id, cp_id],
+                    "responses": {
+                        "200": {
+                            "description": "Blob",
+                            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+                            "headers": {"ETag": {"schema": {"type": "string"}}},
+                        },
+                        "401": {"description": "Run binding required"},
+                        "403": {"description": "thread_id does not match run binding"},
+                        "404": {"description": "Not found"},
+                    },
+                },
+                "delete": {
+                    "tags": ["Checkpoints"],
+                    "summary": "Delete opaque checkpoint blob (proxy mode)",
+                    "operationId": "internal_delete_checkpoint",
+                    "parameters": [t_id, cp_id],
+                    "responses": {
+                        "204": {"description": "Deleted"},
+                        "401": {"description": "Run binding required"},
+                        "403": {"description": "thread_id does not match run binding"},
+                        "404": {"description": "Not found"},
+                    },
+                },
+            },
+            "/internal/checkpoints/{thread_id}/latest": {
+                "get": {
+                    "tags": ["Checkpoints"],
+                    "summary": "Get latest opaque checkpoint for a namespace (proxy mode)",
+                    "description": "Returns the newest blob for the thread. Optional ns selects subgraph namespace (empty = root). X-Runkite-Checkpoint-Id is path-escaped.",
+                    "operationId": "internal_get_latest_checkpoint",
+                    "parameters": [
+                        t_id,
+                        {
+                            "name": "ns",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Checkpoint namespace; empty/absent = root graph",
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Blob",
+                            "headers": {
+                                "ETag": {"schema": {"type": "string"}},
+                                "X-Runkite-Checkpoint-Id": {
+                                    "schema": {"type": "string"},
+                                    "description": "Path-escaped checkpoint_id",
+                                },
+                            },
+                            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+                        },
+                        "401": {"description": "Run binding required"},
+                        "403": {"description": "thread_id does not match run binding"},
+                        "404": {"description": "Not found"},
+                    },
+                }
+            },
         },
     }
 

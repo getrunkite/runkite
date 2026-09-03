@@ -590,6 +590,63 @@
           "expires_at"
         ],
         "title": "BreakGlassWindow"
+      },
+      "UsageSummaryRow": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "UTC calendar day YYYY-MM-DD"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "tokens_in": {
+            "type": "integer"
+          },
+          "tokens_out": {
+            "type": "integer"
+          },
+          "usd_estimate": {
+            "type": "number"
+          },
+          "run_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "tenant_id",
+          "agent_id",
+          "tokens_in",
+          "tokens_out",
+          "usd_estimate",
+          "run_count"
+        ],
+        "title": "UsageSummaryRow"
+      },
+      "UsageHoldsSummary": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "usd_hold": {
+            "type": "number"
+          },
+          "tokens_hold": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "usd_hold",
+          "tokens_hold"
+        ],
+        "title": "UsageHoldsSummary"
       }
     }
   },
@@ -3127,6 +3184,301 @@
                   "items": {
                     "$ref": "#/components/schemas/CronSchedule"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/usage/summary": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Usage Summary",
+        "description": "Per-day token/cost rollups from usage_events. SQL state backends only.",
+        "operationId": "admin_usage_summary",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive lower bound on event ts (RFC3339)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive upper bound on event ts (RFC3339)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsageSummaryRow"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid from/to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (usage requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/usage/alerts": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Usage Budget Alerts",
+        "description": "Recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route audit rows.",
+        "operationId": "admin_usage_alerts",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  }
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (usage alerts require SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/usage/export": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Export Usage Summary",
+        "description": "Same rollup as /usage/summary as CSV (default) or JSON attachment.",
+        "operationId": "admin_usage_export",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "json"
+              ]
+            },
+            "description": "Defaults to csv unless Accept prefers JSON."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV or JSON attachment",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsageSummaryRow"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid from/to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (usage requires SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/usage/holds": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Open Usage Holds",
+        "description": "Optimistic reservation totals for the current UTC day (open holds only).",
+        "operationId": "admin_usage_holds",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageHoldsSummary"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is Mongo (usage holds require SQL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
