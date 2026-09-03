@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all eks-up eks-down eks-smoke eks-soak-loop multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -481,3 +481,20 @@ kind-helm-all:
 	@$(MAKE) kind-helm-reclaim
 	@$(MAKE) kind-helm-net
 	@echo "PASS — kind-helm-all (K0–K3). See docs/k8s-kind-proof.md"
+
+# --- EKS K4 (paid; tear down same day) — see docs/k8s-eks-soak.md ---
+eks-up:
+	@command -v eksctl >/dev/null || { echo "install eksctl first"; exit 1; }
+	@aws sts get-caller-identity >/dev/null || { echo "aws configure first (region eu-north-1)"; exit 1; }
+	eksctl create cluster -f deploy/eks/cluster.yaml
+
+eks-down:
+	@command -v eksctl >/dev/null || { echo "install eksctl first"; exit 1; }
+	eksctl delete cluster -f deploy/eks/cluster.yaml --wait
+	@echo "Also check Billing for leftover ALB/NAT/ECR — see docs/k8s-eks-soak.md"
+
+eks-smoke:
+	@bash scripts/eks-helm-smoke.sh
+
+eks-soak-loop:
+	@bash scripts/eks-soak-loop.sh

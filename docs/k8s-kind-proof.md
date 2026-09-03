@@ -40,4 +40,4 @@ Prereqs: `kind`, `kubectl`, `helm`, `docker`, `curl`, `python3`, `openssl`. Not 
 
 ## K4 (still open)
 
-One real-cloud soak, **$50–100 budget**, tear down, runbook + results attached. Until that lands, announce and docs must keep cluster installs as **Compatible**.
+One real-cloud soak, **$50–100 budget**, tear down, runbook + results attached — see [k8s-eks-soak.md](k8s-eks-soak.md). Until that lands, announce and docs must keep cluster installs as **Compatible**.

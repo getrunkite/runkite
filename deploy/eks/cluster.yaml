@@ -1,0 +1,46 @@
+# Cheap EKS cluster for K4 soak (budget-capped).
+#
+# Design choices that keep spend low:
+# - Public worker nodes, NAT gateway disabled (NAT is the usual bill surprise)
+# - 2× t3.medium (enough for CP×2 + runner + in-cluster Postgres/Redis)
+# - Single AZ is fine for a throwaway soak (not HA proof — Compose already owns that)
+#
+# Create:  eksctl create cluster -f deploy/eks/cluster.yaml
+# Delete:  eksctl delete cluster -f deploy/eks/cluster.yaml --wait
+#
+# Region: eu-north-1 (Stockholm). Do not switch mid-soak; Hyderabad opt-in is optional.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: runkite-k4
+  region: eu-north-1
+  version: "1.31"
+  tags:
+    project: runkite
+    purpose: k4-soak
+    keep: "false"
+
+vpc:
+  nat:
+    gateway: Disable
+  clusterEndpoints:
+    publicAccess: true
+    privateAccess: false
+
+iam:
+  withOIDC: false
+
+managedNodeGroups:
+  - name: ng
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    volumeSize: 40
+    privateNetworking: false
+    disableIMDSv1: true
+    labels:
+      role: soak
+    tags:
+      purpose: k4-soak
