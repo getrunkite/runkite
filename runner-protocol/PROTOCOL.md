@@ -113,6 +113,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
   "resume_command": "object or null",
   "stream_modes": ["array of strings"],
   "connector_needs": ["array of strings"],
+  "allowed_tools": ["array of strings (optional)"],
   "trace_context": {
     "traceparent": "string (W3C Trace Context format)",
     "tracestate": "string",
@@ -136,6 +137,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `resume_command` | object or null | No | If non-null, this run is resuming from an interrupt (HITL). Contains the client's response to the interrupt. The runner MUST pass this to the agent framework's resume mechanism (e.g., LangGraph `Command(resume=...)`). |
 | `stream_modes` | array of strings | No | Which event types the control plane wants. Well-known values: `values`, `updates`, `messages`, `custom`. Default: `["values"]`. Runners SHOULD treat unknown mode strings as pass-through (forward compatibility -- the control plane may map client-requested modes like `events` or `debug` before dispatch, or new modes may be added in future spec versions). The runner SHOULD only emit data events matching these modes (optimization, not a hard requirement -- the control plane filters regardless). **`lifecycle` and `end`/`error` events are always emitted regardless of `stream_modes`** -- they are control events, not data events. |
 | `connector_needs` | array of strings | No | Pre-warm hint. The control plane MAY call GetSession for these connectors at dispatch (e.g. warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
+| `allowed_tools` | array of strings | No | Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = the runner MUST refuse tool names not listed before framework tool side effects (emit `tool_call`, then `tool_auth` deny + `error` + `end` status error). Distinct from connector policy grants on the MCP/proxy path. |
 | `tenant_id` | string | No | Tenant that authenticated the originating request. Runners MUST scope direct-mode `store_items`/`vector_items` SQL (and proxy `X-Runkite-Tenant-Id` on `/internal/*`) to this value. Absent on older control planes -- runners fall back to `"default"`. LangGraph runners MUST also encode this into the checkpointer key: `configurable.thread_id` is the bare `thread_id` when tenant is `"default"`/absent, otherwise `"{tenant_id}:{thread_id}"` (logical thread remains the top-level `thread_id` field; avoid `:` inside tenant ids -- the encoding is a single colon split). Proxy-mode: after kind-token auth the control plane accepts the runner-supplied `X-Runkite-Tenant-Id`, optionally constrained by `RUNNER_TENANTS_<kind>` when configured; see docs/auth.md. |
 | `trace_context` | object | No | W3C Trace Context for cross-process observability. The runner SHOULD set this as the active trace context before executing the agent, so that all spans (LLM calls, tool invocations, etc.) are children of this trace. |
 
@@ -189,7 +191,7 @@ A `RunEvent` is a JSON object published by the runner back to the control plane.
 | `custom:{name}` | Named custom event from a user stream channel. | `{ "name": "string", "payload": any }` |
 | `end` | Terminal event. The run is finished. | `{ "status": "success" | "error" | "interrupted" }` |
 | `error` | Error event. The run failed. | `{ "message": "string", "type": "string (optional)", "stacktrace": "string (optional)" }` |
-| `tool_auth` | Control-plane connector policy denial / pending HITL (not emitted by runners). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny" \| "pending", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number, "action_id"?: "string" }` |
+| `tool_auth` | Connector policy denial / pending HITL (control plane), or in-graph `allowed_tools` denial (runner; `reason_code: tool_not_allowed`, `stage: tool.call`, no connector). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny" \| "pending", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number, "action_id"?: "string" }` |
 
 ### 4.4 Rules
 

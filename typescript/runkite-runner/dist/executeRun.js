@@ -196,8 +196,30 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
                     mode = lgStreamMode.length === 1 ? lgStreamMode[0] : "values";
                     data = chunk;
                 }
+                // allowed_tools: undefined = no filter; present (incl. empty) =
+                // refuse names not listed before ToolNode side effects.
+                const allowedTools = assignment.allowed_tools != null ? new Set(assignment.allowed_tools) : null;
                 for (const tc of findNewToolCalls(data, seenToolCallIds)) {
                     await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
+                    if (allowedTools != null) {
+                        const name = tc.name;
+                        if (!name || !allowedTools.has(name)) {
+                            await emit(makeEvent("tool_auth", {
+                                stage: "tool.call",
+                                effect: "deny",
+                                tool: name,
+                                reason_code: "tool_not_allowed",
+                                reason: `tool ${JSON.stringify(name)} is not in allowed_tools`,
+                            }));
+                            await emit(makeEvent("error", {
+                                message: `tool ${JSON.stringify(name)} is not in allowed_tools`,
+                                type: "ToolNotAllowed",
+                                reason_code: "tool_not_allowed",
+                            }));
+                            await emit(makeEvent("end", { status: "error" }));
+                            return "error";
+                        }
+                    }
                 }
                 if (data && typeof data === "object" && "__interrupt__" in data) {
                     hasInterrupt = true;

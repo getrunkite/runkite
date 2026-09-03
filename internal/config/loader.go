@@ -35,6 +35,12 @@ type LangGraphConfig struct {
 	// agent needs pre-warmed sessions for (RunAssignment.connector_needs).
 	// Additive/optional -- absent means no pre-warm hints for that agent.
 	ConnectorNeeds map[string][]string `json:"connector_needs,omitempty"`
+	// AllowedTools declares, per graph_id, which in-graph tool names the
+	// runner may execute (RunAssignment.allowed_tools). Key absent = no
+	// in-graph allowlist (connector grants still apply). Key present with
+	// an empty list = deny all in-graph tools. This is plane governance for
+	// framework-native tools; it does not replace connector PolicyGrants.
+	AllowedTools map[string][]string `json:"allowed_tools,omitempty"`
 	// RateLimit is control-plane-wide, like Auth -- read from the first
 	// discovered langgraph.json only (see initRateLimiter in cmd/serve.go),
 	// same convention as Auth.

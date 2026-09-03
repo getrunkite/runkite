@@ -40,6 +40,12 @@ type RunAssignment struct {
 	// see docs/auth.md Multi-tenancy.
 	TenantID string `json:"tenant_id,omitempty"`
 
+	// AllowedTools is the optional in-graph tool allowlist for this run.
+	// nil = unset (no runner-side filter). Non-nil (including empty) =
+	// runner MUST refuse tool names not in the list before side effects.
+	// Distinct from connector PolicyGrant tool filters (MCP/proxy path).
+	AllowedTools *[]string `json:"allowed_tools,omitempty"`
+
 	// Generation fences a job against a runner that gets reclaimed
 	// while genuinely still executing, then finishes anyway and
 	// reports a stale result after a second runner already took over.

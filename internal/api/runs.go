@@ -678,6 +678,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		if needs := extractConnectorNeeds(agentForAssignment.Metadata); len(needs) > 0 {
 			assignment.ConnectorNeeds = needs
 		}
+		assignment.AllowedTools = extractAllowedTools(agentForAssignment.Metadata)
 	}
 
 	// Pre-warm connector sessions if registry is available and connector_needs is non-empty.
@@ -968,21 +969,44 @@ func computeCacheKey(tenantID, agentID string, input, config json.RawMessage) st
 // Handles both []string (set in-process) and []interface{} (the shape it
 // comes back as after a JSON round-trip through the state store).
 func extractConnectorNeeds(metadata map[string]interface{}) []string {
-	raw, ok := metadata["connector_needs"]
-	if !ok {
+	return parseStringSlice(metadata["connector_needs"])
+}
+
+// extractAllowedTools reads the optional in-graph tool allowlist from agent
+// metadata. Returns nil when unset (no runner-side filter). Returns a
+// non-nil pointer (possibly to an empty slice) when the agent was
+// bootstrapped with an explicit allowed_tools key — including deny-all.
+func extractAllowedTools(metadata map[string]interface{}) *[]string {
+	if metadata == nil {
+		return nil
+	}
+	_, setFlag := metadata["allowed_tools_set"]
+	_, hasKey := metadata["allowed_tools"]
+	if !setFlag && !hasKey {
+		return nil
+	}
+	tools := parseStringSlice(metadata["allowed_tools"])
+	if tools == nil {
+		tools = []string{}
+	}
+	return &tools
+}
+
+func parseStringSlice(raw interface{}) []string {
+	if raw == nil {
 		return nil
 	}
 	switch v := raw.(type) {
 	case []string:
-		return v
+		return append([]string(nil), v...)
 	case []interface{}:
-		needs := make([]string, 0, len(v))
+		out := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {
-				needs = append(needs, s)
+				out = append(out, s)
 			}
 		}
-		return needs
+		return out
 	default:
 		return nil
 	}

@@ -112,6 +112,11 @@
       "default": [],
       "description": "Pre-warm hint for connector sessions. NOT an allow-list."
     },
+    "allowed_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = runner must refuse tool names not listed before side effects. Distinct from connector policy grants."
+    },
     "tenant_id": {
       "type": "string",
       "minLength": 1,

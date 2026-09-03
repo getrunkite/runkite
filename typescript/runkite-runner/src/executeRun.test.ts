@@ -601,3 +601,39 @@ test("executeRun sets configurable.thread_id and run_id on the config passed to 
   assert.equal(capturedConfig.configurable.thread_id, "my-thread");
   assert.equal(capturedConfig.configurable.run_id, "my-run");
 });
+
+test("executeRun denies a tool_call not in allowed_tools before continuing the stream", async () => {
+  let pulls = 0;
+  const graph: RunnableGraph = {
+    async stream() {
+      // Second yield throws: proves the runner stops after deny and does
+      // not pull the next chunk (where ToolNode side effects would appear).
+      return (async function* () {
+        pulls += 1;
+        yield [
+          "values",
+          {
+            messages: [{ role: "ai", content: "", tool_calls: [{ id: "call_1", name: "forbidden", args: {} }] }],
+          },
+        ] as const;
+        pulls += 1;
+        throw new Error("second stream chunk must not be pulled after allowed_tools deny");
+      })();
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment({ allowed_tools: ["search"] }),
+    async (e) => void events.push(e),
+    () => false,
+  );
+  assert.equal(status, "error");
+  assert.equal(pulls, 1, "runner must not pull past the denied tool_call chunk");
+  assert.equal(events.map((e) => e.method).includes("tool_call"), true);
+  assert.equal(events.map((e) => e.method).includes("tool_auth"), true);
+  assert.equal(events.at(-1)?.method, "end");
+  assert.deepEqual(events.at(-1)?.data, { status: "error" });
+  const auth = events.find((e) => e.method === "tool_auth")!;
+  assert.equal((auth.data as any).reason_code, "tool_not_allowed");
+});

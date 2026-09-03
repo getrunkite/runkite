@@ -902,8 +902,6 @@ func runUsageHoldTTLSweep(ctx context.Context, store state.Store, ttl time.Durat
 	}
 }
 
-
-
 // --- Shared helpers ---
 
 // warnCheckpointDualMode logs when the control-plane state backend is
@@ -1126,6 +1124,11 @@ func bootstrapAgents(store state.Store, configPath string) {
 			metadata := map[string]interface{}{"source": path, "symbol": entry.Symbol, "runner_kind": cfg.RunnerKind}
 			if needs, ok := cfg.ConnectorNeeds[entry.GraphID]; ok && len(needs) > 0 {
 				metadata["connector_needs"] = needs
+			}
+			if tools, ok := cfg.AllowedTools[entry.GraphID]; ok {
+				// Key present (even empty) means an explicit allowlist.
+				metadata["allowed_tools"] = append([]string(nil), tools...)
+				metadata["allowed_tools_set"] = true
 			}
 			if cache, ok := cfg.LLMCache[entry.GraphID]; ok && cache.TTLSeconds > 0 {
 				metadata["cache_ttl_seconds"] = cache.TTLSeconds

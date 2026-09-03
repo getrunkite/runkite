@@ -62,6 +62,21 @@ Stable `reason_code` values on denials include:
 | Production baseline | Durable store + shared transport + `RUNNER_TOKEN_*` (optional comma allowlist per kind for fleets/rotation) + client `auth` (admission refuses bare `serve`) |
 | Multi-tenant | Client auth + run-binding on proxy paths; `serve` requires `RUNNER_TENANTS_<KIND>` for every tokenized kind so unbound `/internal/*` routes cannot claim arbitrary tenants |
 
+## In-graph `allowed_tools`
+
+Optional per-graph allowlist in `langgraph.json`:
+
+```json
+"allowed_tools": {
+  "sales-assistant": ["search", "get_record"]
+}
+```
+
+- **Key absent** for a graph: no runner-side in-graph filter (connector policy still applies on session/MCP paths).
+- **Key present** (including `[]`): Python and TypeScript LangGraph runners refuse tool names not listed when they see them in the stream — before ToolNode side effects. Events: `tool_call` → `tool_auth` (`effect: deny`, `reason_code: tool_not_allowed`) → `error` → `end` status error.
+- This is **not** sandboxing of arbitrary code, not argument-level policy, and not `AuthorizeTool` RPC. Unwrapped / custom tool paths that never surface as stream `tool_calls` are still audit-only if the runner does not emit them (`generic_worker` does not emit `tool_call` today).
+- Durable SQL `audit_events` rows for connector Decide remain separate; in-graph denials are visible on the run event stream.
+
 ## Explicit non-goals (today)
 
 - Prompt-injection / jailbreak classifiers

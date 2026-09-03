@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from typing import Annotated, TypedDict  # noqa: E402
 
-from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 from langchain_core.tools import tool  # noqa: E402
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from langgraph.graph.message import add_messages  # noqa: E402
@@ -178,6 +178,73 @@ async def test_execute_run_does_not_duplicate_tool_call_across_stream_modes():
     check("still exactly one tool_call event with values+updates both requested", len(tool_call_events) == 1)
 
 
+async def test_execute_run_denies_disallowed_tool():
+    """allowed_tools present → non-listed tool_call fails the run before ToolNode."""
+    import operator
+
+    class State(TypedDict):
+        messages: Annotated[list, operator.add]
+
+    def agent(state):
+        return {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "forbidden",
+                            "args": {},
+                            "id": "call_bad",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ]
+        }
+
+    def tools_node(state):
+        raise AssertionError("ToolNode must not run when allowed_tools denies")
+
+    g = StateGraph(State)
+    g.add_node("agent", agent)
+    g.add_node("tools", tools_node)
+    g.set_entry_point("agent")
+    g.add_edge("agent", "tools")
+    g.add_edge("tools", END)
+    compiled = g.compile()
+
+    class FakeAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    assignment = {
+        "run_id": "run-deny",
+        "thread_id": "t1",
+        "graph_id": "g1",
+        "input": {"messages": [HumanMessage(content="hi")]},
+        "stream_modes": ["values"],
+        "allowed_tools": ["search"],
+    }
+    status = await execute_run(FakeAdapter(), assignment, event_callback)
+    check("status is error", status == "error")
+    methods = [e["method"] for e in events]
+    check("emitted tool_call before deny", "tool_call" in methods)
+    check("emitted tool_auth deny", "tool_auth" in methods)
+    check("emitted error", "error" in methods)
+    check("emitted end", methods[-1] == "end")
+    auth = next(e for e in events if e["method"] == "tool_auth")
+    check("reason_code tool_not_allowed", auth["data"].get("reason_code") == "tool_not_allowed")
+    check("end status error", events[-1]["data"].get("status") == "error")
+
+
 def main():
     test_find_new_tool_calls_extracts_from_ai_message()
     test_find_new_tool_calls_dedups_by_id()
@@ -185,6 +252,7 @@ def main():
     test_find_new_tool_calls_handles_list_nesting()
     asyncio.run(test_execute_run_emits_tool_call_event())
     asyncio.run(test_execute_run_does_not_duplicate_tool_call_across_stream_modes())
+    asyncio.run(test_execute_run_denies_disallowed_tool())
     print("\nAll checks passed.")
 
 

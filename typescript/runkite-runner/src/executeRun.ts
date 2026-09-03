@@ -48,6 +48,10 @@ export interface RunAssignment {
   // non-default tenants) the LangGraph checkpointer thread_id key.
   // Absent on older control planes → runner falls back to "default".
   tenant_id?: string;
+  // Optional in-graph tool allowlist. Absent/undefined = no runner-side
+  // filter. Present (including []) = refuse tool names not listed before
+  // ToolNode side effects. Distinct from connector policy grants.
+  allowed_tools?: string[] | null;
 }
 
 /**
@@ -246,8 +250,35 @@ export async function executeRun(
           data = chunk;
         }
 
+        // allowed_tools: undefined = no filter; present (incl. empty) =
+        // refuse names not listed before ToolNode side effects.
+        const allowedTools = assignment.allowed_tools != null ? new Set(assignment.allowed_tools) : null;
+
         for (const tc of findNewToolCalls(data, seenToolCallIds)) {
           await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
+          if (allowedTools != null) {
+            const name = tc.name;
+            if (!name || !allowedTools.has(name)) {
+              await emit(
+                makeEvent("tool_auth", {
+                  stage: "tool.call",
+                  effect: "deny",
+                  tool: name,
+                  reason_code: "tool_not_allowed",
+                  reason: `tool ${JSON.stringify(name)} is not in allowed_tools`,
+                }),
+              );
+              await emit(
+                makeEvent("error", {
+                  message: `tool ${JSON.stringify(name)} is not in allowed_tools`,
+                  type: "ToolNotAllowed",
+                  reason_code: "tool_not_allowed",
+                }),
+              );
+              await emit(makeEvent("end", { status: "error" }));
+              return "error";
+            }
+          }
         }
 
         if (data && typeof data === "object" && "__interrupt__" in data) {

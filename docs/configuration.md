@@ -19,6 +19,9 @@
   "connectors": {
     "salesforce": { "config_ref": "./connectors/salesforce.yaml" }
   },
+  "allowed_tools": {
+    "my_agent": ["search", "get_record"]
+  },
   "rate_limit": {
     "backend": "redis",
     "global": { "rps": 100, "burst": 200 },
@@ -73,6 +76,8 @@
 ```
 
 `runner_kind` declares which runner implementation loads and executes every graph in *this* file -- `python-langgraph` (default, omit the field entirely for existing configs) or `typescript-langgraphjs`. One config file maps to one runner process reading it, so this is file-level, not per-graph: a mixed deployment (some agents Python, some TypeScript) uses two separate `langgraph.json` files, each with its own `runner_kind`, and the control plane routes each run to whichever runner declared the target agent -- see Runners below.
+
+`allowed_tools` is per-agent and opt-in. When the key for a graph id is **absent**, LangGraph runners apply no in-graph tool filter (connector `policy` grants still apply on MCP/session paths). When the key is **present** — including an empty list — the runner refuses tool names not listed as soon as it observes them in the stream (before ToolNode side effects): it emits `tool_call`, then `tool_auth` (`reason_code: tool_not_allowed`), then `error` / `end` with status error. This is plane governance for framework-native tools; it does not replace connector policy grants and is not a full `AuthorizeTool` RPC. See [Trust & governance](trust-governance.md).
 
 `llm_cache` is per-agent and opt-in -- never on by default, since an agent with side effects (e.g. "send an email") must never have its result cached and replayed for a repeated input. The control plane caches whole-run results (keyed by a hash of `agent_id` + `input` + `config`), not individual LLM calls -- it never sees inside a runner's execution to do the latter without becoming framework-aware. A cache hit short-circuits entirely: no queue entry, no runner dispatch, the run comes back immediately with `metadata.cache_hit: true` and the previously-produced output. Resumes (`command.resume`) are never served from or written to the cache -- they continue a specific prior execution, never a fresh cacheable computation. Cache entries expire via `ttl_seconds`; there's no active cleanup sweep for expired rows (they're just never returned), so a very long-running deployment with many distinct inputs would want a periodic `DELETE WHERE expires_at < NOW()` -- not built.
 

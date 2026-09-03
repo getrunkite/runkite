@@ -387,6 +387,14 @@ async def execute_run(
                     mode = lg_stream_mode[0] if len(lg_stream_mode) == 1 else "values"
                     data = chunk
 
+                # allowed_tools: key absent = no filter; present (incl. empty)
+                # = refuse names not listed before ToolNode side effects.
+                allowed_tools = (
+                    set(assignment["allowed_tools"])
+                    if "allowed_tools" in assignment and assignment["allowed_tools"] is not None
+                    else None
+                )
+
                 for tc in find_new_tool_calls(data, seen_tool_call_ids):
                     await event_callback(
                         make_event(
@@ -399,6 +407,34 @@ async def execute_run(
                             namespace=namespace,
                         )
                     )
+                    if allowed_tools is not None:
+                        name = tc.get("name")
+                        if name not in allowed_tools:
+                            await event_callback(
+                                make_event(
+                                    "tool_auth",
+                                    {
+                                        "stage": "tool.call",
+                                        "effect": "deny",
+                                        "tool": name,
+                                        "reason_code": "tool_not_allowed",
+                                        "reason": f"tool {name!r} is not in allowed_tools",
+                                    },
+                                    namespace=namespace,
+                                )
+                            )
+                            await event_callback(
+                                make_event(
+                                    "error",
+                                    {
+                                        "message": f"tool {name!r} is not in allowed_tools",
+                                        "type": "ToolNotAllowed",
+                                        "reason_code": "tool_not_allowed",
+                                    },
+                                )
+                            )
+                            await event_callback(make_event("end", {"status": "error"}))
+                            return "error"
 
                 # Check for interrupts
                 if isinstance(data, dict) and "__interrupt__" in data:
