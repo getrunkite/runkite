@@ -32,7 +32,7 @@ Prereqs: `kind`, `kubectl`, `helm`, `docker`, `curl`, `python3`, `openssl`. Not 
 
 ## Non-claims
 
-- Not Kubernetes **Supported** / not a published EKS/GKE/AKS soak (K4 — `$50–100` cap, tear down, written results — still open)
+- Not a multi-hour / multi-AZ EKS HA soak (K4 smoke only — see [k8s-eks-soak-results.md](k8s-eks-soak-results.md))
 - Not a multi-hour kind soak
 - Not cert-manager / public TLS / IRSA / ExternalSecrets productization
 - Not MCP sticky Ingress beyond what `kind-helm-net` exercises
