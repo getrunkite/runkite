@@ -2,7 +2,7 @@
 
 **Status:** kind-proven for packaging / ops shapes. **Not** Kubernetes Supported. **Not** an EKS (or other cloud) soak.
 
-Compose multi soak (`make soak-multi`) remains the Supported multi-CP HA correctness proof. Cluster installs stay **Compatible** for production cloud claims until a named, budget-capped cloud soak (K4) is written up.
+Compose multi soak (`make soak-multi`) remains the Supported multi-CP HA correctness proof. Named EKS smoke/reclaim is recorded in [k8s-eks-soak-results.md](k8s-eks-soak-results.md); treat full cloud HA claims cautiously until a longer soak exists.
 
 ## Suite
 
