@@ -3262,7 +3262,7 @@
             }
           },
           "501": {
-            "description": "State backend is Mongo (usage requires SQL)",
+            "description": "State backend is non-SQL (usage requires Postgres/MySQL/SQLite)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3325,7 +3325,7 @@
             }
           },
           "501": {
-            "description": "State backend is Mongo (usage alerts require SQL)",
+            "description": "State backend is non-SQL (usage alerts require Postgres/MySQL/SQLite)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3424,7 +3424,7 @@
             }
           },
           "501": {
-            "description": "State backend is Mongo (usage requires SQL)",
+            "description": "State backend is non-SQL (usage requires Postgres/MySQL/SQLite)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3474,7 +3474,7 @@
             }
           },
           "501": {
-            "description": "State backend is Mongo (usage holds require SQL)",
+            "description": "State backend is non-SQL (usage holds require Postgres/MySQL/SQLite)",
             "content": {
               "application/json": {
                 "schema": {

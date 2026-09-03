@@ -16,6 +16,7 @@ const rlsAppRole = "runkite_app"
 
 // Tables that carry tenant_id and should be covered when RLS is enabled.
 // terminal_hook_claims is intentionally omitted (run_id PK only; no tenant column).
+// Keep in sync with ensureRLS / TestRLS_TableListMatchesTenantColumns.
 var rlsTables = []string{
 	"agents",
 	"agent_versions",
@@ -45,7 +46,10 @@ var rlsTables = []string{
 // System context keeps the login role (RESET ROLE) so migrations/admin
 // see every row. Tenant context SETs ROLE runkite_app so FORCE RLS applies
 // even when the DSN user is a superuser.
-func applyTenantGUC(ctx context.Context, conn *pgx.Conn) error {
+//
+// After Init+ensureRLS, failClosed is true: SET ROLE must succeed (no
+// silent bypass if the role is missing).
+func (s *Store) applyTenantGUC(ctx context.Context, conn *pgx.Conn) error {
 	if tenant.IsSystem(ctx) {
 		_, err := conn.Exec(ctx, `
 			SELECT set_config('app.tenant_id', '', false),
@@ -60,11 +64,12 @@ func applyTenantGUC(ctx context.Context, conn *pgx.Conn) error {
 	if err != nil {
 		return err
 	}
-	// Role is created in ensureRLS; ignore "does not exist" before Init.
 	if _, err := conn.Exec(ctx, `SET ROLE `+rlsAppRole); err != nil {
-		if !strings.Contains(err.Error(), "does not exist") {
-			return fmt.Errorf("SET ROLE %s: %w", rlsAppRole, err)
+		// Before ensureRLS, the role may not exist yet (Ping/early acquire).
+		if !s.rlsReady && strings.Contains(err.Error(), "does not exist") {
+			return nil
 		}
+		return fmt.Errorf("SET ROLE %s: %w (RUNKITE_POSTGRES_RLS requires role membership; see docs)", rlsAppRole, err)
 	}
 	return nil
 }
@@ -85,6 +90,13 @@ func (s *Store) ensureRLS(ctx context.Context) error {
 	}
 	defer conn.Release()
 
+	// CREATE ROLE needs CREATEROLE (or superuser). GRANT … SET TRUE is
+	// required on Postgres 16+ so the login role can SET ROLE the app role
+	// (CREATEROLE auto-grants ADMIN on the created role, but not SET).
+	// Do not also request ADMIN TRUE: for a CREATEROLE non-superuser, the
+	// creator is already admin of the new role and re-granting ADMIN to
+	// yourself fails with "ADMIN option cannot be granted back to your
+	// own grantor", rolling back the whole bootstrap transaction.
 	_, err = conn.Exec(ctx, `
 		DO $$ BEGIN
 			CREATE ROLE `+rlsAppRole+` NOINHERIT NOBYPASSRLS;
@@ -97,9 +109,10 @@ func (s *Store) ensureRLS(ctx context.Context) error {
 			GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO `+rlsAppRole+`;
 		ALTER DEFAULT PRIVILEGES IN SCHEMA public
 			GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO `+rlsAppRole+`;
+		GRANT `+rlsAppRole+` TO CURRENT_USER WITH SET TRUE;
 	`)
 	if err != nil {
-		return fmt.Errorf("rls app role: %w", err)
+		return fmt.Errorf("rls app role bootstrap (DSN needs CREATEROLE or superuser): %w", err)
 	}
 
 	for _, table := range rlsTables {
@@ -127,5 +140,48 @@ func (s *Store) ensureRLS(ctx context.Context) error {
 			}
 		}
 	}
+	s.rlsReady = true
+	return nil
+}
+
+// disableRLS drops Runkite's tenant policies and turns off FORCE/ENABLE RLS
+// on known tables. Called from Init when RUNKITE_POSTGRES_RLS is off so a
+// prior enable does not leave sticky FORCE (deny-all for non-BYPASS users).
+// No-op when no runkite_tenant_isolation policy exists (avoids ALTER noise
+// on DBs that never opted into RLS).
+func (s *Store) disableRLS(ctx context.Context) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	var n int
+	if err := conn.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_policies WHERE policyname = 'runkite_tenant_isolation'`,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("detect rls policies: %w", err)
+	}
+	if n == 0 {
+		s.rlsReady = false
+		return nil
+	}
+
+	for _, table := range rlsTables {
+		stmts := []string{
+			fmt.Sprintf(`DROP POLICY IF EXISTS runkite_tenant_isolation ON %s`, table),
+			fmt.Sprintf(`ALTER TABLE %s NO FORCE ROW LEVEL SECURITY`, table),
+			fmt.Sprintf(`ALTER TABLE %s DISABLE ROW LEVEL SECURITY`, table),
+		}
+		for _, stmt := range stmts {
+			if _, err := conn.Exec(ctx, stmt); err != nil {
+				if strings.Contains(err.Error(), "does not exist") {
+					continue
+				}
+				return fmt.Errorf("disable rls %s: %w", table, err)
+			}
+		}
+	}
+	s.rlsReady = false
 	return nil
 }

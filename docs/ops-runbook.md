@@ -91,8 +91,8 @@ Mongo: kill/break-glass Admin APIs return `501` — governance durability is SQL
 | `RUNNER_TOKEN` | Runner env | Single token the runner presents; must match one allowlisted value for its kind |
 | Client `auth` (API key / JWT) | `langgraph.json` + env substitution | `serve` admission requires this in production (`RUNKITE_API_KEY` in the stock Helm config) |
 | Connector OAuth / API keys | Connector YAML via `${ENV}` or `auth.secret_ref` | Prefer env/file/Vault refs; MCP session tokens are short-lived and run-bound |
-| Vault (`vault:` secret_ref) | CP env: `VAULT_ADDR`, `VAULT_TOKEN` or `VAULT_TOKEN_FILE`, optional `VAULT_NAMESPACE` / `VAULT_ALLOWED_PREFIX` | KV v2 paths under allowlisted prefix (default `secret/data/runkite/`). Site: [Secrets](../site/support/secrets.html) |
-| Postgres RLS (opt-in) | CP env: `RUNKITE_POSTGRES_RLS=true` | FORCE RLS + `app.tenant_id` / `app.is_system` on pool checkout. Defense-in-depth only; app `WHERE tenant_id` remains required. Site: [Multi-tenant](../site/support/multi-tenant.html) |
+| Vault (`vault:` secret_ref) | CP env: `VAULT_ADDR`, `VAULT_TOKEN` or `VAULT_TOKEN_FILE`, optional `VAULT_NAMESPACE` / `VAULT_ALLOWED_PREFIX` | KV v2 (`…/data/…`) or KV v1; paths cleaned then prefix-checked (no `..` escapes). Default prefix `secret/data/runkite/`. Site: [Secrets](../site/support/secrets.html) |
+| Postgres RLS (opt-in) | CP env: `RUNKITE_POSTGRES_RLS=true` | FORCE RLS + `app.tenant_id` / `app.is_system` + `SET ROLE runkite_app` (DSN needs `CREATEROLE` + `GRANT … SET TRUE`). Flag off + restart clears sticky FORCE. Defense-in-depth only; app `WHERE tenant_id` remains required. Site: [Multi-tenant](../site/support/multi-tenant.html) |
 
 **Rotation (runners):** set CP allowlist to `old,new` → restart CP → roll runners to `new` → drop `old` → restart CP. Allowlists load at process start. Full auth surface: [Auth](auth.md).
 

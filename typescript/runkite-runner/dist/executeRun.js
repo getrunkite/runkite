@@ -74,10 +74,10 @@ export function buildRunConfig(assignment) {
  * Checked in every stream mode, same reasoning as the Python version:
  * "values"/"updates" give complete, already-materialized messages per
  * graph step; "messages" streams per-token deltas, so an early chunk's
- * tool_calls may have incomplete args from partially-parsed JSON --
- * deduping by id means a real but minor trade-off (emitting on an
- * early, args-incomplete chunk) against missing tool calls entirely for
- * messages-only stream requests. */
+ * tool_calls may have incomplete name/args from partially-parsed JSON.
+ * An id is only marked seen once its name is non-empty — otherwise a
+ * later chunk that fills in a disallowed name would be deduped and never
+ * checked by allowed_tools. */
 function findNewToolCalls(obj, seenIds) {
     const found = [];
     const toolCalls = obj != null && typeof obj === "object" ? obj.tool_calls : undefined;
@@ -85,6 +85,11 @@ function findNewToolCalls(obj, seenIds) {
         for (const tc of toolCalls) {
             const id = tc?.id;
             if (!id || seenIds.has(id))
+                continue;
+            const name = tc?.name;
+            // Incomplete stream delta: wait for a later chunk with the name.
+            // Do not mark seen — that would permanently skip allowlist checks.
+            if (!name)
                 continue;
             seenIds.add(id);
             found.push({ id: tc.id, name: tc.name, args: tc.args });
@@ -203,7 +208,12 @@ export async function executeRun(adapter, assignment, emit, isCancelled) {
                     await emit(makeEvent("tool_call", { name: tc.name, args: tc.args, id: tc.id }));
                     if (allowedTools != null) {
                         const name = tc.name;
-                        if (!name || !allowedTools.has(name)) {
+                        // findNewToolCalls only yields non-empty names; keep the guard so
+                        // a future change cannot false-deny "".
+                        if (!name) {
+                            continue;
+                        }
+                        if (!allowedTools.has(name)) {
                             await emit(makeEvent("tool_auth", {
                                 stage: "tool.call",
                                 effect: "deny",

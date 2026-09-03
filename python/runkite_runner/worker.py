@@ -230,11 +230,9 @@ def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
     Checked in every stream_mode ("values"/"updates" give complete,
     already-materialized messages per graph step; "messages" streams
     per-token deltas, so an early chunk's tool_calls may have incomplete
-    args from partially-parsed JSON -- deduping by id means we might
-    emit on an early, args-incomplete chunk rather than the final one, a
-    real but minor trade-off against the alternative of restricting
-    detection to values/updates only and missing tool calls entirely for
-    messages-only stream requests).
+    name/args from partially-parsed JSON. An id is only marked seen once
+    its name is non-empty — otherwise a later chunk that fills in a
+    disallowed name would be deduped and never checked by allowed_tools.
     """
     found: list[dict] = []
     tool_calls = getattr(obj, "tool_calls", None)
@@ -242,6 +240,11 @@ def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
         for tc in tool_calls:
             tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
             if not tc_id or tc_id in seen_ids:
+                continue
+            name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            # Incomplete stream delta: wait for a later chunk with the name.
+            # Do not mark seen — that would permanently skip allowlist checks.
+            if not name:
                 continue
             seen_ids.add(tc_id)
             found.append(tc if isinstance(tc, dict) else dict(tc))
@@ -409,6 +412,10 @@ async def execute_run(
                     )
                     if allowed_tools is not None:
                         name = tc.get("name")
+                        # find_new_tool_calls only yields non-empty names; keep
+                        # the guard so a future change cannot false-deny "".
+                        if not name:
+                            continue
                         if name not in allowed_tools:
                             await event_callback(
                                 make_event(

@@ -20,8 +20,8 @@
 #
 # Compose multi/soak is the Supported correctness proof path. This overlay
 # packages the same topology for Kubernetes. Kind K0–K3 ops proofs exist
-# (make kind-helm-all; docs/k8s-kind-proof.md). No published EKS/cloud soak
-# (K4) yet — treat production cluster installs as Compatible until then.
+# (make kind-helm-all; docs/k8s-kind-proof.md). Named EKS smoke/reclaim
+# (K4) is done (docs/k8s-eks-soak-results.md); full multi-AZ HA soak still open.
 #
 # Optional pod TLS: also -f values-tls.yaml (and supply TLS Secrets).
 

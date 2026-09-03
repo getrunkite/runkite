@@ -50,9 +50,10 @@ the TLS Secrets named there, or override the names). See
 ops proofs: `make kind-helm-all` (or individual `kind-helm-*` targets) —
 install, token rotation, mid-run reclaim, Ingress + NetworkPolicy — see
 [`docs/k8s-kind-proof.md`](../../../docs/k8s-kind-proof.md). Those are
-**install / ops smokes**, not a soak. A paid EKS (or equivalent) soak
-(K4) is still open; cluster installs stay **Compatible** for
-production-cloud claims until then.
+**install / ops smokes**, not a multi-hour soak. Named EKS smoke/reclaim
+(K4) is recorded in
+[`docs/k8s-eks-soak-results.md`](../../../docs/k8s-eks-soak-results.md) —
+packaging proven on a real cloud cluster; full multi-AZ HA soak still open.
 
 ## Install
 

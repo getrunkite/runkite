@@ -1414,7 +1414,7 @@ def _build_admin_spec() -> dict:
             ], "responses": {
                 "200": {"description": "Success", "content": {"application/json": {"schema": _array_of(_ref("UsageSummaryRow"))}}},
                 "400": {"description": "Invalid from/to", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                "501": {"description": "State backend is Mongo (usage requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is non-SQL (usage requires Postgres/MySQL/SQLite)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
             "/admin-api/usage/alerts": {"get": {"tags": ["Admin"], "summary": "Usage Budget Alerts", "description": "Recent budget_soft / budget_exceeded / budget_alert / budget_kill / budget_route audit rows.", "operationId": "admin_usage_alerts", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1422,7 +1422,7 @@ def _build_admin_spec() -> dict:
                 {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50, "maximum": 200}},
             ], "responses": {
                 "200": {"description": "Success", "content": {"application/json": {"schema": _array_of(_ref("AuditEvent"))}}},
-                "501": {"description": "State backend is Mongo (usage alerts require SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is non-SQL (usage alerts require Postgres/MySQL/SQLite)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
             "/admin-api/usage/export": {"get": {"tags": ["Admin"], "summary": "Export Usage Summary", "description": "Same rollup as /usage/summary as CSV (default) or JSON attachment.", "operationId": "admin_usage_export", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1436,14 +1436,14 @@ def _build_admin_spec() -> dict:
                     "application/json": {"schema": _array_of(_ref("UsageSummaryRow"))},
                 }},
                 "400": {"description": "Invalid from/to", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
-                "501": {"description": "State backend is Mongo (usage requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is non-SQL (usage requires Postgres/MySQL/SQLite)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
             "/admin-api/usage/holds": {"get": {"tags": ["Admin"], "summary": "Open Usage Holds", "description": "Optimistic reservation totals for the current UTC day (open holds only).", "operationId": "admin_usage_holds", "parameters": [
                 {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
             ], "responses": {
                 "200": {"description": "Success", "content": {"application/json": {"schema": _ref("UsageHoldsSummary")}}},
-                "501": {"description": "State backend is Mongo (usage holds require SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                "501": {"description": "State backend is non-SQL (usage holds require Postgres/MySQL/SQLite)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
             "/admin-api/webhooks/dead-letters": {"get": {"tags": ["Admin"], "summary": "List Dead Letters", "operationId": "admin_list_dead_letters", "parameters": [{"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50}}], "responses": {**_json_response("200", "Success", _array_of(_ref("WebhookDeadLetter")))}}},
             "/admin-api/webhooks/dead-letters/{id}/redeliver": {"post": {"tags": ["Admin"], "summary": "Redeliver Dead Letter", "operationId": "admin_redeliver_dead_letter", "parameters": [dl_id], "responses": {**_json_response("200", "Success", _ref("RedeliverWebhookResponse")), "404": _ERR_404}}},

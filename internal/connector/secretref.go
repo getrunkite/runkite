@@ -7,19 +7,26 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"time"
 )
+
+// Shared Vault HTTP client — one Timeout for all secret_ref vault: lookups
+// (avoids per-call Client allocation and keeps dial/timeout behavior consistent).
+var vaultHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // ResolveSecretRef fetches a secret for connector auth at GetSession time.
 // Supported schemes:
 //
 //	env:VAR_NAME
 //	file:/absolute/or/relative/path
-//	vault:secret/data/runkite/...#field   (KV v2 JSON; requires VAULT_ADDR + token)
+//	vault:secret/data/runkite/...#field   (KV v2 JSON data.data)
+//	vault:secret/runkite/...#field        (KV v1 JSON data — no /data/ segment)
 //
 // Empty ref returns ("", nil). Unknown schemes and Vault paths outside
 // VAULT_ALLOWED_PREFIX (default "secret/data/runkite/") fail closed.
+// Paths are cleaned before the prefix check so `..` cannot escape the allowlist.
 func ResolveSecretRef(ctx context.Context, ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -49,17 +56,38 @@ func ResolveSecretRef(ctx context.Context, ref string) (string, error) {
 	}
 }
 
+// cleanVaultPath rejects ".." escapes then re-checks the allowlist prefix on
+// the cleaned path (HasPrefix alone on the raw string is not enough).
+func cleanVaultPath(raw, prefix string) (string, error) {
+	if strings.Contains(raw, "..") {
+		return "", fmt.Errorf("secret_ref vault: path must not contain '..'")
+	}
+	cleaned := path.Clean("/" + strings.TrimPrefix(raw, "/"))
+	cleaned = strings.TrimPrefix(cleaned, "/")
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("secret_ref vault: empty path")
+	}
+	if strings.Contains(cleaned, "..") {
+		return "", fmt.Errorf("secret_ref vault: path must not contain '..'")
+	}
+	if !strings.HasPrefix(cleaned, prefix) {
+		return "", fmt.Errorf("secret_ref vault: path %q outside allowed prefix %q", cleaned, prefix)
+	}
+	return cleaned, nil
+}
+
 func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
-	path, field, ok := strings.Cut(pathAndField, "#")
-	if !ok || path == "" || field == "" {
+	rawPath, field, ok := strings.Cut(pathAndField, "#")
+	if !ok || rawPath == "" || field == "" {
 		return "", fmt.Errorf("secret_ref vault: want path#field, got %q", pathAndField)
 	}
 	prefix := os.Getenv("VAULT_ALLOWED_PREFIX")
 	if prefix == "" {
 		prefix = "secret/data/runkite/"
 	}
-	if !strings.HasPrefix(path, prefix) {
-		return "", fmt.Errorf("secret_ref vault: path %q outside allowed prefix %q", path, prefix)
+	vaultPath, err := cleanVaultPath(rawPath, prefix)
+	if err != nil {
+		return "", err
 	}
 	addr := strings.TrimRight(os.Getenv("VAULT_ADDR"), "/")
 	if addr == "" {
@@ -70,7 +98,7 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/v1/"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/v1/"+vaultPath, nil)
 	if err != nil {
 		return "", err
 	}
@@ -79,8 +107,7 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 		req.Header.Set("X-Vault-Namespace", ns)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := vaultHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("secret_ref vault: %w", err)
 	}
@@ -93,15 +120,43 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 		return "", fmt.Errorf("secret_ref vault: HTTP %d", resp.StatusCode)
 	}
 
-	var envelope struct {
-		Data struct {
-			Data map[string]interface{} `json:"data"`
-		} `json:"data"`
+	raw, err := vaultFieldFromBody(body, field, strings.Contains(vaultPath, "/data/"))
+	if err != nil {
+		return "", err
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	return raw, nil
+}
+
+// vaultFieldFromBody reads KV v2 (data.data) when preferV2, else KV v1 (data).
+// If preferV2 fails the nested lookup, falls back to v1 shape so mixed mounts work.
+func vaultFieldFromBody(body []byte, field string, preferV2 bool) (string, error) {
+	if preferV2 {
+		var v2 struct {
+			Data struct {
+				Data map[string]interface{} `json:"data"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &v2); err != nil {
+			return "", fmt.Errorf("secret_ref vault: decode: %w", err)
+		}
+		if v2.Data.Data != nil {
+			return vaultStringField(v2.Data.Data, field)
+		}
+	}
+	var v1 struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &v1); err != nil {
 		return "", fmt.Errorf("secret_ref vault: decode: %w", err)
 	}
-	raw, ok := envelope.Data.Data[field]
+	return vaultStringField(v1.Data, field)
+}
+
+func vaultStringField(m map[string]interface{}, field string) (string, error) {
+	if m == nil {
+		return "", fmt.Errorf("secret_ref vault: field %q missing", field)
+	}
+	raw, ok := m[field]
 	if !ok {
 		return "", fmt.Errorf("secret_ref vault: field %q missing", field)
 	}

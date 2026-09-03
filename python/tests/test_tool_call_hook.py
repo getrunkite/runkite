@@ -77,6 +77,25 @@ def test_find_new_tool_calls_handles_list_nesting():
     check("finds tool call nested inside a list of dicts", len(found) == 1)
 
 
+def test_find_new_tool_calls_empty_name_not_marked_seen():
+    """Empty-name stream delta must not mark id seen — otherwise a later
+    chunk that fills in a disallowed name is deduped and never denied."""
+    seen = set()
+    incomplete = type("Msg", (), {"tool_calls": [{"name": "", "args": {}, "id": "call_x", "type": "tool_call"}]})()
+    first = find_new_tool_calls({"messages": [incomplete]}, seen)
+    check("empty name yields nothing", first == [])
+    check("id not marked seen while name empty", "call_x" not in seen)
+
+    complete = type(
+        "Msg",
+        (),
+        {"tool_calls": [{"name": "evil", "args": {}, "id": "call_x", "type": "tool_call"}]},
+    )()
+    second = find_new_tool_calls({"messages": [complete]}, seen)
+    check("named chunk returned after empty", len(second) == 1 and second[0]["name"] == "evil")
+    check("id marked seen only after name present", "call_x" in seen)
+
+
 # --- execute_run integration test: real LangGraph ReAct-style graph ---
 
 
@@ -245,14 +264,104 @@ async def test_execute_run_denies_disallowed_tool():
     check("end status error", events[-1]["data"].get("status") == "error")
 
 
+async def test_execute_run_denies_after_empty_name_chunk():
+    """Two-chunk stream: id+empty name, then same id with forbidden name.
+    Must deny — not false-allow via seen_ids marking on the empty chunk."""
+    import operator
+
+    class State(TypedDict):
+        messages: Annotated[list, operator.add]
+        step: int
+
+    def agent(state):
+        step = state.get("step", 0)
+        if step == 0:
+            return {
+                "step": 1,
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {"name": "", "args": {}, "id": "call_stream", "type": "tool_call"},
+                        ],
+                    )
+                ],
+            }
+        return {
+            "step": 2,
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "forbidden", "args": {}, "id": "call_stream", "type": "tool_call"},
+                    ],
+                )
+            ],
+        }
+
+    def tools_node(state):
+        raise AssertionError("ToolNode must not run when allowed_tools denies after empty-name chunk")
+
+    g = StateGraph(State)
+    g.add_node("agent", agent)
+    g.add_node("tools", tools_node)
+    g.set_entry_point("agent")
+
+    def route(state):
+        last = state["messages"][-1] if state.get("messages") else None
+        if isinstance(last, AIMessage) and last.tool_calls:
+            name = (
+                last.tool_calls[0].get("name")
+                if isinstance(last.tool_calls[0], dict)
+                else getattr(last.tool_calls[0], "name", None)
+            )
+            if name:
+                return "tools"
+        if state.get("step", 0) < 2:
+            return "agent"
+        return END
+
+    g.add_conditional_edges("agent", route, {"agent": "agent", "tools": "tools", END: END})
+    g.add_edge("tools", END)
+    compiled = g.compile()
+
+    class FakeAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    assignment = {
+        "run_id": "run-empty-then-deny",
+        "thread_id": "t1",
+        "graph_id": "g1",
+        "input": {"messages": [HumanMessage(content="hi")], "step": 0},
+        "stream_modes": ["values"],
+        "allowed_tools": ["search"],
+    }
+    status = await execute_run(FakeAdapter(), assignment, event_callback)
+    check("status is error after empty→named deny", status == "error")
+    methods = [e["method"] for e in events]
+    check("emitted tool_auth deny after named chunk", "tool_auth" in methods)
+    check("ToolNode never ran (no crash from tools_node)", "error" in methods)
+
+
 def main():
     test_find_new_tool_calls_extracts_from_ai_message()
     test_find_new_tool_calls_dedups_by_id()
     test_find_new_tool_calls_no_tool_calls_returns_empty()
     test_find_new_tool_calls_handles_list_nesting()
+    test_find_new_tool_calls_empty_name_not_marked_seen()
     asyncio.run(test_execute_run_emits_tool_call_event())
     asyncio.run(test_execute_run_does_not_duplicate_tool_call_across_stream_modes())
     asyncio.run(test_execute_run_denies_disallowed_tool())
+    asyncio.run(test_execute_run_denies_after_empty_name_chunk())
     print("\nAll checks passed.")
 
 

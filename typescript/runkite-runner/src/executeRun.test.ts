@@ -637,3 +637,46 @@ test("executeRun denies a tool_call not in allowed_tools before continuing the s
   const auth = events.find((e) => e.method === "tool_auth")!;
   assert.equal((auth.data as any).reason_code, "tool_not_allowed");
 });
+
+test("executeRun denies after empty-name chunk then same id with forbidden name", async () => {
+  // Regression: marking seen on empty name would skip the named chunk and
+  // false-allow a disallowed tool (messages-style streaming).
+  let pulls = 0;
+  const graph: RunnableGraph = {
+    async stream() {
+      return (async function* () {
+        pulls += 1;
+        yield [
+          "values",
+          {
+            messages: [{ role: "ai", content: "", tool_calls: [{ id: "call_stream", name: "", args: {} }] }],
+          },
+        ] as const;
+        pulls += 1;
+        yield [
+          "values",
+          {
+            messages: [{ role: "ai", content: "", tool_calls: [{ id: "call_stream", name: "forbidden", args: {} }] }],
+          },
+        ] as const;
+        pulls += 1;
+        throw new Error("third stream chunk must not be pulled after allowed_tools deny");
+      })();
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment({ allowed_tools: ["search"] }),
+    async (e) => void events.push(e),
+    () => false,
+  );
+  assert.equal(status, "error");
+  assert.equal(pulls, 2, "runner must pull the named chunk and stop after deny");
+  assert.equal(events.map((e) => e.method).includes("tool_auth"), true);
+  assert.equal(events.at(-1)?.method, "end");
+  assert.deepEqual(events.at(-1)?.data, { status: "error" });
+  const auth = events.find((e) => e.method === "tool_auth")!;
+  assert.equal((auth.data as any).reason_code, "tool_not_allowed");
+  assert.equal((auth.data as any).tool, "forbidden");
+});

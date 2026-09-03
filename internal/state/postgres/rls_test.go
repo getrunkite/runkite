@@ -89,3 +89,117 @@ func TestRLS_MissingAppFilterStillIsolates(t *testing.T) {
 		t.Fatalf("acme should see own run via RLS, got count=%d", n)
 	}
 }
+
+// TestRLS_TableListMatchesTenantColumns keeps rlsTables aligned with every
+// public table that has a tenant_id column (minus known intentional skips).
+func TestRLS_TableListMatchesTenantColumns(t *testing.T) {
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN not set — skipping Postgres RLS test")
+	}
+
+	ctx := context.Background()
+	s, err := New(ctx, dsn, WithRLS(true))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if err := s.Init(ctx); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	sys := tenant.SystemContext(ctx)
+	rows, err := s.pool.Query(sys, `
+		SELECT table_name FROM information_schema.columns
+		WHERE table_schema = 'public' AND column_name = 'tenant_id'
+		ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("information_schema: %v", err)
+	}
+	defer rows.Close()
+
+	// Tables with tenant_id that we intentionally do not FORCE-RLS
+	// (document here if adding another exception).
+	skip := map[string]bool{
+		// none today — terminal_hook_claims has no tenant_id
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if skip[name] {
+			continue
+		}
+		have[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]bool{}
+	for _, name := range rlsTables {
+		want[name] = true
+		if !have[name] {
+			t.Errorf("rlsTables lists %q but information_schema has no tenant_id column (or table missing)", name)
+		}
+	}
+	for name := range have {
+		if !want[name] {
+			t.Errorf("table %q has tenant_id but is missing from rlsTables", name)
+		}
+	}
+}
+
+// TestRLS_DisableClearsStickyFORCE proves flipping WithRLS(false) on Init
+// drops FORCE so a non-BYPASS login is not left deny-all after opt-out.
+func TestRLS_DisableClearsStickyFORCE(t *testing.T) {
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN not set — skipping Postgres RLS test")
+	}
+
+	ctx := context.Background()
+	on, err := New(ctx, dsn, WithRLS(true))
+	if err != nil {
+		t.Fatalf("connect on: %v", err)
+	}
+	if err := on.Init(ctx); err != nil {
+		t.Fatalf("init on: %v", err)
+	}
+	_ = on.Close()
+
+	off, err := New(ctx, dsn, WithRLS(false))
+	if err != nil {
+		t.Fatalf("connect off: %v", err)
+	}
+	t.Cleanup(func() { _ = off.Close() })
+	if err := off.Init(ctx); err != nil {
+		t.Fatalf("init off: %v", err)
+	}
+
+	sys := tenant.SystemContext(ctx)
+	var n int
+	err = off.pool.QueryRow(sys,
+		`SELECT COUNT(*) FROM pg_policies WHERE policyname = 'runkite_tenant_isolation'`,
+	).Scan(&n)
+	if err != nil {
+		t.Fatalf("count policies: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 runkite policies after disable, got %d", n)
+	}
+
+	err = off.pool.QueryRow(sys, `
+		SELECT COUNT(*) FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relname = 'runs' AND c.relforcerowsecurity`,
+	).Scan(&n)
+	if err != nil {
+		t.Fatalf("force check: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("runs still has FORCE ROW LEVEL SECURITY after disable")
+	}
+}

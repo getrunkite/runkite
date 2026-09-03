@@ -25,6 +25,9 @@ import (
 type Store struct {
 	pool       *pgxpool.Pool
 	rlsEnabled bool
+	// rlsReady is true after ensureRLS succeeds. Tenant acquires then
+	// fail-closed on SET ROLE (no silent superuser bypass).
+	rlsReady bool
 }
 
 // Option configures optional Postgres store behavior.
@@ -33,7 +36,8 @@ type Option func(*Store)
 // WithRLS enables opt-in Postgres row-level security: FORCE RLS policies on
 // tenant-scoped tables plus per-acquire app.tenant_id / app.is_system GUCs
 // derived from context. Off by default — application WHERE clauses remain
-// the primary isolation mechanism.
+// the primary isolation mechanism. Turning the flag off and restarting
+// clears Runkite's policies (see disableRLS) so FORCE does not stick.
 func WithRLS(enabled bool) Option {
 	return func(s *Store) { s.rlsEnabled = enabled }
 }
@@ -51,7 +55,7 @@ func New(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
 	}
 	if s.rlsEnabled {
 		cfg.PrepareConn = func(ctx context.Context, conn *pgx.Conn) (bool, error) {
-			if err := applyTenantGUC(ctx, conn); err != nil {
+			if err := s.applyTenantGUC(ctx, conn); err != nil {
 				return false, err
 			}
 			return true, nil
@@ -108,6 +112,12 @@ func (s *Store) Init(ctx context.Context) error {
 	if s.rlsEnabled {
 		if err := s.ensureRLS(ctx); err != nil {
 			return fmt.Errorf("enable postgres RLS: %w", err)
+		}
+	} else {
+		// Clear sticky FORCE/policies from a prior enable so flipping the
+		// env flag off and restarting does not leave deny-all RLS behind.
+		if err := s.disableRLS(ctx); err != nil {
+			return fmt.Errorf("disable postgres RLS: %w", err)
 		}
 	}
 	return nil
