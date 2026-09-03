@@ -32,9 +32,9 @@ from runkite_runner.adapter_checkpoint import (
     merge_messages_input,
     messages_from_values_event,
 )
-from runkite_runner.usage import accumulate_usage, usage_from_metrics, usage_payload, values_with_usage
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 from runkite_runner.tracing import make_run_callbacks
+from runkite_runner.usage import accumulate_usage, usage_from_metrics, usage_payload, values_with_usage
 
 
 def _extract_text(result: Any) -> str:
