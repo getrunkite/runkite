@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -143,5 +144,64 @@ func TestGetSessionSecretRefAPIKey(t *testing.T) {
 	c, _ := r.Get("svc")
 	if c.Config.Auth.APIKey != "" {
 		t.Fatalf("shared APIKey mutated to %q", c.Config.Auth.APIKey)
+	}
+}
+
+// materializeAuthSecret dispatches on auth.Type same as getToken does, and
+// api_key was the only branch with an end-to-end GetSession test -- bearer
+// and the two oauth2 branches were only ever exercised with the secret set
+// directly on the config, never via secret_ref. Same shape of gap as an
+// under-exercised branch anywhere else: looks fine on inspection, but
+// "looks fine" is exactly what the stream-mode usage bug also looked like.
+func TestGetSessionSecretRefBearer(t *testing.T) {
+	t.Setenv("RK_BEARER_TOK", "bearer-from-env")
+	r := NewRegistry(map[string]ConnectorConfig{
+		"svc": {Auth: AuthConfig{Type: "bearer", SecretRef: "env:RK_BEARER_TOK"}},
+	})
+	sess, err := r.GetSession(context.Background(), "svc", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.Credentials["access_token"] != "bearer-from-env" {
+		t.Fatalf("credentials = %#v", sess.Credentials)
+	}
+	c, _ := r.Get("svc")
+	if c.Config.Auth.BearerToken != "" {
+		t.Fatalf("shared BearerToken mutated to %q", c.Config.Auth.BearerToken)
+	}
+}
+
+func TestGetSessionSecretRefOAuthClientCredentials(t *testing.T) {
+	t.Setenv("RK_CLIENT_SECRET", "mysecret")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("client_secret") != "mysecret" {
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "cc-tok", "expires_in": 7200})
+	}))
+	defer srv.Close()
+
+	r := NewRegistry(map[string]ConnectorConfig{
+		"svc": {Auth: AuthConfig{
+			Type: "oauth2_client_credentials", TokenURL: srv.URL, ClientID: "myid",
+			SecretRef: "env:RK_CLIENT_SECRET",
+		}},
+	})
+	sess, err := r.GetSession(context.Background(), "svc", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.Credentials["access_token"] != "cc-tok" {
+		t.Fatalf("credentials = %#v", sess.Credentials)
+	}
+	c, _ := r.Get("svc")
+	if c.Config.Auth.ClientSecret != "" {
+		t.Fatalf("shared ClientSecret mutated to %q", c.Config.Auth.ClientSecret)
 	}
 }
