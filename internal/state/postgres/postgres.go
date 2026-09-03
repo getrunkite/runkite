@@ -66,7 +66,8 @@ func New(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pgxpool.NewWithConfig: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+	// System ping: avoid SET ROLE runkite_app before ensureRLS has created it.
+	if err := pool.Ping(tenant.SystemContext(ctx)); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}

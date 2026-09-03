@@ -10,6 +10,10 @@ import (
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
+// rlsAppRole is a NOBYPASSRLS role SET ROLE'd on tenant acquires so FORCE
+// RLS applies even when POSTGRES_DSN is a superuser (common in CI/dev).
+const rlsAppRole = "runkite_app"
+
 // Tables that carry tenant_id and should be covered when RLS is enabled.
 // terminal_hook_claims is intentionally omitted (run_id PK only; no tenant column).
 var rlsTables = []string{
@@ -38,40 +42,65 @@ var rlsTables = []string{
 }
 
 // applyTenantGUC stamps session vars used by RLS policies onto conn.
-// is_system=true (tenant.SystemContext) sees all rows; otherwise rows must
-// match app.tenant_id. Uses session-level set_config (is_local=false) so
-// the GUC is visible to the subsequent Query/Exec on the same acquired
-// connection; AfterRelease clears it before the conn returns to the pool.
+// System context keeps the login role (RESET ROLE) so migrations/admin
+// see every row. Tenant context SETs ROLE runkite_app so FORCE RLS applies
+// even when the DSN user is a superuser.
 func applyTenantGUC(ctx context.Context, conn *pgx.Conn) error {
 	if tenant.IsSystem(ctx) {
-		_, err := conn.Exec(ctx,
-			`SELECT set_config('app.tenant_id', '', false), set_config('app.is_system', 'true', false)`)
+		_, err := conn.Exec(ctx, `
+			SELECT set_config('app.tenant_id', '', false),
+			       set_config('app.is_system', 'true', false);
+			RESET ROLE`)
 		return err
 	}
 	tid := tenant.FromContext(ctx)
 	_, err := conn.Exec(ctx,
 		`SELECT set_config('app.tenant_id', $1, false), set_config('app.is_system', 'false', false)`,
 		tid)
-	return err
+	if err != nil {
+		return err
+	}
+	// Role is created in ensureRLS; ignore "does not exist" before Init.
+	if _, err := conn.Exec(ctx, `SET ROLE `+rlsAppRole); err != nil {
+		if !strings.Contains(err.Error(), "does not exist") {
+			return fmt.Errorf("SET ROLE %s: %w", rlsAppRole, err)
+		}
+	}
+	return nil
 }
 
 func clearTenantGUC(conn *pgx.Conn) {
-	// Best-effort reset on release so a leaked acquire path cannot carry
-	// a prior tenant into the next checkout. Background ctx: release
-	// already happened outside the request.
-	_, _ = conn.Exec(context.Background(),
-		`SELECT set_config('app.tenant_id', '', false), set_config('app.is_system', 'false', false)`)
+	_, _ = conn.Exec(context.Background(), `
+		SELECT set_config('app.tenant_id', '', false),
+		       set_config('app.is_system', 'false', false);
+		RESET ROLE`)
 }
 
 // ensureRLS enables FORCE ROW LEVEL SECURITY and tenant policies on every
-// tenant-scoped table. Idempotent. Policies allow system context through
-// app.is_system; otherwise tenant_id must equal app.tenant_id.
+// tenant-scoped table, and ensures runkite_app exists for tenant acquires.
 func (s *Store) ensureRLS(ctx context.Context) error {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
 		return err
 	}
 	defer conn.Release()
+
+	_, err = conn.Exec(ctx, `
+		DO $$ BEGIN
+			CREATE ROLE `+rlsAppRole+` NOINHERIT NOBYPASSRLS;
+		EXCEPTION WHEN duplicate_object THEN NULL;
+		END $$;
+		GRANT USAGE ON SCHEMA public TO `+rlsAppRole+`;
+		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO `+rlsAppRole+`;
+		GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO `+rlsAppRole+`;
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public
+			GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO `+rlsAppRole+`;
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public
+			GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO `+rlsAppRole+`;
+	`)
+	if err != nil {
+		return fmt.Errorf("rls app role: %w", err)
+	}
 
 	for _, table := range rlsTables {
 		stmts := []string{
@@ -91,7 +120,6 @@ func (s *Store) ensureRLS(ctx context.Context) error {
 		}
 		for _, stmt := range stmts {
 			if _, err := conn.Exec(ctx, stmt); err != nil {
-				// Table may not exist yet on a partial migrate; skip missing.
 				if strings.Contains(err.Error(), "does not exist") {
 					continue
 				}
