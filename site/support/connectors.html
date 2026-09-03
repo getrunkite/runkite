@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Connectors & HITL — Runkite Docs</title>
-    <meta name="description" content="Run-bound connector sessions and human gates." />
+    <meta name="description" content="How to configure a connector, control which tools it can use, and add a human-approval step — step by step." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
@@ -23,49 +23,50 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                                <nav>
+        <nav>
           <div class="nav-group">Start</div>
-          <a  href="./">Overview</a>
-          <a  href="try.html">Try it</a>
-          <a  href="admin-login.html">Admin login</a>
-          <a  href="credentials.html">Credentials map</a>
-          <a  href="why.html">Why a plane</a>
-          <a  href="scenario.html">Scenario</a>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a href="credentials.html">Credentials map</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
           <div class="nav-group">Build</div>
-          <a  href="install.html">Install</a>
-          <a  href="production.html">Production day-0</a>
-          <a  href="first-agent.html">First agent</a>
-          <a  href="agents.html">Agents (Py / JS)</a>
-          <a  href="migrate-agents.html">Migrate agents</a>
-          <a  href="frameworks.html">Framework matrix</a>
-          <a  href="checkpoints.html">Checkpoints</a>
+          <a href="install.html">Install</a>
+          <a href="production.html">Production day-0</a>
+          <a href="first-agent.html">First agent</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="migrate-agents.html">Migrate agents</a>
+          <a href="frameworks.html">Framework matrix</a>
+          <a href="checkpoints.html">Checkpoints</a>
           <a class="active" href="connectors.html">Connectors</a>
-          <a  href="registry.html">Registry</a>
+          <a href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
-          <a  href="runs.html">Runs &amp; threads</a>
-          <a  href="cron.html">Cron</a>
-          <a  href="webhooks.html">Webhooks</a>
-          <a  href="ops.html">Ops</a>
-          <a  href="runner-auth.html">Runner auth</a>
-          <a  href="secrets.html">Secrets</a>
+          <a href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <a href="runner-auth.html">Runner auth</a>
+          <a href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
-          <a  href="grants.html">Grants &amp; HITL</a>
-          <a  href="hitl-ops.html">HITL ops</a>
-          <a  href="policy.html">PDP / Cedar</a>
-          <a  href="kill.html">Kill &amp; break-glass</a>
-          <a  href="security.html">Security</a>
-          <a  href="multi-tenant.html">Multi-tenant keys</a>
-          <a  href="finops.html">Spend (FinOps)</a>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="hitl-ops.html">HITL ops</a>
+          <a href="policy.html">PDP / Cedar</a>
+          <a href="kill.html">Kill &amp; break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="multi-tenant.html">Multi-tenant keys</a>
+          <a href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Connect</div>
-          <a  href="a2a.html">A2A coordination</a>
-          <a  href="protocol.html">Protocols</a>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
-          <a  href="feature-map.html">Feature map</a>
-          <a  href="chapters/">Chapters</a>
-          <a  href="blog/">Blog</a>
-          <a  href="decisions/">Decisions</a>
+          <a href="feature-map.html">Feature map</a>
+          <a href="chapters/">Chapters</a>
+          <a href="blog/">Blog</a>
+          <a href="decisions/">Decisions</a>
           <a href="./engineering.html">Engineering notes</a>
-          <a  href="limitations.html">Limitations</a>
+          <a href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
@@ -75,43 +76,214 @@
         </div>
 
         <h1>Connectors &amp; HITL</h1>
-        <p class="lede">Plane-minted credentials for a run. Workers never hold long-lived provider secrets.</p>
-        <h2>Run-binding</h2>
-        <p>
-          <code>POST /internal/connectors/{name}/session</code> and MCP proxy calls require an
-          in-flight run (<code>X-Runkite-Run-Id</code> + generation). A bare runner token without
-          those headers gets <code>401 run_binding_required</code>.
+        <p class="lede">
+          A connector is how your agent talks to an outside service (Salesforce, GitHub,
+          your own internal API) without ever holding that service's credentials itself.
+          The plane holds the real secret, mints a short-lived session for one specific
+          run, and can pause a call for a human to approve first. This page is the full
+          setup: configure one, control which of its tools an agent can use, and turn on
+          human approval.
         </p>
-        <h2>From agent code</h2>
+
+        <h2>Why route through a connector instead of just calling the API directly?</h2>
+        <p>
+          Nothing stops your agent code from calling an external API directly with its own
+          hardcoded key — that's not something the plane can prevent. The reason to go
+          through a connector instead: the real credential never has to live in your
+          agent's process or environment variables, every call is automatically tied to
+          the run that made it (so "who called Salesforce and why" always has an answer),
+          and you get tool-level allow/deny lists and human-approval gates for free,
+          enforced by the plane instead of by code inside every agent.
+        </p>
+
+        <h2>Step 1 — configure the connector</h2>
+        <p>
+          A connector is a small YAML file, referenced by name from <code>langgraph.json</code>.
+          Here's a complete, working example for a Salesforce connector using OAuth
+          client-credentials:
+        </p>
+        <pre class="mono-block"># connectors/salesforce.yaml
+auth:
+  type: oauth2_client_credentials
+  token_url: https://login.salesforce.com/services/oauth2/token
+  client_id: ${SF_CLIENT_ID}
+  client_secret: ${SF_CLIENT_SECRET}
+mcp:
+  url: https://salesforce-mcp.internal/sse
+tools:
+  allow: [soqlQuery, getObjectSchema]
+  deny: [deleteRecord, bulkUpdate]
+errors:
+  INSUFFICIENT_ACCESS: "You don't have permission for this Salesforce object."</pre>
+        <p>Then point <code>langgraph.json</code> at it:</p>
+        <pre class="mono-block">{
+  "connectors": {
+    "salesforce": { "config_ref": "./connectors/salesforce.yaml" }
+  }
+}</pre>
+        <p><strong>What each part means:</strong></p>
+        <ul class="expect">
+          <li>
+            <strong><code>auth.type</code></strong> — how the plane authenticates to the
+            downstream service. Four supported types: <code>oauth2_client_credentials</code>
+            (a service-to-service OAuth client, e.g. Salesforce/most enterprise APIs),
+            <code>oauth2_token_exchange</code> (swap the end-user's own SSO token for a
+            downstream one — use this when the call should run "as the user", not as a
+            generic service account), <code>api_key</code>, and <code>bearer</code> (a
+            static credential — simplest option, for APIs that just take a header).
+          </li>
+          <li>
+            <strong><code>${SF_CLIENT_ID}</code> / <code>${SF_CLIENT_SECRET}</code></strong> —
+            these get substituted from environment variables when the config loads. Never
+            put a real secret directly in the YAML file. See
+            <a href="secrets.html">Secrets</a> for a second option
+            (<code>auth.secret_ref</code>) that fetches the credential fresh from Vault or
+            a file each time a session is minted, instead of baking it into memory at
+            startup — useful if you rotate credentials without wanting to restart the
+            control plane.
+          </li>
+          <li>
+            <strong><code>mcp.url</code></strong> — set this if the downstream service
+            speaks MCP (Model Context Protocol). The plane proxies every call through
+            itself rather than handing your agent the real MCP URL — that's what makes the
+            <code>tools.allow</code>/<code>tools.deny</code> list below actually
+            enforceable instead of just advisory.
+          </li>
+          <li>
+            <strong><code>tools.allow</code> / <code>tools.deny</code></strong> — restrict
+            which MCP tools this connector exposes. This is a real, enforced gate: a denied
+            tool call is rejected by the plane and never reaches the downstream server at
+            all. Use <code>deny</code> alone to block a specific handful of dangerous tools
+            while allowing everything else; use <code>allow</code> to only permit an
+            explicit, short list.
+          </li>
+          <li>
+            <strong><code>errors</code></strong> — optional. Maps a raw error code from the
+            downstream service to a friendlier message your agent (or its end user) sees
+            instead of a cryptic upstream error string.
+          </li>
+        </ul>
+
+        <h2>Step 2 — a network hiccup shouldn't take down every agent</h2>
+        <p>
+          Every OAuth connector automatically gets a circuit breaker around its token-fetch
+          call — you don't configure this to turn it on, only to tune it:
+        </p>
+        <pre class="mono-block">circuit_breaker:
+  failure_threshold: 5    # consecutive failures before it trips open (default: 5)
+  cooldown_seconds: 30    # how long it stays open before trying again (default: 30)</pre>
+        <p>
+          In plain terms: if Salesforce's login endpoint is down and 5 calls in a row fail,
+          the breaker "opens" — every further call fails instantly (no network attempt, no
+          waiting for a timeout) for 30 seconds, so one broken downstream service can't slow
+          down every agent that happens to use it. After the cooldown, it lets one call
+          through as a test; if that succeeds, it closes and traffic flows normally again.
+          You can watch this state live in <a href="admin-guide.html#5-connectors">Admin →
+          Connectors</a>.
+        </p>
+
+        <h2>Step 3 — call it from your agent code</h2>
+        <p>
+          Use the SDK helper, not a raw HTTP call — it automatically attaches the headers
+          that tie the request to your currently-running run (explained below):
+        </p>
         <pre class="mono-block"># Python (inside a graph node)
 from runkite_runner.connectors import get_connector_session
 
 async def my_node(state, config):
     sess = await get_connector_session(config, "salesforce")
-    ...</pre>
-        
-        <h2>In the product</h2>
+    # sess.credentials["access_token"] is ready to use right now</pre>
+        <pre class="mono-block">// TypeScript
+import { getConnectorSession } from "runkite-runner";
+
+const sess = await getConnectorSession(config, "salesforce");</pre>
         <figure class="shot">
-          <div class="cap">Admin → Connectors — configured connectors</div>
+          <div class="cap">Admin → Connectors — configured connectors and their health</div>
           <img src="../assets/ui-connectors.png" alt="Runkite Admin Connectors" width="960" height="600" />
         </figure>
 
-        <h2>HITL</h2>
+        <h2>What "run-bound" actually means (and why you'll see a 401 if you skip it)</h2>
         <p>
-          Mark a connector/tool as requiring approval. The run interrupts; Admin (or API)
-          approves or denies; the plane resumes or fails closed. Mandatory HITL rules can
-          force a human gate for a connector class.
+          A connector session is only ever minted for a run that's actually in progress
+          right now — the plane will not hand out credentials to a bare request that just
+          has a runner token and nothing else. This is why the SDK helpers above matter:
+          they automatically read the current run's ID and "generation" (a fencing number
+          that changes if the run gets reassigned to a different worker) from the graph
+          config and attach them as headers. If you ever bypass the helper and call the
+          session endpoint directly without those headers, you'll get
+          <code>401 run_binding_required</code> — that's the plane refusing to hand out a
+          credential with no run to attach it to, not a bug.
         </p>
+
+        <h2>Step 4 — decide who's allowed to use this connector at all</h2>
+        <p>
+          Configuring a connector doesn't automatically let every agent use it — by
+          default, a connector call is <strong>denied</strong> until you explicitly grant
+          it. You can grant in config (fixed at deploy time) or in Admin (changeable live,
+          no redeploy):
+        </p>
+        <pre class="mono-block"># langgraph.json — static grant, baked in at deploy time
+"policy": {
+  "grants": [
+    { "tenant_id": "default", "agent_id": "sales-assistant", "connector": "salesforce" }
+  ]
+}</pre>
+        <p>
+          Or open <a href="admin-guide.html#8-grants-policy-grants">Admin → Grants</a>,
+          click "New grant," and pick the tenant / agent / connector. Admin grants roll out
+          to every control-plane replica within about 15 seconds — no restart needed. Use
+          config for grants you always want; use Admin for grants you're experimenting with
+          or need to change without a deploy.
+        </p>
+
+        <h2>Step 5 (optional) — force a human to approve first</h2>
+        <p>
+          For anything you never want an agent doing fully on its own — sending an email,
+          approving a refund, deleting a record — add a mandatory human-in-the-loop (HITL)
+          rule. Once this is in place, a matching call doesn't fail and doesn't succeed —
+          it <strong>pauses</strong> until a human looks at it.
+        </p>
+        <pre class="mono-block"># langgraph.json — every call to salesforce's deleteRecord tool must be approved
+"policy": {
+  "mandatory_hitl": [
+    { "tenant_id": "default", "connector": "salesforce", "tools": ["deleteRecord"] }
+  ]
+}</pre>
+        <p>Leave out <code>tools</code> to require approval for every tool on that connector. You can also create these rules from <a href="admin-guide.html#9-mandatory-hitl">Admin → Mandatory HITL</a> without a redeploy.</p>
+        <p><strong>What actually happens when this fires, end to end:</strong></p>
+        <ol class="steps">
+          <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
+          <li>Instead of running, the call pauses and shows up in <a href="admin-guide.html#10-pending-approval-queue">Admin → Pending</a>, with the exact arguments the agent wanted to send — so a reviewer can see precisely what would happen before approving.</li>
+          <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
+          <li><strong>Approved</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool actually executes. <strong>Denied</strong> — the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
+          <li>This is a one-time unlock, not a standing exception — the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>
+        </ol>
+        <figure class="shot">
+          <div class="cap">Admin → Pending — see exactly what the agent wants to do before approving it</div>
+          <img src="../assets/ui-pending.png" alt="Runkite Admin Pending Actions" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>"My grant isn't taking effect."</strong> — if you added it in Admin on a different replica than the one serving your traffic, give it up to ~15 seconds to propagate.</li>
+          <li><strong>"Nothing happened when my agent called the tool."</strong> — check <a href="admin-guide.html#10-pending-approval-queue">Admin → Pending</a> first; it's very likely paused there waiting for approval, not silently failed.</li>
+          <li><strong>Credentials never leave the plane on their own</strong> — <code>GetSession</code> and the connector status endpoint never hand back a connector's raw downstream URL when MCP is configured, and MCP session tokens are 15-minute, run-bound, and single-purpose. This does not stop your own agent code from independently having a different, hardcoded credential to the same service — the plane can only govern access it hands out itself.</li>
+          <li><strong>A cached OAuth token keeps working even mid-outage</strong> — if the token refresh endpoint is down and the breaker trips, a still-valid cached token keeps being served; only <em>new</em> token fetches fail fast.</li>
+        </ul>
         <p class="note">
+          Reference:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">docs/connectors.md</a>
           ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
           ·
+          <a href="secrets.html">Secrets (env / file / Vault)</a>
+          ·
+          <a href="admin-guide.html">Admin UI guide</a>
+          ·
           <a href="./try.html">Try HITL path</a>
         </p>
-
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+    <script src="./docs.js" defer></script>
   </body>
 </html>

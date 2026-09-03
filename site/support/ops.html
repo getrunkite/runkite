@@ -28,6 +28,7 @@
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a  href="why.html">Why a plane</a>
           <a  href="scenario.html">Scenario</a>
@@ -75,33 +76,95 @@
         </div>
 
         <h1>Ops</h1>
-        <p class="lede">Reclaim, kill, and secrets are plane responsibilities — not SSH folklore.</p>
-        <h2>Reclaim &amp; fencing</h2>
-        <p>
-          If a runner dies mid-job, the plane reclaims and bumps a generation. The stale
-          runner’s later write is fenced out so it cannot overwrite the winner.
+        <p class="lede">
+          Day-2 operations — what happens when a runner crashes, how to stop something
+          gone wrong, and where secrets actually live. None of this needs SSH access to a
+          box; it's all plane behavior or an Admin/API action.
         </p>
-        <h2>Kill / cancel</h2>
+
+        <h2>What happens when a runner crashes mid-job</h2>
         <p>
-          Cancel from Admin or Agent Protocol. Runners see the assignment go non-current;
-          side effects should stop. Break-glass exists for emergency override windows.
+          Every dispatched job has a live heartbeat — the runner pings the plane roughly
+          every 2 seconds while it works. If those heartbeats stop (the process crashed, the
+          pod got OOM-killed, the node disappeared), the plane notices within about 6 seconds
+          and <strong>reclaims</strong> the job automatically: it goes back on the queue for a
+          different runner to pick up, and a "generation" counter on that job increments.
         </p>
-        <h2>Secrets</h2>
         <p>
-          Provider credentials live with connector config / secret store — minted into
-          run-bound sessions, not copied into every agent env.
+          The generation counter is what makes this safe instead of dangerous. If the
+          original runner wasn't actually dead — just slow to report, or its heartbeat got
+          lost on a flaky network — and it finishes the job late and tries to report a
+          result, the plane sees that its generation number is now stale and rejects the
+          write. This is called <strong>fencing</strong>, and it's what stops a "zombie"
+          runner from overwriting the result a second, legitimate runner already produced.
+          You don't do anything to enable this — it's always on.
         </p>
-        <h2>Poison pill</h2>
         <p>
-          Crash-loop jobs stop reclaiming after a hard <code>max_retries</code> ceiling so
-          one cursed graph cannot spin forever.
+          One thing to watch: a job that keeps crash-looping (bad graph code, a dependency
+          that's always down) would otherwise reclaim forever. There's a ceiling —
+          <code>reclaim.max_retries</code> in <code>langgraph.json</code> (default 3, or set
+          <code>RUNKITE_RECLAIM_MAX_RETRIES</code>) — after which the plane stops retrying
+          and marks the run as failed instead of endlessly recycling it. Set it to
+          <code>0</code> for unlimited retries if you'd rather it keep trying forever (not
+          recommended for anything but a very short-lived debugging session).
         </p>
+
+        <h2>Stopping a run that's gone wrong</h2>
+        <p>
+          For one specific run: cancel it from <a href="admin-guide.html#4-threads--runs">Admin
+          → Runs</a> or via the Agent Protocol API. The runner sees its assignment marked
+          non-current and should stop producing side effects on its next check — well-behaved
+          agent code checks the cancellation signal between steps, so a very long single LLM
+          call in flight may still finish that one call before noticing.
+        </p>
+        <p>
+          For something bigger — an entire agent or tenant misbehaving — use
+          <a href="admin-guide.html#11-kill-switches">Admin → Kill switches</a> instead of
+          cancelling runs one at a time: it stops new runs from starting and can cancel every
+          in-flight run in scope in one action. See <a href="kill.html">Kill &amp;
+          break-glass</a> for the full walkthrough, including the opposite tool — a
+          time-boxed policy bypass for when you need something to work again <em>right now</em>
+          while you fix the actual root cause.
+        </p>
+
+        <h2>Where secrets actually live</h2>
+        <p>
+          Provider credentials (a Salesforce OAuth secret, a GitHub token) live in your
+          connector config or a secrets manager — never copied into every agent's process
+          environment. When an agent needs to call out, the plane mints a short-lived,
+          run-bound session at the moment it's needed and hands back only that. See
+          <a href="secrets.html">Secrets</a> for the three ways to reference a credential
+          (env var, mounted file, or HashiCorp Vault) and <a href="connectors.html">Connectors
+          &amp; HITL</a> for the full setup.
+        </p>
+
+        <h2>Reclaim and hooks that run on a schedule (so you know what to expect in logs)</h2>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead><tr><th>Loop</th><th>Cadence</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td>Reclaim sweep</td><td>every 2s</td><td>Finds jobs whose heartbeat went stale (~6s) and re-queues them</td></tr>
+              <tr><td>Cron scheduler</td><td>configurable (default check every ~15s)</td><td>Fires due scheduled agents, exactly once even with multiple replicas</td></tr>
+              <tr><td>Policy overlay poll</td><td>every 15s</td><td>Picks up Admin-created grants / mandatory-HITL rules on replicas that didn't create them</td></tr>
+              <tr><td>Queue depth sample</td><td>every 5s</td><td>Refreshes the human-facing queue-depth gauge (metrics only, not used for decisions)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          None of these need manual triggering — they're background loops inside the control
+          plane process. They're listed here so a "why did this take up to 15 seconds to show
+          up" question has an obvious answer instead of feeling like a bug.
+        </p>
+
         <p class="note">
+          Reference:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">docs/ops-runbook.md</a>
           ·
           <a href="../design/fencing.html">Fencing note</a>
           ·
           <a href="../design/poison-pill.html">Poison-pill note</a>
+          ·
+          <a href="admin-guide.html">Admin UI guide</a>
         </p>
 
       </main>

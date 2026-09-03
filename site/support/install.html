@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Install — Runkite Docs</title>
-    <meta name="description" content="Supported install profile for Runkite." />
+    <meta name="description" content="Step-by-step: laptop demo, Supported Docker Compose profile, and Kubernetes/Helm — what each actually gives you." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
@@ -23,49 +23,50 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                                <nav>
+        <nav>
           <div class="nav-group">Start</div>
-          <a  href="./">Overview</a>
-          <a  href="try.html">Try it</a>
-          <a  href="admin-login.html">Admin login</a>
-          <a  href="credentials.html">Credentials map</a>
-          <a  href="why.html">Why a plane</a>
-          <a  href="scenario.html">Scenario</a>
+          <a href="./">Overview</a>
+          <a href="try.html">Try it</a>
+          <a href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a href="credentials.html">Credentials map</a>
+          <a href="why.html">Why a plane</a>
+          <a href="scenario.html">Scenario</a>
           <div class="nav-group">Build</div>
           <a class="active" href="install.html">Install</a>
-          <a  href="production.html">Production day-0</a>
-          <a  href="first-agent.html">First agent</a>
-          <a  href="agents.html">Agents (Py / JS)</a>
-          <a  href="migrate-agents.html">Migrate agents</a>
-          <a  href="frameworks.html">Framework matrix</a>
-          <a  href="checkpoints.html">Checkpoints</a>
-          <a  href="connectors.html">Connectors</a>
-          <a  href="registry.html">Registry</a>
+          <a href="production.html">Production day-0</a>
+          <a href="first-agent.html">First agent</a>
+          <a href="agents.html">Agents (Py / JS)</a>
+          <a href="migrate-agents.html">Migrate agents</a>
+          <a href="frameworks.html">Framework matrix</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a href="connectors.html">Connectors</a>
+          <a href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
-          <a  href="runs.html">Runs &amp; threads</a>
-          <a  href="cron.html">Cron</a>
-          <a  href="webhooks.html">Webhooks</a>
-          <a  href="ops.html">Ops</a>
-          <a  href="runner-auth.html">Runner auth</a>
-          <a  href="secrets.html">Secrets</a>
+          <a href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a href="webhooks.html">Webhooks</a>
+          <a href="ops.html">Ops</a>
+          <a href="runner-auth.html">Runner auth</a>
+          <a href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
-          <a  href="grants.html">Grants &amp; HITL</a>
-          <a  href="hitl-ops.html">HITL ops</a>
-          <a  href="policy.html">PDP / Cedar</a>
-          <a  href="kill.html">Kill &amp; break-glass</a>
-          <a  href="security.html">Security</a>
-          <a  href="multi-tenant.html">Multi-tenant keys</a>
-          <a  href="finops.html">Spend (FinOps)</a>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="hitl-ops.html">HITL ops</a>
+          <a href="policy.html">PDP / Cedar</a>
+          <a href="kill.html">Kill &amp; break-glass</a>
+          <a href="security.html">Security</a>
+          <a href="multi-tenant.html">Multi-tenant keys</a>
+          <a href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Connect</div>
-          <a  href="a2a.html">A2A coordination</a>
-          <a  href="protocol.html">Protocols</a>
+          <a href="a2a.html">A2A coordination</a>
+          <a href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
-          <a  href="feature-map.html">Feature map</a>
-          <a  href="chapters/">Chapters</a>
-          <a  href="blog/">Blog</a>
-          <a  href="decisions/">Decisions</a>
+          <a href="feature-map.html">Feature map</a>
+          <a href="chapters/">Chapters</a>
+          <a href="blog/">Blog</a>
+          <a href="decisions/">Decisions</a>
           <a href="./engineering.html">Engineering notes</a>
-          <a  href="limitations.html">Limitations</a>
+          <a href="limitations.html">Limitations</a>
         </nav>
       </aside>
       <main class="main">
@@ -74,50 +75,126 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Install (Supported)</h1>
-        <p class="lede">Postgres + Redis is the Supported honesty bar. Dev compose is for demos only.</p>
-        <h2>Laptop demo (not Supported)</h2>
-        <pre class="mono-block">docker compose -f docker-compose.dev.yml up -d --build</pre>
-        <p>SQLite + in-memory. Fine for echo/HITL. Not the production claim.</p>
-        <h2>Supported profile</h2>
-        <ul>
-          <li><code>POSTGRES_DSN</code> + <code>REDIS_URL</code></li>
-          <li>Client auth enabled; runner tokens per kind</li>
-          <li>TLS on the client-facing edge</li>
-        </ul>
-        <pre class="mono-block">cp .env.example .env   # set POSTGRES_PASSWORD and RUNNER_TOKEN
-docker compose up -d --build
-curl -sf http://localhost:2026/readyz && echo OK</pre>
-        <p>
-          Full-stack compose runs Postgres, Redis, control plane, and a Python runner.
-          Required secrets fail fast if unset — no silent default passwords.
+        <h1>Install</h1>
+        <p class="lede">
+          Three ways to run Runkite, in order of how real they are: a laptop demo (SQLite,
+          no auth, throw it away when you're done), the Supported Docker Compose profile
+          (Postgres + Redis, this is the one to trust), and Kubernetes/Helm (same topology,
+          packaged for a cluster). Pick based on what you're actually doing today.
         </p>
-        <h2>Kubernetes</h2>
+
+        <h2>Option 1 — laptop demo (5 minutes, not for anything real)</h2>
+        <pre class="mono-block">git clone https://github.com/getrunkite/runkite.git && cd runkite
+docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p>
-          Helm chart under <code>deploy/helm/runkite</code>. For the Supported profile, install
-          with the overlay at
-          <code>deploy/helm/runkite/values-supported.yaml</code>
-          (optional TLS overlay: <code>values-tls.yaml</code>).
+          This uses SQLite and an in-memory job queue — everything runs in one container,
+          nothing survives a restart, and there's no authentication at all. That's
+          intentional: it's for kicking the tires and following
+          <a href="first-agent.html">First agent</a>, not for anything you'd point real
+          traffic at. If you just want to see it work without cloning anything, use
+          <a href="try.html">Try it</a> instead — same idea, zero setup.
         </p>
-        <pre class="mono-block">helm upgrade --install runkite deploy/helm/runkite \
-  -f deploy/helm/runkite/values.yaml \
-  -f deploy/helm/runkite/values-supported.yaml</pre>
+
+        <h2>Option 2 — Supported profile (Postgres + Redis)</h2>
         <p>
-          Kind K0–K3 ops proofs (<code>make kind-helm-all</code>) cover install, token
-          rotate, mid-run reclaim, and Ingress+NetworkPolicy. Multi-CP HA proof today is
-          Compose soak — treat production cluster installs as Compatible until a named
-          cloud soak (K4) exists.
+          This is the profile Runkite is actually tested and soaked against for
+          multi-replica production use. Two things make it "Supported" instead of "it
+          probably works": <strong>Postgres</strong> holds every agent/thread/run/audit
+          record so a control-plane restart (or running 3 replicas behind a load balancer)
+          never loses or duplicates state, and <strong>Redis</strong> is the shared job
+          queue and locking layer so those replicas coordinate correctly instead of each
+          thinking it owns the whole world.
         </p>
+        <p><strong>Steps:</strong></p>
+        <ol class="steps">
+          <li>
+            <pre class="mono-block">cp .env.example .env</pre>
+            Open <code>.env</code> and fill in two values: <code>POSTGRES_PASSWORD</code>
+            (any password — this stays inside your Docker network) and
+            <code>RUNNER_TOKEN</code> (generate one with
+            <code>openssl rand -hex 32</code>). Both are required — the stack refuses to
+            start with a placeholder or empty value instead of silently booting with a
+            well-known default password.
+          </li>
+          <li>
+            <pre class="mono-block">docker compose up -d --build</pre>
+            This starts four containers: Postgres, Redis, the control plane, and a Python
+            runner loading the bundled example agents.
+          </li>
+          <li>
+            <pre class="mono-block">curl -sf http://localhost:2026/readyz && echo OK</pre>
+            <code>/readyz</code> doesn't just check that the HTTP server is up — it
+            actually verifies Postgres and Redis are reachable. If this returns anything
+            other than <code>OK</code>, check <code>docker compose logs runkite</code>
+            before assuming your agent config is the problem.
+          </li>
+          <li>
+            Open <code>http://localhost:2026/admin/</code> to confirm the plane sees the
+            bundled example agents (see <a href="admin-guide.html">Admin UI guide</a> for
+            what you'll find there).
+          </li>
+        </ol>
         <p class="note">
+          <strong>Client-facing auth is not turned on by this compose file.</strong> It sets
+          <code>RUNKITE_ALLOW_INSECURE_SERVE=1</code> specifically so the demo boots without
+          you having to write an <code>auth</code> config first — this is fine on your own
+          machine, but before this stack is reachable from anywhere else, add a real
+          <code>auth</code> section to <code>langgraph.json</code> (see
+          <a href="admin-login.html">Admin login</a> for the exact shape) and remove that
+          env var. Without <code>auth</code> configured, <code>RUNKITE_ALLOW_INSECURE_SERVE</code>
+          is required — the plane refuses to boot in an ambiguous "maybe secure" state.
+        </p>
+
+        <h2>Option 3 — Kubernetes / Helm</h2>
+        <p>
+          Same Postgres + Redis topology, packaged as a Helm chart under
+          <code>deploy/helm/runkite</code>. Unlike the Compose demo above, the chart's
+          default config <em>does</em> wire in real client auth out of the box — you supply
+          the API key value, not a bypass flag.
+        </p>
+        <ol class="steps">
+          <li>Have a Postgres and Redis reachable from the cluster — the chart does not bundle them; point it at infrastructure you already run.</li>
+          <li>
+            <pre class="mono-block">helm upgrade --install runkite deploy/helm/runkite \
+  -f deploy/helm/runkite/values.yaml \
+  -f deploy/helm/runkite/values-supported.yaml \
+  --set secrets.postgresDsn="postgres://..." \
+  --set secrets.redisUrl="redis://..." \
+  --set secrets.apiKey="$(openssl rand -hex 32)"</pre>
+          </li>
+          <li>Optional: add <code>-f deploy/helm/runkite/values-tls.yaml</code> for pod-to-pod TLS/mTLS between the control plane and runners.</li>
+          <li>Check rollout: <code>kubectl get pods -l app.kubernetes.io/name=runkite</code>, then port-forward or hit your Ingress's <code>/readyz</code>.</li>
+        </ol>
+        <p>
+          Kubernetes packaging itself has been proven with <code>kind</code> (install, runner
+          token rotation, mid-run reclaim, and Ingress/NetworkPolicy — run the whole suite
+          with <code>make kind-helm-all</code>) and with a named smoke test on real EKS
+          (install, a real run, and a control-plane pod kill recovering cleanly — see
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/k8s-eks-soak-results.md">k8s-eks-soak-results.md</a>).
+          What's <em>not</em> proven yet on cloud Kubernetes is a long, multi-availability-zone
+          HA soak — the Compose multi-replica soak is still the deeper correctness proof today.
+          Until that longer cloud soak exists, treat a Kubernetes install as "packaging and
+          day-1 ops are solid" rather than "identical HA guarantees to Compose."
+        </p>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>"<code>/readyz</code> never turns healthy."</strong> — almost always Postgres or Redis isn't reachable yet, or the DSN/URL is wrong. Check <code>docker compose logs</code> / pod logs for the exact connection error before touching anything else.</li>
+          <li><strong>"<code>serve</code> refuses to start."</strong> — this is usually intentional, not a bug: production admission checks fail closed on an insecure combination (e.g. runner tokens configured but no matching <code>RUNNER_TENANTS_*</code>). The startup log names exactly which check failed.</li>
+          <li><strong>Required secrets fail loudly, not silently</strong> — an unset <code>POSTGRES_PASSWORD</code>/<code>RUNNER_TOKEN</code> stops the stack from starting at all, instead of quietly deploying with a shared default password everyone forgets to change.</li>
+        </ul>
+        <p class="note">
+          Reference:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/deployment.md">docs/deployment.md</a>
           ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
           ·
+          <a href="./production.html">Production day-0</a>
+          ·
           <a href="./ops.html">Ops</a>
         </p>
-
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+    <script src="./docs.js" defer></script>
   </body>
 </html>

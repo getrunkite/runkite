@@ -28,6 +28,7 @@
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a  href="why.html">Why a plane</a>
           <a class="active" href="scenario.html">Scenario</a>
@@ -74,21 +75,56 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1>Scenario: one shared connector</h1>
-        <p class="lede">Three agents, two frameworks, one credential surface — without copying secrets into every process.</p>
-        <h2>Without a plane</h2>
-        <p>
-          Each agent process loads provider keys from env. HITL is a custom HTTP callback in one
-          framework. Kill means SSH. Audit is whoever remembered to log.
+        <h1>Scenario: one shared connector, three agents</h1>
+        <p class="lede">
+          A concrete, worked example. Say you have a support-bot agent built in LangGraph, a
+          research agent built in CrewAI, and an internal ops agent built in plain LangChain —
+          and all three need to look things up in Salesforce.
         </p>
+
+        <h2>Without a control plane</h2>
+        <p>
+          Each of the three agent processes needs the Salesforce credential in its own
+          environment — so now there are three copies of the same secret to rotate when it
+          expires, and three places it could leak from. The support-bot's author writes a
+          custom HTTP callback for "pause and ask a human before deleting a Salesforce
+          record," because that's the only way their framework supports it. The research
+          agent doesn't have that safeguard at all, because nobody built the equivalent for
+          CrewAI yet. If something goes wrong at 2am, "stop everything" means finding which
+          of three separate processes is misbehaving and killing it by hand. And "what did
+          these agents do to Salesforce last week" is answered by however much each of the
+          three individually happened to log — usually inconsistently, usually incompletely.
+        </p>
+
         <h2>With Runkite</h2>
-        <ul>
-          <li>Clients create threads/runs via Agent Protocol.</li>
-          <li>Runners pull assignments via Runner Protocol.</li>
-          <li>Connectors mint <em>run-bound</em> sessions — workers never hold long-lived provider secrets.</li>
-          <li>HITL, kill, and audit live on the plane Admin surface.</li>
+        <p>
+          One Salesforce connector, configured once. All three agents reference it by name
+          from their own <code>langgraph.json</code>, regardless of which framework they're
+          written in — the plane doesn't care that one is LangGraph and another is CrewAI.
+          Concretely, here's what changes:
+        </p>
+        <ul class="expect">
+          <li><strong>One credential, minted fresh per call</strong> — the Salesforce secret lives in one place (Vault, a file, or an env var — see <a href="secrets.html">Secrets</a>), and each agent gets a short-lived, run-bound session instead of holding the real credential itself.</li>
+          <li><strong>One human-approval rule, applies to all three</strong> — a single mandatory-HITL rule on the "delete record" tool covers the support bot, the research agent, and the ops agent identically, with no framework-specific plumbing.</li>
+          <li><strong>One kill switch</strong> — if the research agent starts misbehaving, stop just that agent (or the whole tenant) from <a href="admin-guide.html#11-kill-switches">Admin → Kill switches</a>, no SSH required.</li>
+          <li><strong>One audit trail</strong> — every Salesforce call from any of the three agents lands in the same searchable log, filterable by agent, so "what did we do to Salesforce last Tuesday" has a real, complete answer.</li>
         </ul>
-        <p class="note">Product framing: <a href="../#scenario">landing scenario</a> · Try path: <a href="./try.html">Try it</a></p>
+        <p>
+          Under the hood: clients create threads and runs by calling the plane's Agent
+          Protocol API; each of the three runners (whichever language/framework they're
+          written in) pulls its work from the plane via a separate Runner Protocol. Neither
+          side needs to know the other exists directly — the plane is the only thing both
+          talk to.
+        </p>
+
+        <h2>When this scenario doesn't apply to you yet</h2>
+        <p>
+          If you only have the one agent and nothing else shares its connector, you don't
+          need any of the above yet — see <a href="why.html">Why a control plane</a> for
+          when it's worth adding this layer versus when it's premature.
+        </p>
+
+        <p class="note">Product framing: <a href="../#scenario">landing scenario</a> · Try path: <a href="./try.html">Try it</a> · <a href="connectors.html">Connectors &amp; HITL</a> (the full connector setup this scenario uses)</p>
 
       </main>
     </div>

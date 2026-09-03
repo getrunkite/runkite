@@ -31,6 +31,7 @@
           <a href="./">Overview</a>
           <a href="try.html">Try it</a>
           <a href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a href="credentials.html">Credentials map</a>
           <a href="why.html">Why a plane</a>
           <a href="scenario.html">Scenario</a>
@@ -79,9 +80,10 @@
 
         <h1>Engineering notes</h1>
         <p class="lede">
-          Four short notes on how the plane stays honest under reclaim, streaming races,
-          admission, and cursed jobs. Skim before an interview or an ops incident — not a
-          second copy of the architecture docs.
+          Six short notes on how the plane stays honest under reclaim, streaming races,
+          admission, concurrent spend, cursed jobs, and one real Postgres gotcha. Skim
+          before an interview or an ops incident — not a second copy of the architecture
+          docs.
         </p>
 
         <ul class="links">
@@ -100,6 +102,14 @@
           <li>
             <a href="../design/poison-pill.html">4 · Poison pill / reclaim ceiling</a>
             — Crash-loop jobs stop reclaiming after a hard max_retries ceiling.
+          </li>
+          <li>
+            <a href="../design/finops-holds.html">5 · Optimistic spend holds</a>
+            — Reserve an estimate at create time so concurrent runs can't all pass a terminal-only budget check at once.
+          </li>
+          <li>
+            <a href="../design/rls-grant.html">6 · The RLS grant that can't grant itself</a>
+            — A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN.
           </li>
         </ul>
 

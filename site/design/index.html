@@ -34,12 +34,13 @@
         </nav>
       </header>
 
-      <p class="kicker">Engineering notes · set of 4</p>
+      <p class="kicker">Engineering notes · set of 6</p>
       <h1>Crash races, closed doors, one funnel.</h1>
       <p class="lede">
-        Four short notes on how the plane stays honest under reclaim, streaming races,
-        admission, and cursed jobs. Skim before an interview or an ops incident —
-        not a second copy of the architecture docs.
+        Six short notes on how the plane stays honest under reclaim, streaming races,
+        admission, concurrent spend, cursed jobs, and one real Postgres gotcha. Skim
+        before an interview or an ops incident — not a second copy of the
+        architecture docs.
       </p>
 
       <ul class="note-list">
@@ -58,6 +59,14 @@
         <li>
           <a href="./poison-pill.html">4 · Poison pill / reclaim ceiling</a>
           <p>Crash-loop jobs stop reclaiming after a hard max_retries ceiling.</p>
+        </li>
+        <li>
+          <a href="./finops-holds.html">5 · Optimistic spend holds</a>
+          <p>Reserve an estimate at create time so concurrent runs can't all pass a terminal-only budget check at once.</p>
+        </li>
+        <li>
+          <a href="./rls-grant.html">6 · The RLS grant that can't grant itself</a>
+          <p>A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN — and why superuser-only test coverage hid it.</p>
         </li>
       </ul>
 

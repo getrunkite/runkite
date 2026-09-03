@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Optimistic spend holds — Runkite engineering</title>
+    <meta
+      name="description"
+      content="Counting terminal spend alone lets concurrent run creates blow through a daily budget cap before any of them finish. Runkite reserves an estimate at create time and settles it at the end — with a TTL so a crashed runner can't pin the cap shut."
+    />
+    <meta name="theme-color" content="#0a0a0b" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./story.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="note-header">
+        <a class="site-logo" href="../">~/ <span>runkite</span></a>
+        <nav class="note-nav" aria-label="Primary">
+          <a href="../">Product</a>
+          <a href="../support/try.html">Try</a>
+          <a href="../support/">Docs</a>
+          <a class="active" href="./">Notes</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="kicker">Engineering note · 5 of 6</p>
+      <h1>Count the spend <em>before</em> it happens.</h1>
+      <p class="lede">
+        A daily USD/token cap checked only against finished runs has a hole exactly
+        the width of your concurrency: N runs can all pass the check at once, before
+        any of them reports a token back. Runkite closes that hole with an optimistic
+        <em>hold</em> — a guess reserved at create time, settled for real at the end.
+      </p>
+
+      <h2>The gap a terminal-only check leaves open</h2>
+      <p>
+        Terminal usage — the actual token counts and USD estimate — is only known once
+        a run finishes. If admission only asks "how much have finished runs cost
+        today," a burst of concurrent creates all see the same pre-burst total and all
+        pass, because none of them has reported anything back yet.
+      </p>
+      <div class="diagram" role="img" aria-label="Concurrent creates overshoot a terminal-only cap">
+        <pre>
+<span class="dim">cap = $10/day, spent-so-far = $9.50, avg run ≈ $1</span>
+
+<span class="bad">terminal-only check:</span>
+  run A create → checks $9.50 < $10 → <span class="ok">admit</span>
+  run B create → checks $9.50 < $10 → <span class="ok">admit</span>   (A hasn't finished yet)
+  run C create → checks $9.50 < $10 → <span class="ok">admit</span>   (still $9.50 — nothing settled)
+  → three runs land, cap breached by up to 3×avg before any of them reports back
+
+<span class="ok">with a hold:</span>
+  run A create → reserve $1 estimate → checks $9.50+$1 &lt; $10 → <span class="ok">admit</span>, hold open
+  run B create → checks $9.50+$1(A)+$1(B) = $11.50 ≥ $10 → <span class="bad">denied</span>
+        </pre>
+      </div>
+
+      <h2>What a hold actually is</h2>
+      <p>
+        At run-create time, if <code>finops.reservation</code> is configured, the plane
+        writes one row to a <code>usage_holds</code> table: an estimated USD/token
+        amount for that run, scoped to the same tenant/agent the real budget check
+        uses. Every subsequent admission check for that scope adds up open holds
+        alongside terminal usage — so the reservation counts toward the cap
+        immediately, not after the fact. When the run finishes, the real terminal
+        usage event is recorded and the hold is released in the same transaction path
+        — the estimate never double-counts against the real number.
+      </p>
+      <ul>
+        <li>
+          <strong>Reservation size is configurable per agent</strong> — a coding agent
+          that burns 50k tokens a run and a classifier that burns 200 need very
+          different estimates; <code>reservation.agents</code> overrides the default
+          per <code>tenant_id/agent_id</code> key.
+        </li>
+        <li>
+          <strong>Holds only guard USD/token caps</strong>, not
+          <code>max_runs_per_day</code> — run-count admission already counts in-flight
+          runs directly (<code>CountRunsSince</code>), so adding held runs on top would
+          double-count the same run twice.
+        </li>
+      </ul>
+
+      <h2>The failure mode a hold introduces — and how it's closed</h2>
+      <p>
+        An optimistic reservation is a promise to release later. If the runner that
+        opened it crashes before reporting a terminal status, that promise is never
+        kept — the hold sits open forever, silently eating into tomorrow's budget
+        along with today's, because nothing ever releases it.
+      </p>
+      <div class="diagram" role="img" aria-label="A hold TTL sweeper closes the crashed-runner gap">
+        <pre>
+run creates → hold opens ($1, tenant=acme)
+runner crashes mid-execution → no terminal event ever arrives
+                              → hold never releases on its own
+
+<span class="ok">hold_ttl sweeper (background loop):</span>
+  finds holds older than hold_ttl with no matching terminal usage event
+  → expires them → cap returns to its real, un-inflated value
+        </pre>
+      </div>
+      <p>
+        This is the same shape as generation fencing's problem, one layer up the
+        stack: something optimistic was reserved on the assumption the reserver would
+        report back, and the system needs an explicit answer for "what happens when
+        it doesn't." Here the answer is a TTL sweep instead of a fencing token — but
+        set <code>hold_ttl</code> shorter than your longest real run and you'll expire
+        (and under-reserve for) a job that's still legitimately running. Size it above
+        your slowest expected agent, not your average one.
+      </p>
+
+      <div class="takeaway">
+        <p>
+          A budget cap that only looks backward at what already finished isn't a cap
+          under concurrency — it's a cap with a burst-sized hole in it. Reserve the
+          estimate the moment you admit the run, and give the reservation an honest
+          expiry for the runner that never comes back.
+        </p>
+      </div>
+
+      <div class="siblings">
+        <a href="./fencing.html">Fencing</a>
+        <a href="./subscribe-before-enqueue.html">Subscribe-before-enqueue</a>
+        <a href="./create-run-ctx.html">createRunCtx</a>
+        <a href="./poison-pill.html">Poison pill</a>
+        <a class="here" href="./finops-holds.html">FinOps holds</a>
+        <a href="./rls-grant.html">Postgres RLS grant</a>
+      </div>
+
+      <footer class="note-footer">
+        <div>© Runkite · engineering notes</div>
+        <div>
+          <a href="../">Landing</a> ·
+          <a href="../support/finops.html">Docs · Spend (FinOps)</a> ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">Configuration docs</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

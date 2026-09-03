@@ -22,6 +22,7 @@
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a  href="why.html">Why a plane</a>
           <a  href="scenario.html">Scenario</a>
@@ -70,58 +71,138 @@
 
         <p class="kicker">Build</p>
         <h1>Your first agent</h1>
-        <p class="lede">Greenfield path: declare a graph, start plane + runner, create a thread/run, confirm it in Admin → Agents / Runs.</p>
+        <p class="lede">
+          A complete, worked walkthrough: write a tiny LangGraph agent, tell the control
+          plane about it, run it, and watch it execute in Admin. If you already have an
+          existing agent codebase you want to bring over instead of starting fresh, see
+          <a href="./migrate-agents.html">Migrate agents</a> — this page is the greenfield
+          "start from nothing" path.
+        </p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              A runner config lists agents (graphs). The control plane does not import your Python/TS source for dispatch —
-              it routes jobs to runners that registered those <code>agent_id</code>s.
+              Two moving pieces work together: the <strong>control plane</strong> (the
+              <code>runkite</code> binary) which accepts client requests and hands out work,
+              and a <strong>runner</strong> (a small Python or TypeScript process) which
+              actually holds your graph code and executes it. The plane never imports or
+              runs your Python/TS source directly — it only knows the <em>name</em>
+              (<code>agent_id</code>) of each agent, declared in a config file called
+              <code>langgraph.json</code>. The runner is the thing that reads that same file,
+              loads the real code, and tells the plane "I can run this."
             </p>
           </section>
           <section>
-            <h2>Why it is here</h2>
+            <h2>Why it's split this way</h2>
             <p>
-              Enterprises need a boring happy path before adapters and governance. This is that path; migration of existing repos is separate.
+              Because the plane and the runner are separate processes talking over a
+              protocol (not one program), you can restart, redeploy, or scale either side
+              independently, and you can write runners in different languages against the
+              exact same plane. This page uses the simplest possible agent (an echo bot) so
+              the plumbing is the only thing you're learning right now — real governance
+              (connectors, human approval, kill switches) layers on top afterward, unchanged.
             </p>
           </section>
         </div>
 
-        <h2>How to implement</h2>
-        <ol class="steps">
-          <li>Start from Try compose <em>or</em> a Supported install so <code>:2026</code> is healthy.</li>
-          <li>Add a graph module and point <code>langgraph.json</code> <code>graphs</code> / agents at it (see repo examples / <code>docs/quickstart.md</code>).</li>
-          <li>Run the matching runner (<code>runkite-runner</code> or TS) with plane addresses + runner token if auth is on.</li>
-          <li><code>POST /threads</code> then <code>POST /threads/{id}/runs/wait</code> with your <code>agent_id</code> and a small message payload.</li>
-          <li>Open Admin → Agents (id present) → Runs (success) → run detail event log.</li>
-        </ol>
-        <pre class="mono-block"># After plane + runner are up (auth off on try path)
-BASE=http://localhost:2026
+        <h2>Step 1 — get the control plane running</h2>
+        <p>
+          Either the 5-minute <a href="./try.html">Try it</a> demo or a full
+          <a href="./install.html">Install</a> works — you just need
+          <code>http://localhost:2026/health</code> to respond before continuing.
+        </p>
+
+        <h2>Step 2 — write the agent</h2>
+        <p>Create <code>my_agent/graph.py</code>:</p>
+        <pre class="mono-block">from typing import Annotated, TypedDict
+from langgraph.graph import StateGraph, START, END
+
+
+class State(TypedDict):
+    messages: Annotated[list[dict], lambda a, b: a + b]
+
+
+def echo_node(state: State) -> State:
+    last_message = state["messages"][-1]
+    return {"messages": [{"role": "ai", "content": f"Echo: {last_message['content']}"}]}
+
+
+builder = StateGraph(State)
+builder.add_node("echo", echo_node)
+builder.add_edge(START, "echo")
+builder.add_edge("echo", END)
+
+graph = builder.compile()</pre>
+        <p>
+          This is a plain, ordinary LangGraph graph — nothing Runkite-specific in it at all.
+          That's deliberate: your agent code doesn't need to know it's being run by a
+          control plane.
+        </p>
+
+        <h2>Step 3 — tell the plane this agent exists</h2>
+        <p>Next to <code>my_agent/</code>, create <code>langgraph.json</code>:</p>
+        <pre class="mono-block">{
+  "graphs": {
+    "echo_agent": "./my_agent/graph.py:graph"
+  },
+  "dependencies": ["./my_agent"]
+}</pre>
+        <p>
+          The format is <code>"&lt;agent_id&gt;": "&lt;path-to-file&gt;:&lt;variable-name&gt;"</code>.
+          <code>echo_agent</code> is the name clients will use to create runs against this
+          graph — it can be anything you want, it doesn't have to match a filename.
+        </p>
+
+        <h2>Step 4 — start the plane, then start the runner</h2>
+        <pre class="mono-block"># terminal 1 — control plane (auto-discovers langgraph.json in this directory)
+./runkite dev
+
+# terminal 2 — the Python runner, which actually loads and executes graph.py
+pip install runkite-runner
+python -m runkite_runner --config ./langgraph.json --http-address http://localhost:2026</pre>
+        <p>
+          Watch the plane's logs for a line like
+          <code>registered agent graph_id=echo_agent</code> — that's your confirmation the
+          plane now knows this agent exists, even before the runner connects.
+        </p>
+
+        <h2>Step 5 — actually run it</h2>
+        <pre class="mono-block">BASE=http://localhost:2026
 THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' | jq -r .thread_id)
 curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
   -H 'Content-Type: application/json' \
   -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"hello"}]}}'</pre>
+        <p>
+          In plain terms: the first call opens a <strong>thread</strong> (a conversation —
+          you'll reuse this ID for follow-up turns), the second creates a <strong>run</strong>
+          (one execution) inside it and waits for the result. You should get back the echoed
+          message. If auth is turned on in your setup, add
+          <code>-H "Authorization: Bearer &lt;your key&gt;"</code> to both calls.
+        </p>
 
-        <h2>In the product</h2>
+        <h2>Step 6 — confirm it in Admin</h2>
+        <p>Open <code>http://localhost:2026/admin/</code> (see <a href="./admin-guide.html">Admin UI guide</a> if you haven't logged in before) and check two screens:</p>
         <figure class="shot">
-          <div class="cap">Admin → Agents — your agent_id should appear once the runner registers</div>
+          <div class="cap">Admin → Agents — echo_agent should be listed once the runner registers</div>
           <img src="../assets/ui-agents.png" alt="Runkite Admin Agents" width="960" height="600" />
         </figure>
         <figure class="shot">
-          <div class="cap">Admin → Runs — success / error / interrupted</div>
+          <div class="cap">Admin → Runs — your run should show status "success", with a full event log if you click into it</div>
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs" width="960" height="600" />
         </figure>
 
-        <h2>What to expect</h2>
+        <h2>What to expect (and how to fix it)</h2>
         <ul class="expect">
-          <li><strong>Agent missing in Admin</strong> — runner not connected, wrong config path, or agent_id typo.</li>
-          <li><strong>Run stuck pending</strong> — no runner for that kind, or runner token/tenant allow-list mismatch.</li>
-          <li><strong>Next</strong> — <a href="./connectors.html">connectors</a>, <a href="./grants.html">grants / HITL</a>, <a href="./migrate-agents.html">migrate existing agents</a>.</li>
+          <li><strong>Agent missing from Admin → Agents</strong> — the runner either isn't connected yet, is pointed at the wrong <code>langgraph.json</code> path, or there's a typo in the <code>agent_id</code>. Check the runner process's own terminal output first — it logs a clear error if it can't find or import your graph file.</li>
+          <li><strong>Run stuck in "pending" and never starts</strong> — usually means no runner is currently connected for the kind of graph you're trying to run, or (if you have auth on) the runner's token doesn't match what the plane expects. Check <code>docker compose logs runner</code> / the runner's own terminal for a connection error.</li>
+          <li><strong>Run finishes with status "error"</strong> — open the run in Admin and read the event log; it shows the actual exception from your graph code, not just a generic failure.</li>
+          <li><strong>Next steps</strong> — give this agent access to an external service via <a href="./connectors.html">Connectors &amp; HITL</a>, add approval gates with <a href="./grants.html">Grants &amp; HITL</a>, or bring over an existing codebase with <a href="./migrate-agents.html">Migrate agents</a>.</li>
         </ul>
         <p class="note">
           Reference: <a href="./agents.html">Agents</a>
           · <a href="./try.html">Try it</a>
+          · <a href="https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md">docs/quickstart.md</a>
           · <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>
         </p>
 

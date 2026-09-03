@@ -28,6 +28,7 @@
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a class="active" href="why.html">Why a plane</a>
           <a  href="scenario.html">Scenario</a>
@@ -75,28 +76,57 @@
         </div>
 
         <h1>Why a control plane?</h1>
-        <p class="lede">One script is fine until secrets, HITL, and logs multiply across agents and frameworks.</p>
+        <p class="lede">
+          A single LangGraph (or CrewAI, or AutoGen) script is genuinely fine — right up
+          until you have more than one of them, and they all need the same credentials,
+          the same "pause and ask a human" behavior, the same emergency stop, and the same
+          answer to "what did this agent actually do last Tuesday." That's the point where
+          copy-pasting the same glue code into every agent starts costing more than
+          building it once, in one place.
+        </p>
 
-        <div class="card">
-          <strong>Use Runkite when</strong>
-          <ul>
-            <li>Several agents (or frameworks) need <em>shared</em> connectors, grants, HITL, kill, and audit.</li>
-            <li>You want clients on Agent Protocol and workers on a separate Runner Protocol.</li>
-            <li>You need fail-closed admission and fencing under reclaim — not best-effort glue.</li>
-          </ul>
+        <h2>What actually breaks first, in practice</h2>
+        <p>
+          It's rarely the agent logic itself. It's usually one of these, showing up right
+          as you try to ship a second or third agent:
+        </p>
+        <ul class="expect">
+          <li><strong>Secrets</strong> — the same Salesforce/GitHub token gets copy-pasted into every agent's environment, and now revoking it means finding every place it was pasted.</li>
+          <li><strong>Human approval</strong> — one agent needs "pause before sending an email," another needs "pause before a refund." Each team reinvents this from scratch, differently, with different bugs.</li>
+          <li><strong>Emergency stop</strong> — an agent misbehaves in production and there's no single button to stop it; someone has to find the process and kill it manually.</li>
+          <li><strong>"What happened?"</strong> — three agents, three different logging formats, and the honest answer to "who called Salesforce last Tuesday" is a Slack archaeology project.</li>
+        </ul>
+        <p>
+          A control plane is where you solve each of these <em>once</em>, centrally, instead
+          of once per agent. Your agent code keeps using whatever framework it already uses —
+          LangGraph, CrewAI, plain LangChain, whatever — the plane sits underneath and handles
+          the parts that have nothing to do with what the agent is actually thinking about.
+        </p>
+
+        <div class="guide-grid">
+          <div class="card">
+            <strong>Use Runkite when</strong>
+            <ul>
+              <li>You have (or will soon have) more than one agent that needs the <em>same</em> connectors, human-approval rules, kill switch, and audit trail.</li>
+              <li>You want a clean split: clients talk a stable Agent Protocol API, workers (in any language) talk a separate Runner Protocol — so you can change frameworks or add a second language without touching client code.</li>
+              <li>You need admission and failure handling that fails <em>closed</em> by default (a misconfigured deploy refuses to start rather than quietly running insecurely), and a worker crash mid-job to be handled correctly instead of silently losing or duplicating the run.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <strong>Skip it when</strong>
+            <ul>
+              <li>You have one agent, one environment, and nothing else needs to share what it uses.</li>
+              <li>You're still prototyping prompts and don't have a "production" yet — add the plane when you do, not before.</li>
+              <li>You need a fully managed cloud control plane today with zero self-hosting — Runkite is self-host first; a hosted option is on the roadmap, not available yet.</li>
+            </ul>
+          </div>
         </div>
-        <div class="card">
-          <strong>Skip it when</strong>
-          <ul>
-            <li>A single local graph with its own env is enough.</li>
-            <li>You are still prototyping prompts on one laptop.</li>
-            <li>You need a managed cloud plane today (Runkite is self-host first).</li>
-          </ul>
-        </div>
+
         <p>
           Next:
-          <a href="./scenario.html">Scenario</a> ·
-          <a href="./try.html">Try it</a> ·
+          <a href="./scenario.html">Scenario</a> — a worked example of the "without a plane"
+          vs "with Runkite" difference ·
+          <a href="./try.html">Try it</a> — see it running in 5 minutes ·
           <a href="./chapters/big-picture.html">Big picture chapter</a>
         </p>
 

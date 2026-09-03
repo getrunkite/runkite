@@ -170,9 +170,16 @@
 }
 
 .note-footer a {
-  color: var(--ink-dim);
-  text-decoration: none;
+  color: var(--accent-2);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  text-underline-offset: 0.16em;
   margin-right: 0.75rem;
+}
+
+.note-footer a:hover {
+  color: #ffe0a0;
+  text-decoration-color: #ffe0a0;
 }
 
 .note-list {
@@ -187,13 +194,16 @@
   font-family: var(--font-display);
   font-size: 1.2rem;
   font-weight: 550;
-  text-decoration: none;
-  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  text-underline-offset: 0.2em;
+  color: var(--accent-2);
   letter-spacing: -0.02em;
 }
 
 .note-list a:hover {
-  color: var(--accent-2);
+  color: #ffe0a0;
+  text-decoration-color: #ffe0a0;
 }
 
 .note-list p {

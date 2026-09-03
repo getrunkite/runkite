@@ -28,6 +28,7 @@
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a  href="why.html">Why a plane</a>
           <a  href="scenario.html">Scenario</a>
@@ -75,31 +76,96 @@
         </div>
 
         <h1>Security</h1>
-        <p class="lede">Governance of the plane: who can run what, with which connectors, with an audit trail.</p>
-        <h2>What the plane enforces</h2>
-        <ul>
-          <li>Client auth (API key / JWT) and route-level read/write/admin.</li>
-          <li>Optional <code>agents:&lt;id&gt;:run</code> grants on run-create.</li>
-          <li>Connector policy deny + durable audit (SQL backends).</li>
-          <li>Fail-closed serve: production refuses an insecure posture.</li>
-        </ul>
-        <h2>Tenancy</h2>
-        <p>
-          Flat <code>tenant_id</code> scope today — not a full org/team hierarchy. Checkpoint
-          isolation is by key prefix. With runner tokens, configure <code>RUNNER_TENANTS_*</code>
-          per kind.
+        <p class="lede">
+          Four layers, stacked: who can talk to the plane at all, who can run which agent,
+          which connectors an agent may call, and a durable record of every decision. This
+          page explains each layer and, importantly, where the edges of what the plane can
+          see and enforce actually are.
         </p>
-        <h2>What the plane does not see</h2>
+
+        <h2>Layer 1 — can you talk to the plane at all?</h2>
         <p>
-          Raw LLM prompts/completions (unless you add your own proxy), and framework-native
-          tools that bypass connectors.
+          Every request needs a credential (an API key or JWT) unless you've deliberately
+          left auth off for local development. Each credential carries one or more
+          permissions — <code>read</code>, <code>write</code>, or <code>admin</code> — and every
+          route requires a specific one. A client key with only <code>read</code> cannot
+          create a run; a key without <code>admin</code> cannot open the Admin dashboard, full
+          stop, regardless of how much it can otherwise do. See
+          <a href="admin-login.html">Admin login</a> for the exact config shape.
         </p>
+
+        <h2>Layer 2 — can this credential run <em>this</em> agent?</h2>
+        <p>
+          By default, a valid client credential with <code>write</code> can create a run
+          against any agent. If you need finer control than that — "this key may only run
+          the support-bot agent, not the finance one" — add an
+          <code>agents:&lt;id&gt;:run</code> grant to that key's permissions. This only
+          applies to the run-create routes, not cancel/delete/store access, which still fall
+          back to the plain read/write check.
+        </p>
+
+        <h2>Layer 3 — can this agent call this external service?</h2>
+        <p>
+          This is the connector policy layer, covered in full on
+          <a href="connectors.html">Connectors &amp; HITL</a>. Short version: a connector
+          call is denied unless a matching grant exists (static in config, or created live in
+          Admin), and you can force specific tools to require human approval regardless of
+          the grant. Every decision — allow, deny, or pending — gets written to a durable
+          audit trail on SQL backends, searchable from
+          <a href="admin-guide.html#13-audit">Admin → Audit</a>.
+        </p>
+
+        <h2>Fail-closed by default</h2>
+        <p>
+          If a security-relevant check can't be evaluated cleanly — a database write for an
+          audit record fails, a required config value is missing, Redis is unreachable when
+          a shared session lookup needs it — the plane's default behavior is to deny, not to
+          quietly let the request through. In production mode, <code>serve</code> refuses to
+          even start with an insecure combination (e.g. runner tokens configured but no
+          matching tenant allow-list) rather than booting into a state that looks secure but
+          isn't. See <a href="./decisions/why-fail-closed.html">Why fail-closed</a> for the
+          reasoning.
+        </p>
+
+        <h2>Tenancy — what "multi-tenant" means here today</h2>
+        <p>
+          Every resource (agent, thread, run) carries a flat <code>tenant_id</code> — this is
+          isolation by a tag on each row, not a full organization/team/workspace hierarchy
+          with its own nested permissions. Checkpoint state is isolated the same way, by a
+          key prefix rather than a separate database column. If you're using runner tokens
+          (multiple runner fleets sharing one control plane), you must also configure
+          <code>RUNNER_TENANTS_&lt;kind&gt;</code> per runner kind — see
+          <a href="multi-tenant.html">Multi-tenant keys</a> for the full setup and what
+          happens if you skip it (the plane refuses to boot rather than silently trusting an
+          unbound tenant claim).
+        </p>
+
+        <h2>What the plane genuinely cannot see or control</h2>
+        <p>
+          Being precise about this matters more than sounding impressive. The plane does
+          <strong>not</strong> see raw LLM prompts or completions by default — it sees
+          run-level metadata and whatever your agent code explicitly streams back as events.
+          If you want full prompt/completion capture, you add your own OTel/observability
+          proxy; the plane doesn't do this for you automatically, on purpose (that data is
+          often sensitive and shouldn't flow through infrastructure that didn't ask for it).
+          Likewise, connector policy only governs calls that actually go through a configured
+          connector — if your agent code has its own hardcoded credential to some other
+          service and calls it directly, nothing here can see or stop that. Governing access
+          you didn't hand out yourself isn't a gap in this feature; it's outside what any
+          proxy-based system can do.
+        </p>
+
         <p class="note">
+          Reference:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
           ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/auth.md">docs/auth.md</a>
           ·
           <a href="./decisions/why-fail-closed.html">Why fail-closed</a>
+          ·
+          <a href="connectors.html">Connectors &amp; HITL</a>
+          ·
+          <a href="multi-tenant.html">Multi-tenant keys</a>
         </p>
 
       </main>

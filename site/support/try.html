@@ -28,6 +28,7 @@
           <a  href="./">Overview</a>
           <a class="active" href="try.html">Try it</a>
           <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
           <a  href="credentials.html">Credentials map</a>
           <a  href="why.html">Why a plane</a>
           <a  href="scenario.html">Scenario</a>
@@ -131,6 +132,12 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
           <li>Dispatch through the plane (client never talks to the runner).</li>
           <li>Streaming / wait semantics on Agent Protocol.</li>
           <li>A human gate before a side-effecting step continues.</li>
+        </ul>
+        <h2>Next steps</h2>
+        <ul class="expect">
+          <li><a href="admin-guide.html">Admin UI guide</a> — walk through every screen in the dashboard you just opened.</li>
+          <li><a href="first-agent.html">Your first agent</a> — write your own graph from scratch and run it through the plane.</li>
+          <li><a href="install.html">Install (Supported)</a> — when you're ready for the real Postgres + Redis profile.</li>
         </ul>
         <p class="note">
           Longer walkthrough:
