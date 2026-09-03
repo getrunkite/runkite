@@ -38,6 +38,7 @@ Prereqs: `kind`, `kubectl`, `helm`, `docker`, `curl`, `python3`, `openssl`. Not 
 - Not MCP sticky Ingress beyond what `kind-helm-net` exercises
 - Schema migrate Job is unnecessary for boot: `serve` applies numbered migrations on `Init` (same as binary)
 
-## K4 (still open)
+## K4 (EKS smoke — done 2026-09-03)
 
-One real-cloud soak, **$50–100 budget**, tear down, runbook + results attached — see [k8s-eks-soak.md](k8s-eks-soak.md). Until that lands, announce and docs must keep cluster installs as **Compatible**.
+Named EKS install + `/readyz`/`echo_agent` + CP pod kill reclaim on `eu-north-1`, then tear-down: [k8s-eks-soak-results.md](k8s-eks-soak-results.md). Runbook: [k8s-eks-soak.md](k8s-eks-soak.md). Not a multi-hour cloud HA soak.
+

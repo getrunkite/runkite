@@ -1,14 +1,12 @@
 # Cheap EKS cluster for K4 soak (budget-capped).
 #
-# Design choices that keep spend low:
-# - Public worker nodes, NAT gateway disabled (NAT is the usual bill surprise)
-# - 2× t3.medium (enough for CP×2 + runner + in-cluster Postgres/Redis)
-# - Single AZ is fine for a throwaway soak (not HA proof — Compose already owns that)
+# Free Tier accounts reject non-eligible types (t3.medium failed with
+# InvalidParameterCombination). Use free-tier-eligible types only.
+# Prefer m7i-flex.large (2 vCPU / 8 GiB) so CP×2 + runner + in-cluster
+# Postgres/Redis fit; t3.small is too tight.
 #
-# Create:  eksctl create cluster -f deploy/eks/cluster.yaml
-# Delete:  eksctl delete cluster -f deploy/eks/cluster.yaml --wait
-#
-# Region: eu-north-1 (Stockholm). Do not switch mid-soak; Hyderabad opt-in is optional.
+# Create:  make eks-up
+# Delete:  make eks-down
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
@@ -21,6 +19,10 @@ metadata:
     purpose: k4-soak
     keep: "false"
 
+# Keep classic managed nodegroups (not Auto Mode).
+autoModeConfig:
+  enabled: false
+
 vpc:
   nat:
     gateway: Disable
@@ -29,11 +31,11 @@ vpc:
     privateAccess: false
 
 iam:
-  withOIDC: false
+  withOIDC: true
 
 managedNodeGroups:
   - name: ng
-    instanceType: t3.medium
+    instanceType: m7i-flex.large
     desiredCapacity: 2
     minSize: 2
     maxSize: 2

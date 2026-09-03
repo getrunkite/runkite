@@ -82,9 +82,10 @@ done
 aws ecr get-login-password --region "${REGION}" \
   | docker login --username AWS --password-stdin "${ECR}" >/dev/null
 
-echo "==> build + push ${TAG}"
-docker build -t "${CP_IMAGE}" -f Dockerfile .
-docker build -t "${RUNNER_IMAGE}" -f Dockerfile.runner .
+echo "==> build + push ${TAG} (linux/amd64 for EKS nodes)"
+# Apple Silicon hosts otherwise produce arm64 images → exec format error on amd64 nodes.
+docker build --platform linux/amd64 -t "${CP_IMAGE}" -f Dockerfile .
+docker build --platform linux/amd64 -t "${RUNNER_IMAGE}" -f Dockerfile.runner .
 docker push "${CP_IMAGE}"
 docker push "${RUNNER_IMAGE}"
 
