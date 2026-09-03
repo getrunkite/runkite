@@ -16,12 +16,11 @@ type ConnectorConfig struct {
 	CircuitBreaker *CircuitBreakerConfig `json:"circuit_breaker,omitempty" yaml:"circuit_breaker,omitempty"`
 }
 
-// CircuitBreakerConfig configures per-connector circuit breaking (master
-// plan: "Circuit breakers: per-connector circuit breakers with
-// configurable thresholds"). Absent/zero-valued means DefaultCircuitBreakerConfig
-// is used -- circuit breaking is always on, only its thresholds are
-// tunable, since an unprotected connector taking down run-creation
-// latency for every agent that needs it is never the right default.
+// CircuitBreakerConfig configures per-connector circuit breaking.
+// Absent/zero-valued means DefaultCircuitBreakerConfig is used -- circuit
+// breaking is always on, only its thresholds are tunable, since an
+// unprotected connector taking down run-creation latency for every agent
+// that needs it is never the right default.
 type CircuitBreakerConfig struct {
 	// FailureThreshold is how many consecutive token-fetch failures open
 	// the breaker.
@@ -42,6 +41,11 @@ type AuthConfig struct {
 	Scopes       []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 	APIKey       string   `json:"api_key,omitempty" yaml:"api_key,omitempty"`
 	BearerToken  string   `json:"bearer_token,omitempty" yaml:"bearer_token,omitempty"`
+	// SecretRef resolves the primary credential at GetSession time
+	// (env: / file: / vault:path#field). Do not also set api_key,
+	// bearer_token, or client_secret for the same auth type — pick one.
+	// The ref string itself is not ${ENV}-expanded.
+	SecretRef string `json:"secret_ref,omitempty" yaml:"secret_ref,omitempty"`
 }
 
 // MCPConfig points to an MCP server endpoint.

@@ -183,21 +183,28 @@ func (r *Registry) IsToolAllowed(name string, tool string) bool {
 
 // getToken dispatches to the appropriate auth flow.
 func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}) (*CachedToken, error) {
-	switch c.Config.Auth.Type {
+	// Copy auth so SecretRef materialization does not mutate the shared
+	// registry config (concurrent GetSession + expandAuthConfig race).
+	auth := c.Config.Auth
+	if err := materializeAuthSecret(ctx, &auth); err != nil {
+		return nil, err
+	}
+
+	switch auth.Type {
 	case "api_key":
 		return &CachedToken{
-			AccessToken: c.Config.Auth.APIKey,
+			AccessToken: auth.APIKey,
 			ExpiresAt:   time.Now().Add(StaticCredentialSessionTTL),
 		}, nil
 
 	case "bearer":
 		return &CachedToken{
-			AccessToken: c.Config.Auth.BearerToken,
+			AccessToken: auth.BearerToken,
 			ExpiresAt:   time.Now().Add(StaticCredentialSessionTTL),
 		}, nil
 
 	case "oauth2_client_credentials":
-		return c.getClientCredentialsToken(ctx)
+		return c.getClientCredentialsToken(ctx, auth)
 
 	case "oauth2_token_exchange":
 		ssoToken, _ := userCtx["sso_token"].(string)
@@ -211,7 +218,7 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 		if !c.breaker.Allow() {
 			return nil, &ErrCircuitOpen{Connector: c.Name}
 		}
-		token, err := oauth2TokenExchange(ctx, c.Config.Auth, ssoToken)
+		token, err := oauth2TokenExchange(ctx, auth, ssoToken)
 		if err != nil {
 			c.breaker.RecordFailure()
 			return nil, err
@@ -220,12 +227,12 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 		return token, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported auth type: %s", c.Config.Auth.Type)
+		return nil, fmt.Errorf("unsupported auth type: %s", auth.Type)
 	}
 }
 
 // getClientCredentialsToken returns a cached token or fetches a new one.
-func (c *Connector) getClientCredentialsToken(ctx context.Context) (*CachedToken, error) {
+func (c *Connector) getClientCredentialsToken(ctx context.Context, auth AuthConfig) (*CachedToken, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
 
@@ -240,7 +247,7 @@ func (c *Connector) getClientCredentialsToken(ctx context.Context) (*CachedToken
 	if !c.breaker.Allow() {
 		return nil, &ErrCircuitOpen{Connector: c.Name}
 	}
-	token, err := oauth2ClientCredentials(ctx, c.Config.Auth)
+	token, err := oauth2ClientCredentials(ctx, auth)
 	if err != nil {
 		c.breaker.RecordFailure()
 		return nil, err
