@@ -434,6 +434,7 @@ def test_execute_opaque_survives_fresh_client():
         tt = bind_tenant("default")
         rt = bind_run("run-restart-a", 1)
         try:
+
             async def send1(_e):
                 return None
 

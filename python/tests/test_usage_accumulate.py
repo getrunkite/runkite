@@ -43,19 +43,11 @@ class TestUsageAccumulate(unittest.TestCase):
         totals: dict = {}
         accumulate_usage(
             totals,
-            {
-                "messages": [
-                    {"type": "ai", "usage_metadata": {"input_tokens": 3, "output_tokens": 1}}
-                ]
-            },
+            {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 3, "output_tokens": 1}}]},
         )
         accumulate_usage(
             totals,
-            {
-                "messages": [
-                    {"type": "ai", "usage_metadata": {"input_tokens": 7, "output_tokens": 2}}
-                ]
-            },
+            {"messages": [{"type": "ai", "usage_metadata": {"input_tokens": 7, "output_tokens": 2}}]},
         )
         u = usage_payload(totals)
         self.assertEqual(u["prompt_tokens"], 10)
@@ -115,6 +107,7 @@ class TestUsageFromMetrics(unittest.TestCase):
         class M:
             prompt_tokens = 3
             completion_tokens = 2
+
         u = usage_from_metrics(M())
         self.assertEqual(u["total_tokens"], 5)
 

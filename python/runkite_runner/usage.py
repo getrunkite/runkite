@@ -47,16 +47,8 @@ def _usage_from_message(msg: Any) -> tuple[int, int, str]:
                 um = tu
 
     if isinstance(um, dict):
-        prompt = _as_int(
-            um.get("input_tokens")
-            or um.get("prompt_tokens")
-            or um.get("promptTokenCount")
-        )
-        completion = _as_int(
-            um.get("output_tokens")
-            or um.get("completion_tokens")
-            or um.get("candidatesTokenCount")
-        )
+        prompt = _as_int(um.get("input_tokens") or um.get("prompt_tokens") or um.get("promptTokenCount"))
+        completion = _as_int(um.get("output_tokens") or um.get("completion_tokens") or um.get("candidatesTokenCount"))
         if not prompt and not completion:
             # Some providers only report total.
             total = _as_int(um.get("total_tokens") or um.get("totalTokenCount"))
@@ -188,4 +180,3 @@ def values_with_usage(base: dict[str, Any], usage: dict[str, Any] | None) -> dic
     out = dict(base)
     out["usage"] = usage
     return out
-

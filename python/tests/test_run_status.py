@@ -53,9 +53,7 @@ class TestShouldSkipRun(unittest.TestCase):
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         with patch("runkite_runner.run_status.httpx.AsyncClient", return_value=client):
-            self.assertFalse(
-                _run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme"))
-            )
+            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme")))
         kwargs = client.get.await_args.kwargs
         self.assertEqual(kwargs["headers"].get("X-Runkite-Tenant-Id"), "acme")
 
