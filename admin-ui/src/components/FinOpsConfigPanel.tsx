@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api/client";
-import type { AdminFinOpsView, FinOpsBudgetCap, FinOpsModelPrice } from "../api/types";
+import type { AdminFinOpsView, FinOpsBudgetCap, FinOpsConfigPayload, FinOpsModelPrice } from "../api/types";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 
@@ -17,9 +17,9 @@ function pricebookToRows(pb: Record<string, FinOpsModelPrice> | undefined): Pric
   }));
 }
 
-function budgetsToRows(tenants: Record<string, FinOpsBudgetCap> | undefined): BudgetRow[] {
-  const entries = Object.entries(tenants ?? {});
-  if (entries.length === 0) return [{ key: "default", usd: "", soft: false }];
+function budgetsToRows(caps: Record<string, FinOpsBudgetCap> | undefined, emptyKey: string): BudgetRow[] {
+  const entries = Object.entries(caps ?? {});
+  if (entries.length === 0) return [{ key: emptyKey, usd: "", soft: false }];
   return entries.map(([key, c]) => ({
     key,
     usd: c.max_usd_per_day != null ? String(c.max_usd_per_day) : "",
@@ -27,7 +27,30 @@ function budgetsToRows(tenants: Record<string, FinOpsBudgetCap> | undefined): Bu
   }));
 }
 
-/** Guided live editor for FinOps overlays (pricebook + tenant budgets). */
+function countModels(cfg: FinOpsConfigPayload | undefined): number {
+  return Object.keys(cfg?.pricebook ?? {}).length;
+}
+
+function countCaps(caps: Record<string, FinOpsBudgetCap> | undefined): number {
+  return Object.keys(caps ?? {}).length;
+}
+
+function summarizeSide(label: string, cfg: FinOpsConfigPayload | undefined): string {
+  const models = countModels(cfg);
+  const tenants = countCaps(cfg?.budgets?.tenants);
+  const agents = countCaps(cfg?.budgets?.agents);
+  return `${label}: ${models} model${models === 1 ? "" : "s"}, ${tenants} tenant cap${tenants === 1 ? "" : "s"}, ${agents} agent cap${agents === 1 ? "" : "s"}`;
+}
+
+function pickEditable(
+  overlay: Record<string, FinOpsBudgetCap> | undefined,
+  file: Record<string, FinOpsBudgetCap> | undefined,
+): Record<string, FinOpsBudgetCap> {
+  if (overlay && Object.keys(overlay).length > 0) return overlay;
+  return { ...(file ?? {}), ...(overlay ?? {}) };
+}
+
+/** Guided live editor for FinOps overlays (pricebook + tenant/agent budgets). */
 export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }) {
   const [view, setView] = useState<AdminFinOpsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,7 +58,8 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
   const [saveOk, setSaveOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prices, setPrices] = useState<PriceRow[]>([{ model: "", input: "", output: "" }]);
-  const [budgets, setBudgets] = useState<BudgetRow[]>([{ key: "default", usd: "", soft: false }]);
+  const [tenantBudgets, setTenantBudgets] = useState<BudgetRow[]>([{ key: "default", usd: "", soft: false }]);
+  const [agentBudgets, setAgentBudgets] = useState<BudgetRow[]>([{ key: "default/agent", usd: "", soft: false }]);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -44,12 +68,13 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
       setView(v);
       const overlayPb = v.overlay?.pricebook ?? {};
       const effPb = { ...(v.file?.pricebook ?? {}), ...overlayPb };
-      // Prefer editing the overlay surface: start from effective so admins
-      // see what is live, then PUT as the full overlay document.
       setPrices(pricebookToRows(Object.keys(overlayPb).length > 0 ? overlayPb : effPb));
-      const overlayTenants = v.overlay?.budgets?.tenants ?? {};
-      const effTenants = { ...(v.file?.budgets?.tenants ?? {}), ...overlayTenants };
-      setBudgets(budgetsToRows(Object.keys(overlayTenants).length > 0 ? overlayTenants : effTenants));
+      setTenantBudgets(
+        budgetsToRows(pickEditable(v.overlay?.budgets?.tenants, v.file?.budgets?.tenants), "default"),
+      );
+      setAgentBudgets(
+        budgetsToRows(pickEditable(v.overlay?.budgets?.agents, v.file?.budgets?.agents), "default/agent"),
+      );
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : String(e);
       setLoadError(msg);
@@ -67,9 +92,41 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
       const have = new Set(rows.map((r) => r.model.trim()).filter(Boolean));
       const add = seedModels.filter((m) => m && !have.has(m));
       if (add.length === 0) return rows;
-      return [...rows.filter((r) => r.model.trim() || r.input || r.output), ...add.map((m) => ({ model: m, input: "", output: "" }))];
+      return [
+        ...rows.filter((r) => r.model.trim() || r.input || r.output),
+        ...add.map((m) => ({ model: m, input: "", output: "" })),
+      ];
     });
   }, [seedModels]);
+
+  const diffNote = useMemo(() => {
+    if (!view) return null;
+    const fileModels = countModels(view.file);
+    const effModels = countModels(view.effective);
+    const fileTenants = countCaps(view.file?.budgets?.tenants);
+    const effTenants = countCaps(view.effective?.budgets?.tenants);
+    const fileAgents = countCaps(view.file?.budgets?.agents);
+    const effAgents = countCaps(view.effective?.budgets?.agents);
+    const same = fileModels === effModels && fileTenants === effTenants && fileAgents === effAgents && !view.has_overlay;
+    if (same) return "Effective matches file baseline (no live overlay).";
+    return "Effective differs from file — overlay keys win at runtime.";
+  }, [view]);
+
+  const parseBudgetRows = (rows: BudgetRow[], kind: "tenant" | "agent"): Record<string, FinOpsBudgetCap> => {
+    const out: Record<string, FinOpsBudgetCap> = {};
+    for (const r of rows) {
+      const key = r.key.trim();
+      if (!key) continue;
+      if (r.usd.trim() === "") continue;
+      if (kind === "agent" && !key.includes("/")) {
+        throw new Error(`Agent budget key ${JSON.stringify(key)} must be tenant_id/agent_id`);
+      }
+      const usd = Number(r.usd);
+      if (Number.isNaN(usd)) throw new Error(`Budget ${key}: max USD must be a number`);
+      out[key] = { max_usd_per_day: usd, soft: r.soft };
+    }
+    return out;
+  };
 
   const save = async () => {
     setBusy(true);
@@ -77,6 +134,7 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
     setSaveOk(null);
     try {
       const pricebook: Record<string, FinOpsModelPrice> = {};
+      const zeroRateModels: string[] = [];
       for (const r of prices) {
         const model = r.model.trim();
         if (!model) continue;
@@ -85,24 +143,29 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
         if (Number.isNaN(input) || Number.isNaN(output)) {
           throw new Error(`Pricebook ${model}: rates must be numbers`);
         }
+        if (input === 0 && output === 0) zeroRateModels.push(model);
         pricebook[model] = { input_per_1k: input, output_per_1k: output };
       }
-      const tenants: Record<string, FinOpsBudgetCap> = {};
-      for (const r of budgets) {
-        const key = r.key.trim();
-        if (!key) continue;
-        if (r.usd.trim() === "") continue;
-        const usd = Number(r.usd);
-        if (Number.isNaN(usd)) throw new Error(`Budget ${key}: max USD must be a number`);
-        tenants[key] = { max_usd_per_day: usd, soft: r.soft };
+      if (zeroRateModels.length > 0) {
+        const ok = window.confirm(
+          `These models have $0/$0 rates (intentional free tier):\n${zeroRateModels.join(", ")}\n\nSave as free tier?`,
+        );
+        if (!ok) {
+          setBusy(false);
+          return;
+        }
       }
+      const tenants = parseBudgetRows(tenantBudgets, "tenant");
+      const agents = parseBudgetRows(agentBudgets, "agent");
+      // Keep non-UI FinOps fields (routing/reservation/alerts) from the
+      // previous overlay so a pricebook save does not wipe them. Those
+      // knobs stay file/API-only in this UI.
       const payload = {
         ...(view?.overlay ?? {}),
         pricebook,
         budgets: {
-          ...(view?.overlay?.budgets ?? {}),
           tenants,
-          agents: view?.overlay?.budgets?.agents,
+          agents,
         },
       };
       const next = await api.put<AdminFinOpsView>("/finops", payload);
@@ -133,6 +196,75 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
     }
   };
 
+  const renderBudgetEditor = (
+    title: string,
+    hint: string,
+    rows: BudgetRow[],
+    setRows: (rows: BudgetRow[]) => void,
+    placeholder: string,
+    addLabel: string,
+  ) => (
+    <>
+      <p className="mb-1 text-sm font-medium">{title}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{hint}</p>
+      <div className="mb-4 space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <Input
+              className="w-52 font-mono text-xs"
+              placeholder={placeholder}
+              value={r.key}
+              onChange={(e) => {
+                const next = [...rows];
+                next[i] = { ...r, key: e.target.value };
+                setRows(next);
+              }}
+            />
+            <Input
+              className="w-28 font-mono text-xs"
+              placeholder="max_usd_per_day"
+              value={r.usd}
+              onChange={(e) => {
+                const next = [...rows];
+                next[i] = { ...r, usd: e.target.value };
+                setRows(next);
+              }}
+            />
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={r.soft}
+                onChange={(e) => {
+                  const next = [...rows];
+                  next[i] = { ...r, soft: e.target.checked };
+                  setRows(next);
+                }}
+              />
+              Soft (warn, don’t deny)
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRows(rows.filter((_, j) => j !== i))}
+              disabled={rows.length <= 1}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setRows([...rows, { key: "", usd: "", soft: false }])}
+        >
+          {addLabel}
+        </Button>
+      </div>
+    </>
+  );
+
   if (loadError) {
     return (
       <div className="rounded-sm border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
@@ -147,8 +279,9 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
         <div>
           <h2 className="text-lg font-semibold">Live FinOps config</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Edit pricebook and tenant day budgets here — no JSON file edit, no control-plane restart.
-            File <code className="text-foreground">finops</code> stays the bootstrap baseline; this overlay wins at runtime.
+            Edit pricebook and day budgets here — no JSON file edit, no control-plane restart. File{" "}
+            <code className="text-foreground">finops</code> stays the bootstrap baseline; this overlay wins at runtime.
+            Routing / reservation / hold_ttl stay file or API-only.
           </p>
         </div>
         <div className="text-xs text-muted-foreground">
@@ -163,6 +296,20 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
           )}
         </div>
       </div>
+
+      {view && (
+        <div className="mb-4 grid gap-2 rounded-sm border border-border bg-background/40 px-3 py-2 text-xs sm:grid-cols-2">
+          <div>
+            <p className="font-medium text-foreground">File baseline</p>
+            <p className="mt-1 font-mono text-muted-foreground">{summarizeSide("file", view.file)}</p>
+          </div>
+          <div>
+            <p className="font-medium text-foreground">Effective (live)</p>
+            <p className="mt-1 font-mono text-muted-foreground">{summarizeSide("effective", view.effective)}</p>
+          </div>
+          <p className="sm:col-span-2 text-muted-foreground">{diffNote}</p>
+        </div>
+      )}
 
       <p className="mb-2 text-sm font-medium">Pricebook (USD per 1k tokens)</p>
       <div className="mb-4 space-y-2">
@@ -209,67 +356,33 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
             </Button>
           </div>
         ))}
-        <Button type="button" variant="outline" size="sm" onClick={() => setPrices([...prices, { model: "", input: "", output: "" }])}>
-          Add model
-        </Button>
-      </div>
-
-      <p className="mb-2 text-sm font-medium">Tenant day budgets (max USD)</p>
-      <div className="mb-4 space-y-2">
-        {budgets.map((r, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2">
-            <Input
-              className="w-40 font-mono text-xs"
-              placeholder="tenant_id"
-              value={r.key}
-              onChange={(e) => {
-                const next = [...budgets];
-                next[i] = { ...r, key: e.target.value };
-                setBudgets(next);
-              }}
-            />
-            <Input
-              className="w-28 font-mono text-xs"
-              placeholder="max_usd_per_day"
-              value={r.usd}
-              onChange={(e) => {
-                const next = [...budgets];
-                next[i] = { ...r, usd: e.target.value };
-                setBudgets(next);
-              }}
-            />
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={r.soft}
-                onChange={(e) => {
-                  const next = [...budgets];
-                  next[i] = { ...r, soft: e.target.checked };
-                  setBudgets(next);
-                }}
-              />
-              Soft (warn, don’t deny)
-            </label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setBudgets(budgets.filter((_, j) => j !== i))}
-              disabled={budgets.length <= 1}
-            >
-              Remove
-            </Button>
-          </div>
-        ))}
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => setBudgets([...budgets, { key: "", usd: "", soft: false }])}
+          onClick={() => setPrices([...prices, { model: "", input: "", output: "" }])}
         >
-          Add tenant budget
+          Add model
         </Button>
       </div>
+
+      {renderBudgetEditor(
+        "Tenant day budgets (max USD)",
+        "Keys are tenant_id (e.g. default).",
+        tenantBudgets,
+        setTenantBudgets,
+        "tenant_id",
+        "Add tenant budget",
+      )}
+
+      {renderBudgetEditor(
+        "Agent day budgets (max USD)",
+        "Keys must be tenant_id/agent_id (e.g. default/gemini_langgraph).",
+        agentBudgets,
+        setAgentBudgets,
+        "tenant_id/agent_id",
+        "Add agent budget",
+      )}
 
       {saveError && <p className="mb-2 text-sm text-destructive">{saveError}</p>}
       {saveOk && <p className="mb-2 text-sm text-emerald-400">{saveOk}</p>}
@@ -278,7 +391,13 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
         <Button type="button" size="sm" onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save live overlay"}
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => void clearOverlay()} disabled={busy || !view?.has_overlay}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void clearOverlay()}
+          disabled={busy || !view?.has_overlay}
+        >
           Clear overlay
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => void load()} disabled={busy}>
