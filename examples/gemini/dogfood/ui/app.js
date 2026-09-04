@@ -5,7 +5,7 @@ const AGENTS = [
   { id: "gemini_langchain", label: "LangChain", port: 3102, note: "chain" },
   { id: "gemini_crewai", label: "CrewAI", port: 3103, note: "crew" },
   { id: "gemini_llamaindex", label: "LlamaIndex", port: 3104, note: "chat engine" },
-  { id: "approval_agent", label: "HITL", port: 3105, note: "interrupt / resume" },
+  { id: "approval_agent", label: "HITL", port: 3105, note: "email approve demo (not Gemini chat)" },
   { id: "gemini_autogen", label: "AutoGen", port: 3106, note: "assistant" },
   { id: "gemini_langgraphjs", label: "LangGraph.js", port: 3107, note: "TS runner" },
 ];
@@ -113,21 +113,45 @@ async function ensureThread() {
   return threadId;
 }
 
+function messageContent(msg) {
+  if (!msg || typeof msg !== "object") return "";
+  // Flat Agent Protocol / Python shapes: {role|type, content}
+  // LangGraph.js SSE often nests: {type:"ai", data:{content:"..."}}
+  const raw = msg.content ?? msg.data?.content;
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((c) => (typeof c === "string" ? c : c?.text || ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return raw != null ? String(raw) : "";
+}
+
+function messageRole(msg) {
+  if (!msg || typeof msg !== "object") return "";
+  const r = (msg.role || msg.type || msg.data?.type || "").toString().toLowerCase();
+  if (r === "human") return "user";
+  if (r === "ai" || r === "aimessage") return "assistant";
+  return r;
+}
+
 function extractText(data) {
   if (!data || typeof data !== "object") return "";
   if (typeof data.content === "string") return data.content;
   const messages = data.messages;
   if (!Array.isArray(messages) || messages.length === 0) return "";
-  const last = messages[messages.length - 1];
-  if (!last) return "";
-  if (typeof last.content === "string") return last.content;
-  if (Array.isArray(last.content)) {
-    return last.content
-      .map((c) => (typeof c === "string" ? c : c?.text || ""))
-      .filter(Boolean)
-      .join("\n");
+  // Prefer the last model turn — intermediate "values" snapshots often end
+  // on the just-appended user message, which would otherwise render as a
+  // fake AI echo in the chat pane (seen with HITL + LangGraph.js).
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const role = messageRole(messages[i]);
+    if (role === "assistant" || role === "ai") {
+      const text = messageContent(messages[i]);
+      if (text) return text;
+    }
   }
-  return last.content != null ? String(last.content) : "";
+  return "";
 }
 
 async function streamRun(body) {
@@ -281,7 +305,9 @@ ping();
 setInterval(ping, 8000);
 addMsg(
   "system",
-  lockedAgent
-    ? `Locked to ${currentAgent}. Ask anything — traffic goes through Runkite, not Gemini directly.`
-    : "Hub mode: pick an agent chip, then ask. Watch usage land in the right panel and Admin Spend.",
+  lockedAgent === "approval_agent"
+    ? "Locked to approval_agent — HITL demo: any message proposes sending an email to alice@example.com; Approve/Deny resumes the checkpoint. Not a Gemini chat."
+    : lockedAgent
+      ? `Locked to ${currentAgent}. Ask anything — traffic goes through Runkite, not Gemini directly.`
+      : "Hub mode: pick an agent chip, then ask. Watch usage land in the right panel and Admin Spend.",
 );

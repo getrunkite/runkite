@@ -72,7 +72,14 @@ def _usage_from_autogen_result(result: Any) -> dict[str, Any] | None:
 
 
 async def _seed_model_context(agent: Any, prior_messages: list) -> None:
-    """Clear then replay prior turns into AutoGen's ChatCompletionContext."""
+    """Clear then replay prior turns into AutoGen's ChatCompletionContext.
+
+    Must use ``autogen_core.models`` UserMessage/AssistantMessage — not
+    ``autogen_agentchat.messages.TextMessage``. The OpenAI-compatible model
+    client only transforms core LLMMessage types; seeding TextMessage makes
+    the second turn on a checkpointed thread raise
+    ``ValueError: Unknown message type: <class '...TextMessage'>``.
+    """
     model_context = getattr(agent, "_model_context", None) or getattr(agent, "model_context", None)
     if model_context is None:
         return
@@ -81,7 +88,7 @@ async def _seed_model_context(agent: Any, prior_messages: list) -> None:
     if not prior_messages or not hasattr(model_context, "add_message"):
         return
     try:
-        from autogen_agentchat.messages import TextMessage
+        from autogen_core.models import AssistantMessage, UserMessage
     except ImportError:
         return
     for msg in prior_messages:
@@ -91,9 +98,11 @@ async def _seed_model_context(agent: Any, prior_messages: list) -> None:
         content = msg.get("content") or ""
         if isinstance(content, list):
             content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
-        source = "user" if role in ("human", "user") else "assistant"
         try:
-            await model_context.add_message(TextMessage(content=str(content), source=source))
+            if role in ("human", "user"):
+                await model_context.add_message(UserMessage(content=str(content), source="user"))
+            else:
+                await model_context.add_message(AssistantMessage(content=str(content), source="assistant"))
         except Exception:
             # Best-effort seed; run still proceeds with task= last human text.
             break

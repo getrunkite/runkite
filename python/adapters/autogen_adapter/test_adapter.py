@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "python"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "python", "adapters"))
 
-from autogen_adapter.adapter import AutoGenAdapter  # noqa: E402
+from autogen_adapter.adapter import AutoGenAdapter, _seed_model_context  # noqa: E402
 
 
 def check(name, cond):
@@ -181,6 +181,50 @@ async def test_concurrent_run_on_shared_agent_is_serialized():
     check("all three concurrent runs still completed successfully", all(status == "success" for status, _ in results))
 
 
+async def test_seed_model_context_uses_core_message_types_not_textmessage():
+    """Regression: _seed_model_context used to build
+    autogen_agentchat.messages.TextMessage and hand it to
+    ChatCompletionContext.add_message(). The real model client only
+    accepts autogen_core.models SystemMessage/UserMessage/AssistantMessage/
+    FunctionExecutionResultMessage (a discriminated union) -- TextMessage
+    is not a member, so add_message() raised
+    "ValueError: Unknown message type: <class '...TextMessage'>" on turn 2
+    of any checkpointed thread (turn 1 has no prior_messages to seed, so
+    it always looked fine; the bug only ever showed up starting turn 2).
+
+    test_sequential_runs_clear_shared_model_context (above) never caught
+    this: its fake _Context.add() is a no-op stand-in that accepts
+    anything, so it never actually validated what _seed_model_context
+    tries to hand a REAL ChatCompletionContext. This test uses AutoGen's
+    own UnboundedChatCompletionContext so a wrong message type fails the
+    same way it did against the real model client.
+    """
+    from autogen_core.model_context import UnboundedChatCompletionContext
+    from autogen_core.models import AssistantMessage, UserMessage
+
+    class _RealContextAgent:
+        def __init__(self):
+            self._model_context = UnboundedChatCompletionContext()
+
+    agent = _RealContextAgent()
+    prior_messages = [
+        {"role": "human", "content": "My favorite color is teal."},
+        {"role": "ai", "content": "Got it, teal it is."},
+    ]
+
+    # The actual regression: this used to raise ValueError deep inside
+    # add_message() the moment a real ChatCompletionContext saw a
+    # TextMessage instead of a core LLMMessage.
+    await _seed_model_context(agent, prior_messages)
+
+    seeded = await agent._model_context.get_messages()
+    check("both prior turns were seeded", len(seeded) == 2)
+    check("human turn became a real UserMessage (not TextMessage)", isinstance(seeded[0], UserMessage))
+    check("ai turn became a real AssistantMessage (not TextMessage)", isinstance(seeded[1], AssistantMessage))
+    check("UserMessage content round-trips", seeded[0].content == "My favorite color is teal.")
+    check("AssistantMessage content round-trips", seeded[1].content == "Got it, teal it is.")
+
+
 async def test_sequential_runs_clear_shared_model_context():
     """Regression: a shared AssistantAgent appends to model_context on
     every run(). Without an explicit clear between runs, run N+1 would
@@ -284,6 +328,7 @@ async def main():
     await test_execute_happy_path_emits_expected_events()
     await test_extracts_last_human_message_as_input()
     await test_real_reply_with_no_models_usage_is_flagged_unmetered()
+    await test_seed_model_context_uses_core_message_types_not_textmessage()
     await test_unknown_graph_id_reports_error()
     await test_agent_exception_reports_error()
     await test_concurrent_run_on_shared_agent_is_serialized()
