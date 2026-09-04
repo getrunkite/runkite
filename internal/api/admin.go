@@ -55,6 +55,19 @@ func withSystemContext(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// withTenantQuery scopes a handler to ?tenant_id= (default "default").
+// Used by Admin Try-agent create/stream so runs land in the selected
+// agent's tenant rather than SystemContext (which would mis-attribute).
+func withTenantQuery(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tid := r.URL.Query().Get("tenant_id")
+		if tid == "" {
+			tid = tenant.DefaultTenant
+		}
+		next(w, r.WithContext(tenant.WithContext(r.Context(), tid)))
+	}
+}
+
 // --------------------------------------------------------------------------
 // Overview
 // --------------------------------------------------------------------------

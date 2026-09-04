@@ -20,6 +20,7 @@ import { BreakGlass } from "./pages/BreakGlass";
 import { MandatoryHITL } from "./pages/MandatoryHITL";
 import { Audit } from "./pages/Audit";
 import { Spend } from "./pages/Spend";
+import { TryAgent } from "./pages/TryAgent";
 
 function Gate() {
   const { status } = useAuth();
@@ -62,6 +63,7 @@ function Gate() {
         <Route path="break-glass" element={<BreakGlass />} />
         <Route path="audit" element={<Audit />} />
         <Route path="spend" element={<Spend />} />
+        <Route path="try" element={<TryAgent />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>

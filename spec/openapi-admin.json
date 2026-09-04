@@ -1350,6 +1350,47 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create Thread (admin try)",
+        "description": "Creates a thread in ?tenant_id= (default 'default') for the Admin Try-agent playground. Same body as public POST /threads.",
+        "operationId": "admin_create_thread",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminThreadView"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/admin-api/threads/{thread_id}": {
@@ -1505,6 +1546,71 @@
           },
           "400": {
             "description": "Invalid cursor or cursor+offset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/threads/{thread_id}/runs/stream": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create And Stream Thread Run (admin try)",
+        "description": "Same as public POST /threads/{id}/runs/stream, scoped to ?tenant_id=. Used by the Admin Try-agent playground (Admin session cookie is Path=/admin-api only).",
+        "operationId": "admin_create_and_stream_thread_run",
+        "parameters": [
+          {
+            "description": "Thread ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id",
+              "format": "uuid"
+            },
+            "name": "thread_id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Same shape as public RunCreate (agent_id, input, command, stream_mode, ...)"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
             "content": {
               "application/json": {
                 "schema": {

@@ -409,6 +409,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/threads", s.handleAdminListThreads)
 	mux.HandleFunc("GET /admin-api/threads/{threadID}", s.handleAdminGetThread)
 	mux.HandleFunc("GET /admin-api/threads/{threadID}/runs", s.handleAdminListThreadRuns)
+	// Admin Try-agent playground: same create/stream handlers as the
+	// public Agent Protocol, scoped to ?tenant_id= so the Admin session
+	// cookie (Path=/admin-api) can drive a real run without exposing
+	// credentials to public routes.
+	mux.HandleFunc("POST /admin-api/threads", withTenantQuery(s.handleCreateThread))
+	mux.HandleFunc("POST /admin-api/threads/{threadID}/runs/stream", withTenantQuery(s.handleCreateAndStreamThreadRun))
 	mux.HandleFunc("GET /admin-api/runs", s.handleAdminListRuns)
 	mux.HandleFunc("GET /admin-api/runs/{runID}", s.handleAdminGetRun)
 	mux.HandleFunc("GET /admin-api/runs/{runID}/stream", s.handleAdminStreamRun)

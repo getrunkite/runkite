@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Unlock,
   DollarSign,
+  FlaskConical,
   Webhook as WebhookIcon,
   Workflow,
 } from "lucide-react";
@@ -44,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Resources",
     items: [
       { to: "/admin/agents", label: "Agents", icon: Bot },
+      { to: "/admin/try", label: "Try agent", icon: FlaskConical },
       { to: "/admin/registry", label: "Registry", icon: Package },
       { to: "/admin/threads", label: "Threads", icon: MessagesSquare },
       { to: "/admin/runs", label: "Runs", icon: Workflow },
