@@ -157,15 +157,33 @@ class LangChainAdapter:
 
             # Capture AIMessage.usage_metadata even when the chain ends in
             # StrOutputParser (string output) — otherwise FinOps never sees
-            # tokens for the common prompt|llm|parser pattern.
-            from langchain_core.callbacks import UsageMetadataCallbackHandler
+            # tokens for the common prompt|llm|parser pattern. Soft-optional:
+            # older langchain_core / minimal test Runnables may lack the
+            # handler class entirely.
+            usage_cb: Any | None = None
+            callbacks: list[Any] = []
+            try:
+                from langchain_core.callbacks import UsageMetadataCallbackHandler
 
-            usage_cb = UsageMetadataCallbackHandler()
-            callbacks: list[Any] = [usage_cb]
+                usage_cb = UsageMetadataCallbackHandler()
+                callbacks.append(usage_cb)
+            except ImportError:
+                pass
             if otel_cbs := make_run_callbacks(run_id):
                 callbacks.extend(otel_cbs)
 
-            invoke = runnable.ainvoke({"input": text}, config={"callbacks": callbacks})
+            # Only pass config when we have callbacks -- a bare ainvoke(input)
+            # keeps working for minimal/test Runnables that don't take config.
+            # If a Runnable rejects config= entirely, fall back to bare invoke
+            # (metering soft-fails; the chain still runs).
+            if callbacks:
+                try:
+                    invoke = runnable.ainvoke({"input": text}, config={"callbacks": callbacks})
+                except TypeError:
+                    invoke = runnable.ainvoke({"input": text})
+                    usage_cb = None
+            else:
+                invoke = runnable.ainvoke({"input": text})
             result = await run_cancellable(invoke, cancel_event)
             reply = _extract_text(result)
 
@@ -174,7 +192,11 @@ class LangChainAdapter:
             # Prefer callback totals (works with StrOutputParser). Fall back
             # to scanning a BaseMessage result / framework metrics object.
             accumulate_usage(totals, {"messages": [result] if result is not None else []})
-            usage = _usage_from_langchain_callback(usage_cb) or usage_payload(totals) or usage_from_metrics(result)
+            usage = (
+                (_usage_from_langchain_callback(usage_cb) if usage_cb is not None else None)
+                or usage_payload(totals)
+                or usage_from_metrics(result)
+            )
             # A real reply came back but every extraction path above found
             # nothing -- flag it explicitly rather than silently reporting
             # zero spend indistinguishable from "no LLM call happened".

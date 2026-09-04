@@ -1,6 +1,9 @@
 package adapters_test
 
 import (
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +40,8 @@ func TestLangChainAdapter_RunsToCompletion(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 	}
 	if finalRun["status"] != "success" {
-		t.Fatalf("expected run to succeed, got %v\n--- runner log ---\n%s", finalRun, currentRunnerLog())
+		t.Fatalf("expected run to succeed, got %v\n--- error event ---\n%s\n--- runner log ---\n%s",
+			finalRun, fetchErrorEvent(t, threadID, runID), currentRunnerLog())
 	}
 
 	// Poll for thread.values (not only run status). StatusCallback writes
@@ -107,7 +111,8 @@ func TestLangChainAdapter_CancelMidExecution(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 	}
 	if finalRun["status"] != "interrupted" {
-		t.Fatalf("expected run status 'interrupted' after cancel, got %v (this must NOT be 'success' -- that would mean cancel had no effect and the chain ran to completion)\n--- runner log ---\n%s", finalRun["status"], currentRunnerLog())
+		t.Fatalf("expected run status 'interrupted' after cancel, got %v (this must NOT be 'success' -- that would mean cancel had no effect and the chain ran to completion)\n--- error event ---\n%s\n--- runner log ---\n%s",
+			finalRun["status"], fetchErrorEvent(t, threadID, runID), currentRunnerLog())
 	}
 
 	// Thread must recover (not stuck busy) -- same regression class VG-002
@@ -124,4 +129,40 @@ func TestLangChainAdapter_CancelMidExecution(t *testing.T) {
 	if s, _ := threadAfter["status"].(string); s == "busy" {
 		t.Fatalf("thread stuck busy after cancelled run -- would permanently block all future runs on this thread")
 	}
+}
+
+// fetchErrorEvent pulls the persisted SSE stream for a finished run and
+// returns any error-event payload. The run object only says
+// "error:see error event", which hid the TypeError that broke this suite.
+func fetchErrorEvent(t *testing.T, threadID, runID string) string {
+	t.Helper()
+	resp, err := http.Get(baseURL + "/threads/" + threadID + "/runs/" + runID + "/stream")
+	if err != nil {
+		return "(stream fetch failed: " + err.Error() + ")"
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	raw := string(body)
+	for _, block := range strings.Split(raw, "\n\n") {
+		block = strings.TrimSpace(block)
+		if block == "" {
+			continue
+		}
+		var eventName string
+		var data string
+		for _, line := range strings.Split(block, "\n") {
+			if v, ok := strings.CutPrefix(line, "event: "); ok {
+				eventName = v
+			} else if v, ok := strings.CutPrefix(line, "data: "); ok {
+				data = v
+			}
+		}
+		if eventName == "error" && data != "" {
+			return data
+		}
+	}
+	if raw == "" {
+		return "(no SSE body)"
+	}
+	return "(no error event in stream; raw=" + raw + ")"
 }

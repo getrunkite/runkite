@@ -154,3 +154,38 @@ if second > 5:
     sys.exit(1)
 print("bare_concat_agent OK: turn-over-turn growth stayed linear (no compounding)")
 ' "${readings[@]}"
+
+# AutoGen multi-turn success: turn 2 previously failed because the adapter
+# seeded UnboundedChatCompletionContext with TextMessage instead of
+# UserMessage/AssistantMessage. Metering checks above use fresh threads, so
+# they never catch "second run on the same thread errors".
+echo
+echo "autogen same-thread turn-2 succeeds:"
+thread=$(curl -sf -X POST "$CP/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+fail=0
+for turn in 1 2; do
+  out=$(curl -sf -X POST "$CP/threads/$thread/runs/wait" -H 'Content-Type: application/json' \
+    -d '{"agent_id":"gemini_autogen","input":{"messages":[{"role":"user","content":"Reply with exactly the word OK."}]}}')
+  if ! python3 -c '
+import json,sys
+d=json.loads(sys.argv[1])
+status=d.get("status")
+out=d.get("values") or d.get("output") or d
+msgs=(out.get("messages") if isinstance(out, dict) else None) or []
+text=""
+for m in reversed(msgs):
+    if isinstance(m, dict) and m.get("role") in ("ai","assistant") and m.get("content"):
+        text=str(m["content"]); break
+ok = status == "success" and bool(text.strip())
+print(f"turn {sys.argv[2]}", "OK" if ok else "FAIL", f"status={status!r} reply={text[:80]!r}")
+sys.exit(0 if ok else 1)
+' "$out" "$turn"; then
+    fail=1
+  fi
+done
+if [[ "$fail" -ne 0 ]]; then
+  echo "smoke_usage: gemini_autogen same-thread turn-2 failed" >&2
+  exit 1
+fi
+echo "smoke_usage: gemini_autogen same-thread multi-turn OK"

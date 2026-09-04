@@ -11,7 +11,11 @@ import asyncio
 
 
 class _SlowRunnable:
-    async def ainvoke(self, input_dict):
+    # Accept config=None so this matches real LangChain Runnable.ainvoke
+    # (callbacks / tags) without requiring the adapter to special-case us.
+    # Deliberately do NOT require config -- adapter must still support bare
+    # ainvoke(input) for minimal Runnables when it has nothing to pass.
+    async def ainvoke(self, input_dict, config=None):
         await asyncio.sleep(6)
         return f"finished (slowly) responding to: {input_dict.get('input', '')}"
 

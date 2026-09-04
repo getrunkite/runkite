@@ -276,12 +276,35 @@ async def test_real_reply_with_no_usage_anywhere_is_flagged_unmetered():
     )
 
 
+async def test_bare_ainvoke_without_config_kwarg_still_runs():
+    """e2e slow_chain historically only accepted ainvoke(input). FinOps
+    wiring must not TypeError those minimal Runnables into status=error."""
+
+    class _Bare:
+        async def ainvoke(self, input_dict):
+            return f"echo:{input_dict.get('input', '')}"
+
+    adapter = LangChainAdapter()
+    adapter.runnables["bare"] = _Bare()
+    callback, events = _collector()
+    status = await adapter.execute(
+        {"run_id": "r-bare", "graph_id": "bare", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
+    check("bare runnable succeeds", status == "success")
+    values_event = next(e for e in events if e["method"] == "values")
+    msgs = values_event["data"].get("messages") or []
+    check("bare runnable produced an ai reply", len(msgs) == 2 and "echo:" in str(msgs[1].get("content", "")))
+
+
 async def main():
     await test_load_config_and_string_output()
     await test_extracts_last_human_message_and_passes_input_key()
     await test_basemessage_output_normalized_to_text()
     await test_basemessage_with_usage_metadata_reaches_values()
     await test_real_reply_with_no_usage_anywhere_is_flagged_unmetered()
+    await test_bare_ainvoke_without_config_kwarg_still_runs()
     await test_unknown_graph_id_reports_error_without_crashing()
     await test_runnable_exception_reports_error_without_crashing()
     await test_cancel_event_interrupts_a_slow_chain()
