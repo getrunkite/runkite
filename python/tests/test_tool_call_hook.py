@@ -566,6 +566,82 @@ async def test_execute_run_does_not_double_count_usage_across_turns():
     )
 
 
+async def test_execute_run_skip_prefix_covers_bare_concat_idless_graph():
+    """Same regression as test_execute_run_does_not_double_count_usage_across_turns,
+    but with a bare list-concat reducer (`operator.add`) instead of
+    `add_messages` -- the exact shape that left the original LangGraph.js
+    example agent vulnerable (no add_messages / MessagesAnnotation means
+    no stable per-message id, so skip_ids alone has nothing to match on).
+    skip_prefix (the prior message count from execute_run's pre-run
+    aget_state snapshot) must still exclude turn 1's tokens on turn 2
+    purely by position, with no ids involved at all.
+    """
+    import operator
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    class _BareConcatState(TypedDict):
+        messages: Annotated[list, operator.add]
+
+    call_usage = [
+        {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70},
+        {"input_tokens": 90, "output_tokens": 35, "total_tokens": 125},
+    ]
+    call_count = {"n": 0}
+
+    def agent_with_usage(state):
+        i = call_count["n"]
+        call_count["n"] += 1
+        # Plain dicts, deliberately with no "id" key at all -- this is
+        # what a bare concat reducer actually persists to checkpoint;
+        # nothing in this path ever stamps an id onto them.
+        msg = {"type": "ai", "content": f"reply {i}", "usage_metadata": call_usage[i]}
+        return {"messages": [msg]}
+
+    builder = StateGraph(_BareConcatState)
+    builder.add_node("agent", agent_with_usage)
+    builder.add_edge(START, "agent")
+    builder.add_edge("agent", END)
+    compiled = builder.compile(checkpointer=MemorySaver())
+
+    class _BareConcatAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    async def run_turn(run_id: str, content: str) -> dict | None:
+        events = []
+
+        async def event_callback(event):
+            events.append(event)
+
+        assignment = {
+            "run_id": run_id,
+            "thread_id": "t-bare-concat-dedup",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "human", "content": content}]},
+            "stream_modes": ["values"],
+        }
+        status = await execute_run(_BareConcatAdapter(), assignment, event_callback)
+        check(f"{run_id} succeeds", status == "success")
+        values_with_usage = [e for e in events if e["method"] == "values" and e["data"].get("usage")]
+        return values_with_usage[-1]["data"]["usage"] if values_with_usage else None
+
+    usage_turn1 = await run_turn("r-bare-1", "hello")
+    usage_turn2 = await run_turn("r-bare-2", "again")
+
+    check(
+        "turn 1 (bare concat, no ids) reports only its own tokens",
+        usage_turn1 == {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+    )
+    check(
+        "turn 2 (bare concat, no ids) reports only its own tokens, not turn 1's on top",
+        usage_turn2 == {"prompt_tokens": 90, "completion_tokens": 35, "total_tokens": 125},
+    )
+
+
 async def test_execute_run_resume_does_not_recount_pre_interrupt_usage():
     """The interrupted run and its resume are two separate run_ids in two
     separate usage_events rows -- if the resumed run's final "values"
@@ -667,6 +743,7 @@ def main():
     asyncio.run(test_execute_run_captures_usage_before_interrupt())
     asyncio.run(test_execute_run_captures_usage_before_interrupt_updates_mode_only())
     asyncio.run(test_execute_run_does_not_double_count_usage_across_turns())
+    asyncio.run(test_execute_run_skip_prefix_covers_bare_concat_idless_graph())
     asyncio.run(test_execute_run_resume_does_not_recount_pre_interrupt_usage())
     print("\nAll checks passed.")
 

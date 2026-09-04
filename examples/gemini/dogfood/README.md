@@ -51,6 +51,7 @@ Extra agents on this control plane (for FinOps edge paths):
 
 - `llm_approval_agent` — real LLM turn then HITL interrupt
 - `unknown_provider_agent` — real LLM reply with usage stripped (`usage_unmetered`)
+- `bare_concat_agent` — id-less messages (`operator.add` + cleared reply ids); exercises `skip_prefix`
 
 ## Prerequisites
 

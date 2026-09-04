@@ -95,3 +95,62 @@ if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 echo "smoke_usage: cross-call usage isolation holds for all ${#AGENTS[@]} agents"
+
+# Same-thread multi-turn check: the two checks above prove single-call
+# metering and cross-THREAD isolation, but neither exercises skip_prefix --
+# the id-less-message fallback (bare_concat_agent uses operator.add, not
+# add_messages, so its messages never get a stable id and skip_ids alone
+# has nothing to match on).
+#
+# A ratio/doubling threshold on raw prompt_tokens does NOT reliably catch
+# this: real context growth is itself additive (each turn's own true
+# prompt_tokens ~= base + (turn-1)*increment, since it re-sends the whole
+# growing history), so a genuinely-correct 3-turn sequence and a buggy
+# cumulative-of-cumulative one can land at similar-looking ratios over
+# just 3 turns (confirmed while writing this: 53/118/195, a real captured
+# buggy sequence, has turn ratios of 2.2x/1.6x -- indistinguishable from
+# a plausible correct sequence by ratio alone).
+#
+# Sending the SAME literal text every turn instead makes the math clean:
+# CORRECT (meter only this turn's AIMessage): first differences stay ~flat
+# (second difference ≈ 0). BUGGY (re-sum every prior AIMessage): first
+# differences themselves grow, so second difference ≈ per-turn context
+# growth. Note: a ratio check like d2 > 2.5*d1 is too loose — the real
+# buggy sequence 53/118/195 has diffs (65, 77) and would slip through.
+echo
+echo "same-thread multi-turn check (bare_concat_agent, id-less messages):"
+thread=$(curl -sf -X POST "$CP/threads" -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
+readings=()
+for _ in 1 2 3; do
+  out=$(curl -sf -X POST "$CP/threads/$thread/runs/wait" -H 'Content-Type: application/json' \
+    -d '{"agent_id":"bare_concat_agent","input":{"messages":[{"role":"user","content":"Say OK and nothing else."}]}}')
+  prompt_tokens=$(python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+out = d.get("values") or d.get("output") or d
+u = (out.get("usage") if isinstance(out, dict) else None) or {}
+print(int(u.get("prompt_tokens") or 0))
+' "$out")
+  readings+=("$prompt_tokens")
+done
+python3 -c '
+import sys
+r = [int(x) for x in sys.argv[1:]]
+d1 = r[1] - r[0]
+d2 = r[2] - r[1]
+second = d2 - d1
+print(f"readings={r} first_diffs=({d1}, {d2}) second_diff={second}")
+if d1 <= 0 or d2 <= 0:
+    print("bare_concat_agent FAIL: prompt_tokens did not grow at all across identical-text turns -- checkpoint restore may be broken")
+    sys.exit(1)
+# Correct (per-turn only): first diffs stay ~flat → second ≈ 0.
+# Buggy (cumsum of prior turns): first diffs themselves grow → second ≈
+# per-turn context growth. A 2.5x ratio on first diffs is too loose: the
+# real captured buggy sequence 53/118/195 has diffs (65, 77) and would
+# pass that check. With temp=0 + identical text, second should stay near 0.
+if second > 5:
+    print(f"bare_concat_agent FAIL: first diffs accelerated (second_diff={second}) -- looks like cross-turn compounding")
+    sys.exit(1)
+print("bare_concat_agent OK: turn-over-turn growth stayed linear (no compounding)")
+' "${readings[@]}"

@@ -3,7 +3,8 @@
     "gemini_langgraph": "../langgraph_agent/graph.py:graph",
     "approval_agent": "../../approval_agent/graph.py:graph",
     "llm_approval_agent": "../../approval_agent/graph_llm_hitl.py:graph",
-    "unknown_provider_agent": "../../approval_agent/graph_unknown_provider.py:graph"
+    "unknown_provider_agent": "../../approval_agent/graph_unknown_provider.py:graph",
+    "bare_concat_agent": "../../approval_agent/graph_bare_concat.py:graph"
   },
   "dependencies": ["../langgraph_agent", "..", "../../approval_agent"],
   "runner_kind": "python-langgraph",

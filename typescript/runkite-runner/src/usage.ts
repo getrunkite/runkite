@@ -141,12 +141,7 @@ function foldMessageUsage(totals: UsageTotals, msg: unknown): void {
  * present; `skipPrefix` covers graphs that append messages without
  * stable ids (bare concat instead of MessagesAnnotation).
  */
-export function accumulateUsage(
-  totals: UsageTotals,
-  data: unknown,
-  skipIds?: Set<string>,
-  skipPrefix = 0,
-): void {
+export function accumulateUsage(totals: UsageTotals, data: unknown, skipIds?: Set<string>, skipPrefix = 0): void {
   if (data && typeof data === "object" && !Array.isArray(data) && "messages" in (data as object)) {
     const msgs = (data as Record<string, unknown>).messages;
     if (Array.isArray(msgs)) {
