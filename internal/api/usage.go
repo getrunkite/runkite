@@ -219,7 +219,7 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 		return
 	}
 	usage, model := extractRunUsageWithModel(run.Output)
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CostUSD == 0 {
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CostUSD == 0 && !usage.Unmetered {
 		return
 	}
 	var pb finops.Pricebook
@@ -246,6 +246,31 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 				"model":             model,
 				"prompt_tokens":     usage.PromptTokens,
 				"completion_tokens": usage.CompletionTokens,
+			},
+		})
+	}
+	if usage.Unmetered {
+		// The runner found an AI-shaped reply (a real model turn ran) but
+		// could not extract any token/cost data from it in any recognized
+		// shape -- most likely a provider/framework integration this
+		// codebase has never seen (a brand-new model, a community
+		// integration that has not adopted LangChain's standardized
+		// usage_metadata fields, or a custom adapter that has not wired
+		// FinOps up at all). Silence here would look identical to "this
+		// agent made no LLM call and owes nothing", which is the one
+		// failure mode worse than an under-priced run: an entirely
+		// invisible one.
+		s.writeSecurityAudit(ctx, &models.AuditEvent{
+			TenantID:     run.TenantID,
+			Action:       policy.StageRunCreate,
+			ResourceType: "agent",
+			ResourceID:   run.AgentID,
+			Decision:     policy.EffectAllow,
+			ReasonCode:   policy.ReasonUsageUnmetered,
+			AgentID:      run.AgentID,
+			RunID:        run.RunID,
+			Attrs: map[string]interface{}{
+				"model": model,
 			},
 		})
 	}

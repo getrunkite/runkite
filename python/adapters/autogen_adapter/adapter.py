@@ -38,7 +38,7 @@ from runkite_runner.adapter_checkpoint import (
     messages_from_values_event,
 )
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
-from runkite_runner.usage import usage_from_metrics, values_with_usage
+from runkite_runner.usage import usage_from_metrics, usage_or_unmetered, values_with_usage
 
 
 def _extract_text(result: Any) -> str:
@@ -195,6 +195,9 @@ class AutoGenAdapter:
                             model = raw.get("model")
                 if model:
                     usage = {**usage, "model": str(model)}
+            # A real reply came back but models_usage found nothing --
+            # flag it explicitly instead of silently reporting zero spend.
+            usage = usage_or_unmetered(usage, bool(reply and str(reply).strip()))
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

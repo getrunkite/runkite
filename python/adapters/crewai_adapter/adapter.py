@@ -54,6 +54,7 @@ from typing import Any
 # depend on TTY detection succeeding.
 os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
 
+from crewai.types.usage_metrics import UsageMetrics  # noqa: E402
 from runkite_runner.adapter_checkpoint import (  # noqa: E402
     context_prompt_from_messages,
     decode_messages_checkpoint,
@@ -62,7 +63,7 @@ from runkite_runner.adapter_checkpoint import (  # noqa: E402
     messages_from_values_event,
 )
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable  # noqa: E402
-from runkite_runner.usage import usage_from_metrics, values_with_usage
+from runkite_runner.usage import usage_from_metrics, usage_or_unmetered, values_with_usage
 
 from .otel_events import attach_otel_listeners  # noqa: E402
 
@@ -156,12 +157,31 @@ class CrewAIAdapter:
             # OTEL is off. Safe across concurrent graph_ids / waiting lockers.
             with attach_otel_listeners(run_id):
                 async with self._crew_locks[graph_id]:
+                    # crew.usage_metrics is the LIFETIME total for every LLM
+                    # client on this shared Crew, not this call's own usage
+                    # -- the same Crew instance (and its agents' LLM clients)
+                    # is reused for every run dispatched to this graph_id
+                    # (see module docstring), and CrewAI's own token counters
+                    # (BaseLLM._token_usage) only ever accumulate, with no
+                    # reset between kickoffs. Confirmed live: three
+                    # unrelated fresh-thread calls to the same agent reported
+                    # 84/168/252 prompt tokens -- exact multiples of the
+                    # first call's real usage, not three independent turns.
+                    # Snapshotting before/after and taking delta_since (a
+                    # method CrewAI ships for exactly this) isolates this
+                    # call's own contribution regardless of how many prior
+                    # runs (on any thread, any tenant) already used this
+                    # Crew. Captured inside the same lock that serializes
+                    # akickoff on this Crew, so no concurrent call can slip
+                    # a mutation between the two snapshots.
+                    usage_before = getattr(crew, "usage_metrics", None) or UsageMetrics()
                     result = await run_cancellable(crew.akickoff(inputs={"input": text}), cancel_event)
+                    usage_after = getattr(crew, "usage_metrics", None) or UsageMetrics()
+                    usage_delta = usage_after.delta_since(usage_before)
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            # CrewAI writes token totals onto the shared Crew after kickoff.
-            usage = usage_from_metrics(getattr(crew, "usage_metrics", None))
+            usage = usage_from_metrics(usage_delta)
             # UsageMetrics has no model id — FinOps pricebook needs one or
             # Est. USD stays $0 (tokens still record). Prefer the agent's LLM
             # model string (LiteLLM style "gemini/gemini-…" soft-matches).
@@ -172,6 +192,10 @@ class CrewAIAdapter:
                     if model:
                         usage = {**usage, "model": str(model)}
                         break
+            # A real reply came back but usage_metrics's delta found
+            # nothing -- flag it explicitly (see usage_or_unmetered)
+            # instead of silently reporting zero spend.
+            usage = usage_or_unmetered(usage, bool(reply and str(reply).strip()))
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

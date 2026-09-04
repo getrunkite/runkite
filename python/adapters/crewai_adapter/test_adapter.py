@@ -27,6 +27,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "python"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "python", "adapters"))
 
+from crewai.types.usage_metrics import UsageMetrics  # noqa: E402
+
 from crewai_adapter.adapter import CrewAIAdapter  # noqa: E402
 
 
@@ -113,6 +115,103 @@ async def test_extracts_last_human_message_as_input():
     check("invoke uses input key", set(fake.last_inputs.keys()) == {"input"})
     check("current ask present", "the real ask" in fake.last_inputs["input"])
     check("prior turn folded into prompt", "ignored" in fake.last_inputs["input"])
+
+
+class _CumulativeUsageFakeCrew:
+    """Mimics CrewAI's real behavior: usage_metrics is the LIFETIME total
+    across every kickoff on this Crew instance (crewai/llms/base_llm.py's
+    _token_usage only ever accumulates; crewai/crew.py's
+    calculate_usage_metrics reads that live accumulator fresh every call,
+    it does not track "since when"). Each akickoff call here adds a fixed
+    amount to the running total, the same way a real LLM client's
+    internal counter would after one real provider call."""
+
+    def __init__(self, per_call_prompt: int, per_call_completion: int):
+        self._per_call_prompt = per_call_prompt
+        self._per_call_completion = per_call_completion
+        self.usage_metrics: UsageMetrics | None = None
+
+    async def akickoff(self, inputs):
+        prior = self.usage_metrics or UsageMetrics()
+        self.usage_metrics = UsageMetrics(
+            prompt_tokens=prior.prompt_tokens + self._per_call_prompt,
+            completion_tokens=prior.completion_tokens + self._per_call_completion,
+            total_tokens=prior.total_tokens + self._per_call_prompt + self._per_call_completion,
+        )
+        return _FakeCrewOutput("ok")
+
+
+async def test_usage_metrics_delta_not_cumulative_across_calls():
+    """Live dogfood proof this was a real bug, not a hypothetical: three
+    separate fresh-thread calls to the same real Gemini-backed Crew
+    reported prompt_tokens 84, 168, 252 -- exact multiples of the first
+    call's real usage, because crew.usage_metrics is the shared Crew's
+    lifetime total, not a per-call figure. Same graph_id means same
+    shared Crew instance (see load_config), so this is not scoped to one
+    thread the way LangGraph's checkpoint-carried usage_metadata is --
+    it grows with every run this process has ever handled for this agent,
+    across every tenant and thread.
+    """
+    adapter = CrewAIAdapter()
+    fake = _CumulativeUsageFakeCrew(per_call_prompt=84, per_call_completion=30)
+    adapter.crews["my_crew"] = fake
+
+    async def run_once(run_id: str):
+        callback, events = _collector()
+        status = await adapter.execute(
+            {"run_id": run_id, "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+            callback,
+            None,
+        )
+        check(f"{run_id} succeeds", status == "success")
+        values_event = next(e for e in events if e["method"] == "values")
+        return values_event["data"].get("usage")
+
+    usage1 = await run_once("r-call-1")
+    usage2 = await run_once("r-call-2")
+    usage3 = await run_once("r-call-3")
+
+    check(
+        "call 1 reports only its own 84/30 tokens", usage1["prompt_tokens"] == 84 and usage1["completion_tokens"] == 30
+    )
+    check(
+        "call 2 reports only its own 84/30 tokens, not call 1's on top (would be 168 if buggy)",
+        usage2["prompt_tokens"] == 84 and usage2["completion_tokens"] == 30,
+    )
+    check(
+        "call 3 reports only its own 84/30 tokens, not calls 1+2's on top (would be 252 if buggy)",
+        usage3["prompt_tokens"] == 84 and usage3["completion_tokens"] == 30,
+    )
+    # And the underlying accumulator genuinely did keep growing across
+    # calls -- proving the delta logic is doing real subtraction, not
+    # just coincidentally returning the same fixture value three times.
+    check("underlying lifetime accumulator kept growing", fake.usage_metrics.prompt_tokens == 84 * 3)
+
+
+async def test_real_reply_with_no_usage_metrics_is_flagged_unmetered():
+    """_FakeCrew (used throughout this file) has no usage_metrics attribute
+    at all -- exactly what a brand-new/unrecognized provider integration,
+    or a Crew whose LLM class this codebase has never exercised, would
+    produce: a real reply, with the delta computation finding literally
+    nothing to report. That must surface as an explicit unmetered marker,
+    not silently look identical to a Crew that made no LLM call.
+    """
+    adapter = CrewAIAdapter()
+    adapter.crews["my_crew"] = _FakeCrew(response="a real reply, but usage_metrics reports nothing")
+
+    callback, events = _collector()
+    status = await adapter.execute(
+        {"run_id": "r-unmetered", "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
+    check("status success", status == "success")
+    values_event = next(e for e in events if e["method"] == "values")
+    check(
+        "usage carries the unmetered marker instead of being absent",
+        values_event["data"].get("usage")
+        == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "unmetered": True},
+    )
 
 
 async def test_unknown_graph_id_reports_error():
@@ -210,6 +309,8 @@ async def main():
     await test_extracts_last_human_message_as_input()
     await test_unknown_graph_id_reports_error()
     await test_crew_exception_reports_error()
+    await test_real_reply_with_no_usage_metrics_is_flagged_unmetered()
+    await test_usage_metrics_delta_not_cumulative_across_calls()
     await test_concurrent_akickoff_on_shared_crew_is_serialized()
     await test_cancel_event_interrupts_a_slow_crew()
     print("\nAll checks passed.")

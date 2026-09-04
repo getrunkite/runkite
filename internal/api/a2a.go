@@ -155,6 +155,16 @@ type RunUsage struct {
 	CompletionTokens int64   `json:"completion_tokens,omitempty"`
 	TotalTokens      int64   `json:"total_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
+	// Unmetered is set by a runner when it found an AI-shaped reply (a
+	// real model turn happened) but could not extract any token/cost data
+	// from it at all -- distinct from zero usage meaning "no LLM call
+	// happened". Surfaces as a usage_unmetered audit alert (see
+	// ingestTerminalUsage) instead of silently looking free. The runner
+	// side (python/runkite_runner/usage.py's usage_payload /
+	// usage_or_unmetered) is where this gets set; it exists specifically
+	// for a provider/framework integration whose usage-reporting shape
+	// this codebase has never seen.
+	Unmetered bool `json:"unmetered,omitempty"`
 }
 
 // RunCostDetail is one run's contribution to a RunCostSummary.

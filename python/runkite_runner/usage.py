@@ -124,23 +124,66 @@ def _walk_messages(obj: Any) -> list[Any]:
     return out
 
 
-def accumulate_usage(totals: dict[str, Any], data: Any) -> None:
+def _message_id(msg: Any) -> str | None:
+    if isinstance(msg, dict):
+        mid = msg.get("id")
+    else:
+        mid = getattr(msg, "id", None)
+    return str(mid) if mid else None
+
+
+def _fold_message_usage(totals: dict[str, Any], msg: Any) -> None:
+    """Add one message's token/cost fields into *totals* (mutates)."""
+    p, c, model, cost = _usage_from_message(msg)
+    if p or c:
+        totals["prompt_tokens"] = int(totals.get("prompt_tokens") or 0) + p
+        totals["completion_tokens"] = int(totals.get("completion_tokens") or 0) + c
+    if cost:
+        totals["cost_usd"] = float(totals.get("cost_usd") or 0) + cost
+    if not p and not c and not cost:
+        # AI-shaped reply with nothing extractable — see usage_payload.
+        totals["_saw_unmetered_ai_message"] = True
+    if model and not totals.get("model"):
+        totals["model"] = model
+
+
+def accumulate_usage(
+    totals: dict[str, Any],
+    data: Any,
+    skip_ids: set[str] | None = None,
+    skip_prefix: int = 0,
+) -> None:
     """Add any token usage found in *data* into *totals* (mutates).
 
     Call this on a single final ``values`` snapshot (or on incremental
     ``messages`` / ``updates`` chunks), not on every cumulative ``values``
     chunk — LangGraph ``values`` mode re-sends the full message history,
     so summing each snapshot double-counts prior AIMessage usage.
+
+    *skip_ids* / *skip_prefix* come from ``execute_run``'s pre-run
+    ``aget_state`` snapshot. Every multi-turn ``values`` chunk contains the
+    *entire* message history, so without a filter turn N re-bills turns
+    1..N-1 (and a HITL resume re-bills the pre-interrupt turn). Prefer
+    message ids when present; *skip_prefix* covers graphs that append
+    messages without stable ids (bare list concat instead of
+    ``add_messages`` / MessagesAnnotation).
     """
+    # Values snapshots: index-aware walk so id-less prior turns are skipped.
+    if isinstance(data, dict) and isinstance(data.get("messages"), (list, tuple)):
+        for i, msg in enumerate(data["messages"]):
+            if i < skip_prefix:
+                continue
+            mid = _message_id(msg)
+            if skip_ids and mid and mid in skip_ids:
+                continue
+            for walked in _walk_messages(msg):
+                _fold_message_usage(totals, walked)
+        return
+
     for msg in _walk_messages(data):
-        p, c, model, cost = _usage_from_message(msg)
-        if p or c:
-            totals["prompt_tokens"] = int(totals.get("prompt_tokens") or 0) + p
-            totals["completion_tokens"] = int(totals.get("completion_tokens") or 0) + c
-        if cost:
-            totals["cost_usd"] = float(totals.get("cost_usd") or 0) + cost
-        if model and not totals.get("model"):
-            totals["model"] = model
+        if skip_ids and (mid := _message_id(msg)) and mid in skip_ids:
+            continue
+        _fold_message_usage(totals, msg)
 
 
 def usage_payload(totals: dict[str, Any]) -> dict[str, Any] | None:
@@ -148,6 +191,14 @@ def usage_payload(totals: dict[str, Any]) -> dict[str, Any] | None:
     p = int(totals.get("prompt_tokens") or 0)
     c = int(totals.get("completion_tokens") or 0)
     if p == 0 and c == 0:
+        if totals.get("_saw_unmetered_ai_message"):
+            # An AI-shaped reply existed but nothing about it was
+            # extractable -- explicit zero + marker, not silence, so the
+            # control plane can tell "no LLM call happened" apart from
+            # "an LLM call happened and our extraction found nothing" and
+            # alert on the latter (see internal/api/usage.go's
+            # usage_unmetered check).
+            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "unmetered": True}
         return None
     out: dict[str, Any] = {
         "prompt_tokens": p,
@@ -159,6 +210,24 @@ def usage_payload(totals: dict[str, Any]) -> dict[str, Any] | None:
     if totals.get("cost_usd"):
         out["cost_usd"] = totals["cost_usd"]
     return out
+
+
+def usage_or_unmetered(usage: dict[str, Any] | None, produced_output: bool) -> dict[str, Any] | None:
+    """For non-LangGraph adapters (LangChain/CrewAI/LlamaIndex/AutoGen) that
+    call usage_from_metrics/a framework-specific extractor instead of
+    accumulate_usage: if that extraction found nothing but the framework
+    clearly produced real model output (a non-empty reply -- these adapters
+    exist to wrap something that calls an LLM, there is no code path to a
+    real reply that did not involve one), surface the same explicit
+    zero-plus-marker payload as accumulate_usage's AI-message case, instead
+    of silently omitting usage and looking identical to an agent that made
+    no LLM call at all.
+    """
+    if usage is not None:
+        return usage
+    if not produced_output:
+        return None
+    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "unmetered": True}
 
 
 def usage_from_metrics(obj: Any) -> dict[str, Any] | None:

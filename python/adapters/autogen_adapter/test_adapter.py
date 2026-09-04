@@ -255,9 +255,35 @@ async def test_cancel_event_interrupts_a_slow_agent():
     check("no error event emitted for a cancellation", not any(e["method"] == "error" for e in events))
 
 
+async def test_real_reply_with_no_models_usage_is_flagged_unmetered():
+    """_FakeMessage has no models_usage attribute at all -- exactly what a
+    brand-new/unrecognized model client wired into AssistantAgent would
+    look like: a real reply, zero extractable RequestUsage anywhere. That
+    must surface as an explicit unmetered marker, not silently look
+    identical to an agent that made no LLM call.
+    """
+    adapter = AutoGenAdapter()
+    adapter.agents["my_agent"] = _FakeAssistantAgent(response="a real reply, but nothing reports its usage")
+
+    callback, events = _collector()
+    status = await adapter.execute(
+        {"run_id": "r-unmetered", "graph_id": "my_agent", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
+    check("status success", status == "success")
+    values_event = next(e for e in events if e["method"] == "values")
+    check(
+        "usage carries the unmetered marker instead of being absent",
+        values_event["data"].get("usage")
+        == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "unmetered": True},
+    )
+
+
 async def main():
     await test_execute_happy_path_emits_expected_events()
     await test_extracts_last_human_message_as_input()
+    await test_real_reply_with_no_models_usage_is_flagged_unmetered()
     await test_unknown_graph_id_reports_error()
     await test_agent_exception_reports_error()
     await test_concurrent_run_on_shared_agent_is_serialized()

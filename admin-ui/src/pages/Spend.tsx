@@ -20,6 +20,9 @@ const DOCS = {
 const USD_TIP =
   "Estimate only — not a provider invoice. Dollars = tokens × finops.pricebook, or gateway cost_usd when the runner reports one.";
 
+const OPEN_HOLDS_TIP =
+  "A hold is a provisional reservation placed the instant a run is created (finops.reservation), before the real token count is known — it counts toward today's USD/token caps so many runs starting at once can't all sneak in under the limit before any of them reports real usage. Released the moment the run finishes; a nonzero count here means that many runs are still in flight for this filter right now.";
+
 function UsdHeader() {
   return (
     <Tooltip>
@@ -47,6 +50,8 @@ function reasonLabel(code: string | undefined): string {
   switch (code) {
     case "usage_unpriced":
       return "Unpriced model";
+    case "usage_unmetered":
+      return "Unmetered reply";
     case "budget_soft":
       return "Soft budget";
     case "budget_exceeded":
@@ -66,6 +71,11 @@ function alertDetail(e: AdminAuditEvent): string {
   const attrs = (e.attrs ?? {}) as Record<string, unknown>;
   if (e.reason_code === "usage_unpriced" && attrs.model) {
     return `Add pricebook row for ${String(attrs.model)}`;
+  }
+  if (e.reason_code === "usage_unmetered") {
+    return attrs.model
+      ? `${String(attrs.model)} replied but reported no usage — check that framework/provider's usage_metadata shape`
+      : "A run replied but reported no usage at all — check that adapter's usage extraction";
   }
   if (attrs.model) return `model ${String(attrs.model)}`;
   if (attrs.cap_kind) return `cap ${String(attrs.cap_kind)}`;
@@ -275,6 +285,12 @@ export function Spend() {
             Unpriced model alert fires. Add the model under <code className="text-foreground">finops.pricebook</code> in{" "}
             <code className="text-foreground">langgraph.json</code>, then restart the control plane.
           </li>
+          <li>
+            A reply came back but the runner found <em>no</em> token/cost data in any shape it recognizes (a brand-new
+            provider, or a framework integration that has not adopted LangChain's standard{" "}
+            <code className="text-foreground">usage_metadata</code>) → an Unmetered reply alert fires instead of quietly
+            showing $0, so a genuinely unmetered agent is never mistaken for a free one.
+          </li>
         </ol>
         <p className="mt-3 text-muted-foreground">
           Needs a SQL state backend (Postgres / MySQL / SQLite).{" "}
@@ -338,7 +354,12 @@ export function Spend() {
           <p className="font-mono text-lg font-semibold tabular-nums">{totals.runs.toLocaleString()}</p>
         </div>
         <div className="rounded-sm border border-border bg-card px-3 py-2">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Open holds (UTC day)</p>
+          <Tooltip>
+            <TooltipTrigger className="cursor-help text-[11px] uppercase tracking-wide text-muted-foreground underline decoration-dotted underline-offset-4">
+              Open holds (UTC day)
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{OPEN_HOLDS_TIP}</TooltipContent>
+          </Tooltip>
           <p className="font-mono text-lg font-semibold tabular-nums">
             {holds ? `${holds.count} · $${Number(holds.usd_hold || 0).toFixed(4)}` : "—"}
           </p>

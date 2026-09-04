@@ -1,8 +1,8 @@
 # Local multi-framework playground
 
 Runs your Runkite control plane locally with the Gemini example agents
-(LangGraph, LangChain, CrewAI, LlamaIndex, AutoGen, LangGraph.js) plus the
-approval agent for HITL / checkpoints — one process tree, shared FinOps Spend.
+(LangGraph, LangChain, CrewAI, LlamaIndex, AutoGen, LangGraph.js) plus HITL
+helpers — one process tree, shared FinOps Spend.
 
 ## URLs
 
@@ -17,14 +17,7 @@ approval agent for HITL / checkpoints — one process tree, shared FinOps Spend.
 ## Credentials
 
 Copy `.env.llm.example` → `.env.llm` at the repo root and set `GOOGLE_API_KEY`.
-Never commit `.env.llm`.
-
-To load secrets from another path:
-
-```bash
-export RUNKITE_LLM_ENV=/path/to/your.env
-./examples/gemini/dogfood/start.sh
-```
+Never commit `.env.llm`. Or set `RUNKITE_LLM_ENV=/path/to/your.env`.
 
 Model ids that appear in Spend should also have rows in
 `00_controlplane.json` → `finops.pricebook`.
@@ -46,16 +39,21 @@ rm -rf examples/gemini/dogfood/.run examples/gemini/dogfood/logs
 
 ## Usage smoke
 
-After changing adapters or example agents, confirm each agent meters tokens:
-
 ```bash
 ./examples/gemini/dogfood/smoke_usage.sh
 ```
 
-A successful chat with missing `Output.usage` (tokens + model) is a FinOps regression.
+Fails if any agent is missing `Output.usage` (tokens + model), or if two
+identical fresh-thread calls report growing `prompt_tokens` (lifetime /
+cross-turn double-count regressions).
+
+Extra agents on this control plane (for FinOps edge paths):
+
+- `llm_approval_agent` — real LLM turn then HITL interrupt
+- `unknown_provider_agent` — real LLM reply with usage stripped (`usage_unmetered`)
 
 ## Prerequisites
 
-1. `.env.llm` (or `RUNKITE_LLM_ENV`) with `GOOGLE_API_KEY`.
-2. `python/.venv` and adapter venvs under `python/adapters/*` where needed.
-3. Optional: `examples/gemini/langgraphjs_agent/node_modules` for LangGraph.js.
+1. `.env.llm` (or `RUNKITE_LLM_ENV`) with `GOOGLE_API_KEY`
+2. `python/.venv` and adapter venvs under `python/adapters/*` where needed
+3. Optional: `examples/gemini/langgraphjs_agent/node_modules` for LangGraph.js

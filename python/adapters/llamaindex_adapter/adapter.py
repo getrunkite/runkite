@@ -34,14 +34,66 @@ from runkite_runner.adapter_checkpoint import (
     messages_from_values_event,
 )
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
-from runkite_runner.usage import usage_from_metrics, usage_payload, values_with_usage
+from runkite_runner.usage import usage_from_metrics, usage_or_unmetered, usage_payload, values_with_usage
 
 from .otel_events import attach_otel_job
 
 # LLM.callback_manager is per-instance but shared across concurrent runs of
-# the same graph_id; serialize install/uninstall so TokenCountingHandler
+# the same graph_id; serialize install/uninstall so _RealUsageOnlyHandler
 # counts don't mix between runs.
 _settings_lock = asyncio.Lock()
+
+
+class _RealUsageOnlyHandler:
+    """Like LlamaIndex's own TokenCountingHandler, but never falls back to
+    re-tokenizing the prompt/response with a tiktoken-based estimator when
+    a provider's raw usage doesn't match a recognized key.
+
+    TokenCountingHandler's get_llm_token_counts() calls
+    get_tokens_from_response() first (reads response.raw["usage"] /
+    ["usage_metadata"] against a fixed multi-provider key list --
+    prompt_tokens/input_tokens/prompt_token_count etc.), then falls back to
+    token_counter.estimate_tokens_in_messages() using OpenAI's tiktoken
+    encoding whenever that lookup comes back empty. That estimate is not
+    this provider's real tokenizer -- for a brand-new/unrecognized
+    provider it produces a plausible-looking but wrong number, which is
+    worse than an honest zero: usage_or_unmetered only catches a hard
+    zero, so a silently-estimated count would never raise usage_unmetered
+    at all. This handler calls get_tokens_from_response() directly and
+    stops there -- real provider usage or nothing, no guessing.
+    """
+
+    def __init__(self) -> None:
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.found_real_usage = False
+        # BaseCallbackHandler's ABC requires these two attributes.
+        self.event_starts_to_ignore: tuple = ()
+        self.event_ends_to_ignore: tuple = ()
+
+    def on_event_start(self, event_type, payload=None, event_id="", parent_id="", **kwargs):
+        return event_id
+
+    def on_event_end(self, event_type, payload=None, event_id="", **kwargs):
+        from llama_index.core.callbacks.schema import CBEventType, EventPayload
+        from llama_index.core.callbacks.token_counting import get_tokens_from_response
+
+        if event_type != CBEventType.LLM or payload is None:
+            return
+        response = payload.get(EventPayload.RESPONSE) or payload.get(EventPayload.COMPLETION)
+        if response is None:
+            return
+        p, c = get_tokens_from_response(response)
+        if p or c:
+            self.prompt_tokens += int(p or 0)
+            self.completion_tokens += int(c or 0)
+            self.found_real_usage = True
+
+    def start_trace(self, trace_id=None):
+        return
+
+    def end_trace(self, trace_id=None, trace_map=None):
+        return
 
 
 def _to_chat_messages(messages: list) -> list[ChatMessage]:
@@ -147,13 +199,20 @@ class LlamaIndexAdapter:
 
             # GoogleGenAI + SimpleChatEngine returns AgentChatResponse with
             # empty metadata — usage_from_metrics sees nothing. Meter via
-            # TokenCountingHandler on the *LLM instance* callback_manager
+            # _RealUsageOnlyHandler on the *LLM instance* callback_manager
             # (Settings.callback_manager alone is ignored once the LLM was
             # constructed at adapter load time with a different manager).
-            from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
+            # See _RealUsageOnlyHandler's docstring for why this is a
+            # custom handler rather than LlamaIndex's own
+            # TokenCountingHandler: that class silently estimates tokens
+            # with tiktoken (not this provider's real tokenizer) when a
+            # provider's raw usage doesn't match a recognized key, which
+            # would produce a wrong-but-plausible number instead of
+            # falling through to the usage_or_unmetered signal below.
+            from llama_index.core.callbacks import CallbackManager
 
             llm = getattr(engine, "_llm", None) or getattr(engine, "llm", None)
-            tok = TokenCountingHandler()
+            tok = _RealUsageOnlyHandler()
             async with _settings_lock:
                 prev_cm = getattr(llm, "callback_manager", None) if llm is not None else None
                 if llm is not None:
@@ -170,10 +229,10 @@ class LlamaIndexAdapter:
 
             output_messages = messages + [{"role": "ai", "content": reply}]
             usage = None
-            if tok.prompt_llm_token_count or tok.completion_llm_token_count:
+            if tok.found_real_usage:
                 totals = {
-                    "prompt_tokens": int(tok.prompt_llm_token_count or 0),
-                    "completion_tokens": int(tok.completion_llm_token_count or 0),
+                    "prompt_tokens": tok.prompt_tokens,
+                    "completion_tokens": tok.completion_tokens,
                 }
                 model = getattr(llm, "model", None) or getattr(llm, "model_name", None) if llm else None
                 if model:
@@ -187,6 +246,10 @@ class LlamaIndexAdapter:
                 )
             if usage is None:
                 usage = usage_from_metrics(getattr(result, "token_counts", None))
+            # A real reply came back but every extraction path above found
+            # nothing -- flag it explicitly instead of silently reporting
+            # zero spend indistinguishable from "no LLM call happened".
+            usage = usage_or_unmetered(usage, bool(reply and str(reply).strip()))
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

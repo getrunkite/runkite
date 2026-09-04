@@ -12,6 +12,9 @@ export interface RunnableGraph {
     checkpointer?: BaseCheckpointSaver | boolean;
     store?: BaseStore;
     stream(input: unknown, config?: unknown): Promise<AsyncIterable<unknown>>;
+    getState?(config: unknown): Promise<{
+        values: unknown;
+    } | undefined>;
 }
 export declare class LangGraphAdapter {
     private configPath;

@@ -73,7 +73,7 @@ func (s *Server) handleAdminUsageAlerts(w http.ResponseWriter, r *http.Request) 
 	ctx := tenant.SystemContext(r.Context())
 	codes := []string{
 		policy.ReasonBudgetSoft, policy.ReasonBudgetExceeded, policy.ReasonBudgetAlert, policy.ReasonBudgetKill,
-		"budget_route", policy.ReasonUsageUnpriced,
+		"budget_route", policy.ReasonUsageUnpriced, policy.ReasonUsageUnmetered,
 	}
 	var out []*models.AuditEvent
 	for _, code := range codes {

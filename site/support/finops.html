@@ -128,7 +128,11 @@
             non-empty pricebook, a terminal run with real tokens, no reported cost, and a model
             id missing from the book raises a <code>usage_unpriced</code> alert instead of
             silently looking free (empty pricebook = tokens-only, no alert; a present
-            <code>$0</code>-rate row is intentional free tier).
+            <code>$0</code>-rate row is intentional free tier). If a run's reply carries
+            <strong>no</strong> token data in any shape the runner recognizes at all (a brand-new
+            provider, or an integration that has not adopted LangChain's standardized
+            <code>usage_metadata</code> fields), that raises a <code>usage_unmetered</code> alert
+            instead — the one failure mode worse than under-pricing a run is making it invisible.
             APIs: <code>/admin-api/usage/{summary,alerts,holds,export}</code>.
           </li>
         </ul>

@@ -34,6 +34,11 @@ export interface RunnableGraph {
   checkpointer?: BaseCheckpointSaver | boolean;
   store?: BaseStore;
   stream(input: unknown, config?: unknown): Promise<AsyncIterable<unknown>>;
+  // Optional: present on every real compiled Pregel graph, used only to
+  // snapshot which message ids already existed before this run started
+  // (see executeRun.ts's usage-dedup comment). Optional because minimal
+  // test doubles for RunnableGraph in unit tests need not implement it.
+  getState?(config: unknown): Promise<{ values: unknown } | undefined>;
 }
 
 interface LangGraphJsonConfig {

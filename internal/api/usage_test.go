@@ -334,6 +334,155 @@ func TestUsage_UnpricedAlertsOnMissingPricebookRow(t *testing.T) {
 	}
 }
 
+// TestUsage_UnmeteredAlertsWhenRunnerFoundNoUsageAtAll proves a terminal run
+// whose runner set usage.unmetered (a real reply, but zero token/cost data
+// extractable in any shape it recognizes — the runner-side signal for "a
+// brand-new/unrecognized provider or framework integration") surfaces a
+// usage_unmetered audit event instead of looking identical to an agent that
+// made no LLM call at all. This is a strictly worse failure mode than
+// usage_unpriced: there, tokens are at least visible and only the dollar
+// figure is wrong; here, nothing is visible unless this alert fires.
+func TestUsage_UnmeteredAlertsWhenRunnerFoundNoUsageAtAll(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu-unmetered", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-unmetered", ThreadID: "tu-unmetered", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	s.SetFinOps(&finops.Config{
+		Pricebook: finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}},
+	})
+
+	// No prompt_tokens/completion_tokens/cost_usd at all -- just the
+	// runner's explicit unmetered marker, exactly what a future/
+	// unrecognized provider integration would emit.
+	out := []byte(`{"messages":[],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"unmetered":true,"model":"some-brand-new-provider-v1"}}`)
+	if err := broker.Publish(acme, "run-unmetered", &transport.RunEvent{
+		EventID: "run-unmetered_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-unmetered", "success", "")
+
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("alerts: %d %s", resp.StatusCode, b)
+	}
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range events {
+		if e.ReasonCode == "usage_unmetered" && e.RunID == "run-unmetered" {
+			found = true
+			if e.Attrs["model"] != "some-brand-new-provider-v1" {
+				t.Fatalf("usage_unmetered attrs missing model: %#v", e.Attrs)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("want a usage_unmetered alert for run-unmetered, got %#v", events)
+	}
+}
+
+// TestUsage_NoUnmeteredAlertForOrdinaryZeroUsageRun proves a run with no
+// usage.unmetered marker and genuinely zero tokens/cost (an agent that made
+// no LLM call at all, or an adapter that has not wired up FinOps) does not
+// spuriously raise usage_unmetered — only the explicit marker does.
+func TestUsage_NoUnmeteredAlertForOrdinaryZeroUsageRun(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acme := tenant.WithContext(ctx, "acme")
+	if err := store.UpsertAgent(acme, &models.Agent{
+		AgentID: "echo", Name: "Echo", Capabilities: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateThread(acme, &models.Thread{ThreadID: "tu-nousage", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(acme, &models.Run{
+		RunID: "run-nousage", ThreadID: "tu-nousage", AgentID: "echo", Status: models.RunStatusRunning,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	broker := inprocess.NewBroker()
+	s := api.NewServer(store, inprocess.NewQueue(), broker, inprocess.NewCancelBus())
+	s.SetFinOps(&finops.Config{
+		Pricebook: finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}},
+	})
+
+	// No usage key at all -- a deterministic agent that never called an LLM.
+	out := []byte(`{"messages":[]}`)
+	if err := broker.Publish(acme, "run-nousage", &transport.RunEvent{
+		EventID: "run-nousage_evt_1", Seq: 1, Method: "values",
+		Namespace: []string{}, Data: json.RawMessage(out),
+		Ts: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.StatusCallback()("run-nousage", "success", "")
+
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/admin-api/usage/alerts?tenant_id=acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var events []*models.AuditEvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.ReasonCode == "usage_unmetered" {
+			t.Fatalf("ordinary zero-usage run must not raise usage_unmetered, got %#v", e)
+		}
+	}
+}
+
 // TestUsage_NoUnpricedAlertWhenPricebookEmpty: tokens-only metering (no
 // pricebook configured) must not spam usage_unpriced on every run.
 func TestUsage_NoUnpricedAlertWhenPricebookEmpty(t *testing.T) {

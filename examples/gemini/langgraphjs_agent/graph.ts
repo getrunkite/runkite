@@ -7,15 +7,17 @@
  * FinOps the same way as the Python LangGraph example.
  */
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import type { BaseMessage } from "@langchain/core/messages";
+import { END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 
-const State = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: (a, b) => a.concat(b),
-    default: () => [],
-  }),
-});
+// MessagesAnnotation (LangGraph.js's equivalent of Python's
+// Annotated[list, add_messages]) instead of a bare `.concat()` reducer:
+// besides the usual message-list conveniences (merge-by-id, RemoveMessage
+// support), it stamps a stable id onto every message that lacks one. The
+// runner's FinOps usage-dedup (executeRun.ts's pre-run getState snapshot)
+// keys off that id to tell "already billed in an earlier turn" apart from
+// "new this run" -- a plain concat reducer leaves messages id-less, so
+// every turn on a thread would look "new" and get summed all over again.
+const State = MessagesAnnotation;
 
 const modelName = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const temperature = Number(process.env.GEMINI_TEMPERATURE || "0");

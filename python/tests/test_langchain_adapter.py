@@ -227,7 +227,10 @@ async def test_basemessage_with_usage_metadata_reaches_values():
             }
 
     u = _usage_from_langchain_callback(_UM())
-    check("callback usage folded", u == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18, "model": "gemini-3-flash-preview"})
+    check(
+        "callback usage folded",
+        u == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18, "model": "gemini-3-flash-preview"},
+    )
 
     class _AI:
         content = "hi"
@@ -247,11 +250,38 @@ async def test_basemessage_with_usage_metadata_reaches_values():
     check("values carries usage from AIMessage", usage is not None and usage.get("prompt_tokens") == 3)
 
 
+async def test_real_reply_with_no_usage_anywhere_is_flagged_unmetered():
+    """test_load_config_and_string_output's fake chain already returns a
+    plain string with zero usage info in any form (no callback usage, no
+    AIMessage.usage_metadata, no framework metrics) -- exactly what a
+    brand-new/unrecognized provider integration would look like. That must
+    surface as an explicit unmetered marker, not silently look identical
+    to an agent that made no LLM call at all.
+    """
+    adapter = LangChainAdapter()
+    adapter.runnables["chat"] = _FakeRunnable("a real reply, but nothing reports its usage")
+
+    callback, events = _collector()
+    status = await adapter.execute(
+        {"run_id": "r-unmetered", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
+    check("status success", status == "success")
+    values_event = next(e for e in events if e["method"] == "values")
+    check(
+        "usage carries the unmetered marker instead of being absent",
+        values_event["data"].get("usage")
+        == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "unmetered": True},
+    )
+
+
 async def main():
     await test_load_config_and_string_output()
     await test_extracts_last_human_message_and_passes_input_key()
     await test_basemessage_output_normalized_to_text()
     await test_basemessage_with_usage_metadata_reaches_values()
+    await test_real_reply_with_no_usage_anywhere_is_flagged_unmetered()
     await test_unknown_graph_id_reports_error_without_crashing()
     await test_runnable_exception_reports_error_without_crashing()
     await test_cancel_event_interrupts_a_slow_chain()

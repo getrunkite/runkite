@@ -486,6 +486,174 @@ async def test_execute_run_captures_usage_before_interrupt_updates_mode_only():
         check("completion_tokens captured (updates mode)", usage.get("completion_tokens") == 33)
 
 
+async def test_execute_run_does_not_double_count_usage_across_turns():
+    """A live, real-Gemini dogfood run on a multi-turn thread found this:
+    turn 2's reported usage included turn 1's tokens again, turn 3
+    included turns 1 and 2 again, and so on -- because Runkite injects its
+    own checkpointer into every LangGraph.attach_checkpointer'd graph, and
+    a stateful graph's "values" snapshot is the *entire* message history,
+    not just this run's own turn. Every prior AIMessage.usage_metadata was
+    still sitting in state and got summed again on every later run.
+
+    Two separate execute_run calls on the same thread_id (exactly how a
+    real multi-turn conversation works over the Agent Protocol -- one run
+    per user message, not one long-lived run) must each report only their
+    own turn's tokens.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+
+    class _ChatState(TypedDict):
+        messages: Annotated[list, add_messages]
+
+    call_usage = [
+        {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70},
+        {"input_tokens": 90, "output_tokens": 35, "total_tokens": 125},
+    ]
+    call_count = {"n": 0}
+
+    def agent_with_usage(state):
+        i = call_count["n"]
+        call_count["n"] += 1
+        msg = AIMessage(content=f"reply {i}", usage_metadata=call_usage[i])
+        return {"messages": [msg]}
+
+    builder = StateGraph(_ChatState)
+    builder.add_node("agent", agent_with_usage)
+    builder.add_edge(START, "agent")
+    builder.add_edge("agent", END)
+    compiled = builder.compile(checkpointer=MemorySaver())
+
+    class _ChatAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    async def run_turn(run_id: str, content: str) -> dict | None:
+        events = []
+
+        async def event_callback(event):
+            events.append(event)
+
+        assignment = {
+            "run_id": run_id,
+            "thread_id": "t-multiturn-dedup",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "human", "content": content}]},
+            "stream_modes": ["values"],
+        }
+        status = await execute_run(_ChatAdapter(), assignment, event_callback)
+        check(f"{run_id} succeeds", status == "success")
+        values_with_usage = [e for e in events if e["method"] == "values" and e["data"].get("usage")]
+        return values_with_usage[-1]["data"]["usage"] if values_with_usage else None
+
+    usage_turn1 = await run_turn("r-turn-1", "hello")
+    usage_turn2 = await run_turn("r-turn-2", "again")
+
+    check(
+        "turn 1 reports only its own call's tokens",
+        usage_turn1
+        == {
+            "prompt_tokens": 50,
+            "completion_tokens": 20,
+            "total_tokens": 70,
+        },
+    )
+    check(
+        "turn 2 reports only its own call's tokens, not turn 1's on top",
+        usage_turn2 == {"prompt_tokens": 90, "completion_tokens": 35, "total_tokens": 125},
+    )
+
+
+async def test_execute_run_resume_does_not_recount_pre_interrupt_usage():
+    """The interrupted run and its resume are two separate run_ids in two
+    separate usage_events rows -- if the resumed run's final "values"
+    snapshot still contains the pre-interrupt AIMessage (it does; nothing
+    removes it from state) and accumulate_usage re-sums it, that same
+    provider call gets billed twice in Spend for one real API call.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import interrupt
+
+    class _InterruptState(TypedDict):
+        messages: Annotated[list, add_messages]
+        approved: bool
+
+    def agent_with_usage(state):
+        msg = AIMessage(
+            content="draft",
+            usage_metadata={"input_tokens": 30, "output_tokens": 15, "total_tokens": 45},
+        )
+        return {"messages": [msg]}
+
+    def gate(state):
+        approval = interrupt({"question": "approve?"})
+        return {"approved": bool(approval)}
+
+    builder = StateGraph(_InterruptState)
+    builder.add_node("agent", agent_with_usage)
+    builder.add_node("gate", gate)
+    builder.add_edge(START, "agent")
+    builder.add_edge("agent", "gate")
+    builder.add_edge("gate", END)
+    compiled = builder.compile(checkpointer=MemorySaver())
+
+    class _InterruptAdapter:
+        def is_factory(self, _gid):
+            return False
+
+        def get_graph(self, _gid):
+            return compiled
+
+    def usage_from(events: list) -> dict | None:
+        values_with_usage = [e for e in events if e["method"] == "values" and e["data"].get("usage")]
+        return values_with_usage[-1]["data"]["usage"] if values_with_usage else None
+
+    events1 = []
+
+    async def cb1(event):
+        events1.append(event)
+
+    assignment1 = {
+        "run_id": "r-resume-dedup-1",
+        "thread_id": "t-resume-dedup",
+        "graph_id": "gate_agent",
+        "input": {"messages": [{"role": "human", "content": "do it"}]},
+        "stream_modes": ["values"],
+    }
+    status1 = await execute_run(_InterruptAdapter(), assignment1, cb1)
+    check("first run interrupts", status1 == "interrupted")
+    usage1 = usage_from(events1)
+    check(
+        "interrupted run reports the draft's tokens",
+        usage1
+        == {
+            "prompt_tokens": 30,
+            "completion_tokens": 15,
+            "total_tokens": 45,
+        },
+    )
+
+    events2 = []
+
+    async def cb2(event):
+        events2.append(event)
+
+    assignment2 = {
+        "run_id": "r-resume-dedup-2",
+        "thread_id": "t-resume-dedup",
+        "graph_id": "gate_agent",
+        "input": None,
+        "resume_command": {"response": True},
+        "stream_modes": ["values"],
+    }
+    status2 = await execute_run(_InterruptAdapter(), assignment2, cb2)
+    check("resume succeeds", status2 == "success")
+    usage2 = usage_from(events2)
+    check("resume reports no NEW usage -- the draft's tokens were already billed", usage2 is None)
+
+
 def main():
     test_find_new_tool_calls_extracts_from_ai_message()
     test_find_new_tool_calls_dedups_by_id()
@@ -498,6 +666,8 @@ def main():
     asyncio.run(test_execute_run_denies_after_empty_name_chunk())
     asyncio.run(test_execute_run_captures_usage_before_interrupt())
     asyncio.run(test_execute_run_captures_usage_before_interrupt_updates_mode_only())
+    asyncio.run(test_execute_run_does_not_double_count_usage_across_turns())
+    asyncio.run(test_execute_run_resume_does_not_recount_pre_interrupt_usage())
     print("\nAll checks passed.")
 
 

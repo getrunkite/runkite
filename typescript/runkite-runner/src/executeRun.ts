@@ -205,6 +205,12 @@ export async function executeRun(
   // the same as every in-loop "interrupted" exit.
   let lastValues: unknown = null;
   const usageTotals: UsageTotals = {};
+  // Declared here, not just at its assignment site below, so emitInterrupted
+  // (which can fire before the getState snapshot runs, e.g. a cancel
+  // during graph construction) always has a defined set to pass --- an
+  // empty set is correct in that case (nothing to exclude yet), not a bug.
+  let skipIds = new Set<string>();
+  let skipPrefix = 0;
 
   // A HITL pause or a cancel mid-run still burns real, already-spent LLM
   // tokens on every turn that ran before the interrupt/cancel -- those
@@ -218,7 +224,7 @@ export async function executeRun(
     // stream_modes never included "values".
     let totals: UsageTotals = {};
     if (lastValues != null) {
-      accumulateUsage(totals, lastValues);
+      accumulateUsage(totals, lastValues, skipIds, skipPrefix);
     } else {
       totals = { ...usageTotals };
     }
@@ -270,6 +276,31 @@ export async function executeRun(
         graph = await factoryBuild.open();
       } else {
         graph = adapter.getGraph(graphId);
+      }
+
+      // Snapshot which message ids already existed before this run -- a
+      // stateful graph's checkpoint carries every prior turn's AIMessage
+      // forward into every future "values" snapshot, and without this,
+      // every subsequent turn on the same thread (and every HITL resume)
+      // would re-sum tokens FinOps already recorded for those older
+      // messages on top of its own new ones. See accumulateUsage's
+      // docstring for the full failure mode. Best-effort: a fresh thread
+      // has no checkpoint yet, which correctly yields an empty skip set.
+      try {
+        const priorState = await graph.getState?.(config);
+        const priorValues = priorState?.values;
+        if (priorValues && typeof priorValues === "object") {
+          const msgs = (priorValues as Record<string, unknown>).messages;
+          if (Array.isArray(msgs)) {
+            skipPrefix = msgs.length;
+            for (const msg of msgs) {
+              const mid = msg && typeof msg === "object" ? (msg as Record<string, unknown>).id : undefined;
+              if (mid) skipIds.add(String(mid));
+            }
+          }
+        }
+      } catch (err) {
+        logger.debug("could not snapshot prior state for usage dedup", err);
       }
 
       const stream = await graph.stream(inputData, { ...config, streamMode: lgStreamMode });
@@ -354,7 +385,7 @@ export async function executeRun(
         if (mode === "values" && data && typeof data === "object") {
           lastValues = data;
         } else if (mode !== "values") {
-          accumulateUsage(usageTotals, data);
+          accumulateUsage(usageTotals, data, skipIds);
         }
         await emit(makeEvent(mode, data));
       }
@@ -368,7 +399,7 @@ export async function executeRun(
       if (lastValues != null) {
         // Prefer once-at-end from the last cumulative values snapshot.
         totals = {};
-        accumulateUsage(totals, lastValues);
+        accumulateUsage(totals, lastValues, skipIds, skipPrefix);
       }
       const usage = usagePayload(totals);
       if (usage && lastValues != null) {

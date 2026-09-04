@@ -141,6 +141,162 @@ test("executeRun captures usage from AI turns that ran before an interrupt", asy
   assert.ok(usageIdx < events.length - 1, "usage event must precede the final end event");
 });
 
+test("executeRun skipPrefix covers prior messages that have no id", async () => {
+  // Bare concat reducers leave messages id-less; skipIds alone cannot
+  // exclude them. getState length → skipPrefix must still drop prior turns.
+  const graph: RunnableGraph = {
+    async getState() {
+      return {
+        values: {
+          messages: [
+            { type: "human", content: "hi" },
+            { type: "ai", content: "turn 1", usage_metadata: { input_tokens: 50, output_tokens: 20 } },
+          ],
+        },
+      };
+    },
+    async stream() {
+      return asyncGen([
+        {
+          messages: [
+            { type: "human", content: "hi" },
+            { type: "ai", content: "turn 1", usage_metadata: { input_tokens: 50, output_tokens: 20 } },
+            { type: "human", content: "again" },
+            { type: "ai", content: "turn 2", usage_metadata: { input_tokens: 90, output_tokens: 35 } },
+          ],
+        },
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
+  assert.equal(status, "success");
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  const usage = (usageEvents[0].data as any).usage;
+  assert.equal(usage.prompt_tokens, 90);
+  assert.equal(usage.completion_tokens, 35);
+});
+
+test("executeRun does not recount usage from messages that existed before this run", async () => {
+  // A live dogfood run on a real multi-turn thread found this: turn 2's
+  // reported usage included turn 1's tokens again, because a stateful
+  // graph's "values" snapshot is the *entire* message history (Runkite's
+  // injected checkpointer keeps every prior AIMessage.usage_metadata in
+  // state), not just the new turn. getState() reports what already
+  // existed before this run started; that message's usage must be
+  // excluded even though it is still present in the final "values" chunk.
+  const graph: RunnableGraph = {
+    async getState() {
+      return { values: { messages: [{ id: "ai-turn-1", type: "ai", content: "turn 1 reply" }] } };
+    },
+    async stream() {
+      return asyncGen([
+        {
+          messages: [
+            { id: "human-turn-1", type: "human", content: "hi" },
+            {
+              id: "ai-turn-1",
+              type: "ai",
+              content: "turn 1 reply",
+              usage_metadata: { input_tokens: 50, output_tokens: 20 },
+            },
+            { id: "human-turn-2", type: "human", content: "again" },
+            {
+              id: "ai-turn-2",
+              type: "ai",
+              content: "turn 2 reply",
+              usage_metadata: { input_tokens: 90, output_tokens: 35 },
+            },
+          ],
+        },
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
+
+  assert.equal(status, "success");
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  assert.equal(usageEvents.length, 1);
+  const usage = (usageEvents[0].data as any).usage;
+  assert.equal(usage.prompt_tokens, 90, "must not include turn 1's 50 prompt tokens again");
+  assert.equal(usage.completion_tokens, 35, "must not include turn 1's 20 completion tokens again");
+});
+
+test("executeRun resume does not recount pre-interrupt usage as new", async () => {
+  // The interrupted run and its resume are two separate run_ids in two
+  // separate usage_events rows. If the resumed run's final "values"
+  // snapshot still contains the pre-interrupt AIMessage (it does -- HITL
+  // resume never removes it) and usage is re-summed from scratch, that
+  // one real provider call gets billed twice in Spend.
+  const graph: RunnableGraph = {
+    async getState() {
+      return { values: { messages: [{ id: "ai-draft", type: "ai", content: "draft" }] } };
+    },
+    async stream() {
+      return asyncGen([
+        {
+          messages: [
+            { id: "human-1", type: "human", content: "do it" },
+            { id: "ai-draft", type: "ai", content: "draft", usage_metadata: { input_tokens: 30, output_tokens: 15 } },
+          ],
+          approved: true,
+        },
+      ]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment({ input: null, resume_command: { response: true } }),
+    async (e) => void events.push(e),
+    () => false,
+  );
+
+  assert.equal(status, "success");
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  assert.equal(usageEvents.length, 0, "resume must report no new usage -- the draft's tokens were already billed");
+});
+
+test("executeRun flags a real AI reply with no extractable usage as unmetered", async () => {
+  // Simulates a brand-new/unrecognized provider integration: a real
+  // AI-shaped reply with no usage_metadata field at all. Must surface as
+  // an explicit unmetered marker, not silently look identical to a graph
+  // that never called an LLM.
+  const graph: RunnableGraph = {
+    async stream() {
+      return asyncGen([{ messages: [{ type: "ai", content: "a real reply from a provider we've never seen" }] }]);
+    },
+  };
+  const events: RunEvent[] = [];
+  const status = await executeRun(
+    fakeAdapter(graph),
+    assignment(),
+    async (e) => void events.push(e),
+    () => false,
+  );
+
+  assert.equal(status, "success");
+  const usageEvents = events.filter((e) => e.method === "values" && (e.data as any)?.usage);
+  assert.equal(usageEvents.length, 1);
+  assert.deepEqual((usageEvents[0].data as any).usage, {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    unmetered: true,
+  });
+});
+
 test("executeRun captures usage before interrupt with stream_modes updates only", async () => {
   // Same metering contract as the values-mode interrupt test, but with
   // stream_modes: ["updates"] alone — no lastValues snapshot ever exists,
@@ -152,9 +308,7 @@ test("executeRun captures usage before interrupt with stream_modes updates only"
       return asyncGen([
         {
           agent: {
-            messages: [
-              { type: "ai", content: "thinking...", usage_metadata: { input_tokens: 77, output_tokens: 33 } },
-            ],
+            messages: [{ type: "ai", content: "thinking...", usage_metadata: { input_tokens: 77, output_tokens: 33 } }],
           },
         },
         { __interrupt__: [{ id: "abc123", value: { question: "approve?" } }] },

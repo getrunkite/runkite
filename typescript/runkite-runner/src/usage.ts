@@ -23,6 +23,8 @@ export type UsageTotals = {
   completion_tokens?: number;
   model?: string;
   cost_usd?: number;
+  // Internal only, never on UsagePayload's own shape -- see accumulateUsage.
+  _sawUnmeteredAiMessage?: boolean;
 };
 
 export type UsagePayload = {
@@ -31,6 +33,7 @@ export type UsagePayload = {
   total_tokens: number;
   model?: string;
   cost_usd?: number;
+  unmetered?: boolean;
 };
 
 function asInt(v: unknown): number {
@@ -103,27 +106,99 @@ function walkMessages(obj: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
-/** Add any token usage found in data into totals (mutates). Call once on the final values snapshot. */
-export function accumulateUsage(totals: UsageTotals, data: unknown): void {
+function messageId(msg: unknown): string | null {
+  if (msg && typeof msg === "object") {
+    const id = (msg as Record<string, unknown>).id;
+    if (id) return String(id);
+  }
+  return null;
+}
+
+function foldMessageUsage(totals: UsageTotals, msg: unknown): void {
+  const { prompt, completion, model, cost } = usageFromMessage(msg);
+  if (prompt || completion) {
+    totals.prompt_tokens = (totals.prompt_tokens ?? 0) + prompt;
+    totals.completion_tokens = (totals.completion_tokens ?? 0) + completion;
+  }
+  if (cost) {
+    totals.cost_usd = (totals.cost_usd ?? 0) + cost;
+  }
+  if (!prompt && !completion && !cost) {
+    // AI-shaped reply with nothing extractable — see usagePayload.
+    totals._sawUnmeteredAiMessage = true;
+  }
+  if (model && !totals.model) totals.model = model;
+}
+
+/**
+ * Add any token usage found in data into totals (mutates). Call once on
+ * the final values snapshot.
+ *
+ * `skipIds` / `skipPrefix` come from executeRun's pre-run getState
+ * snapshot. Multi-turn "values" chunks contain the entire message
+ * history; without a filter turn N re-bills turns 1..N-1 (and a HITL
+ * resume re-bills the pre-interrupt turn). Prefer message ids when
+ * present; `skipPrefix` covers graphs that append messages without
+ * stable ids (bare concat instead of MessagesAnnotation).
+ */
+export function accumulateUsage(
+  totals: UsageTotals,
+  data: unknown,
+  skipIds?: Set<string>,
+  skipPrefix = 0,
+): void {
+  if (data && typeof data === "object" && !Array.isArray(data) && "messages" in (data as object)) {
+    const msgs = (data as Record<string, unknown>).messages;
+    if (Array.isArray(msgs)) {
+      for (let i = 0; i < msgs.length; i++) {
+        if (i < skipPrefix) continue;
+        const msg = msgs[i];
+        const mid = messageId(msg);
+        if (skipIds && mid && skipIds.has(mid)) continue;
+        for (const walked of walkMessages(msg)) {
+          foldMessageUsage(totals, walked);
+        }
+      }
+      return;
+    }
+  }
   for (const msg of walkMessages(data)) {
-    const { prompt, completion, model, cost } = usageFromMessage(msg);
-    if (prompt || completion) {
-      totals.prompt_tokens = (totals.prompt_tokens ?? 0) + prompt;
-      totals.completion_tokens = (totals.completion_tokens ?? 0) + completion;
-    }
-    if (cost) {
-      totals.cost_usd = (totals.cost_usd ?? 0) + cost;
-    }
-    if (model && !totals.model) totals.model = model;
+    const mid = messageId(msg);
+    if (skipIds && mid && skipIds.has(mid)) continue;
+    foldMessageUsage(totals, msg);
   }
 }
 
 export function usagePayload(totals: UsageTotals): UsagePayload | null {
   const p = totals.prompt_tokens ?? 0;
   const c = totals.completion_tokens ?? 0;
-  if (p === 0 && c === 0) return null;
+  if (p === 0 && c === 0) {
+    if (totals._sawUnmeteredAiMessage) {
+      // An AI-shaped reply existed but nothing about it was extractable --
+      // explicit zero + marker, not silence, so the control plane can tell
+      // "no LLM call happened" apart from "an LLM call happened and our
+      // extraction found nothing" and alert on the latter (see
+      // internal/api/usage.go's usage_unmetered check).
+      return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmetered: true };
+    }
+    return null;
+  }
   const out: UsagePayload = { prompt_tokens: p, completion_tokens: c, total_tokens: p + c };
   if (totals.model) out.model = totals.model;
   if (totals.cost_usd) out.cost_usd = totals.cost_usd;
   return out;
+}
+
+/**
+ * For adapters that call a framework-specific usage extractor instead of
+ * accumulateUsage: if that extraction found nothing but the framework
+ * clearly produced real model output, surface the same explicit
+ * zero-plus-marker payload instead of silently omitting usage and looking
+ * identical to an agent that made no LLM call at all. Mirrors Python's
+ * usage_or_unmetered.
+ */
+export function usageOrUnmetered(usage: UsagePayload | null, producedOutput: boolean): UsagePayload | null {
+  if (usage != null) return usage;
+  if (!producedOutput) return null;
+  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmetered: true };
 }

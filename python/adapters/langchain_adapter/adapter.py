@@ -39,7 +39,13 @@ from runkite_runner.adapter_checkpoint import (
 )
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
 from runkite_runner.tracing import make_run_callbacks
-from runkite_runner.usage import accumulate_usage, usage_from_metrics, usage_payload, values_with_usage
+from runkite_runner.usage import (
+    accumulate_usage,
+    usage_from_metrics,
+    usage_or_unmetered,
+    usage_payload,
+    values_with_usage,
+)
 
 
 def _extract_text(result: Any) -> str:
@@ -168,11 +174,11 @@ class LangChainAdapter:
             # Prefer callback totals (works with StrOutputParser). Fall back
             # to scanning a BaseMessage result / framework metrics object.
             accumulate_usage(totals, {"messages": [result] if result is not None else []})
-            usage = (
-                _usage_from_langchain_callback(usage_cb)
-                or usage_payload(totals)
-                or usage_from_metrics(result)
-            )
+            usage = _usage_from_langchain_callback(usage_cb) or usage_payload(totals) or usage_from_metrics(result)
+            # A real reply came back but every extraction path above found
+            # nothing -- flag it explicitly rather than silently reporting
+            # zero spend indistinguishable from "no LLM call happened".
+            usage = usage_or_unmetered(usage, bool(reply and str(reply).strip()))
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

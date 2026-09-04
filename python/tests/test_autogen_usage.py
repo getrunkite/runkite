@@ -34,11 +34,15 @@ def main() -> None:
         ]
     )
     u = _usage_from_autogen_result(result)
-    check("sums RequestUsage across messages", u == {
-        "prompt_tokens": 12,
-        "completion_tokens": 8,
-        "total_tokens": 20,
-    })
+    check(
+        "sums RequestUsage across messages",
+        u
+        == {
+            "prompt_tokens": 12,
+            "completion_tokens": 8,
+            "total_tokens": 20,
+        },
+    )
     check("empty TaskResult → None", _usage_from_autogen_result(SimpleNamespace(messages=[])) is None)
     print("\nAll checks passed.")
 

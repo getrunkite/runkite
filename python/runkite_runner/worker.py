@@ -257,7 +257,14 @@ def find_new_tool_calls(obj: Any, seen_ids: set) -> list[dict]:
     return found
 
 
-async def _emit_interrupted(event_callback, make_event, last_values: dict | None, usage_totals: dict) -> str:
+async def _emit_interrupted(
+    event_callback,
+    make_event,
+    last_values: dict | None,
+    usage_totals: dict,
+    skip_ids: set[str] | None = None,
+    skip_prefix: int = 0,
+) -> str:
     """Emit the usage-enriched values event (if we have any usage to report)
     followed by end:interrupted, and return "interrupted".
 
@@ -267,13 +274,16 @@ async def _emit_interrupted(event_callback, make_event, last_values: dict | None
     exit path that reports "interrupted" shares this so a paused run's
     tokens don't just vanish from FinOps until (if ever) it resumes to a
     terminal status.
+
+    *skip_ids* / *skip_prefix* exclude messages already present before this
+    run started (see execute_run's pre-run aget_state snapshot).
     """
     # Same once-at-end discipline as the success path: prefer the last
     # cumulative values snapshot; fall back to incremental totals when
     # stream_modes never included "values".
     totals: dict = {}
     if last_values is not None:
-        accumulate_usage(totals, last_values)
+        accumulate_usage(totals, last_values, skip_ids=skip_ids, skip_prefix=skip_prefix)
     else:
         totals = dict(usage_totals)
     usage = usage_payload(totals)
@@ -333,6 +343,13 @@ async def execute_run(
     seen_tool_call_ids: set = set()
     usage_totals: dict = {}
     last_values: dict | None = None
+    # Declared here, not just at its assignment site below, so the
+    # asyncio.CancelledError handler at the bottom of this function can
+    # always reference it -- a cancel landing before the aget_state probe
+    # runs must not crash with NameError; it just means an empty skip set
+    # (nothing to exclude), same as a genuinely fresh thread.
+    skip_ids: set[str] = set()
+    skip_prefix = 0
 
     try:
         # Emitted BEFORE building the graph, not after: for a factory
@@ -390,6 +407,29 @@ async def execute_run(
                     lg_stream_mode.append(mode)
             if not lg_stream_mode:
                 lg_stream_mode = ["values"]
+
+            # Snapshot which message ids already existed before this run --
+            # a stateful graph's checkpoint carries every prior turn's
+            # AIMessage forward into every future "values" snapshot, and
+            # without this, every subsequent turn on the same thread (and
+            # every HITL resume) would re-sum tokens FinOps already
+            # recorded for those older messages on top of its own new
+            # ones. See accumulate_usage's docstring for the full failure
+            # mode. Best-effort: a fresh thread has no checkpoint yet
+            # (aget_state raises or returns empty values), which correctly
+            # yields an empty skip set, not an error.
+            try:
+                prior_state = await graph.aget_state(config)
+                if prior_state is not None and isinstance(prior_state.values, dict):
+                    prior_msgs = prior_state.values.get("messages") or []
+                    if isinstance(prior_msgs, (list, tuple)):
+                        skip_prefix = len(prior_msgs)
+                        for msg in prior_msgs:
+                            mid = msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
+                            if mid:
+                                skip_ids.add(str(mid))
+            except Exception:
+                logger.debug("could not snapshot prior state for usage dedup", exc_info=True)
 
             # Stream the graph
             has_interrupt = False
@@ -506,7 +546,9 @@ async def execute_run(
                     if clean_data:
                         await event_callback(make_event(mode, clean_data, namespace=namespace))
                     if cancel_event is not None and cancel_event.is_set():
-                        return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
+                        return await _emit_interrupted(
+                            event_callback, make_event, last_values, usage_totals, skip_ids, skip_prefix
+                        )
                     continue
 
                 # Named custom channels become method "custom:<name>" so
@@ -525,7 +567,7 @@ async def execute_run(
                 if mode == "values" and isinstance(data, dict):
                     last_values = data
                 elif mode != "values":
-                    accumulate_usage(usage_totals, data)
+                    accumulate_usage(usage_totals, data, skip_ids=skip_ids)
 
                 await event_callback(make_event(method, data, namespace=namespace))
 
@@ -535,19 +577,25 @@ async def execute_run(
                 # before emit (or only when another chunk arrives) dropped
                 # cancels that landed after the agent's last stream item.
                 if cancel_event is not None and cancel_event.is_set():
-                    return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
+                    return await _emit_interrupted(
+                        event_callback, make_event, last_values, usage_totals, skip_ids, skip_prefix
+                    )
 
             if cancel_event is not None and cancel_event.is_set():
-                return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
+                return await _emit_interrupted(
+                    event_callback, make_event, last_values, usage_totals, skip_ids, skip_prefix
+                )
             if has_interrupt:
-                return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
+                return await _emit_interrupted(
+                    event_callback, make_event, last_values, usage_totals, skip_ids, skip_prefix
+                )
             else:
                 # Enrich final values with top-level usage so the control
                 # plane can meter Output (FinOps usage_events / budgets).
                 if last_values is not None:
                     # Prefer once-at-end from the last cumulative snapshot.
                     usage_totals = {}
-                    accumulate_usage(usage_totals, last_values)
+                    accumulate_usage(usage_totals, last_values, skip_ids=skip_ids, skip_prefix=skip_prefix)
                 usage = usage_payload(usage_totals)
                 if usage and last_values is not None:
                     enriched = {**last_values, "usage": usage}
@@ -561,7 +609,7 @@ async def execute_run(
                 return "success"
 
     except asyncio.CancelledError:
-        return await _emit_interrupted(event_callback, make_event, last_values, usage_totals)
+        return await _emit_interrupted(event_callback, make_event, last_values, usage_totals, skip_ids, skip_prefix)
     except Exception as e:
         logger.exception(f"Run {run_id} failed: {e}")
         await event_callback(

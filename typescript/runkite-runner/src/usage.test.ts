@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accumulateUsage, usagePayload } from "./usage.js";
+import { accumulateUsage, usageOrUnmetered, usagePayload } from "./usage.js";
 
 test("accumulateUsage from AIMessage-shaped values", () => {
   const totals = {};
@@ -57,9 +57,7 @@ test("accumulateUsage descends into updates-mode {nodeName: {...}} wrapper", () 
   const totals = {};
   accumulateUsage(totals, {
     agent: {
-      messages: [
-        { type: "ai", usage_metadata: { input_tokens: 77, output_tokens: 33, total_tokens: 110 } },
-      ],
+      messages: [{ type: "ai", usage_metadata: { input_tokens: 77, output_tokens: 33, total_tokens: 110 } }],
     },
   });
   assert.deepEqual(usagePayload(totals), { prompt_tokens: 77, completion_tokens: 33, total_tokens: 110 });
@@ -70,4 +68,52 @@ test("no cost field means no cost_usd key (direct provider, no gateway)", () => 
   accumulateUsage(totals, { messages: [{ type: "ai", usage_metadata: { input_tokens: 10, output_tokens: 5 } }] });
   const u = usagePayload(totals)!;
   assert.equal("cost_usd" in u, false);
+});
+
+test("plain dict reply with no type or usage_metadata is not flagged unmetered", () => {
+  // The common shape for a hand-built, non-LLM deterministic reply must
+  // not trip the unmetered-AI-message detector -- it never even
+  // qualifies as an AI-shaped message under walkMessages's own test.
+  const totals = {};
+  accumulateUsage(totals, { messages: [{ role: "ai", content: "hardcoded, no LLM involved" }] });
+  assert.equal(usagePayload(totals), null);
+});
+
+test("AI message with no usage_metadata is flagged unmetered", () => {
+  // Simulates a future/unrecognized provider integration: a real
+  // AIMessage-shaped reply exists, but nothing in it is extractable in
+  // any currently-known shape.
+  const totals = {};
+  accumulateUsage(totals, { messages: [{ type: "ai", content: "reply from an unseen provider" }] });
+  assert.deepEqual(usagePayload(totals), {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    unmetered: true,
+  });
+});
+
+test("normal usage never carries the unmetered marker", () => {
+  const totals = {};
+  accumulateUsage(totals, { messages: [{ type: "ai", usage_metadata: { input_tokens: 10, output_tokens: 5 } }] });
+  const u = usagePayload(totals)!;
+  assert.equal("unmetered" in u, false);
+});
+
+test("usageOrUnmetered passes through real usage", () => {
+  const real = { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 };
+  assert.deepEqual(usageOrUnmetered(real, true), real);
+});
+
+test("usageOrUnmetered flags a real reply with no usage", () => {
+  assert.deepEqual(usageOrUnmetered(null, true), {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    unmetered: true,
+  });
+});
+
+test("usageOrUnmetered stays null when nothing was produced", () => {
+  assert.equal(usageOrUnmetered(null, false), null);
 });
