@@ -36,7 +36,7 @@ func (s *Server) usageEvents() (usageStore, bool) {
 // wins over soft. Break-glass must not bypass this (caller invokes after
 // policy / break-glass). Nil finops or empty budgets → allow.
 func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, runID string) (allow bool, reason string) {
-	if s == nil || s.finops == nil || !s.finops.Enabled() {
+	if s == nil || s.FinOps() == nil || !s.FinOps().Enabled() {
 		return true, ""
 	}
 	store, ok := s.usageEvents()
@@ -45,7 +45,7 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		// admission still works; Admin usage routes return 501.
 		return true, ""
 	}
-	tenantCap, agentCap := s.finops.LookupCaps(tenantID, agentID)
+	tenantCap, agentCap := s.FinOps().LookupCaps(tenantID, agentID)
 	if tenantCap == nil && agentCap == nil {
 		return true, ""
 	}
@@ -79,7 +79,7 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 
 	var soft *finops.BudgetVerdict
 	var approach *finops.BudgetVerdict
-	softPct := s.finops.SoftPct()
+	softPct := s.FinOps().SoftPct()
 	for _, pair := range []struct {
 		cap   *finops.BudgetCap
 		agent string
@@ -100,7 +100,7 @@ func (s *Server) checkBudgetAdmission(ctx context.Context, tenantID, agentID, ru
 		if v.Hard {
 			s.writeAdmissionDenyAudit(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, v.Reason)
 			s.emitBudgetAlert(ctx, tenantID, agentID, runID, policy.ReasonBudgetExceeded, &v, true)
-			if s.finops.CancelInflightOnHardBreach() {
+			if s.FinOps().CancelInflightOnHardBreach() {
 				drainAgent := ""
 				if pair.scope == "agent" {
 					drainAgent = agentID
@@ -223,8 +223,8 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 		return
 	}
 	var pb finops.Pricebook
-	if s.finops != nil {
-		pb = s.finops.Pricebook
+	if s.FinOps() != nil {
+		pb = s.FinOps().Pricebook
 	}
 	usd := pb.EstimateUSD(model, usage.PromptTokens, usage.CompletionTokens, usage.CostUSD)
 	if usage.CostUSD == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) &&
@@ -319,14 +319,14 @@ func (s *Server) usageHolds() (usageHoldStore, bool) {
 }
 
 func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
-	if s == nil || run == nil || s.finops == nil || !s.finops.ReservationEnabled() {
+	if s == nil || run == nil || s.FinOps() == nil || !s.FinOps().ReservationEnabled() {
 		return
 	}
 	hs, ok := s.usageHolds()
 	if !ok {
 		return
 	}
-	usd, tokens := s.finops.ReservationFor(run.TenantID, run.AgentID)
+	usd, tokens := s.FinOps().ReservationFor(run.TenantID, run.AgentID)
 	if usd <= 0 && tokens <= 0 {
 		return
 	}
@@ -359,7 +359,7 @@ func (s *Server) releaseUsageHold(ctx context.Context, runID string) {
 // lookup tries aliasKey first so operators can key prefer_cheaper maps
 // by the public alias name.
 func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, aliasKey string) (string, string) {
-	if s == nil || s.finops == nil || !s.finops.Routing.Enabled || len(s.finops.Routing.Aliases) == 0 {
+	if s == nil || s.FinOps() == nil || !s.FinOps().Routing.Enabled || len(s.FinOps().Routing.Aliases) == 0 {
 		return agentID, ""
 	}
 	var targets []string
@@ -367,7 +367,7 @@ func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, alia
 		if key == "" {
 			continue
 		}
-		if t := s.finops.Routing.Aliases[key]; len(t) > 0 {
+		if t := s.FinOps().Routing.Aliases[key]; len(t) > 0 {
 			targets = t
 			break
 		}
@@ -380,7 +380,7 @@ func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, alia
 		return agentID, ""
 	}
 	since, until := finops.UTCDayWindow(time.Now().UTC())
-	tenantCap, agentCap := s.finops.LookupCaps(tenantID, agentID)
+	tenantCap, agentCap := s.FinOps().LookupCaps(tenantID, agentID)
 	load := func(agent string) (finops.UsageSnapshot, error) {
 		tin, tout, usd, err := store.SumUsage(ctx, tenantID, agent, since, until)
 		if err != nil {
@@ -402,7 +402,7 @@ func (s *Server) applyFinOpsRouting(ctx context.Context, tenantID, agentID, alia
 		return snap, nil
 	}
 	near := false
-	pct := s.finops.RoutingSoftPct()
+	pct := s.FinOps().RoutingSoftPct()
 	for _, pair := range []struct {
 		cap   *finops.BudgetCap
 		agent string

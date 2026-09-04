@@ -100,6 +100,7 @@ Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs
 | Durable `break_glass_windows` (time-bounded policy bypass) | Yes | No (`501`) |
 | Durable `mandatory_hitl_rules` Admin overlays | Yes | No (`501`) |
 | Durable `usage_events` + Admin usage summary + Spend UI | Yes | No (`501`) |
+| Live FinOps overlays (`/admin-api/finops`) | Yes | No (`501`) |
 | Run admission Gate (`agents:<id>:run` + kill + optional `run.create` Decide + optional finops budgets) | Yes | Authz works; kill / break-glass / budget durability SQL-only |
 | OTel `policy.decide` + optional SIEM `policy_decision` | Yes | Yes (not store-backed) |
 | `tool_auth` RunEvents | Yes | Yes |

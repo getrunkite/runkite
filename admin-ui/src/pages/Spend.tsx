@@ -4,6 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminAuditEvent, AdminUsageHoldsSummary, AdminUsageSummaryRow } from "../api/types";
 import { EmptyState, ErrorState, PageHeader, formatRelativeTime, supportPage } from "../components/common";
+import { FinOpsConfigPanel } from "../components/FinOpsConfigPanel";
 import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -282,8 +283,10 @@ export function Spend() {
           </li>
           <li>
             Missing pricebook row → tokens still show, Est. USD stays <code className="text-foreground">$0</code>, and an
-            Unpriced model alert fires. Add the model under <code className="text-foreground">finops.pricebook</code> in{" "}
-            <code className="text-foreground">langgraph.json</code>, then restart the control plane.
+            Unpriced model alert fires. Add the model in{" "}
+            <strong className="font-medium text-foreground">Live FinOps config</strong> below (takes effect immediately)
+            or under <code className="text-foreground">finops.pricebook</code> in{" "}
+            <code className="text-foreground">langgraph.json</code> (file baseline; restart only if you skip the live editor).
           </li>
           <li>
             A reply came back but the runner found <em>no</em> token/cost data in any shape it recognizes (a brand-new
@@ -300,6 +303,10 @@ export function Spend() {
           {" · "}
           <DocsLink href={DOCS.configuration}>configuration.md</DocsLink>
         </p>
+      </div>
+
+      <div className="mb-6">
+        <FinOpsConfigPanel seedModels={unpricedModels} />
       </div>
 
       {(unpriced.length > 0 || tokensButNoUsd) && (

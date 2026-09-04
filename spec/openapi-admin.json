@@ -647,6 +647,175 @@
           "tokens_hold"
         ],
         "title": "UsageHoldsSummary"
+      },
+      "FinOpsBudgetCap": {
+        "type": "object",
+        "properties": {
+          "max_usd_per_day": {
+            "type": "number"
+          },
+          "max_tokens_per_day": {
+            "type": "integer"
+          },
+          "max_runs_per_day": {
+            "type": "integer"
+          },
+          "soft": {
+            "type": "boolean",
+            "description": "true = allow + audit budget_soft; false = hard deny budget_exceeded."
+          }
+        },
+        "title": "FinOpsBudgetCap"
+      },
+      "FinOpsConfigPatch": {
+        "type": "object",
+        "description": "Partial finops.Config JSON — same shape as the file langgraph.json finops section. Any field omitted is left to the other side of the merge (file baseline for GET's overlay/effective view, or 'no change' semantics do not apply on PUT — PUT replaces the entire stored overlay document).",
+        "properties": {
+          "pricebook": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "input_per_1k": {
+                  "type": "number"
+                },
+                "output_per_1k": {
+                  "type": "number"
+                }
+              },
+              "title": "FinOpsModelPrice"
+            }
+          },
+          "budgets": {
+            "type": "object",
+            "properties": {
+              "tenants": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/FinOpsBudgetCap"
+                },
+                "description": "Keyed by tenant_id."
+              },
+              "agents": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/FinOpsBudgetCap"
+                },
+                "description": "Keyed by tenant_id/agent_id."
+              }
+            }
+          },
+          "alerts": {
+            "type": "object",
+            "properties": {
+              "soft_pct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "reservation": {
+            "type": "object",
+            "properties": {
+              "usd_per_run": {
+                "type": "number"
+              },
+              "tokens_per_run": {
+                "type": "integer"
+              },
+              "hold_ttl": {
+                "type": "string",
+                "description": "Go duration string, e.g. \"24h\"."
+              },
+              "agents": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "usd_per_run": {
+                      "type": "number"
+                    },
+                    "tokens_per_run": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "description": "Keyed by tenant_id/agent_id."
+              }
+            }
+          },
+          "routing": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "soft_pct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "aliases": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "on_hard_breach": {
+            "type": "string",
+            "enum": [
+              "",
+              "cancel_inflight"
+            ]
+          }
+        },
+        "title": "FinOpsConfigPatch"
+      },
+      "AdminFinOpsView": {
+        "type": "object",
+        "description": "File baseline, live SQL overlay, and the merged effective config the control plane actually applies (file ∪ overlay, overlay wins on set keys).",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/FinOpsConfigPatch"
+          },
+          "overlay": {
+            "$ref": "#/components/schemas/FinOpsConfigPatch"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/FinOpsConfigPatch"
+          },
+          "has_overlay": {
+            "type": "boolean"
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_by": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "file",
+          "overlay",
+          "effective",
+          "has_overlay"
+        ],
+        "title": "AdminFinOpsView"
       }
     }
   },
@@ -3475,6 +3644,111 @@
           },
           "501": {
             "description": "State backend is non-SQL (usage holds require Postgres/MySQL/SQLite)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/finops": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Live FinOps Config",
+        "description": "File baseline, live SQL overlay, and merged effective finops config (pricebook/budgets/alerts/reservation/routing). SQL state backends only.",
+        "operationId": "admin_get_finops",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFinOpsView"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is non-SQL (finops overlay requires Postgres/MySQL/SQLite)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Replace Live FinOps Overlay",
+        "description": "Replaces the entire stored overlay document with the given partial finops.Config (full replace, not a deep merge onto the previous overlay — omit a key to remove it from the overlay). Validated server-side (rate/budget bounds, agent key shape tenant_id/agent_id, swapped-rate heuristics). Reloads the effective config on this replica immediately; siblings converge within ~15s via poll.",
+        "operationId": "admin_put_finops",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinOpsConfigPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — returns the updated view (same shape as GET)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFinOpsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or a value failed validation (out-of-range rate/budget, malformed agent key, swapped input/output rate heuristic, etc.)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State backend is non-SQL (finops overlay requires Postgres/MySQL/SQLite)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Clear Live FinOps Overlay",
+        "description": "Deletes the stored overlay; effective config reverts to the file langgraph.json baseline on this replica immediately, siblings within ~15s.",
+        "operationId": "admin_delete_finops",
+        "responses": {
+          "204": {
+            "description": "Cleared"
+          },
+          "501": {
+            "description": "State backend is non-SQL (finops overlay requires Postgres/MySQL/SQLite)",
             "content": {
               "application/json": {
                 "schema": {

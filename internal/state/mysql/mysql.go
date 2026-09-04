@@ -323,6 +323,17 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 13,
+			Name:    "finops_overlays",
+			Up: func(ctx context.Context) error {
+				return s.upFinOpsOverlays(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS finops_overlays`)
+				return err
+			},
+		},
 	}
 }
 
@@ -356,7 +367,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 
 	for _, tbl := range []string{
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
-		"usage_events",
+		"usage_holds", "usage_events", "finops_overlays",
 		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "opaque_checkpoints", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",

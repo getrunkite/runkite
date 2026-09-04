@@ -361,6 +361,14 @@ func startServer(opts serverOpts) {
 			go runUsageHoldTTLSweep(ctx, store, fc.Reservation.HoldTTL)
 		}
 	}
+	// SQL overlay (Admin live edit) merges on top of the file baseline.
+	// Independent of policy — FinOps overlays must poll even when policy
+	// is off. Mongo returns !ok and stays file-only.
+	if lister, ok := store.(finopsOverlayLister); ok {
+		apiServer.ReloadFinOpsOverlays(ctx)
+		go runFinOpsOverlayPoll(ctx, lister, apiServer)
+		slog.Info("finops: overlay poll enabled", "interval", finopsOverlayPollInterval)
+	}
 
 	// A/B deployment routing, built on top of full agent versioning.
 	// Disabled (pure pass-through) unless "agent_aliases" is configured.

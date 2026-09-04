@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,7 +55,11 @@ type Server struct {
 	a2aMaxDepth       int                             // 0 means "use the default" -- see SetA2AMaxDepth
 	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
 	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
-	finops            *finops.Config                  // nil = no pricebook / budget caps
+	// finopsBaseline is the file langgraph.json finops section (immutable
+	// after SetFinOps). finopsEffective is baseline ∪ SQL overlay; swapped
+	// atomically on Admin write and sibling poll — never mutate in place.
+	finopsBaseline  *finops.Config
+	finopsEffective atomic.Pointer[finops.Config]
 	// approachAlertSeen dedupes budget_alert approach audits/webhooks
 	// once per tenant|agent|scope|kind|UTC-day in this process.
 	approachAlertSeen sync.Map
@@ -167,12 +172,6 @@ func (s *Server) a2aMaxBreadthOrDefault() int {
 // admission_limits config. Nil or all-zero disables checks.
 func (s *Server) SetAdmissionLimits(l *AdmissionLimits) {
 	s.admissionLimits = l
-}
-
-// SetFinOps attaches optional pricebook + budget caps from finops config.
-// Nil disables budget admission and leaves usd_estimate at cost_usd / 0.
-func (s *Server) SetFinOps(cfg *finops.Config) {
-	s.finops = cfg
 }
 
 // SetAliasResolver attaches A/B deployment routing (see alias.go).
@@ -436,6 +435,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/usage/alerts", s.handleAdminUsageAlerts)
 	mux.HandleFunc("GET /admin-api/usage/export", s.handleAdminUsageExport)
 	mux.HandleFunc("GET /admin-api/usage/holds", s.handleAdminUsageHolds)
+	mux.HandleFunc("GET /admin-api/finops", s.handleAdminGetFinOps)
+	mux.HandleFunc("PUT /admin-api/finops", s.handleAdminPutFinOps)
+	mux.HandleFunc("DELETE /admin-api/finops", s.handleAdminDeleteFinOps)
 	mux.HandleFunc("GET /admin-api/break-glass", s.handleAdminListBreakGlass)
 	mux.HandleFunc("POST /admin-api/break-glass", s.handleAdminCreateBreakGlass)
 	mux.HandleFunc("GET /admin-api/break-glass/{id}", s.handleAdminGetBreakGlass)

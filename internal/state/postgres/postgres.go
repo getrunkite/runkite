@@ -287,6 +287,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 13,
+			Name:    "finops_overlays",
+			Up: func(ctx context.Context) error {
+				return s.upFinOpsOverlays(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `DROP TABLE IF EXISTS finops_overlays`)
+				return err
+			},
+		},
 	}
 }
 
@@ -299,6 +310,7 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			run_cache,
 			usage_events,
 			usage_holds,
+			finops_overlays,
 			webhook_dead_letters,
 			audit_events,
 			policy_grants,

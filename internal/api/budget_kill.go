@@ -16,7 +16,7 @@ import (
 // kill-switch drain). agentID empty = whole tenant; otherwise that agent.
 // Safe to call asynchronously; cancelRunSingle is idempotent on terminal.
 func (s *Server) cancelInflightForBudget(ctx context.Context, tenantID, agentID, trigger string) {
-	if s == nil || s.finops == nil || !s.finops.CancelInflightOnHardBreach() {
+	if s == nil || s.FinOps() == nil || !s.FinOps().CancelInflightOnHardBreach() {
 		return
 	}
 	if tenantID == "" {
@@ -52,10 +52,10 @@ func budgetKillScope(agentID string) string {
 // usage is ingested and its hold released. If a hard cap is breached,
 // drains remaining inflight in that scope. No-op unless cancel_inflight.
 func (s *Server) maybeCancelInflightAfterTerminal(ctx context.Context, run *models.Run) {
-	if s == nil || run == nil || s.finops == nil || !s.finops.CancelInflightOnHardBreach() {
+	if s == nil || run == nil || s.FinOps() == nil || !s.FinOps().CancelInflightOnHardBreach() {
 		return
 	}
-	if !s.finops.Enabled() {
+	if !s.FinOps().Enabled() {
 		return
 	}
 	store, ok := s.usageEvents()
@@ -64,7 +64,7 @@ func (s *Server) maybeCancelInflightAfterTerminal(ctx context.Context, run *mode
 	}
 	tenantID := run.TenantID
 	agentID := run.AgentID
-	tenantCap, agentCap := s.finops.LookupCaps(tenantID, agentID)
+	tenantCap, agentCap := s.FinOps().LookupCaps(tenantID, agentID)
 	if tenantCap == nil && agentCap == nil {
 		return
 	}

@@ -37,8 +37,8 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	}
 	bk := migrate.NewPgx(s.pool)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 12 {
-		t.Fatalf("version after Init = %d, %v; want 12", cur, err)
+	if err != nil || cur != 13 {
+		t.Fatalf("version after Init = %d, %v; want 13", cur, err)
 	}
 	if !tableExists(t, ctx, s, "audit_events") {
 		t.Fatal("audit_events missing after Init")
@@ -64,11 +64,25 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	if !tableExists(t, ctx, s, "usage_holds") {
 		t.Fatal("usage_holds missing after Init")
 	}
+	if !tableExists(t, ctx, s, "finops_overlays") {
+		t.Fatal("finops_overlays missing after Init")
+	}
 
-	// Downgrade v12→v11 (usage_holds) then v11→v10 (usage_events) then
-	// v9→v8 (opaque table) then v8→v7 (mandatory_hitl) then v7→v6 (break_glass)
-	// then v6→v5 (index) then v5→v4→v3→v2→v1: drop kill_switches, pending_actions,
-	// policy_grants, then audit_events; re-Init restores all.
+	// Downgrade v13→v12 (finops_overlays) then v12→v11 (usage_holds) then
+	// v11→v10 (usage_events) then v9→v8 (opaque table) then v8→v7
+	// (mandatory_hitl) then v7→v6 (break_glass) then v6→v5 (index) then
+	// v5→v4→v3→v2→v1: drop kill_switches, pending_actions, policy_grants,
+	// then audit_events; re-Init restores all.
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("Downgrade v13→v12: %v", err)
+	}
+	cur, _ = bk.Current(ctx)
+	if cur != 12 {
+		t.Fatalf("version after Downgrade = %d, want 12", cur)
+	}
+	if tableExists(t, ctx, s, "finops_overlays") {
+		t.Fatal("finops_overlays still present after v13 Down")
+	}
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatalf("Downgrade v12→v11: %v", err)
 	}
@@ -177,11 +191,11 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 		t.Fatalf("re-Init after Downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
-	if cur != 12 {
-		t.Fatalf("version after re-Init = %d, want 12", cur)
+	if cur != 13 {
+		t.Fatalf("version after re-Init = %d, want 13", cur)
 	}
-	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") || !tableExists(t, ctx, s, "kill_switches") || !tableExists(t, ctx, s, "break_glass_windows") || !tableExists(t, ctx, s, "mandatory_hitl_rules") || !tableExists(t, ctx, s, "opaque_checkpoints") || !tableExists(t, ctx, s, "usage_events") || !tableExists(t, ctx, s, "usage_holds") {
-		t.Fatal("audit_events/policy_grants/pending_actions/kill_switches/break_glass_windows/mandatory_hitl_rules/opaque_checkpoints/usage_events/usage_holds missing after re-Init")
+	if !tableExists(t, ctx, s, "audit_events") || !tableExists(t, ctx, s, "policy_grants") || !tableExists(t, ctx, s, "pending_actions") || !tableExists(t, ctx, s, "kill_switches") || !tableExists(t, ctx, s, "break_glass_windows") || !tableExists(t, ctx, s, "mandatory_hitl_rules") || !tableExists(t, ctx, s, "opaque_checkpoints") || !tableExists(t, ctx, s, "usage_events") || !tableExists(t, ctx, s, "usage_holds") || !tableExists(t, ctx, s, "finops_overlays") {
+		t.Fatal("audit_events/policy_grants/pending_actions/kill_switches/break_glass_windows/mandatory_hitl_rules/opaque_checkpoints/usage_events/usage_holds/finops_overlays missing after re-Init")
 	}
 
 	ts := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)

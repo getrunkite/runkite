@@ -221,3 +221,47 @@ export interface AdminUsageHoldsSummary {
   usd_hold: number;
   tokens_hold: number;
 }
+
+export interface FinOpsModelPrice {
+  input_per_1k: number;
+  output_per_1k: number;
+}
+
+export interface FinOpsBudgetCap {
+  max_usd_per_day?: number;
+  max_tokens_per_day?: number;
+  max_runs_per_day?: number;
+  soft?: boolean;
+}
+
+export interface FinOpsConfigPayload {
+  pricebook?: Record<string, FinOpsModelPrice>;
+  budgets?: {
+    tenants?: Record<string, FinOpsBudgetCap>;
+    agents?: Record<string, FinOpsBudgetCap>;
+  };
+  alerts?: { soft_pct?: number };
+  on_hard_breach?: string;
+  routing?: {
+    enabled?: boolean;
+    soft_pct?: number;
+    aliases?: Record<string, string[]>;
+  };
+  reservation?: {
+    usd_per_run?: number;
+    tokens_per_run?: number;
+    hold_ttl?: string;
+  };
+}
+
+export interface AdminFinOpsView {
+  file: FinOpsConfigPayload;
+  overlay: FinOpsConfigPayload;
+  effective: FinOpsConfigPayload;
+  has_overlay: boolean;
+  meta?: {
+    id: string;
+    updated_at: string;
+    updated_by?: string;
+  };
+}
