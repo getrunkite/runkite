@@ -15,6 +15,11 @@ Input/output convention: extracts text from `RunAssignment.input.messages`
 and invokes the Runnable with `{"input": <text>}`. With opaque checkpoints,
 prior turns are restored and folded into that string so clients can send
 only the new message.
+
+FinOps: many real chains end in ``StrOutputParser()``, which returns a plain
+string and drops ``AIMessage.usage_metadata``. We attach LangChain's
+``UsageMetadataCallbackHandler`` on every invoke so token counts still
+reach ``Output.usage`` for the control plane (same shape LangGraph emits).
 """
 
 from __future__ import annotations
@@ -46,6 +51,36 @@ def _extract_text(result: Any) -> str:
     if hasattr(result, "content"):
         return result.content
     return str(result)
+
+
+def _usage_from_langchain_callback(cb: Any) -> dict[str, Any] | None:
+    """Fold UsageMetadataCallbackHandler.usage_metadata into Output.usage."""
+    by_model = getattr(cb, "usage_metadata", None) or {}
+    if not by_model:
+        return None
+    totals: dict[str, Any] = {}
+    for model, um in by_model.items():
+        if not isinstance(um, dict):
+            continue
+        p = int(um.get("input_tokens") or um.get("prompt_tokens") or 0)
+        c = int(um.get("output_tokens") or um.get("completion_tokens") or 0)
+        if not p and not c:
+            total = int(um.get("total_tokens") or 0)
+            if total:
+                p = total
+        if p or c:
+            totals["prompt_tokens"] = int(totals.get("prompt_tokens") or 0) + p
+            totals["completion_tokens"] = int(totals.get("completion_tokens") or 0) + c
+        if model and not totals.get("model"):
+            totals["model"] = str(model)
+        # Gateways sometimes put cost on usage_metadata; prefer when present.
+        cost = um.get("cost") or um.get("total_cost")
+        if cost:
+            try:
+                totals["cost_usd"] = float(totals.get("cost_usd") or 0) + float(cost)
+            except (TypeError, ValueError):
+                pass
+    return usage_payload(totals)
 
 
 class LangChainAdapter:
@@ -114,19 +149,30 @@ class LangChainAdapter:
             messages = list(input_data.get("messages", []))
             text = context_prompt_from_messages(messages)
 
-            # Only pass config when we have callbacks -- a bare ainvoke(input)
-            # keeps working for minimal/test Runnables that don't take config.
+            # Capture AIMessage.usage_metadata even when the chain ends in
+            # StrOutputParser (string output) — otherwise FinOps never sees
+            # tokens for the common prompt|llm|parser pattern.
+            from langchain_core.callbacks import UsageMetadataCallbackHandler
+
+            usage_cb = UsageMetadataCallbackHandler()
+            callbacks: list[Any] = [usage_cb]
             if otel_cbs := make_run_callbacks(run_id):
-                invoke = runnable.ainvoke({"input": text}, config={"callbacks": otel_cbs})
-            else:
-                invoke = runnable.ainvoke({"input": text})
+                callbacks.extend(otel_cbs)
+
+            invoke = runnable.ainvoke({"input": text}, config={"callbacks": callbacks})
             result = await run_cancellable(invoke, cancel_event)
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
             totals: dict = {}
+            # Prefer callback totals (works with StrOutputParser). Fall back
+            # to scanning a BaseMessage result / framework metrics object.
             accumulate_usage(totals, {"messages": [result] if result is not None else []})
-            usage = usage_payload(totals) or usage_from_metrics(result)
+            usage = (
+                _usage_from_langchain_callback(usage_cb)
+                or usage_payload(totals)
+                or usage_from_metrics(result)
+            )
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

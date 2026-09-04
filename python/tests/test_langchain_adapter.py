@@ -57,8 +57,9 @@ class _FakeRunnable:
         self._delay = delay
         self.last_input = None
 
-    async def ainvoke(self, input_dict):
+    async def ainvoke(self, input_dict, config=None):
         self.last_input = input_dict
+        self.last_config = config
         if self._delay:
             await asyncio.sleep(self._delay)
         if self._raise_error:
@@ -87,7 +88,11 @@ def _write_config(tmpdir, chain_module_code: str) -> str:
 async def test_load_config_and_string_output():
     with tempfile.TemporaryDirectory() as tmpdir:
         config_path = _write_config(
-            tmpdir, "class _R:\n    async def ainvoke(self, d):\n        return 'plain string reply'\nchain = _R()\n"
+            tmpdir,
+            "class _R:\n"
+            "    async def ainvoke(self, d, config=None):\n"
+            "        return 'plain string reply'\n"
+            "chain = _R()\n",
         )
         adapter = LangChainAdapter()
         await adapter.load_config(config_path)
@@ -206,10 +211,47 @@ async def test_cancel_event_interrupts_a_slow_chain():
     check("no error event emitted for a cancellation", not any(e["method"] == "error" for e in events))
 
 
+async def test_basemessage_with_usage_metadata_reaches_values():
+    """When the chain returns an AIMessage-shaped object (no StrOutputParser),
+    accumulate_usage must still populate Output.usage for FinOps."""
+    from adapter import _usage_from_langchain_callback
+
+    class _UM:
+        def __init__(self):
+            self.usage_metadata = {
+                "gemini-3-flash-preview": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "total_tokens": 18,
+                }
+            }
+
+    u = _usage_from_langchain_callback(_UM())
+    check("callback usage folded", u == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18, "model": "gemini-3-flash-preview"})
+
+    class _AI:
+        content = "hi"
+        type = "ai"
+        usage_metadata = {"input_tokens": 3, "output_tokens": 2}
+
+    adapter = LangChainAdapter()
+    adapter.runnables["chat"] = _FakeRunnable(_AI())
+    callback, events = _collector()
+    await adapter.execute(
+        {"run_id": "r-usage", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        callback,
+        None,
+    )
+    values_event = next(e for e in events if e["method"] == "values")
+    usage = values_event["data"].get("usage")
+    check("values carries usage from AIMessage", usage is not None and usage.get("prompt_tokens") == 3)
+
+
 async def main():
     await test_load_config_and_string_output()
     await test_extracts_last_human_message_and_passes_input_key()
     await test_basemessage_output_normalized_to_text()
+    await test_basemessage_with_usage_metadata_reaches_values()
     await test_unknown_graph_id_reports_error_without_crashing()
     await test_runnable_exception_reports_error_without_crashing()
     await test_cancel_event_interrupts_a_slow_chain()

@@ -162,6 +162,16 @@ class CrewAIAdapter:
             output_messages = messages + [{"role": "ai", "content": reply}]
             # CrewAI writes token totals onto the shared Crew after kickoff.
             usage = usage_from_metrics(getattr(crew, "usage_metrics", None))
+            # UsageMetrics has no model id — FinOps pricebook needs one or
+            # Est. USD stays $0 (tokens still record). Prefer the agent's LLM
+            # model string (LiteLLM style "gemini/gemini-…" soft-matches).
+            if usage and not usage.get("model"):
+                for agent in getattr(crew, "agents", None) or []:
+                    llm = getattr(agent, "llm", None)
+                    model = getattr(llm, "model", None) if llm is not None else None
+                    if model:
+                        usage = {**usage, "model": str(model)}
+                        break
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

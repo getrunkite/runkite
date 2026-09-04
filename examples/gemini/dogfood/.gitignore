@@ -1,0 +1,7 @@
+.run/
+logs/
+*.db
+*.db-shm
+*.db-wal
+pids
+names

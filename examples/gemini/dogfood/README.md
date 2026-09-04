@@ -1,0 +1,61 @@
+# Local multi-framework playground
+
+Runs your Runkite control plane locally with the Gemini example agents
+(LangGraph, LangChain, CrewAI, LlamaIndex, AutoGen, LangGraph.js) plus the
+approval agent for HITL / checkpoints — one process tree, shared FinOps Spend.
+
+## URLs
+
+| URL | Purpose |
+|-----|---------|
+| http://127.0.0.1:2026 | Control plane API |
+| http://127.0.0.1:2026/admin/ | Admin UI |
+| http://127.0.0.1:2026/admin/spend | Spend / usage |
+| http://127.0.0.1:3100/ | Hub UI (all agents) |
+| http://127.0.0.1:3101/ … :3107/ | Per-framework chat UIs |
+
+## Credentials
+
+Copy `.env.llm.example` → `.env.llm` at the repo root and set `GOOGLE_API_KEY`.
+Never commit `.env.llm`.
+
+To load secrets from another path:
+
+```bash
+export RUNKITE_LLM_ENV=/path/to/your.env
+./examples/gemini/dogfood/start.sh
+```
+
+Model ids that appear in Spend should also have rows in
+`00_controlplane.json` → `finops.pricebook`.
+
+## Start / stop
+
+```bash
+./examples/gemini/dogfood/start.sh
+./examples/gemini/dogfood/stop.sh
+```
+
+Clean local DB / logs and restart:
+
+```bash
+./examples/gemini/dogfood/stop.sh
+rm -rf examples/gemini/dogfood/.run examples/gemini/dogfood/logs
+./examples/gemini/dogfood/start.sh
+```
+
+## Usage smoke
+
+After changing adapters or example agents, confirm each agent meters tokens:
+
+```bash
+./examples/gemini/dogfood/smoke_usage.sh
+```
+
+A successful chat with missing `Output.usage` (tokens + model) is a FinOps regression.
+
+## Prerequisites
+
+1. `.env.llm` (or `RUNKITE_LLM_ENV`) with `GOOGLE_API_KEY`.
+2. `python/.venv` and adapter venvs under `python/adapters/*` where needed.
+3. Optional: `examples/gemini/langgraphjs_agent/node_modules` for LangGraph.js.

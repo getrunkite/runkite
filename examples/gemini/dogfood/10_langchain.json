@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_langchain": "../langchain_agent/chain.py:chain"
+  },
+  "dependencies": ["../langchain_agent", ".."],
+  "runner_kind": "python-langchain"
+}

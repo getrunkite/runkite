@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runkite Gemini Dogfood</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;550;650&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <strong>Runkite · Gemini dogfood</strong>
+        <span id="subtitle">Q&amp;A through your control plane</span>
+      </div>
+      <nav class="nav" id="agent-nav"></nav>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Conversation</h2>
+        <div id="chat"></div>
+        <div class="hitl" id="hitl">
+          <span id="hitl-text">Agent interrupted — approve to resume</span>
+          <button type="button" id="approve">Approve</button>
+          <button type="button" class="deny" id="deny">Deny</button>
+        </div>
+        <form class="composer" id="form">
+          <textarea id="prompt" placeholder="Ask Gemini via Runkite…" rows="2"></textarea>
+          <button type="submit" id="send">Send</button>
+        </form>
+      </section>
+
+      <aside class="panel">
+        <h2>Live protocol / metering</h2>
+        <div id="log"></div>
+        <div class="meta">
+          <div>Control plane: <code id="cp-url"></code></div>
+          <div>Agent: <code id="agent-id"></code></div>
+          <div>Thread: <code id="thread-id">—</code></div>
+          <div>Last run: <code id="run-id">—</code></div>
+          <div>Usage (last values): <code id="usage">—</code></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <div>
+        <span class="status-dot" id="health-dot"></span>
+        <span id="health-text">checking control plane…</span>
+      </div>
+      <div>
+        <a href="http://127.0.0.1:2026/admin/spend" target="_blank" rel="noreferrer">Admin Spend</a>
+        ·
+        <a href="http://127.0.0.1:2026/admin/" target="_blank" rel="noreferrer">Admin UI</a>
+        ·
+        <a href="http://127.0.0.1:2026/agents" target="_blank" rel="noreferrer">/agents</a>
+      </div>
+    </footer>
+
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

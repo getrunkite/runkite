@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "gemini_crewai": "../crewai_agent/crew.py:crew"
+  },
+  "dependencies": ["../crewai_agent", ".."],
+  "runner_kind": "python-crewai"
+}

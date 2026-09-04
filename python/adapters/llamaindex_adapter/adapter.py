@@ -19,6 +19,7 @@ are shared across runs and must not rely on in-process chat_history).
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -33,9 +34,14 @@ from runkite_runner.adapter_checkpoint import (
     messages_from_values_event,
 )
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
-from runkite_runner.usage import usage_from_metrics, values_with_usage
+from runkite_runner.usage import usage_from_metrics, usage_payload, values_with_usage
 
 from .otel_events import attach_otel_job
+
+# LLM.callback_manager is per-instance but shared across concurrent runs of
+# the same graph_id; serialize install/uninstall so TokenCountingHandler
+# counts don't mix between runs.
+_settings_lock = asyncio.Lock()
 
 
 def _to_chat_messages(messages: list) -> list[ChatMessage]:
@@ -139,18 +145,46 @@ class LlamaIndexAdapter:
                 )
             prior_history = _to_chat_messages(messages[:-1])
 
-            # Nest runkite.llm/tool under the active runkite.run (no-op when OTEL is off).
-            with attach_otel_job(run_id):
-                result = await run_cancellable(engine.achat(last_text, chat_history=prior_history), cancel_event)
+            # GoogleGenAI + SimpleChatEngine returns AgentChatResponse with
+            # empty metadata — usage_from_metrics sees nothing. Meter via
+            # TokenCountingHandler on the *LLM instance* callback_manager
+            # (Settings.callback_manager alone is ignored once the LLM was
+            # constructed at adapter load time with a different manager).
+            from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
+
+            llm = getattr(engine, "_llm", None) or getattr(engine, "llm", None)
+            tok = TokenCountingHandler()
+            async with _settings_lock:
+                prev_cm = getattr(llm, "callback_manager", None) if llm is not None else None
+                if llm is not None:
+                    llm.callback_manager = CallbackManager([tok])
+                try:
+                    with attach_otel_job(run_id):
+                        result = await run_cancellable(
+                            engine.achat(last_text, chat_history=prior_history), cancel_event
+                        )
+                finally:
+                    if llm is not None and prev_cm is not None:
+                        llm.callback_manager = prev_cm
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            # Best-effort: ChatResponse.raw / additional_kwargs / token_counts.
-            usage = usage_from_metrics(
-                getattr(result, "additional_kwargs", None)
-                or getattr(result, "raw", None)
-                or getattr(result, "meta", None)
-            )
+            usage = None
+            if tok.prompt_llm_token_count or tok.completion_llm_token_count:
+                totals = {
+                    "prompt_tokens": int(tok.prompt_llm_token_count or 0),
+                    "completion_tokens": int(tok.completion_llm_token_count or 0),
+                }
+                model = getattr(llm, "model", None) or getattr(llm, "model_name", None) if llm else None
+                if model:
+                    totals["model"] = str(model)
+                usage = usage_payload(totals)
+            if usage is None:
+                usage = usage_from_metrics(
+                    getattr(result, "additional_kwargs", None)
+                    or getattr(result, "raw", None)
+                    or getattr(result, "meta", None)
+                )
             if usage is None:
                 usage = usage_from_metrics(getattr(result, "token_counts", None))
             values = values_with_usage({"messages": output_messages}, usage)

@@ -1,0 +1,43 @@
+{
+  "graphs": {
+    "gemini_langgraph": "../langgraph_agent/graph.py:graph",
+    "approval_agent": "../../approval_agent/graph.py:graph"
+  },
+  "dependencies": ["../langgraph_agent", "..", "../../approval_agent"],
+  "runner_kind": "python-langgraph",
+  "cors": {
+    "allow_origins": [
+      "http://127.0.0.1:3100",
+      "http://localhost:3100",
+      "http://127.0.0.1:3101",
+      "http://localhost:3101",
+      "http://127.0.0.1:3102",
+      "http://localhost:3102",
+      "http://127.0.0.1:3103",
+      "http://localhost:3103",
+      "http://127.0.0.1:3104",
+      "http://localhost:3104",
+      "http://127.0.0.1:3105",
+      "http://localhost:3105",
+      "http://127.0.0.1:3106",
+      "http://localhost:3106",
+      "http://127.0.0.1:3107",
+      "http://localhost:3107"
+    ]
+  },
+  "finops": {
+    "pricebook": {
+      "gemini-2.0-flash": { "input_per_1k": 0.0001, "output_per_1k": 0.0004 },
+      "gemini-2.5-flash": { "input_per_1k": 0.00015, "output_per_1k": 0.0006 },
+      "gemini-3-flash-preview": { "input_per_1k": 0.0001, "output_per_1k": 0.0004 },
+      "models/gemini-2.0-flash": { "input_per_1k": 0.0001, "output_per_1k": 0.0004 },
+      "models/gemini-3-flash-preview": { "input_per_1k": 0.0001, "output_per_1k": 0.0004 }
+    },
+    "budgets": {
+      "tenants": {
+        "default": { "max_usd_per_day": 5, "max_runs_per_day": 200, "soft": true }
+      }
+    },
+    "alerts": { "soft_pct": 50 }
+  }
+}

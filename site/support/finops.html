@@ -80,6 +80,30 @@
           See spend in Admin and stop spend at admission —
           export and alerts included; not a full BI warehouse.
         </p>
+        <h2>Configure USD (pricebook)</h2>
+        <p>
+          Tokens show up automatically from the model response. Dollars do not —
+          you must map each <em>model id string the runner reports</em> in
+          <code>finops.pricebook</code> (or use a gateway that inlines
+          <code>usage.cost</code> / <code>cost_usd</code>).
+        </p>
+        <pre><code>{`{
+  "finops": {
+    "pricebook": {
+      "gemini-2.0-flash": { "input_per_1k": 0.0001, "output_per_1k": 0.0004 }
+    },
+    "budgets": {
+      "tenants": { "default": { "max_usd_per_day": 25, "soft": true } }
+    }
+  }
+}`}</code></pre>
+        <p>
+          If Admin Spend shows tokens but <strong>$0</strong> and an
+          <code>usage_unpriced</code> alert, the model id in the alert attrs is
+          missing from the pricebook — add that exact string, restart the control
+          plane, and new runs will price. Full field list:
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>.
+        </p>
         <h2>What ships now</h2>
         <ul>
           <li>

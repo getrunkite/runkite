@@ -54,6 +54,23 @@ def _extract_text(result: Any) -> str:
     return str(result)
 
 
+def _usage_from_autogen_result(result: Any) -> dict[str, Any] | None:
+    """Sum RequestUsage on each TaskResult message into Output.usage."""
+    from runkite_runner.usage import usage_payload
+
+    totals: dict[str, Any] = {}
+    for msg in getattr(result, "messages", None) or []:
+        mu = getattr(msg, "models_usage", None)
+        if mu is None:
+            continue
+        p = int(getattr(mu, "prompt_tokens", 0) or 0)
+        c = int(getattr(mu, "completion_tokens", 0) or 0)
+        if p or c:
+            totals["prompt_tokens"] = int(totals.get("prompt_tokens") or 0) + p
+            totals["completion_tokens"] = int(totals.get("completion_tokens") or 0) + c
+    return usage_payload(totals)
+
+
 async def _seed_model_context(agent: Any, prior_messages: list) -> None:
     """Clear then replay prior turns into AutoGen's ChatCompletionContext."""
     model_context = getattr(agent, "_model_context", None) or getattr(agent, "model_context", None)
@@ -161,7 +178,23 @@ class AutoGenAdapter:
             reply = _extract_text(result)
 
             output_messages = messages + [{"role": "ai", "content": reply}]
-            usage = usage_from_metrics(result)
+            # TaskResult.messages carry models_usage=RequestUsage(...); a
+            # top-level usage_from_metrics(result) sees none of that, so FinOps
+            # silently got $0 for every AutoGen Gemini run.
+            usage = _usage_from_autogen_result(result) or usage_from_metrics(result)
+            if usage and not usage.get("model"):
+                # OpenAIChatCompletionClient keeps the id on _raw_config /
+                # _resolved_model, not a public .model attribute.
+                client = getattr(agent, "_model_client", None) or getattr(agent, "model_client", None)
+                model = None
+                if client is not None:
+                    model = getattr(client, "_resolved_model", None) or getattr(client, "model", None)
+                    if not model:
+                        raw = getattr(client, "_raw_config", None) or {}
+                        if isinstance(raw, dict):
+                            model = raw.get("model")
+                if model:
+                    usage = {**usage, "model": str(model)}
             values = values_with_usage({"messages": output_messages}, usage)
             await event_callback(make_event("values", values))
             await event_callback(make_event("end", {"status": "success"}))

@@ -1,7 +1,7 @@
-# Gemini example agents (real LLM)
+# Gemini example agents
 
-Reference agents that call **Google Gemini** instead of fake/offline LLMs.
-Use these when you want to see a real model on every runner Runkite claims:
+Reference agents that call a real Google Gemini model (instead of offline stubs)
+so you can exercise every Runkite runner kind end-to-end.
 
 | Folder | Runner kind | Agent id |
 |--------|-------------|----------|
@@ -18,7 +18,10 @@ Use these when you want to see a real model on every runner Runkite claims:
 2. Set `GOOGLE_API_KEY` (and optionally `GEMINI_MODEL`).
 3. Never commit `.env.llm`.
 
-The Python examples load `.env.llm` via `_env.py`. For the TS example, export the vars (or `set -a && source ../../.env.llm && set +a`) before starting the runner.
+Optionally point at a secrets file outside the repo with `RUNKITE_LLM_ENV=/path/to/env`.
+
+Python examples load credentials via `_env.py`. For the TypeScript example, export
+the same variables before starting the runner.
 
 ## Quick run (LangGraph Python)
 
@@ -27,4 +30,12 @@ set -a && source .env.llm && set +a
 # start control plane + runner pointed at examples/gemini/langgraph_agent/langgraph.json
 ```
 
-For the full frameworks × backends matrix with budget tracking, see `bench/llm/`.
+## Local playground (all frameworks + Admin)
+
+```bash
+./examples/gemini/dogfood/start.sh
+# hub: http://127.0.0.1:3100/  — see dogfood/README.md
+./examples/gemini/dogfood/smoke_usage.sh
+```
+
+For a broader frameworks × backends matrix, see `bench/llm/`.

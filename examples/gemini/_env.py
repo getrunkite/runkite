@@ -1,7 +1,11 @@
-"""Load local Gemini credentials for example agents.
+"""Load local LLM credentials for example agents.
 
-Looks for a repo-root `.env.llm` (gitignored). Never hard-code keys.
-Falls back to process environment if the file is absent (CI / deployed runners).
+Looks for:
+1. ``RUNKITE_LLM_ENV`` — absolute/relative path to an env file (preferred when
+   keys live outside the repo, e.g. ``~/.config/runkite/llm.env``)
+2. Else repo-root ``.env.llm`` (gitignored)
+
+Never hard-code keys. Process environment already set wins over the file.
 """
 
 from __future__ import annotations
@@ -10,10 +14,19 @@ import os
 from pathlib import Path
 
 
-def load_llm_env() -> None:
+def _llm_env_path() -> Path | None:
+    override = os.environ.get("RUNKITE_LLM_ENV", "").strip()
+    if override:
+        p = Path(override).expanduser()
+        return p if p.is_file() else None
     root = Path(__file__).resolve().parents[2]
-    path = root / ".env.llm"
-    if not path.is_file():
+    p = root / ".env.llm"
+    return p if p.is_file() else None
+
+
+def load_llm_env() -> None:
+    path = _llm_env_path()
+    if path is None:
         return
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -33,7 +46,8 @@ def require_google_api_key() -> str:
     if not key:
         raise RuntimeError(
             "GOOGLE_API_KEY is not set. Copy .env.llm.example to .env.llm "
-            "(gitignored) and add your key, or export GOOGLE_API_KEY."
+            "(gitignored), or set RUNKITE_LLM_ENV to your secrets file, "
+            "or export GOOGLE_API_KEY."
         )
     return key
 
