@@ -103,7 +103,7 @@ jobs:
         # instead of it silently skipping.
         run: pip install fastapi
 
-      - name: Admin UI - install, lint, typecheck, build
+      - name: Admin UI - install, lint, test, typecheck, build
         # Builds straight into internal/adminui/dist (see admin-ui/vite.config.ts),
         # so the Go build step right after this actually exercises a fresh
         # bundle instead of whatever was last committed.
@@ -118,6 +118,9 @@ jobs:
           # otherwise-green lint+build. Real highs still print when the API works.
           npm audit --audit-level=high || echo "::warning::npm audit failed or unavailable; continuing"
           npm run lint
+          # Plain node --test with native TS type-stripping (no extra
+          # devDependency) -- see src/lib/agentMessages.test.ts.
+          npm test
           npm run build
 
       - name: Build

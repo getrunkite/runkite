@@ -111,7 +111,12 @@ export function TryAgent() {
             }
             if (method === "end") {
               if (lastAi) {
-                setChat((c) => [...c, { role: "assistant", text: lastAi }]);
+                // Snapshot into a const: the setChat updater is a closure
+                // over `lastAi` and only runs on React's next flush, by
+                // which point the `lastAi = ""` reset below would already
+                // have landed, pushing an empty bubble instead of the reply.
+                const text = lastAi;
+                setChat((c) => [...c, { role: "assistant", text }]);
                 lastAi = "";
               }
               const status = (data as { status?: string } | null)?.status;
@@ -129,7 +134,10 @@ export function TryAgent() {
           },
           (err) => {
             if (err) setChat((c) => [...c, { role: "system", text: err }]);
-            if (lastAi) setChat((c) => [...c, { role: "assistant", text: lastAi }]);
+            if (lastAi) {
+              const text = lastAi;
+              setChat((c) => [...c, { role: "assistant", text }]);
+            }
             setBusy(false);
             resolve();
           },
