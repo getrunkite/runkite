@@ -51,7 +51,20 @@ export function Agents() {
 
   return (
     <div>
-      <PageHeader title="Agents" subtitle="Registered across every tenant. Filter applies to the current page." />
+      <PageHeader
+        title="Agents"
+        subtitle="Registered across every tenant. Filter applies to the current page."
+        actions={
+          <a
+            href={supportPage("admin-guide.html#2-agents")}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Docs: agents →
+          </a>
+        }
+      />
 
       {error && !data && <ErrorState message={error} />}
 

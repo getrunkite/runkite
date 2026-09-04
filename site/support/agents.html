@@ -96,7 +96,7 @@
           <li><strong>Python (LangGraph)</strong> — install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
           <li><strong>TypeScript (LangGraph.js)</strong> — install the TS runner, same config shape, same plane.</li>
           <li><strong>Adapters</strong> — CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
-          <li><strong>Verify</strong> — Admin → Agents shows registered ids; create a thread + run with that <code>agent_id</code>.</li>
+          <li><strong>Verify</strong> — Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
         </ol>
         <pre class="mono-block"># Python
 pip install runkite-runner
@@ -120,10 +120,12 @@ runkite-runner --config path/to/langgraph.json \
         <ul class="expect">
           <li><strong>Success</strong> — agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
           <li><strong>Routing</strong> — jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
+          <li><strong>Which agents appear</strong> — only the <code>graphs</code> keys in your control plane's <code>langgraph.json</code> at boot; production lists your agents, not demo examples unless you point config there.</li>
           <li><strong>Limits</strong> — framework adapters differ on concurrency safety; see runners doc.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>
+          · <a href="./admin-guide.html#2-agents">Admin UI guide → Agents</a>
           · <a href="./try.html">Try path</a>
           · <a href="./protocol.html">Protocols</a>
         </p>

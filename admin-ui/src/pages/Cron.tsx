@@ -54,7 +54,20 @@ export function Cron() {
 
   return (
     <div>
-      <PageHeader title="Cron schedules" subtitle="Across every tenant." />
+      <PageHeader
+        title="Cron schedules"
+        subtitle="Across every tenant."
+        actions={
+          <a
+            href={supportPage("admin-guide.html#7-cron")}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Docs: cron →
+          </a>
+        }
+      />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (
         <EmptyState
