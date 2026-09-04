@@ -88,7 +88,13 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | `/admin/audit` | Search policy decisions |
 | `/admin/spend` | Usage rollups, budget alerts, CSV/JSON export, and the live FinOps pricebook/budget overlay editor |
 
-Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement. `/admin/try` (Try agent) is the one screen in this list that is *not* SQL-gated -- it only creates threads and runs, which every state backend supports.
+Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
+
+## Playground
+
+| Route | Purpose |
+| --- | --- |
+| `/admin/try` | Built-in client: create a thread + stream a run against any registered agent. Shows live protocol events and per-turn usage. Not an agent builder; LLM/API keys are configured on the **runner** process, not in Admin. The agent dropdown is the control-plane registry (can include stale entries) — the runner must actually have that graph loaded. |
 
 ## Operator flow
 

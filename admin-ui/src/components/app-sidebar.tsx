@@ -45,7 +45,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Resources",
     items: [
       { to: "/admin/agents", label: "Agents", icon: Bot },
-      { to: "/admin/try", label: "Try agent", icon: FlaskConical },
       { to: "/admin/registry", label: "Registry", icon: Package },
       { to: "/admin/threads", label: "Threads", icon: MessagesSquare },
       { to: "/admin/runs", label: "Runs", icon: Workflow },
@@ -65,6 +64,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/audit", label: "Audit", icon: Shield },
       { to: "/admin/spend", label: "Spend", icon: DollarSign },
     ],
+  },
+  {
+    label: "Playground",
+    items: [{ to: "/admin/try", label: "Try agent", icon: FlaskConical }],
   },
 ];
 

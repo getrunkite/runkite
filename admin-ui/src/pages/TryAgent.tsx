@@ -210,7 +210,7 @@ export function TryAgent() {
     <div>
       <PageHeader
         title="Try agent"
-        subtitle="Run a registered agent through the real control plane. Watch the live protocol and token usage — same path clients use."
+        subtitle="Run any registered agent through the real control plane — live protocol and per-turn usage, same path clients use."
         actions={
           <a
             href={supportPage("admin-guide.html#3-try-agent")}
@@ -222,6 +222,27 @@ export function TryAgent() {
           </a>
         }
       />
+
+      <div className="mb-4 rounded-sm border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+        <p>
+          <strong className="font-medium text-foreground">LLM keys live on the runner, not here.</strong>{" "}
+          Try agent is a client — it dispatches to whatever graph your runner loaded. Demo agents
+          (echo, react, approval) need no key; real models need{" "}
+          <code className="text-xs text-foreground">GOOGLE_API_KEY</code> /{" "}
+          <code className="text-xs text-foreground">OPENAI_API_KEY</code> (etc.) in the runner
+          process before you start it. The dropdown lists every agent the control plane knows about —
+          if you see <code className="text-xs">Graph not found</code>, pick one your runner actually
+          loaded or align CP + runner config.{" "}
+          <a
+            href={supportPage("credentials.html")}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-primary hover:underline"
+          >
+            Credentials map →
+          </a>
+        </p>
+      </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <label className="text-sm">
@@ -269,8 +290,10 @@ export function TryAgent() {
             )}
             {chat.map((m, i) => (
               <div key={i} className="text-sm">
-                <span className="mr-2 font-mono text-[11px] uppercase text-muted-foreground">{m.role}</span>
-                <span className="whitespace-pre-wrap">{m.text}</span>
+                <p className="mb-0.5 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {m.role}
+                </p>
+                <p className="whitespace-pre-wrap text-foreground">{m.text}</p>
               </div>
             ))}
           </div>

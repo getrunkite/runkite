@@ -90,8 +90,10 @@
           <strong>How this page is organized</strong>
           <p style="margin-top: 8px">
             The Admin dashboard has 16 screens, grouped the same way the left-hand nav inside
-            Admin groups them: general visibility, then governance (who can do what), then spend.
-            For each screen below you get four things: <strong>what it's for</strong> in plain
+            Admin groups them: <strong>Overview</strong>, then <strong>Resources</strong> (agents,
+            registry, threads, runs), <strong>Platform</strong> (connectors through spend and
+            governance), and <strong>Playground</strong> (Try agent — exercise a registered graph,
+            not inventory). For each screen below you get four things: <strong>what it's for</strong> in plain
             language, <strong>what you'll actually see</strong> on the page, <strong>how to use
             it</strong> step by step, and <strong>things that trip people up</strong>.
           </p>
@@ -189,6 +191,18 @@
           <li>Every run you start here is a real run — it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>
         </ol>
         <p class="note">This is deliberately not an agent builder: it runs whatever graph is already deployed. To change what the agent does, edit and redeploy the graph itself — see <a href="first-agent.html">First agent</a>.</p>
+        <p class="note">
+          <strong>Nav:</strong> Try agent lives under <strong>Playground</strong> in the sidebar (last
+          group) — it's an action, not inventory like Agents/Registry/Threads/Runs.
+          <strong>LLM keys:</strong> Admin does not accept API keys; put
+          <code>GOOGLE_API_KEY</code> / <code>OPENAI_API_KEY</code> (etc.) in the runner process
+          before you start it — see <a href="credentials.html">Credentials map</a> and
+          <code>examples/gemini/</code>. Demo agents (echo, react) need no key; scripted replies like
+          “The answer is 42” mean you picked a fake-LLM test graph, not a live model.
+          <strong>Graph not found:</strong> the dropdown lists every agent the control plane has ever
+          registered; your connected runner may only load a subset — pick one that appears in the
+          runner's startup logs or align CP + runner <code>langgraph.json</code>.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Try agent — chat, live protocol, and usage</div>
           <img src="../assets/ui-try-agent.png" alt="Runkite Admin Try agent playground" width="960" height="600" />
