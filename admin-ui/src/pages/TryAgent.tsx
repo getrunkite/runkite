@@ -227,7 +227,9 @@ export function TryAgent() {
         <p>
           <strong className="font-medium text-foreground">LLM keys live on the runner, not here.</strong>{" "}
           Try agent is a client — it dispatches to whatever graph your runner loaded. Demo agents
-          (echo, react, approval) need no key; real models need{" "}
+          (echo, react, approval) come from <code>examples/all_agents</code> in
+          <code>docker-compose.dev.yml</code>, not from Admin itself; production uses your own{" "}
+          <code>langgraph.json</code> <code>graphs</code> keys only. Real models need{" "}
           <code className="text-xs text-foreground">GOOGLE_API_KEY</code> /{" "}
           <code className="text-xs text-foreground">OPENAI_API_KEY</code> (etc.) in the runner
           process before you start it. The dropdown lists every agent the control plane knows about —

@@ -17,6 +17,8 @@ services:
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      # Override for prod-like local runs: mount your own langgraph.json and set
+      # LANGGRAPH_CONFIG to it — only graphs listed there appear in Admin.
       DATABASE_PATH: /tmp/runkite.db
       # This is the intentional zero-dependency local profile (SQLite,
       # in-process transport, no auth) -- checkProductionAdmission

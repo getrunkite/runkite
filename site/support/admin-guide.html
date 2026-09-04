@@ -146,10 +146,13 @@
         </p>
         <p>
           <strong>What you'll see:</strong> agent ID, which tenant it belongs to, and its
-          declared input/output schema. Agents show up here automatically the moment the
-          control plane boots and reads your <code>langgraph.json</code> (or a runner
-          registers one dynamically) — there is no "add agent" button in Admin, because agents
-          are code, not admin config.
+          declared input/output schema. Agents show up here when the control plane boots and
+          reads your <code>langgraph.json</code> <code>graphs</code> section (each key becomes a
+          registered agent) — there is no separate “add agent” button in Admin. Which agents appear
+          is entirely your config: production ships <em>your</em> graphs only;
+          <code>docker-compose.dev.yml</code> deliberately points at
+          <code>examples/all_agents/langgraph.json</code> (echo, react, approval, …) for local
+          demos — that is not baked into Admin or the product binary.
         </p>
         <p>
           <strong>How to use it:</strong> click an agent to see its full detail — schema,
@@ -160,7 +163,7 @@
           <div class="cap">Admin → Agents</div>
           <img src="../assets/ui-agents.png" alt="Runkite Admin Agents list" width="960" height="600" />
         </figure>
-        <p class="note">If an agent you just deployed is missing here, check the runner's logs for a config parse error before assuming Admin is broken — this list mirrors exactly what the runner reported at boot.</p>
+        <p class="note">If an agent you just deployed is missing here, check the runner's logs for a config parse error before assuming Admin is broken — this list mirrors the <code>graphs</code> keys bootstrapped from your control plane's <code>langgraph.json</code>. Removing a graph from config does not delete its row from the database; restart with a fresh store (<code>docker compose … down -v</code> in dev) or deploy only the agents you want in prod. If multiple runners are connected, Try agent can fail with <code>Graph not found</code> when a job lands on a runner that did not load that graph — keep CP + runner configs aligned and stop stray local runners.</p>
 
         <h2 id="3-try-agent">3. Try agent</h2>
         <p>
@@ -201,11 +204,12 @@
           “The answer is 42” mean you picked a fake-LLM test graph, not a live model.
           <strong>Graph not found:</strong> the dropdown lists every agent the control plane has ever
           registered; your connected runner may only load a subset — pick one that appears in the
-          runner's startup logs or align CP + runner <code>langgraph.json</code>.
+          runner's startup logs or align CP + runner <code>langgraph.json</code>. Stop other local
+          runners (e.g. Gemini dogfood on the same port) if they steal jobs.
         </p>
         <figure class="shot">
           <div class="cap">Admin → Try agent — chat, live protocol, and usage</div>
-          <img src="../assets/ui-try-agent.png" alt="Runkite Admin Try agent playground" width="960" height="600" />
+          <img src="../assets/ui-try-agent.png?v=20260905" alt="Runkite Admin Try agent playground" width="960" height="600" />
         </figure>
 
         <h2 id="4-registry">4. Registry</h2>

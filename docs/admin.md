@@ -94,7 +94,7 @@ Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a S
 
 | Route | Purpose |
 | --- | --- |
-| `/admin/try` | Built-in client: create a thread + stream a run against any registered agent. Shows live protocol events and per-turn usage. Not an agent builder; LLM/API keys are configured on the **runner** process, not in Admin. The agent dropdown is the control-plane registry (can include stale entries) — the runner must actually have that graph loaded. |
+| `/admin/try` | Built-in client: create a thread + stream a run against any registered agent. Shows live protocol events and per-turn usage. Not an agent builder; LLM/API keys are configured on the **runner** process, not in Admin. Which agents exist is defined by the control plane's `langgraph.json` **`graphs`** keys at boot (production: your agents only; `docker-compose.dev.yml` uses `examples/all_agents` for local demos). The dropdown can include stale rows if the DB outlived a config change — align CP + runner config and avoid multiple stray runners on the same queue. |
 
 ## Operator flow
 
