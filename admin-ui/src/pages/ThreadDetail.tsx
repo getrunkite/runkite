@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminRun, AdminThread } from "../api/types";
-import { EmptyState, ErrorState, formatTimestamp, PageHeader, StatusBadge, TableSkeleton } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage, TableSkeleton } from "../components/common";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -63,32 +63,35 @@ export function ThreadDetail() {
           </span>
         }
         actions={
-          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <DialogTrigger asChild>
-              <Button variant="destructive">
-                <Trash2 className="size-3.5" />
-                Delete thread
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Delete this thread?</DialogTitle>
-                <DialogDescription>
-                  This permanently deletes <code className="font-mono">{thread.data.thread_id}</code> and every
-                  checkpoint associated with it. This cannot be undone.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={deleting}>
-                  Cancel
+          <>
+            <DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <DialogTrigger asChild>
+                <Button variant="destructive">
+                  <Trash2 className="size-3.5" />
+                  Delete thread
                 </Button>
-                <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                  {deleting && <Loader2 className="size-3.5 animate-spin" />}
-                  Delete permanently
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete this thread?</DialogTitle>
+                  <DialogDescription>
+                    This permanently deletes <code className="font-mono">{thread.data.thread_id}</code> and every
+                    checkpoint associated with it. This cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={deleting}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                    {deleting && <Loader2 className="size-3.5 animate-spin" />}
+                    Delete permanently
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
         }
       />
 

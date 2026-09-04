@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminWebhookDeadLetter } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -110,6 +110,7 @@ export function Webhooks() {
       <PageHeader
         title="Webhook dead-letters"
         subtitle="Deliveries that exhausted every retry. Redelivery re-POSTs the stored payload unsigned and doesn't remove the entry below -- it's a manual retry, not a resolution."
+        actions={<DocsLink href={supportPage("admin-guide.html#8-webhooks")}>Docs: webhooks →</DocsLink>}
       />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (

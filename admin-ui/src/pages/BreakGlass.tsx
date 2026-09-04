@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminBreakGlassWindow } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -210,10 +210,13 @@ export function BreakGlass() {
         title="Break-glass"
         subtitle="Time-bounded policy bypass (max 24h). Does not override kill, agent authz, or admission limits. SQL backends only."
         actions={
-          <Button size="sm" onClick={() => { setForm(emptyForm()); setDialogOpen(true); }}>
-            <Plus className="size-3.5" />
-            Mint window
-          </Button>
+          <>
+            <DocsLink href={supportPage("admin-guide.html#13-break-glass")}>Docs: break-glass →</DocsLink>
+            <Button size="sm" onClick={() => { setForm(emptyForm()); setDialogOpen(true); }}>
+              <Plus className="size-3.5" />
+              Mint window
+            </Button>
+          </>
         }
       />
 

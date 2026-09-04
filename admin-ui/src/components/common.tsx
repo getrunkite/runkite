@@ -19,12 +19,31 @@ export function PageHeader({
     <div className="mb-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">{actions}</div>}
       </div>
       {subtitle && (
         <p className="mt-1.5 text-sm text-balance text-muted-foreground">{subtitle}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * A "Docs: X →" link for page headers. Deliberately muted rather than
+ * `text-primary` -- next to a primary-colored action button (New grant,
+ * Publish entry, ...) an amber link and an amber button read as two buttons
+ * glued together. This stays visually secondary until hovered.
+ */
+export function DocsLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-sm font-medium text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-primary hover:decoration-solid"
+    >
+      {children}
+    </a>
   );
 }
 

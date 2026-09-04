@@ -2,7 +2,7 @@ import { Plug } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminConnector } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, StatusBadge, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 
 const columns: ColumnDef<AdminConnector, unknown>[] = [
@@ -34,7 +34,11 @@ export function Connectors() {
 
   return (
     <div>
-      <PageHeader title="Connectors" subtitle="OAuth/MCP sessions runners pre-warm for their declared agents." />
+      <PageHeader
+        title="Connectors"
+        subtitle="OAuth/MCP sessions runners pre-warm for their declared agents."
+        actions={<DocsLink href={supportPage("admin-guide.html#6-connectors")}>Docs: connectors →</DocsLink>}
+      />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (
         <EmptyState

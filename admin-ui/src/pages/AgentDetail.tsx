@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 import { FlaskConical } from "lucide-react";
 import { useApi } from "../api/useApi";
 import type { AdminAgent, AdminAgentSchema, AdminAgentVersion } from "../api/types";
-import { ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
+import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminAgentPath, adminAgentSchemasPath, adminAgentVersionsPath } from "../lib/adminPaths";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -45,16 +45,7 @@ export function AgentDetail() {
       <PageHeader
         title={a.name || a.agent_id}
         subtitle={`Registered agent · v${a.version}`}
-        actions={
-          <a
-            href={supportPage("agents.html")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Docs: agents →
-          </a>
-        }
+        actions={<DocsLink href={supportPage("agents.html")}>Docs: agents →</DocsLink>}
       />
 
       <div className="mb-4 flex flex-wrap gap-2">

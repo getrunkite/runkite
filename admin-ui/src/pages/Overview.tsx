@@ -4,7 +4,7 @@ import { Bot, Clock, MessagesSquare, Plug, Workflow } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { useApi } from "../api/useApi";
 import type { AdminOverview } from "../api/types";
-import { ErrorState, PageHeader, StatusBadge } from "../components/common";
+import { DocsLink, ErrorState, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Skeleton } from "../components/ui/skeleton";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../components/ui/chart";
@@ -70,7 +70,12 @@ export function Overview() {
       <PageHeader
         title="Overview"
         subtitle="Across every tenant in this deployment."
-        actions={<LiveIndicator loading={loading} />}
+        actions={
+          <>
+            <DocsLink href={supportPage("admin-guide.html#1-overview")}>Docs: overview →</DocsLink>
+            <LiveIndicator loading={loading} />
+          </>
+        }
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">

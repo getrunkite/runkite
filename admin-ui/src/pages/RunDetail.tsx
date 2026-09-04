@@ -6,7 +6,7 @@ import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
 import type { AdminRun } from "../api/types";
-import { ErrorState, formatTimestamp, PageHeader, StatusBadge } from "../components/common";
+import { DocsLink, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -110,34 +110,37 @@ export function RunDetail() {
           </span>
         }
         actions={
-          !isTerminal && (
-            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-              <DialogTrigger asChild>
-                <Button variant="destructive">
-                  <XCircle className="size-3.5" />
-                  Cancel run
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Cancel this run?</DialogTitle>
-                  <DialogDescription>
-                    Requests a graceful stop of <code className="font-mono">{run.data!.run_id}</code>. The runner
-                    finishes its current step before the run transitions to <code>interrupted</code>.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={cancelling}>
-                    Keep running
-                  </Button>
-                  <Button variant="destructive" onClick={handleCancel} disabled={cancelling}>
-                    {cancelling && <Loader2 className="size-3.5 animate-spin" />}
+          <>
+            <DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>
+            {!isTerminal && (
+              <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive">
+                    <XCircle className="size-3.5" />
                     Cancel run
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Cancel this run?</DialogTitle>
+                    <DialogDescription>
+                      Requests a graceful stop of <code className="font-mono">{run.data!.run_id}</code>. The runner
+                      finishes its current step before the run transitions to <code>interrupted</code>.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={cancelling}>
+                      Keep running
+                    </Button>
+                    <Button variant="destructive" onClick={handleCancel} disabled={cancelling}>
+                      {cancelling && <Loader2 className="size-3.5 animate-spin" />}
+                      Cancel run
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
+          </>
         }
       />
 

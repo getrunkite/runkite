@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminPolicyGrant } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -248,10 +248,13 @@ export function PolicyGrants() {
         title="Policy grants"
         subtitle="Durable connector overlays (SQL backends). DB rows win over langgraph.json on the same tenant/agent/connector."
         actions={
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="size-3.5" />
-            New grant
-          </Button>
+          <>
+            <DocsLink href={supportPage("admin-guide.html#9-grants-policy-grants")}>Docs: grants →</DocsLink>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-3.5" />
+              New grant
+            </Button>
+          </>
         }
       />
 

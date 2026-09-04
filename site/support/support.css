@@ -362,6 +362,49 @@ table.matrix td.pending {
     max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+    /* Below this width the ~40-link nav no longer fits as a vertical list
+       without pushing all page content below the fold -- turn it into one
+       horizontally scrollable strip instead (drag / swipe / trackpad, no
+       JS needed) so a reader lands on content immediately and slides the
+       nav sideways only when they actually want a different page. */
+    padding-bottom: 0.9rem;
+  }
+  .sidebar nav {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    gap: 0.15rem;
+    padding: 0.15rem 1.25rem 0.35rem 0;
+    margin: 0 -1rem 0 0;
+    /* Fade the right edge so it's visually obvious there's more to scroll to. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+  }
+  .sidebar nav .nav-group {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0 0.6rem 0 0.7rem;
+    white-space: nowrap;
+    position: relative;
+  }
+  .sidebar nav .nav-group:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 0.9rem;
+    background: var(--line);
+  }
+  .sidebar nav a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    margin: 0 0.05rem;
   }
   /* Keep a compact jump back to nav when the long sidebar scrolls away. */
   .main .topbar {

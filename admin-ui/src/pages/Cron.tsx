@@ -2,7 +2,7 @@ import { Clock } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminCronSchedule } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -57,16 +57,7 @@ export function Cron() {
       <PageHeader
         title="Cron schedules"
         subtitle="Across every tenant."
-        actions={
-          <a
-            href={supportPage("admin-guide.html#7-cron")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Docs: cron →
-          </a>
-        }
+        actions={<DocsLink href={supportPage("admin-guide.html#7-cron")}>Docs: cron →</DocsLink>}
       />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && (

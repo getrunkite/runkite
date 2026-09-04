@@ -4,7 +4,7 @@ import { FlaskConical } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { streamSSEPost, type SseEvent } from "../api/sse";
 import type { AdminAgent } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, supportPage } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, PageHeader, supportPage } from "../components/common";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -211,16 +211,7 @@ export function TryAgent() {
       <PageHeader
         title="Try agent"
         subtitle="Run any registered agent through the real control plane — live protocol and per-turn usage, same path clients use."
-        actions={
-          <a
-            href={supportPage("admin-guide.html#3-try-agent")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Docs: try agent →
-          </a>
-        }
+        actions={<DocsLink href={supportPage("admin-guide.html#3-try-agent")}>Docs: try agent →</DocsLink>}
       />
 
       <div className="mb-4 rounded-sm border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">

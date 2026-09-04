@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminMandatoryHITLRule } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -230,10 +230,13 @@ export function MandatoryHITL() {
         title="Mandatory HITL"
         subtitle="Force matching tool.call allows to pending (Admin approve → one-shot retry). Config baselines + SQL overlays. Hard deny still wins. SQL backends only."
         actions={
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="size-3.5" />
-            Add rule
-          </Button>
+          <>
+            <DocsLink href={supportPage("admin-guide.html#10-mandatory-hitl")}>Docs: mandatory HITL →</DocsLink>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-3.5" />
+              Add rule
+            </Button>
+          </>
         }
       />
 

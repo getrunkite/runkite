@@ -4,7 +4,7 @@ import { Shield } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminAuditEvent } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -126,6 +126,7 @@ export function Audit() {
       <PageHeader
         title="Audit"
         subtitle="Policy decisions across every tenant (SQL backends). Click any column to sort the current page."
+        actions={<DocsLink href={supportPage("admin-guide.html#14-audit")}>Docs: audit →</DocsLink>}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

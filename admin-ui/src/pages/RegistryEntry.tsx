@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry, AdminRegistryEntryVersion } from "../api/types";
-import { ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
+import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminRegistryPath, adminRegistryVersionsPath, adminTenantQuery } from "../lib/adminPaths";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -166,16 +166,7 @@ export function RegistryEntry() {
               ? `v${entry.data.version} · updated ${formatTimestamp(entry.data.updated_at)}`
               : undefined
         }
-        actions={
-          <a
-            href={supportPage("registry.html")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Docs: registry →
-          </a>
-        }
+        actions={<DocsLink href={supportPage("registry.html")}>Docs: registry →</DocsLink>}
       />
 
       <div className="mb-4">

@@ -4,7 +4,7 @@ import { Workflow } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRun } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -81,7 +81,11 @@ export function Runs() {
 
   return (
     <div>
-      <PageHeader title="Runs" subtitle="Across every tenant. Auto-refreshes every 8s. Click any column to sort the current page." />
+      <PageHeader
+        title="Runs"
+        subtitle="Across every tenant. Auto-refreshes every 8s. Click any column to sort the current page."
+        actions={<DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>}
+      />
 
       <div className="mb-4 flex items-center gap-3">
         <Select

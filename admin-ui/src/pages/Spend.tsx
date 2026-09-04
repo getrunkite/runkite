@@ -3,7 +3,7 @@ import { BookOpen, DollarSign, ExternalLink } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminAuditEvent, AdminUsageHoldsSummary, AdminUsageSummaryRow } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, formatRelativeTime, supportPage } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, PageHeader, formatRelativeTime, supportPage } from "../components/common";
 import { FinOpsConfigPanel } from "../components/FinOpsConfigPanel";
 import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
@@ -33,7 +33,7 @@ function UsdHeader() {
   );
 }
 
-function DocsLink({ href, children }: { href: string; children: ReactNode }) {
+function ExternalDocLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
       href={href}
@@ -255,19 +255,22 @@ export function Spend() {
         title="Spend"
         subtitle="Estimated spend from metered runs. Tokens come from the model; dollars come from your pricebook (or a gateway cost)."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" asChild>
-              <a href={DOCS.finops} target="_blank" rel="noreferrer">
-                <BookOpen className="size-3.5" />
-                FinOps guide
-              </a>
-            </Button>
-            <Button type="button" variant="outline" size="sm" asChild>
-              <a href={DOCS.configuration} target="_blank" rel="noreferrer">
-                Configure finops
-              </a>
-            </Button>
-          </div>
+          <>
+            <DocsLink href={supportPage("admin-guide.html#15-spend-finops")}>Docs: spend →</DocsLink>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" asChild>
+                <a href={DOCS.finops} target="_blank" rel="noreferrer">
+                  <BookOpen className="size-3.5" />
+                  FinOps guide
+                </a>
+              </Button>
+              <Button type="button" variant="outline" size="sm" asChild>
+                <a href={DOCS.configuration} target="_blank" rel="noreferrer">
+                  Configure finops
+                </a>
+              </Button>
+            </div>
+          </>
         }
       />
 
@@ -297,11 +300,11 @@ export function Spend() {
         </ol>
         <p className="mt-3 text-muted-foreground">
           Needs a SQL state backend (Postgres / MySQL / SQLite).{" "}
-          <DocsLink href={DOCS.production}>Production day-0</DocsLink>
+          <ExternalDocLink href={DOCS.production}>Production day-0</ExternalDocLink>
           {" · "}
-          <DocsLink href={DOCS.finops}>Spend docs</DocsLink>
+          <ExternalDocLink href={DOCS.finops}>Spend docs</ExternalDocLink>
           {" · "}
-          <DocsLink href={DOCS.configuration}>configuration.md</DocsLink>
+          <ExternalDocLink href={DOCS.configuration}>configuration.md</ExternalDocLink>
         </p>
       </div>
 
@@ -333,7 +336,7 @@ export function Spend() {
             </code>
           </p>
           <p className="mt-2">
-            <DocsLink href={DOCS.configuration}>Open configuration reference</DocsLink>
+            <ExternalDocLink href={DOCS.configuration}>Open configuration reference</ExternalDocLink>
           </p>
         </div>
       )}
@@ -424,7 +427,7 @@ export function Spend() {
         <h2 className="mb-1 text-lg font-semibold">Alerts</h2>
         <p className="mb-3 text-sm text-muted-foreground">
           Budget and pricing signals for this filter.{" "}
-          <DocsLink href={DOCS.finops}>What each alert means</DocsLink>
+          <ExternalDocLink href={DOCS.finops}>What each alert means</ExternalDocLink>
         </p>
         {(!alerts || alerts.length === 0) && (
           <p className="text-sm text-muted-foreground">No alerts yet.</p>

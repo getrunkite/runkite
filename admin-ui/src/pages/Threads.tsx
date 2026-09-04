@@ -4,7 +4,7 @@ import { MessagesSquare } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminThread } from "../api/types";
-import { EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -59,7 +59,11 @@ export function Threads() {
 
   return (
     <div>
-      <PageHeader title="Threads" subtitle="Across every tenant. Click any column to sort the current page." />
+      <PageHeader
+        title="Threads"
+        subtitle="Across every tenant. Click any column to sort the current page."
+        actions={<DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>}
+      />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && onFirstPage && (
         <EmptyState

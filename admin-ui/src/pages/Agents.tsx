@@ -4,7 +4,7 @@ import { Bot, Search } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminAgent } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -54,16 +54,7 @@ export function Agents() {
       <PageHeader
         title="Agents"
         subtitle="Registered across every tenant. Filter applies to the current page."
-        actions={
-          <a
-            href={supportPage("admin-guide.html#2-agents")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Docs: agents →
-          </a>
-        }
+        actions={<DocsLink href={supportPage("admin-guide.html#2-agents")}>Docs: agents →</DocsLink>}
       />
 
       {error && !data && <ErrorState message={error} />}

@@ -4,7 +4,7 @@ import { Package, Plus } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
-import { EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
+import { DocsLink, EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -74,12 +74,15 @@ export function Registry() {
         title="Registry"
         subtitle="A metadata catalog for publishing and discovering agent definitions across every tenant."
         actions={
-          <Button size="sm" asChild>
-            <Link to="/admin/registry/new">
-              <Plus className="size-3.5" />
-              Publish entry
-            </Link>
-          </Button>
+          <>
+            <DocsLink href={supportPage("admin-guide.html#4-registry")}>Docs: registry →</DocsLink>
+            <Button size="sm" asChild>
+              <Link to="/admin/registry/new">
+                <Plus className="size-3.5" />
+                Publish entry
+              </Link>
+            </Button>
+          </>
         }
       />
       {error && !data && <ErrorState message={error} />}
