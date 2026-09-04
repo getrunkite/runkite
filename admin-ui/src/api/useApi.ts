@@ -29,6 +29,13 @@ export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): 
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (!path) {
+      setLoading(false);
+      setError(null);
+      setData(null);
+      setNextCursor(null);
+      return;
+    }
     let cancelled = false;
     let isFirstLoad = true;
 

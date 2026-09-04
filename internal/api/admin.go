@@ -251,6 +251,37 @@ func adminScopedAgentContext(r *http.Request) context.Context {
 	return tenant.SystemContext(r.Context())
 }
 
+// GET /admin-api/agents/{agentID}/schemas[?tenant_id=]
+func (s *Server) handleAdminGetAgentSchemas(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agentID")
+	schema, err := s.store.GetAgentSchema(adminScopedAgentContext(r), agentID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, schema)
+}
+
+type adminAgentVersionView struct {
+	*models.AgentVersion
+	TenantID string `json:"tenant_id"`
+}
+
+// GET /admin-api/agents/{agentID}/versions[?tenant_id=]
+func (s *Server) handleAdminListAgentVersions(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agentID")
+	versions, err := s.store.ListAgentVersions(adminScopedAgentContext(r), agentID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	views := make([]adminAgentVersionView, 0, len(versions))
+	for _, v := range versions {
+		views = append(views, adminAgentVersionView{AgentVersion: v, TenantID: v.TenantID})
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
 // GET /admin-api/agents/{agentID}[?tenant_id=]
 func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
 	agent, err := s.store.GetAgent(adminScopedAgentContext(r), r.PathValue("agentID"))

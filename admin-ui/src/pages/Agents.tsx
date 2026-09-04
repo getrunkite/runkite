@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import { Bot, Search } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
@@ -33,6 +34,7 @@ const columns: ColumnDef<AdminAgent, unknown>[] = [
 ];
 
 export function Agents() {
+  const navigate = useNavigate();
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
   const path = adminListPath("/agents", cursor);
@@ -91,6 +93,7 @@ export function Agents() {
                 getRowId={(a) => `${a.tenant_id}:${a.agent_id}`}
                 loading={loading}
                 initialSorting={[{ id: "agent_id", desc: false }]}
+                onRowClick={(a) => navigate(`/admin/agents/${encodeURIComponent(a.agent_id)}?tenant_id=${encodeURIComponent(a.tenant_id)}`)}
               />
               <ListPager
                 pageIndex={cursorStack.length}

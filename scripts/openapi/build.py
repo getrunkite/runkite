@@ -986,6 +986,32 @@ def _build_admin_spec() -> dict:
                     },
                     "title": "AdminRegistryEntryView",
                 },
+                "AdminRegistryEntryBody": {
+                    "type": "object",
+                    "required": ["source_type", "source_ref"],
+                    "properties": {
+                        "display_name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "author": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "source_type": {"type": "string", "enum": ["git", "url", "inline"]},
+                        "source_ref": {"type": "string"},
+                        "metadata": {"type": "object"},
+                    },
+                    "title": "AdminRegistryEntryBody",
+                },
+                "AgentSchema": {
+                    "type": "object",
+                    "required": ["agent_id", "input_schema", "output_schema"],
+                    "properties": {
+                        "agent_id": {"type": "string"},
+                        "input_schema": {"type": "object"},
+                        "output_schema": {"type": "object"},
+                        "state_schema": {"type": "object"},
+                        "config_schema": {"type": "object"},
+                    },
+                    "title": "AgentSchema",
+                },
                 "RedeliverWebhookResponse": {
                     "type": "object",
                     "properties": {
@@ -1328,8 +1354,14 @@ def _build_admin_spec() -> dict:
             "/admin-api/overview": {"get": {"tags": ["Admin"], "summary": "Admin Overview", "operationId": "admin_overview", "responses": {**_json_response("200", "Success", _ref("AdminOverview"))}}},
             "/admin-api/agents": {"get": {"tags": ["Admin"], "summary": "List All Agents", "operationId": "admin_list_agents", "parameters": list(admin_page), "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminAgentView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/admin-api/agents/{agent_id}": {"get": {"tags": ["Admin"], "summary": "Get Agent (admin)", "operationId": "admin_get_agent", "parameters": [a_id, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminAgentView")), "404": _ERR_404}}},
+            "/admin-api/agents/{agent_id}/schemas": {"get": {"tags": ["Admin"], "summary": "Get Agent Schemas (admin)", "operationId": "admin_get_agent_schemas", "parameters": [a_id, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AgentSchema")), "404": _ERR_404}}},
+            "/admin-api/agents/{agent_id}/versions": {"get": {"tags": ["Admin"], "summary": "List Agent Versions (admin)", "operationId": "admin_list_agent_versions", "parameters": [a_id, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _array_of({"type": "object"}))}}},
             "/admin-api/registry": {"get": {"tags": ["Admin"], "summary": "List Registry Entries", "operationId": "admin_list_registry", "parameters": list(admin_page), "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRegistryEntryView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
-            "/admin-api/registry/{name}": {"get": {"tags": ["Admin"], "summary": "Get Registry Entry (admin)", "operationId": "admin_get_registry_entry", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminRegistryEntryView")), "404": _ERR_404}}},
+            "/admin-api/registry/{name}": {
+                "get": {"tags": ["Admin"], "summary": "Get Registry Entry (admin)", "operationId": "admin_get_registry_entry", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("AdminRegistryEntryView")), "404": _ERR_404}},
+                "put": {"tags": ["Admin"], "summary": "Publish Registry Entry (admin)", "operationId": "admin_put_registry_entry", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("AdminRegistryEntryBody")}}}, "responses": {**_json_response("200", "Success", _ref("AdminRegistryEntryView")), "400": {"description": "Invalid body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404}},
+                "delete": {"tags": ["Admin"], "summary": "Delete Registry Entry (admin)", "operationId": "admin_delete_registry_entry", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404}},
+            },
             "/admin-api/registry/{name}/versions": {"get": {"tags": ["Admin"], "summary": "List Registry Versions (admin)", "operationId": "admin_list_registry_versions", "parameters": [n_param, {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _array_of({"type": "object"}))}}},
             "/admin-api/threads": {
                 "get": {"tags": ["Admin"], "summary": "List All Threads", "operationId": "admin_list_threads", "parameters": [{"name": "status", "in": "query", "required": False, "schema": {"type": "string"}}, *admin_page], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminThreadView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},

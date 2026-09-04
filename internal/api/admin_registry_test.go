@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -99,5 +100,88 @@ func TestAdminRegistry_TenantIDParamScopesVersionHistory(t *testing.T) {
 	json.Unmarshal(readBody(t, scopedResp), &scoped)
 	if len(scoped) != 1 || scoped[0]["display_name"] != "a-v1" {
 		t.Fatalf("expected exactly tenant-a's own version with ?tenant_id=tenant-a, got %+v", scoped)
+	}
+}
+
+func TestAdminRegistry_PutDeleteScopedToTenant(t *testing.T) {
+	env := newTestEnv(t)
+
+	body := `{"display_name":"Demo","source_type":"git","source_ref":"https://example.com/repo@main"}`
+	req, err := http.NewRequest(http.MethodPut, env.srv.URL+"/admin-api/registry/demo-bot?tenant_id=tenant-a", bytes.NewReader([]byte(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	var published map[string]interface{}
+	json.Unmarshal(readBody(t, resp), &published)
+	if published["tenant_id"] != "tenant-a" || published["display_name"] != "Demo" {
+		t.Fatalf("unexpected publish response: %+v", published)
+	}
+
+	getResp, err := http.Get(env.srv.URL + "/admin-api/registry/demo-bot?tenant_id=tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	expectStatus(t, getResp, 200)
+
+	delReq, err := http.NewRequest(http.MethodDelete, env.srv.URL+"/admin-api/registry/demo-bot?tenant_id=tenant-a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp, err := http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp.Body.Close()
+	expectStatus(t, delResp, 204)
+
+	missing, err := http.Get(env.srv.URL + "/admin-api/registry/demo-bot?tenant_id=tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Body.Close()
+	expectStatus(t, missing, 404)
+}
+
+func TestAdminRegistry_PutRejectsInvalidSourceType(t *testing.T) {
+	env := newTestEnv(t)
+	body := `{"source_type":"ftp","source_ref":"x"}`
+	req, _ := http.NewRequest(http.MethodPut, env.srv.URL+"/admin-api/registry/bad?tenant_id=default", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectStatus(t, resp, 400)
+}
+
+func TestAdminGetAgentSchemas_ExposesSchema(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := tenant.WithContext(context.Background(), "default")
+	env.store.UpsertAgent(ctx, &models.Agent{AgentID: "echo", Name: "echo", Metadata: map[string]interface{}{}, Capabilities: map[string]interface{}{}})
+	env.store.UpsertAgentSchema(ctx, &models.AgentSchema{
+		AgentID:      "echo",
+		InputSchema:  map[string]interface{}{"type": "object"},
+		OutputSchema: map[string]interface{}{"type": "string"},
+	})
+
+	resp, err := http.Get(env.srv.URL + "/admin-api/agents/echo/schemas?tenant_id=default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	var sch map[string]interface{}
+	json.Unmarshal(readBody(t, resp), &sch)
+	if sch["agent_id"] != "echo" {
+		t.Fatalf("expected echo schema, got %+v", sch)
 	}
 }

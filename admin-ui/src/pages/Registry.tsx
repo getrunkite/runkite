@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Package } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Package, Plus } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
@@ -7,6 +8,7 @@ import { EmptyState, ErrorState, PageHeader, supportPage} from "../components/co
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 
 const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
   {
@@ -59,6 +61,7 @@ const columns: ColumnDef<AdminRegistryEntry, unknown>[] = [
 ];
 
 export function Registry() {
+  const navigate = useNavigate();
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
   const path = adminListPath("/registry", cursor);
@@ -70,6 +73,14 @@ export function Registry() {
       <PageHeader
         title="Registry"
         subtitle="A metadata catalog for publishing and discovering agent definitions across every tenant."
+        actions={
+          <Button size="sm" asChild>
+            <Link to="/admin/registry/new">
+              <Plus className="size-3.5" />
+              Publish entry
+            </Link>
+          </Button>
+        }
       />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && onFirstPage && (
@@ -83,7 +94,15 @@ export function Registry() {
       )}
       {(data === null || (data && data.length > 0) || !onFirstPage) && !(data && data.length === 0 && onFirstPage) && (
         <>
-          <DataTable columns={columns} data={data ?? []} getRowId={(e) => `${e.tenant_id}:${e.name}`} loading={loading} />
+          <DataTable
+            columns={columns}
+            data={data ?? []}
+            getRowId={(e) => `${e.tenant_id}:${e.name}`}
+            loading={loading}
+            onRowClick={(e) =>
+              navigate(`/admin/registry/${encodeURIComponent(e.name)}?tenant_id=${encodeURIComponent(e.tenant_id)}`)
+            }
+          />
           <ListPager
             pageIndex={cursorStack.length}
             pageCount={data?.length ?? 0}

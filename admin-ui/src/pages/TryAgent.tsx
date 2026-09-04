@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { FlaskConical } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { streamSSEPost, type SseEvent } from "../api/sse";
@@ -18,6 +18,7 @@ type ChatMsg = { role: "user" | "assistant" | "system"; text: string };
 type RawLine = { ts: string; event: string; preview: string };
 
 export function TryAgent() {
+  const [searchParams] = useSearchParams();
   const [agents, setAgents] = useState<AdminAgent[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState("default");
@@ -39,9 +40,17 @@ export function TryAgent() {
         const rows = await api.get<AdminAgent[]>("/agents?limit=200");
         if (cancelled) return;
         setAgents(rows ?? []);
-        if (!agentId && rows?.length) {
+        const urlTenant = searchParams.get("tenant_id");
+        const urlAgent = searchParams.get("agent_id");
+        if (urlTenant) setTenantId(urlTenant);
+        if (urlAgent) {
+          setAgentId(urlAgent);
+        } else if (!agentId && rows?.length) {
           setAgentId(rows[0].agent_id);
           setTenantId(rows[0].tenant_id || "default");
+        } else if (urlTenant && !urlAgent && rows?.length) {
+          const match = rows.find((a) => a.tenant_id === urlTenant);
+          if (match) setAgentId(match.agent_id);
         }
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof ApiError ? e.message : String(e));

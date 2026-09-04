@@ -23,6 +23,25 @@ export interface AdminAgent {
   version: number;
 }
 
+export interface AdminAgentSchema {
+  agent_id: string;
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  state_schema?: Record<string, unknown>;
+  config_schema?: Record<string, unknown>;
+}
+
+export interface AdminAgentVersion {
+  tenant_id: string;
+  agent_id: string;
+  version: number;
+  name: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface AdminRegistryEntry {
   tenant_id: string;
   name: string;
@@ -39,6 +58,7 @@ export interface AdminRegistryEntry {
 }
 
 export interface AdminRegistryEntryVersion {
+  tenant_id: string;
   name: string;
   version: number;
   display_name?: string;

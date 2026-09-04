@@ -210,6 +210,71 @@
         },
         "title": "AdminRegistryEntryView"
       },
+      "AdminRegistryEntryBody": {
+        "type": "object",
+        "required": [
+          "source_type",
+          "source_ref"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "git",
+              "url",
+              "inline"
+            ]
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "title": "AdminRegistryEntryBody"
+      },
+      "AgentSchema": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "input_schema",
+          "output_schema"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "state_schema": {
+            "type": "object"
+          },
+          "config_schema": {
+            "type": "object"
+          }
+        },
+        "title": "AgentSchema"
+      },
       "RedeliverWebhookResponse": {
         "type": "object",
         "properties": {
@@ -1101,6 +1166,101 @@
         }
       }
     },
+    "/admin-api/agents/{agent_id}/schemas": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get Agent Schemas (admin)",
+        "operationId": "admin_get_agent_schemas",
+        "parameters": [
+          {
+            "description": "Agent ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/agents/{agent_id}/versions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Agent Versions (admin)",
+        "operationId": "admin_list_agent_versions",
+        "parameters": [
+          {
+            "description": "Agent ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin-api/registry": {
       "get": {
         "tags": [
@@ -1212,6 +1372,117 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Publish Registry Entry (admin)",
+        "operationId": "admin_put_registry_entry",
+        "parameters": [
+          {
+            "description": "Registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRegistryEntryBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRegistryEntryView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete Registry Entry (admin)",
+        "operationId": "admin_delete_registry_entry",
+        "parameters": [
+          {
+            "description": "Registry entry name.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            },
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
           },
           "404": {
             "description": "Not Found",

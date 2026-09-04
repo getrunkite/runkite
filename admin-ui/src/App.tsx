@@ -5,7 +5,9 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Agents } from "./pages/Agents";
+import { AgentDetail } from "./pages/AgentDetail";
 import { Registry } from "./pages/Registry";
+import { RegistryEntry } from "./pages/RegistryEntry";
 import { Threads } from "./pages/Threads";
 import { ThreadDetail } from "./pages/ThreadDetail";
 import { Runs } from "./pages/Runs";
@@ -48,7 +50,15 @@ function Gate() {
       <Route path="/admin" element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="agents" element={<Agents />} />
+        <Route path="agents/:agentId" element={<AgentDetail />} />
         <Route path="registry" element={<Registry />} />
+        {/* No separate "registry/new" route: it would match with no :name
+            param at all (that pattern has no capture group of its own),
+            so RegistryEntry's `routeName === "new"` check for isNew would
+            never be true. Let "/admin/registry/new" fall through to the
+            :name route instead, where routeName really is the literal
+            string "new". */}
+        <Route path="registry/:name" element={<RegistryEntry />} />
         <Route path="threads" element={<Threads />} />
         <Route path="threads/:threadId" element={<ThreadDetail />} />
         <Route path="runs" element={<Runs />} />
