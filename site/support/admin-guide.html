@@ -89,7 +89,7 @@
         <div class="card">
           <strong>How this page is organized</strong>
           <p style="margin-top: 8px">
-            The Admin dashboard has 15 screens, grouped the same way the left-hand nav inside
+            The Admin dashboard has 16 screens, grouped the same way the left-hand nav inside
             Admin groups them: general visibility, then governance (who can do what), then spend.
             For each screen below you get four things: <strong>what it's for</strong> in plain
             language, <strong>what you'll actually see</strong> on the page, <strong>how to use
@@ -160,7 +160,37 @@
         </figure>
         <p class="note">If an agent you just deployed is missing here, check the runner's logs for a config parse error before assuming Admin is broken — this list mirrors exactly what the runner reported at boot.</p>
 
-        <h2 id="3-registry">3. Registry</h2>
+        <h2 id="3-try-agent">3. Try agent</h2>
+        <p>
+          <strong>What it's for:</strong> a built-in playground to exercise any registered agent
+          through the real control plane — same create/stream path a production client uses —
+          without writing a curl command or standing up your own test harness.
+        </p>
+        <p>
+          <strong>What you'll see:</strong> a chat panel on the left, a raw <strong>Live
+          protocol</strong> feed and per-turn <strong>Usage</strong> panel on the right. The raw
+          feed exists on purpose, not as a debug leftover — it's the exact sequence of Agent
+          Protocol events (<code>metadata</code>, <code>running</code>, <code>values</code>,
+          <code>end</code>, and interrupt events) your agent emitted for that turn, so you can
+          see precisely what a client SDK would have received instead of only the rendered
+          text.
+        </p>
+        <p><strong>How to use it:</strong></p>
+        <ol class="steps">
+          <li>Pick an agent from the dropdown — only agents the plane already knows about show up here; you cannot author a new one from this page.</li>
+          <li>Type a prompt and send it. A real thread and run are created against that agent's tenant, and the reply streams in as it's produced.</li>
+          <li>
+            If the agent pauses for human approval mid-run (HITL), an
+            <strong>Interrupted</strong> banner appears with <strong>Approve</strong> /
+            <strong>Deny</strong> buttons right in the chat — resuming replays through the same
+            stream so you see the rest of the run continue live.
+          </li>
+          <li>The <strong>Usage</strong> panel shows that turn's token counts and estimated cost the moment the run finishes; click through to <strong>Spend</strong> for the tenant-wide rollup.</li>
+          <li>Every run you start here is a real run — it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>
+        </ol>
+        <p class="note">This is deliberately not an agent builder: it runs whatever graph is already deployed. To change what the agent does, edit and redeploy the graph itself — see <a href="first-agent.html">First agent</a>.</p>
+
+        <h2 id="4-registry">4. Registry</h2>
         <p>
           <strong>What it's for:</strong> a searchable catalog of agent definitions with version
           history — useful once you have more than a couple of agents and need to answer
@@ -173,15 +203,22 @@
         </p>
         <p>
           <strong>How to use it:</strong> browse or search by name, then open an entry to see
-          every version that's ever been published, oldest first. This is view-only in Admin —
-          publishing happens from your CI/CD or the Registry API, not by clicking a button here.
+          every version that's ever been published, oldest first. Unlike Agents above, this page
+          is not read-only — click <strong>Publish entry</strong> to create a new catalog entry,
+          or open an existing one to edit its metadata or delete it, right from this screen. What
+          publishing does <em>not</em> do: wire the entry into a running graph. A registry entry
+          is metadata plus a <code>source_ref</code> (a git URL, a plain URL, or an inline
+          snippet) — pointing at where the actual code lives, not a copy of the code itself. Making
+          it a live, callable agent still means adding it to a runner's config and deploying that
+          runner, same as any other agent; see <a href="registry.html">Registry</a> for the exact
+          field reference and the API-only equivalent of this form.
         </p>
         <figure class="shot">
           <div class="cap">Admin → Registry</div>
           <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
         </figure>
 
-        <h2 id="4-threads--runs">4. Threads &amp; Runs</h2>
+        <h2 id="5-threads--runs">5. Threads &amp; Runs</h2>
         <p>
           <strong>What they're for:</strong> the operational core of Admin — this is where you
           go to answer "what did this specific execution actually do." A <strong>thread</strong>
@@ -224,7 +261,7 @@
           <img src="../assets/ui-run-detail.png" alt="Runkite Admin Run detail page" width="960" height="600" />
         </figure>
 
-        <h2 id="5-connectors">5. Connectors</h2>
+        <h2 id="6-connectors">6. Connectors</h2>
         <p>
           <strong>What it's for:</strong> a live status board for every external service
           (Salesforce, GitHub, your internal APIs, etc.) your agents are configured to call
@@ -249,7 +286,7 @@
           <img src="../assets/ui-connectors.png" alt="Runkite Admin Connectors" width="960" height="600" />
         </figure>
 
-        <h2 id="6-cron">6. Cron</h2>
+        <h2 id="7-cron">7. Cron</h2>
         <p>
           <strong>What it's for:</strong> visibility into every scheduled ("run this agent every
           hour") agent across every tenant.
@@ -271,7 +308,7 @@
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron" width="960" height="600" />
         </figure>
 
-        <h2 id="7-webhooks">7. Webhooks</h2>
+        <h2 id="8-webhooks">8. Webhooks</h2>
         <p>
           <strong>What it's for:</strong> Runkite can POST events (a run finished, a tool was
           called, a policy decision happened) to a URL you configure. This page is where failed
@@ -301,7 +338,7 @@
           <img src="../assets/ui-webhooks.png" alt="Runkite Admin Webhooks" width="960" height="600" />
         </figure>
 
-        <h2 id="8-grants-policy-grants">8. Grants (Policy Grants)</h2>
+        <h2 id="9-grants-policy-grants">9. Grants (Policy Grants)</h2>
         <p>
           <strong>What it's for:</strong> the allowlist that decides which agent can use which
           connector, and which specific tools on that connector. Without a grant, a connector
@@ -327,7 +364,7 @@
           <img src="../assets/ui-grants.png" alt="Runkite Admin Policy Grants" width="960" height="600" />
         </figure>
 
-        <h2 id="9-mandatory-hitl">9. Mandatory HITL</h2>
+        <h2 id="10-mandatory-hitl">10. Mandatory HITL</h2>
         <p>
           <strong>What it's for:</strong> force a human approval step for a connector or tool
           class, regardless of what any grant says. Use this for anything you never want an
@@ -351,7 +388,7 @@
           <img src="../assets/ui-mandatory-hitl.png" alt="Runkite Admin Mandatory HITL" width="960" height="600" />
         </figure>
 
-        <h2 id="10-pending-approval-queue">10. Pending (approval queue)</h2>
+        <h2 id="11-pending-approval-queue">11. Pending (approval queue)</h2>
         <p>
           <strong>What it's for:</strong> the inbox for every connector call that's currently
           paused waiting for a human — whether it paused because of a Mandatory HITL rule above,
@@ -375,7 +412,7 @@
           <img src="../assets/ui-pending.png" alt="Runkite Admin Pending Actions" width="960" height="600" />
         </figure>
 
-        <h2 id="11-kill-switches">11. Kill switches</h2>
+        <h2 id="12-kill-switches">12. Kill switches</h2>
         <p>
           <strong>What it's for:</strong> the emergency stop button. Use this when something is
           actively causing harm right now and you need every run for a tenant (or one specific
@@ -398,7 +435,7 @@
           <img src="../assets/ui-kill.png" alt="Runkite Admin Kill Switches" width="960" height="600" />
         </figure>
 
-        <h2 id="12-break-glass">12. Break-glass</h2>
+        <h2 id="13-break-glass">13. Break-glass</h2>
         <p>
           <strong>What it's for:</strong> the opposite emergency tool — a short, time-boxed
           window where normal connector policy checks are bypassed, for situations like
@@ -423,7 +460,7 @@
           <img src="../assets/ui-break-glass.png" alt="Runkite Admin Break-glass" width="960" height="600" />
         </figure>
 
-        <h2 id="13-audit">13. Audit</h2>
+        <h2 id="14-audit">14. Audit</h2>
         <p>
           <strong>What it's for:</strong> the searchable paper trail of every policy decision
           the plane has made — every allow, every deny, every pending-for-approval, with who,
@@ -445,7 +482,7 @@
           <img src="../assets/ui-audit.png" alt="Runkite Admin Audit" width="960" height="600" />
         </figure>
 
-        <h2 id="14-spend-finops">14. Spend (FinOps)</h2>
+        <h2 id="15-spend-finops">15. Spend (FinOps)</h2>
         <p>
           <strong>What it's for:</strong> how much your agents are actually costing you, and
           the budget guardrails that stop a runaway agent from generating a five-figure LLM
@@ -458,10 +495,16 @@
           was breached mid-run). You can also export the usage rollup as CSV or JSON.
         </p>
         <p>
-          <strong>How to use it:</strong> budgets themselves are configured in
-          <code>langgraph.json</code> (a hard cap on USD/tokens/runs per day, per tenant or per
-          agent) — this page is where you watch them and export the numbers for a monthly
-          report. See <a href="finops.html">Spend (FinOps)</a> for how to actually set a budget.
+          <strong>How to use it:</strong> the <code>langgraph.json</code> <code>finops</code>
+          section is the bootstrap baseline (a hard cap on USD/tokens/runs per day, per tenant
+          or per agent) — but you don't need to edit that file or restart the control plane to
+          change a price or a budget. Scroll down to the <strong>Live FinOps config</strong>
+          panel on this same page to add or edit pricebook rates and tenant/agent day budgets
+          directly. A save here takes effect on this replica immediately and every other
+          replica within about 15 seconds; <strong>Clear overlay</strong> reverts to whatever
+          the file says. The panel always shows <strong>file baseline</strong> next to
+          <strong>effective (live)</strong> so you can tell at a glance whether anything has
+          been overridden from Admin.
         </p>
         <figure class="shot">
           <div class="cap">Admin → Spend — usage, alerts, and export</div>

@@ -135,6 +135,22 @@
             instead — the one failure mode worse than under-pricing a run is making it invisible.
             APIs: <code>/admin-api/usage/{summary,alerts,holds,export}</code>.
           </li>
+          <li>
+            <strong>Live editing from Admin, no redeploy.</strong> The <code>finops</code> block
+            in <code>langgraph.json</code> is only the bootstrap baseline — open
+            <a href="admin-guide.html#15-spend-finops">Admin → Spend</a> and use the
+            <strong>Live FinOps config</strong> panel to add pricebook rows or change a
+            tenant/agent day budget directly, no file edit or control-plane restart required.
+            The change is live on that replica the moment you save, and every other replica
+            picks it up within about 15 seconds (same fingerprint-poll mechanism as durable
+            policy grants). The panel shows <strong>file baseline</strong> and
+            <strong>effective (live)</strong> side by side so an overridden value is never a
+            surprise, and <strong>Clear overlay</strong> reverts everything back to whatever the
+            file says. Writes are validated server-side (no negative rates or budgets, a
+            same-magnitude-swapped input/output rate is flagged, and a genuinely-intentional
+            <code>$0</code> free-tier rate is confirmed on save rather than silently rejected).
+            API: <code>GET|PUT|DELETE /admin-api/finops</code>.
+          </li>
         </ul>
         <h2>What is not shipped yet</h2>
         <ul>

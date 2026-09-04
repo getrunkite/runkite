@@ -111,7 +111,7 @@
 
         <h2>Stopping a run that's gone wrong</h2>
         <p>
-          For one specific run: cancel it from <a href="admin-guide.html#4-threads--runs">Admin
+          For one specific run: cancel it from <a href="admin-guide.html#5-threads--runs">Admin
           → Runs</a> or via the Agent Protocol API. The runner sees its assignment marked
           non-current and should stop producing side effects on its next check — well-behaved
           agent code checks the cancellation signal between steps, so a very long single LLM
@@ -119,7 +119,7 @@
         </p>
         <p>
           For something bigger — an entire agent or tenant misbehaving — use
-          <a href="admin-guide.html#11-kill-switches">Admin → Kill switches</a> instead of
+          <a href="admin-guide.html#12-kill-switches">Admin → Kill switches</a> instead of
           cancelling runs one at a time: it stops new runs from starting and can cancel every
           in-flight run in scope in one action. See <a href="kill.html">Kill &amp;
           break-glass</a> for the full walkthrough, including the opposite tool — a

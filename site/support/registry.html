@@ -90,6 +90,8 @@
         </div>
 
         <h2>How to implement</h2>
+        <p>Two equivalent paths — pick whichever fits your workflow. Both write to the same table, so an entry published one way shows up immediately when you look it up the other.</p>
+        <p><strong>From your CI/CD or a script</strong> — the client-facing API, scoped by your own auth context:</p>
         <ol class="steps">
           <li><code>PUT /registry/entries/{name}</code> with metadata + <code>source_type</code> / <code>source_ref</code>.</li>
           <li><code>POST /registry/search</code> by name substring, tags (all must match), or author.</li>
@@ -105,6 +107,14 @@
   "source_type": "git",
   "source_ref": "https://github.com/example/sales-qualifier@main"
 }</pre>
+        <p><strong>From Admin, by hand</strong> — no request body to write yourself:</p>
+        <ol class="steps">
+          <li>Open <code>/admin/registry</code> and click <strong>Publish entry</strong> for a new one, or click any row to open an existing entry.</li>
+          <li>Fill in the same fields as the API body above through a plain form — tenant, name (slug), display name, tags, and <code>source_type</code> / <code>source_ref</code>.</li>
+          <li><strong>Save changes</strong> updates the entry in place (a real content change still writes a new version, exactly like the API path); <strong>Delete</strong> removes it and its version history.</li>
+          <li>The same "publishing is not deploying" rule applies here too — the entry is discoverable metadata, not a live agent, regardless of which path you used to create it.</li>
+        </ol>
+        <p class="note">Admin writes go through <code>PUT</code> / <code>DELETE /admin-api/registry/{name}</code> (an Admin-only route, distinct from the client-facing <code>/registry/entries/{name}</code> above) and are audited the same way every other Admin mutation is.</p>
 
         <h2>In the product</h2>
         <figure class="shot">

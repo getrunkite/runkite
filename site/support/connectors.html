@@ -178,7 +178,7 @@ errors:
           waiting for a timeout) for 30 seconds, so one broken downstream service can't slow
           down every agent that happens to use it. After the cooldown, it lets one call
           through as a test; if that succeeds, it closes and traffic flows normally again.
-          You can watch this state live in <a href="admin-guide.html#5-connectors">Admin →
+          You can watch this state live in <a href="admin-guide.html#6-connectors">Admin →
           Connectors</a>.
         </p>
 
@@ -229,7 +229,7 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
   ]
 }</pre>
         <p>
-          Or open <a href="admin-guide.html#8-grants-policy-grants">Admin → Grants</a>,
+          Or open <a href="admin-guide.html#9-grants-policy-grants">Admin → Grants</a>,
           click "New grant," and pick the tenant / agent / connector. Admin grants roll out
           to every control-plane replica within about 15 seconds — no restart needed. Use
           config for grants you always want; use Admin for grants you're experimenting with
@@ -249,11 +249,11 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
     { "tenant_id": "default", "connector": "salesforce", "tools": ["deleteRecord"] }
   ]
 }</pre>
-        <p>Leave out <code>tools</code> to require approval for every tool on that connector. You can also create these rules from <a href="admin-guide.html#9-mandatory-hitl">Admin → Mandatory HITL</a> without a redeploy.</p>
+        <p>Leave out <code>tools</code> to require approval for every tool on that connector. You can also create these rules from <a href="admin-guide.html#10-mandatory-hitl">Admin → Mandatory HITL</a> without a redeploy.</p>
         <p><strong>What actually happens when this fires, end to end:</strong></p>
         <ol class="steps">
           <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
-          <li>Instead of running, the call pauses and shows up in <a href="admin-guide.html#10-pending-approval-queue">Admin → Pending</a>, with the exact arguments the agent wanted to send — so a reviewer can see precisely what would happen before approving.</li>
+          <li>Instead of running, the call pauses and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a>, with the exact arguments the agent wanted to send — so a reviewer can see precisely what would happen before approving.</li>
           <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
           <li><strong>Approved</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool actually executes. <strong>Denied</strong> — the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
           <li>This is a one-time unlock, not a standing exception — the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>
@@ -266,7 +266,7 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>"My grant isn't taking effect."</strong> — if you added it in Admin on a different replica than the one serving your traffic, give it up to ~15 seconds to propagate.</li>
-          <li><strong>"Nothing happened when my agent called the tool."</strong> — check <a href="admin-guide.html#10-pending-approval-queue">Admin → Pending</a> first; it's very likely paused there waiting for approval, not silently failed.</li>
+          <li><strong>"Nothing happened when my agent called the tool."</strong> — check <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> first; it's very likely paused there waiting for approval, not silently failed.</li>
           <li><strong>Credentials never leave the plane on their own</strong> — <code>GetSession</code> and the connector status endpoint never hand back a connector's raw downstream URL when MCP is configured, and MCP session tokens are 15-minute, run-bound, and single-purpose. This does not stop your own agent code from independently having a different, hardcoded credential to the same service — the plane can only govern access it hands out itself.</li>
           <li><strong>A cached OAuth token keeps working even mid-outage</strong> — if the token refresh endpoint is down and the breaker trips, a still-valid cached token keeps being served; only <em>new</em> token fetches fail fast.</li>
         </ul>

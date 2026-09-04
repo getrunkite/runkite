@@ -106,7 +106,7 @@
         <ul class="expect">
           <li><strong>One credential, minted fresh per call</strong> — the Salesforce secret lives in one place (Vault, a file, or an env var — see <a href="secrets.html">Secrets</a>), and each agent gets a short-lived, run-bound session instead of holding the real credential itself.</li>
           <li><strong>One human-approval rule, applies to all three</strong> — a single mandatory-HITL rule on the "delete record" tool covers the support bot, the research agent, and the ops agent identically, with no framework-specific plumbing.</li>
-          <li><strong>One kill switch</strong> — if the research agent starts misbehaving, stop just that agent (or the whole tenant) from <a href="admin-guide.html#11-kill-switches">Admin → Kill switches</a>, no SSH required.</li>
+          <li><strong>One kill switch</strong> — if the research agent starts misbehaving, stop just that agent (or the whole tenant) from <a href="admin-guide.html#12-kill-switches">Admin → Kill switches</a>, no SSH required.</li>
           <li><strong>One audit trail</strong> — every Salesforce call from any of the three agents lands in the same searchable log, filterable by agent, so "what did we do to Salesforce last Tuesday" has a real, complete answer.</li>
         </ul>
         <p>

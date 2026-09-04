@@ -4,7 +4,7 @@
 
 ![Admin UI walkthrough](assets/admin-walkthrough.gif)
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents, the registry, threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters — plus SQL governance pages: durable policy grants, mandatory HITL overlays, the connector HITL pending queue, kill/pause switches, break-glass windows, and policy audit search. The walkthrough GIF cycles Overview → Agents → Registry → Threads → Runs → Connectors → Cron → Webhooks → Grants → Mandatory HITL → Pending → Kill → Break-glass → Audit.
+A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents (with a per-agent detail page: schema, metadata, version history), a built-in **Try agent** playground (run any registered agent through the real create/stream path, with a raw live-protocol feed and per-turn usage -- not a graph builder, just a client you don't have to write), the registry (publish, edit, and delete catalog entries directly from Admin, not only via the API), threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters — plus SQL governance pages: durable policy grants, mandatory HITL overlays, the connector HITL pending queue, kill/pause switches, break-glass windows, policy audit search, and FinOps spend (with a live pricebook/budget overlay editor -- change a rate or a day cap without touching `langgraph.json` or restarting). The walkthrough GIF cycles Overview → Agents → Registry → Threads → Runs → Connectors → Cron → Webhooks → Grants → Mandatory HITL → Pending → Kill → Break-glass → Audit; Try agent and Spend are newer additions covered below.
 
 ```
 runkite serve --config langgraph.json
@@ -21,9 +21,18 @@ The static UI shell (`GET /admin/*`) is always public at the HTTP layer, same as
 GET /admin-api/overview                     Summary counts (agents/threads/runs, by status) across every tenant -- real COUNT/GROUP BY aggregates, not a capped Search* sample
 GET /admin-api/agents                       List agents (tenant_id visible; ?limit=&cursor= or ?offset=, default 50, max 200; X-Next-Cursor)
 GET /admin-api/agents/{id}                  Agent detail
+GET /admin-api/agents/{id}/schemas          Agent input/output/state/config schema
+GET /admin-api/agents/{id}/versions         Agent version history (?tenant_id=; omitted merges every tenant's history)
 GET /admin-api/registry                     List registry entries (tenant_id visible; ?limit=&cursor= or ?offset=; X-Next-Cursor)
 GET /admin-api/registry/{name}              Registry entry detail (?tenant_id= disambiguates a cross-tenant name collision)
+PUT /admin-api/registry/{name}              Publish/update an entry (?tenant_id=, default "default"); validates source_type/source_ref; audited
+DELETE /admin-api/registry/{name}           Unpublish an entry (?tenant_id=); audited
 GET /admin-api/registry/{name}/versions     Registry entry version history (same ?tenant_id=; omitted merges every tenant's history)
+GET /admin-api/finops                       Effective FinOps config: file baseline, SQL overlay, and merged effective view
+PUT /admin-api/finops                       Patch the FinOps overlay (pricebook/budgets/routing/reservation); validated server-side; hot-reloads this replica (siblings via 15s poll). 501 on non-SQL stores
+DELETE /admin-api/finops                    Clear the overlay; file baseline becomes effective again
+POST /admin-api/threads                     Try-agent: create a thread scoped to ?tenant_id= (reuses the client-facing handler under the Admin session)
+POST /admin-api/threads/{id}/runs/stream    Try-agent: create + stream a run scoped to ?tenant_id= (same SSE wire format as the client-facing route)
 GET /admin-api/threads                      List threads (tenant_id visible; ?status=; ?limit=&cursor= or ?offset=; X-Next-Cursor)
 GET /admin-api/threads/{id}                 Thread detail
 GET /admin-api/threads/{id}/runs            Runs on a thread (?limit=&cursor= or ?offset=; X-Next-Cursor)
@@ -77,8 +86,9 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |
 | `/admin/audit` | Search policy decisions |
+| `/admin/spend` | Usage rollups, budget alerts, CSV/JSON export, and the live FinOps pricebook/budget overlay editor |
 
-Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
+Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement. `/admin/try` (Try agent) is the one screen in this list that is *not* SQL-gated -- it only creates threads and runs, which every state backend supports.
 
 ## Operator flow
 
@@ -88,4 +98,6 @@ flowchart LR
   B --> C[Inspect run stream]
   C --> D[Cancel run]
   B --> E[Grants / Mandatory HITL / Pending / Kill / Break-glass / Audit]
+  B --> F[Try agent: exercise a registered agent]
+  B --> G[Spend: watch usage, edit budgets live]
 ```
