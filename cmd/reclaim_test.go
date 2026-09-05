@@ -18,6 +18,60 @@ func TestTryAcquireReclaimLeader_NilRedisAlwaysWins(t *testing.T) {
 	}
 }
 
+func TestInitReclaimMaxAge_Default(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{"graphs": {"echo": "graph.py:graph"}}`)
+	if got := initReclaimMaxAge(path); got != defaultReclaimMaxAge {
+		t.Fatalf("got %v, want default %v", got, defaultReclaimMaxAge)
+	}
+}
+
+func TestInitReclaimMaxAge_Configured(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_age": "12s"}
+	}`)
+	if got := initReclaimMaxAge(path); got != 12*time.Second {
+		t.Fatalf("got %v, want 12s", got)
+	}
+}
+
+func TestInitReclaimMaxAge_EnvOverridesConfig(t *testing.T) {
+	t.Setenv("RUNKITE_RECLAIM_MAX_AGE", "9s")
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_age": "12s"}
+	}`)
+	if got := initReclaimMaxAge(path); got != 9*time.Second {
+		t.Fatalf("got %v, want env override 9s", got)
+	}
+}
+
+func TestInitReclaimMaxAge_InvalidConfigKeepsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_age": "not-a-duration"}
+	}`)
+	if got := initReclaimMaxAge(path); got != defaultReclaimMaxAge {
+		t.Fatalf("got %v, want default %v after invalid config", got, defaultReclaimMaxAge)
+	}
+}
+
+func TestInitReclaimMaxAge_InvalidEnvKeepsConfig(t *testing.T) {
+	t.Setenv("RUNKITE_RECLAIM_MAX_AGE", "nope")
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_age": "10s"}
+	}`)
+	if got := initReclaimMaxAge(path); got != 10*time.Second {
+		t.Fatalf("got %v, want config 10s after invalid env", got)
+	}
+}
+
 func TestTryAcquireReclaimLeader_OnlyOneWinner(t *testing.T) {
 	rdb := redisClientOrSkip(t)
 	ctx := context.Background()

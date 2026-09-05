@@ -268,7 +268,7 @@ func startServer(opts serverOpts) {
 	// Starts after apiServer so StatusCallback can mark poison-pill
 	// deaths. Passes rdb so Kafka+Redis HA can elect a single reclaim
 	// leader (see tryAcquireReclaimLeader).
-	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxRetries(opts.configPath), apiServer.StatusCallback())
+	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxAge(opts.configPath), initReclaimMaxRetries(opts.configPath), apiServer.StatusCallback())
 
 	// Wire connector registry if configured
 	if reg := bootstrapConnectors(opts.configPath); reg != nil {

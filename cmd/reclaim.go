@@ -75,6 +75,10 @@ type staleReclaimer interface {
 	ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error)
 }
 
+// defaultReclaimMaxAge matches the reclaim loop comment block below:
+// ~2s runner Heartbeat cadence, 2s reclaim ticker, keepalive ~4s.
+const defaultReclaimMaxAge = 6 * time.Second
+
 // defaultReclaimMaxRetries matches plans/poison_pill_max_retries.md and
 // PROTOCOL.md §13: original attempt + limited reclaims before permanent
 // failure. Explicit reclaim.max_retries=0 (or env 0) means unlimited.
@@ -102,7 +106,34 @@ func initReclaimMaxRetries(configPath string) int {
 	return maxRetries
 }
 
-func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxRetries int, statusCallback func(runID, status, errorMsg string)) {
+// initReclaimMaxAge reads langgraph.json "reclaim.max_age" from the first
+// discovered config file, then applies RUNKITE_RECLAIM_MAX_AGE if set.
+// Absent/invalid config → default 6s.
+func initReclaimMaxAge(configPath string) time.Duration {
+	maxAge := defaultReclaimMaxAge
+	paths := config.FindLangGraphJSON(configPath)
+	if len(paths) > 0 {
+		if cfg, err := config.LoadLangGraphJSON(paths[0]); err == nil && cfg.Reclaim != nil && cfg.Reclaim.MaxAge != "" {
+			d, parseErr := time.ParseDuration(cfg.Reclaim.MaxAge)
+			if parseErr != nil || d <= 0 {
+				slog.Error("reclaim.max_age invalid; keeping prior value", "value", cfg.Reclaim.MaxAge, "using", maxAge, "error", parseErr)
+			} else {
+				maxAge = d
+			}
+		}
+	}
+	if v := os.Getenv("RUNKITE_RECLAIM_MAX_AGE"); v != "" {
+		d, parseErr := time.ParseDuration(v)
+		if parseErr != nil || d <= 0 {
+			slog.Error("RUNKITE_RECLAIM_MAX_AGE invalid; keeping prior value", "value", v, "using", maxAge, "error", parseErr)
+		} else {
+			maxAge = d
+		}
+	}
+	return maxAge
+}
+
+func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxAge time.Duration, maxRetries int, statusCallback func(runID, status, errorMsg string)) {
 	r, ok := queue.(staleReclaimer)
 	if !ok {
 		return
@@ -120,8 +151,8 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 	// does. No retuning needed to cover the larger window -- the same
 	// numbers that worked for "dequeue to first event" also work for
 	// "dequeue to completion" once the clock is reset throughout,
-	// rather than frozen at dequeue time.
-	const maxAge = 6 * time.Second
+	// rather than frozen at dequeue time. Tune via reclaim.max_age or
+	// RUNKITE_RECLAIM_MAX_AGE; default 6s (see initReclaimMaxAge).
 	holder, _ := os.Hostname()
 	if holder == "" {
 		holder = "runkite"

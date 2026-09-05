@@ -1883,26 +1883,27 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 	t.Run("SS-020_ttl_refresh_on_read_extends_expiry", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
-		ttl := 1.0 / 60.0 // 1 second
+		ttl := 2.0 / 60.0 // 2 seconds — wider window than 1s so slow CI runners
+		// still land inside the refreshed deadline with room to spare.
 
 		s.PutItem(ctx, &models.StoreItem{Namespace: []string{"ttl"}, Key: "k4", Value: map[string]interface{}{}, TTLMinutes: &ttl})
 
-		// Read with refreshTTL=true at t=0.5s (well inside the original
-		// 1s window) -- resets the countdown to another full 1s from now.
-		time.Sleep(500 * time.Millisecond)
+		// Read with refreshTTL=true at t=1s (well inside the original
+		// 2s window) -- resets the countdown to another full 2s from now.
+		time.Sleep(1 * time.Second)
 		if _, err := s.GetItem(ctx, []string{"ttl"}, "k4", true); err != nil {
-			t.Fatalf("GetItem at t=0.5s (before original expiry): %v", err)
+			t.Fatalf("GetItem at t=1s (before original expiry): %v", err)
 		}
 
-		// t=1.3s: past the ORIGINAL 1s deadline, but well inside the
-		// REFRESHED deadline (0.5s + 1s = 1.5s) -- must still be present.
-		time.Sleep(800 * time.Millisecond)
+		// t=2.2s: past the ORIGINAL 2s deadline, but well inside the
+		// REFRESHED deadline (1s + 2s = 3s) -- must still be present.
+		time.Sleep(1200 * time.Millisecond)
 		if _, err := s.GetItem(ctx, []string{"ttl"}, "k4", false); err != nil {
 			t.Fatalf("item should still be alive past its original TTL because a refreshing read extended it: %v", err)
 		}
 
-		// t=1.9s: past the refreshed deadline (1.5s) too -- now expired.
-		time.Sleep(600 * time.Millisecond)
+		// t=3.4s: past the refreshed deadline (3s) too -- now expired.
+		time.Sleep(1200 * time.Millisecond)
 		_, err := s.GetItem(ctx, []string{"ttl"}, "k4", false)
 		if _, ok := err.(*state.ErrNotFound); !ok {
 			t.Errorf("expected ErrNotFound once the refreshed TTL also elapses, got %v (%T)", err, err)

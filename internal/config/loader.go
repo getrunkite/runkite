@@ -100,8 +100,9 @@ type LangGraphConfig struct {
 	Retention *RetentionEntry `json:"retention,omitempty"`
 	// Reclaim caps how many times a crashed job may be re-enqueued
 	// (generation ceiling / poison-pill defense). Control-plane-wide,
-	// first-file (see initReclaimMaxRetries in cmd/reclaim.go). Absent
-	// means default max_retries=3; explicit 0 means unlimited (legacy).
+	// first-file (see initReclaimMaxRetries / initReclaimMaxAge in
+	// cmd/reclaim.go). Absent means default max_retries=3 and max_age=6s;
+	// explicit max_retries=0 means unlimited (legacy).
 	Reclaim *ReclaimEntry `json:"reclaim,omitempty"`
 	// RunTimeout is control-plane-wide, same first-file convention as
 	// Retention (see initRunTimeoutConfig in cmd/run_timeout.go).
@@ -333,6 +334,13 @@ type ReclaimEntry struct {
 	// section (or this field) is absent. Explicit 0 means unlimited
 	// (pre-ceiling behavior). Overridable by RUNKITE_RECLAIM_MAX_RETRIES.
 	MaxRetries *int `json:"max_retries,omitempty"`
+	// MaxAge is how long an in-flight job may go without a successful
+	// Heartbeat/Renew before ReclaimStale re-enqueues it. Go duration
+	// string (e.g. "6s"). Default 6s when absent. Sized for ~2s runner
+	// heartbeat cadence and the 2s reclaim ticker -- lower values risk
+	// false reclaims; higher values slow crash recovery. Overridable by
+	// RUNKITE_RECLAIM_MAX_AGE.
+	MaxAge string `json:"max_age,omitempty"`
 }
 
 // RetentionEntry is the "retention" section of langgraph.json.

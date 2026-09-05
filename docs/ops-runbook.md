@@ -59,11 +59,16 @@ Details: [Deployment](deployment.md) · [Helm README](../deploy/helm/runkite/REA
 
 When a runner dies mid-job, the control plane reclaims the lease and may re-enqueue. Generation fencing already exists on Redis, NATS, and Kafka.
 
-**Ceiling:** `reclaim.max_retries` in `langgraph.json` (default **3**). When the next reclaim would exceed the ceiling, the run is marked `error`, the thread is released, and a terminal status/hook fires — it is **not** re-enqueued forever.
+**Staleness (`max_age`):** how long an in-flight job may go without a successful Heartbeat/Renew before reclaim re-enqueues it. Default **6s** — sized for ~2s runner heartbeat cadence and the 2s reclaim ticker. Lower → false reclaims (duplicate LLM work); higher → slower crash recovery.
 
 ```json
-"reclaim": { "max_retries": 3 }
+"reclaim": { "max_age": "6s", "max_retries": 3 }
 ```
+
+- Absent `max_age` → default `6s`
+- Env override: `RUNKITE_RECLAIM_MAX_AGE` (Go duration string, loaded at process start)
+
+**Ceiling (`max_retries`):** when the next reclaim would exceed the ceiling, the run is marked `error`, the thread is released, and a terminal status/hook fires — it is **not** re-enqueued forever.
 
 - Absent section / field → default `3`
 - Explicit `0` → unlimited (legacy)

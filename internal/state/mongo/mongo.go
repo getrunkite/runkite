@@ -1986,10 +1986,12 @@ func (s *Store) GetItem(ctx context.Context, namespace []string, key string, ref
 		// for a system-context caller reading across tenants, those can
 		// differ, which would otherwise silently match zero docs here.
 		newExpiry := storeItemExpiresAt(now, doc.TTLMinutes)
-		_, _ = s.col("store_items").UpdateOne(ctx,
+		if _, err := s.col("store_items").UpdateOne(ctx,
 			bson.M{"tenant_id": doc.TenantID, "namespace": doc.Namespace, "key": doc.Key},
-			bson.M{"$set": bson.M{"expires_at": newExpiry}},
-		)
+			bson.M{"$set": bson.M{"expires_at": newExpiry, "updated_at": now}},
+		); err != nil {
+			return nil, err
+		}
 	}
 	return &models.StoreItem{Namespace: stringToNs(doc.Namespace), Key: doc.Key, Value: bsonToMap(doc.Value), CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt}, nil
 }
@@ -2049,10 +2051,12 @@ func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest)
 	cur.Close(ctx)
 	for _, doc := range toRefresh {
 		newExpiry := storeItemExpiresAt(now, doc.TTLMinutes)
-		_, _ = s.col("store_items").UpdateOne(ctx,
+		if _, err := s.col("store_items").UpdateOne(ctx,
 			bson.M{"tenant_id": doc.TenantID, "namespace": doc.Namespace, "key": doc.Key},
-			bson.M{"$set": bson.M{"expires_at": newExpiry}},
-		)
+			bson.M{"$set": bson.M{"expires_at": newExpiry, "updated_at": now}},
+		); err != nil {
+			return nil, err
+		}
 	}
 	return items, nil
 }
