@@ -2,6 +2,33 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## [0.3.0] — 2026-09-05
+
+Self-host preview: FinOps, opaque adapter checkpoints, plane-side secrets/RLS/`allowed_tools`, Admin playground + Spend, docs rewrite. Preview (BUSL) — not a 1.0 production claim, and **not** a hosted control plane.
+
+### Added
+- FinOps continuum on SQL: pricebook, daily USD/token/run caps, reservation holds, routing aliases, alerts/export, cancel-on-hard-breach, Admin Spend + live overlay editor
+- Universal opaque checkpoints for non-LangGraph adapters (`adapter-state`); proxy HITL/CAS still for LangGraph
+- Per-graph `allowed_tools`; connector `auth.secret_ref` (env/file/Vault); Postgres RLS fail-closed
+- Run manifest snapshot at dispatch; Admin Try-agent playground, registry editor, DocsLink
+- Kind K0–K3 ops proofs plus a named EKS smoke/reclaim
+- Docs site rewrite, Admin UI 15-screen guide, Gemini dogfood QA hub
+- Admin login rate limit (TCP peer, not `X-Forwarded-For`); GitHub Actions SHA-pinned
+
+### Fixed
+- Store `ListNamespaces` suffix on every backend; Python store `batch()` fail-fast on the store loop
+- Proxy checkpoint lock map capped; RunDetail SSE list capped
+- Alpine runtime image digest-pinned; Docker `GIT_COMMIT` is a release build-arg
+
+### Notes
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.3.0]: https://github.com/getrunkite/runkite/releases/tag/v0.3.0
+
 ## [0.2.0] — 2026-08-10
 
 Governance-preview cut: plane policy + Admin governance on SQL backends, announce-bar proof, packaging smokes. Preview (BUSL) — not a 1.0 production claim.

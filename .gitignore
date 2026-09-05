@@ -67,6 +67,10 @@ rh-agents-demo/
 # risk to publish before the findings are actually fixed.
 CODE_REVIEW_ANALYSIS*.md
 
+# Local LLM review write-ups (same disclosure-timing class as the
+# CODE_REVIEW_ANALYSIS files). Keep them on disk; never `git add .` them.
+reviews/
+
 # Soak run artifacts (logs, metrics snapshots, REPORT.md)
 bench/soak/out/*/
 examples/gemini/**/node_modules/
