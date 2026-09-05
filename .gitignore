@@ -71,11 +71,11 @@ CODE_REVIEW_ANALYSIS*.md
 # CODE_REVIEW_ANALYSIS files). Keep them on disk; never `git add .` them.
 reviews/
 
-# Unpublished announcement copy (Show HN / Reddit / X drafts). Same
-# disclosure-timing class as the review write-ups above -- draft text
-# for a launch post, not something that should sit in the public tree
-# before it's actually posted. Keep on disk; never `git add .` it.
-docs/announce-v0.3-draft.md
+# Unpublished launch copy (Show HN / Reddit / X). A single filename
+# (announce-v0.3-draft.md) is not enough — the next version bump would
+# create announce-v0.4-draft.md and `git add docs/` would ship it again.
+docs/announce*.md
+*announce*-draft.md
 
 # Soak run artifacts (logs, metrics snapshots, REPORT.md)
 bench/soak/out/*/

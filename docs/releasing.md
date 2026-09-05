@@ -30,6 +30,7 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
    ```
 5. [ ] Watch **Release**; verify GitHub Release, `docker pull …:latest`, `pip` / `npm` latest.
 6. [ ] After first GHCR push: set each package visibility to **Public** (org → Packages).
+7. [ ] Announce on HN / Reddit from a **local** draft only. `docs/announce*.md` is gitignored — do not `git add` Show HN copy. After you post, the public record is the thread, not a file in this repo.
 
 ## One-time setup (humans)
 
