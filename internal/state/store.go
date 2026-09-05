@@ -1,11 +1,10 @@
 // Package state defines the StateStore interface for persistent storage
-// of agents, threads, runs, and store items. Implemented today by SQLite
-// and Postgres (internal/state/sqlite, internal/state/postgres); a
-// MongoDB backend (internal/state/mongo) is the project's non-SQL
-// exemplar for community-contributed backends. Any backend that
+// of agents, threads, runs, and store items. Implemented today by SQLite,
+// Postgres, MySQL (internal/state/sqlite, postgres, mysql), and MongoDB
+// (internal/state/mongo, the non-SQL exemplar). Any backend that
 // satisfies this interface and passes internal/state/conformance's
-// shared test suite is a valid implementation -- MySQL/DynamoDB remain
-// possible future drivers, not currently planned.
+// shared test suite is a valid implementation -- DynamoDB remains a
+// possible future driver.
 package state
 
 import (

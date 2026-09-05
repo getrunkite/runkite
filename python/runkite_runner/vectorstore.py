@@ -203,7 +203,7 @@ class RunkiteVectorStore(VectorStore):
         texts = [d.page_content for d in documents]
         metadatas = [d.metadata for d in documents]
         ids = kwargs.get("ids") or [d.id or str(uuid.uuid4()) for d in documents]
-        vectors = self._embedding.embed_documents(texts)
+        vectors = await self._embedding.aembed_documents(texts)
         for doc_id, text, meta, vec in zip(ids, texts, metadatas, vectors, strict=True):
             await self._upsert(doc_id, text, meta, vec)
         return ids
@@ -224,7 +224,7 @@ class RunkiteVectorStore(VectorStore):
         return await self.aadd_documents(docs, **kwargs)
 
     async def asimilarity_search(self, query: str, k: int = 4, **kwargs: Any) -> list[Document]:
-        embedding = self._embedding.embed_query(query)
+        embedding = await self._embedding.aembed_query(query)
         return await self.asimilarity_search_by_vector(embedding, k, **kwargs)
 
     async def asimilarity_search_by_vector(self, embedding: list[float], k: int = 4, **kwargs: Any) -> list[Document]:
@@ -234,7 +234,7 @@ class RunkiteVectorStore(VectorStore):
     async def asimilarity_search_with_score(
         self, query: str, k: int = 4, **kwargs: Any
     ) -> list[tuple[Document, float]]:
-        embedding = self._embedding.embed_query(query)
+        embedding = await self._embedding.aembed_query(query)
         results = await self._search(embedding, k, kwargs.get("filter"))
         return [(_item_to_document(r["item"]), r["score"]) for r in results]
 

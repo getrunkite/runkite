@@ -1800,6 +1800,29 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 		if len(ns) != 2 {
 			t.Errorf("got %d namespaces, want 2 (a/b, a/c)", len(ns))
 		}
+
+		suffixed, err := s.ListNamespaces(ctx, &models.StoreListNamespacesRequest{
+			Suffix: []string{"c"},
+			Limit:  100,
+		})
+		if err != nil {
+			t.Fatalf("ListNamespaces suffix: %v", err)
+		}
+		if len(suffixed) != 1 || len(suffixed[0]) != 2 || suffixed[0][1] != "c" {
+			t.Errorf("suffix filter: got %v, want [[a c]]", suffixed)
+		}
+
+		both, err := s.ListNamespaces(ctx, &models.StoreListNamespacesRequest{
+			Prefix: []string{"a"},
+			Suffix: []string{"c"},
+			Limit:  100,
+		})
+		if err != nil {
+			t.Fatalf("ListNamespaces prefix+suffix: %v", err)
+		}
+		if len(both) != 1 || len(both[0]) != 2 || both[0][1] != "c" {
+			t.Errorf("prefix+suffix filter: got %v, want [[a c]]", both)
+		}
 	})
 
 	t.Run("SS-016_large_value", func(t *testing.T) {

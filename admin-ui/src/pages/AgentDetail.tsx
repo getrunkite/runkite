@@ -127,8 +127,8 @@ export function AgentDetail() {
               </>
             )}
             <p className="text-xs text-muted-foreground">
-              Schemas come from the runner after graph load, or a bootstrap stub until then. Editing graphs
-              from Admin is Phase C.2 — this page is read-only catalog.
+              Schemas come from the runner after graph load, or a bootstrap stub until then. This page is
+              a read-only catalog — editing graphs from Admin is not yet supported.
             </p>
           </CardContent>
         </Card>

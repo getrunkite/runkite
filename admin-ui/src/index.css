@@ -7,7 +7,7 @@
 /* Design tokens — dark rack/ops, amber signal (mirrors site/brand.css).
    No cobalt glow. Harder radii. Pages inherit via shadcn slots. */
 @theme inline {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --color-background: var(--background);

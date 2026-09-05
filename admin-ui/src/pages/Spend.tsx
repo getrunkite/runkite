@@ -314,7 +314,7 @@ export function Spend() {
 
       {(unpriced.length > 0 || tokensButNoUsd) && (
         <div className="mb-4 rounded-sm border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <p className="font-medium text-amber-100">Est. USD is $0 because pricing did not match</p>
+          <p className="font-medium text-foreground">Est. USD is $0 because pricing did not match</p>
           <p className="mt-1 text-muted-foreground">
             Tokens were recorded. This is not a rounding issue — the model id was missing from your pricebook (or no
             gateway cost was reported).

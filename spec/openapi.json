@@ -8,7 +8,7 @@
   "tags": [
     {
       "name": "Runs",
-      "description": "A run is an invocation of an agent, optionally, on a thread. If applied to a thread, it updates the state of the thread. Otherwise, it has not state or memory persistence."
+      "description": "A run is an invocation of an agent, optionally, on a thread. If applied to a thread, it updates the state of the thread. Otherwise, it has no state or memory persistence."
     },
     {
       "name": "Threads",

@@ -259,7 +259,7 @@ export function RegistryEntry() {
           </div>
           <p className="text-xs text-muted-foreground">
             Registry entries are discoverable metadata. Wiring <code className="text-foreground">source_ref</code> into a
-            runner still requires deploy/restart (Phase C.2).
+            runner still requires a deploy or restart.
           </p>
         </CardContent>
       </Card>

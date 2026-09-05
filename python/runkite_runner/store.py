@@ -87,6 +87,12 @@ def _ns_prefix_pattern(prefix: tuple[str, ...]) -> str:
     return _NS_DELIM + _NS_DELIM.join(prefix) + _NS_DELIM + "%"
 
 
+def _ns_suffix_pattern(suffix: tuple[str, ...]) -> str:
+    if not suffix:
+        return "%"
+    return "%" + _NS_DELIM + _NS_DELIM.join(suffix) + _NS_DELIM
+
+
 def _timedelta_minutes(minutes: float) -> timedelta:
     return timedelta(minutes=minutes)
 
@@ -465,12 +471,15 @@ class RunkiteStore(BaseStore):
                 return items
 
         if isinstance(op, ListNamespacesOp):
-            prefix, _suffix = _split_match_conditions(op.match_conditions)
+            prefix, suffix = _split_match_conditions(op.match_conditions)
             where = ["tenant_id = %s"]
             args = [current_tenant()]
             if prefix:
                 where.append("namespace LIKE %s")
                 args.append(_ns_prefix_pattern(prefix))
+            if suffix:
+                where.append("namespace LIKE %s")
+                args.append(_ns_suffix_pattern(suffix))
             query = "SELECT DISTINCT namespace FROM store_items WHERE " + " AND ".join(where)
             limit = op.limit or 100
             query += " ORDER BY namespace LIMIT %s OFFSET %s"

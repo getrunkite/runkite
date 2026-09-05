@@ -1894,6 +1894,11 @@ func nsPrefixRegex(prefix []string) string {
 	return "^" + regexQuoteMeta(joined)
 }
 
+func nsSuffixRegex(suffix []string) string {
+	joined := nsDelim + strings.Join(suffix, nsDelim) + nsDelim
+	return regexQuoteMeta(joined) + "$"
+}
+
 // regexQuoteMeta escapes regex metacharacters so a literal string (a
 // namespace segment, an agent name search term) can't be misread as a
 // pattern -- mirrors why Postgres/SQLite use parameterized LIKE with a
@@ -2067,8 +2072,27 @@ func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespa
 		limit = 100
 	}
 	filter := tenantFilter(ctx, bson.M{})
+	var re []string
 	if len(req.Prefix) > 0 {
-		filter["namespace"] = bson.M{"$regex": nsPrefixRegex(req.Prefix)}
+		re = append(re, nsPrefixRegex(req.Prefix))
+	}
+	if len(req.Suffix) > 0 {
+		re = append(re, nsSuffixRegex(req.Suffix))
+	}
+	switch len(re) {
+	case 0:
+		// no filter
+	case 1:
+		filter["namespace"] = bson.M{"$regex": re[0]}
+	default:
+		// Both prefix and suffix given -- a single regex can't express
+		// two independent anchored constraints (one anchored at ^, the
+		// other at $) without overlap edge cases, so require both via
+		// $and instead of trying to merge into one pattern.
+		filter["$and"] = bson.A{
+			bson.M{"namespace": bson.M{"$regex": re[0]}},
+			bson.M{"namespace": bson.M{"$regex": re[1]}},
+		}
 	}
 
 	var raw []interface{}

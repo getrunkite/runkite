@@ -87,6 +87,9 @@ type Server struct {
 	// finishedRuns is a process-local fast path that skips a second DB
 	// claim when cancel and StatusCallback race on the same replica.
 	// Cross-replica exactly-once is state.Store.TryClaimTerminalHook.
+	// Entries expire after finishedRunTTL so the map cannot grow for the
+	// lifetime of a long-running process; a late retry after expiry
+	// still no-ops via TryClaimTerminalHook.
 	finishedRuns sync.Map // run_id -> struct{}
 }
 
@@ -140,6 +143,11 @@ const defaultA2AMaxDepth = 10
 
 // defaultA2AMaxBreadth applies when a2a.max_breadth is unset or <= 0.
 const defaultA2AMaxBreadth = 20
+
+// finishedRunTTL is long enough that cancel vs StatusCallback on the
+// same replica still hits the in-memory skip, and short enough that a
+// busy process does not retain every historical run_id forever.
+const finishedRunTTL = time.Hour
 
 // SetA2AMaxDepth configures the maximum Agent-to-Agent delegation chain
 // depth. Called after NewServer when an "a2a" config section is present;
@@ -660,6 +668,7 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 	if _, already := s.finishedRuns.LoadOrStore(runID, struct{}{}); already {
 		return
 	}
+	time.AfterFunc(finishedRunTTL, func() { s.finishedRuns.Delete(runID) })
 
 	if !s.hooks.HasSinks() {
 		return
@@ -1166,7 +1175,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("writeJSON encode failed", "status", status, "error", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

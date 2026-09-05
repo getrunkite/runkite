@@ -1,9 +1,6 @@
-// Package mysql will implement the state.Store interface using MySQL --
-// the second SQL exemplar alongside Postgres/SQLite, kept as a future
-// SQL twin for anyone who needs it, using the same conformance suite
-// (internal/state/conformance) as every other backend. Built in
-// checkpoints: schema (New/Init/Close) plus Agents CRUD so far;
-// remaining Store methods land before conformance wiring.
+// Package mysql implements the state.Store interface using MySQL --
+// the second SQL exemplar alongside Postgres/SQLite, using the same
+// conformance suite (internal/state/conformance) as every other backend.
 //
 // Schema evolves via numbered migrations (baseline v1 + later Ups).
 // Fresh CREATE TABLE statements declare their final indexes inline
@@ -814,7 +811,7 @@ func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, er
 	row := s.db.QueryRowContext(ctx, query, args...)
 	a, err := scanAgent(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent", ID: agentID}
 		}
 		return nil, err
@@ -911,7 +908,7 @@ func (s *Store) GetAgentSchema(ctx context.Context, agentID string) (*models.Age
 	var as models.AgentSchema
 	var inBytes, outBytes, stBytes, cfgBytes []byte
 	if err := row.Scan(&as.AgentID, &inBytes, &outBytes, &stBytes, &cfgBytes); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent_schema", ID: agentID}
 		}
 		return nil, err
@@ -975,7 +972,7 @@ func (s *Store) GetAgentVersion(ctx context.Context, agentID string, version int
 	row := s.db.QueryRowContext(ctx, query, args...)
 	v, err := scanAgentVersion(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
 		}
 		return nil, err
@@ -1048,7 +1045,7 @@ func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread,
 	row := s.db.QueryRowContext(ctx, query, args...)
 	t, err := scanThread(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
 		}
 		return nil, err
@@ -1410,7 +1407,7 @@ func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
 	row := s.db.QueryRowContext(ctx, query, args...)
 	r, err := scanRun(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
 		}
 		return nil, err
@@ -1717,7 +1714,7 @@ func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*mode
 
 	ts, err := scanCheckpoint(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "checkpoint", ID: "latest"}
 		}
 		return nil, err
@@ -1831,6 +1828,13 @@ func nsPrefixPattern(prefix []string) string {
 	return nsDelim + strings.Join(prefix, nsDelim) + nsDelim + "%"
 }
 
+func nsSuffixPattern(suffix []string) string {
+	if len(suffix) == 0 {
+		return "%"
+	}
+	return "%" + nsDelim + strings.Join(suffix, nsDelim) + nsDelim
+}
+
 // storeItemExpiresAt computes the absolute expiry from a TTL in
 // minutes, nil if ttlMinutes is nil (no expiration) -- shared by
 // PutItem and the refresh-on-read path in GetItem/SearchItems so both
@@ -1879,7 +1883,7 @@ func (s *Store) GetItem(ctx context.Context, namespace []string, key string, ref
 	var valBytes []byte
 	var ttlMinutes *float64
 	if err := row.Scan(&tenantID, &nsStr, &item.Key, &valBytes, &item.CreatedAt, &item.UpdatedAt, &ttlMinutes); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "store_item", ID: key}
 		}
 		return nil, err
@@ -2020,6 +2024,10 @@ func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespa
 		where = append(where, "namespace LIKE ?")
 		args = append(args, nsPrefixPattern(req.Prefix))
 	}
+	if len(req.Suffix) > 0 {
+		where = append(where, "namespace LIKE ?")
+		args = append(args, nsSuffixPattern(req.Suffix))
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -2144,7 +2152,7 @@ func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*model
 	var r models.CachedRunResult
 	var outputBytes []byte
 	if err := row.Scan(&r.CacheKey, &r.AgentID, &outputBytes, &r.CreatedAt, &r.ExpiresAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "run_cache", ID: cacheKey}
 		}
 		return nil, err
@@ -2275,7 +2283,7 @@ func (s *Store) GetLastCronFireTime(ctx context.Context, scheduleName string) (t
 	err := s.db.QueryRowContext(ctx, `
 		SELECT fire_time FROM cron_claims WHERE tenant_id = ? AND schedule_name = ? ORDER BY fire_time DESC LIMIT 1
 	`, tenant.FromContext(ctx), scheduleName).Scan(&fireTime)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, false, nil
 	}
 	if err != nil {
@@ -2503,7 +2511,7 @@ func (s *Store) GetOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	row := s.db.QueryRowContext(ctx, query, args...)
 	var oc models.OpaqueCheckpoint
 	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &oc.CreatedAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
 		}
 		return nil, err
@@ -2539,7 +2547,7 @@ func (s *Store) GetLatestOpaqueCheckpoint(ctx context.Context, threadID, namespa
 	row := s.db.QueryRowContext(ctx, query, args...)
 	var oc models.OpaqueCheckpoint
 	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &oc.CreatedAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: threadID}
 		}
 		return nil, err
@@ -2722,7 +2730,7 @@ func (s *Store) GetRegistryEntry(ctx context.Context, name string) (*models.Regi
 	row := s.db.QueryRowContext(ctx, query, args...)
 	e, err := scanRegistryEntry(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
 		}
 		return nil, err
@@ -2882,7 +2890,7 @@ func (s *Store) GetRegistryEntryVersion(ctx context.Context, name string, versio
 	row := s.db.QueryRowContext(ctx, query, args...)
 	v, err := scanRegistryEntryVersion(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
 		}
 		return nil, err

@@ -1,9 +1,18 @@
 .git
 *.db
+*.db-shm
+*.db-wal
 runkite
 .cursor/
 .github/
 plans/
+explain_in_details/
+rh-agents-demo/
+CODE_REVIEW_ANALYSIS*.md
+.env
+.env.*
+!.env.example
+!.env.llm.example
 typescript/*/dist/
 # Bare "node_modules/"/".venv" only matched the repo root, not per-example
 # dirs like examples/*/node_modules -- **/ matches at any depth, so a

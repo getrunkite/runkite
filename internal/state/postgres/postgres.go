@@ -2412,6 +2412,13 @@ func nsPrefixPattern(prefix []string) string {
 	return nsDelim + strings.Join(prefix, nsDelim) + nsDelim + "%"
 }
 
+func nsSuffixPattern(suffix []string) string {
+	if len(suffix) == 0 {
+		return "%"
+	}
+	return "%" + nsDelim + strings.Join(suffix, nsDelim) + nsDelim
+}
+
 // storeItemExpiresAt computes the absolute expiry from a TTL in minutes,
 // nil if ttlMinutes is nil (no expiration) -- shared by PutItem and the
 // refresh-on-read path in GetItem/SearchItems so both compute the same
@@ -2592,6 +2599,11 @@ func (s *Store) ListNamespaces(ctx context.Context, req *models.StoreListNamespa
 	if len(req.Prefix) > 0 {
 		where = append(where, fmt.Sprintf("namespace LIKE $%d", argN))
 		args = append(args, nsPrefixPattern(req.Prefix))
+		argN++
+	}
+	if len(req.Suffix) > 0 {
+		where = append(where, fmt.Sprintf("namespace LIKE $%d", argN))
+		args = append(args, nsSuffixPattern(req.Suffix))
 		argN++
 	}
 	if len(where) > 0 {

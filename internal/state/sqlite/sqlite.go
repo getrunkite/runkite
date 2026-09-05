@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -705,7 +706,7 @@ func (s *SQLiteStore) GetAgentVersion(ctx context.Context, agentID string, versi
 	row := s.db.QueryRowContext(ctx, query, args...)
 	v, err := scanAgentVersion(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent_version", ID: fmt.Sprintf("%s@v%d", agentID, version)}
 		}
 		return nil, err
@@ -795,7 +796,7 @@ func (s *SQLiteStore) GetRegistryEntry(ctx context.Context, name string) (*model
 	row := s.db.QueryRowContext(ctx, query, args...)
 	e, err := scanRegistryEntry(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "registry_entry", ID: name}
 		}
 		return nil, err
@@ -947,7 +948,7 @@ func (s *SQLiteStore) GetRegistryEntryVersion(ctx context.Context, name string, 
 	row := s.db.QueryRowContext(ctx, query, args...)
 	v, err := scanRegistryEntryVersion(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "registry_entry_version", ID: fmt.Sprintf("%s@v%d", name, version)}
 		}
 		return nil, err
@@ -999,7 +1000,7 @@ func (s *SQLiteStore) GetAgent(ctx context.Context, agentID string) (*models.Age
 	var a models.Agent
 	var metaStr, capsStr string
 	if err := row.Scan(&a.TenantID, &a.AgentID, &a.Name, &a.Description, &metaStr, &capsStr, &a.Version); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent", ID: agentID}
 		}
 		return nil, err
@@ -1123,7 +1124,7 @@ func (s *SQLiteStore) GetAgentSchema(ctx context.Context, agentID string) (*mode
 	var as models.AgentSchema
 	var inStr, outStr, stStr, cfgStr string
 	if err := row.Scan(&as.AgentID, &inStr, &outStr, &stStr, &cfgStr); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "agent_schema", ID: agentID}
 		}
 		return nil, err
@@ -1174,7 +1175,7 @@ func (s *SQLiteStore) GetThread(ctx context.Context, threadID string) (*models.T
 	var t models.Thread
 	var metaStr, valsStr, createdStr, updatedStr string
 	if err := row.Scan(&t.TenantID, &t.ThreadID, &t.Status, &metaStr, &valsStr, &createdStr, &updatedStr, &t.Version); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "thread", ID: threadID}
 		}
 		return nil, err
@@ -1235,7 +1236,7 @@ func (s *SQLiteStore) UpdateThread(ctx context.Context, threadID string, patch *
 	var newVersion int
 	err = s.db.QueryRowContext(ctx, query, args...).Scan(&newVersion)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			if patch.IfMatchVersion != nil {
 				return nil, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "version mismatch (optimistic concurrency)"}
 			}
@@ -1515,7 +1516,7 @@ func scanCheckpointRow(row *sql.Row) (*models.ThreadState, error) {
 	var parentID sql.NullString
 
 	if err := row.Scan(&cpID, &tID, &cpNS, &parentID, &valsStr, &metaStr, &nextStr, &tasksStr, &intStr, &createdStr); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "checkpoint", ID: "latest"}
 		}
 		return nil, err
@@ -1604,7 +1605,7 @@ func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, er
 	var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 	var createdStr, updatedStr string
 	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
 		}
 		return nil, err
@@ -1848,7 +1849,7 @@ func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpo
 			WHERE tenant_id = ? AND thread_id = ? AND checkpoint_id = ? AND version = ?
 			RETURNING version
 		`, framework, data, now, tid, threadID, checkpointID, *ifMatch).Scan(&newVersion)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, &state.ErrConflict{Resource: "opaque_checkpoint", ID: checkpointID, Reason: "version mismatch"}
 		}
 		if err != nil {
@@ -1891,7 +1892,7 @@ func (s *SQLiteStore) GetOpaqueCheckpoint(ctx context.Context, threadID, checkpo
 	var oc models.OpaqueCheckpoint
 	var createdStr string
 	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &createdStr); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: checkpointID}
 		}
 		return nil, err
@@ -1929,7 +1930,7 @@ func (s *SQLiteStore) GetLatestOpaqueCheckpoint(ctx context.Context, threadID, n
 	var oc models.OpaqueCheckpoint
 	var createdStr string
 	if err := row.Scan(&oc.ThreadID, &oc.CheckpointID, &oc.Framework, &oc.Data, &oc.Version, &createdStr); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "opaque_checkpoint", ID: threadID}
 		}
 		return nil, err
@@ -2263,6 +2264,13 @@ func nsPrefixPattern(prefix []string) string {
 	return nsDelim + strings.Join(prefix, nsDelim) + nsDelim + "%"
 }
 
+func nsSuffixPattern(suffix []string) string {
+	if len(suffix) == 0 {
+		return "%"
+	}
+	return "%" + nsDelim + strings.Join(suffix, nsDelim) + nsDelim
+}
+
 // storeExpiresLayout is a fixed-width UTC timestamp used ONLY for
 // store_items.expires_at string comparisons. Plain time.RFC3339
 // truncates to whole seconds (broke sub-second TTLs). Plain
@@ -2319,7 +2327,7 @@ func (s *SQLiteStore) GetItem(ctx context.Context, namespace []string, key strin
 	var tenantID, nsStr, valStr, createdStr, updatedStr string
 	var ttlMinutes *float64
 	if err := row.Scan(&tenantID, &nsStr, &item.Key, &valStr, &createdStr, &updatedStr, &ttlMinutes); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "store_item", ID: key}
 		}
 		return nil, err
@@ -2452,6 +2460,10 @@ func (s *SQLiteStore) ListNamespaces(ctx context.Context, req *models.StoreListN
 		where = append(where, "namespace LIKE ?")
 		args = append(args, nsPrefixPattern(req.Prefix))
 	}
+	if len(req.Suffix) > 0 {
+		where = append(where, "namespace LIKE ?")
+		args = append(args, nsSuffixPattern(req.Suffix))
+	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -2554,7 +2566,7 @@ func (s *SQLiteStore) GetCachedRunResult(ctx context.Context, cacheKey string) (
 	var r models.CachedRunResult
 	var outputStr, createdAtStr, expiresAtStr string
 	if err := row.Scan(&r.CacheKey, &r.AgentID, &outputStr, &createdAtStr, &expiresAtStr); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "run_cache", ID: cacheKey}
 		}
 		return nil, err
@@ -2665,7 +2677,7 @@ func (s *SQLiteStore) GetLastCronFireTime(ctx context.Context, scheduleName stri
 	err := s.db.QueryRowContext(ctx, `
 		SELECT fire_time FROM cron_claims WHERE tenant_id = ? AND schedule_name = ? ORDER BY fire_time DESC LIMIT 1
 	`, tenant.FromContext(ctx), scheduleName).Scan(&fireTimeStr)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, false, nil
 	}
 	if err != nil {

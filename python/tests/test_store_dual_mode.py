@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from runkite_runner.store import (  # noqa: E402
     RunkiteStore,
     _ns_prefix_pattern,
+    _ns_suffix_pattern,
     _ns_to_string,
     _string_to_ns,
 )
@@ -54,6 +55,10 @@ def test_namespace_encoding():
     check("prefix pattern does not match sibling segment", not fnmatch.fnmatch(sibling, like_pattern))
     exact = _ns_to_string(("team-a", "x"))
     check("prefix pattern matches real child", fnmatch.fnmatch(exact, like_pattern))
+
+    suffix = _ns_suffix_pattern(("users",))
+    check("suffix pattern matches trailing segment", fnmatch.fnmatch(encoded, suffix.replace("%", "*")))
+    check("suffix pattern does not match unrelated leaf", not fnmatch.fnmatch(sibling, suffix.replace("%", "*")))
 
 
 async def test_dual_mode_interop(http_url: str, postgres_dsn: str):

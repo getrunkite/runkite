@@ -23,6 +23,7 @@ import { MandatoryHITL } from "./pages/MandatoryHITL";
 import { Audit } from "./pages/Audit";
 import { Spend } from "./pages/Spend";
 import { TryAgent } from "./pages/TryAgent";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function Gate() {
   const { status } = useAuth();
@@ -82,8 +83,10 @@ function Gate() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Gate />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Gate />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
