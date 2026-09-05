@@ -13,6 +13,26 @@ export interface AdminOverview {
   cron_schedule_count: number;
 }
 
+// Mirrors internal/models.RunManifest -- a frozen snapshot of what a run
+// was authorized to do at dispatch time, stored at run.metadata.run_manifest.
+export interface RunManifest {
+  schema_version: number;
+  captured_at: string;
+  tenant_id: string;
+  agent_id: string;
+  requested_alias?: string;
+  agent_version?: number;
+  runner_kind: string;
+  connector_needs?: string[];
+  /** Absent = no in-graph tool allowlist (unrestricted). Present, even
+   *  empty, = runner must refuse every tool not listed. */
+  allowed_tools?: string[];
+  policy_fail_closed: boolean;
+  principal?: { identity?: string; permissions?: string[] };
+  parent_run_id?: string;
+  depth?: number;
+}
+
 export interface AdminAgent {
   tenant_id: string;
   agent_id: string;

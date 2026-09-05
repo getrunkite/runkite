@@ -265,6 +265,32 @@ type Run struct {
 	Depth       int     `json:"depth,omitempty"`
 }
 
+// RunManifest is a frozen snapshot of what a run was authorized to do at
+// dispatch time. Stored in run metadata (run_manifest) and copied onto
+// RunAssignment so runners, Admin, and audit can reference the same
+// intent recorded at createRunCtx — not live-mutable config.
+type RunManifest struct {
+	SchemaVersion    int                   `json:"schema_version"`
+	CapturedAt       time.Time             `json:"captured_at"`
+	TenantID         string                `json:"tenant_id"`
+	AgentID          string                `json:"agent_id"`
+	RequestedAlias   string                `json:"requested_alias,omitempty"`
+	AgentVersion     int                   `json:"agent_version,omitempty"`
+	RunnerKind       string                `json:"runner_kind"`
+	ConnectorNeeds   []string              `json:"connector_needs,omitempty"`
+	AllowedTools     *[]string             `json:"allowed_tools,omitempty"`
+	PolicyFailClosed bool                  `json:"policy_fail_closed"`
+	Principal        *RunManifestPrincipal `json:"principal,omitempty"`
+	ParentRunID      *string               `json:"parent_run_id,omitempty"`
+	Depth            int                   `json:"depth,omitempty"`
+}
+
+// RunManifestPrincipal records who started the run (when auth is configured).
+type RunManifestPrincipal struct {
+	Identity    string   `json:"identity,omitempty"`
+	Permissions []string `json:"permissions,omitempty"`
+}
+
 // RunCreate is the body for POST /runs and POST /threads/{id}/runs.
 type RunCreate struct {
 	// RunID lets a client supply its own run ID instead of the server

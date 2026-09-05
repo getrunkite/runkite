@@ -286,7 +286,8 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// resolution above so this checks the REAL target, not the alias
 	// name. Applies to every run, including resumes -- a resume still
 	// needs a real, registered agent to dispatch against.
-	if _, agentErr := s.store.GetAgent(ctx, req.AgentID); agentErr != nil {
+	agentForRun, agentErr := s.store.GetAgent(ctx, req.AgentID)
+	if agentErr != nil {
 		var notFound *state.ErrNotFound
 		if errors.As(agentErr, &notFound) {
 			return nil, nil, agentErr
@@ -391,8 +392,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// assignment and skip enqueue. Placed after thread creation above --
 	// a cache-hit run record still needs a real thread row to satisfy the
 	// runs.thread_id foreign key.
-	if req.ResumeCommand == nil {
-		if run, hit, err := s.tryServeCachedRun(ctx, runID, threadID, req, now); hit || err != nil {
+	// A2A delegation (ParentRunID set) must not short-circuit on cache:
+	// the cache check runs before depth/breadth enforcement below, and a
+	// hit would return a run with no parent/depth bookkeeping at all.
+	if req.ResumeCommand == nil && req.ParentRunID == nil {
+		if run, hit, err := s.tryServeCachedRun(ctx, runID, threadID, req, now, requestedAlias, agentForRun); hit || err != nil {
 			return run, nil, err
 		}
 	}
@@ -540,12 +544,25 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// caching silently never hit on Postgres. SQLite (plain TEXT columns,
 	// no reformatting) masked this in earlier testing.
 	if req.ResumeCommand == nil {
-		if agent, agentErr := s.store.GetAgent(ctx, req.AgentID); agentErr == nil && agent != nil {
-			if cacheTTLSeconds(agent.Metadata) > 0 {
+		if agentForRun != nil {
+			if cacheTTLSeconds(agentForRun.Metadata) > 0 {
 				run.Metadata["cache_key"] = computeCacheKey(tenant.FromContext(ctx), req.AgentID, req.Input, req.Config)
 			}
 		}
 	}
+
+	manifest := buildRunManifest(runManifestInput{
+		capturedAt:       now,
+		tenantID:         tenant.FromContext(ctx),
+		agentID:          req.AgentID,
+		requestedAlias:   requestedAlias,
+		agent:            agentForRun,
+		policyFailClosed: s.policy != nil,
+		user:             userContextFromAuth(ctx),
+		parentRunID:      req.ParentRunID,
+		depth:            depth,
+	})
+	run.Metadata["run_manifest"] = runManifestToMetadata(manifest)
 
 	// admission_limits (when configured) use CreateRunAdmitted: scope
 	// lock + COUNT + INSERT on one connection/tx so a burst cannot all
@@ -614,9 +631,8 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// loader's own default and preserving every existing deployment's
 	// behavior unchanged.
 	runnerKind := "python-langgraph"
-	agentForAssignment, agentLookupErr := s.store.GetAgent(ctx, req.AgentID)
-	if agentLookupErr == nil && agentForAssignment != nil {
-		if rk, ok := agentForAssignment.Metadata["runner_kind"].(string); ok && rk != "" {
+	if agentForRun != nil {
+		if rk, ok := agentForRun.Metadata["runner_kind"].(string); ok && rk != "" {
 			runnerKind = rk
 		}
 	}
@@ -633,6 +649,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		ResumeCommand:  req.ResumeCommand,
 		StreamModes:    []string{"values", "updates"},
 		ConnectorNeeds: []string{},
+		RunManifest:    runManifestToRaw(manifest),
 		User:           userContextFromAuth(ctx),
 		TenantID:       tenant.FromContext(ctx),
 		// Generation starts at 1 for every fresh dispatch (see its own
@@ -674,11 +691,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// knows its own dependencies statically, the run-creation caller doesn't.
 	// Reuses the same agent fetched above for runner_kind -- no need to
 	// look it up twice.
-	if agentForAssignment != nil {
-		if needs := extractConnectorNeeds(agentForAssignment.Metadata); len(needs) > 0 {
+	if agentForRun != nil {
+		if needs := extractConnectorNeeds(agentForRun.Metadata); len(needs) > 0 {
 			assignment.ConnectorNeeds = needs
 		}
-		assignment.AllowedTools = extractAllowedTools(agentForAssignment.Metadata)
+		assignment.AllowedTools = extractAllowedTools(agentForRun.Metadata)
 	}
 
 	// Pre-warm connector sessions if registry is available and connector_needs is non-empty.
@@ -814,10 +831,14 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantI
 // record directly -- no queue, no runner, no wait. hit=false (with a nil
 // run and nil error) means "proceed with a normal run" -- the overwhelmingly
 // common case (agent has no cache config, or a real cache miss).
-func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, req *models.RunCreate, now time.Time) (run *models.Run, hit bool, err error) {
-	agent, agentErr := s.store.GetAgent(ctx, req.AgentID)
-	if agentErr != nil || agent == nil {
-		return nil, false, nil
+func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, req *models.RunCreate, now time.Time, requestedAlias string, agentForRun *models.Agent) (run *models.Run, hit bool, err error) {
+	agent := agentForRun
+	if agent == nil {
+		var agentErr error
+		agent, agentErr = s.store.GetAgent(ctx, req.AgentID)
+		if agentErr != nil || agent == nil {
+			return nil, false, nil
+		}
 	}
 	ttlSeconds := cacheTTLSeconds(agent.Metadata)
 	if ttlSeconds <= 0 {
@@ -841,10 +862,38 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	}
 
 	outputJSON, _ := json.Marshal(cached.Output)
+	// A cache hit never reaches the normal manifest-building code below
+	// (this function returns before that point) -- build one here too so
+	// "what was this run authorized to do" has the same answer whether or
+	// not it happened to hit cache. depth/parent_run_id are omitted (both
+	// default to their zero value): this function is never reached for an
+	// A2A child at all (the caller gates on req.ParentRunID == nil before
+	// calling it, precisely so depth/breadth enforcement -- which runs
+	// after this point in the normal flow -- can never be skipped), so
+	// there is no delegation state to thread through here in the first
+	// place.
+	manifest := buildRunManifest(runManifestInput{
+		capturedAt:       now,
+		tenantID:         tenant.FromContext(ctx),
+		agentID:          req.AgentID,
+		requestedAlias:   requestedAlias,
+		agent:            agent,
+		policyFailClosed: s.policy != nil,
+		user:             userContextFromAuth(ctx),
+	})
+	metadata := map[string]interface{}{
+		"cache_hit":    true,
+		"run_manifest": runManifestToMetadata(manifest),
+	}
+	if requestedAlias != "" {
+		// Same A/B routing attribution convention as the normal (non-cached)
+		// path below -- a cache hit is just as alias-routable.
+		metadata["requested_alias"] = requestedAlias
+	}
 	run = &models.Run{
 		RunID: runID, ThreadID: threadID, AgentID: req.AgentID, AssistantID: req.AgentID,
 		Status:    models.RunStatusSuccess,
-		Metadata:  map[string]interface{}{"cache_hit": true},
+		Metadata:  metadata,
 		Input:     req.Input,
 		Config:    req.Config,
 		Output:    outputJSON,

@@ -56,6 +56,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
+          <a href="run-manifest.html">Run manifest</a>
           <a href="kill.html">Kill &amp; break-glass</a>
           <a href="security.html">Security</a>
           <a href="multi-tenant.html">Multi-tenant keys</a>
@@ -267,6 +268,14 @@
             This is the single best tool for debugging "the agent did something weird" — you
             see every tool call, every value the graph produced, and the final status, in
             order, without needing to reproduce the run yourself.
+          </li>
+          <li>
+            Above the event stream (between the input panel and the event log), the <strong>Run manifest</strong> card answers a different
+            question than the event log: not "what happened" but "what was this run allowed to
+            do the instant it was dispatched" — agent version, runner kind, tool allowlist,
+            whether connector policy was fail-closed, and who requested it. It's frozen at
+            dispatch, so it stays accurate even if you change config afterward. See
+            <a href="run-manifest.html">Run manifest</a> for the full field reference.
           </li>
           <li>
             A <strong>Cancel</strong> action is available on any non-terminal run, from any

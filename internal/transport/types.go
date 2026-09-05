@@ -69,6 +69,11 @@ type RunAssignment struct {
 	// as a real generation number (see the same reasoning in
 	// Ack/Renew).
 	Generation int64 `json:"generation,omitempty"`
+
+	// RunManifest is the frozen dispatch-time intent snapshot (see
+	// models.RunManifest). Copied from run metadata at createRunCtx so
+	// runners and audit see the same record the control plane stored.
+	RunManifest json.RawMessage `json:"run_manifest,omitempty"`
 }
 
 // UserContext is the identity that authenticated a run's originating

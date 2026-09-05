@@ -117,6 +117,11 @@
       "items": { "type": "string" },
       "description": "Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = runner must refuse tool names not listed before side effects. Distinct from connector policy grants."
     },
+    "run_manifest": {
+      "type": "object",
+      "description": "Frozen snapshot of what this run was authorized to do at dispatch time (schema_version, agent, runner_kind, connector_needs, allowed_tools, principal, etc.). Same payload stored in run metadata for Admin/audit.",
+      "additionalProperties": true
+    },
     "tenant_id": {
       "type": "string",
       "minLength": 1,

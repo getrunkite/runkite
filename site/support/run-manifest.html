@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run manifest — Runkite Docs</title>
+    <meta name="description" content="A frozen, per-run record of exactly what a run was authorized to do at dispatch time." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20260903" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a class="active" href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Govern</p>
+        <h1>Run manifest</h1>
+        <p class="lede">Every run freezes a snapshot of exactly what it was authorized to do the instant it was created — not whatever your config says right now. That snapshot is stored on the run record (<code>metadata.run_manifest</code>) and, when the run is actually dispatched to a runner, copied onto the queued job too. Admin can pull it up for any run, forever.</p>
+
+        <div class="guide-grid">
+          <section>
+            <h2>What it is</h2>
+            <p>
+              At <code>createRunCtx</code> — the single function every run creation path (REST, streaming, cron, A2A delegation)
+              goes through — the plane resolves the agent, the runner it will dispatch to, its declared tool allowlist and
+              connector needs, whether connector policy is fail-closed, and who asked for the run. That resolved set of facts
+              is written once, as <code>run.metadata.run_manifest</code>, and copied verbatim onto the queued job the runner
+              receives. Neither copy changes after that point, even if you edit <code>langgraph.json</code>, rotate a grant,
+              or flip policy on a minute later.
+            </p>
+          </section>
+          <section>
+            <h2>Why it is here</h2>
+            <p>
+              "What was this agent even allowed to do when it ran?" is a question every audit, incident review, and support
+              ticket eventually asks. Live config answers "what's allowed right now" — which is the wrong answer once
+              anything has changed since. A frozen per-run record is the only honest answer to a question about the past.
+            </p>
+          </section>
+        </div>
+
+        <h2>What's in it (schema v1)</h2>
+        <pre class="mono-block">{
+  "schema_version": 1,
+  "captured_at": "2026-09-05T02:58:06Z",
+  "tenant_id": "acme",
+  "agent_id": "sales-bot",
+  "agent_version": 3,
+  "runner_kind": "python-langgraph",
+  "connector_needs": ["salesforce"],
+  "allowed_tools": ["lookup_account"],
+  "policy_fail_closed": true,
+  "principal": { "identity": "alice", "permissions": ["runs:create"] },
+  "parent_run_id": null,
+  "depth": 0
+}</pre>
+        <ul class="expect">
+          <li><strong><code>agent_version</code></strong> — the registry version dispatched, so "which build of the agent actually ran" survives a later redeploy.</li>
+          <li><strong><code>allowed_tools</code></strong> — absent means no in-graph tool allowlist was configured (unrestricted); present, including an empty list, means the runner was told to refuse every tool call not on it.</li>
+          <li><strong><code>policy_fail_closed</code></strong> — whether the connector <code>policy</code> section was configured for this dispatch (<code>true</code> = a policy engine was active; it does not mean every call was denied). Specific allow/deny/pending decisions are still <a href="./grants.html">Grants &amp; HITL</a> and <a href="./policy.html">PDP / Cedar</a> — see Audit for the decision log.</li>
+          <li><strong><code>principal</code></strong> — omitted entirely when no auth provider is configured (open local/dev mode), not a blank record.</li>
+        </ul>
+
+        <h2>In the product</h2>
+        <figure class="shot">
+          <div class="cap">Admin → Runs → a run — the Run manifest card, with raw JSON one click away</div>
+          <img src="../assets/ui-run-manifest.png" alt="Runkite Admin Run detail page showing the Run manifest card" width="960" height="600" />
+        </figure>
+
+        <h2>What to expect</h2>
+        <ul class="expect">
+          <li><strong>Automatic, no config.</strong> Every run gets one in metadata — there's nothing to turn on, and nothing changes about how you write an agent. LLM cache hits get a manifest too (no runner dispatch, so nothing is copied onto a <code>RunAssignment</code>).</li>
+          <li><strong>A record, not a gate.</strong> This is v1: it captures intent, it does not evaluate sequences of calls or block anything on its own. Reasoning about a <em>sequence</em> of tool calls in flight and denying a suspicious one before it runs is a different, heavier control than a per-run snapshot. Runkite's existing fail-closed grants, mandatory HITL, and break-glass are the enforcement layer; the manifest is what you check afterward to see what any of them were actually working with.</li>
+          <li><strong>Lives in existing storage.</strong> No new database column or migration — it rides inside the <code>metadata</code> JSON column every run already has, so it works on every state backend the same way.</li>
+          <li><strong>API-visible from day one.</strong> <code>GET /admin-api/runs/{id}</code> has always returned it (it's just a key in <code>metadata</code>); the Admin UI card in this release is what makes it visible without reading raw JSON.</li>
+        </ul>
+        <p class="note">
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>
+          · <a href="./grants.html">Grants &amp; HITL</a>
+          · <a href="./admin-guide.html#5-threads--runs">Admin UI guide → Threads &amp; Runs</a>
+          · <a href="./limitations.html">Limitations</a>
+        </p>
+
+      </main>
+    </div>
+      <script src="./docs.js" defer></script>
+  </body>
+</html>

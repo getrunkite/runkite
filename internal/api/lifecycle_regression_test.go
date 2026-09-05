@@ -388,7 +388,7 @@ func TestCacheHit_ConflictsWhenThreadBusy(t *testing.T) {
 
 	_, hit, err := s.tryServeCachedRun(ctx, "run-cache", threadID, &models.RunCreate{
 		AgentID: "cached-agent", Input: input,
-	}, time.Now().UTC())
+	}, time.Now().UTC(), "", nil)
 	if err == nil {
 		t.Fatal("expected conflict when serving cache hit on busy thread")
 	}

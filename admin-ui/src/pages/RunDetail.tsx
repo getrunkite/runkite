@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
-import type { AdminRun } from "../api/types";
+import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -37,6 +37,18 @@ const EVENT_COLORS: Record<string, string> = {
   error: "text-destructive",
   interrupted: "text-warning",
 };
+
+// run_manifest rides inside the generic metadata bag (no dedicated API
+// field), so this is a best-effort read: older runs predating the
+// feature, or a malformed value, just render nothing rather than crash
+// the page.
+function readRunManifest(metadata: Record<string, unknown> | undefined): RunManifest | undefined {
+  const raw = metadata?.run_manifest;
+  if (!raw || typeof raw !== "object") return undefined;
+  const m = raw as Partial<RunManifest>;
+  if (typeof m.schema_version !== "number" || typeof m.agent_id !== "string") return undefined;
+  return m as RunManifest;
+}
 
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
@@ -87,6 +99,7 @@ export function RunDetail() {
   if (run.error) return <ErrorState message={run.error} />;
   if (!run.data) return null;
 
+  const manifest = readRunManifest(run.data.metadata);
   const isTerminal = TERMINAL_STATUSES.has(run.data.status);
   const childRuns = children.data ?? [];
   // Show A2A panel for delegated children immediately; for parents wait until
@@ -202,6 +215,8 @@ export function RunDetail() {
         </Card>
       </div>
 
+      {manifest && <RunManifestCard manifest={manifest} cacheHit={run.data.metadata?.cache_hit === true} />}
+
       {showA2A && (
         <Card className="mb-4">
           <CardHeader>
@@ -296,6 +311,90 @@ export function RunDetail() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function RunManifestCard({ manifest: m, cacheHit = false }: { manifest: RunManifest; cacheHit?: boolean }) {
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex-row items-center justify-between">
+        <div>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            Run manifest
+            {cacheHit && (
+              <Badge variant="muted" title="Answer served from LLM cache — no runner was dispatched">
+                LLM cache hit
+              </Badge>
+            )}
+          </CardTitle>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Frozen the moment this run was dispatched — what it was authorized to do, not today's live config.
+          </p>
+        </div>
+        <DocsLink href={supportPage("run-manifest.html")}>Docs: run manifest →</DocsLink>
+      </CardHeader>
+      <CardContent>
+        <DetailRow label="Agent">
+          {m.agent_id}
+          {m.agent_version != null && <span className="ml-1.5 text-muted-foreground">v{m.agent_version}</span>}
+        </DetailRow>
+        {m.requested_alias && m.requested_alias !== m.agent_id && (
+          <DetailRow label="Requested as">{m.requested_alias}</DetailRow>
+        )}
+        <DetailRow label="Runner kind">
+          <code className="font-mono text-xs">{m.runner_kind}</code>
+        </DetailRow>
+        <DetailRow label="Connector policy">
+          <Badge variant={m.policy_fail_closed ? "success" : "muted"}>
+            {m.policy_fail_closed ? "policy configured" : "no policy configured"}
+          </Badge>
+        </DetailRow>
+        <DetailRow label="Tool allowlist">
+          {m.allowed_tools == null ? (
+            <Badge variant="muted">unrestricted</Badge>
+          ) : m.allowed_tools.length === 0 ? (
+            <Badge variant="destructive">deny all</Badge>
+          ) : (
+            <div className="flex flex-wrap justify-end gap-1">
+              {m.allowed_tools.map((t) => (
+                <Badge key={t} variant="outline">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </DetailRow>
+        <DetailRow label="Connectors">
+          {m.connector_needs && m.connector_needs.length > 0 ? (
+            <div className="flex flex-wrap justify-end gap-1">
+              {m.connector_needs.map((c) => (
+                <Badge key={c} variant="outline">
+                  {c}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">none declared</span>
+          )}
+        </DetailRow>
+        <DetailRow label="Requested by">
+          {m.principal?.identity ? (
+            <span className="font-mono text-xs">{m.principal.identity}</span>
+          ) : (
+            <span className="text-muted-foreground">no auth configured</span>
+          )}
+        </DetailRow>
+        <DetailRow label="Captured at" last>
+          {formatTimestamp(m.captured_at)}
+        </DetailRow>
+        <details className="mt-3 text-xs">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Raw JSON</summary>
+          <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-muted/50 p-3 font-mono">
+            {JSON.stringify(m, null, 2)}
+          </pre>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
 
