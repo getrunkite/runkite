@@ -92,7 +92,12 @@ func initReclaimMaxRetries(configPath string) int {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) > 0 {
 		if cfg, err := config.LoadLangGraphJSON(paths[0]); err == nil && cfg.Reclaim != nil && cfg.Reclaim.MaxRetries != nil {
-			maxRetries = *cfg.Reclaim.MaxRetries
+			n := *cfg.Reclaim.MaxRetries
+			if n < 0 {
+				slog.Error("reclaim.max_retries invalid; keeping prior value", "value", n, "using", maxRetries)
+			} else {
+				maxRetries = n
+			}
 		}
 	}
 	if v := os.Getenv("RUNKITE_RECLAIM_MAX_RETRIES"); v != "" {

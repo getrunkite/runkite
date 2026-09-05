@@ -72,6 +72,59 @@ func TestInitReclaimMaxAge_InvalidEnvKeepsConfig(t *testing.T) {
 	}
 }
 
+func TestInitReclaimMaxRetries_Default(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{"graphs": {"echo": "graph.py:graph"}}`)
+	if got := initReclaimMaxRetries(path); got != defaultReclaimMaxRetries {
+		t.Fatalf("got %d, want default %d", got, defaultReclaimMaxRetries)
+	}
+}
+
+func TestInitReclaimMaxRetries_Configured(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_retries": 5}
+	}`)
+	if got := initReclaimMaxRetries(path); got != 5 {
+		t.Fatalf("got %d, want 5", got)
+	}
+}
+
+func TestInitReclaimMaxRetries_ZeroMeansUnlimited(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_retries": 0}
+	}`)
+	if got := initReclaimMaxRetries(path); got != 0 {
+		t.Fatalf("got %d, want 0 (unlimited)", got)
+	}
+}
+
+func TestInitReclaimMaxRetries_InvalidConfigNegativeKeepsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_retries": -1}
+	}`)
+	if got := initReclaimMaxRetries(path); got != defaultReclaimMaxRetries {
+		t.Fatalf("got %d, want default %d after negative config", got, defaultReclaimMaxRetries)
+	}
+}
+
+func TestInitReclaimMaxRetries_InvalidEnvKeepsConfig(t *testing.T) {
+	t.Setenv("RUNKITE_RECLAIM_MAX_RETRIES", "-1")
+	dir := t.TempDir()
+	path := writeLangGraphJSON(t, dir, `{
+		"graphs": {"echo": "graph.py:graph"},
+		"reclaim": {"max_retries": 5}
+	}`)
+	if got := initReclaimMaxRetries(path); got != 5 {
+		t.Fatalf("got %d, want config 5 after invalid env", got)
+	}
+}
+
 func TestTryAcquireReclaimLeader_OnlyOneWinner(t *testing.T) {
 	rdb := redisClientOrSkip(t)
 	ctx := context.Background()
