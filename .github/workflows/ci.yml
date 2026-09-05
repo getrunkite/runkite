@@ -116,10 +116,9 @@ jobs:
         run: |
           npm install -g npm@10.9.2
           npm ci
-          # Audit is best-effort: npm's audit API flakes (503 / retired quick
-          # endpoint / "Invalid package tree") and must not red-gate an
-          # otherwise-green lint+build. Real highs still print when the API works.
-          npm audit --audit-level=high || echo "::warning::npm audit failed or unavailable; continuing"
+          # Fail on real high/critical findings; warn-only if the audit
+          # API/registry is down (see scripts/npm-audit-ci.sh).
+          bash ../scripts/npm-audit-ci.sh
           npm run lint
           # Plain node --test with native TS type-stripping (no extra
           # devDependency) -- see src/lib/agentMessages.test.ts.
@@ -225,6 +224,25 @@ jobs:
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py
+          python python/tests/test_adapter_checkpoints.py
+          python python/tests/test_usage_accumulate.py
+          python python/tests/test_protocol_execute_goldens.py
+          python python/tests/test_heartbeat.py
+          python python/tests/test_logging_config.py
+          python python/tests/test_tls_utils.py
+          python python/tests/test_schema_introspect.py
+          python python/tests/test_tenant_ctx.py
+          python python/tests/test_connectors.py
+          python python/tests/test_tracing.py
+          python python/tests/test_otel_callbacks.py
+          python python/tests/test_checkpoint_concurrent_setup.py
+          python python/tests/test_proxy_checkpoint.py
+          # Live LangGraph SDK tests skip cleanly when /health is down (no
+          # control plane in this step). They run for real when
+          # RUNKITE_URL points at a live stack.
+          python tests/sdk_client_test.py
+          python tests/sdk_e2e_test.py
+          python tests/sdk_cancel_hitl_test.py
 
       - name: CrewAI/LlamaIndex/AutoGen adapter unit tests
         # Isolated venvs, deliberately NOT installed into the shared
@@ -254,7 +272,7 @@ jobs:
         working-directory: typescript/runkite-runner
         run: |
           npm install
-          npm audit --audit-level=high || echo "::warning::npm audit failed or unavailable; continuing"
+          bash ../../scripts/npm-audit-ci.sh
           npm run lint
           npm run format:check
 

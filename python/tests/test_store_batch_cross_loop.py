@@ -42,6 +42,16 @@ async def test_batch_from_to_thread_uses_store_loop():
     check("abatch ran on the store's main loop", len(seen) == 1 and seen[0] is main_loop)
 
 
+async def test_batch_on_store_loop_raises_instead_of_deadlock():
+    store = RunkiteStore(http_base_url="http://127.0.0.1:9")
+    await store.warm()
+    try:
+        store.batch([])
+        check("batch on own loop raised", False)
+    except RuntimeError as e:
+        check("batch on own loop raised", "abatch" in str(e))
+
+
 async def test_direct_batch_before_warm_fails_loudly():
     store = RunkiteStore(postgres_dsn="postgresql://unused", http_base_url=None)
     # Force direct mode even if both were somehow set -- constructor picks
@@ -56,6 +66,7 @@ async def test_direct_batch_before_warm_fails_loudly():
 
 async def main():
     await test_batch_from_to_thread_uses_store_loop()
+    await test_batch_on_store_loop_raises_instead_of_deadlock()
     await test_direct_batch_before_warm_fails_loudly()
     print("\nAll checks passed.")
 

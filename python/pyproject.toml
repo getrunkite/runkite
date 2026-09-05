@@ -28,6 +28,10 @@ dependencies = [
   "psycopg[binary,pool]",
   "httpx",
   "uvicorn",
+]
+
+[project.optional-dependencies]
+otel = [
   "opentelemetry-api",
   "opentelemetry-sdk",
   "opentelemetry-exporter-otlp",

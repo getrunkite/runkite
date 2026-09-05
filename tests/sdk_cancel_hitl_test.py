@@ -18,7 +18,8 @@ config as well. You can run two runners or use a combined config.
 import asyncio
 import os
 import sys
-import time
+import urllib.error
+import urllib.request
 
 try:
     from langgraph_sdk import get_client
@@ -29,7 +30,21 @@ except ImportError:
 BASE_URL = os.environ.get("RUNKITE_URL", "http://localhost:2026")
 
 
+def _control_plane_reachable() -> bool:
+    url = BASE_URL.rstrip("/") + "/health"
+    try:
+        urllib.request.urlopen(url, timeout=2)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except urllib.error.URLError:
+        return False
+
+
 async def main():
+    if not _control_plane_reachable():
+        print(f"SKIP: control plane not reachable at {BASE_URL} (set RUNKITE_URL to run)")
+        return
     client = get_client(url=BASE_URL)
     passed = 0
     failed = 0

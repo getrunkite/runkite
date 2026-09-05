@@ -44,7 +44,13 @@ pip install runkite-runner
 ```
 
 Requires **Python 3.11+**. Pulls in LangGraph, gRPC, checkpoint Postgres support,
-httpx, uvicorn, and OpenTelemetry exporters (see `pyproject.toml`).
+httpx, and uvicorn (see `pyproject.toml`). Tracing is optional:
+
+```bash
+pip install 'runkite-runner[otel]'
+```
+
+Without the extra, the runner still starts; OTEL_* env vars log once and stay no-op until the packages are installed.
 
 ---
 

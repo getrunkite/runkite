@@ -266,13 +266,22 @@ class RunkiteStore(BaseStore):
             return asyncio.run(self.abatch(ops))
 
         try:
-            asyncio.get_running_loop()
+            running = asyncio.get_running_loop()
         except RuntimeError:
             return _run_abatch()
 
-        # Sync API invoked from inside a running loop: never block that
-        # same loop waiting on itself -- hop to a worker thread that
-        # run_coroutine_threadsafe's back onto the store loop.
+        # Called from the store's own loop: a ThreadPool hop still
+        # deadlocks -- this stack is blocked in .result() so the loop
+        # never runs abatch. Callers already on the loop must use abatch.
+        if self._loop is not None and running is self._loop:
+            raise RuntimeError(
+                "RunkiteStore.batch() cannot be called from the store's event loop "
+                "(it would deadlock waiting for abatch). Use await store.abatch(...) instead."
+            )
+
+        # Sync API invoked from a *different* running loop: hop to a
+        # worker thread that run_coroutine_threadsafe's back onto the
+        # store loop (see test_store_batch_cross_loop.py).
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:

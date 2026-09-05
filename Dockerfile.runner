@@ -10,7 +10,7 @@ RUN groupadd --gid 65532 runkite && \
 COPY python/ ./python/
 COPY examples/ ./examples/
 
-RUN pip install --no-cache-dir ./python && \
+RUN pip install --no-cache-dir "./python[otel]" && \
     chown -R runkite:runkite /app
 
 ENV PYTHONUNBUFFERED=1

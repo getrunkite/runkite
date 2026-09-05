@@ -89,7 +89,9 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ steps.ver.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.ver.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
           tags: ${{ steps.ver.outputs.tags_cp }}
 
       - name: Push Python runner image

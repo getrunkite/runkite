@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { AdminFinOpsView, FinOpsBudgetCap, FinOpsConfigPayload, FinOpsModelPrice } from "../api/types";
 import { Button } from "../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 
 type PriceRow = { model: string; input: string; output: string };
@@ -60,6 +68,8 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
   const [prices, setPrices] = useState<PriceRow[]>([{ model: "", input: "", output: "" }]);
   const [tenantBudgets, setTenantBudgets] = useState<BudgetRow[]>([{ key: "default", usd: "", soft: false }]);
   const [agentBudgets, setAgentBudgets] = useState<BudgetRow[]>([{ key: "default/agent", usd: "", soft: false }]);
+  const [freeConfirm, setFreeConfirm] = useState<string[] | null>(null);
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -128,7 +138,7 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
     return out;
   };
 
-  const save = async () => {
+  const save = async (opts?: { confirmFree?: boolean }) => {
     setBusy(true);
     setSaveError(null);
     setSaveOk(null);
@@ -146,15 +156,12 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
         if (input === 0 && output === 0) zeroRateModels.push(model);
         pricebook[model] = { input_per_1k: input, output_per_1k: output };
       }
-      if (zeroRateModels.length > 0) {
-        const ok = window.confirm(
-          `These models have $0/$0 rates (intentional free tier):\n${zeroRateModels.join(", ")}\n\nSave as free tier?`,
-        );
-        if (!ok) {
-          setBusy(false);
-          return;
-        }
+      if (zeroRateModels.length > 0 && !opts?.confirmFree) {
+        setFreeConfirm(zeroRateModels);
+        setBusy(false);
+        return;
       }
+      setFreeConfirm(null);
       const tenants = parseBudgetRows(tenantBudgets, "tenant");
       const agents = parseBudgetRows(agentBudgets, "agent");
       // Keep non-UI FinOps fields (routing/reservation/alerts) from the
@@ -181,7 +188,7 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
 
   const clearOverlay = async () => {
     if (!view?.has_overlay) return;
-    if (!window.confirm("Clear the live FinOps overlay? File langgraph.json baseline becomes effective again.")) return;
+    setClearConfirm(false);
     setBusy(true);
     setSaveError(null);
     setSaveOk(null);
@@ -395,7 +402,7 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => void clearOverlay()}
+          onClick={() => setClearConfirm(true)}
           disabled={busy || !view?.has_overlay}
         >
           Clear overlay
@@ -404,6 +411,44 @@ export function FinOpsConfigPanel({ seedModels = [] }: { seedModels?: string[] }
           Reload
         </Button>
       </div>
+
+      <Dialog open={freeConfirm != null} onOpenChange={(open) => !open && setFreeConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as free tier?</DialogTitle>
+            <DialogDescription>
+              These models have $0/$0 rates (intentional free tier): {freeConfirm?.join(", ")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setFreeConfirm(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void save({ confirmFree: true })} disabled={busy}>
+              Save as free tier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={clearConfirm} onOpenChange={setClearConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear live FinOps overlay?</DialogTitle>
+            <DialogDescription>
+              File langgraph.json baseline becomes effective again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setClearConfirm(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void clearOverlay()} disabled={busy}>
+              Clear overlay
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

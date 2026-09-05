@@ -66,6 +66,10 @@ _NS_SEP = "\x1f"
 _HEADER_FRAMEWORK = "X-Runkite-Checkpoint-Framework"
 _LIST_FETCH_LIMIT = 1000
 _CAS_MAX_ATTEMPTS = 8
+# Per-blob GET-modify-PUT locks. Unbounded growth would retain one Lock
+# per checkpoint key for the saver's lifetime; drop idle (unlocked)
+# entries when the map hits this ceiling. Held locks are never evicted.
+_LOCKS_CAP = 4096
 
 
 class _CASConflict(Exception):
@@ -155,6 +159,12 @@ class ProxyCheckpointSaver(BaseCheckpointSaver):
         async with self._locks_guard:
             lock = self._locks.get(lock_key)
             if lock is None:
+                if len(self._locks) >= _LOCKS_CAP:
+                    for k, existing in list(self._locks.items()):
+                        if not existing.locked():
+                            del self._locks[k]
+                        if len(self._locks) < _LOCKS_CAP:
+                            break
                 lock = asyncio.Lock()
                 self._locks[lock_key] = lock
             return lock

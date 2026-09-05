@@ -127,6 +127,11 @@
       "minLength": 1,
       "description": "Tenant that authenticated the originating request. Runners scope direct-mode store/vector SQL and proxy X-Runkite-Tenant-Id headers to this value. Absent on older control planes -- runners fall back to \"default\". Does not tenant-scope LangGraph's own checkpoint tables."
     },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Fencing token for this dispatch attempt. Starts at 1 when a run is created; incremented on reclaim so a superseded runner's late report can be rejected. Absent or 0 = pre-fencing runner (always-matching for backward compatibility)."
+    },
     "trace_context": {
       "type": "object",
       "description": "W3C Trace Context for cross-process observability.",

@@ -15,6 +15,8 @@ This validates GO-006: LangGraph SDK client connects and functions correctly.
 import asyncio
 import os
 import sys
+import urllib.error
+import urllib.request
 
 # ponytail: stdlib only for imports; langgraph-sdk is the sole external dep.
 try:
@@ -27,7 +29,21 @@ except ImportError:
 BASE_URL = os.environ.get("RUNKITE_URL", "http://localhost:2026")
 
 
+def _control_plane_reachable() -> bool:
+    url = BASE_URL.rstrip("/") + "/health"
+    try:
+        urllib.request.urlopen(url, timeout=2)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except urllib.error.URLError:
+        return False
+
+
 async def main():
+    if not _control_plane_reachable():
+        print(f"SKIP: control plane not reachable at {BASE_URL} (set RUNKITE_URL to run)")
+        return
     client = get_client(url=BASE_URL)
     passed = 0
     failed = 0

@@ -22,7 +22,7 @@ import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from runkite_runner.proxy_checkpoint import ProxyCheckpointSaver  # noqa: E402
+from runkite_runner.proxy_checkpoint import _LOCKS_CAP, ProxyCheckpointSaver  # noqa: E402
 from runkite_runner.tenant_ctx import bind_tenant, reset_tenant  # noqa: E402
 
 
@@ -426,11 +426,24 @@ async def test_soft_noop_on_run_not_inflight():
         await saver.aclose()
 
 
+async def test_lock_map_evicts_unlocked():
+    """Idle per-blob locks must not grow without bound."""
+    saver = ProxyCheckpointSaver(http_base_url="http://cp.test")
+    try:
+        for i in range(_LOCKS_CAP + 50):
+            await saver._lock_for("thr-evict", f"cp-{i}")
+        check("lock map stays at or under cap", len(saver._locks) <= _LOCKS_CAP)
+        check("lock map still usable after eviction", len(saver._locks) > 0)
+    finally:
+        await saver.aclose()
+
+
 def main():
     asyncio.run(test_round_trip())
     asyncio.run(test_concurrent_pending_writes_cas())
     asyncio.run(test_aput_create_only_preserves_writes_shell())
     asyncio.run(test_soft_noop_on_run_not_inflight())
+    asyncio.run(test_lock_map_evicts_unlocked())
     print("all proxy checkpoint checks passed")
 
 

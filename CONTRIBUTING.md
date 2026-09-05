@@ -89,7 +89,7 @@ At minimum, a new runner needs: `GetJob`/`ReportStatus`/`StreamEvents`/`WatchCan
 
 ## Code style
 
-- Go: standard `gofmt`, `go vet` clean. No linter config beyond that today.
+- Go: `gofmt`, `go vet` clean. CI also runs `golangci-lint` v2.12 (see `.golangci.yml`) and `govulncheck`.
 - Comments should explain *why*, not narrate *what* the code already says -- this codebase leans heavily on comments documenting the reasoning behind a non-obvious decision, a trade-off, or a bug that was actually found and fixed, not restating adjacent code in prose.
 - Match existing patterns in the file/package you're editing before introducing a new one.
 - New tests should be real regression tests (they fail without the fix, pass with it), not just "does it run without crashing."

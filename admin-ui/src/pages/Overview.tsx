@@ -237,7 +237,11 @@ function StatusDonut({ breakdown, loading }: { breakdown?: Record<string, number
       </p>
     );
   }
-  const chartData = entries.map(([status, count]) => ({ status, count, fill: `var(--color-${status})` }));
+  const chartData = entries.map(([status, count]) => ({
+    status,
+    count,
+    fill: statusColorVar(status),
+  }));
   const config: ChartConfig = Object.fromEntries(
     entries.map(([status]) => [status, { label: status, color: statusColorVar(status) }]),
   );

@@ -14,12 +14,20 @@ type AdminSessionHandlers struct {
 	AdminProvider Provider
 	Provider      Provider
 	Strict        bool
+	// loginLimit is nil in production (package-wide default). Tests
+	// inject a fresh limiter so they don't share quota with each other.
+	loginLimit *loginLimiter
 }
 
 // Create handles POST /admin-api/session.
 func (h *AdminSessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Store == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "admin sessions not configured"})
+		return
+	}
+	if !h.loginAllowed(r) {
+		w.Header().Set("Retry-After", loginRetryAfter())
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"message": "too many login attempts"})
 		return
 	}
 	var body struct {

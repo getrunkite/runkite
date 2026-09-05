@@ -15,6 +15,8 @@ Run:
 import asyncio
 import os
 import sys
+import urllib.error
+import urllib.request
 
 try:
     from langgraph_sdk import get_client
@@ -26,7 +28,21 @@ BASE_URL = os.environ.get("RUNKITE_URL", "http://localhost:2026")
 AGENT_ID = os.environ.get("RUNKITE_AGENT", "echo_agent")
 
 
+def _control_plane_reachable() -> bool:
+    url = BASE_URL.rstrip("/") + "/health"
+    try:
+        urllib.request.urlopen(url, timeout=2)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except urllib.error.URLError:
+        return False
+
+
 async def main():
+    if not _control_plane_reachable():
+        print(f"SKIP: control plane not reachable at {BASE_URL} (set RUNKITE_URL to run)")
+        return
     client = get_client(url=BASE_URL)
     passed = 0
     failed = 0

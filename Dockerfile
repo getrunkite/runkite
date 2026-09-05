@@ -11,8 +11,12 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN GIT_COMMIT=$(cat .git/refs/heads/main 2>/dev/null | cut -c1-7 || echo "docker") && \
-    BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
+# .dockerignore excludes .git, so the image cannot read the SHA from
+# the repo. Callers (release.yml) pass GIT_COMMIT; local `docker build`
+# without the arg stamps "docker".
+ARG GIT_COMMIT=docker
+ARG BUILD_TIME
+RUN BUILD_TIME="${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" && \
     CGO_ENABLED=0 go build \
       -ldflags "-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
       -o runkite ./cmd/
@@ -20,7 +24,8 @@ RUN GIT_COMMIT=$(cat .git/refs/heads/main 2>/dev/null | cut -c1-7 || echo "docke
 # Runtime base is independent of the golang:*-alpine builder image.
 # Keep this on a supported Alpine line so Trivy can assess CVEs (3.20
 # reached EOL 2026-04-01 and produced a false-clean scan).
-FROM alpine:3.24
+# Digest is the multi-arch index for alpine:3.24 (3.24.1 as of 2026-06-16).
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 # `apk add` only installs the packages it's given -- it does not touch
 # already-present ones. The base image's own baked-in packages (libssl3,
 # libcrypto3, ...) age between when Docker Hub last rebuilt this tag and

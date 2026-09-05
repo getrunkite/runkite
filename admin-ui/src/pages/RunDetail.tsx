@@ -32,6 +32,10 @@ interface LogEntry extends SseEvent {
 // UI shouldn't offer.
 const TERMINAL_STATUSES = new Set(["success", "error", "interrupted", "timeout"]);
 
+// Long-running streams can emit tens of thousands of events; keep the
+// last N in the log pane so the page stays usable.
+const MAX_RUN_EVENTS = 500;
+
 const EVENT_COLORS: Record<string, string> = {
   end: "text-success",
   error: "text-destructive",
@@ -84,7 +88,11 @@ export function RunDetail() {
     setStreaming(true);
     const abort = streamSSE(
       `/runs/${runId}/stream`,
-      (event) => setEvents((prev) => [...prev, { ...event, receivedAt: Date.now() }]),
+      (event) =>
+        setEvents((prev) => {
+          const next = [...prev, { ...event, receivedAt: Date.now() }];
+          return next.length > MAX_RUN_EVENTS ? next.slice(-MAX_RUN_EVENTS) : next;
+        }),
       () => setStreaming(false),
     );
     return abort;
