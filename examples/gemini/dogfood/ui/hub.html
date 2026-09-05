@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runkite · Manual QA hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;550;650&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="hub-body">
+    <header>
+      <div class="brand">
+        <strong>Runkite · Manual QA hub</strong>
+        <span id="subtitle">Pre-v0.3 checklist · backend matrix · conversation scripts</span>
+      </div>
+      <nav class="nav" id="quick-nav"></nav>
+    </header>
+
+    <main class="hub-main">
+      <section class="panel hub-panel">
+        <div class="hub-toolbar">
+          <h2>Feature checklist</h2>
+          <div class="hub-actions">
+            <button type="button" id="expand-all">Expand all</button>
+            <button type="button" id="collapse-all">Collapse all</button>
+            <button type="button" id="reset-checks">Reset checks</button>
+          </div>
+        </div>
+        <p class="hub-lede">
+          Work top to bottom. Checks persist in this browser. Full prose:
+          <code>examples/gemini/dogfood/MANUAL_QA.md</code>
+        </p>
+        <div id="checklist"></div>
+        <div class="hub-progress">
+          <span id="progress-text">0 / 0 done</span>
+          <div class="progress-bar"><div id="progress-fill"></div></div>
+        </div>
+      </section>
+
+      <aside class="panel hub-side">
+        <h2>Backend profiles</h2>
+        <div id="backends" class="backend-list"></div>
+
+        <h2 class="hub-subhead">Conversation scripts</h2>
+        <div id="scenarios" class="scenario-list"></div>
+
+        <h2 class="hub-subhead">Quick links</h2>
+        <div class="quick-links">
+          <a href="http://127.0.0.1:2026/admin/" target="_blank" rel="noreferrer">Admin UI</a>
+          <a href="http://127.0.0.1:2026/admin/spend" target="_blank" rel="noreferrer">Spend</a>
+          <a href="http://127.0.0.1:2026/admin/try" target="_blank" rel="noreferrer">Try agent</a>
+          <a href="http://127.0.0.1:3101/" target="_blank" rel="noreferrer">LangGraph chat</a>
+          <a href="http://127.0.0.1:3105/" target="_blank" rel="noreferrer">HITL chat</a>
+        </div>
+
+        <div class="meta hub-meta">
+          <div>Control plane: <code id="cp-url">http://127.0.0.1:2026</code></div>
+          <div>Matrix: <code>qa-matrix.json</code></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <div>
+        <span class="status-dot" id="health-dot"></span>
+        <span id="health-text">checking control plane…</span>
+      </div>
+      <div>
+        <a href="/index.html">Open chat playground</a>
+        ·
+        <a href="https://getrunkite.github.io/runkite/support/admin-guide.html" target="_blank" rel="noreferrer"
+          >Admin guide</a
+        >
+      </div>
+    </footer>
+
+    <script src="/config.js"></script>
+    <script src="/hub.js"></script>
+  </body>
+</html>

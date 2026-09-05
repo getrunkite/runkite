@@ -4,6 +4,12 @@ Runs your Runkite control plane locally with the Gemini example agents
 (LangGraph, LangChain, CrewAI, LlamaIndex, AutoGen, LangGraph.js) plus HITL
 helpers — one process tree, shared FinOps Spend.
 
+## Pre-v0.3 manual QA
+
+**Start here before release:** [MANUAL_QA.md](./MANUAL_QA.md) — full step-by-step playbook.
+
+After `./start.sh`, open **http://127.0.0.1:3100/** for the interactive checklist (backend matrix, conversation scripts, feature ticks). Data lives in `qa-matrix.json`.
+
 ## URLs
 
 | URL | Purpose |
@@ -11,7 +17,8 @@ helpers — one process tree, shared FinOps Spend.
 | http://127.0.0.1:2026 | Control plane API |
 | http://127.0.0.1:2026/admin/ | Admin UI |
 | http://127.0.0.1:2026/admin/spend | Spend / usage |
-| http://127.0.0.1:3100/ | Hub UI (all agents) |
+| http://127.0.0.1:3100/ | **QA hub** (checklist + matrix) |
+| http://127.0.0.1:3100/index.html | Chat hub (all agents) |
 | http://127.0.0.1:3101/ … :3107/ | Per-framework chat UIs |
 
 ## Credentials

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Two protocols, one plane — Runkite Blog</title>
+    <meta
+      name="description"
+      content="Why Agent Protocol clients and Runner Protocol workers never talk to each other directly — and how that split is what lets any framework attach to one plane."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../support.css?v=20260903" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="../">Overview</a>
+          <a href="../try.html">Try it</a>
+          <a href="../admin-login.html">Admin login</a>
+          <a href="../admin-guide.html">Admin UI guide</a>
+          <a href="../credentials.html">Credentials map</a>
+          <a href="../why.html">Why a plane</a>
+          <a href="../scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="../install.html">Install</a>
+          <a href="../production.html">Production day-0</a>
+          <a href="../first-agent.html">First agent</a>
+          <a href="../agents.html">Agents (Py / JS)</a>
+          <a href="../migrate-agents.html">Migrate agents</a>
+          <a href="../frameworks.html">Framework matrix</a>
+          <a href="../checkpoints.html">Checkpoints</a>
+          <a href="../connectors.html">Connectors</a>
+          <a href="../registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a href="../runs.html">Runs &amp; threads</a>
+          <a href="../cron.html">Cron</a>
+          <a href="../webhooks.html">Webhooks</a>
+          <a href="../ops.html">Ops</a>
+          <a href="../runner-auth.html">Runner auth</a>
+          <a href="../secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="../grants.html">Grants &amp; HITL</a>
+          <a href="../hitl-ops.html">HITL ops</a>
+          <a href="../policy.html">PDP / Cedar</a>
+          <a href="../run-manifest.html">Run manifest</a>
+          <a href="../kill.html">Kill &amp; break-glass</a>
+          <a href="../security.html">Security</a>
+          <a href="../multi-tenant.html">Multi-tenant keys</a>
+          <a href="../finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="../a2a.html">A2A coordination</a>
+          <a href="../protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="../feature-map.html">Feature map</a>
+          <a href="../chapters/">Chapters</a>
+          <a class="active" href="../blog/">Blog</a>
+          <a href="../decisions/">Decisions</a>
+          <a href="../engineering.html">Engineering notes</a>
+          <a href="../limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="./">← Blog</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Blog</p>
+        <h1>Two protocols, one plane</h1>
+        <p class="lede">
+          Most "agent platforms" quietly assume you've picked a framework and you're never
+          switching. Runkite doesn't get to make that assumption, and the reason it doesn't
+          have to is a boring-sounding design decision: the thing your client talks to and
+          the thing your agent code talks to are never the same conversation.
+        </p>
+
+        <h2>The question that exposes the problem</h2>
+        <p>
+          Ask most agent frameworks "can I run a LangGraph agent and a CrewAI crew behind
+          the same API, with the same governance, and have neither one know the other
+          exists?" and you'll get a shrug, or a plugin system that's really just the
+          framework's own internals with an extension point bolted on. The honest answer
+          for most tools is no — not because nobody thought of it, but because the framework
+          and the "platform" around it were designed as one piece from the start. Pull them
+          apart later and you find load-bearing walls where you expected a curtain.
+        </p>
+        <p>
+          Runkite starts from the opposite assumption: the control plane and the agent code
+          were never going to be the same program, so the boundary between them has to be a
+          real one — a protocol, not a convention. That's the whole idea. Once you commit to
+          that, the question "which framework is running this agent" stops being something
+          the plane needs to know at all.
+        </p>
+
+        <h2>Agent Protocol: the front door, and only the front door</h2>
+        <p>
+          Everything a client does — create a thread, create a run, stream tokens back,
+          cancel, resume after a human-in-the-loop pause — happens over Agent Protocol. It's
+          plain HTTP, plus Server-Sent Events or a WebSocket when you want the run streamed
+          back instead of polled for. If you've used any Agent Protocol–compatible SDK
+          before, the shape is already familiar: nothing about it mentions runners, queues,
+          generations, or fencing tokens, because none of that is the client's business.
+        </p>
+        <p>
+          This matters more than it sounds like it should. A client that has to know "which
+          runner pod is handling this" is a client that breaks the moment you add a second
+          runner, move a runner to a different machine, or restart one mid-run. Runkite's
+          clients don't know runners exist. They know threads and runs, and the plane
+          handles everything else — including the part where the runner that started your
+          run crashed and a different one picked it up without you noticing, because the
+          run ID didn't change and neither did the API you called to check on it.
+        </p>
+
+        <h2>Runner Protocol: the back door, and it stays locked</h2>
+        <p>
+          Runners speak a completely different, private contract: a small gRPC surface with
+          exactly five calls — <code>GetJob</code> (long-poll for the next assignment),
+          <code>StreamEvents</code> (push progress back as it happens), <code>ReportStatus</code>
+          (say how it ended), <code>Heartbeat</code> (prove you're still alive, and find out
+          if you've been superseded), and <code>WatchCancels</code> (learn about a
+          cancellation without polling for it). That's the entire vocabulary a runner needs,
+          and it's deliberately small — every one of those five calls exists because the
+          plane has to make a specific lifecycle decision, not because someone thought a
+          bigger API would be more flexible.
+        </p>
+        <p>
+          None of this is reachable from the public internet the way Agent Protocol is.
+          Runners authenticate with their own tokens, scoped to a runner kind, and the
+          gRPC bridge they talk to has never heard of your client's API key. A runner that
+          got compromised can't pretend to be a client; a client that got compromised can't
+          pretend to be a runner. That separation is free the moment the two sides speak
+          different protocols — you'd have to work to break it, instead of having to work
+          to build it.
+        </p>
+
+        <h2>What the split is actually buying you</h2>
+        <p>
+          Here's the payoff, stated plainly: because a runner only ever needs to implement
+          Runner Protocol's five calls, "write a new runner" is a bounded, specific piece of
+          work — not a rewrite of your control plane. That's why Runkite ships runners for
+          LangGraph, LangGraph.js, CrewAI, LlamaIndex, AutoGen, and LangChain today, and why
+          adding a hand-rolled Python script that doesn't use any framework at all is the
+          same amount of integration work as adding a well-known one. The plane doesn't
+          special-case any of them. It dispatches an assignment, waits for events and a
+          terminal status, and applies the exact same reclaim, fencing, and governance rules
+          regardless of what's actually running inside that runner process.
+        </p>
+        <p>
+          Try that with a framework-first design and you're rewriting core assumptions every
+          time you want to support something the original framework didn't anticipate. With
+          a protocol-first design, supporting a new framework is "does it fit in a runner,"
+          and the answer is almost always yes — because a runner's job is small and
+          well-defined: pull work, do it, report back, listen for cancellation. Nothing in
+          that list requires knowing what "it" is.
+        </p>
+
+        <h2>The one thing collapsing the two protocols would cost you</h2>
+        <p>
+          It's tempting to ask why not just have one protocol and let clients and runners
+          both use it — fewer moving parts, one thing to document. The answer is that the
+          two sides need genuinely different guarantees, and giving both of them the same
+          guarantee means giving the weaker side too much and the stronger side too little.
+          Clients need a stable, portable, SDK-friendly surface that doesn't change when you
+          reshuffle infrastructure. Runners need lease semantics, generation fencing so a
+          zombie process that comes back to life after being reclaimed can't clobber the
+          run that replaced it, and a heartbeat that can say "you've been superseded, stop."
+          A single protocol trying to be both ends up leaking one side's internals to the
+          other — either clients start seeing generation numbers and reclaim state they have
+          no use for, or runners get starved of the lifecycle primitives that keep a
+          distributed job queue honest under real failures. Keeping the seam is what lets
+          each side be exactly as simple as its job allows, instead of as complicated as the
+          other side's job requires.
+        </p>
+
+        <h2>Try it</h2>
+        <p>
+          <a href="./why-a-plane.html">Previous: why your agents need a control plane</a> ·
+          <a href="../protocol.html">Protocols (docs)</a> ·
+          <a href="../chapters/two-protocols.html">Chapter: two protocols</a> ·
+          <a href="../decisions/why-agent-protocol.html">Decision: why Agent Protocol on the front</a> ·
+          <a href="./">Blog index</a>
+        </p>
+        <p class="note">
+          Next in this series: <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a> —
+          what actually reaches your agent process, and for how long.
+        </p>
+      </main>
+    </div>
+    <script src="../docs.js" defer></script>
+  </body>
+</html>

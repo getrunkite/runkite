@@ -41,6 +41,32 @@ let currentAgent = lockedAgent || AGENTS[0].id;
 let threadId = null;
 let busy = false;
 let pendingInterrupt = null;
+/** @type {{ text: string; at: string; agent: string }[]} */
+let questionLog = [];
+
+function renderQuestionLog() {
+  const host = document.getElementById("question-log");
+  if (!host) return;
+  if (questionLog.length === 0) {
+    host.textContent = "—";
+    return;
+  }
+  host.textContent = questionLog.map((q, i) => `${i + 1}. ${q.text}`).join("\n");
+}
+
+function copyQuestionLog() {
+  const text = questionLog.map((q, i) => `${i + 1}. ${q.text}`).join("\n");
+  navigator.clipboard.writeText(text);
+  log("question log copied");
+}
+
+function runHistoryRecallTest() {
+  if (busy || questionLog.length < 2) {
+    addMsg("system", "Ask at least two questions on this thread first.");
+    return;
+  }
+  sendPrompt("List every question I asked you in this conversation, in order, quoting my exact wording.");
+}
 
 function log(line) {
   const ts = new Date().toISOString().slice(11, 19);
@@ -82,6 +108,8 @@ function renderNav() {
         e.preventDefault();
         currentAgent = a.id;
         threadId = null;
+        questionLog = [];
+        renderQuestionLog();
         els.threadId.textContent = "—";
         els.agentId.textContent = currentAgent;
         els.subtitle.textContent = `${a.label} · ${a.note}`;
@@ -242,6 +270,8 @@ async function sendPrompt(text) {
   setBusy(true);
   els.hitl.classList.remove("visible");
   pendingInterrupt = null;
+  questionLog.push({ text, at: new Date().toISOString(), agent: currentAgent });
+  renderQuestionLog();
   addMsg("user", text);
   try {
     await streamRun({
@@ -301,8 +331,15 @@ async function ping() {
 }
 
 renderNav();
+renderQuestionLog();
 ping();
 setInterval(ping, 8000);
+
+const copyLogBtn = document.getElementById("copy-question-log");
+const recallBtn = document.getElementById("history-recall");
+if (copyLogBtn) copyLogBtn.addEventListener("click", copyQuestionLog);
+if (recallBtn) recallBtn.addEventListener("click", runHistoryRecallTest);
+
 addMsg(
   "system",
   lockedAgent === "approval_agent"

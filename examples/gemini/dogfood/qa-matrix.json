@@ -1,0 +1,298 @@
+{
+  "version": "v0.3-pre",
+  "title": "Runkite pre-release manual QA",
+  "backendProfiles": [
+    {
+      "id": "sqlite_dev",
+      "label": "Dev · SQLite · in-process",
+      "state": "SQLite",
+      "transport": "in-process",
+      "governance": "full",
+      "finops": "full",
+      "recommended": true,
+      "start": "./examples/gemini/dogfood/start.sh",
+      "stop": "./examples/gemini/dogfood/stop.sh",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Default Gemini dogfood. Isolated DB at dogfood/.run/dogfood.db. Best for multi-framework + FinOps + HITL checkpoint demos."
+    },
+    {
+      "id": "postgres_redis",
+      "label": "Prod-like · Postgres · Redis",
+      "state": "Postgres",
+      "transport": "Redis",
+      "governance": "full",
+      "finops": "full",
+      "start": "make infra-up && POSTGRES_DSN='postgres://runkite:runkite@127.0.0.1:5433/runkite_test?sslmode=disable' REDIS_URL='redis://127.0.0.1:6380' ./runkite serve --config examples/all_agents/langgraph.json --port 2026",
+      "stop": "make infra-down",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Matches CI matrix cell postgres_redis. Stop dogfood first if it owns :2026."
+    },
+    {
+      "id": "postgres_inprocess",
+      "label": "SQL · Postgres · in-process",
+      "state": "Postgres",
+      "transport": "in-process",
+      "governance": "full",
+      "finops": "full",
+      "start": "make infra-up && POSTGRES_DSN='postgres://runkite:runkite@127.0.0.1:5433/runkite_test?sslmode=disable' REDIS_URL= ./runkite serve --config examples/all_agents/langgraph.json --port 2026",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Single-instance Postgres without Redis queue. Good for governance + FinOps without multi-CP infra."
+    },
+    {
+      "id": "mongo_redis",
+      "label": "NoSQL · Mongo · Redis",
+      "state": "Mongo",
+      "transport": "Redis",
+      "governance": "501",
+      "finops": "partial",
+      "start": "make infra-up && MONGO_URI='mongodb://127.0.0.1:27018/runkite_test?replicaSet=rs0&directConnection=true' REDIS_URL='redis://127.0.0.1:6380' ./runkite serve --config examples/all_agents/langgraph.json --port 2026",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Governance Admin routes return 501. Confirm UI empty states and run/ thread APIs still work."
+    },
+    {
+      "id": "docker_dev",
+      "label": "Docker dev · SQLite",
+      "state": "SQLite",
+      "transport": "in-process",
+      "governance": "limited",
+      "finops": "limited",
+      "start": "docker compose -f docker-compose.dev.yml up -d --build",
+      "stop": "docker compose -f docker-compose.dev.yml down -v",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Zero-deps compose profile. echo_agent only — no Gemini dogfood runners."
+    },
+    {
+      "id": "multi_cp",
+      "label": "Prod-like · 3× CP · Postgres · Redis",
+      "state": "Postgres",
+      "transport": "Redis",
+      "governance": "full",
+      "finops": "full",
+      "start": "make smoke-multi",
+      "stop": "make multi-down",
+      "cpUrl": "http://127.0.0.1:2026",
+      "notes": "Requires RUNNER_TOKEN in .env. Leaves stack up for Admin inspection. Not a Gemini stack."
+    }
+  ],
+  "conversationScenarios": [
+    {
+      "id": "history_recall",
+      "title": "Thread history recall",
+      "agent": "gemini_langgraph",
+      "port": 3101,
+      "turns": [
+        "What is the capital of France?",
+        "What language do they speak there?",
+        "Name one famous landmark in that city.",
+        "List every question I asked you in this conversation, in order, quoting my exact wording."
+      ],
+      "pass": "Final reply lists all three prior user questions in order. Check Admin → Threads → your thread for persisted messages."
+    },
+    {
+      "id": "follow_up_context",
+      "title": "Follow-up context",
+      "agent": "gemini_langchain",
+      "port": 3102,
+      "turns": [
+        "My favorite color is teal. Remember that.",
+        "What is my favorite color?"
+      ],
+      "pass": "Second reply mentions teal without you repeating it."
+    },
+    {
+      "id": "hitl_approve",
+      "title": "HITL approve path",
+      "agent": "approval_agent",
+      "port": 3105,
+      "turns": ["Send the weekly report email to alice@example.com"],
+      "pass": "Run interrupts; click Approve; final message confirms email sent. Deny path: new thread, same prompt, click Deny → cancelled message."
+    },
+    {
+      "id": "usage_metering",
+      "title": "Usage metering",
+      "agent": "gemini_langgraph",
+      "port": 3101,
+      "turns": ["Reply with exactly one word: kite."],
+      "pass": "Right panel shows usage JSON. Admin → Spend shows token counts > 0 for tenant default."
+    }
+  ],
+  "features": [
+    {
+      "id": "dogfood_start",
+      "section": "0 · Bootstrap",
+      "title": "Start Gemini dogfood stack",
+      "steps": [
+        "Copy .env.llm.example → .env.llm and set GOOGLE_API_KEY.",
+        "./examples/gemini/dogfood/start.sh — wait for healthy control plane.",
+        "Open http://127.0.0.1:3100/ (QA hub) and http://127.0.0.1:2026/admin/."
+      ]
+    },
+    {
+      "id": "framework_matrix",
+      "section": "1 · Gemini frameworks",
+      "title": "Run one prompt on every framework UI",
+      "steps": [
+        "3101 LangGraph — ask anything; confirm AI reply + usage in side panel.",
+        "3102 LangChain — same.",
+        "3103 CrewAI — same (skip if venv missing; start.sh logs it).",
+        "3104 LlamaIndex — same.",
+        "3106 AutoGen — same.",
+        "3107 LangGraph.js — same (skip if node_modules missing).",
+        "./examples/gemini/dogfood/smoke_usage.sh — all agents emit Output.usage."
+      ]
+    },
+    {
+      "id": "admin_overview",
+      "section": "2 · Admin UI",
+      "title": "Overview + navigation",
+      "steps": [
+        "Admin → Overview: agent/thread/run counts reflect your dogfood runs.",
+        "Click through every nav item once — no blank crash pages."
+      ]
+    },
+    {
+      "id": "admin_agents",
+      "section": "2 · Admin UI",
+      "title": "Agents + Try agent",
+      "steps": [
+        "Admin → Agents: gemini_* agents listed with tenant default.",
+        "Open an agent detail — schema + version history load.",
+        "Admin → Try: pick gemini_langgraph, send a prompt, watch live SSE + usage.",
+        "Raw protocol panel shows lifecycle/values/end events."
+      ]
+    },
+    {
+      "id": "admin_runs",
+      "section": "2 · Admin UI",
+      "title": "Runs + run manifest",
+      "steps": [
+        "Admin → Runs: dogfood runs appear with success/interrupted statuses.",
+        "Open a completed run — SSE event log replays.",
+        "Run manifest card shows agent, tenant, policy labels; cache-hit runs show badge if you trigger llm_cache."
+      ]
+    },
+    {
+      "id": "admin_threads",
+      "section": "2 · Admin UI",
+      "title": "Threads",
+      "steps": [
+        "Admin → Threads: threads from dogfood UIs listed.",
+        "Open a multi-turn thread — run list matches your conversation."
+      ]
+    },
+    {
+      "id": "finops_spend",
+      "section": "3 · FinOps",
+      "title": "Spend dashboard + export",
+      "steps": [
+        "Admin → Spend: Est. USD and token totals > 0 after Gemini runs.",
+        "Filter by tenant default / agent gemini_langgraph — numbers narrow correctly.",
+        "Download CSV and JSON — files open and contain your runs."
+      ]
+    },
+    {
+      "id": "finops_alert_soft",
+      "section": "3 · FinOps",
+      "title": "Soft budget alert",
+      "steps": [
+        "Admin → Spend → Live FinOps config: set tenant default max_usd_per_day to 0.0001, soft=true.",
+        "Send several Gemini prompts from dogfood until ~50% of cap (soft_pct=50 in dogfood config).",
+        "Spend → Alerts table shows budget_soft or budget_alert row.",
+        "Restore budget to a sane value (e.g. 5) when done."
+      ]
+    },
+    {
+      "id": "finops_unpriced",
+      "section": "3 · FinOps",
+      "title": "Unpriced model path (optional)",
+      "steps": [
+        "Admin → Try → run unknown_provider_agent if registered, OR temporarily remove a model from pricebook overlay.",
+        "Confirm usage_unpriced alert appears on Spend when tokens exist but USD is $0."
+      ]
+    },
+    {
+      "id": "hitl_checkpoint",
+      "section": "4 · HITL",
+      "title": "Graph interrupt approve / deny",
+      "steps": [
+        "http://127.0.0.1:3105/ — send any message.",
+        "Approve → 'Email sent to alice@example.com successfully!'",
+        "New thread, same prompt, Deny → 'Action was not approved. Cancelled.'",
+        "Admin → Runs: interrupted run visible; resumed run completes."
+      ]
+    },
+    {
+      "id": "governance_smoke",
+      "section": "5 · Governance",
+      "title": "Automated governance bar (SQL)",
+      "steps": [
+        "make smoke-governance — PASS (Postgres test infra).",
+        "Optional manual: Admin → Grants create a deny rule; Admin → Audit shows decision."
+      ]
+    },
+    {
+      "id": "governance_pending",
+      "section": "5 · Governance",
+      "title": "Connector pending queue (if connectors configured)",
+      "steps": [
+        "Requires connector + mandatory HITL setup on SQL backend — see docs/grants in site/support.",
+        "Admin → Pending: approve and deny buttons work; Audit records outcome.",
+        "Skip on Mongo profile — expect 501 empty state."
+      ]
+    },
+    {
+      "id": "governance_kill",
+      "section": "5 · Governance",
+      "title": "Kill switch + break-glass",
+      "steps": [
+        "Admin → Kill: pause an agent; Try agent run should fail or stall per policy.",
+        "Clear kill switch — runs work again.",
+        "Admin → Break-glass: mint ≤24h window with reason; revoke when done."
+      ]
+    },
+    {
+      "id": "registry_cron_webhooks",
+      "section": "6 · Platform",
+      "title": "Registry, cron, webhooks pages",
+      "steps": [
+        "Admin → Registry: list loads (may be empty in dogfood).",
+        "Admin → Cron: schedules visible if configured in langgraph.json.",
+        "Admin → Webhooks: dead-letter list loads; redeliver button present on rows (unsigned resend — expected limitation)."
+      ]
+    },
+    {
+      "id": "backend_matrix",
+      "section": "7 · Backend matrix",
+      "title": "Spot-check non-SQLite profiles",
+      "steps": [
+        "Stop dogfood if testing another profile on :2026.",
+        "Run postgres_redis profile — /readyz 200, create echo run via Try or curl.",
+        "Run mongo_redis profile — governance pages show SQL-required message; runs still work.",
+        "make test-matrix (optional overnight) — full framework × backend golden diff."
+      ]
+    },
+    {
+      "id": "history_external",
+      "section": "8 · History test",
+      "title": "External LLM history audit",
+      "steps": [
+        "Complete the 'Thread history recall' scenario on port 3101.",
+        "Copy the question log from the UI sidebar.",
+        "In a separate Gemini chat, paste: 'Here are the questions I asked my agent: … — did I miss any?'",
+        "Compare — your manual log should match the agent's final list reply."
+      ]
+    },
+    {
+      "id": "automated_only",
+      "section": "9 · CI / not manual",
+      "title": "Leave to automation",
+      "steps": [
+        "make test — unit + protocol fixtures.",
+        "make smoke-governance — policy phases 0–3.",
+        "make smoke-multi — 3× CP soak entry.",
+        "make test-matrix — framework × backend goldens.",
+        "EKS smoke / paid soak — docs/k8s-eks-soak.md."
+      ]
+    }
+  ]
+}

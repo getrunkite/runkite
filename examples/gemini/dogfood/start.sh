@@ -137,7 +137,7 @@ if [[ -d typescript/runkite-runner/node_modules ]]; then
 fi
 
 # UIs
-start_bg ui-hub python3 "$DOGFOOD/ui/serve.py" --port 3100 --cp "http://127.0.0.1:${CP_HTTP}"
+start_bg ui-hub python3 "$DOGFOOD/ui/serve.py" --port 3100 --hub --cp "http://127.0.0.1:${CP_HTTP}"
 start_bg ui-langgraph python3 "$DOGFOOD/ui/serve.py" --port 3101 --agent gemini_langgraph --cp "http://127.0.0.1:${CP_HTTP}"
 start_bg ui-langchain python3 "$DOGFOOD/ui/serve.py" --port 3102 --agent gemini_langchain --cp "http://127.0.0.1:${CP_HTTP}"
 start_bg ui-crewai python3 "$DOGFOOD/ui/serve.py" --port 3103 --agent gemini_crewai --cp "http://127.0.0.1:${CP_HTTP}"
@@ -157,7 +157,8 @@ echo " Admin UI              http://127.0.0.1:${CP_HTTP}/admin/"
 echo " Admin Spend (FinOps)  http://127.0.0.1:${CP_HTTP}/admin/spend"
 echo " Agents JSON           http://127.0.0.1:${CP_HTTP}/agents"
 echo
-echo " Playground hub        http://127.0.0.1:3100/"
+echo " QA hub (checklist)     http://127.0.0.1:3100/"
+echo " Chat playground        http://127.0.0.1:3100/index.html"
 echo " LangGraph + Gemini    http://127.0.0.1:3101/"
 echo " LangChain + Gemini    http://127.0.0.1:3102/"
 echo " CrewAI + Gemini       http://127.0.0.1:3103/"

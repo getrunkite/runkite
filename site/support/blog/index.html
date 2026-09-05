@@ -7,7 +7,7 @@
     <title>Blog — Runkite Docs</title>
     <meta
       name="description"
-      content="Writing about the agent control plane: why it exists, how runners attach, and what we publish on Medium."
+      content="Writing about the agent control plane: why it exists, how runners attach, and what it costs to run agents honestly."
     />
     <link
       rel="icon"
@@ -82,45 +82,46 @@
         <p class="kicker">Deep</p>
         <h1>Blog</h1>
         <p class="lede">
-          Short posts that explain the plane to people who already run agents.
-          Site index stays here; longer cuts may also go to Medium after release.
+          Short posts that explain the plane to people who already run agents. This page
+          is the whole publication — not a staging area for somewhere else. If you find
+          this post through a search engine, a link from a friend, or a stray tab, you're
+          already looking at the real thing.
         </p>
 
-        <h2>Published / ready</h2>
+        <h2>Posts</h2>
         <ul class="links">
           <li>
             <a href="./why-a-plane.html">Why your agents need a control plane</a>
-            — Medium #1 cut (draft on-site; publish post-release)
+            — the moment one script, one <code>.env</code>, and one deploy stops being enough.
+          </li>
+          <li>
+            <a href="./two-protocols-one-plane.html">Two protocols, one plane</a>
+            — why Agent Protocol clients and Runner Protocol workers never talk to each
+            other directly, and how that split is what lets a LangGraph agent, a CrewAI
+            crew, and a hand-rolled Python script share one control plane without any of
+            them knowing the others exist.
+          </li>
+          <li>
+            <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a>
+            — your agent code and your compute stay exactly where they already run; what
+            changes is how credentials reach them, and for how long they're allowed to work.
+          </li>
+          <li>
+            <a href="./spend-without-becoming-a-billco.html">Spend without becoming a billco</a>
+            — why "FinOps" here means budgets, holds, and an honest cost estimate, not a
+            second Stripe integration bolted onto your agent platform.
           </li>
         </ul>
 
-        <h2>Series outline (C1)</h2>
-        <ol class="steps">
-          <li>
-            <strong>Why a plane</strong> — when one script stops being enough; shared
-            connectors, HITL, kill, audit. <em>Ready on-site.</em>
-          </li>
-          <li>
-            <strong>Two protocols, one plane</strong> — Agent Protocol clients vs Runner
-            Protocol workers; why the split is the product boundary.
-          </li>
-          <li>
-            <strong>BYO runner, governed secrets</strong> — runners stay yours;
-            <code>secret_ref</code> / Vault patterns keep long-lived creds out of agent env.
-          </li>
-          <li>
-            <strong>Spend without becoming a billco</strong> — FinOps as plane governance
-            (budgets, holds, export) — not Stripe rails.
-          </li>
-        </ol>
-
-        <h2>Medium (C2)</h2>
         <p>
-          Post-release: publish post 1 on Medium, link back here. Until then this index
-          is the canonical outline + draft home. Related:
-          <a href="../chapters/">chapters</a>,
-          <a href="../decisions/">decisions</a>,
-          <a href="../why.html">why a plane</a>.
+          There's no publishing calendar and no editorial backlog beyond what's linked
+          above — each post gets written when there's something specific and true to say,
+          not on a schedule. Related reading if you want more depth than a blog post gives:
+          <a href="../chapters/">the chapters</a> walk through the architecture more
+          methodically, and <a href="../decisions/">the decision write-ups</a> explain the
+          specific engineering trade-offs behind choices these posts only gesture at. If
+          you'd rather just see the plane running than read about it, <a href="../try.html">the
+          five-minute try</a> is faster than either.
         </p>
       </main>
     </div>

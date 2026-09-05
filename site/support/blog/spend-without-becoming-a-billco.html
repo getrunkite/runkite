@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spend without becoming a billco — Runkite Blog</title>
+    <meta
+      name="description"
+      content="Why FinOps on the plane means budgets, holds, and an honest cost estimate — not a second Stripe integration bolted onto your agent platform."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../support.css?v=20260903" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+        <nav>
+          <div class="nav-group">Start</div>
+          <a href="../">Overview</a>
+          <a href="../try.html">Try it</a>
+          <a href="../admin-login.html">Admin login</a>
+          <a href="../admin-guide.html">Admin UI guide</a>
+          <a href="../credentials.html">Credentials map</a>
+          <a href="../why.html">Why a plane</a>
+          <a href="../scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a href="../install.html">Install</a>
+          <a href="../production.html">Production day-0</a>
+          <a href="../first-agent.html">First agent</a>
+          <a href="../agents.html">Agents (Py / JS)</a>
+          <a href="../migrate-agents.html">Migrate agents</a>
+          <a href="../frameworks.html">Framework matrix</a>
+          <a href="../checkpoints.html">Checkpoints</a>
+          <a href="../connectors.html">Connectors</a>
+          <a href="../registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a href="../runs.html">Runs &amp; threads</a>
+          <a href="../cron.html">Cron</a>
+          <a href="../webhooks.html">Webhooks</a>
+          <a href="../ops.html">Ops</a>
+          <a href="../runner-auth.html">Runner auth</a>
+          <a href="../secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="../grants.html">Grants &amp; HITL</a>
+          <a href="../hitl-ops.html">HITL ops</a>
+          <a href="../policy.html">PDP / Cedar</a>
+          <a href="../run-manifest.html">Run manifest</a>
+          <a href="../kill.html">Kill &amp; break-glass</a>
+          <a href="../security.html">Security</a>
+          <a href="../multi-tenant.html">Multi-tenant keys</a>
+          <a href="../finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a href="../a2a.html">A2A coordination</a>
+          <a href="../protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a href="../feature-map.html">Feature map</a>
+          <a href="../chapters/">Chapters</a>
+          <a class="active" href="../blog/">Blog</a>
+          <a href="../decisions/">Decisions</a>
+          <a href="../engineering.html">Engineering notes</a>
+          <a href="../limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="./">← Blog</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Blog</p>
+        <h1>Spend without becoming a billco</h1>
+        <p class="lede">
+          At some point every team running LLM-backed agents in production asks the same
+          quiet, slightly nervous question: "wait, what happens if one of these starts
+          looping and just... keeps calling the model?" FinOps on the plane exists to
+          answer that question before it becomes an incident report — and to answer it
+          honestly, which turns out to be harder than it sounds.
+        </p>
+
+        <h2>The failure mode this actually guards against</h2>
+        <p>
+          An agent that gets stuck in a retry loop, or a prompt that quietly triggers a
+          much longer tool-call chain than anyone expected, doesn't fail loudly. It fails
+          expensively. Nothing crashes. Nothing pages anyone. The bill just arrives at the
+          end of the month noticeably larger than it should be, and by then the loop that
+          caused it ran its course days ago and left no obvious trace beyond the invoice.
+          That's the specific, unglamorous problem FinOps on the plane is built to catch
+          while it's still happening, not after.
+        </p>
+        <p>
+          The fix isn't a dashboard that tells you about the problem after the fact — you
+          can build that yourself with any logging pipeline. The fix has to be a control
+          that can actually say no, at the moment a new run is about to start, before the
+          money is spent rather than after. That's the difference between monitoring spend
+          and governing it, and it's the reason budgets live at admission time — the same
+          gate that checks kill switches and authorization — rather than in a report you
+          read the next morning.
+        </p>
+
+        <h2>What "governing" actually means here: caps, not invoices</h2>
+        <p>
+          Budgets are set per tenant and, if you want finer control, per tenant-and-agent
+          pair: a maximum USD spend per UTC day, a maximum token count, a maximum number of
+          runs. Cross a soft cap and the plane lets the run through but records an alert —
+          useful for "we're approaching the limit, someone should look at this" without
+          anyone's legitimate work getting blocked. Cross a hard cap and new runs in that
+          scope are refused outright, admission-time, before a runner is ever dispatched.
+          There's also an opt-in, more aggressive option for when a hard cap is already
+          blown: cancel whatever's still in flight in that scope instead of just refusing
+          new work, for the cases where "stop the bleeding immediately" matters more than
+          "let currently-running work finish."
+        </p>
+        <p>
+          None of this requires the plane to know anything about how you actually get
+          billed. There's no invoice, no payment method, no subscription tier changing
+          based on usage. A budget is a ceiling the plane enforces on itself, using numbers
+          you configured, computed from real token counts the model provider reported. It's
+          closer to a resource quota than a billing system, and that's deliberate — the
+          plane's job is to stop you from finding out about a runaway agent from an invoice,
+          not to become the thing that generates the invoice.
+        </p>
+
+        <h2>The estimate is honest about being an estimate</h2>
+        <p>
+          Here's the part that's easy to get wrong, and where a lot of "cost tracking"
+          features quietly start lying to you: the dollar figure Admin shows is
+          <strong>labeled</strong> Estimated USD, not Cost, and that label is load-bearing,
+          not decoration. Token counts are exact — they come straight from the model
+          provider's own response metadata, the same numbers the provider itself would use
+          to bill you. Dollars are a separate calculation: your own configured price-per-
+          thousand-tokens for that specific model ID, multiplied against those exact token
+          counts — unless the runner happens to be talking through a gateway that reports
+          cost inline with usage (OpenRouter's <code>usage.cost</code> is the concrete
+          example this codebase actually handles), in which case that reported figure is
+          used instead and the local pricebook is skipped for that one run.
+        </p>
+        <p>
+          What happens when a model gets swapped and nobody remembers to add its price to
+          the pricebook? The honest answer is: the token count still gets recorded
+          correctly, the dollar figure resolves to zero, and the plane raises an alert about
+          it — <code>usage_unpriced</code> — instead of silently showing a low number that
+          looks fine at a glance but is quietly wrong. And if a reply comes back from a
+          provider or framework integration the plane has never seen the shape of before,
+          so it can't find token data anywhere it knows to look, that raises a different
+          alert — <code>usage_unmetered</code> — because the one outcome worse than
+          under-pricing a run is making it invisible to the whole system, indistinguishable
+          from an agent that made no LLM call at all. Both of those are the plane telling
+          you "I don't actually know the answer here" instead of guessing and presenting
+          the guess as fact.
+        </p>
+
+        <h2>What this deliberately doesn't try to be</h2>
+        <p>
+          It's worth being direct about the boundary. This is not a billing platform. There
+          is no invoicing, no multi-currency support, no reconciliation against your actual
+          provider account balance after the fact, and no attempt to shop automatically
+          across model providers for the cheapest option — the closest thing to automatic
+          cost optimization here is an opt-in rule that reroutes to a cheaper, pre-approved
+          alternative agent once spend gets close to its soft threshold, and even that only
+          fires within aliases you explicitly configured. If what you actually need is a
+          product that handles payments, subscriptions, and customer-facing invoices for
+          usage-based pricing, that's a different category of tool, and pretending
+          otherwise would make this section dishonest. What FinOps on the plane promises is
+          narrower and, for the specific failure mode it targets, more useful: agents don't
+          get to spend money nobody approved, and when the plane isn't sure what something
+          cost, it says so instead of making up a number.
+        </p>
+
+        <h2>Try it</h2>
+        <p>
+          <a href="./byo-runner-governed-secrets.html">Previous: BYO runner, governed secrets</a> ·
+          <a href="../finops.html">Spend (FinOps) docs</a> ·
+          <a href="../run-manifest.html">Run manifest</a> ·
+          <a href="./">Blog index</a>
+        </p>
+        <p class="note">
+          That's the series for now — <a href="./">back to the blog index</a> for what's
+          next, or <a href="../chapters/">the chapters</a> for a slower, more methodical
+          walk through the same ground.
+        </p>
+      </main>
+    </div>
+    <script src="../docs.js" defer></script>
+  </body>
+</html>
