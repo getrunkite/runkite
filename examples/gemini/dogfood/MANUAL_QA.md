@@ -313,7 +313,7 @@ When every checkbox in the QA hub is ticked (or every section above is PASS):
 - [ ] At least one non-SQLite profile spot-checked (Postgres+Redis recommended)
 - [ ] Mongo profile: 501 empty states confirmed (optional but recommended)
 
-Then proceed to **v0.3.0 tag + announce** (`docs/announce-v0.3-draft.md`).
+Then proceed to **v0.3.0 tag + announce**. Launch copy stays on disk (gitignored `docs/announce*.md`) — do not commit Show HN / Reddit drafts.
 
 ---
 
