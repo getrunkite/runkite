@@ -56,8 +56,7 @@ def init() -> Callable[[], None]:
         if not _warned_missing:
             logger.warning(
                 "OTEL_EXPORTER_OTLP_* is set but opentelemetry packages are not installed; "
-                "runner tracing disabled. pip install opentelemetry-api opentelemetry-sdk "
-                "opentelemetry-exporter-otlp"
+                "runner tracing disabled. pip install 'runkite-runner[otel]'"
             )
             _warned_missing = True
         return noop

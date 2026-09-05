@@ -53,6 +53,7 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "git_commit=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
           FILE_V="$(tr -d '[:space:]' < VERSION)"
           TAGS_CP="ghcr.io/getrunkite/runkite:${V}"
           TAGS_PY="ghcr.io/getrunkite/runkite-runner:${V}"
@@ -91,7 +92,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ steps.ver.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
+            GIT_COMMIT=${{ steps.ver.outputs.git_commit }}
           tags: ${{ steps.ver.outputs.tags_cp }}
 
       - name: Push Python runner image
