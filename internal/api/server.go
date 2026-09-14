@@ -862,8 +862,9 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageConnectorSession, name, ""); deny {
-		s.emitToolAuthEvent(r.Context(), policy.StageConnectorSession, name, "", dec, "")
+	in := s.policyInput(r.Context(), policy.StageConnectorSession, name, "")
+	if dec, deny := s.checkConnectorPolicy(r.Context(), in); deny {
+		s.emitToolAuthEvent(r.Context(), in, dec, "")
 		writeJSON(w, http.StatusForbidden, policyDenyJSON(dec))
 		return
 	}
@@ -975,9 +976,11 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	// the connector's own static tool filter inside ProxyMCPRequest).
 	// One-shot capability (Admin-approved pending) is checked before Decide
 	// so a cached or re-pending webhook cannot block the approved retry.
-	if method, tool := extractToolsCallName(body); method == "tools/call" {
+	if method, tool, args := extractToolsCall(body); method == "tools/call" {
+		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
+		in.Args, in.ArgsDigest, in.ArgsMeta = policy.BindArgs(args)
 		if !s.tryConsumePendingCapability(r.Context(), name, tool) {
-			if dec, deny := s.checkConnectorPolicy(r.Context(), policy.StageToolCall, name, tool); deny {
+			if dec, deny := s.checkConnectorPolicy(r.Context(), in); deny {
 				actionID := ""
 				if dec.Effect == policy.EffectPending {
 					id, err := s.persistPendingAction(r.Context(), name, tool, dec)
@@ -997,7 +1000,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 				}
-				s.emitToolAuthEvent(r.Context(), policy.StageToolCall, name, tool, dec, actionID)
+				s.emitToolAuthEvent(r.Context(), in, dec, actionID)
 				msg := dec.Reason
 				if msg == "" {
 					if dec.Effect == policy.EffectPending {

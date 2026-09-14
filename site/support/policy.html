@@ -94,9 +94,10 @@
         <h2>How to implement</h2>
         <ol class="steps">
           <li>Enable <code>policy</code> (presence of the section fail-closes connector access).</li>
-          <li>Set <code>policy.webhook.url</code> (+ optional secret / timeout).</li>
+          <li>For a simple amount/destination gate with no PDP, add <code>policy.predicates</code> in <code>langgraph.json</code> — see <a href="grants.html#argument-predicates">Grants &amp; HITL</a>. Restart the control plane.</li>
+          <li>For everything else, set <code>policy.webhook.url</code> (+ optional secret / timeout). The webhook body now includes <code>data.args</code> + <code>data.args_digest</code> on <code>tools/call</code>.</li>
           <li>Start from <code>examples/policy_webhook/</code> (deny / pending + HMAC self-check).</li>
-          <li>Layer grants + mandatory HITL in Admin; watch Pending / Audit when the PDP returns pending.</li>
+          <li>Layer grants + mandatory HITL in Admin; watch Pending / Audit when the PDP or a predicate returns pending.</li>
         </ol>
         <pre class="mono-block">"policy": {
   "default_effect": "deny",

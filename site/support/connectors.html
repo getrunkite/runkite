@@ -237,6 +237,30 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
           or need to change without a deploy.
         </p>
 
+        <h2>Step 4b (optional) — gate on the argument, not just the tool name</h2>
+        <p>
+          Grants are name-only. To pending or deny from a field inside <code>tools/call</code>
+          (for example <code>amount &gt; 100</code>), add <code>policy.predicates</code> in
+          <code>langgraph.json</code> and restart the control plane. This is config-only — there
+          is no Admin form for it. It applies only to connector MCP, before the downstream call.
+          Under the threshold the tool still runs; over it, Admin → Pending, and the amount is
+          on Admin → Audit (hover <strong>Args</strong>). Full example:
+          <a href="grants.html#argument-predicates">Grants &amp; HITL</a>.
+        </p>
+        <pre class="mono-block"># langgraph.json — after the grant above
+"predicates": [
+  {
+    "id": "update-over-100",
+    "tenant_id": "default",
+    "agent_id": "sales-assistant",
+    "connector": "salesforce",
+    "tool": "updateRecord",
+    "when": { "path": "amount", "op": "gt", "value": 100 },
+    "effect": "pending",
+    "reason_code": "predicate_amount"
+  }
+]</pre>
+
         <h2>Step 5 (optional) — force a human to approve first</h2>
         <p>
           For anything you never want an agent doing fully on its own — sending an email,
@@ -254,7 +278,7 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
         <p><strong>What actually happens when this fires, end to end:</strong></p>
         <ol class="steps">
           <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
-          <li>Instead of running, the call pauses and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a>, with the exact arguments the agent wanted to send — so a reviewer can see precisely what would happen before approving.</li>
+          <li>Instead of running, the call is refused with JSON-RPC pending and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> (connector, tool, reason). The triggering arguments are on the <a href="admin-guide.html">Audit</a> row (<code>args_digest</code> plus a size-capped display copy), not the pending queue.</li>
           <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
           <li><strong>Approved</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool actually executes. <strong>Denied</strong> — the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
           <li>This is a one-time unlock, not a standing exception — the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>

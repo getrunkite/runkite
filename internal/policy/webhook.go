@@ -78,11 +78,7 @@ func (w *Webhook) Decide(ctx context.Context, in PolicyInput, failClosed bool) P
 		Connector:  in.Connector,
 		Tool:       in.Tool,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
-		Data: map[string]any{
-			"connector": in.Connector,
-			"tool":      in.Tool,
-			"identity":  in.Principal,
-		},
+		Data:       webhookData(in),
 	}
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
@@ -147,6 +143,21 @@ func (w *Webhook) Decide(ctx context.Context, in PolicyInput, failClosed bool) P
 		ReasonCode: code,
 		RuleID:     parsed.RuleID,
 	}
+}
+
+func webhookData(in PolicyInput) map[string]any {
+	data := map[string]any{
+		"connector": in.Connector,
+		"tool":      in.Tool,
+		"identity":  in.Principal,
+	}
+	if in.ArgsDigest != "" {
+		data["args_digest"] = in.ArgsDigest
+	}
+	if in.ArgsMeta != nil {
+		data["args"] = in.ArgsMeta
+	}
+	return data
 }
 
 func webhookFail(failClosed bool, reason, code string) PolicyDecision {

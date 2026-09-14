@@ -43,12 +43,7 @@ func policyInputFromRequest(ctx context.Context, stage, connectorName, tool stri
 	return in
 }
 
-// checkConnectorPolicy runs the policy engine when enabled. Returns
-// (decision, true) when the caller should deny; (zero, false) to proceed.
-func (s *Server) checkConnectorPolicy(ctx context.Context, stage, connectorName, tool string) (policy.PolicyDecision, bool) {
-	if !s.policy.Enabled() {
-		return policy.PolicyDecision{}, false
-	}
+func (s *Server) policyInput(ctx context.Context, stage, connectorName, tool string) policy.PolicyInput {
 	in := policyInputFromRequest(ctx, stage, connectorName, tool)
 	// Pre-warm / createRun may not have AgentID on binding; callers that
 	// know the agent should set it on context via withPolicyAgent.
@@ -57,6 +52,15 @@ func (s *Server) checkConnectorPolicy(ctx context.Context, stage, connectorName,
 	}
 	if v, ok := ctx.Value(policyRunKey{}).(string); ok && in.RunID == "" {
 		in.RunID = v
+	}
+	return in
+}
+
+// checkConnectorPolicy runs the policy engine when enabled. Returns
+// (decision, true) when the caller should deny; (zero, false) to proceed.
+func (s *Server) checkConnectorPolicy(ctx context.Context, in policy.PolicyInput) (policy.PolicyDecision, bool) {
+	if !s.policy.Enabled() {
+		return policy.PolicyDecision{}, false
 	}
 	if s.tryBreakGlassBypass(ctx, in) {
 		return policy.PolicyDecision{
@@ -118,19 +122,18 @@ func mcpPolicyDenyData(dec policy.PolicyDecision, actionID string) map[string]in
 // streams surface connector policy denials / pending HITL. Event IDs use
 // a distinct namespace from runner `{run_id}_evt_{seq}` so they never
 // collide; seq is max(replay)+1 (best-effort under concurrent runner publishes).
-func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, tool string, dec policy.PolicyDecision, actionID string) {
+func (s *Server) emitToolAuthEvent(ctx context.Context, in policy.PolicyInput, dec policy.PolicyDecision, actionID string) {
 	if s == nil || !s.policyRunEvents || s.broker == nil {
 		return
 	}
-	in := policyInputFromRequest(ctx, stage, connectorName, tool)
 	if in.RunID == "" {
 		return
 	}
 	payloadMap := map[string]interface{}{
-		"stage":       stage,
+		"stage":       in.Stage,
 		"effect":      dec.Effect,
-		"connector":   connectorName,
-		"tool":        tool,
+		"connector":   in.Connector,
+		"tool":        in.Tool,
 		"reason":      dec.Reason,
 		"reason_code": dec.ReasonCode,
 		"rule_id":     dec.RuleID,
@@ -138,6 +141,9 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, stage, connectorName, to
 	}
 	if actionID != "" {
 		payloadMap["action_id"] = actionID
+	}
+	if in.ArgsDigest != "" {
+		payloadMap["args_digest"] = in.ArgsDigest
 	}
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {
@@ -187,23 +193,25 @@ func extractJSONRPCID(body []byte) json.RawMessage {
 	return envelope.ID
 }
 
-// extractToolsCallName returns params.name for a tools/call body, or "".
-func extractToolsCallName(body []byte) (method, tool string) {
+// extractToolsCall returns method, params.name, and params.arguments for
+// a tools/call body. arguments is nil when absent.
+func extractToolsCall(body []byte) (method, tool string, args json.RawMessage) {
 	var envelope struct {
 		Method string          `json:"method"`
 		Params json.RawMessage `json:"params"`
 	}
 	if json.Unmarshal(body, &envelope) != nil {
-		return "", ""
+		return "", "", nil
 	}
 	if envelope.Method != "tools/call" {
-		return envelope.Method, ""
+		return envelope.Method, "", nil
 	}
 	var params struct {
-		Name string `json:"name"`
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
 	}
 	_ = json.Unmarshal(envelope.Params, &params)
-	return envelope.Method, params.Name
+	return envelope.Method, params.Name, params.Arguments
 }
 
 // tryConsumePendingCapability burns one approved pending_action for this

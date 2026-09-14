@@ -83,7 +83,7 @@
         <h2>Known gaps (summary)</h2>
         <ul>
           <li>Agent Protocol MCP sessions are process-local (sticky routing).</li>
-          <li>Authz is route-level (+ optional agent run grants), not per-tool ACLs outside connector policy.</li>
+          <li>Authz is route-level (+ optional agent run grants), not per-tool ACLs outside connector policy (MCP grants + argument predicates).</li>
           <li>Tenancy is flat <code>tenant_id</code> — no org/team UI.</li>
           <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) with alerts, export, holds, and alias routing on SQL. Overshoot possible when reservation is unset or estimates are wrong; no mid-run budget kill.</li>

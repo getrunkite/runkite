@@ -165,7 +165,7 @@ export function PendingActions() {
     <div>
       <PageHeader
         title="Pending actions"
-        subtitle="Connector HITL queue (SQL backends). Approve mints a one-shot capability for the next matching tools/call."
+        subtitle="Connector HITL queue (SQL backends). Approve mints a one-shot capability for the next matching tools/call. Triggering arguments are on Audit → Args, not this queue."
         actions={<DocsLink href={supportPage("admin-guide.html#11-pending-approval-queue")}>Docs: pending →</DocsLink>}
       />
 

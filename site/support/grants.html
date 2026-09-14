@@ -78,7 +78,9 @@
           <section>
             <h2>What it is</h2>
             <p>
-              <strong>Grants</strong> are durable allow rules (tenant/agent/connector). <strong>Mandatory HITL</strong>
+              <strong>Grants</strong> are durable allow rules (tenant/agent/connector). <strong>Predicates</strong>
+              deny or pending a connector <code>tools/call</code> from argument values (config-only; never allow).
+              <strong>Mandatory HITL</strong>
               forces matching tool calls to pending even when a grant would allow. <strong>Pending</strong> is the operator queue to approve or deny.
             </p>
           </section>
@@ -93,10 +95,36 @@
         <h2>How to implement</h2>
         <ol class="steps">
           <li>Define connector policy / grants (config defaults + Admin overlays on SQL).</li>
-          <li>Add mandatory HITL rules for high-risk tools.</li>
-          <li>Run an agent that hits a gated tool — status becomes interrupted / pending.</li>
-          <li>Admin → Pending → approve or deny; agent retries the tool call after approve.</li>
+          <li>For argument gates (amount, destination), add <code>policy.predicates</code> in the first <code>langgraph.json</code> — not the Grants form. Restart the control plane.</li>
+          <li>Add mandatory HITL rules for high-risk tools (Admin or config).</li>
+          <li>Drive a connector MCP <code>tools/call</code> that matches. Over-threshold → JSON-RPC <code>-32000</code> pending; under-threshold reaches the connector.</li>
+          <li>Admin → Pending → approve or deny; the agent retries the same tool. Hover <strong>Args</strong> on Admin → Audit for the capped arguments (Pending does not store them).</li>
         </ol>
+        <pre class="mono-block"># langgraph.json — grant opens the connector; predicate tightens by amount
+"policy": {
+  "grants": [
+    { "tenant_id": "acme", "agent_id": "payroll", "connector": "bank" }
+  ],
+  "predicates": [
+    {
+      "id": "transfer-over-100",
+      "tenant_id": "acme",
+      "agent_id": "payroll",
+      "connector": "bank",
+      "tool": "transfer",
+      "when": { "path": "amount", "op": "gt", "value": 100 },
+      "effect": "pending",
+      "reason": "approval required for transfers over 100",
+      "reason_code": "predicate_amount"
+    }
+  ]
+}</pre>
+        <p id="argument-predicates">
+          Ops: <code>eq</code> <code>neq</code> <code>gt</code> <code>gte</code> <code>lt</code> <code>lte</code> <code>in</code> <code>contains</code> <code>exists</code>.
+          Numeric compares use JSON numbers only (<code>"100"</code> vs <code>100</code> does not match).
+          Empty <code>agent_id</code> = whole tenant; empty <code>tool</code> = every tool on that connector.
+          Predicates never <code>allow</code>. There is no Admin CRUD for them this release.
+        </p>
         <pre class="mono-block"># From the try path — approval_agent pauses until resume
 curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
   -H 'Content-Type: application/json' \
@@ -114,9 +142,9 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Deny</strong> — tool never reaches the downstream connector.</li>
-          <li><strong>Pending</strong> — operator must act; approve is one-shot for the next matching call.</li>
-          <li><strong>Audit</strong> — decisions are queryable on SQL backends.</li>
+          <li><strong>Deny</strong> — tool never reaches the downstream connector (grant, predicate, or webhook).</li>
+          <li><strong>Pending</strong> — operator must act; approve is one-shot for the next matching call. The triggering arguments are on the Audit row, not the pending queue.</li>
+          <li><strong>Audit</strong> — decisions are queryable on SQL backends (including <code>args_digest</code> on connector <code>tools/call</code>).</li>
           <li><strong>Admin walkthrough</strong> — see <a href="admin-guide.html#9-grants-policy-grants">Admin UI guide → Grants</a>, <a href="admin-guide.html#10-mandatory-hitl">Mandatory HITL</a>, and <a href="admin-guide.html#11-pending-approval-queue">Pending</a> for a step-by-step of each screen.</li>
         </ul>
         <p class="note">

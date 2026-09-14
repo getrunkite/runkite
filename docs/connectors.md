@@ -48,7 +48,7 @@ Store/vector proxy clients already attach the same headers via `tenant_headers()
 
 ### Policy grants (fail-closed when configured)
 
-With a non-empty `policy` section in `langgraph.json`, session mint and MCP `tools/call` require a matching grant for `(tenant_id, agent_id, connector)` derived from the in-flight run — see [Trust & governance](trust-governance.md). Production MCP connectors should stay **proxy-only** (the control plane never returns the raw downstream MCP URL when MCP is configured); that is what makes tool grants enforceable.
+With a non-empty `policy` section in `langgraph.json`, session mint and MCP `tools/call` require a matching grant for `(tenant_id, agent_id, connector)` derived from the in-flight run — see [Trust & governance](trust-governance.md). Optional `policy.predicates` additionally deny or pending a `tools/call` from argument values (pre-call, connector MCP only — not in-graph AuthorizeTool). Production MCP connectors should stay **proxy-only** (the control plane never returns the raw downstream MCP URL when MCP is configured); that is what makes tool grants and argument predicates enforceable.
 
 ### Tool allow/deny enforcement (MCP connectors)
 

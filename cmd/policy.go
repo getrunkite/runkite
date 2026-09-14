@@ -125,6 +125,24 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 			Tools:     append([]string(nil), r.Tools...),
 		})
 	}
+	for _, r := range p.Predicates {
+		pr := policy.Predicate{
+			ID:         r.ID,
+			TenantID:   r.TenantID,
+			AgentID:    r.AgentID,
+			Connector:  r.Connector,
+			Tool:       r.Tool,
+			Effect:     r.Effect,
+			Reason:     r.Reason,
+			ReasonCode: r.ReasonCode,
+		}
+		if r.When != nil {
+			pr.Path = r.When.Path
+			pr.Op = r.When.Op
+			pr.Value = r.When.Value
+		}
+		pcfg.Predicates = append(pcfg.Predicates, pr)
+	}
 	if hasWebhook {
 		wc := &policy.WebhookConfig{
 			URL:    p.Webhook.URL,
@@ -166,6 +184,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		"overlays", len(overlays),
 		"mandatory_hitl", len(pcfg.MandatoryHITL),
 		"mandatory_hitl_overlays", len(mhitlOverlays),
+		"predicates", len(pcfg.Predicates),
 		"webhook", pcfg.Webhook != nil,
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,
@@ -185,23 +204,27 @@ func (s *siemExporter) ExportPolicyDecision(_ context.Context, in policy.PolicyI
 	if s == nil || s.d == nil {
 		return
 	}
+	data := map[string]interface{}{
+		"stage":       in.Stage,
+		"effect":      dec.Effect,
+		"reason":      dec.Reason,
+		"reason_code": dec.ReasonCode,
+		"rule_id":     dec.RuleID,
+		"latency_ms":  dec.LatencyMs,
+		"connector":   in.Connector,
+		"tool":        in.Tool,
+		"generation":  in.Generation,
+		"principal":   in.Principal,
+	}
+	if in.ArgsDigest != "" {
+		data["args_digest"] = in.ArgsDigest
+	}
 	s.d.Dispatch(hooks.Event{
-		Type:     hooks.PolicyDecision,
-		RunID:    in.RunID,
-		AgentID:  in.AgentID,
-		TenantID: in.TenantID,
-		Data: map[string]interface{}{
-			"stage":       in.Stage,
-			"effect":      dec.Effect,
-			"reason":      dec.Reason,
-			"reason_code": dec.ReasonCode,
-			"rule_id":     dec.RuleID,
-			"latency_ms":  dec.LatencyMs,
-			"connector":   in.Connector,
-			"tool":        in.Tool,
-			"generation":  in.Generation,
-			"principal":   in.Principal,
-		},
+		Type:      hooks.PolicyDecision,
+		RunID:     in.RunID,
+		AgentID:   in.AgentID,
+		TenantID:  in.TenantID,
+		Data:      data,
 		Timestamp: time.Now().UTC(),
 	})
 }

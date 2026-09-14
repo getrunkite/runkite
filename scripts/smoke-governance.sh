@@ -9,6 +9,8 @@
 #   Phase 3 — admission authz/kill deny (+ activate) write durable audit
 #             (covered by TestAdmission_* in the same package when run via
 #             make test / go test ./internal/api/ -run 'TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind')
+#   Predicates — amount-gated tools/call pending + audit args_digest
+#             (TestPolicyPredicate_AmountPending)
 #
 # Usage (from repo root):
 #   make smoke-governance
@@ -45,9 +47,10 @@ echo "==> Governance announce bar"
 echo "    Phase 0: run-binding reject + assignment tenant"
 echo "    Phase 1: tenant B connector deny + audit write"
 echo "    Phase 2: Admin audit query + HITL approve one-shot"
+echo "    Predicates: amount-gated tools/call pending + audit args_digest"
 
 set +e
-go test ./internal/api/ -run 'TestGovernanceAnnounceBar|TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind' -count=1 -timeout 120s
+go test ./internal/api/ -run 'TestGovernanceAnnounceBar|TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind|TestPolicyPredicate_AmountPending' -count=1 -timeout 120s
 rc=$?
 set -e
 

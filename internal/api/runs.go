@@ -707,7 +707,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	if s.connectors != nil && len(assignment.ConnectorNeeds) > 0 {
 		prewarmCtx := withPolicyAgent(ctx, req.AgentID, runID)
 		for _, name := range assignment.ConnectorNeeds {
-			if dec, deny := s.checkConnectorPolicy(prewarmCtx, policy.StageConnectorSession, name, ""); deny {
+			if dec, deny := s.checkConnectorPolicy(prewarmCtx, s.policyInput(prewarmCtx, policy.StageConnectorSession, name, "")); deny {
 				slog.Warn("connector pre-warm skipped by policy", "connector", name, "run_id", runID, "reason_code", dec.ReasonCode)
 				continue
 			}

@@ -2,6 +2,32 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## [0.4.0] — 2026-09-14
+
+Argument-aware connector policy: MCP `tools/call` arguments reach Decide, config predicates, webhook, and audit. Preview (BUSL) — not a 1.0 production claim, and **not** a hosted control plane.
+
+### Added
+- Connector MCP `tools/call` arguments bound into policy Decide (SHA-256 digest for cache / webhook / audit; size-capped, secret-stripped display map)
+- Config `policy.predicates` — deny or pending from argument values after a matching grant and before the sync webhook (never allow; restart to reload; no Admin CRUD)
+- Bounded expirable LRU for policy decisions (max 10_000); cache key includes `ArgsDigest`; `pending` is not cached
+- Admin Audit **Args** column; Grants / Pending copy points operators at `langgraph.json` for predicates
+- Operator how-to: [Grants & HITL](site/support/grants.html#argument-predicates)
+
+### Changed
+- Policy webhook `data` includes `args_digest` plus capped `args` on `tool.call`
+- `tool_auth` and SIEM carry the digest only
+
+### Notes
+- Connector MCP, pre-call only — not in-graph `AuthorizeTool`, not tool-result inspection. Pending rows still store connector / tool / reason; the triggering arguments are on the audit event.
+- Fixture replay (`runkite sim`) is not in this tag.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.4.0]: https://github.com/getrunkite/runkite/releases/tag/v0.4.0
+
 ## [0.3.0] — 2026-09-05
 
 Self-host preview: FinOps, opaque adapter checkpoints, plane-side secrets/RLS/`allowed_tools`, Admin playground + Spend, docs rewrite. Preview (BUSL) — not a 1.0 production claim, and **not** a hosted control plane.

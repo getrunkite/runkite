@@ -80,12 +80,12 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 
 | Route | Purpose |
 | --- | --- |
-| `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s) |
+| `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s). Argument predicates are **not** this page — `policy.predicates` in `langgraph.json` (config-only). |
 | `/admin/mandatory-hitl` | List / create / edit / delete durable mandatory-HITL overlays (same hot-reload / poll) |
-| `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny |
+| `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny. Does not store the triggering arguments; see Audit. |
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |
-| `/admin/audit` | Search policy decisions |
+| `/admin/audit` | Search policy decisions. Connector `tools/call` rows include an Args column (`attrs.args_digest` + capped `attrs.args`). |
 | `/admin/spend` | Usage rollups, budget alerts, CSV/JSON export, and the live FinOps pricebook/budget overlay editor |
 
 Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.

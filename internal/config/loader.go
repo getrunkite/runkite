@@ -159,6 +159,10 @@ type PolicyEntry struct {
 	// MandatoryHITL forces matching tool.call allows to pending (Admin
 	// approve → one-shot retry). Config-only; hard deny still wins.
 	MandatoryHITL []PolicyMandatoryHITLEntry `json:"mandatory_hitl,omitempty"`
+	// Predicates deny or pending a connector tools/call from argument
+	// values (config-only; never allow). Evaluated after grants, before
+	// the sync webhook.
+	Predicates []PolicyPredicateEntry `json:"predicates,omitempty"`
 	// Webhook is an optional sync PolicyProvider (WebhookGate-shaped).
 	Webhook *PolicyWebhookEntry `json:"webhook,omitempty"`
 	// SIEM is an optional async export sink for policy_decision events
@@ -175,6 +179,27 @@ type PolicyMandatoryHITLEntry struct {
 	AgentID   string   `json:"agent_id,omitempty"`
 	Connector string   `json:"connector"`
 	Tools     []string `json:"tools,omitempty"`
+}
+
+// PolicyPredicateEntry is one argument check on connector tools/call.
+// Empty agent_id = whole tenant; empty tool = every tool on the connector.
+type PolicyPredicateEntry struct {
+	ID         string               `json:"id,omitempty"`
+	TenantID   string               `json:"tenant_id"`
+	AgentID    string               `json:"agent_id,omitempty"`
+	Connector  string               `json:"connector"`
+	Tool       string               `json:"tool,omitempty"`
+	When       *PolicyPredicateWhen `json:"when,omitempty"`
+	Effect     string               `json:"effect"`
+	Reason     string               `json:"reason,omitempty"`
+	ReasonCode string               `json:"reason_code,omitempty"`
+}
+
+// PolicyPredicateWhen is the argument matcher for a predicate.
+type PolicyPredicateWhen struct {
+	Path  string `json:"path"`
+	Op    string `json:"op"`
+	Value any    `json:"value,omitempty"`
 }
 
 // PolicyGrantEntry is one static connector grant.

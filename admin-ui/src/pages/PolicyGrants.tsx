@@ -246,9 +246,10 @@ export function PolicyGrants() {
     <div>
       <PageHeader
         title="Policy grants"
-        subtitle="Durable connector overlays (SQL backends). DB rows win over langgraph.json on the same tenant/agent/connector."
+        subtitle="Durable connector overlays (SQL backends). DB rows win over langgraph.json on the same tenant/agent/connector. Amount or destination gates are policy.predicates in langgraph.json — not this form."
         actions={
           <>
+            <DocsLink href={supportPage("grants.html#argument-predicates")}>Docs: argument predicates →</DocsLink>
             <DocsLink href={supportPage("admin-guide.html#9-grants-policy-grants")}>Docs: grants →</DocsLink>
             <Button size="sm" onClick={openCreate}>
               <Plus className="size-3.5" />

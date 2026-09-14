@@ -1,7 +1,8 @@
-// Package policy is the control-plane PolicyProvider: static grants and
-// an optional sync webhook gate for connector session mint and MCP
-// tools/call. Absent config preserves V1 open behavior; when any grant
-// or webhook is configured, unmatched requests default to deny.
+// Package policy is the control-plane PolicyProvider: static grants,
+// optional argument predicates on MCP tools/call, and an optional sync
+// webhook gate for connector session mint and MCP tools/call. Absent
+// config preserves V1 open behavior; when any grant, predicate, or
+// webhook is configured, unmatched requests default to deny.
 package policy
 
 import (
@@ -65,6 +66,9 @@ type PolicyInput struct {
 	Generation int64
 	Connector  string
 	Tool       string
+	// Args is the full parsed tools/call arguments (predicate eval).
+	// Secret-looking keys stay here; ArgsMeta is the redacted display copy.
+	Args       any
 	ArgsMeta   map[string]any
 	ArgsDigest string
 	Claims     map[string]any
@@ -108,6 +112,7 @@ type Engine struct {
 	mandatoryHITLBaseline []MandatoryHITLRule
 	mandatoryHITLOverlays []MandatoryHITLRule
 	mandatoryHITL         []MandatoryHITLRule // force allow → pending on tool.call
+	predicates            []Predicate         // config-only; deny/pending after grants
 	auditor               Auditor
 	exporter              Exporter
 	cache                 *decisionCache
@@ -124,9 +129,12 @@ type Config struct {
 	Overlays      []Grant // DB grants loaded at startup
 	// MandatoryHITL forces matching tool.call allows to pending (config-only).
 	MandatoryHITL []MandatoryHITLRule
-	Webhook       *WebhookConfig
-	Auditor       Auditor
-	Exporter      Exporter
+	// Predicates deny or pending a tools/call from argument values.
+	// They never allow; invalid rows are skipped at New.
+	Predicates []Predicate
+	Webhook    *WebhookConfig
+	Auditor    Auditor
+	Exporter   Exporter
 	// ForceEnable builds an engine even with no grants/webhook (empty
 	// "policy": {} for Admin-API-only grant management).
 	ForceEnable bool
@@ -134,11 +142,21 @@ type Config struct {
 
 // New returns an Engine, or nil when nothing is configured (V1 open).
 func New(cfg Config) *Engine {
+	var preds []Predicate
+	for _, p := range cfg.Predicates {
+		vp, err := ValidatePredicate(p)
+		if err != nil {
+			slog.Warn("policy: skipping invalid predicate", "id", p.ID, "error", err)
+			continue
+		}
+		preds = append(preds, vp)
+	}
 	hasBaseline := len(cfg.Grants) > 0
 	hasOverlays := len(cfg.Overlays) > 0
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
 	hasMandatory := len(cfg.MandatoryHITL) > 0
-	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !cfg.ForceEnable {
+	hasPredicates := len(preds) > 0
+	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !hasPredicates && !cfg.ForceEnable {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -156,6 +174,7 @@ func New(cfg Config) *Engine {
 		exporter:              cfg.Exporter,
 		baseline:              append([]Grant(nil), cfg.Grants...),
 		mandatoryHITLBaseline: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
+		predicates:            preds,
 	}
 	if hasWebhook {
 		e.webhook = NewWebhook(*cfg.Webhook)
@@ -279,15 +298,16 @@ func mergeGrants(baseline, overlays []Grant) []Grant {
 }
 
 // Enabled reports whether the policy engine is attached. An empty
-// ForceEnable engine (no grants/webhook yet) is still enabled — Decide
+// ForceEnable engine (no grants/webhook/predicates yet) is still enabled — Decide
 // applies default_effect until Admin overlays or config grants appear.
 func (e *Engine) Enabled() bool {
 	return e != nil
 }
 
-// Decide evaluates static grants then webhook. Call only when Enabled().
-// Every call (including cache hits) emits an OTel span event, writes
-// audit when configured, and fans out to Exporter (SIEM) when set.
+// Decide evaluates static grants, then argument predicates, then webhook.
+// Call only when Enabled(). Every call (including cache hits) emits an
+// OTel span event, writes audit when configured, and fans out to
+// Exporter (SIEM) when set.
 func (e *Engine) Decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	start := time.Now()
 	dec := e.decide(ctx, in)
@@ -353,6 +373,7 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	webhook := e.webhook
 	defaultEffect := e.defaultEffect
 	failClosed := e.failClosed
+	preds := e.predicates
 	e.mu.RUnlock()
 
 	if e.cache != nil {
@@ -374,13 +395,21 @@ func (e *Engine) decide(ctx context.Context, in PolicyInput) PolicyDecision {
 			// No grant: honor default_effect when that is the only reason.
 			if dec.ReasonCode == ReasonPolicyNoGrant && defaultEffect == EffectAllow && webhook == nil {
 				out := PolicyDecision{Effect: EffectAllow, Reason: "default allow (no matching grant)"}
-				e.cachePut(in, out)
-				return out
+				staticAllow = &out
+			} else {
+				e.cachePut(in, dec)
+				return dec
 			}
-			e.cachePut(in, dec)
-			return dec
+		} else {
+			staticAllow = &dec
 		}
-		staticAllow = &dec
+	}
+
+	if pred := applyPredicates(preds, in); pred != nil {
+		if pred.Effect != EffectPending {
+			e.cachePut(in, *pred)
+		}
+		return *pred
 	}
 
 	if webhook != nil {
@@ -459,4 +488,13 @@ func (e *Engine) cachePut(in PolicyInput, dec PolicyDecision) {
 	if e.cache != nil {
 		e.cache.put(in, dec)
 	}
+}
+
+// CacheLen is the current decision-cache occupancy (tests / ops). 0 when
+// caching is off.
+func (e *Engine) CacheLen() int {
+	if e == nil {
+		return 0
+	}
+	return e.cache.len()
 }

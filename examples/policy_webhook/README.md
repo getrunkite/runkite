@@ -37,6 +37,8 @@ Add to the first `langgraph.json` the control plane loads (webhook-only = webhoo
 }
 ```
 
+Amount or destination without a PDP: add `policy.predicates` in the same `langgraph.json` (`deny` / `pending` only, after grants and before this webhook). Copy-paste: [Grants & HITL](../../site/support/grants.html#argument-predicates).
+
 1. Start the PDP: `SECRET=dev-policy-secret python3 pdp.py`
 2. Start Runkite with a SQL state backend (needed for `pending` + audit).
 3. Drive a connector MCP `tools/call` for `delete_repo` → deny; `transfer_funds` → pending in Admin **Pending** (`/admin/pending`).
@@ -57,9 +59,17 @@ Add to the first `langgraph.json` the control plane loads (webhook-only = webhoo
   "connector": "github",
   "tool": "delete_repo",
   "timestamp": "...",
-  "data": { "connector": "github", "tool": "delete_repo", "identity": "..." }
+  "data": {
+    "connector": "github",
+    "tool": "delete_repo",
+    "identity": "...",
+    "args_digest": "<sha256 of JSON-marshaled arguments>",
+    "args": { "repo": "example" }
+  }
 }
 ```
+
+`data.args` is a size-capped, secret-stripped copy of `tools/call` arguments (keys named `password` / `token` / `secret` / `authorization` / `api_key` are omitted). `data.args_digest` is SHA-256 of the full parsed JSON (including those keys). Session / `run.create` omit both.
 
 **HMAC** (when `secret` is set): header `X-Runkite-Signature: sha256=<hex(HMAC-SHA256(secret, raw body))>`.
 

@@ -78,6 +78,30 @@ const columns: ColumnDef<AdminAuditEvent, unknown>[] = [
     },
   },
   {
+    id: "args_digest",
+    header: "Args",
+    cell: ({ row }) => {
+      const attrs = row.original.attrs ?? {};
+      const digest = typeof attrs.args_digest === "string" ? attrs.args_digest : "";
+      if (!digest) {
+        return <span className="text-muted-foreground">—</span>;
+      }
+      const args = attrs.args;
+      const tip =
+        args !== undefined && args !== null
+          ? JSON.stringify(args)
+          : digest;
+      return (
+        <Tooltip>
+          <TooltipTrigger className="font-mono text-xs text-muted-foreground">
+            {digest.slice(0, 8)}…
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm break-all text-xs">{tip}</TooltipContent>
+        </Tooltip>
+      );
+    },
+  },
+  {
     accessorKey: "run_id",
     header: "Run",
     cell: ({ row }) =>
@@ -125,7 +149,7 @@ export function Audit() {
     <div>
       <PageHeader
         title="Audit"
-        subtitle="Policy decisions across every tenant (SQL backends). Click any column to sort the current page."
+        subtitle="Policy decisions across every tenant (SQL backends). Hover Args on a tools/call row for the capped arguments. Click any column to sort the current page."
         actions={<DocsLink href={supportPage("admin-guide.html#14-audit")}>Docs: audit →</DocsLink>}
       />
 

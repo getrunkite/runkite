@@ -1,59 +1,67 @@
 package policy
 
 import (
-	"sync"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2/expirable"
 )
 
-// decisionCache is a short-TTL cache keyed on
-// stage/tenant/agent/principal/connector/tool (not run_id/generation) so
-// webhook latency stays bounded without cross-contaminating principals.
-// A BYO PDP may allow Alice and deny Bob for the same tool; omitting
-// Principal from the key would serve Alice's allow to Bob until TTL.
-type decisionCache struct {
-	ttl time.Duration
-	mu  sync.Mutex
-	m   map[string]cacheEntry
-}
+// defaultDecisionCacheMaxEntries bounds the Decide cache once argument
+// digests are part of the key. Same default as the auth webhook LRU:
+// credential+path keys had the same high-cardinality shape. Expired
+// entries also drop via TTL; a size cap is what stops distinct amounts
+// from growing the map for the process lifetime.
+const defaultDecisionCacheMaxEntries = 10_000
 
-type cacheEntry struct {
-	dec PolicyDecision
-	exp time.Time
+// decisionCache is a short-TTL LRU keyed on
+// stage/tenant/agent/principal/connector/tool/args_digest (not
+// run_id/generation) so webhook latency stays bounded without
+// cross-contaminating principals or argument values. A BYO webhook PDP
+// can allow Alice / deny Bob for the same tool; omitting Principal
+// would leak Alice's allow. Omitting ArgsDigest would reuse a $50
+// allow for a $250 call.
+type decisionCache struct {
+	lru *lru.LRU[string, PolicyDecision]
 }
 
 func newDecisionCache(ttl time.Duration) *decisionCache {
-	return &decisionCache{ttl: ttl, m: make(map[string]cacheEntry)}
+	if ttl <= 0 {
+		return nil
+	}
+	return &decisionCache{
+		lru: lru.NewLRU[string, PolicyDecision](defaultDecisionCacheMaxEntries, nil, ttl),
+	}
 }
 
 func cacheKey(in PolicyInput) string {
 	return in.Stage + "\x00" + in.TenantID + "\x00" + in.AgentID + "\x00" +
-		in.Principal + "\x00" + in.Connector + "\x00" + in.Tool
+		in.Principal + "\x00" + in.Connector + "\x00" + in.Tool + "\x00" + in.ArgsDigest
 }
 
 func (c *decisionCache) get(in PolicyInput) (PolicyDecision, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	e, ok := c.m[cacheKey(in)]
-	if !ok || time.Now().After(e.exp) {
-		if ok {
-			delete(c.m, cacheKey(in))
-		}
+	if c == nil || c.lru == nil {
 		return PolicyDecision{}, false
 	}
-	return e.dec, true
+	return c.lru.Get(cacheKey(in))
 }
 
 func (c *decisionCache) put(in PolicyInput, dec PolicyDecision) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.m[cacheKey(in)] = cacheEntry{dec: dec, exp: time.Now().Add(c.ttl)}
+	if c == nil || c.lru == nil {
+		return
+	}
+	c.lru.Add(cacheKey(in), dec)
 }
 
 func (c *decisionCache) clear() {
-	if c == nil {
+	if c == nil || c.lru == nil {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.m = make(map[string]cacheEntry)
+	c.lru.Purge()
+}
+
+func (c *decisionCache) len() int {
+	if c == nil || c.lru == nil {
+		return 0
+	}
+	return c.lru.Len()
 }

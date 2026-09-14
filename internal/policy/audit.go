@@ -56,14 +56,25 @@ func (a *storeAuditor) WritePolicyDecision(ctx context.Context, in PolicyInput, 
 		AgentID:      in.AgentID,
 		Connector:    in.Connector,
 		Tool:         in.Tool,
-		Attrs: map[string]interface{}{
-			"reason": dec.Reason,
-		},
+		Attrs:        policyAuditAttrs(in, dec),
 	}
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
 		ev.TraceID = sc.TraceID().String()
 	}
 	return a.store.WriteAuditEvent(ctx, ev)
+}
+
+func policyAuditAttrs(in PolicyInput, dec PolicyDecision) map[string]interface{} {
+	attrs := map[string]interface{}{
+		"reason": dec.Reason,
+	}
+	if in.ArgsDigest != "" {
+		attrs["args_digest"] = in.ArgsDigest
+	}
+	if in.ArgsMeta != nil {
+		attrs["args"] = in.ArgsMeta
+	}
+	return attrs
 }
 
 func randomID() (string, error) {

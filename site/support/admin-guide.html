@@ -390,6 +390,14 @@
           <li>Save. The change takes effect on the replica you're talking to immediately, and on every other control-plane replica within about 15 seconds (they poll for changes — there's no manual "sync" step).</li>
         </ol>
         <p>Edit or delete a grant the same way, from the same table.</p>
+        <p>
+          <strong>Argument predicates are not this screen.</strong> Amount / destination gates live in
+          <code>langgraph.json</code> as <code>policy.predicates</code> (config-only; restart the control plane).
+          They run after a matching grant and before the sync webhook, on connector MCP <code>tools/call</code> only.
+          Copy the example on <a href="grants.html#argument-predicates">Grants &amp; HITL → argument predicates</a>.
+          After a pending or deny, open <a href="#14-audit">Audit</a> and hover the <strong>Args</strong> column —
+          the pending queue does not store the triggering amount.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Grants — durable connector allowlist</div>
           <img src="../assets/ui-grants.png" alt="Runkite Admin Policy Grants" width="960" height="600" />
@@ -427,13 +435,13 @@
         </p>
         <p>
           <strong>What you'll see:</strong> a list of pending actions, each showing which run
-          triggered it, which connector/tool it wants to call, and with what arguments — so you
+          triggered it, which connector/tool it wants to call, and the reason string — so you
           can actually see "the agent wants to send this exact email to this exact address"
           before deciding.
         </p>
         <p><strong>How to approve or deny:</strong></p>
         <ol class="steps">
-          <li>Open a pending action and read what it's actually asking to do — the tool name and its arguments are shown in full.</li>
+          <li>Open a pending action and read the connector, tool, and reason. The triggering arguments (amount, destination) are on <a href="#14-audit">Audit</a> — hover the <strong>Args</strong> column — not on this queue.</li>
           <li><strong>Approve</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool executes normally.</li>
           <li><strong>Deny</strong> — the run resumes with a denial instead; your agent code decides what to do next (retry differently, tell the user, give up).</li>
         </ol>
@@ -500,7 +508,9 @@
         <p>
           <strong>What you'll see:</strong> a filterable table — by tenant, agent, connector,
           tool, run, or a date range. Each row shows the decision, the reason code behind it,
-          and which rule (grant, mandatory-HITL rule, or break-glass window) produced it.
+          and which rule (grant, predicate, mandatory-HITL rule, or break-glass window) produced it.
+          Connector <code>tools/call</code> rows also have an <strong>Args</strong> column: a short digest, with the
+          size-capped argument map in the hover (secrets such as <code>token</code> / <code>password</code> are stripped).
         </p>
         <p>
           <strong>How to use it:</strong> this is your answer to "prove that agent X was not
