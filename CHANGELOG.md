@@ -2,9 +2,9 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
-## [Unreleased]
+## [0.4.1] — 2026-09-15
 
-Exact-bound connector HITL: the one-shot approve is for this `tools/call` (digest + display map), not the next call with the same tool name.
+Security patch: connector HITL one-shot is bound to this `tools/call`'s argument digest. Preview (BUSL) — not a 1.0 production claim, and **not** a hosted control plane.
 
 ### Added
 - `pending_actions.args_digest` / `args` / `decided_by` (schema 14); consume and find match the digest
@@ -12,12 +12,21 @@ Exact-bound connector HITL: the one-shot approve is for this `tools/call` (diges
 
 ### Fixed
 - Approving a $500 transfer no longer forwards a $5,000,000 retry on the same tool (consume used to match `(run_id, generation, connector, tool)` only)
+- `google.golang.org/grpc` 1.83.1 → 1.83.2 (already on `main` before this tag)
 
 ### Notes
+- No Python or TypeScript runner logic change — version lockstep only.
 - Consume still skips Decide so mandatory HITL cannot re-pending the approved retry. Digest match *is* the retry check.
 - Rows created before this binding (`args_digest` empty) still consume once on the old tuple.
 - Display map omits secret-looking keys; approve re-eval uses that map. Predicates must not key on `password|token|secret|authorization|api_key`.
-- **Not tagged yet.** Fixture replay (`runkite sim`) is not in this train.
+- Fixture replay (`runkite sim`) is not in this tag.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.4.1]: https://github.com/getrunkite/runkite/releases/tag/v0.4.1
 
 ## [0.4.0] — 2026-09-14
 
