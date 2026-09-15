@@ -1461,7 +1461,7 @@ This chapter is critical. There are two types of HITL (Human In The Loop) in Run
 6. The control plane writes a row to the `pending_actions` table in Postgres.
 7. The control plane optionally publishes a `tool_auth` event on the run's SSE stream so dashboards/UIs can show "waiting for approval."
 8. An ADMINISTRATOR opens the Admin UI (`/admin/pending`), sees the pending action, reviews it, and clicks "Approve."
-9. On approve: the control plane re-checks policy (in case a hard deny rule was added in the meantime), and if still OK, stores a one-shot capability for this specific (run_id, generation, connector, tool) combination.
+9. On approve: the control plane re-checks policy (in case a hard deny rule was added in the meantime), and if still OK, stores a one-shot capability for this specific (run_id, generation, connector, tool, args_digest) combination.
 10. The agent code must RETRY the same tools/call. On this retry, the control plane sees the one-shot capability, consumes it, and forwards the call to the actual upstream service. The tool executes once.
 11. If the agent calls the same tool a third time, there is no capability remaining, and it goes back to pending/deny.
 
@@ -1639,7 +1639,7 @@ All the security features described across Chapters 11, 12, and elsewhere conver
 
 **Gate 3 — Extract tool name** (`internal/api/server.go`). The CP parses the JSON-RPC body: `{"method": "tools/call", "params": {"name": "transfer_funds"}}`. Now it has the complete tuple: `(acme, finance_bot, bank, transfer_funds)`. Policy only fires for `tools/call` — read-only methods like `tools/list` skip it.
 
-**Gate 4 — One-shot capability** (`internal/api/policy.go`, `tryConsumePendingCapability`). Was this exact `(run_id, generation, connector, tool)` already approved by an admin? If YES: consume the capability (delete it from Postgres so it can't be reused), skip all remaining policy gates, forward directly to the upstream bank API. This is how "retry after admin approval" works.
+**Gate 4 — One-shot capability** (`internal/api/policy.go`, `tryConsumePendingCapability`). Was this exact `(run_id, generation, connector, tool, args_digest)` already approved by an admin? If YES: consume the capability (delete it from Postgres so it can't be reused), skip all remaining policy gates, forward directly to the upstream bank API. A retry with a different amount does not match. This is how "retry after admin approval" works.
 
 **Gate 5 — Break-glass** (`internal/api/break_glass.go`, `tryBreakGlassBypass`). Is there an active break-glass window for tenant `acme`? If YES: attempt to write an audit record first. If the audit write succeeds, allow the call (skip grants, webhook, mandatory HITL). If the audit write fails, the bypass itself is REFUSED — you cannot use break-glass silently. Configured via Admin UI `/admin/break-glass`.
 
@@ -4158,7 +4158,7 @@ The admin reviews the transfer and clicks "Approve."
 The approval handler:
 
 1. Re-runs Decide to check current policy (in case a hard deny rule was added since the pending was created). If it would now be hard denied, approval fails.
-2. If still not hard denied: marks the pending_action as approved and creates a **one-shot capability**: `(run_id=run_88, generation=1, connector=bank, tool=transfer_funds) → approved once`.
+2. If still not hard denied: marks the pending_action as approved and creates a **one-shot capability**: `(run_id=run_88, generation=1, connector=bank, tool=transfer_funds, args_digest=<sha256 of these arguments>) → approved once`.
 3. Writes an audit event recording the approval.
 
 
@@ -4167,7 +4167,7 @@ The approval handler:
 
 The agent (if well-written) retries the `transfer_funds` call. Runner-A sends the same MCP tools/call request again.
 
-The CP receives it. Decide runs again. This time, before consulting grants/webhook, it checks: is there a one-shot capability for (run_88, gen=1, bank, transfer_funds)? YES. It consumes (deletes) the capability and short-circuits: **allow this one call**.
+The CP receives it. Before consulting grants/webhook, it checks: is there a one-shot capability for (run_88, gen=1, bank, transfer_funds) whose digest matches this call's arguments? YES. It consumes the capability and short-circuits: **allow this one call**. A retry with a different amount would not match and would go through Decide again.
 
 The CP now forwards the actual request to the upstream banking service, injecting real credentials. The transfer executes. The response flows back to the runner.
 

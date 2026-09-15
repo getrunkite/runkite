@@ -527,6 +527,19 @@
             "type": "string",
             "description": "pending | approved | denied | consumed"
           },
+          "args_digest": {
+            "type": "string",
+            "description": "SHA-256 of the JSON-marshaled tools/call arguments. Empty on rows created before digest-bound HITL; those still consume once on the old tuple."
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Size-capped, secret-stripped display map persisted for the approver. Not the raw blob."
+          },
+          "decided_by": {
+            "type": "string",
+            "description": "Admin identity that approved, when request auth carries one."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -2762,7 +2775,7 @@
           "Admin"
         ],
         "summary": "List Pending Actions",
-        "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability for the next matching tools/call.",
+        "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability bound to that row's args_digest.",
         "operationId": "admin_list_pending_actions",
         "parameters": [
           {
@@ -2921,7 +2934,7 @@
           "Admin"
         ],
         "summary": "Approve Pending Action",
-        "description": "Re-evaluates policy; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching tools/call).",
+        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next tools/call with that digest).",
         "operationId": "admin_approve_pending_action",
         "parameters": [
           {

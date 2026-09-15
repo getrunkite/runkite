@@ -395,8 +395,8 @@
           <code>langgraph.json</code> as <code>policy.predicates</code> (config-only; restart the control plane).
           They run after a matching grant and before the sync webhook, on connector MCP <code>tools/call</code> only.
           Copy the example on <a href="grants.html#argument-predicates">Grants &amp; HITL → argument predicates</a>.
-          After a pending or deny, open <a href="#14-audit">Audit</a> and hover the <strong>Args</strong> column —
-          the pending queue does not store the triggering amount.
+          After a pending or deny, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column —
+          approve binds that display map (Audit still has digest + args as well).
         </p>
         <figure class="shot">
           <div class="cap">Admin → Grants — durable connector allowlist</div>
@@ -435,14 +435,14 @@
         </p>
         <p>
           <strong>What you'll see:</strong> a list of pending actions, each showing which run
-          triggered it, which connector/tool it wants to call, and the reason string — so you
-          can actually see "the agent wants to send this exact email to this exact address"
+          triggered it, which connector/tool it wants to call, the reason, and the
+          <strong>Args</strong> display map — so you can see the amount you are binding
           before deciding.
         </p>
         <p><strong>How to approve or deny:</strong></p>
         <ol class="steps">
-          <li>Open a pending action and read the connector, tool, and reason. The triggering arguments (amount, destination) are on <a href="#14-audit">Audit</a> — hover the <strong>Args</strong> column — not on this queue.</li>
-          <li><strong>Approve</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool executes normally.</li>
+          <li>Open a pending action and read the connector, tool, reason, and <strong>Args</strong> column (hover for the display map). Approve binds that payload — a later call with a different amount is a new row, not a silent send.</li>
+          <li><strong>Approve</strong> — the plane mints a one-shot permission for the next matching call with that same argument digest; the run resumes, and the tool executes normally.</li>
           <li><strong>Deny</strong> — the run resumes with a denial instead; your agent code decides what to do next (retry differently, tell the user, give up).</li>
         </ol>
         <p class="note">Approving here does not create a standing grant — it's a one-time unlock for this specific paused call. The next time the agent tries the same thing, it pauses again unless you've also added a Grant or removed the Mandatory HITL rule.</p>

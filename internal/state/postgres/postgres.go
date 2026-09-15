@@ -298,6 +298,22 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 14,
+			Name:    "pending_actions_args",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActionsArgs(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `
+					DROP INDEX IF EXISTS idx_pending_actions_consume;
+					ALTER TABLE pending_actions
+						DROP COLUMN IF EXISTS args_digest,
+						DROP COLUMN IF EXISTS args,
+						DROP COLUMN IF EXISTS decided_by`)
+				return err
+			},
+		},
 	}
 }
 
@@ -3023,6 +3039,21 @@ func (s *Store) upPendingActions(ctx context.Context, conn *pgxpool.Conn) error 
 	return err
 }
 
+func (s *Store) upPendingActionsArgs(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `
+		ALTER TABLE pending_actions
+			ADD COLUMN IF NOT EXISTS args_digest TEXT NOT NULL DEFAULT '',
+			ADD COLUMN IF NOT EXISTS args JSONB NOT NULL DEFAULT '{}'::jsonb,
+			ADD COLUMN IF NOT EXISTS decided_by TEXT NOT NULL DEFAULT '';
+		CREATE INDEX IF NOT EXISTS idx_pending_actions_consume
+			ON pending_actions (run_id, generation, connector, tool, status, args_digest);
+	`)
+	return err
+}
+
+const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by`
+
 // CreatePendingAction inserts a new pending HITL row.
 func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction) error {
 	if a == nil {
@@ -3039,18 +3070,19 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
-			rule_id, reason, reason_code, status, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			rule_id, reason, reason_code, status, created_at, updated_at,
+			args_digest, args, decided_by
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 	`, a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
-		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt)
+		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt,
+		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy)
 	return err
 }
 
 // GetPendingAction returns one row by id.
 func (s *Store) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		       rule_id, reason, reason_code, status, created_at, updated_at
+		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions WHERE id = $1
 	`, id)
 	a, err := scanPendingAction(row)
@@ -3072,8 +3104,7 @@ func (s *Store) SearchPendingActions(ctx context.Context, req *models.PendingAct
 	if limit <= 0 {
 		limit = 50
 	}
-	query := `SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at FROM pending_actions`
+	query := `SELECT ` + pendingActionSelectCols + ` FROM pending_actions`
 	var args []interface{}
 	var where []string
 	argN := 1
@@ -3152,17 +3183,17 @@ func (s *Store) SetPendingActionStatus(ctx context.Context, id, fromStatus, toSt
 	return nil
 }
 
-// FindOpenPendingAction returns the oldest still-pending row for a call tuple.
-func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool string) (*models.PendingAction, error) {
+// FindOpenPendingAction returns the oldest still-pending row for this
+// call tuple and argument digest. Different amounts do not share a row.
+func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		       rule_id, reason, reason_code, status, created_at, updated_at
+		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions
 		WHERE run_id = $1 AND generation = $2 AND connector = $3 AND tool = $4
-		  AND status = $5
+		  AND status = $5 AND args_digest = $6
 		ORDER BY created_at ASC
 		LIMIT 1
-	`, runID, generation, connector, tool, models.PendingStatusPending)
+	`, runID, generation, connector, tool, models.PendingStatusPending, argsDigest)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -3173,16 +3204,34 @@ func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generat
 	return a, nil
 }
 
+// SetPendingActionApproved moves pending → approved and records who decided.
+func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE pending_actions SET status = $1, decided_by = $2, updated_at = $3
+		WHERE id = $4 AND status = $5
+	`, models.PendingStatusApproved, decidedBy, time.Now().UTC(), id, models.PendingStatusPending)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed"}
+	}
+	return nil
+}
+
 // ConsumeApprovedAction atomically marks an approved action consumed for
-// the matching run/generation/connector/tool. Returns the action id or "".
-func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool string) (string, error) {
+// the matching run/generation/connector/tool and argument digest.
+// Rows with an empty args_digest (pre-migration) still match once so an
+// in-flight approve is not stranded. Exact digest wins over a legacy row.
+func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
 		WITH picked AS (
 			SELECT id FROM pending_actions
 			WHERE run_id = $3 AND generation = $4 AND connector = $5 AND tool = $6
 			  AND status = $7
-			ORDER BY created_at ASC
+			  AND (args_digest = $8 OR args_digest = '')
+			ORDER BY (args_digest = $8) DESC, created_at ASC
 			LIMIT 1
 			FOR UPDATE
 		)
@@ -3192,7 +3241,7 @@ func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generat
 		WHERE p.id = picked.id
 		RETURNING p.id
 	`, models.PendingStatusConsumed, time.Now().UTC(),
-		runID, generation, connector, tool, models.PendingStatusApproved).Scan(&id)
+		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -3204,12 +3253,15 @@ func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generat
 
 func scanPendingAction(row policyGrantScanner) (*models.PendingAction, error) {
 	var a models.PendingAction
+	var argsRaw []byte
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy,
 	); err != nil {
 		return nil, err
 	}
+	a.Args = models.UnmarshalPendingArgs(argsRaw)
 	return &a, nil
 }
 

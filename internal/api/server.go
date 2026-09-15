@@ -979,11 +979,11 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	if method, tool, args := extractToolsCall(body); method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
 		in.Args, in.ArgsDigest, in.ArgsMeta = policy.BindArgs(args)
-		if !s.tryConsumePendingCapability(r.Context(), name, tool) {
+		if !s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest) {
 			if dec, deny := s.checkConnectorPolicy(r.Context(), in); deny {
 				actionID := ""
 				if dec.Effect == policy.EffectPending {
-					id, err := s.persistPendingAction(r.Context(), name, tool, dec)
+					id, err := s.persistPendingAction(r.Context(), in, name, tool, dec)
 					if err != nil {
 						slog.Warn("policy: persist pending action failed", "error", err, "connector", name, "tool", tool)
 						dec.Effect = policy.EffectDeny

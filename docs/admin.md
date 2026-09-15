@@ -52,7 +52,7 @@ PUT /admin-api/mandatory-hitl/{id}          Replace a rule; hot-reloads this rep
 DELETE /admin-api/mandatory-hitl/{id}       Delete a rule; hot-reloads this replica (siblings via poll)
 GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/pending-actions/{id}         Get one pending action
-POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability for next matching tools/call (refuses if policy hard-denies)
+POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability bound to this row's args_digest (refuses if policy hard-denies)
 POST /admin-api/pending-actions/{id}/deny   Mark denied
 GET /admin-api/kill-switches                Tenant/agent kill or pause flags (SQL; ?tenant_id=&agent_id=; X-Next-Cursor). 501 on Mongo.
 POST /admin-api/kill-switches               Upsert kill/pause; unless pause_only, cancel non-terminal runs in scope
@@ -82,7 +82,7 @@ cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui
 | --- | --- |
 | `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s). Argument predicates are **not** this page — `policy.predicates` in `langgraph.json` (config-only). |
 | `/admin/mandatory-hitl` | List / create / edit / delete durable mandatory-HITL overlays (same hot-reload / poll) |
-| `/admin/pending` | Connector HITL queue — approve (one-shot capability) or deny. Does not store the triggering arguments; see Audit. |
+| `/admin/pending` | Connector HITL queue — approve (one-shot, bound to this row's `args_digest`) or deny. Pending **Args** column shows the display map. |
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |
 | `/admin/audit` | Search policy decisions. Connector `tools/call` rows include an Args column (`attrs.args_digest` + capped `attrs.args`). |

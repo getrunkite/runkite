@@ -331,6 +331,22 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 14,
+			Name:    "pending_actions_args",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActionsArgs(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `
+					ALTER TABLE pending_actions
+						DROP INDEX idx_pending_actions_consume,
+						DROP COLUMN args_digest,
+						DROP COLUMN args,
+						DROP COLUMN decided_by`)
+				return err
+			},
+		},
 	}
 }
 

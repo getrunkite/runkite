@@ -234,6 +234,24 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 14,
+			Name:    "pending_actions_args",
+			Up:      s.upPendingActionsArgs,
+			Down: func(ctx context.Context) error {
+				for _, q := range []string{
+					`DROP INDEX IF EXISTS idx_pending_actions_consume`,
+					`ALTER TABLE pending_actions DROP COLUMN args_digest`,
+					`ALTER TABLE pending_actions DROP COLUMN args`,
+					`ALTER TABLE pending_actions DROP COLUMN decided_by`,
+				} {
+					if _, err := s.db.ExecContext(ctx, q); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		},
 	}
 }
 

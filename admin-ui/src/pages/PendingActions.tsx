@@ -103,6 +103,29 @@ export function PendingActions() {
       cell: ({ getValue }) => <span className="font-mono text-xs">{getValue() as string}</span>,
     },
     {
+      id: "args",
+      header: "Args",
+      cell: ({ row }) => {
+        const digest = row.original.args_digest ?? "";
+        if (!digest) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        const args = row.original.args;
+        const tip =
+          args !== undefined && args !== null && Object.keys(args).length > 0
+            ? JSON.stringify(args)
+            : digest;
+        return (
+          <Tooltip>
+            <TooltipTrigger className="font-mono text-xs text-muted-foreground">
+              {digest.slice(0, 8)}…
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm break-all text-xs">{tip}</TooltipContent>
+          </Tooltip>
+        );
+      },
+    },
+    {
       accessorKey: "run_id",
       header: "Run",
       cell: ({ getValue }) => {
@@ -165,7 +188,7 @@ export function PendingActions() {
     <div>
       <PageHeader
         title="Pending actions"
-        subtitle="Connector HITL queue (SQL backends). Approve mints a one-shot capability for the next matching tools/call. Triggering arguments are on Audit → Args, not this queue."
+        subtitle="Connector HITL queue (SQL backends). Approve binds this payload for one matching tools/call; a different amount is a new row."
         actions={<DocsLink href={supportPage("admin-guide.html#11-pending-approval-queue")}>Docs: pending →</DocsLink>}
       />
 

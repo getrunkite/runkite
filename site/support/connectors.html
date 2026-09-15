@@ -278,9 +278,9 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
         <p><strong>What actually happens when this fires, end to end:</strong></p>
         <ol class="steps">
           <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
-          <li>Instead of running, the call is refused with JSON-RPC pending and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> (connector, tool, reason). The triggering arguments are on the <a href="admin-guide.html">Audit</a> row (<code>args_digest</code> plus a size-capped display copy), not the pending queue.</li>
+          <li>Instead of running, the call is refused with JSON-RPC pending and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> (connector, tool, reason, and the triggering display map on the <strong>Args</strong> column).</li>
           <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
-          <li><strong>Approved</strong> — the plane mints a one-shot permission for exactly that next matching call, the run resumes, and the tool actually executes. <strong>Denied</strong> — the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
+          <li><strong>Approved</strong> — the plane mints a one-shot permission for the next matching call with that same argument digest. A retry with a different amount does not consume it. <strong>Denied</strong> — the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
           <li>This is a one-time unlock, not a standing exception — the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>
         </ol>
         <figure class="shot">

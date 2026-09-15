@@ -1113,6 +1113,19 @@ def _build_admin_spec() -> dict:
                             "type": "string",
                             "description": "pending | approved | denied | consumed",
                         },
+                        "args_digest": {
+                            "type": "string",
+                            "description": "SHA-256 of the JSON-marshaled tools/call arguments. Empty on rows created before digest-bound HITL; those still consume once on the old tuple.",
+                        },
+                        "args": {
+                            "type": "object",
+                            "additionalProperties": True,
+                            "description": "Size-capped, secret-stripped display map persisted for the approver. Not the raw blob.",
+                        },
+                        "decided_by": {
+                            "type": "string",
+                            "description": "Admin identity that approved, when request auth carries one.",
+                        },
                         "created_at": {"type": "string", "format": "date-time"},
                         "updated_at": {"type": "string", "format": "date-time"},
                     },
@@ -1428,7 +1441,7 @@ def _build_admin_spec() -> dict:
                 "delete": {"tags": ["Admin"], "summary": "Delete Mandatory HITL Rule", "operationId": "admin_delete_mandatory_hitl", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"204": {"description": "Deleted"}, "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions": {
-                "get": {"tags": ["Admin"], "summary": "List Pending Actions", "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability for the next matching tools/call.", "operationId": "admin_list_pending_actions", "parameters": [
+                "get": {"tags": ["Admin"], "summary": "List Pending Actions", "description": "Connector tool calls awaiting HITL approval (SQL backends). Approve mints a one-shot capability bound to that row's args_digest.", "operationId": "admin_list_pending_actions", "parameters": [
                     {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
                     {"name": "status", "in": "query", "required": False, "schema": {"type": "string"}, "description": "pending | approved | denied | consumed"},
                     {"name": "run_id", "in": "query", "required": False, "schema": {"type": "string"}},
@@ -1443,7 +1456,7 @@ def _build_admin_spec() -> dict:
                 "get": {"tags": ["Admin"], "summary": "Get Pending Action", "operationId": "admin_get_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PendingAction")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions/{id}/approve": {
-                "post": {"tags": ["Admin"], "summary": "Approve Pending Action", "description": "Re-evaluates policy; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching tools/call).", "operationId": "admin_approve_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
+                "post": {"tags": ["Admin"], "summary": "Approve Pending Action", "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next tools/call with that digest).", "operationId": "admin_approve_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
                     "200": {"description": "Approved", "content": {"application/json": {"schema": _ref("PendingAction")}}},
                     "409": {"description": "Not pending, or policy still denies", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                     "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},

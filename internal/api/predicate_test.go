@@ -180,6 +180,12 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 	if got.Status != models.PendingStatusPending || got.Tool != "transfer" {
 		t.Fatalf("pending row: %+v", got)
 	}
+	if got.ArgsDigest == "" {
+		t.Fatalf("pending row missing args_digest: %+v", got)
+	}
+	if got.Args["amount"] != float64(250) {
+		t.Fatalf("pending args=%#v", got.Args)
+	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	var found *models.AuditEvent

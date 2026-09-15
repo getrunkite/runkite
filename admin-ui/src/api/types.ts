@@ -197,6 +197,9 @@ export interface AdminPendingAction {
   reason?: string;
   reason_code?: string;
   status: string;
+  args_digest?: string;
+  args?: Record<string, unknown>;
+  decided_by?: string;
   created_at: string;
   updated_at: string;
 }

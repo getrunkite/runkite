@@ -215,8 +215,9 @@ func extractToolsCall(body []byte) (method, tool string, args json.RawMessage) {
 }
 
 // tryConsumePendingCapability burns one approved pending_action for this
-// tools/call. Returns true when the call should proceed without Decide.
-func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool string) bool {
+// tools/call when the argument digest matches. Returns true when the call
+// should proceed without Decide.
+func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest string) bool {
 	store, ok := s.pendingActions()
 	if !ok {
 		return false
@@ -225,7 +226,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 	if in.RunID == "" {
 		return false
 	}
-	id, err := store.ConsumeApprovedAction(ctx, in.RunID, in.Generation, connectorName, tool)
+	id, err := store.ConsumeApprovedAction(ctx, in.RunID, in.Generation, connectorName, tool, argsDigest)
 	if err != nil {
 		slog.Warn("policy: consume approved action failed", "error", err, "run_id", in.RunID)
 		return false
@@ -233,17 +234,21 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 	return id != ""
 }
 
-// persistPendingAction stores (or reuses) a pending HITL row. Returns action id.
-func (s *Server) persistPendingAction(ctx context.Context, connectorName, tool string, dec policy.PolicyDecision) (string, error) {
+// persistPendingAction stores (or reuses) a pending HITL row for this
+// exact argument digest. Returns action id.
+func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput, connectorName, tool string, dec policy.PolicyDecision) (string, error) {
 	store, ok := s.pendingActions()
 	if !ok {
 		return "", errString("pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
 	}
-	in := policyInputFromRequest(ctx, policy.StageToolCall, connectorName, tool)
 	if in.RunID == "" {
 		return "", errString("pending actions require run binding")
 	}
-	if existing, err := store.FindOpenPendingAction(ctx, in.RunID, in.Generation, connectorName, tool); err != nil {
+	digest := in.ArgsDigest
+	if digest == "" {
+		_, digest, _ = policy.BindArgs(nil)
+	}
+	if existing, err := store.FindOpenPendingAction(ctx, in.RunID, in.Generation, connectorName, tool, digest); err != nil {
 		return "", err
 	} else if existing != nil {
 		return existing.ID, nil
@@ -264,6 +269,8 @@ func (s *Server) persistPendingAction(ctx context.Context, connectorName, tool s
 		Reason:     dec.Reason,
 		ReasonCode: dec.ReasonCode,
 		Status:     models.PendingStatusPending,
+		ArgsDigest: digest,
+		Args:       in.ArgsMeta,
 	}
 	if a.ReasonCode == "" {
 		a.ReasonCode = policy.ReasonPolicyPending

@@ -2,6 +2,23 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## [Unreleased]
+
+Exact-bound connector HITL: the one-shot approve is for this `tools/call` (digest + display map), not the next call with the same tool name.
+
+### Added
+- `pending_actions.args_digest` / `args` / `decided_by` (schema 14); consume and find match the digest
+- Admin Pending **Args** column; approve records `decided_by` when Admin auth carries an identity
+
+### Fixed
+- Approving a $500 transfer no longer forwards a $5,000,000 retry on the same tool (consume used to match `(run_id, generation, connector, tool)` only)
+
+### Notes
+- Consume still skips Decide so mandatory HITL cannot re-pending the approved retry. Digest match *is* the retry check.
+- Rows created before this binding (`args_digest` empty) still consume once on the old tuple.
+- Display map omits secret-looking keys; approve re-eval uses that map. Predicates must not key on `password|token|secret|authorization|api_key`.
+- **Not tagged yet.** Fixture replay (`runkite sim`) is not in this train.
+
 ## [0.4.0] — 2026-09-14
 
 Argument-aware connector policy: MCP `tools/call` arguments reach Decide, config predicates, webhook, and audit. Preview (BUSL) — not a 1.0 production claim, and **not** a hosted control plane.

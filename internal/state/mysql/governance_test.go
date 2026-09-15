@@ -75,11 +75,11 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 	if err := store.SetPendingActionStatus(sys, "mysql-p1", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.ConsumeApprovedAction(sys, "mysql-r1", 2, "sf", "delete_repo")
+	id, err := store.ConsumeApprovedAction(sys, "mysql-r1", 2, "sf", "delete_repo", "")
 	if err != nil || id != "mysql-p1" {
 		t.Fatalf("ConsumeApprovedAction: id=%q err=%v", id, err)
 	}
-	id, err = store.ConsumeApprovedAction(sys, "mysql-r1", 2, "sf", "delete_repo")
+	id, err = store.ConsumeApprovedAction(sys, "mysql-r1", 2, "sf", "delete_repo", "")
 	if err != nil || id != "" {
 		t.Fatalf("second consume want empty, got %q err=%v", id, err)
 	}

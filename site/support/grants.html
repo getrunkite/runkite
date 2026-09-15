@@ -98,7 +98,7 @@
           <li>For argument gates (amount, destination), add <code>policy.predicates</code> in the first <code>langgraph.json</code> — not the Grants form. Restart the control plane.</li>
           <li>Add mandatory HITL rules for high-risk tools (Admin or config).</li>
           <li>Drive a connector MCP <code>tools/call</code> that matches. Over-threshold → JSON-RPC <code>-32000</code> pending; under-threshold reaches the connector.</li>
-          <li>Admin → Pending → approve or deny; the agent retries the same tool. Hover <strong>Args</strong> on Admin → Audit for the capped arguments (Pending does not store them).</li>
+          <li>Admin → Pending → approve or deny; hover <strong>Args</strong> on that row for the capped display map. The agent retries the same arguments. A different amount is a new row, not a silent send.</li>
         </ol>
         <pre class="mono-block"># langgraph.json — grant opens the connector; predicate tightens by amount
 "policy": {
@@ -143,7 +143,7 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Deny</strong> — tool never reaches the downstream connector (grant, predicate, or webhook).</li>
-          <li><strong>Pending</strong> — operator must act; approve is one-shot for the next matching call. The triggering arguments are on the Audit row, not the pending queue.</li>
+          <li><strong>Pending</strong> — operator must act; approve is one-shot for the next matching call with the same argument digest. The Pending queue shows the triggering display map.</li>
           <li><strong>Audit</strong> — decisions are queryable on SQL backends (including <code>args_digest</code> on connector <code>tools/call</code>).</li>
           <li><strong>Admin walkthrough</strong> — see <a href="admin-guide.html#9-grants-policy-grants">Admin UI guide → Grants</a>, <a href="admin-guide.html#10-mandatory-hitl">Mandatory HITL</a>, and <a href="admin-guide.html#11-pending-approval-queue">Pending</a> for a step-by-step of each screen.</li>
         </ul>

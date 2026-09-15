@@ -80,6 +80,21 @@ func (s *Store) upPendingActions(ctx context.Context, db migrate.DB) error {
 	return err
 }
 
+func (s *Store) upPendingActionsArgs(ctx context.Context, db migrate.DB) error {
+	// ponytail: InnoDB utf8mb4 max key is 3072 bytes. Prefix run_id/connector/tool
+	// at 64; widen if those columns shrink or the table uses a non-utf8mb4 collation.
+	_, err := db.ExecContext(ctx, `
+		ALTER TABLE pending_actions
+			ADD COLUMN args_digest VARCHAR(64) NOT NULL DEFAULT '',
+			ADD COLUMN args JSON,
+			ADD COLUMN decided_by VARCHAR(255) NOT NULL DEFAULT '',
+			ADD INDEX idx_pending_actions_consume (run_id(64), generation, connector(64), tool(64), status, args_digest)`)
+	return err
+}
+
+const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by`
+
 // WriteAuditEvent persists one policy/security decision.
 func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error {
 	if ev == nil {
@@ -393,18 +408,19 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
-			rule_id, reason, reason_code, status, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			rule_id, reason, reason_code, status, created_at, updated_at,
+			args_digest, args, decided_by
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
-		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt)
+		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt,
+		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy)
 	return err
 }
 
 // GetPendingAction returns one row by id.
 func (s *Store) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		       rule_id, reason, reason_code, status, created_at, updated_at
+		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions WHERE id = ?`, id)
 	a, err := scanPendingAction(row)
 	if err != nil {
@@ -425,8 +441,7 @@ func (s *Store) SearchPendingActions(ctx context.Context, req *models.PendingAct
 	if limit <= 0 {
 		limit = 50
 	}
-	query := `SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at FROM pending_actions`
+	query := `SELECT ` + pendingActionSelectCols + ` FROM pending_actions`
 	var args []interface{}
 	var where []string
 	if !tenant.IsSystem(ctx) {
@@ -498,16 +513,16 @@ func (s *Store) SetPendingActionStatus(ctx context.Context, id, fromStatus, toSt
 	return nil
 }
 
-// FindOpenPendingAction returns the oldest still-pending row for a call tuple.
-func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool string) (*models.PendingAction, error) {
+// FindOpenPendingAction returns the oldest still-pending row for this
+// call tuple and argument digest.
+func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, run_id, generation, tenant_id, agent_id, connector, tool,
-		       rule_id, reason, reason_code, status, created_at, updated_at
+		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
-		  AND status = ?
+		  AND status = ? AND args_digest = ?
 		ORDER BY created_at ASC LIMIT 1`,
-		runID, generation, connector, tool, models.PendingStatusPending)
+		runID, generation, connector, tool, models.PendingStatusPending, argsDigest)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -518,8 +533,23 @@ func (s *Store) FindOpenPendingAction(ctx context.Context, runID string, generat
 	return a, nil
 }
 
+func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE pending_actions SET status = ?, decided_by = ?, updated_at = ?
+		WHERE id = ? AND status = ?`,
+		models.PendingStatusApproved, decidedBy, time.Now().UTC(), id, models.PendingStatusPending)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed"}
+	}
+	return nil
+}
+
 // ConsumeApprovedAction atomically marks an approved action consumed.
-func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool string) (string, error) {
+func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -531,8 +561,9 @@ func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generat
 		SELECT id FROM pending_actions
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
 		  AND status = ?
-		ORDER BY created_at ASC LIMIT 1 FOR UPDATE`,
-		runID, generation, connector, tool, models.PendingStatusApproved).Scan(&id)
+		  AND (args_digest = ? OR args_digest = '')
+		ORDER BY (args_digest = ?) DESC, created_at ASC LIMIT 1 FOR UPDATE`,
+		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, argsDigest).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
@@ -559,12 +590,15 @@ func (s *Store) ConsumeApprovedAction(ctx context.Context, runID string, generat
 func scanPendingAction(row govScanner) (*models.PendingAction, error) {
 	var a models.PendingAction
 	var reason sql.NullString
+	var argsRaw []byte
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy,
 	); err != nil {
 		return nil, err
 	}
 	a.Reason = reason.String
+	a.Args = models.UnmarshalPendingArgs(argsRaw)
 	return &a, nil
 }

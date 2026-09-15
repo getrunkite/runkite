@@ -11,6 +11,8 @@
 #             make test / go test ./internal/api/ -run 'TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind')
 #   Predicates — amount-gated tools/call pending + audit args_digest
 #             (TestPolicyPredicate_AmountPending)
+#   HITL digest — approve $500 cannot consume a $5M retry
+#             (TestPendingHITL_ApprovedDigestMismatch)
 #
 # Usage (from repo root):
 #   make smoke-governance
@@ -48,9 +50,10 @@ echo "    Phase 0: run-binding reject + assignment tenant"
 echo "    Phase 1: tenant B connector deny + audit write"
 echo "    Phase 2: Admin audit query + HITL approve one-shot"
 echo "    Predicates: amount-gated tools/call pending + audit args_digest"
+echo "    HITL digest: approve \$500 cannot consume a \$5M retry"
 
 set +e
-go test ./internal/api/ -run 'TestGovernanceAnnounceBar|TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind|TestPolicyPredicate_AmountPending' -count=1 -timeout 120s
+go test ./internal/api/ -run 'TestGovernanceAnnounceBar|TestAdmission_AgentScopedAuthz|TestAdmission_KillSwitchRefusesCreate|TestKillSwitch_CRUDAndFind|TestPolicyPredicate_AmountPending|TestPendingHITL_ApprovedDigestMismatch$' -count=1 -timeout 120s
 rc=$?
 set -e
 

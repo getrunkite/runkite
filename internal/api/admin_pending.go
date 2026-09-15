@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/policy"
@@ -16,8 +17,9 @@ type pendingActionStore interface {
 	GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error)
 	SearchPendingActions(ctx context.Context, req *models.PendingActionSearchRequest) ([]*models.PendingAction, error)
 	SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error
-	FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool string) (*models.PendingAction, error)
-	ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool string) (string, error)
+	SetPendingActionApproved(ctx context.Context, id, decidedBy string) error
+	FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error)
+	ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error)
 }
 
 func (s *Server) pendingActions() (pendingActionStore, bool) {
@@ -87,7 +89,7 @@ func (s *Server) handleAdminGetPendingAction(w http.ResponseWriter, r *http.Requ
 
 // POST /admin-api/pending-actions/{id}/approve
 // Re-evaluates policy: hard deny refuses approve; allow/pending mints a
-// one-shot capability (status=approved) for the next matching tools/call.
+// one-shot capability (status=approved) bound to this row's args_digest.
 func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.pendingActions()
 	if !ok {
@@ -117,12 +119,19 @@ func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.
 		Generation: a.Generation,
 		Connector:  a.Connector,
 		Tool:       a.Tool,
+		Args:       a.Args,
+		ArgsDigest: a.ArgsDigest,
+		ArgsMeta:   a.Args,
 	})
 	if dec.Effect == policy.EffectDeny {
 		writeError(w, http.StatusConflict, "policy still denies this tool call; approve refused")
 		return
 	}
-	if err := store.SetPendingActionStatus(ctx, id, models.PendingStatusPending, models.PendingStatusApproved); err != nil {
+	decidedBy := ""
+	if ar := auth.FromContext(r.Context()); ar != nil {
+		decidedBy = ar.Identity
+	}
+	if err := store.SetPendingActionApproved(ctx, id, decidedBy); err != nil {
 		handleStoreError(w, err)
 		return
 	}
