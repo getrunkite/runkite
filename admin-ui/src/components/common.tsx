@@ -68,7 +68,7 @@ export function EmptyState({
   message: string;
   icon?: typeof Inbox;
   action?: ReactNode;
-  /** Optional deep link into the public support map (GitHub Pages). */
+  /** Optional deep link into the public support map. */
   learnMore?: { href: string; label: string };
 }) {
   return (
@@ -99,12 +99,32 @@ export function EmptyState({
   );
 }
 
-/** Public support-map base (GitHub Pages). Used by Admin empty states. */
-export const SUPPORT_BASE = "https://getrunkite.github.io/runkite/support";
+/** Public product host that fronts this Admin with a marketing site. */
+export function isPublicDemoHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "getrunkite.com" || host === "www.getrunkite.com" || host === "demo.getrunkite.com";
+}
+
+/** Native <a href>, not a React Router Link: on the public host "/" is
+ * Caddy's product page, which the SPA never sees. On a self-hosted plane
+ * there is no marketing site, so the brand stays on Admin overview. */
+export function productHomeHref(): string {
+  return isPublicDemoHost() ? "/" : "/admin/";
+}
+
+export function supportBase(): string {
+  if (isPublicDemoHost()) {
+    return `${window.location.origin}/support`;
+  }
+  return "https://getrunkite.com/support";
+}
+
+export const SUPPORT_BASE = "https://getrunkite.com/support";
 
 export function supportPage(path: string): string {
   const cleaned = path.replace(/^\//, "");
-  return `${SUPPORT_BASE}/${cleaned}`;
+  return `${supportBase()}/${cleaned}`;
 }
 
 export function ErrorState({ message }: { message: string }) {

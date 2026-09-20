@@ -74,8 +74,140 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hero::before,
-  .hero::after {
+  .hero::after,
+  .cube,
+  .live-pill .pulse {
     animation: none;
+  }
+}
+
+/* Wireframe cubes: motion like a live console, amber edges, no aurora. */
+.hero-cubes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  perspective: 1100px;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.cube {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  transform-style: preserve-3d;
+  animation: cube-spin 32s linear infinite;
+}
+
+.cube-a {
+  --s: 240px;
+  --h: 120px;
+  left: 6%;
+  top: 14%;
+  opacity: 0.48;
+}
+
+.cube-b {
+  --s: 150px;
+  --h: 75px;
+  right: 8%;
+  top: 22%;
+  opacity: 0.28;
+  animation-duration: 46s;
+  animation-direction: reverse;
+}
+
+.cube .face {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    transparent 58%
+  );
+}
+
+.cube .ft {
+  transform: rotateY(0deg) translateZ(var(--h));
+}
+.cube .bk {
+  transform: rotateY(180deg) translateZ(var(--h));
+}
+.cube .rt {
+  transform: rotateY(90deg) translateZ(var(--h));
+}
+.cube .lt {
+  transform: rotateY(-90deg) translateZ(var(--h));
+}
+.cube .tp {
+  transform: rotateX(90deg) translateZ(var(--h));
+}
+.cube .bm {
+  transform: rotateX(-90deg) translateZ(var(--h));
+}
+
+@keyframes cube-spin {
+  from {
+    transform: rotateX(-18deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(-18deg) rotateY(360deg);
+  }
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 auto 1.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.live-pill .pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 65%, transparent);
+  animation: live-ping 2s ease-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes live-ping {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (max-width: 720px) {
+  .cube-b {
+    display: none;
+  }
+  .cube-a {
+    left: 50%;
+    margin-left: calc(var(--s) / -2);
+    opacity: 0.32;
+  }
+  .live-pill {
+    max-width: 100%;
+    text-align: left;
+    white-space: normal;
+    line-height: 1.35;
   }
 }
 
@@ -114,7 +246,7 @@
 }
 
 .hero .lede {
-  margin: 0 auto 1.75rem;
+  margin: 0 auto 1rem;
   max-width: 36rem;
   color: var(--muted);
   font-size: 1.12rem;
@@ -146,9 +278,10 @@
   margin-bottom: 2.5rem;
 }
 
-/* Rack console bezel around the product GIF */
+/* Rack console bezel around the product GIF — the GIF is the try-Admin control. */
 .hero-visual {
   position: relative;
+  display: block;
   width: min(960px, 100%);
   margin: 0 auto;
   border-radius: var(--radius);
@@ -156,6 +289,13 @@
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow);
   background: var(--bg-elev);
+  text-decoration: none;
+  color: inherit;
+}
+
+.hero-visual:hover {
+  border-color: var(--accent);
+  color: inherit;
 }
 
 .hero-visual .chrome {
@@ -177,15 +317,14 @@
   width: 8px;
   height: 8px;
   border-radius: 1px;
-  background: var(--accent);
+  background: var(--ok);
   box-shadow: 10px 0 0 #3f3f46, 20px 0 0 #3f3f46;
   flex-shrink: 0;
 }
 
-.hero-visual .chrome::after {
-  content: "admin · /console";
+.hero-visual .chrome-cta {
   margin-left: auto;
-  color: var(--ink-dim);
+  color: var(--accent-2);
 }
 
 .hero-visual img {

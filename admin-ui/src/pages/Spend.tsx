@@ -11,7 +11,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 
-/** Public docs — GitHub Pages support map + repo configuration reference. */
+/** Public docs — product support map + repo configuration reference. */
 const DOCS = {
   finops: supportPage("finops.html"),
   production: supportPage("production.html"),

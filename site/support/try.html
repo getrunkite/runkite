@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./support.css?v=20260903" />
+    <link rel="stylesheet" href="./support.css?v=20260920" />
   </head>
   <body>
     <div class="layout">
@@ -77,7 +77,15 @@
         </div>
 
         <h1 class="one-line">Compose → echo → HITL</h1>
-        <p class="lede">Docker only. Same cold-tester path as the product landing.</p>
+        <p class="lede">Public Admin first. Your agents run on your infra (Compose, Helm, Kubernetes).</p>
+
+        <div class="callout" style="border:1px solid rgba(244,244,245,0.18);padding:1rem 1.15rem;margin:0 0 1.75rem;background:#121214">
+          <p><strong>Live sandbox</strong>:
+            <a href="https://getrunkite.com/admin/">getrunkite.com/admin</a>
+            is a running Runkite process (Postgres, Redis, runners), not a mock.
+            Shared key is on the product page. Fake agents only. Compose below is a local
+            replica, not the production shape. Production: <a href="./install.html">Install</a>.</p>
+        </div>
 
         <div class="try-visual">
           <div class="flow-grid">
@@ -148,6 +156,6 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
 
       </main>
     </div>
-      <script src="./docs.js" defer></script>
+      <script src="./docs.js?v=20260920" defer></script>
   </body>
 </html>

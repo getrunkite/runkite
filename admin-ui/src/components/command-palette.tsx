@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router";
-import { LogOut, Moon, Sun } from "lucide-react";
+import { BookOpen, Home, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "./theme-provider";
 import { NAV_GROUPS } from "./app-sidebar";
+import { isPublicDemoHost, productHomeHref, supportBase } from "./common";
 import {
   CommandDialog,
   CommandEmpty,
@@ -51,6 +52,29 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             ))}
           </CommandGroup>
         ))}
+        <CommandSeparator />
+        <CommandGroup heading="Site">
+          {isPublicDemoHost() && (
+            <CommandItem
+              onSelect={() => {
+                onOpenChange(false);
+                window.location.href = productHomeHref();
+              }}
+            >
+              <Home />
+              Product home
+            </CommandItem>
+          )}
+          <CommandItem
+            onSelect={() => {
+              onOpenChange(false);
+              window.open(supportBase(), "_blank", "noopener,noreferrer");
+            }}
+          >
+            <BookOpen />
+            Docs
+          </CommandItem>
+        </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Actions">
           <CommandItem

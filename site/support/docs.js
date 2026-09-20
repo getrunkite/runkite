@@ -105,9 +105,61 @@
     }
   }
 
+  function adminHref() {
+    if (location.hostname === "getrunkite.github.io") {
+      return "https://getrunkite.com/admin/";
+    }
+    return "/admin/";
+  }
+
+  function injectLiveAdmin() {
+    var href = adminHref();
+    if (!document.getElementById("rk-live-admin-style")) {
+      var style = document.createElement("style");
+      style.id = "rk-live-admin-style";
+      style.textContent =
+        ".sidebar nav a.nav-live-admin{color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent);margin-bottom:.85rem}" +
+        ".topbar a[data-live-admin]{color:var(--accent-2);font-weight:600}";
+      document.head.appendChild(style);
+    }
+
+    var topbar = document.querySelector(".topbar");
+    if (topbar && !topbar.querySelector("[data-live-admin]")) {
+      var top = document.createElement("a");
+      top.href = href;
+      top.setAttribute("data-live-admin", "1");
+      top.textContent = "Live Admin";
+      var product = null;
+      var links = topbar.querySelectorAll("a[href]");
+      for (var i = 0; i < links.length; i++) {
+        var h = links[i].getAttribute("href") || "";
+        if (h === "../" || h === "../../" || h === "../index.html") {
+          product = links[i];
+          break;
+        }
+      }
+      if (product && product.nextSibling) {
+        topbar.insertBefore(top, product.nextSibling);
+      } else {
+        topbar.insertBefore(top, topbar.firstChild);
+      }
+    }
+
+    var nav = document.querySelector(".sidebar nav");
+    if (nav && !nav.querySelector("[data-live-admin]")) {
+      var side = document.createElement("a");
+      side.href = href;
+      side.setAttribute("data-live-admin", "1");
+      side.className = "nav-live-admin";
+      side.textContent = "Live Admin";
+      nav.insertBefore(side, nav.firstChild);
+    }
+  }
+
   ready(function () {
     enhanceCodeBlocks();
     keepSidebarScroll();
     markPendingCells();
+    injectLiveAdmin();
   });
 })();

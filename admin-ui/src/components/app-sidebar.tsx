@@ -19,6 +19,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { isPublicDemoHost, productHomeHref } from "./common";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "./ui/button";
 import {
@@ -110,7 +111,11 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function SidebarBrand() {
   return (
-    <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+    <a
+      href={productHomeHref()}
+      className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4 no-underline hover:bg-sidebar-accent/50"
+      title={isPublicDemoHost() ? "Product home" : "Admin overview"}
+    >
       <img
         src={`${import.meta.env.BASE_URL}logo.svg`}
         alt=""
@@ -118,13 +123,13 @@ export function SidebarBrand() {
         height={28}
         className="size-7 rounded-sm"
       />
-      <span className="font-mono text-xs font-semibold tracking-widest uppercase">
+      <span className="font-mono text-xs font-semibold tracking-widest uppercase text-sidebar-foreground">
         ~/ <span className="text-primary">runkite</span>
       </span>
       <span className="ml-auto rounded-sm border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
         Admin
       </span>
-    </div>
+    </a>
   );
 }
 
@@ -153,7 +158,7 @@ export function SignOutButton() {
 
 export function AppSidebar() {
   return (
-    <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+    <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
       <SidebarBrand />
       <NavLinks />
       <SignOutButton />
