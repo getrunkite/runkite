@@ -20,7 +20,7 @@ Zero-deps laptop demo (SQLite + in-memory, **not** Supported):
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Site walkthrough: [Try it](https://getrunkite.github.io/runkite/#try).
+Site walkthrough: [Try it](https://getrunkite.com/support/try.html).
 
 ### Helm
 

@@ -29,7 +29,7 @@
     "url": "git+https://github.com/getrunkite/runkite.git",
     "directory": "typescript/runkite-runner"
   },
-  "homepage": "https://getrunkite.github.io/runkite/",
+  "homepage": "https://getrunkite.com/",
   "bugs": {
     "url": "https://github.com/getrunkite/runkite/issues"
   },

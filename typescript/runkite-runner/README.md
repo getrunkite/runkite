@@ -12,7 +12,7 @@ optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 | **Install** | `npm install -g runkite-runner` |
 | **CLI** | `runkite-runner` |
 | **Control plane** | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `ghcr.io/getrunkite/runkite` |
-| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Site](https://getrunkite.github.io/runkite/) |
+| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Site](https://getrunkite.com/) |
 | **License** | [BUSL-1.1](./LICENSE) |
 
 ## Quick start
@@ -44,7 +44,7 @@ From a clone: `npm ci && npm run build` then `npx runkite-runner --config …`.
 
 ## Links
 
-- Homepage: https://getrunkite.github.io/runkite/
+- Homepage: https://getrunkite.com/
 - Source: https://github.com/getrunkite/runkite/tree/main/typescript/runkite-runner
 - Python twin: https://pypi.org/project/runkite-runner/
 - Changelog: https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md

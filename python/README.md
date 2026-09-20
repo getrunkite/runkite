@@ -23,7 +23,7 @@ status back so clients see live SSE / WebSocket progress in the Admin UI.
 | **CLI** | `runkite-runner` · `python -m runkite_runner` |
 | **Companion (TS)** | [`runkite-runner` on npm](https://www.npmjs.com/package/runkite-runner) |
 | **Control plane** | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `ghcr.io/getrunkite/runkite` |
-| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Quick start](https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md) · [Site](https://getrunkite.github.io/runkite/) |
+| **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Quick start](https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md) · [Site](https://getrunkite.com/) |
 | **License** | [BUSL-1.1](https://github.com/getrunkite/runkite/blob/main/LICENSE) |
 
 ---
@@ -146,7 +146,7 @@ when you need them — see [docs/runners.md](https://github.com/getrunkite/runki
 
 ## Links
 
-- Homepage: https://getrunkite.github.io/runkite/
+- Homepage: https://getrunkite.com/
 - Source: https://github.com/getrunkite/runkite/tree/main/python
 - Issues: https://github.com/getrunkite/runkite/issues
 - Changelog: https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md

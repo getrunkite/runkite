@@ -177,7 +177,7 @@ Dogfood config sets `soft_pct: 50` and `max_usd_per_day: 5` in `00_controlplane.
 - **Unpriced:** remove a model from pricebook overlay, run that model → `usage_unpriced` alert.
 - **Unmetered:** run `unknown_provider_agent` via Try agent (registered in dogfood CP config) → `usage_unmetered` alert.
 
-Docs: [FinOps guide](https://getrunkite.github.io/runkite/support/finops.html)
+Docs: [FinOps guide](https://getrunkite.com/support/finops.html)
 
 ---
 
@@ -250,7 +250,7 @@ make smoke-governance
 
 ### 5.2 Connector HITL + Pending queue (manual, optional)
 
-Requires Postgres profile + connectors configured in `langgraph.json` + mandatory HITL rule. Follow [Grants & HITL](https://getrunkite.github.io/runkite/support/grants.html) and [HITL ops](https://getrunkite.github.io/runkite/support/hitl-ops.html).
+Requires Postgres profile + connectors configured in `langgraph.json` + mandatory HITL rule. Follow [Grants & HITL](https://getrunkite.com/support/grants.html) and [HITL ops](https://getrunkite.com/support/hitl-ops.html).
 
 **Pass:**
 
@@ -259,7 +259,7 @@ Requires Postgres profile + connectors configured in `langgraph.json` + mandator
 3. Admin → **Audit** shows decision.
 4. Run completes or fails per policy.
 
-> There is no built-in “email me when I approve” in the open-source stack. Wire a `webhooks` entry for `policy_decision` / `interrupt` to your own endpoint (Slack, email gateway) if you need notifications — see [Webhooks](https://getrunkite.github.io/runkite/support/webhooks.html).
+> There is no built-in “email me when I approve” in the open-source stack. Wire a `webhooks` entry for `policy_decision` / `interrupt` to your own endpoint (Slack, email gateway) if you need notifications — see [Webhooks](https://getrunkite.com/support/webhooks.html).
 
 ### 5.3 Kill switch + break-glass (manual)
 

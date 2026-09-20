@@ -3,7 +3,7 @@
 Product site served from this folder via `.github/workflows/pages.yml`.
 Visuals live in `assets/`.
 
-**Live:** https://getrunkite.github.io/runkite/
+**Live:** https://getrunkite.com/
 
 **Brand system (W2):** [`brand.css`](./brand.css) — dark rack/ops canvas, Fraunces + IBM Plex Sans + JetBrains Mono, amber signal (no aurora/stars/cobalt glow). Shared by landing, support, and design notes.
 

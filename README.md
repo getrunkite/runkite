@@ -11,9 +11,11 @@ If you already know [LangSmith Deployments](https://docs.smith.langchain.com/dep
 [![PyPI](https://img.shields.io/pypi/v/runkite-runner)](https://pypi.org/project/runkite-runner/)
 [![npm](https://img.shields.io/npm/v/runkite-runner)](https://www.npmjs.com/package/runkite-runner)
 [![GHCR](https://img.shields.io/badge/GHCR-getrunkite%2Frunkite-blue)](https://github.com/getrunkite/runkite/pkgs/container/runkite)
-[![Site](https://img.shields.io/badge/site-getrunkite.github.io-0c1210)](https://getrunkite.github.io/runkite/)
+[![Site](https://img.shields.io/badge/site-getrunkite.com-0c1210)](https://getrunkite.com/)
 
-**Website:** [getrunkite.github.io/runkite](https://getrunkite.github.io/runkite/) · **Releases:** [GitHub Releases](https://github.com/getrunkite/runkite/releases) · **Python runner:** [PyPI](https://pypi.org/project/runkite-runner/) · **TypeScript runner:** [npm](https://www.npmjs.com/package/runkite-runner)
+**Website:** [getrunkite.com](https://getrunkite.com/) · **Live Admin:** [getrunkite.com/admin](https://getrunkite.com/admin/) · **Releases:** [GitHub Releases](https://github.com/getrunkite/runkite/releases) · **Python runner:** [PyPI](https://pypi.org/project/runkite-runner/) · **TypeScript runner:** [npm](https://www.npmjs.com/package/runkite-runner)
+
+**Try it live, no signup:** [getrunkite.com](https://getrunkite.com/). Open Admin with the shared key on that page. Fake agents. Your graphs stay on your infra.
 
 <p align="center">
   <img src="docs/assets/admin-walkthrough.gif" alt="Runkite Admin UI walkthrough" width="920" />
@@ -57,9 +59,7 @@ Being clear about scope matters as much as being clear about capability:
 
 ## Quick start
 
-The fastest way to see it working, with nothing installed: [try it on the site](https://getrunkite.github.io/runkite/#try) — `docker compose -f docker-compose.dev.yml up -d --build` brings up the plane, an echo agent shows a full round trip, and a HITL approval demo shows the human-in-the-loop path, all in about five minutes.
-
-To run it directly instead:
+The fastest way to see it, with nothing installed: [getrunkite.com](https://getrunkite.com/) (live Admin, shared key on the page). To run the same path on your own infra:
 
 | Piece | Get it |
 |---|---|
@@ -156,7 +156,7 @@ sequenceDiagram
 | Features | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
 | Operations | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Trust & governance](docs/trust-governance.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) |
 
-The [documentation site](https://getrunkite.github.io/runkite/) covers the same material with a guided, page-by-page walkthrough — including a full [Admin UI guide](https://getrunkite.github.io/runkite/support/admin-guide.html) and an occasional [blog post](https://getrunkite.github.io/runkite/support/blog/) — if you'd rather read in that format than jump between Markdown files.
+The [documentation site](https://getrunkite.com/support/) covers the same material with a guided, page-by-page walkthrough — including a full [Admin UI guide](https://getrunkite.com/support/admin-guide.html) and an occasional [blog post](https://getrunkite.com/support/blog/) — if you'd rather read in that format than jump between Markdown files.
 
 ## Development
 

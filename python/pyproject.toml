@@ -38,9 +38,9 @@ otel = [
 ]
 
 [project.urls]
-Homepage = "https://getrunkite.github.io/runkite/"
+Homepage = "https://getrunkite.com/"
 Repository = "https://github.com/getrunkite/runkite"
-Documentation = "https://github.com/getrunkite/runkite/tree/main/docs"
+Documentation = "https://getrunkite.com/support/"
 Changelog = "https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md"
 Issues = "https://github.com/getrunkite/runkite/issues"
 
