@@ -26,8 +26,8 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./brand.css?v=20260920" />
-    <link rel="stylesheet" href="./landing.css?v=20260920" />
+    <link rel="stylesheet" href="./brand.css?v=20260920b" />
+    <link rel="stylesheet" href="./landing.css?v=20260920b" />
   </head>
   <body>
     <div class="shell">
@@ -98,7 +98,7 @@
         <section class="section reveal" id="scenario">
           <div class="wrap">
             <p class="kicker">Scenario</p>
-            <h2 class="nowrap-lg">Three agents. Two frameworks. One connector.</h2>
+            <h2>Three agents. Two frameworks. One connector.</h2>
             <p class="section-copy">
               When one script stops being enough: coordinators and workers still need one
               place for credentials, HITL, kill, and audit.
@@ -117,7 +117,7 @@
                 <h3>One plane. Run-bound sessions. Shared Admin.</h3>
                 <p>
                   Clients speak Agent Protocol. Runners pull jobs. Connectors mint
-                  credentials from the assignment — not from forged headers.
+                  credentials from the assignment, not from forged headers.
                 </p>
               </article>
             </div>
@@ -147,7 +147,7 @@
             <p class="kicker">On the plane</p>
             <h2>Governance that fails closed</h2>
             <p class="section-copy">
-              Grants, HITL, fencing, and reclaim ceilings live on the plane — not as
+              Grants, HITL, fencing, and reclaim ceilings live on the plane, not as
               afterthought middleware in every script.
             </p>
             <div class="gov-strip">
@@ -175,11 +175,12 @@
         <section class="section reveal" id="architecture">
           <div class="wrap">
             <p class="kicker">Architecture</p>
-            <h2 class="nowrap-lg">Clients never talk to runners</h2>
+            <h2>Clients never talk to runners</h2>
             <p class="section-copy">
               Agent Protocol on the front. Runner Protocol on the back. The plane owns
-              lifecycle, policy, and proof. Pluggable state, transport, and vectors under an
-              honest tier model — Supported for Postgres + Redis; Compatible for the rest.
+              <span class="keep-phrase">lifecycle, policy, and proof</span>.
+              State, transport, and vectors plug in under an honest tier model.
+              Supported for Postgres + Redis. Compatible for the rest.
             </p>
             <div class="eco" role="img" aria-label="Runkite architecture: clients call the control plane over Agent Protocol, runners pull jobs over Runner Protocol, and state, transport, and vector stores plug in underneath">
               <div class="eco-row eco-top">
@@ -259,7 +260,7 @@
         <section class="cta-band">
           <div class="wrap">
             <p class="kicker">Start</p>
-            <h2 class="nowrap-lg">See Admin, then deploy the plane</h2>
+            <h2>See Admin, then deploy the plane</h2>
             <p class="section-copy" style="margin-inline: auto; text-align: center">
               Sandbox here. Supported production is Postgres, Redis, and a runner you run.
             </p>
@@ -272,7 +273,7 @@
       </main>
 
       <footer class="site-footer">
-        <div>Runkite — open agent control plane</div>
+        <div>Runkite · open agent control plane</div>
         <div>
           <a href="https://getrunkite.com/admin/">Admin</a>
           <a href="./support/">Docs</a>
