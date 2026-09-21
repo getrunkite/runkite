@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Engineering notes — Runkite</title>
+    <title>Engineering notes · Runkite</title>
     <meta
       name="description"
-      content="Skimmable design notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim ceiling."
+      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -35,13 +35,13 @@
         </nav>
       </header>
 
-      <p class="kicker">Engineering notes · set of 6</p>
-      <h1>Crash races, closed doors, one funnel.</h1>
+      <p class="kicker">Engineering notes</p>
+      <h1>Reclaim, admission, and spend</h1>
       <p class="lede">
-        Six short notes on how the plane stays honest under reclaim, streaming races,
-        admission, concurrent spend, cursed jobs, and one real Postgres gotcha. Skim
-        before an interview or an ops incident — not a second copy of the
-        architecture docs.
+        How the control plane behaves when a runner is reclaimed, a stream starts
+        before enqueue, serve would start insecure, a job crash-loops, concurrent
+        runs share a budget, or Postgres RLS cannot grant itself. Failure modes and
+        the code that closes them. Not a second architecture overview.
       </p>
 
       <ul class="note-list">
@@ -67,7 +67,7 @@
         </li>
         <li>
           <a href="./rls-grant.html">6 · The RLS grant that can't grant itself</a>
-          <p>A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN — and why superuser-only test coverage hid it.</p>
+          <p>A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN, and why superuser-only test coverage hid it.</p>
         </li>
       </ul>
 

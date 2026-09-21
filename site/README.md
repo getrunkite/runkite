@@ -5,13 +5,13 @@ Visuals live in `assets/`.
 
 **Live:** https://getrunkite.com/
 
-**Brand system (W2):** [`brand.css`](./brand.css) — dark rack/ops canvas, Fraunces + IBM Plex Sans + JetBrains Mono, amber signal (no aurora/stars/cobalt glow). Shared by landing, support, and design notes.
+**Brand system:** [`brand.css`](./brand.css), dark rack/ops canvas, Fraunces + IBM Plex Sans + JetBrains Mono, amber signal (no aurora/stars/cobalt glow). Shared by landing, support, and design notes.
 
 **Routes (uniform multi-page nav):**
-- [`/`](./index.html) — product landing
-- [`/support/try.html`](./support/try.html) — try path
-- [`/support/`](./support/) — Docs handbook (catalog + feature guides + chapters + decisions)
-- [`/design/`](./design/) — engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
+- [`/`](./index.html), product landing
+- [`/support/try.html`](./support/try.html), try path
+- [`/support/`](./support/). Docs handbook (catalog + feature guides + chapters + decisions)
+- [`/design/`](./design/), engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
 
 `try.html` at the site root redirects to `/support/try.html`.
 

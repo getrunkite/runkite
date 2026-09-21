@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Webhooks — Runkite Docs</title>
+    <title>Webhooks · Runkite Docs</title>
     <meta name="description" content="Outbound event delivery and dead-letter handling on the plane." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Operate</p>
         <h1>Webhooks</h1>
-        <p class="lede">The plane can notify your systems when runs change — with dead-letter visibility when delivery fails.</p>
+        <p class="lede">The plane can notify your systems when runs change, with dead-letter visibility when delivery fails.</p>
 
         <div class="guide-grid">
           <section>
@@ -100,15 +100,15 @@
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Webhooks — dead letters / delivery</div>
+          <div class="cap">Admin → Webhooks: dead letters / delivery</div>
           <img src="../assets/ui-webhooks.png" alt="Runkite Admin Webhooks" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Success</strong> — your endpoint gets signed/authenticated POSTs as runs progress.</li>
-          <li><strong>Failure</strong> — dead-letters accumulate instead of silent drop.</li>
-          <li><strong>Limits</strong> — treat receivers as idempotent; at-least-once delivery is the honest model.</li>
+          <li><strong>Success</strong>: your endpoint gets signed/authenticated POSTs as runs progress.</li>
+          <li><strong>Failure</strong>: dead-letters accumulate instead of silent drop.</li>
+          <li><strong>Limits</strong>: treat receivers as idempotent; at-least-once delivery is the honest model.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>

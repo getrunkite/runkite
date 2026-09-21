@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Why your agents need a control plane — Runkite Blog</title>
+    <title>Why your agents need a control plane · Runkite Blog</title>
     <meta
       name="description"
       content="When one script is no longer enough: shared connectors, HITL, kill, and audit across agents and frameworks."
@@ -82,7 +82,7 @@
         <p class="kicker">Blog</p>
         <h1>Why your agents need a control plane</h1>
         <p class="lede">
-          A single LangGraph (or CrewAI, or Autogen) script is fine — until secrets,
+          A single LangGraph (or CrewAI, or Autogen) script is fine, until secrets,
           human approvals, kill switches, and audit logs have to work the same way for
           every agent you ship.
         </p>
@@ -97,7 +97,7 @@
         <p>
           That is not a framework problem. Frameworks are good at <em>thinking</em>.
           The gap is <em>operating</em>: credentials, admission, reclaim, kill, spend,
-          audit — shared across agents and languages.
+          audit, shared across agents and languages.
         </p>
 
         <h2>What a plane is (and is not)</h2>
@@ -116,7 +116,7 @@
         <h2>The split that matters</h2>
         <p>
           <strong>Clients</strong> create threads and runs. <strong>Runners</strong> execute
-          your graphs wherever you already run them — laptop, Kubernetes, your VPC. The
+          your graphs wherever you already run them, laptop, Kubernetes, your VPC. The
           plane does not need to own your compute; it needs to govern what that compute is
           allowed to do when it calls out.
         </p>
@@ -131,7 +131,7 @@
         <p>
           Still prototyping prompts on one laptop? Stay in the framework. One agent, one
           env, no shared connectors? You do not need a plane yet. Need a fully hosted cloud
-          CP today with no self-host path? That is on the roadmap (CLOUD) — self-host is
+          CP today with no self-host path? That is on the roadmap (CLOUD), self-host is
           what ships first.
         </p>
 
@@ -143,8 +143,7 @@
           <a href="./">Blog index</a>
         </p>
         <p class="note">
-          Next in this series: <a href="./two-protocols-one-plane.html">Two protocols, one plane</a> —
-          the mechanism that actually makes "any framework, one plane" true.
+          Next in this series: <a href="./two-protocols-one-plane.html">Two protocols, one plane</a>: the mechanism that actually makes "any framework, one plane" true.
         </p>
       </main>
     </div>

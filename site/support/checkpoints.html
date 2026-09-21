@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Checkpoints — Runkite Docs</title>
+    <title>Checkpoints · Runkite Docs</title>
     <meta name="description" content="Opaque checkpoint modes on the plane." />
     <link
       rel="icon"
@@ -80,16 +80,16 @@
         <p class="lede">The plane stores <a href="./decisions/why-opaque-checkpoints.html">opaque blobs</a>. Frameworks own the bytes; Runkite owns durability and tenancy keys.</p>
         <h2>Modes</h2>
         <ul>
-          <li><strong>Direct Postgres</strong> — LangGraph AsyncPostgresSaver against your DSN.</li>
-          <li><strong>HTTP proxy</strong> — opaque blobs via <code>/internal/checkpoints</code> (any CP backend). Used by LangGraph when DSN is unset, and by CrewAI / LlamaIndex / AutoGen / LangChain adapters for multi-turn continuity.</li>
-          <li><strong>Memory</strong> — fallback when neither DSN nor HTTP URL is set. Demo only.</li>
+          <li><strong>Direct Postgres</strong>: LangGraph AsyncPostgresSaver against your DSN.</li>
+          <li><strong>HTTP proxy</strong>: opaque blobs via <code>/internal/checkpoints</code> (any CP backend). Used by LangGraph when DSN is unset, and by CrewAI / LlamaIndex / AutoGen / LangChain adapters for multi-turn continuity.</li>
+          <li><strong>Memory</strong>: fallback when neither DSN nor HTTP URL is set. Demo only.</li>
         </ul>
         <h2>Adapter multi-turn</h2>
         <p>
           Non-LangGraph runners opt in via <code>checkpoint_framework</code> on the adapter. With
           <code>RUNKITE_HTTP_URL</code> (or the worker’s http address) set, the generic worker
           <code>GET .../adapter-state</code> before execute and <code>PUT</code> that same id after
-          success — so the client can send only the new message on the next run (not
+          success, so the client can send only the new message on the next run (not
           <code>.../latest</code>, which is ordered by checkpoint id and can return a LangGraph
           blob on a shared thread). LlamaIndex restores native <code>chat_history</code>; other
           adapters fold prior turns into the next invoke string / AutoGen model context.
@@ -103,8 +103,8 @@
         </p>
         <h2>How to choose</h2>
         <ul>
-          <li><strong>Supported HA</strong> — Postgres direct or HTTP proxy against a durable store.</li>
-          <li><strong>Demo</strong> — memory mode from <code>docker-compose.dev.yml</code> (lost on restart).</li>
+          <li><strong>Supported HA</strong>: Postgres direct or HTTP proxy against a durable store.</li>
+          <li><strong>Demo</strong>: memory mode from <code>docker-compose.dev.yml</code> (lost on restart).</li>
           <li>Never put production traffic on memory just because health checks are green.</li>
         </ul>
         <p class="note">

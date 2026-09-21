@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>The RLS grant that can't grant itself — Runkite engineering</title>
+    <title>The RLS grant that can't grant itself · Runkite engineering</title>
     <meta
       name="description"
-      content="Postgres row-level security only bites when the connecting role can't bypass it — but the role that creates the enforcement role can't always SET ROLE into it. A real Postgres 16 gotcha and the one-line fix."
+      content="Postgres row-level security only bites when the connecting role can't bypass it, but the role that creates the enforcement role can't always SET ROLE into it. A real Postgres 16 gotcha and the one-line fix."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -39,17 +39,17 @@
       <h1>Owning a role isn't <em>being</em> it.</h1>
       <p class="lede">
         Postgres row-level security only actually filters rows for a role that
-        <strong>cannot bypass RLS</strong> — which most application DSNs, superuser
+        <strong>cannot bypass RLS</strong>: which most application DSNs, superuser
         included, can. Runkite's fix is a dedicated, restricted role the connection
         switches into per tenant request. The one-line detail that made this fail on
-        a real, least-privilege production role — and didn't show up in a superuser
-        test DSN — is worth writing down.
+        a real, least-privilege production role, and didn't show up in a superuser
+        test DSN, is worth writing down.
       </p>
 
       <h2>Why RLS needs a second, weaker role at all</h2>
       <p>
         A Postgres superuser (and, by default, the owner of a table) bypasses row-level
-        security entirely — <code>FORCE ROW LEVEL SECURITY</code> exists specifically
+        security entirely. <code>FORCE ROW LEVEL SECURITY</code> exists specifically
         to close that hole, but it only applies to roles that don't already have
         <code>BYPASSRLS</code>. Most real deployments connect as a superuser-ish
         application role for simplicity, which means RLS policies would silently do
@@ -59,8 +59,7 @@
       <p>
         Runkite's opt-in <code>RUNKITE_POSTGRES_RLS</code> creates exactly that role
         (<code>runkite_app</code>, <code>NOBYPASSRLS</code>) once at startup, and
-        <code>SET ROLE</code>s into it on every tenant-scoped connection acquire —
-        system-context work (migrations, admin queries) stays on the original login
+        <code>SET ROLE</code>s into it on every tenant-scoped connection acquire, system-context work (migrations, admin queries) stays on the original login
         role and sees everything, same as before.
       </p>
 
@@ -69,50 +68,48 @@
         Postgres 16 added a convenience: a non-superuser with <code>CREATEROLE</code>
         who creates a new role is automatically granted membership in it. That sounds
         like it should be enough to let the creator immediately <code>SET ROLE</code>
-        into what it just made — but membership comes with three independent
+        into what it just made, but membership comes with three independent
         sub-options (<code>ADMIN</code>, <code>INHERIT</code>, <code>SET</code>), and
         the automatic grant only turns on <code>ADMIN</code>. Without the
-        <code>SET</code> option explicitly granted, <code>SET ROLE</code> fails —
-        <code>permission denied to set role</code> — on a role you just created and
+        <code>SET</code> option explicitly granted, <code>SET ROLE</code> fails. <code>permission denied to set role</code>: on a role you just created and
         technically "own."
       </p>
       <div class="diagram" role="img" aria-label="ADMIN option without SET still cannot SET ROLE">
         <pre>
 <span class="dim">non-superuser DSN with CREATEROLE, no explicit grant tuning:</span>
 
-  CREATE ROLE runkite_app ...          <span class="ok">succeeds</span> — CREATEROLE is enough to create
+  CREATE ROLE runkite_app ...          <span class="ok">succeeds</span>: CREATEROLE is enough to create
   <span class="dim">Postgres 16 auto-grants:</span> membership WITH ADMIN TRUE   (not SET)
 
   SET ROLE runkite_app;                <span class="bad">ERROR: permission denied to set role</span>
 
-<span class="ok">explicit fix — one line in the bootstrap SQL:</span>
+<span class="ok">explicit fix, one line in the bootstrap SQL:</span>
   GRANT runkite_app TO CURRENT_USER WITH SET TRUE;
   SET ROLE runkite_app;                <span class="ok">now works</span>
         </pre>
       </div>
       <p>
-        The tempting "just grant everything" fix — <code>WITH ADMIN TRUE, SET TRUE</code>
-        in one statement — fails too, but with a different, sharper error:
+        The tempting "just grant everything" fix. <code>WITH ADMIN TRUE, SET TRUE</code>
+        in one statement, fails too, but with a different, sharper error:
         <code>ADMIN option cannot be granted back to your own grantor</code>. The
         auto-grant at creation already recorded the new role as your grantor for that
         membership; re-granting <code>ADMIN</code> back to yourself on the same
         membership is a circular grant Postgres refuses outright. <code>SET</code>
         alone, with no <code>ADMIN</code>, has no such conflict and is the only
-        privilege actually needed here — nothing in the bootstrap re-grants
+        privilege actually needed here, nothing in the bootstrap re-grants
         <code>runkite_app</code> onward to a third role, so admin option was never
         buying anything.
       </p>
 
       <h2>Why a superuser test DSN hides all of this</h2>
       <p>
-        A superuser can <code>SET ROLE</code> to anything, membership grant or not —
-        the membership/<code>SET</code>-option check is skipped entirely for
+        A superuser can <code>SET ROLE</code> to anything, membership grant or not, the membership/<code>SET</code>-option check is skipped entirely for
         superusers. A test suite that only ever exercises this against a superuser
         connection (the common shape for local Postgres and CI service containers)
         will pass cleanly while being completely unable to detect that the exact same
         code fails for the realistic, least-privileged production role the feature
         was built to harden in the first place. The fix here wasn't just the one-line
-        grant — it was adding a second test DSN tier (non-superuser, <code>CREATEROLE</code>-only)
+        grant, it was adding a second test DSN tier (non-superuser, <code>CREATEROLE</code>-only)
         specifically to stop "passes in CI" from meaning "works in production."
       </p>
 

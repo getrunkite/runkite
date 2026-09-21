@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Blog — Runkite Docs</title>
+    <title>Blog · Runkite Docs</title>
     <meta
       name="description"
       content="Writing about the agent control plane: why it exists, how runners attach, and what it costs to run agents honestly."
@@ -83,7 +83,7 @@
         <h1>Blog</h1>
         <p class="lede">
           Short posts that explain the plane to people who already run agents. This page
-          is the whole publication — not a staging area for somewhere else. If you find
+          is the whole publication, not a staging area for somewhere else. If you find
           this post through a search engine, a link from a friend, or a stray tab, you're
           already looking at the real thing.
         </p>
@@ -91,31 +91,27 @@
         <h2>Posts</h2>
         <ul class="links">
           <li>
-            <a href="./why-a-plane.html">Why your agents need a control plane</a>
-            — the moment one script, one <code>.env</code>, and one deploy stops being enough.
+            <a href="./why-a-plane.html">Why your agents need a control plane</a>: the moment one script, one <code>.env</code>, and one deploy stops being enough.
           </li>
           <li>
-            <a href="./two-protocols-one-plane.html">Two protocols, one plane</a>
-            — why Agent Protocol clients and Runner Protocol workers never talk to each
+            <a href="./two-protocols-one-plane.html">Two protocols, one plane</a>: why Agent Protocol clients and Runner Protocol workers never talk to each
             other directly, and how that split is what lets a LangGraph agent, a CrewAI
             crew, and a hand-rolled Python script share one control plane without any of
             them knowing the others exist.
           </li>
           <li>
-            <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a>
-            — your agent code and your compute stay exactly where they already run; what
+            <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a>: your agent code and your compute stay exactly where they already run; what
             changes is how credentials reach them, and for how long they're allowed to work.
           </li>
           <li>
-            <a href="./spend-without-becoming-a-billco.html">Spend without becoming a billco</a>
-            — why "FinOps" here means budgets, holds, and an honest cost estimate, not a
+            <a href="./spend-without-becoming-a-billco.html">Spend without becoming a billco</a>: why "FinOps" here means budgets, holds, and an honest cost estimate, not a
             second Stripe integration bolted onto your agent platform.
           </li>
         </ul>
 
         <p>
           There's no publishing calendar and no editorial backlog beyond what's linked
-          above — each post gets written when there's something specific and true to say,
+          above, each post gets written when there's something specific and true to say,
           not on a schedule. Related reading if you want more depth than a blog post gives:
           <a href="../chapters/">the chapters</a> walk through the architecture more
           methodically, and <a href="../decisions/">the decision write-ups</a> explain the

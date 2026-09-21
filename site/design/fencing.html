@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Generation fencing — Runkite engineering</title>
+    <title>Generation fencing · Runkite engineering</title>
     <meta
       name="description"
-      content="How Runkite stops a revived runner from clobbering the winner after reclaim — generation fencing on heartbeats, status, and terminal events."
+      content="How Runkite stops a revived runner from clobbering the winner after reclaim, generation fencing on heartbeats, status, and terminal events."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -39,8 +39,7 @@
       <h1>A stale runner <em>cannot</em> win.</h1>
       <p class="lede">
         When a job is reclaimed, the next attempt gets a higher generation. Every later
-        heartbeat, status report, and terminal event from the old attempt is rejected —
-        so a network blip cannot rewrite the winner’s result.
+        heartbeat, status report, and terminal event from the old attempt is rejected, so a network blip cannot rewrite the winner’s result.
       </p>
 
       <h2>The race that breaks queues</h2>
@@ -63,21 +62,21 @@
       <h2>What generation actually gates</h2>
       <ul>
         <li>
-          <strong>Heartbeat</strong> — control plane answers with
+          <strong>Heartbeat</strong>: control plane answers with
           <code>superseded: true</code>; the runner cancels local work.
         </li>
         <li>
-          <strong>ReportStatus / Ack</strong> — non-current generation is ignored; the
+          <strong>ReportStatus / Ack</strong>: non-current generation is ignored; the
           thread stays on B’s terminal state.
         </li>
         <li>
-          <strong>Terminal StreamEvents</strong> — completion events from a superseded
+          <strong>Terminal StreamEvents</strong>: completion events from a superseded
           generation are dropped before publish.
         </li>
       </ul>
       <p>
         Progress tokens from a dying runner can still slip through until the next
-        heartbeat — only the <strong>final status</strong> is iron-fenced. That trade
+        heartbeat, only the <strong>final status</strong> is iron-fenced. That trade
         is deliberate and documented.
       </p>
 
@@ -92,7 +91,7 @@
       <div class="takeaway">
         <p>
           Think boarding-pass versions: if reclaim reissued seat gen=2, your gen=1 pass
-          cannot board — even if you arrive late with a smile.
+          cannot board, even if you arrive late with a smile.
         </p>
       </div>
 

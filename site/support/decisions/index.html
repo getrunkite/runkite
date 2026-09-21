@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Decisions — Runkite Docs</title>
+    <title>Decisions · Runkite Docs</title>
     <meta name="description" content="Short decision write-ups for Runkite control-plane choices." />
     <link
       rel="icon"
@@ -76,25 +76,21 @@
         </div>
         <h1>Decision write-ups</h1>
         <p class="lede">
-          Short “why we chose X” pages — not the full explanation book. Start here when
+          Short “why we chose X” pages, not the full explanation book. Start here when
           someone asks why the plane looks the way it does.
         </p>
         <ul class="links">
           <li>
-            <a href="./why-opaque-checkpoints.html">Why opaque checkpoint proxy</a>
-            — plane stores bytes; frameworks own serde
+            <a href="./why-opaque-checkpoints.html">Why opaque checkpoint proxy</a>: plane stores bytes; frameworks own serde
           </li>
           <li>
-            <a href="./why-fencing.html">Why generation fencing</a>
-            — stale runners must not clobber reclaim winners
+            <a href="./why-fencing.html">Why generation fencing</a>: stale runners must not clobber reclaim winners
           </li>
           <li>
-            <a href="./why-fail-closed.html">Why fail-closed serve</a>
-            — ambiguous auth or policy → deny, don’t guess
+            <a href="./why-fail-closed.html">Why fail-closed serve</a>: ambiguous auth or policy → deny, don’t guess
           </li>
           <li>
-            <a href="./why-agent-protocol.html">Why Agent Protocol on the front</a>
-            — clients stay framework-agnostic; reclaim stays internal
+            <a href="./why-agent-protocol.html">Why Agent Protocol on the front</a>: clients stay framework-agnostic; reclaim stays internal
           </li>
         </ul>
         <p class="note">

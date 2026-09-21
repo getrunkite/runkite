@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Why Agent Protocol — Runkite</title>
+    <title>Why Agent Protocol · Runkite</title>
     <meta
       name="description"
       content="Why Runkite fronts Agent Protocol for clients and a separate Runner Protocol for workers."
@@ -87,7 +87,7 @@
         <p>
           <strong>Clients</strong> speak Agent Protocol (HTTP/SSE) to the plane.
           <strong>Runners</strong> speak Runner Protocol (gRPC) to the plane. The plane is
-          the only place those worlds meet — grants, HITL, kill, audit, and opaque
+          the only place those worlds meet, grants, HITL, kill, audit, and opaque
           checkpoints live there, not in each framework SDK.
         </p>
         <h2>Consequences</h2>
@@ -95,14 +95,13 @@
           <li>Any Agent Protocol client can drive the plane without learning Runkite-only APIs first.</li>
           <li>Framework adapters stay thin: implement Runner Protocol, not a second control plane.</li>
           <li>
-            We do not pretend ThreadState is a LangGraph checkpointer —
-            see <a href="./why-opaque-checkpoints.html">opaque checkpoints</a>.
+            We do not pretend ThreadState is a LangGraph checkpointer, see <a href="./why-opaque-checkpoints.html">opaque checkpoints</a>.
           </li>
         </ul>
         <h2>Rejected alternatives</h2>
         <ul>
-          <li>Expose only a proprietary admin API — kills portability and client ecosystem.</li>
-          <li>Make runners speak Agent Protocol — wrong shape for reclaim/fencing/connector minting.</li>
+          <li>Expose only a proprietary admin API, kills portability and client ecosystem.</li>
+          <li>Make runners speak Agent Protocol, wrong shape for reclaim/fencing/connector minting.</li>
         </ul>
         <p class="note">
           Map:

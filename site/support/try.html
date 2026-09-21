@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Try it — Runkite Docs</title>
+    <title>Try it · Runkite Docs</title>
     <meta name="description" content="5-minute Docker path: compose, echo, HITL." />
     <link
       rel="icon"
@@ -91,11 +91,11 @@
           <div class="flow-grid">
             <div class="flow-card"><span class="n">01</span><h3>Compose is up</h3><p>Plane on :2026. Runner waiting. Admin opens with <em>no login</em> (auth off).</p></div>
             <div class="flow-card"><span class="n">02</span><h3>Echo agent</h3><p>POST a run. Wait. See the echoed message.</p></div>
-            <div class="flow-card"><span class="n">03</span><h3>HITL interrupt</h3><p><code>approval_agent</code> pauses — status interrupted.</p></div>
+            <div class="flow-card"><span class="n">03</span><h3>HITL interrupt</h3><p><code>approval_agent</code> pauses, status interrupted.</p></div>
             <div class="flow-card"><span class="n">04</span><h3>You approve</h3><p>Resume with <code>{"command":{"resume":true}}</code>. Run completes.</p></div>
           </div>
           <figure class="try-admin">
-            <div class="cap">What you’ll see in Admin — Overview after Try compose is up</div>
+            <div class="cap">What you’ll see in Admin: Overview after Try compose is up</div>
             <img src="../assets/ui-overview.png" alt="Runkite Admin Overview during local Try" width="960" height="600" />
           </figure>
         </div>
@@ -107,7 +107,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 curl -sf http://localhost:2026/readyz && echo OK
 # Admin → http://localhost:2026/admin/</pre>
         <p>
-          Dev compose is SQLite + in-memory transport — no Postgres/Redis required.
+          Dev compose is SQLite + in-memory transport, no Postgres/Redis required.
           First build takes a few minutes.
         </p>
 
@@ -122,7 +122,7 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
         <p>Expect <code>status: success</code> and an AI message that echoes your string.</p>
 
         <h2>3. HITL interrupt + resume</h2>
-        <p>Use a <em>new</em> thread — do not reuse the echo thread id.</p>
+        <p>Use a <em>new</em> thread, do not reuse the echo thread id.</p>
         <pre class="mono-block">THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
 # Stream until you see interrupted, then Ctrl-C
@@ -144,9 +144,9 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
         </ul>
         <h2>Next steps</h2>
         <ul class="expect">
-          <li><a href="admin-guide.html">Admin UI guide</a> — walk through every screen in the dashboard you just opened.</li>
-          <li><a href="first-agent.html">Your first agent</a> — write your own graph from scratch and run it through the plane.</li>
-          <li><a href="install.html">Install (Supported)</a> — when you're ready for the real Postgres + Redis profile.</li>
+          <li><a href="admin-guide.html">Admin UI guide</a>: walk through every screen in the dashboard you just opened.</li>
+          <li><a href="first-agent.html">Your first agent</a>: write your own graph from scratch and run it through the plane.</li>
+          <li><a href="install.html">Install (Supported)</a>: when you're ready for the real Postgres + Redis profile.</li>
         </ul>
         <p class="note">
           Longer walkthrough:

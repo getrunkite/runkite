@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HITL ops — Runkite Docs</title>
-    <meta name="description" content="Graph interrupt/resume vs connector Pending queue — two different human gates." />
+    <title>HITL ops · Runkite Docs</title>
+    <meta name="description" content="Graph interrupt/resume vs connector Pending queue, two different human gates." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -94,31 +94,31 @@
 
         <h2>How to operate</h2>
         <ol class="steps">
-          <li><strong>Interrupted run</strong> — open Run detail / stream; resume via API or continue the client session. Not the Pending page.</li>
-          <li><strong>Pending row</strong> — Admin → Pending → Approve or Deny. Agent retries the tool after approve.</li>
-          <li><strong>Mandatory HITL</strong> — rules force pending even when a grant would allow; configure under Mandatory HITL.</li>
-          <li><strong>Audit</strong> — policy decisions searchable on SQL.</li>
+          <li><strong>Interrupted run</strong>: open Run detail / stream; resume via API or continue the client session. Not the Pending page.</li>
+          <li><strong>Pending row</strong>: Admin → Pending → Approve or Deny. Agent retries the tool after approve.</li>
+          <li><strong>Mandatory HITL</strong>: rules force pending even when a grant would allow; configure under Mandatory HITL.</li>
+          <li><strong>Audit</strong>: policy decisions searchable on SQL.</li>
         </ol>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Mandatory HITL — force pending even when a grant would allow</div>
+          <div class="cap">Admin → Mandatory HITL: force pending even when a grant would allow</div>
           <img src="../assets/ui-mandatory-hitl.png" alt="Runkite Admin Mandatory HITL page" width="960" height="600" />
         </figure>
         <figure class="shot">
-          <div class="cap">Admin → Pending — approve or deny gated connector / tool calls</div>
+          <div class="cap">Admin → Pending: approve or deny gated connector / tool calls</div>
           <img src="../assets/ui-pending.png" alt="Runkite Admin Pending actions page" width="960" height="600" />
         </figure>
         <figure class="shot">
-          <div class="cap">Run detail — use this surface for graph interrupt / event replay</div>
+          <div class="cap">Run detail: use this surface for graph interrupt / event replay</div>
           <img src="../assets/admin-ui-review-runs.png" alt="Runkite Admin run review" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Empty Pending</strong> — normal if you only used graph interrupt (Try path).</li>
-          <li><strong>Approve is one-shot</strong> — bound to this row's argument digest; a different amount is a new decision.</li>
-          <li><strong>Break-glass</strong> — can skip Decide (and mandatory HITL); kill/authz/limits still apply.</li>
+          <li><strong>Empty Pending</strong>: normal if you only used graph interrupt (Try path).</li>
+          <li><strong>Approve is one-shot</strong>: bound to this row's argument digest; a different amount is a new decision.</li>
+          <li><strong>Break-glass</strong>: can skip Decide (and mandatory HITL); kill/authz/limits still apply.</li>
         </ul>
         <p class="note">
           <a href="./grants.html">Grants &amp; HITL</a>

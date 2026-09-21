@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>The big picture — Runkite chapters</title>
+    <title>The big picture · Runkite chapters</title>
     <meta name="description" content="What Runkite is, what it is not, and the one-sentence product definition." />
     <link
       rel="icon"
@@ -77,7 +77,7 @@
           <a href="../why.html">Why a plane</a>
         </div>
         <h1>1 · The big picture</h1>
-        <p class="lede">Air-traffic control for agents — not another agent framework.</p>
+        <p class="lede">Air-traffic control for agents, not another agent framework.</p>
 
         <h2>What problem does Runkite solve?</h2>
         <p>
@@ -88,7 +88,7 @@
           tool call, or mint credentials without copying secrets into every process.
         </p>
         <p>
-          Runkite sits in the middle as a <strong>control plane</strong> — one Go binary that
+          Runkite sits in the middle as a <strong>control plane</strong>: one Go binary that
           coordinates. Agents still do the flying (LLM calls, tools); the plane decides who may
           fly, with which fuel (credentials), under which rules, with an audit trail.
         </p>
@@ -104,16 +104,14 @@
 
         <h2>One sentence</h2>
         <p>
-          Runkite is a self-hosted control plane between your application and your agent workers —
-          dispatch, streaming, multi-tenancy, auth, policy, credentials, and observability —
-          regardless of which agent framework the workers use.
+          Runkite is a self-hosted control plane between your application and your agent workers, dispatch, streaming, multi-tenancy, auth, policy, credentials, and observability, regardless of which agent framework the workers use.
         </p>
 
         <h2>Where the pieces live (public tree)</h2>
         <ul>
-          <li>Control plane — Go binary + embedded Admin UI</li>
-          <li>Runners — Python and TypeScript packages speaking Runner Protocol</li>
-          <li>Clients — any Agent Protocol HTTP/SSE/WebSocket client</li>
+          <li>Control plane. Go binary + embedded Admin UI</li>
+          <li>Runners. Python and TypeScript packages speaking Runner Protocol</li>
+          <li>Clients, any Agent Protocol HTTP/SSE/WebSocket client</li>
         </ul>
 
         <p class="note">

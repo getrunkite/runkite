@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Spend (FinOps) — Runkite Docs</title>
+    <title>Spend (FinOps) · Runkite Docs</title>
     <meta name="description" content="Spend governance living on the plane." />
     <link
       rel="icon"
@@ -78,13 +78,11 @@
 
         <h1>Spend (FinOps)</h1>
         <p class="lede">
-          See spend in Admin and stop spend at admission —
-          export and alerts included; not a full BI warehouse.
+          See spend in Admin and stop spend at admission, export and alerts included; not a full BI warehouse.
         </p>
         <h2>Configure USD (pricebook)</h2>
         <p>
-          Tokens show up automatically from the model response. Dollars do not —
-          you must map each <em>model id string the runner reports</em> in
+          Tokens show up automatically from the model response. Dollars do not, you must map each <em>model id string the runner reports</em> in
           <code>finops.pricebook</code> (or use a gateway that inlines
           <code>usage.cost</code> / <code>cost_usd</code>).
         </p>
@@ -101,7 +99,7 @@
         <p>
           If Admin Spend shows tokens but <strong>$0</strong> and an
           <code>usage_unpriced</code> alert, the model id in the alert attrs is
-          missing from the pricebook — add that exact string, restart the control
+          missing from the pricebook, add that exact string, restart the control
           plane, and new runs will price. Full field list:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>.
         </p>
@@ -116,13 +114,13 @@
             Terminal <code>Output.usage</code> → SQL <code>usage_events</code>
             (LangGraph Python/TS; CrewAI/LlamaIndex/LangChain/AutoGen adapters when metrics exist).
             A HITL pause or a mid-run cancel still meters whatever tokens ran before the
-            pause/cancel — it does not wait for a terminal <code>success</code> to record them.
+            pause/cancel, it does not wait for a terminal <code>success</code> to record them.
             Webhook event <code>budget_alert</code> + Admin alerts strip (approach alerts deduped once per UTC day per process).
           </li>
           <li>
             Admin <code>/admin/spend</code> labels dollars <strong>Estimated USD</strong>, not
             "Cost": tokens are exact (from the model response), dollars are tokens ×
-            your <code>finops.pricebook</code> rate — unless the runner is talking to an LLM
+            your <code>finops.pricebook</code> rate, unless the runner is talking to an LLM
             gateway that reports cost inline with usage (OpenRouter's <code>usage.cost</code>,
             and OpenAI-compatible gateways following the same convention), in which case that
             reported figure is used instead and the pricebook is skipped for that run. With a
@@ -133,12 +131,12 @@
             <strong>no</strong> token data in any shape the runner recognizes at all (a brand-new
             provider, or an integration that has not adopted LangChain's standardized
             <code>usage_metadata</code> fields), that raises a <code>usage_unmetered</code> alert
-            instead — the one failure mode worse than under-pricing a run is making it invisible.
+            instead, the one failure mode worse than under-pricing a run is making it invisible.
             APIs: <code>/admin-api/usage/{summary,alerts,holds,export}</code>.
           </li>
           <li>
             <strong>Live editing from Admin, no redeploy.</strong> The <code>finops</code> block
-            in <code>langgraph.json</code> is only the bootstrap baseline — open
+            in <code>langgraph.json</code> is only the bootstrap baseline, open
             <a href="admin-guide.html#15-spend-finops">Admin → Spend</a> and use the
             <strong>Live FinOps config</strong> panel to add pricebook rows or change a
             tenant/agent day budget directly, no file edit or control-plane restart required.
@@ -155,9 +153,9 @@
         </ul>
         <h2>What is not shipped yet</h2>
         <ul>
-          <li>Streaming mid-run token metering (kill of inflight is opt-in via <code>on_hard_breach: cancel_inflight</code>, not continuous spend tracking) — usage is still only recorded once a run reaches a terminal or interrupted status.</li>
+          <li>Streaming mid-run token metering (kill of inflight is opt-in via <code>on_hard_breach: cancel_inflight</code>, not continuous spend tracking), usage is still only recorded once a run reaches a terminal or interrupted status.</li>
           <li>Reconciling against a provider's account-level billing API (OpenAI/Anthropic Costs/Usage endpoints) after the fact; multi-currency / warehouse BI.</li>
-          <li>Reading cost from gateways that report it out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard) — routing calls through one works today (it's a plain client <code>base_url</code> change, nothing Runkite-specific), but its cost won't reach Runkite unless it inlines cost the way OpenRouter does; those runs price from tokens × pricebook like any direct-provider run.</li>
+          <li>Reading cost from gateways that report it out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard), routing calls through one works today (it's a plain client <code>base_url</code> change, nothing Runkite-specific), but its cost won't reach Runkite unless it inlines cost the way OpenRouter does; those runs price from tokens × pricebook like any direct-provider run.</li>
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>
         </ul>
@@ -175,7 +173,7 @@
             height="600"
             alt="Admin Spend page showing USD and token rollups by tenant and agent"
           />
-          <figcaption>Admin → Spend — UTC-day rollups from <code>usage_events</code>.</figcaption>
+          <figcaption>Admin → Spend. UTC-day rollups from <code>usage_events</code>.</figcaption>
         </figure>
         <p class="note">
           Related: <a href="./security.html">Security</a> ·

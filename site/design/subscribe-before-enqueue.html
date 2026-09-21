@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Subscribe-before-enqueue — Runkite engineering</title>
+    <title>Subscribe-before-enqueue · Runkite engineering</title>
     <meta
       name="description"
-      content="Why Runkite opens the event broker subscription before enqueuing a run — so the first tokens cannot race past an unsubscribed stream handler."
+      content="Why Runkite opens the event broker subscription before enqueuing a run, so the first tokens cannot race past an unsubscribed stream handler."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -39,7 +39,7 @@
       <h1>Listen <em>before</em> you dispatch.</h1>
       <p class="lede">
         Stream and wait handlers subscribe to the event broker, then enqueue the job.
-        Reverse that order and a fast runner can publish tokens into a void — the
+        Reverse that order and a fast runner can publish tokens into a void, the
         client never sees the opening of the answer.
       </p>
 
@@ -69,20 +69,20 @@
       </p>
       <ul>
         <li>
-          <strong>1. <code>broker.Subscribe(runID)</code></strong> — returns a Go
+          <strong>1. <code>broker.Subscribe(runID)</code></strong>: returns a Go
           channel; a background reader tails the stream from “now.”
         </li>
         <li>
-          <strong>2. <code>enqueue(assignment)</code></strong> — only then may a
+          <strong>2. <code>enqueue(assignment)</code></strong>: only then may a
           runner dequeue and publish.
         </li>
         <li>
-          <strong>3. Fan-out</strong> — stream writes SSE frames; wait discards
+          <strong>3. Fan-out</strong>: stream writes SSE frames; wait discards
           intermediates and returns one JSON body on the terminal event.
         </li>
       </ul>
       <p>
-        Background <code>POST …/runs</code> skips subscribe on purpose — the client
+        Background <code>POST …/runs</code> skips subscribe on purpose, the client
         asked for fire-and-forget. Replay still works later because Redis Streams keep
         events (~24h TTL).
       </p>
@@ -91,8 +91,7 @@
       <p>
         Pub/sub is fire-and-forget: miss the window and the message is gone. Streams
         are an ordered log with offsets, so Subscribe can block on new entries and
-        Replay can catch up after a reconnect. The broker interface hides that —
-        in-process mode uses Go channels; multi-replica uses XADD/XREAD.
+        Replay can catch up after a reconnect. The broker interface hides that, in-process mode uses Go channels; multi-replica uses XADD/XREAD.
       </p>
 
       <div class="takeaway">

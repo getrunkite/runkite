@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Optimistic spend holds — Runkite engineering</title>
+    <title>Optimistic spend holds · Runkite engineering</title>
     <meta
       name="description"
-      content="Counting terminal spend alone lets concurrent run creates blow through a daily budget cap before any of them finish. Runkite reserves an estimate at create time and settles it at the end — with a TTL so a crashed runner can't pin the cap shut."
+      content="Counting terminal spend alone lets concurrent run creates blow through a daily budget cap before any of them finish. Runkite reserves an estimate at create time and settles it at the end, with a TTL so a crashed runner can't pin the cap shut."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -41,12 +41,12 @@
         A daily USD/token cap checked only against finished runs has a hole exactly
         the width of your concurrency: N runs can all pass the check at once, before
         any of them reports a token back. Runkite closes that hole with an optimistic
-        <em>hold</em> — a guess reserved at create time, settled for real at the end.
+        <em>hold</em>: a guess reserved at create time, settled for real at the end.
       </p>
 
       <h2>The gap a terminal-only check leaves open</h2>
       <p>
-        Terminal usage — the actual token counts and USD estimate — is only known once
+        Terminal usage, the actual token counts and USD estimate, is only known once
         a run finishes. If admission only asks "how much have finished runs cost
         today," a burst of concurrent creates all see the same pre-burst total and all
         pass, because none of them has reported anything back yet.
@@ -58,7 +58,7 @@
 <span class="bad">terminal-only check:</span>
   run A create → checks $9.50 < $10 → <span class="ok">admit</span>
   run B create → checks $9.50 < $10 → <span class="ok">admit</span>   (A hasn't finished yet)
-  run C create → checks $9.50 < $10 → <span class="ok">admit</span>   (still $9.50 — nothing settled)
+  run C create → checks $9.50 < $10 → <span class="ok">admit</span>   (still $9.50, nothing settled)
   → three runs land, cap breached by up to 3×avg before any of them reports back
 
 <span class="ok">with a hold:</span>
@@ -73,31 +73,30 @@
         writes one row to a <code>usage_holds</code> table: an estimated USD/token
         amount for that run, scoped to the same tenant/agent the real budget check
         uses. Every subsequent admission check for that scope adds up open holds
-        alongside terminal usage — so the reservation counts toward the cap
+        alongside terminal usage, so the reservation counts toward the cap
         immediately, not after the fact. When the run finishes, the real terminal
-        usage event is recorded and the hold is released in the same transaction path
-        — the estimate never double-counts against the real number.
+        usage event is recorded and the hold is released in the same transaction path, the estimate never double-counts against the real number.
       </p>
       <ul>
         <li>
-          <strong>Reservation size is configurable per agent</strong> — a coding agent
+          <strong>Reservation size is configurable per agent</strong>: a coding agent
           that burns 50k tokens a run and a classifier that burns 200 need very
           different estimates; <code>reservation.agents</code> overrides the default
           per <code>tenant_id/agent_id</code> key.
         </li>
         <li>
           <strong>Holds only guard USD/token caps</strong>, not
-          <code>max_runs_per_day</code> — run-count admission already counts in-flight
+          <code>max_runs_per_day</code>: run-count admission already counts in-flight
           runs directly (<code>CountRunsSince</code>), so adding held runs on top would
           double-count the same run twice.
         </li>
       </ul>
 
-      <h2>The failure mode a hold introduces — and how it's closed</h2>
+      <h2>The failure mode a hold introduces, and how it's closed</h2>
       <p>
         An optimistic reservation is a promise to release later. If the runner that
         opened it crashes before reporting a terminal status, that promise is never
-        kept — the hold sits open forever, silently eating into tomorrow's budget
+        kept, the hold sits open forever, silently eating into tomorrow's budget
         along with today's, because nothing ever releases it.
       </p>
       <div class="diagram" role="img" aria-label="A hold TTL sweeper closes the crashed-runner gap">
@@ -115,7 +114,7 @@ runner crashes mid-execution → no terminal event ever arrives
         This is the same shape as generation fencing's problem, one layer up the
         stack: something optimistic was reserved on the assumption the reserver would
         report back, and the system needs an explicit answer for "what happens when
-        it doesn't." Here the answer is a TTL sweep instead of a fencing token — but
+        it doesn't." Here the answer is a TTL sweep instead of a fencing token, but
         set <code>hold_ttl</code> shorter than your longest real run and you'll expire
         (and under-reserve for) a job that's still legitimately running. Size it above
         your slowest expected agent, not your average one.
@@ -124,7 +123,7 @@ runner crashes mid-execution → no terminal event ever arrives
       <div class="takeaway">
         <p>
           A budget cap that only looks backward at what already finished isn't a cap
-          under concurrency — it's a cap with a burst-sized hole in it. Reserve the
+          under concurrency, it's a cap with a burst-sized hole in it. Reserve the
           estimate the moment you admit the run, and give the reservation an honest
           expiry for the runner that never comes back.
         </p>

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cron — Runkite Docs</title>
+    <title>Cron · Runkite Docs</title>
     <meta name="description" content="Schedule agent runs on the plane with multi-replica-safe claims." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Operate</p>
         <h1>Cron</h1>
-        <p class="lede">Fire agents on a schedule from the control plane — same enqueue path as a client-created run, with exactly-once claims across replicas.</p>
+        <p class="lede">Fire agents on a schedule from the control plane, same enqueue path as a client-created run, with exactly-once claims across replicas.</p>
 
         <div class="guide-grid">
           <section>
@@ -109,15 +109,15 @@
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Cron — schedules across tenants</div>
+          <div class="cap">Admin → Cron: schedules across tenants</div>
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron schedules" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Multi-replica</strong> — <code>cron_claims</code> ensures one dispatch per fire when replicas share Postgres.</li>
-          <li><strong>Missed fires</strong> — restarting schedules catch the latest miss only (no backlog storm); brand-new schedules start from registration time.</li>
-          <li><strong>Overlap</strong> — if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
+          <li><strong>Multi-replica</strong>: <code>cron_claims</code> ensures one dispatch per fire when replicas share Postgres.</li>
+          <li><strong>Missed fires</strong>: restarting schedules catch the latest miss only (no backlog storm); brand-new schedules start from registration time.</li>
+          <li><strong>Overlap</strong>: if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>

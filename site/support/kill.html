@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kill & break-glass — Runkite Docs</title>
-    <meta name="description" content="Emergency stop and time-bounded policy bypass — plane-owned." />
+    <title>Kill & break-glass · Runkite Docs</title>
+    <meta name="description" content="Emergency stop and time-bounded policy bypass, plane-owned." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -72,14 +72,14 @@
 
         <p class="kicker">Govern</p>
         <h1>Kill &amp; break-glass</h1>
-        <p class="lede">Stop the blast radius fast — and temporarily bypass policy when a human explicitly owns the risk.</p>
+        <p class="lede">Stop the blast radius fast, and temporarily bypass policy when a human explicitly owns the risk.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
               <strong>Kill / pause</strong> switches block enqueue (and can cancel in-flight runs) for a tenant or agent.
-              <strong>Break-glass</strong> is a time-bounded window that bypasses policy Decide — not auth, not kill, not rate limits.
+              <strong>Break-glass</strong> is a time-bounded window that bypasses policy Decide, not auth, not kill, not rate limits.
             </p>
           </section>
           <section>
@@ -92,28 +92,28 @@
 
         <h2>How to use it</h2>
         <ol class="steps">
-          <li>Admin → Kill — upsert a kill or pause for tenant/agent; confirm in-flight cancel behavior.</li>
+          <li>Admin → Kill, upsert a kill or pause for tenant/agent; confirm in-flight cancel behavior.</li>
           <li>Clear the switch when the incident is over so enqueue resumes.</li>
-          <li>Break-glass — create a window with reason + expiry (max 24h); revoke early if possible.</li>
-          <li>Review Audit afterward — break-glass is meant to be loud and temporary.</li>
+          <li>Break-glass, create a window with reason + expiry (max 24h); revoke early if possible.</li>
+          <li>Review Audit afterward, break-glass is meant to be loud and temporary.</li>
         </ol>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Kill — refuse new creates; optional drain of in-flight runs</div>
+          <div class="cap">Admin → Kill: refuse new creates; optional drain of in-flight runs</div>
           <img src="../assets/ui-kill.png" alt="Runkite Admin Kill switches page" width="960" height="600" />
         </figure>
         <figure class="shot">
-          <div class="cap">Admin → Break-glass — time-bounded policy bypass (max 24h)</div>
+          <div class="cap">Admin → Break-glass: time-bounded policy bypass (max 24h)</div>
           <img src="../assets/ui-break-glass.png" alt="Runkite Admin Break-glass page" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Kill</strong> — new work stops; optional cancel of non-terminal runs in scope.</li>
-          <li><strong>Break-glass</strong> — policy allows that would otherwise pending/deny may proceed; kill still wins.</li>
-          <li><strong>SQL only</strong> — these Admin routes return 501 on Mongo for governance durability.</li>
-          <li><strong>Full step-by-step</strong> — see <a href="admin-guide.html#12-kill-switches">Admin UI guide → Kill switches</a> and <a href="admin-guide.html#13-break-glass">Break-glass</a> for a detailed walkthrough of each screen.</li>
+          <li><strong>Kill</strong>: new work stops; optional cancel of non-terminal runs in scope.</li>
+          <li><strong>Break-glass</strong>: policy allows that would otherwise pending/deny may proceed; kill still wins.</li>
+          <li><strong>SQL only</strong>: these Admin routes return 501 on Mongo for governance durability.</li>
+          <li><strong>Full step-by-step</strong>: see <a href="admin-guide.html#12-kill-switches">Admin UI guide → Kill switches</a> and <a href="admin-guide.html#13-break-glass">Break-glass</a> for a detailed walkthrough of each screen.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>

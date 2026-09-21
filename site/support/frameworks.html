@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Framework matrix — Runkite Docs</title>
-    <meta name="description" content="What each runner kind supports today — LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain." />
+    <title>Framework matrix · Runkite Docs</title>
+    <meta name="description" content="What each runner kind supports today. LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Build</p>
         <h1>Framework matrix</h1>
-        <p class="lede">Same control plane, many runners. The plane never assumes LangGraph — adapters share a generic worker loop and speak Runner Protocol.</p>
+        <p class="lede">Same control plane, many runners. The plane never assumes LangGraph, adapters share a generic worker loop and speak Runner Protocol.</p>
 
         <div class="guide-grid">
           <section>
@@ -84,7 +84,7 @@
           <section>
             <h2>Why it is here</h2>
             <p>
-              “Framework-agnostic” only counts if dispatch, cancel, HITL, and connectors work the same way for every runner kind — with honest gaps called out.
+              “Framework-agnostic” only counts if dispatch, cancel, HITL, and connectors work the same way for every runner kind, with honest gaps called out.
             </p>
           </section>
         </div>
@@ -108,9 +108,9 @@
               <tr><td>Cancel (WatchCancels)</td><td>Yes</td><td>Yes*</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
               <tr><td>HITL interrupt / resume</td><td>Yes</td><td>Yes*</td><td>Limited</td><td>Limited</td><td>Limited</td><td>Limited</td></tr>
               <tr><td>Opaque checkpoint proxy</td><td>Yes</td><td>Yes</td><td>Yes†</td><td>Yes</td><td>Yes†</td><td>Yes†</td></tr>
-              <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>, </td><td>, </td><td>, </td><td>, </td></tr>
               <tr><td>True --concurrency N</td><td>Yes</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td></tr>
-              <tr><td>Isolated adapter venv</td><td>—</td><td>—</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Shared</td></tr>
+              <tr><td>Isolated adapter venv</td><td>, </td><td>, </td><td>Yes</td><td>Yes</td><td>Yes</td><td>Shared</td></tr>
               <tr><td>E2E in CI matrix</td><td>Yes</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Yes</td></tr>
             </tbody>
           </table>
@@ -122,23 +122,23 @@
 
         <h2>How to implement</h2>
         <ol class="steps">
-          <li>LangGraph — <code>runkite-runner</code> (Py) or TS runner with <code>langgraph.json</code>.</li>
-          <li>Adapters — install each adapter’s deps (isolated venv for CrewAI / LI / AutoGen), then <code>PYTHONPATH=python:python/adapters</code> and <code>python -m crewai_adapter</code> (etc.).</li>
+          <li>LangGraph. <code>runkite-runner</code> (Py) or TS runner with <code>langgraph.json</code>.</li>
+          <li>Adapters, install each adapter’s deps (isolated venv for CrewAI / LI / AutoGen), then <code>PYTHONPATH=python:python/adapters</code> and <code>python -m crewai_adapter</code> (etc.).</li>
           <li>Clients keep the same Agent Protocol shape: last human message in, AI message out.</li>
           <li>See <a href="./agents.html">Agents</a> for register/run; <a href="./checkpoints.html">Checkpoints</a> for durable state (LangGraph + adapters).</li>
         </ol>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Agents — registered ids across runner kinds</div>
+          <div class="cap">Admin → Agents: registered ids across runner kinds</div>
           <img src="../assets/ui-agents.png" alt="Runkite Admin Agents list" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Same plane features</strong> — connectors, grants, kill, webhooks apply regardless of framework.</li>
-          <li><strong>Honest limits</strong> — adapter opaque checkpoints need <code>RUNKITE_HTTP_URL</code> (or the worker http address); they store message transcripts, not LangGraph channel state. Time-travel <code>checkpoint_ref</code> is LangGraph-only.</li>
-          <li><strong>Dependency isolation</strong> — don’t install CrewAI into the LangGraph venv (protobuf pin fights).</li>
+          <li><strong>Same plane features</strong>: connectors, grants, kill, webhooks apply regardless of framework.</li>
+          <li><strong>Honest limits</strong>: adapter opaque checkpoints need <code>RUNKITE_HTTP_URL</code> (or the worker http address); they store message transcripts, not LangGraph channel state. Time-travel <code>checkpoint_ref</code> is LangGraph-only.</li>
+          <li><strong>Dependency isolation</strong>: don’t install CrewAI into the LangGraph venv (protobuf pin fights).</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>

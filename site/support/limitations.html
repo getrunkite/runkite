@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Limitations — Runkite Docs</title>
-    <meta name="description" content="Supported vs Compatible — honest gaps." />
+    <title>Limitations · Runkite Docs</title>
+    <meta name="description" content="Supported vs Compatible, honest gaps." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
@@ -84,7 +84,7 @@
         <ul>
           <li>Agent Protocol MCP sessions are process-local (sticky routing).</li>
           <li>Authz is route-level (+ optional agent run grants), not per-tool ACLs outside connector policy (MCP grants + argument predicates).</li>
-          <li>Tenancy is flat <code>tenant_id</code> — no org/team UI.</li>
+          <li>Tenancy is flat <code>tenant_id</code>: no org/team UI.</li>
           <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) with alerts, export, holds, and alias routing on SQL. Overshoot possible when reservation is unset or estimates are wrong; no mid-run budget kill.</li>
           <li>Kubernetes/Helm: kind K0–K3 ops-proven; Compatible for production cloud until a named soak (K4). Compose proves multi-CP HA today.</li>

@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Two protocols, one plane — Runkite Blog</title>
+    <title>Two protocols, one plane · Runkite Blog</title>
     <meta
       name="description"
-      content="Why Agent Protocol clients and Runner Protocol workers never talk to each other directly — and how that split is what lets any framework attach to one plane."
+      content="Why Agent Protocol clients and Runner Protocol workers never talk to each other directly, and how that split is what lets any framework attach to one plane."
     />
     <link
       rel="icon"
@@ -94,22 +94,22 @@
           the same API, with the same governance, and have neither one know the other
           exists?" and you'll get a shrug, or a plugin system that's really just the
           framework's own internals with an extension point bolted on. The honest answer
-          for most tools is no — not because nobody thought of it, but because the framework
+          for most tools is no, not because nobody thought of it, but because the framework
           and the "platform" around it were designed as one piece from the start. Pull them
           apart later and you find load-bearing walls where you expected a curtain.
         </p>
         <p>
           Runkite starts from the opposite assumption: the control plane and the agent code
           were never going to be the same program, so the boundary between them has to be a
-          real one — a protocol, not a convention. That's the whole idea. Once you commit to
+          real one, a protocol, not a convention. That's the whole idea. Once you commit to
           that, the question "which framework is running this agent" stops being something
           the plane needs to know at all.
         </p>
 
         <h2>Agent Protocol: the front door, and only the front door</h2>
         <p>
-          Everything a client does — create a thread, create a run, stream tokens back,
-          cancel, resume after a human-in-the-loop pause — happens over Agent Protocol. It's
+          Everything a client does, create a thread, create a run, stream tokens back,
+          cancel, resume after a human-in-the-loop pause, happens over Agent Protocol. It's
           plain HTTP, plus Server-Sent Events or a WebSocket when you want the run streamed
           back instead of polled for. If you've used any Agent Protocol–compatible SDK
           before, the shape is already familiar: nothing about it mentions runners, queues,
@@ -120,7 +120,7 @@
           runner pod is handling this" is a client that breaks the moment you add a second
           runner, move a runner to a different machine, or restart one mid-run. Runkite's
           clients don't know runners exist. They know threads and runs, and the plane
-          handles everything else — including the part where the runner that started your
+          handles everything else, including the part where the runner that started your
           run crashed and a different one picked it up without you noticing, because the
           run ID didn't change and neither did the API you called to check on it.
         </p>
@@ -128,12 +128,12 @@
         <h2>Runner Protocol: the back door, and it stays locked</h2>
         <p>
           Runners speak a completely different, private contract: a small gRPC surface with
-          exactly five calls — <code>GetJob</code> (long-poll for the next assignment),
+          exactly five calls. <code>GetJob</code> (long-poll for the next assignment),
           <code>StreamEvents</code> (push progress back as it happens), <code>ReportStatus</code>
           (say how it ended), <code>Heartbeat</code> (prove you're still alive, and find out
           if you've been superseded), and <code>WatchCancels</code> (learn about a
           cancellation without polling for it). That's the entire vocabulary a runner needs,
-          and it's deliberately small — every one of those five calls exists because the
+          and it's deliberately small, every one of those five calls exists because the
           plane has to make a specific lifecycle decision, not because someone thought a
           bigger API would be more flexible.
         </p>
@@ -143,7 +143,7 @@
           gRPC bridge they talk to has never heard of your client's API key. A runner that
           got compromised can't pretend to be a client; a client that got compromised can't
           pretend to be a runner. That separation is free the moment the two sides speak
-          different protocols — you'd have to work to break it, instead of having to work
+          different protocols, you'd have to work to break it, instead of having to work
           to build it.
         </p>
 
@@ -151,7 +151,7 @@
         <p>
           Here's the payoff, stated plainly: because a runner only ever needs to implement
           Runner Protocol's five calls, "write a new runner" is a bounded, specific piece of
-          work — not a rewrite of your control plane. That's why Runkite ships runners for
+          work, not a rewrite of your control plane. That's why Runkite ships runners for
           LangGraph, LangGraph.js, CrewAI, LlamaIndex, AutoGen, and LangChain today, and why
           adding a hand-rolled Python script that doesn't use any framework at all is the
           same amount of integration work as adding a well-known one. The plane doesn't
@@ -163,7 +163,7 @@
           Try that with a framework-first design and you're rewriting core assumptions every
           time you want to support something the original framework didn't anticipate. With
           a protocol-first design, supporting a new framework is "does it fit in a runner,"
-          and the answer is almost always yes — because a runner's job is small and
+          and the answer is almost always yes, because a runner's job is small and
           well-defined: pull work, do it, report back, listen for cancellation. Nothing in
           that list requires knowing what "it" is.
         </p>
@@ -171,7 +171,7 @@
         <h2>The one thing collapsing the two protocols would cost you</h2>
         <p>
           It's tempting to ask why not just have one protocol and let clients and runners
-          both use it — fewer moving parts, one thing to document. The answer is that the
+          both use it, fewer moving parts, one thing to document. The answer is that the
           two sides need genuinely different guarantees, and giving both of them the same
           guarantee means giving the weaker side too much and the stronger side too little.
           Clients need a stable, portable, SDK-friendly surface that doesn't change when you
@@ -179,7 +179,7 @@
           zombie process that comes back to life after being reclaimed can't clobber the
           run that replaced it, and a heartbeat that can say "you've been superseded, stop."
           A single protocol trying to be both ends up leaking one side's internals to the
-          other — either clients start seeing generation numbers and reclaim state they have
+          other, either clients start seeing generation numbers and reclaim state they have
           no use for, or runners get starved of the lifecycle primitives that keep a
           distributed job queue honest under real failures. Keeping the seam is what lets
           each side be exactly as simple as its job allows, instead of as complicated as the
@@ -195,8 +195,7 @@
           <a href="./">Blog index</a>
         </p>
         <p class="note">
-          Next in this series: <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a> —
-          what actually reaches your agent process, and for how long.
+          Next in this series: <a href="./byo-runner-governed-secrets.html">BYO runner, governed secrets</a>: what actually reaches your agent process, and for how long.
         </p>
       </main>
     </div>

@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PDP / Cedar — Runkite Docs</title>
-    <meta name="description" content="Bring your own policy decision point — OPA, Cedar, or a small webhook." />
+    <title>PDP / Cedar · Runkite Docs</title>
+    <meta name="description" content="Bring your own policy decision point. OPA, Cedar, or a small webhook." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -85,7 +85,7 @@
           <section>
             <h2>Why it is here</h2>
             <p>
-              Enterprises already have a PDP. The plane’s job is to gate side effects and audit — not to replace your policy stack.
+              Enterprises already have a PDP. The plane’s job is to gate side effects and audit, not to replace your policy stack.
               Mandatory HITL still overrides an “allow” for defense in depth.
             </p>
           </section>
@@ -94,7 +94,7 @@
         <h2>How to implement</h2>
         <ol class="steps">
           <li>Enable <code>policy</code> (presence of the section fail-closes connector access).</li>
-          <li>For a simple amount/destination gate with no PDP, add <code>policy.predicates</code> in <code>langgraph.json</code> — see <a href="grants.html#argument-predicates">Grants &amp; HITL</a>. Restart the control plane.</li>
+          <li>For a simple amount/destination gate with no PDP, add <code>policy.predicates</code> in <code>langgraph.json</code>: see <a href="grants.html#argument-predicates">Grants &amp; HITL</a>. Restart the control plane.</li>
           <li>For everything else, set <code>policy.webhook.url</code> (+ optional secret / timeout). The webhook body now includes <code>data.args</code> + <code>data.args_digest</code> on <code>tools/call</code>.</li>
           <li>Start from <code>examples/policy_webhook/</code> (deny / pending + HMAC self-check).</li>
           <li>Layer grants + mandatory HITL in Admin; watch Pending / Audit when the PDP or a predicate returns pending.</li>
@@ -110,15 +110,15 @@
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Grants — durable connector overlays next to your PDP / webhook Decide</div>
+          <div class="cap">Admin → Grants: durable connector overlays next to your PDP / webhook Decide</div>
           <img src="../assets/ui-grants.png" alt="Runkite Admin Policy grants page" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Fail-closed</strong> — webhook errors and timeouts deny (or pending per contract), never open the gate silently.</li>
-          <li><strong>Scope</strong> — governs connectors / admission on the plane, not arbitrary in-graph tools that never call a connector.</li>
-          <li><strong>Break-glass</strong> — timed bypass skips Decide; audit notes when mandatory HITL would have matched.</li>
+          <li><strong>Fail-closed</strong>: webhook errors and timeouts deny (or pending per contract), never open the gate silently.</li>
+          <li><strong>Scope</strong>: governs connectors / admission on the plane, not arbitrary in-graph tools that never call a connector.</li>
+          <li><strong>Break-glass</strong>: timed bypass skips Decide; audit notes when mandatory HITL would have matched.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>

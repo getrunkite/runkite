@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Migrate agents — Runkite Docs</title>
+    <title>Migrate agents · Runkite Docs</title>
     <meta name="description" content="Bring existing LangGraph / CrewAI / LlamaIndex / AutoGen / LangChain agents onto the plane." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Build</p>
         <h1>Migrate existing agents</h1>
-        <p class="lede">You already have graphs or crews. Goal: runners speak Runner Protocol; clients keep Agent Protocol; the plane owns governance — without rewriting your whole product.</p>
+        <p class="lede">You already have graphs or crews. Goal: runners speak Runner Protocol; clients keep Agent Protocol; the plane owns governance, without rewriting your whole product.</p>
 
         <div class="guide-grid">
           <section>
@@ -85,32 +85,32 @@
           <section>
             <h2>Why it is here</h2>
             <p>
-              “Rip out the framework” is a non-goal. The plane wraps execution. Migration succeeds when runs are dispatchable, observable, and governable — not when every line of agent code is new.
+              “Rip out the framework” is a non-goal. The plane wraps execution. Migration succeeds when runs are dispatchable, observable, and governable, not when every line of agent code is new.
             </p>
           </section>
         </div>
 
         <h2>How to implement</h2>
         <ol class="steps">
-          <li><strong>Inventory</strong> — list agent entrypoints, checkpoint stores, tools that need secrets, HITL points, cron/triggers.</li>
-          <li><strong>Pick runner kind</strong> — LangGraph stay on LangGraph runners; others use <code>python/adapters/*</code> (see <a href="./frameworks.html">matrix</a>).</li>
-          <li><strong>Wire config</strong> — <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
-          <li><strong>Checkpoints</strong> — LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts — clients can send only the new turn.</li>
-          <li><strong>Secrets</strong> — stop baking tokens in agent env long-term; move side-effect tools to connectors + grants.</li>
-          <li><strong>Cutover</strong> — run shadow traffic on the plane; compare outputs; switch clients to plane base URL + API keys.</li>
+          <li><strong>Inventory</strong>: list agent entrypoints, checkpoint stores, tools that need secrets, HITL points, cron/triggers.</li>
+          <li><strong>Pick runner kind</strong>: LangGraph stay on LangGraph runners; others use <code>python/adapters/*</code> (see <a href="./frameworks.html">matrix</a>).</li>
+          <li><strong>Wire config</strong>: <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
+          <li><strong>Checkpoints</strong>: LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts, clients can send only the new turn.</li>
+          <li><strong>Secrets</strong>: stop baking tokens in agent env long-term; move side-effect tools to connectors + grants.</li>
+          <li><strong>Cutover</strong>: run shadow traffic on the plane; compare outputs; switch clients to plane base URL + API keys.</li>
         </ol>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Registry — catalog entries for discoverability (optional; not auto-deploy)</div>
+          <div class="cap">Admin → Registry: catalog entries for discoverability (optional; not auto-deploy)</div>
           <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Same client shape</strong> — last human message in, AI message out keeps multi-framework fleets manageable.</li>
-          <li><strong>Concurrency</strong> — CrewAI/AutoGen may serialize per graph; do not assume <code>--concurrency N</code> equals N parallel crews.</li>
-          <li><strong>Honesty</strong> — registry publish ≠ deploy; you still wire runners.</li>
+          <li><strong>Same client shape</strong>: last human message in, AI message out keeps multi-framework fleets manageable.</li>
+          <li><strong>Concurrency</strong>: CrewAI/AutoGen may serialize per graph; do not assume <code>--concurrency N</code> equals N parallel crews.</li>
+          <li><strong>Honesty</strong>: registry publish ≠ deploy; you still wire runners.</li>
         </ul>
         <p class="note">
           Reference: <a href="./frameworks.html">Framework matrix</a>

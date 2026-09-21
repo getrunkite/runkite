@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Why opaque checkpoints — Runkite</title>
+    <title>Why opaque checkpoints · Runkite</title>
     <meta
       name="description"
       content="Why Runkite stores opaque checkpoint blobs on the control plane instead of forcing runner Postgres."
@@ -93,7 +93,7 @@
         <ul>
           <li>
             Durable multi-turn can sit on whatever state backend the plane already uses
-            (Postgres / MySQL / SQLite / Mongo) — not “Postgres-only because LangGraph said so.”
+            (Postgres / MySQL / SQLite / Mongo), not “Postgres-only because LangGraph said so.”
           </li>
           <li>Runners need not hold DB credentials in proxy mode.</li>
           <li>
@@ -105,10 +105,10 @@
         <h2>Rejected alternatives</h2>
         <ul>
           <li>
-            Reuse Agent Protocol thread state as a LangGraph saver — different shape;
+            Reuse Agent Protocol thread state as a LangGraph saver, different shape;
             wrong abstraction.
           </li>
-          <li>Force Postgres everywhere — contradicts multi-backend positioning.</li>
+          <li>Force Postgres everywhere, contradicts multi-backend positioning.</li>
         </ul>
         <p class="note">
           See

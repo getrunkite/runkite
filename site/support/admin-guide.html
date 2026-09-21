@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin UI Guide — Runkite Docs</title>
+    <title>Admin UI Guide · Runkite Docs</title>
     <meta
       name="description"
       content="A page-by-page walkthrough of the Admin dashboard: what each screen shows, why it exists, and exactly how to use it."
@@ -83,7 +83,7 @@
         <h1>Admin UI guide</h1>
         <p class="lede">
           Everything you can see and do in the Admin dashboard, one section at a time. If you
-          just want to log in, see <a href="admin-login.html">Admin login</a> first — this page
+          just want to log in, see <a href="admin-login.html">Admin login</a> first, this page
           picks up from there and walks through every screen you land on afterward.
         </p>
 
@@ -93,7 +93,7 @@
             The Admin dashboard has 16 screens, grouped the same way the left-hand nav inside
             Admin groups them: <strong>Overview</strong>, then <strong>Resources</strong> (agents,
             registry, threads, runs), <strong>Platform</strong> (connectors through spend and
-            governance), and <strong>Playground</strong> (Try agent — exercise a registered graph,
+            governance), and <strong>Playground</strong> (Try agent, exercise a registered graph,
             not inventory). For each screen below you get four things: <strong>what it's for</strong> in plain
             language, <strong>what you'll actually see</strong> on the page, <strong>how to use
             it</strong> step by step, and <strong>things that trip people up</strong>.
@@ -107,12 +107,12 @@
         </p>
         <ul class="expect">
           <li>
-            <strong>No auth configured (local/dev)</strong> — you land straight on Overview, no
+            <strong>No auth configured (local/dev)</strong>: you land straight on Overview, no
             login screen. This is normal for a laptop demo, not something to "fix."
           </li>
           <li>
-            <strong>Auth configured</strong> — you get a login card asking for an API key or JWT.
-            It only accepts a credential that has the <code>admin</code> permission — a normal
+            <strong>Auth configured</strong>: you get a login card asking for an API key or JWT.
+            It only accepts a credential that has the <code>admin</code> permission, a normal
             read/write client key will not work here, on purpose (client keys are scoped to one
             tenant; Admin sees every tenant). Full details, including the exact
             <code>langgraph.json</code> snippet to add an admin key, are on
@@ -121,10 +121,10 @@
         </ul>
         <p>
           Once you're in, the left sidebar inside Admin lists every screen below. Nothing here
-          requires editing a config file to "turn on" — every screen is always present; what
+          requires editing a config file to "turn on", every screen is always present; what
           changes based on your setup is whether it has data to show (e.g. Cron is empty until
           you register a scheduled agent) or whether it works at all (the governance screens
-          need a SQL state backend — Postgres, MySQL, or SQLite — and return a friendly
+          need a SQL state backend. Postgres, MySQL, or SQLite, and return a friendly
           "not available on this backend" message on Mongo).
         </p>
 
@@ -134,29 +134,29 @@
           busy the plane is right now, across every tenant.
         </p>
         <p><strong>What you'll see:</strong> counts of agents, threads, and runs, with runs broken down by status (pending / running / success / error / interrupted). These are real database counts computed on the spot, not a rough estimate.</p>
-        <p><strong>How to use it:</strong> there's nothing to configure here — it's read-only. Check it after a deploy to confirm the plane sees your agents, or when triage starts ("why do we have 40 pending runs?") as the first stop before drilling into Runs.</p>
+        <p><strong>How to use it:</strong> there's nothing to configure here, it's read-only. Check it after a deploy to confirm the plane sees your agents, or when triage starts ("why do we have 40 pending runs?") as the first stop before drilling into Runs.</p>
         <figure class="shot">
-          <div class="cap">Admin → Overview — cross-tenant counts</div>
+          <div class="cap">Admin → Overview: cross-tenant counts</div>
           <img src="../assets/ui-overview.png" alt="Runkite Admin Overview page" width="960" height="600" />
         </figure>
 
         <h2 id="2-agents">2. Agents</h2>
         <p>
           <strong>What it's for:</strong> the list of every agent the plane currently knows
-          about — the things you can actually create a run against.
+          about, the things you can actually create a run against.
         </p>
         <p>
           <strong>What you'll see:</strong> agent ID, which tenant it belongs to, and its
           declared input/output schema. Agents show up here when the control plane boots and
           reads your <code>langgraph.json</code> <code>graphs</code> section (each key becomes a
-          registered agent) — there is no separate “add agent” button in Admin. Which agents appear
+          registered agent), there is no separate “add agent” button in Admin. Which agents appear
           is entirely your config: production ships <em>your</em> graphs only;
           <code>docker-compose.dev.yml</code> deliberately points at
           <code>examples/all_agents/langgraph.json</code> (echo, react, approval, …) for local
-          demos — that is not baked into Admin or the product binary.
+          demos, that is not baked into Admin or the product binary.
         </p>
         <p>
-          <strong>How to use it:</strong> click an agent to see its full detail — schema,
+          <strong>How to use it:</strong> click an agent to see its full detail, schema,
           version, and metadata. Use this page to sanity-check that a newly deployed graph is
           actually visible to the plane before you try to run it from a client.
         </p>
@@ -164,18 +164,17 @@
           <div class="cap">Admin → Agents</div>
           <img src="../assets/ui-agents.png" alt="Runkite Admin Agents list" width="960" height="600" />
         </figure>
-        <p class="note">If an agent you just deployed is missing here, check the runner's logs for a config parse error before assuming Admin is broken — this list mirrors the <code>graphs</code> keys bootstrapped from your control plane's <code>langgraph.json</code>. Removing a graph from config does not delete its row from the database; restart with a fresh store (<code>docker compose … down -v</code> in dev) or deploy only the agents you want in prod. If multiple runners are connected, Try agent can fail with <code>Graph not found</code> when a job lands on a runner that did not load that graph — keep CP + runner configs aligned and stop stray local runners.</p>
+        <p class="note">If an agent you just deployed is missing here, check the runner's logs for a config parse error before assuming Admin is broken, this list mirrors the <code>graphs</code> keys bootstrapped from your control plane's <code>langgraph.json</code>. Removing a graph from config does not delete its row from the database; restart with a fresh store (<code>docker compose … down -v</code> in dev) or deploy only the agents you want in prod. If multiple runners are connected, Try agent can fail with <code>Graph not found</code> when a job lands on a runner that did not load that graph, keep CP + runner configs aligned and stop stray local runners.</p>
 
         <h2 id="3-try-agent">3. Try agent</h2>
         <p>
           <strong>What it's for:</strong> a built-in playground to exercise any registered agent
-          through the real control plane — same create/stream path a production client uses —
-          without writing a curl command or standing up your own test harness.
+          through the real control plane, same create/stream path a production client uses, without writing a curl command or standing up your own test harness.
         </p>
         <p>
           <strong>What you'll see:</strong> a chat panel on the left, a raw <strong>Live
           protocol</strong> feed and per-turn <strong>Usage</strong> panel on the right. The raw
-          feed exists on purpose, not as a debug leftover — it's the exact sequence of Agent
+          feed exists on purpose, not as a debug leftover, it's the exact sequence of Agent
           Protocol events (<code>metadata</code>, <code>running</code>, <code>values</code>,
           <code>end</code>, and interrupt events) your agent emitted for that turn, so you can
           see precisely what a client SDK would have received instead of only the rendered
@@ -183,40 +182,40 @@
         </p>
         <p><strong>How to use it:</strong></p>
         <ol class="steps">
-          <li>Pick an agent from the dropdown — only agents the plane already knows about show up here; you cannot author a new one from this page.</li>
+          <li>Pick an agent from the dropdown, only agents the plane already knows about show up here; you cannot author a new one from this page.</li>
           <li>Type a prompt and send it. A real thread and run are created against that agent's tenant, and the reply streams in as it's produced.</li>
           <li>
             If the agent pauses for human approval mid-run (HITL), an
             <strong>Interrupted</strong> banner appears with <strong>Approve</strong> /
-            <strong>Deny</strong> buttons right in the chat — resuming replays through the same
+            <strong>Deny</strong> buttons right in the chat, resuming replays through the same
             stream so you see the rest of the run continue live.
           </li>
           <li>The <strong>Usage</strong> panel shows that turn's token counts and estimated cost the moment the run finishes; click through to <strong>Spend</strong> for the tenant-wide rollup.</li>
-          <li>Every run you start here is a real run — it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>
+          <li>Every run you start here is a real run, it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>
         </ol>
-        <p class="note">This is deliberately not an agent builder: it runs whatever graph is already deployed. To change what the agent does, edit and redeploy the graph itself — see <a href="first-agent.html">First agent</a>.</p>
+        <p class="note">This is deliberately not an agent builder: it runs whatever graph is already deployed. To change what the agent does, edit and redeploy the graph itself, see <a href="first-agent.html">First agent</a>.</p>
         <p class="note">
           <strong>Nav:</strong> Try agent lives under <strong>Playground</strong> in the sidebar (last
-          group) — it's an action, not inventory like Agents/Registry/Threads/Runs.
+          group), it's an action, not inventory like Agents/Registry/Threads/Runs.
           <strong>LLM keys:</strong> Admin does not accept API keys; put
           <code>GOOGLE_API_KEY</code> / <code>OPENAI_API_KEY</code> (etc.) in the runner process
-          before you start it — see <a href="credentials.html">Credentials map</a> and
+          before you start it, see <a href="credentials.html">Credentials map</a> and
           <code>examples/gemini/</code>. Demo agents (echo, react) need no key; scripted replies like
           “The answer is 42” mean you picked a fake-LLM test graph, not a live model.
           <strong>Graph not found:</strong> the dropdown lists every agent the control plane has ever
-          registered; your connected runner may only load a subset — pick one that appears in the
+          registered; your connected runner may only load a subset, pick one that appears in the
           runner's startup logs or align CP + runner <code>langgraph.json</code>. Stop other local
           runners (e.g. Gemini dogfood on the same port) if they steal jobs.
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Try agent — chat, live protocol, and usage</div>
+          <div class="cap">Admin → Try agent: chat, live protocol, and usage</div>
           <img src="../assets/ui-try-agent.png?v=20260905" alt="Runkite Admin Try agent playground" width="960" height="600" />
         </figure>
 
         <h2 id="4-registry">4. Registry</h2>
         <p>
           <strong>What it's for:</strong> a searchable catalog of agent definitions with version
-          history — useful once you have more than a couple of agents and need to answer
+          history, useful once you have more than a couple of agents and need to answer
           "what changed in v3 of the support-bot agent, and when."
         </p>
         <p>
@@ -227,11 +226,11 @@
         <p>
           <strong>How to use it:</strong> browse or search by name, then open an entry to see
           every version that's ever been published, oldest first. Unlike Agents above, this page
-          is not read-only — click <strong>Publish entry</strong> to create a new catalog entry,
+          is not read-only, click <strong>Publish entry</strong> to create a new catalog entry,
           or open an existing one to edit its metadata or delete it, right from this screen. What
           publishing does <em>not</em> do: wire the entry into a running graph. A registry entry
           is metadata plus a <code>source_ref</code> (a git URL, a plain URL, or an inline
-          snippet) — pointing at where the actual code lives, not a copy of the code itself. Making
+          snippet), pointing at where the actual code lives, not a copy of the code itself. Making
           it a live, callable agent still means adding it to a runner's config and deploying that
           runner, same as any other agent; see <a href="registry.html">Registry</a> for the exact
           field reference and the API-only equivalent of this form.
@@ -243,7 +242,7 @@
 
         <h2 id="5-threads--runs">5. Threads &amp; Runs</h2>
         <p>
-          <strong>What they're for:</strong> the operational core of Admin — this is where you
+          <strong>What they're for:</strong> the operational core of Admin, this is where you
           go to answer "what did this specific execution actually do." A <strong>thread</strong>
           is a conversation (it can span many turns and many runs); a <strong>run</strong> is
           one single execution inside a thread.
@@ -251,44 +250,44 @@
         <p>
           <strong>What you'll see:</strong> Threads lists every thread across every tenant, with
           a filter by status. Click a thread to see every run that happened inside it. Runs
-          lists every run directly, filterable by status, agent, or thread — useful when you
+          lists every run directly, filterable by status, agent, or thread, useful when you
           already know the run ID or agent you're chasing and don't want to go through a thread
           first.
         </p>
-        <p><strong>How to use a run's detail page — the part people miss:</strong></p>
+        <p><strong>How to use a run's detail page, the part people miss:</strong></p>
         <ol class="steps">
           <li>Click into any run from either list to open its detail page.</li>
           <li>
-            You get a <strong>live or replayed event stream</strong> — the exact same
+            You get a <strong>live or replayed event stream</strong>: the exact same
             token-by-token / step-by-step events the client SDK would have seen, but viewable
             after the fact. If the run is still going, it streams live; if it already finished,
             you're replaying its recorded history.
           </li>
           <li>
-            This is the single best tool for debugging "the agent did something weird" — you
+            This is the single best tool for debugging "the agent did something weird", you
             see every tool call, every value the graph produced, and the final status, in
             order, without needing to reproduce the run yourself.
           </li>
           <li>
             Above the event stream (between the input panel and the event log), the <strong>Run manifest</strong> card answers a different
             question than the event log: not "what happened" but "what was this run allowed to
-            do the instant it was dispatched" — agent version, runner kind, tool allowlist,
+            do the instant it was dispatched", agent version, runner kind, tool allowlist,
             whether connector policy was fail-closed, and who requested it. It's frozen at
             dispatch, so it stays accurate even if you change config afterward. See
             <a href="run-manifest.html">Run manifest</a> for the full field reference.
           </li>
           <li>
             A <strong>Cancel</strong> action is available on any non-terminal run, from any
-            tenant — useful when something is stuck or looping and you don't want to wait for
+            tenant, useful when something is stuck or looping and you don't want to wait for
             it to time out on its own.
           </li>
         </ol>
         <figure class="shot">
-          <div class="cap">Admin → Runs — filter by status/agent/thread</div>
+          <div class="cap">Admin → Runs: filter by status/agent/thread</div>
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs list" width="960" height="600" />
         </figure>
         <figure class="shot">
-          <div class="cap">Admin → Run detail — live/replayed event stream</div>
+          <div class="cap">Admin → Run detail: live/replayed event stream</div>
           <img src="../assets/ui-run-detail.png" alt="Runkite Admin Run detail page" width="960" height="600" />
         </figure>
 
@@ -305,7 +304,7 @@
           API can't take down every agent that depends on it).
         </p>
         <p>
-          <strong>How to use it:</strong> this page is read-only — connectors are configured in
+          <strong>How to use it:</strong> this page is read-only, connectors are configured in
           <code>langgraph.json</code>, not clicked into existence here. Use it to spot a tripped
           circuit breaker before a user reports "Salesforce lookups stopped working," and to
           confirm a new connector actually loaded after you deployed it. Full configuration
@@ -313,7 +312,7 @@
           <a href="connectors.html">Connectors &amp; HITL</a> page.
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Connectors — health &amp; circuit state</div>
+          <div class="cap">Admin → Connectors: health &amp; circuit state</div>
           <img src="../assets/ui-connectors.png" alt="Runkite Admin Connectors" width="960" height="600" />
         </figure>
 
@@ -325,17 +324,17 @@
         <p>
           <strong>What you'll see:</strong> each schedule, its cron expression, and when it last
           fired. If you're running more than one control-plane replica, this is also where you'd
-          confirm a schedule only fired once — the plane uses a claim mechanism so two replicas
+          confirm a schedule only fired once, the plane uses a claim mechanism so two replicas
           racing to fire the same schedule at the same second don't double-run it.
         </p>
         <p>
-          <strong>How to use it:</strong> read-only here too — schedules are created via the
+          <strong>How to use it:</strong> read-only here too, schedules are created via the
           Agent Protocol API or config, not from this screen. Check this page when a scheduled
-          job "didn't run" (is it even registered?) or "ran twice" (did two replicas race — see
+          job "didn't run" (is it even registered?) or "ran twice" (did two replicas race, see
           <a href="cron.html">Cron</a> for the claim mechanism that's supposed to prevent this).
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Cron — schedules across every tenant</div>
+          <div class="cap">Admin → Cron: schedules across every tenant</div>
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron" width="960" height="600" />
         </figure>
 
@@ -346,15 +345,14 @@
           deliveries land so you don't lose them silently.
         </p>
         <p>
-          <strong>What you'll see:</strong> a list of "dead letters" — deliveries that failed
-          after retrying — each with the event payload that was going to be sent.
+          <strong>What you'll see:</strong> a list of "dead letters", deliveries that failed
+          after retrying, each with the event payload that was going to be sent.
         </p>
         <p><strong>How to use it:</strong></p>
         <ol class="steps">
           <li>Find the failed delivery for the event you're missing on your receiving end.</li>
           <li>
-            Fix the actual problem first (your endpoint was down, returned a 500, etc.) —
-            this page doesn't diagnose that for you.
+            Fix the actual problem first (your endpoint was down, returned a 500, etc.), this page doesn't diagnose that for you.
           </li>
           <li>
             Click <strong>Redeliver</strong> to re-POST the exact stored payload. Note: if your
@@ -365,7 +363,7 @@
           </li>
         </ol>
         <figure class="shot">
-          <div class="cap">Admin → Webhooks — dead letters &amp; redeliver</div>
+          <div class="cap">Admin → Webhooks: dead letters &amp; redeliver</div>
           <img src="../assets/ui-webhooks.png" alt="Runkite Admin Webhooks" width="960" height="600" />
         </figure>
 
@@ -373,11 +371,11 @@
         <p>
           <strong>What it's for:</strong> the allowlist that decides which agent can use which
           connector, and which specific tools on that connector. Without a grant, a connector
-          call is denied by default — this is a safety default, not a bug you need to work
+          call is denied by default, this is a safety default, not a bug you need to work
           around by disabling something.
         </p>
         <p>
-          <strong>What you'll see:</strong> a table of grants — each one says "agent X may use
+          <strong>What you'll see:</strong> a table of grants, each one says "agent X may use
           connector Y" (optionally scoped to specific tool names). You can also set static
           grants in <code>langgraph.json</code>; the ones you create here live in the database
           and layer on top.
@@ -386,8 +384,8 @@
         <ol class="steps">
           <li>Click <strong>New grant</strong>.</li>
           <li>Pick the tenant, the agent, and the connector this grant applies to.</li>
-          <li>Optionally restrict it to specific tool names — leave it open to allow every tool the connector exposes.</li>
-          <li>Save. The change takes effect on the replica you're talking to immediately, and on every other control-plane replica within about 15 seconds (they poll for changes — there's no manual "sync" step).</li>
+          <li>Optionally restrict it to specific tool names, leave it open to allow every tool the connector exposes.</li>
+          <li>Save. The change takes effect on the replica you're talking to immediately, and on every other control-plane replica within about 15 seconds (they poll for changes, there's no manual "sync" step).</li>
         </ol>
         <p>Edit or delete a grant the same way, from the same table.</p>
         <p>
@@ -395,11 +393,10 @@
           <code>langgraph.json</code> as <code>policy.predicates</code> (config-only; restart the control plane).
           They run after a matching grant and before the sync webhook, on connector MCP <code>tools/call</code> only.
           Copy the example on <a href="grants.html#argument-predicates">Grants &amp; HITL → argument predicates</a>.
-          After a pending or deny, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column —
-          approve binds that display map (Audit still has digest + args as well).
+          After a pending or deny, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column, approve binds that display map (Audit still has digest + args as well).
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Grants — durable connector allowlist</div>
+          <div class="cap">Admin → Grants: durable connector allowlist</div>
           <img src="../assets/ui-grants.png" alt="Runkite Admin Policy Grants" width="960" height="600" />
         </figure>
 
@@ -407,13 +404,13 @@
         <p>
           <strong>What it's for:</strong> force a human approval step for a connector or tool
           class, regardless of what any grant says. Use this for anything you never want an
-          agent to do fully autonomously — sending an email, making a payment, deleting a
-          record — even if the agent is otherwise trusted with that connector.
+          agent to do fully autonomously, sending an email, making a payment, deleting a
+          record, even if the agent is otherwise trusted with that connector.
         </p>
         <p>
           <strong>What you'll see:</strong> a table of rules, each one saying "any call to
           connector X (optionally, specific tool Y) must pause for approval." Runs that hit a
-          rule here don't fail — they pause and wait, and show up in the <strong>Pending</strong>
+          rule here don't fail, they pause and wait, and show up in the <strong>Pending</strong>
           screen (next section) for someone to approve or deny.
         </p>
         <p><strong>How to create one:</strong></p>
@@ -423,31 +420,31 @@
           <li>Save. Like grants, this rolls out to every replica within about 15 seconds.</li>
         </ol>
         <figure class="shot">
-          <div class="cap">Admin → Mandatory HITL — force human approval for a connector class</div>
+          <div class="cap">Admin → Mandatory HITL: force human approval for a connector class</div>
           <img src="../assets/ui-mandatory-hitl.png" alt="Runkite Admin Mandatory HITL" width="960" height="600" />
         </figure>
 
         <h2 id="11-pending-approval-queue">11. Pending (approval queue)</h2>
         <p>
           <strong>What it's for:</strong> the inbox for every connector call that's currently
-          paused waiting for a human — whether it paused because of a Mandatory HITL rule above,
+          paused waiting for a human, whether it paused because of a Mandatory HITL rule above,
           or because the agent code itself asked for approval before a sensitive action.
         </p>
         <p>
           <strong>What you'll see:</strong> a list of pending actions, each showing which run
           triggered it, which connector/tool it wants to call, the reason, and the
-          <strong>Args</strong> display map — so you can see the amount you are binding
+          <strong>Args</strong> display map, so you can see the amount you are binding
           before deciding.
         </p>
         <p><strong>How to approve or deny:</strong></p>
         <ol class="steps">
-          <li>Open a pending action and read the connector, tool, reason, and <strong>Args</strong> column (hover for the display map). Approve binds that payload — a later call with a different amount is a new row, not a silent send.</li>
-          <li><strong>Approve</strong> — the plane mints a one-shot permission for the next matching call with that same argument digest; the run resumes, and the tool executes normally.</li>
-          <li><strong>Deny</strong> — the run resumes with a denial instead; your agent code decides what to do next (retry differently, tell the user, give up).</li>
+          <li>Open a pending action and read the connector, tool, reason, and <strong>Args</strong> column (hover for the display map). Approve binds that payload, a later call with a different amount is a new row, not a silent send.</li>
+          <li><strong>Approve</strong>: the plane mints a one-shot permission for the next matching call with that same argument digest; the run resumes, and the tool executes normally.</li>
+          <li><strong>Deny</strong>: the run resumes with a denial instead; your agent code decides what to do next (retry differently, tell the user, give up).</li>
         </ol>
-        <p class="note">Approving here does not create a standing grant — it's a one-time unlock for this specific paused call. The next time the agent tries the same thing, it pauses again unless you've also added a Grant or removed the Mandatory HITL rule.</p>
+        <p class="note">Approving here does not create a standing grant, it's a one-time unlock for this specific paused call. The next time the agent tries the same thing, it pauses again unless you've also added a Grant or removed the Mandatory HITL rule.</p>
         <figure class="shot">
-          <div class="cap">Admin → Pending — approve or deny a paused tool call</div>
+          <div class="cap">Admin → Pending: approve or deny a paused tool call</div>
           <img src="../assets/ui-pending.png" alt="Runkite Admin Pending Actions" width="960" height="600" />
         </figure>
 
@@ -465,18 +462,18 @@
             currently running/pending run in scope) or <strong>pause-only</strong> (stop new
             runs from starting, but let anything already in flight finish normally).
           </li>
-          <li>Save. This takes effect immediately — no waiting for a poll interval.</li>
+          <li>Save. This takes effect immediately, no waiting for a poll interval.</li>
           <li>When the incident is over, come back to this page and clear the switch to resume normal operation.</li>
         </ol>
-        <p class="note">A kill switch is not the same as Break-glass below — kill always wins. Break-glass cannot override a kill switch, by design.</p>
+        <p class="note">A kill switch is not the same as Break-glass below, kill always wins. Break-glass cannot override a kill switch, by design.</p>
         <figure class="shot">
-          <div class="cap">Admin → Kill switches — stop a tenant or agent immediately</div>
+          <div class="cap">Admin → Kill switches: stop a tenant or agent immediately</div>
           <img src="../assets/ui-kill.png" alt="Runkite Admin Kill Switches" width="960" height="600" />
         </figure>
 
         <h2 id="13-break-glass">13. Break-glass</h2>
         <p>
-          <strong>What it's for:</strong> the opposite emergency tool — a short, time-boxed
+          <strong>What it's for:</strong> the opposite emergency tool, a short, time-boxed
           window where normal connector policy checks are bypassed, for situations like
           "policy is misconfigured and blocking a legitimate call and we need it to work in the
           next five minutes while we fix the actual rule."
@@ -484,29 +481,29 @@
         <p><strong>How to use it:</strong></p>
         <ol class="steps">
           <li>Click <strong>New window</strong>.</li>
-          <li>Pick the scope (tenant, or tenant+agent), write a reason (required — this shows up in the audit trail), and set an expiry. The maximum window is 24 hours; you cannot open a longer one.</li>
+          <li>Pick the scope (tenant, or tenant+agent), write a reason (required, this shows up in the audit trail), and set an expiry. The maximum window is 24 hours; you cannot open a longer one.</li>
           <li>Save. Connector policy checks in scope now pass automatically until the window expires or you revoke it.</li>
-          <li>Revoke early any time from this same page — normal policy checks resume instantly.</li>
+          <li>Revoke early any time from this same page, normal policy checks resume instantly.</li>
         </ol>
         <p class="note">
           Break-glass only bypasses connector <em>policy</em> decisions. It does <strong>not</strong>
           override a kill switch, does not bypass authentication, and does not raise spend
-          budgets or run limits — those are separate controls that stay in force even during a
+          budgets or run limits, those are separate controls that stay in force even during a
           break-glass window.
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Break-glass — time-boxed policy bypass, always audited</div>
+          <div class="cap">Admin → Break-glass: time-boxed policy bypass, always audited</div>
           <img src="../assets/ui-break-glass.png" alt="Runkite Admin Break-glass" width="960" height="600" />
         </figure>
 
         <h2 id="14-audit">14. Audit</h2>
         <p>
           <strong>What it's for:</strong> the searchable paper trail of every policy decision
-          the plane has made — every allow, every deny, every pending-for-approval, with who,
+          the plane has made, every allow, every deny, every pending-for-approval, with who,
           what, and why.
         </p>
         <p>
-          <strong>What you'll see:</strong> a filterable table — by tenant, agent, connector,
+          <strong>What you'll see:</strong> a filterable table, by tenant, agent, connector,
           tool, run, or a date range. Each row shows the decision, the reason code behind it,
           and which rule (grant, predicate, mandatory-HITL rule, or break-glass window) produced it.
           Connector <code>tools/call</code> rows also have an <strong>Args</strong> column: a short digest, with the
@@ -516,10 +513,10 @@
           <strong>How to use it:</strong> this is your answer to "prove that agent X was not
           allowed to touch connector Y last Tuesday" or "show me everything that happened during
           that break-glass window." Filter down to the scope you care about; there's no
-          write/edit action here — it's a read-only historical record.
+          write/edit action here, it's a read-only historical record.
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Audit — search every policy decision</div>
+          <div class="cap">Admin → Audit: search every policy decision</div>
           <img src="../assets/ui-audit.png" alt="Runkite Admin Audit" width="960" height="600" />
         </figure>
 
@@ -538,7 +535,7 @@
         <p>
           <strong>How to use it:</strong> the <code>langgraph.json</code> <code>finops</code>
           section is the bootstrap baseline (a hard cap on USD/tokens/runs per day, per tenant
-          or per agent) — but you don't need to edit that file or restart the control plane to
+          or per agent), but you don't need to edit that file or restart the control plane to
           change a price or a budget. Scroll down to the <strong>Live FinOps config</strong>
           panel on this same page to add or edit pricebook rates and tenant/agent day budgets
           directly. A save here takes effect on this replica immediately and every other
@@ -548,7 +545,7 @@
           been overridden from Admin.
         </p>
         <figure class="shot">
-          <div class="cap">Admin → Spend — usage, alerts, and export</div>
+          <div class="cap">Admin → Spend: usage, alerts, and export</div>
           <img src="../assets/ui-spend.png" alt="Runkite Admin Spend" width="960" height="600" />
         </figure>
 
@@ -557,17 +554,17 @@
           Grants, Mandatory HITL, Pending, Kill switches, Break-glass, Audit, and Spend all
           store their data in your state database. On Postgres, MySQL, or SQLite this works
           exactly as described above. On MongoDB, these screens show a clear "not available on
-          this backend" message instead of failing silently or showing stale data — governance
+          this backend" message instead of failing silently or showing stale data, governance
           durability on Mongo is on the roadmap, not silently unsupported.
         </p>
 
         <h2>Quick answers to the questions people actually ask</h2>
         <ul class="expect">
-          <li><strong>"I can't log in with my normal API key."</strong> — that key doesn't have the <code>admin</code> permission. See <a href="admin-login.html">Admin login</a> for the exact config to add one.</li>
-          <li><strong>"A run is stuck, how do I stop just that one?"</strong> — open it from Runs and use Cancel. Kill switches are for stopping everything in a tenant/agent, not one run.</li>
-          <li><strong>"An agent tried something and nothing happened."</strong> — check Pending; it's probably waiting on a Mandatory HITL rule or an approval the agent itself requested.</li>
-          <li><strong>"I changed a grant and it's not working."</strong> — give it up to ~15 seconds if you're on a different replica than the one you edited it on; every replica polls for overlay changes on that interval.</li>
-          <li><strong>"Governance pages are erroring out."</strong> — you're likely on MongoDB; those pages require Postgres, MySQL, or SQLite.</li>
+          <li><strong>"I can't log in with my normal API key."</strong>: that key doesn't have the <code>admin</code> permission. See <a href="admin-login.html">Admin login</a> for the exact config to add one.</li>
+          <li><strong>"A run is stuck, how do I stop just that one?"</strong>: open it from Runs and use Cancel. Kill switches are for stopping everything in a tenant/agent, not one run.</li>
+          <li><strong>"An agent tried something and nothing happened."</strong>: check Pending; it's probably waiting on a Mandatory HITL rule or an approval the agent itself requested.</li>
+          <li><strong>"I changed a grant and it's not working."</strong>: give it up to ~15 seconds if you're on a different replica than the one you edited it on; every replica polls for overlay changes on that interval.</li>
+          <li><strong>"Governance pages are erroring out."</strong>: you're likely on MongoDB; those pages require Postgres, MySQL, or SQLite.</li>
         </ul>
 
         <p class="note">

@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Registry — Runkite Docs</title>
-    <meta name="description" content="Publish and search agent definitions — a catalog, not a package installer." />
+    <title>Registry · Runkite Docs</title>
+    <meta name="description" content="Publish and search agent definitions, a catalog, not a package installer." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Build</p>
         <h1>Registry</h1>
-        <p class="lede">A tenant-scoped catalog of agent definitions: publish, search, version history. Metadata + <code>source_ref</code> — not auto-deploy.</p>
+        <p class="lede">A tenant-scoped catalog of agent definitions: publish, search, version history. Metadata + <code>source_ref</code>: not auto-deploy.</p>
 
         <div class="guide-grid">
           <section>
@@ -91,13 +91,13 @@
         </div>
 
         <h2>How to implement</h2>
-        <p>Two equivalent paths — pick whichever fits your workflow. Both write to the same table, so an entry published one way shows up immediately when you look it up the other.</p>
-        <p><strong>From your CI/CD or a script</strong> — the client-facing API, scoped by your own auth context:</p>
+        <p>Two equivalent paths, pick whichever fits your workflow. Both write to the same table, so an entry published one way shows up immediately when you look it up the other.</p>
+        <p><strong>From your CI/CD or a script</strong>: the client-facing API, scoped by your own auth context:</p>
         <ol class="steps">
           <li><code>PUT /registry/entries/{name}</code> with metadata + <code>source_type</code> / <code>source_ref</code>.</li>
           <li><code>POST /registry/search</code> by name substring, tags (all must match), or author.</li>
           <li>Browse history via <code>GET /registry/entries/{name}/versions</code>.</li>
-          <li>Wire the source into a runner config yourself — publishing does not register a live agent.</li>
+          <li>Wire the source into a runner config yourself, publishing does not register a live agent.</li>
         </ol>
         <pre class="mono-block">PUT /registry/entries/sales-qualifier
 {
@@ -108,26 +108,26 @@
   "source_type": "git",
   "source_ref": "https://github.com/example/sales-qualifier@main"
 }</pre>
-        <p><strong>From Admin, by hand</strong> — no request body to write yourself:</p>
+        <p><strong>From Admin, by hand</strong>: no request body to write yourself:</p>
         <ol class="steps">
           <li>Open <code>/admin/registry</code> and click <strong>Publish entry</strong> for a new one, or click any row to open an existing entry.</li>
-          <li>Fill in the same fields as the API body above through a plain form — tenant, name (slug), display name, tags, and <code>source_type</code> / <code>source_ref</code>.</li>
+          <li>Fill in the same fields as the API body above through a plain form, tenant, name (slug), display name, tags, and <code>source_type</code> / <code>source_ref</code>.</li>
           <li><strong>Save changes</strong> updates the entry in place (a real content change still writes a new version, exactly like the API path); <strong>Delete</strong> removes it and its version history.</li>
-          <li>The same "publishing is not deploying" rule applies here too — the entry is discoverable metadata, not a live agent, regardless of which path you used to create it.</li>
+          <li>The same "publishing is not deploying" rule applies here too, the entry is discoverable metadata, not a live agent, regardless of which path you used to create it.</li>
         </ol>
         <p class="note">Admin writes go through <code>PUT</code> / <code>DELETE /admin-api/registry/{name}</code> (an Admin-only route, distinct from the client-facing <code>/registry/entries/{name}</code> above) and are audited the same way every other Admin mutation is.</p>
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Registry — catalog entries</div>
+          <div class="cap">Admin → Registry: catalog entries</div>
           <img src="../assets/ui-registry.png" alt="Runkite Admin Registry" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Tenant-private</strong> — not a cross-tenant public marketplace.</li>
-          <li><strong>No review queue</strong> — publish is immediately visible in-tenant.</li>
-          <li><strong>Admin name collisions</strong> — use <code>?tenant_id=</code> when two tenants share a name.</li>
+          <li><strong>Tenant-private</strong>: not a cross-tenant public marketplace.</li>
+          <li><strong>No review queue</strong>: publish is immediately visible in-tenant.</li>
+          <li><strong>Admin name collisions</strong>: use <code>?tenant_id=</code> when two tenants share a name.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md">docs/registry.md</a>

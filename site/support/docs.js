@@ -100,7 +100,7 @@
       var td = cells[i];
       if (td.textContent.trim() !== "Not yet") continue;
       td.classList.add("pending");
-      td.title = "Known gap — not yet implemented for this framework.";
+      td.title = "Known gap, not yet implemented for this framework.";
       td.setAttribute("data-pending", "matrix-gap");
     }
   }

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>createRunCtx / fail-closed — Runkite engineering</title>
+    <title>createRunCtx / fail-closed · Runkite engineering</title>
     <meta
       name="description"
-      content="Every Runkite run — HTTP, wait, stream, cron, A2A, MCP — enters through createRunCtx. Production serve refuses to boot without durable store, shared transport, runner tokens, and client auth."
+      content="Every Runkite run. HTTP, wait, stream, cron, A2A, MCP, enters through createRunCtx. Production serve refuses to boot without durable store, shared transport, runner tokens, and client auth."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -38,8 +38,8 @@
       <p class="kicker">Engineering note · 3 of 6</p>
       <h1>One funnel. <em>Refuse</em> insecure start.</h1>
       <p class="lede">
-        Every run admission path — Agent Protocol, stream/wait, cron, agent-to-agent,
-        MCP tools/call — goes through <code>createRunCtx</code>. And
+        Every run admission path. Agent Protocol, stream/wait, cron, agent-to-agent,
+        MCP tools/call, goes through <code>createRunCtx</code>. And
         <code>runkite serve</code> will not listen at all until the plane can prove a
         production-safe posture.
       </p>
@@ -60,16 +60,16 @@
       </div>
       <ul>
         <li>
-          <strong>Thread claim is atomic</strong> — one active run per thread; two
+          <strong>Thread claim is atomic</strong>: one active run per thread; two
           creators cannot both win.
         </li>
         <li>
-          <strong>A2A bounds</strong> — child depth and breadth checked only on the
+          <strong>A2A bounds</strong>: child depth and breadth checked only on the
           internal runner-authenticated path; public clients cannot forge
           <code>parent_run_id</code>.
         </li>
         <li>
-          <strong>Assignment carries generation=1</strong> — fencing starts at create,
+          <strong>Assignment carries generation=1</strong>: fencing starts at create,
           not as an afterthought on reclaim.
         </li>
       </ul>
@@ -77,15 +77,15 @@
       <h2>Fail-closed serve</h2>
       <p>
         An earlier default let <code>serve</code> boot on SQLite + in-process + no
-        runner tokens + no client auth — still green on <code>/readyz</code>, so
+        runner tokens + no client auth, still green on <code>/readyz</code>, so
         Kubernetes happily sent production traffic. That is gone.
       </p>
       <p>Before listening, admission checks:</p>
       <ul>
-        <li>Durable state — <code>POSTGRES_DSN</code> / <code>MYSQL_DSN</code> / <code>MONGO_URI</code></li>
-        <li>Shared transport — <code>REDIS_URL</code> / <code>NATS_URL</code> / <code>KAFKA_URL</code></li>
-        <li>Runner tokens — any <code>RUNNER_TOKEN_*</code></li>
-        <li>Client auth — <code>auth</code> configured in <code>langgraph.json</code></li>
+        <li>Durable state. <code>POSTGRES_DSN</code> / <code>MYSQL_DSN</code> / <code>MONGO_URI</code></li>
+        <li>Shared transport. <code>REDIS_URL</code> / <code>NATS_URL</code> / <code>KAFKA_URL</code></li>
+        <li>Runner tokens, any <code>RUNNER_TOKEN_*</code></li>
+        <li>Client auth. <code>auth</code> configured in <code>langgraph.json</code></li>
       </ul>
       <p>
         Any miss → clear error, exit 1, never listen. Escape hatches are explicit:
@@ -97,13 +97,13 @@
       <p>
         Serve admission and policy Decide deny when unsure (security). Rate limiting
         fails open on a Redis blip (availability). Same word, different risk
-        preference — do not conflate them.
+        preference, do not conflate them.
       </p>
 
       <div class="takeaway">
         <p>
-          If you cannot prove every create path shares one gate — and that
-          <code>serve</code> will not start half-wired — you do not have a control
+          If you cannot prove every create path shares one gate, and that
+          <code>serve</code> will not start half-wired, you do not have a control
           plane; you have N slightly different APIs and a lucky readiness probe.
         </p>
       </div>

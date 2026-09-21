@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Install — Runkite Docs</title>
-    <meta name="description" content="Step-by-step: laptop demo, Supported Docker Compose profile, and Kubernetes/Helm — what each actually gives you." />
+    <title>Install · Runkite Docs</title>
+    <meta name="description" content="Step-by-step: laptop demo, Supported Docker Compose profile, and Kubernetes/Helm, what each actually gives you." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
@@ -84,19 +84,19 @@
           packaged for a cluster). Pick based on what you're actually doing today.
         </p>
 
-        <h2>Option 1 — laptop demo (5 minutes, not for anything real)</h2>
+        <h2>Option 1: laptop demo (5 minutes, not for anything real)</h2>
         <pre class="mono-block">git clone https://github.com/getrunkite/runkite.git && cd runkite
 docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p>
-          This uses SQLite and an in-memory job queue — everything runs in one container,
+          This uses SQLite and an in-memory job queue, everything runs in one container,
           nothing survives a restart, and there's no authentication at all. That's
           intentional: it's for kicking the tires and following
           <a href="first-agent.html">First agent</a>, not for anything you'd point real
           traffic at. If you just want to see it work without cloning anything, use
-          <a href="try.html">Try it</a> instead — same idea, zero setup.
+          <a href="try.html">Try it</a> instead, same idea, zero setup.
         </p>
 
-        <h2>Option 2 — Supported profile (Postgres + Redis)</h2>
+        <h2>Option 2: Supported profile (Postgres + Redis)</h2>
         <p>
           This is the profile Runkite is actually tested and soaked against for
           multi-replica production use. Two things make it "Supported" instead of "it
@@ -111,9 +111,9 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           <li>
             <pre class="mono-block">cp .env.example .env</pre>
             Open <code>.env</code> and fill in two values: <code>POSTGRES_PASSWORD</code>
-            (any password — this stays inside your Docker network) and
+            (any password, this stays inside your Docker network) and
             <code>RUNNER_TOKEN</code> (generate one with
-            <code>openssl rand -hex 32</code>). Both are required — the stack refuses to
+            <code>openssl rand -hex 32</code>). Both are required, the stack refuses to
             start with a placeholder or empty value instead of silently booting with a
             well-known default password.
           </li>
@@ -124,7 +124,7 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           </li>
           <li>
             <pre class="mono-block">curl -sf http://localhost:2026/readyz && echo OK</pre>
-            <code>/readyz</code> doesn't just check that the HTTP server is up — it
+            <code>/readyz</code> doesn't just check that the HTTP server is up, it
             actually verifies Postgres and Redis are reachable. If this returns anything
             other than <code>OK</code>, check <code>docker compose logs runkite</code>
             before assuming your agent config is the problem.
@@ -138,23 +138,23 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p class="note">
           <strong>Client-facing auth is not turned on by this compose file.</strong> It sets
           <code>RUNKITE_ALLOW_INSECURE_SERVE=1</code> specifically so the demo boots without
-          you having to write an <code>auth</code> config first — this is fine on your own
+          you having to write an <code>auth</code> config first, this is fine on your own
           machine, but before this stack is reachable from anywhere else, add a real
           <code>auth</code> section to <code>langgraph.json</code> (see
           <a href="admin-login.html">Admin login</a> for the exact shape) and remove that
           env var. Without <code>auth</code> configured, <code>RUNKITE_ALLOW_INSECURE_SERVE</code>
-          is required — the plane refuses to boot in an ambiguous "maybe secure" state.
+          is required, the plane refuses to boot in an ambiguous "maybe secure" state.
         </p>
 
-        <h2>Option 3 — Kubernetes / Helm</h2>
+        <h2>Option 3: Kubernetes / Helm</h2>
         <p>
           Same Postgres + Redis topology, packaged as a Helm chart under
           <code>deploy/helm/runkite</code>. Unlike the Compose demo above, the chart's
-          default config <em>does</em> wire in real client auth out of the box — you supply
+          default config <em>does</em> wire in real client auth out of the box, you supply
           the API key value, not a bypass flag.
         </p>
         <ol class="steps">
-          <li>Have a Postgres and Redis reachable from the cluster — the chart does not bundle them; point it at infrastructure you already run.</li>
+          <li>Have a Postgres and Redis reachable from the cluster, the chart does not bundle them; point it at infrastructure you already run.</li>
           <li>
             <pre class="mono-block">helm upgrade --install runkite deploy/helm/runkite \
   -f deploy/helm/runkite/values.yaml \
@@ -168,21 +168,21 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
         </ol>
         <p>
           Kubernetes packaging itself has been proven with <code>kind</code> (install, runner
-          token rotation, mid-run reclaim, and Ingress/NetworkPolicy — run the whole suite
+          token rotation, mid-run reclaim, and Ingress/NetworkPolicy, run the whole suite
           with <code>make kind-helm-all</code>) and with a named smoke test on real EKS
-          (install, a real run, and a control-plane pod kill recovering cleanly — see
+          (install, a real run, and a control-plane pod kill recovering cleanly, see
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/k8s-eks-soak-results.md">k8s-eks-soak-results.md</a>).
           What's <em>not</em> proven yet on cloud Kubernetes is a long, multi-availability-zone
-          HA soak — the Compose multi-replica soak is still the deeper correctness proof today.
+          HA soak, the Compose multi-replica soak is still the deeper correctness proof today.
           Until that longer cloud soak exists, treat a Kubernetes install as "packaging and
           day-1 ops are solid" rather than "identical HA guarantees to Compose."
         </p>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>"<code>/readyz</code> never turns healthy."</strong> — almost always Postgres or Redis isn't reachable yet, or the DSN/URL is wrong. Check <code>docker compose logs</code> / pod logs for the exact connection error before touching anything else.</li>
-          <li><strong>"<code>serve</code> refuses to start."</strong> — this is usually intentional, not a bug: production admission checks fail closed on an insecure combination (e.g. runner tokens configured but no matching <code>RUNNER_TENANTS_*</code>). The startup log names exactly which check failed.</li>
-          <li><strong>Required secrets fail loudly, not silently</strong> — an unset <code>POSTGRES_PASSWORD</code>/<code>RUNNER_TOKEN</code> stops the stack from starting at all, instead of quietly deploying with a shared default password everyone forgets to change.</li>
+          <li><strong>"<code>/readyz</code> never turns healthy."</strong>: almost always Postgres or Redis isn't reachable yet, or the DSN/URL is wrong. Check <code>docker compose logs</code> / pod logs for the exact connection error before touching anything else.</li>
+          <li><strong>"<code>serve</code> refuses to start."</strong>: this is usually intentional, not a bug: production admission checks fail closed on an insecure combination (e.g. runner tokens configured but no matching <code>RUNNER_TENANTS_*</code>). The startup log names exactly which check failed.</li>
+          <li><strong>Required secrets fail loudly, not silently</strong>: an unset <code>POSTGRES_PASSWORD</code>/<code>RUNNER_TOKEN</code> stops the stack from starting at all, instead of quietly deploying with a shared default password everyone forgets to change.</li>
         </ul>
         <p class="note">
           Reference:

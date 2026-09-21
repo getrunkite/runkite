@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agents (Python / JS) — Runkite Docs</title>
-    <meta name="description" content="Register and run agents on Runkite — Python and TypeScript runners." />
+    <title>Agents (Python / JS) · Runkite Docs</title>
+    <meta name="description" content="Register and run agents on Runkite. Python and TypeScript runners." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -72,7 +72,7 @@
 
         <p class="kicker">Build</p>
         <h1>Agents</h1>
-        <p class="lede">An agent is a graph (or adapter) the plane can dispatch. Clients never talk to the runner process — they create runs on the plane; runners pull jobs.</p>
+        <p class="lede">An agent is a graph (or adapter) the plane can dispatch. Clients never talk to the runner process, they create runs on the plane; runners pull jobs.</p>
 
         <div class="guide-grid">
           <section>
@@ -80,7 +80,7 @@
             <p>
               Agents are declared in a runner config (<code>langgraph.json</code> or adapter config).
               Each agent has an <code>agent_id</code>. Python and TypeScript runners implement the same
-              Runner Protocol against one Go control plane — mixed fleets are normal.
+              Runner Protocol against one Go control plane, mixed fleets are normal.
             </p>
           </section>
           <section>
@@ -94,10 +94,10 @@
 
         <h2>How to implement</h2>
         <ol class="steps">
-          <li><strong>Python (LangGraph)</strong> — install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
-          <li><strong>TypeScript (LangGraph.js)</strong> — install the TS runner, same config shape, same plane.</li>
-          <li><strong>Adapters</strong> — CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
-          <li><strong>Verify</strong> — Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
+          <li><strong>Python (LangGraph)</strong>: install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
+          <li><strong>TypeScript (LangGraph.js)</strong>: install the TS runner, same config shape, same plane.</li>
+          <li><strong>Adapters</strong>: CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
+          <li><strong>Verify</strong>: Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
         </ol>
         <pre class="mono-block"># Python
 pip install runkite-runner
@@ -113,16 +113,16 @@ runkite-runner --config path/to/langgraph.json \
 
         <h2>In the product</h2>
         <figure class="shot">
-          <div class="cap">Admin → Agents — registered agents</div>
+          <div class="cap">Admin → Agents: registered agents</div>
           <img src="../assets/ui-agents.png" alt="Runkite Admin Agents" width="960" height="600" />
         </figure>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Success</strong> — agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
-          <li><strong>Routing</strong> — jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
-          <li><strong>Which agents appear</strong> — only the <code>graphs</code> keys in your control plane's <code>langgraph.json</code> at boot; production lists your agents, not demo examples unless you point config there.</li>
-          <li><strong>Limits</strong> — framework adapters differ on concurrency safety; see runners doc.</li>
+          <li><strong>Success</strong>: agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
+          <li><strong>Routing</strong>: jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
+          <li><strong>Which agents appear</strong>: only the <code>graphs</code> keys in your control plane's <code>langgraph.json</code> at boot; production lists your agents, not demo examples unless you point config there.</li>
+          <li><strong>Limits</strong>: framework adapters differ on concurrency safety; see runners doc.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>

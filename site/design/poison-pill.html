@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Poison pill / reclaim ceiling — Runkite engineering</title>
+    <title>Poison pill / reclaim ceiling · Runkite engineering</title>
     <meta
       name="description"
-      content="How Runkite stops crash-loop jobs from reclaiming forever — reclaim.max_retries as a hard ceiling on Redis, NATS, and Kafka."
+      content="How Runkite stops crash-loop jobs from reclaiming forever, reclaim.max_retries as a hard ceiling on Redis, NATS, and Kafka."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -39,7 +39,7 @@
       <h1>Crash loops must <em>end</em>.</h1>
       <p class="lede">
         Generation fencing stops a <em>late</em> runner from winning. The poison pill
-        stops a <em>cursed</em> job from reclaiming forever — after
+        stops a <em>cursed</em> job from reclaiming forever, after
         <code>reclaim.max_retries</code>, the run is terminal error, the thread is
         released, and hooks fire. No infinite re-enqueue.
       </p>
@@ -69,7 +69,7 @@
         <li>Env override at process start: <code>RUNKITE_RECLAIM_MAX_RETRIES</code>.</li>
       </ul>
       <p>
-        Applies on <strong>Redis, NATS, and Kafka</strong> — same ceiling, no
+        Applies on <strong>Redis, NATS, and Kafka</strong>: same ceiling, no
         transport-only asymmetry. Distinct from live <strong>cancel</strong> and from
         Admin <strong>kill switches</strong>.
       </p>
@@ -77,7 +77,7 @@
       <h2>How it pairs with fencing</h2>
       <p>
         Fencing answers: “which attempt is allowed to write?” The poison pill answers:
-        “how many attempts are allowed at all?” You need both — otherwise a
+        “how many attempts are allowed at all?” You need both, otherwise a
         well-fenced crash loop still never dies.
       </p>
 
