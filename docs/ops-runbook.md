@@ -90,7 +90,7 @@ Mongo: kill/break-glass Admin APIs return `501` — governance durability is SQL
 
 | Secret | Where | Notes |
 |--------|-------|--------|
-| `POSTGRES_DSN` / `REDIS_URL` | CP env or K8s Secret | Required for Supported; never bake into images |
+| `POSTGRES_DSN` / `REDIS_URL` | CP env or K8s Secret | Required for Supported; never bake into images. Redis also holds connector sessions (`rk:conn:sess:*`), Admin sessions (`rk:admin:sess:*`), rate-limit buckets (`rk:rl:*`), and opt-in payload shrink (`rk:payload:*`) |
 | `RUNNER_TOKEN_<KIND>` | CP env | Kind encoding: `PYTHON_LANGGRAPH` → `python-langgraph`. Value may be a **comma-separated allowlist** for rotation |
 | `RUNNER_TENANTS_<KIND>` | CP env | Required with client auth + runner tokens; tenant allow-list for unbound `/internal/*` (use `default` for single-tenant) |
 | `RUNNER_TOKEN` | Runner env | Single token the runner presents; must match one allowlisted value for its kind |

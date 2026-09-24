@@ -82,7 +82,7 @@ runkite-runner --config examples/echo_agent/langgraph.json \
 
 Admin: http://localhost:2026/admin/ · Health: http://localhost:2026/health
 
-The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, and more).
+The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, `sim`, and more).
 
 ## Architecture
 
@@ -153,7 +153,7 @@ sequenceDiagram
 | Getting started | [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) |
 | Core | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) |
 | Worker contract (gRPC + opaque checkpoints) | [Runner Protocol](runner-protocol/README.md) · [PROTOCOL.md](runner-protocol/PROTOCOL.md) · [public mirror](https://github.com/getrunkite/runner-protocol) |
-| Features | [Connectors](docs/connectors.md) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
+| Features | [Connectors](docs/connectors.md) (MCP proxy, optional payload shrink) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
 | Operations | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Trust & governance](docs/trust-governance.md) · [Fixture replay](docs/sim.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) |
 
 The [documentation site](https://getrunkite.com/support/) covers the same material with a guided, page-by-page walkthrough — including a full [Admin UI guide](https://getrunkite.com/support/admin-guide.html) and an occasional [blog post](https://getrunkite.com/support/blog/) — if you'd rather read in that format than jump between Markdown files.

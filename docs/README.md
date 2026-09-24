@@ -6,14 +6,14 @@ Focused guides extracted from the root README. Start with the [root README](../R
 |-----|-------|
 | [Quick Start](quickstart.md) | Longer getting-started walkthrough |
 | [Client SDK](client-sdk.md) | Client SDK usage |
-| [Configuration](configuration.md) | `langgraph.json` and environment variables |
+| [Configuration](configuration.md) | `langgraph.json` and environment variables, including opt-in `payload_shrink` |
 | [Auth](auth.md) | Auth, TLS/mTLS, multi-tenancy |
 | [Trust & governance](trust-governance.md) | Trust boundary, run-binding, non-goals; `make smoke-governance` |
 | [Fixture replay](sim.md) | `runkite sim`: YAML against a live plane; spend/daily skip, policy kept |
 | [Admin UI](admin.md) | Embedded ops + SQL governance pages (grants, HITL, kill, audit, …) |
 | [Factory Graphs](factory-graphs.md) | LangGraph SDK factory-graph compatibility |
 | [Vector Store](vector-store.md) | Vector store backends and APIs |
-| [Connectors](connectors.md) | Connectors and custom routes |
+| [Connectors](connectors.md) | Connectors, MCP proxy, optional payload shrink |
 | [A2A](a2a.md) | Agent-to-Agent protocol |
 | [MCP Server](mcp-server.md) | MCP server surface |
 | [Registry](registry.md) | Agent marketplace / registry |
