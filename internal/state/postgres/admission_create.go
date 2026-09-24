@@ -53,7 +53,7 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 		return n, err
 	}
 	countSince := func(since time.Time, agentID string) (int, error) {
-		q := `SELECT COUNT(*) FROM runs WHERE created_at >= $1 AND tenant_id = $2`
+		q := `SELECT COUNT(*) FROM runs WHERE created_at >= $1 AND tenant_id = $2` + state.SQLExcludeSimulationPostgres
 		args := []interface{}{since.UTC(), tid}
 		if agentID != "" {
 			q += ` AND agent_id = $3`

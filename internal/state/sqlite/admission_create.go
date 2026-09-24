@@ -47,7 +47,7 @@ func (s *SQLiteStore) CreateRunAdmitted(ctx context.Context, run *models.Run, ca
 		return n, err
 	}
 	countSince := func(since time.Time, agentID string) (int, error) {
-		q := `SELECT COUNT(*) FROM runs WHERE created_at >= ? AND tenant_id = ?`
+		q := `SELECT COUNT(*) FROM runs WHERE created_at >= ? AND tenant_id = ?` + state.SQLExcludeSimulationSQLite
 		args := []interface{}{since.UTC().Format(time.RFC3339), tid}
 		if agentID != "" {
 			q += ` AND agent_id = ?`

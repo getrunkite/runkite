@@ -63,6 +63,11 @@ const (
 	// RUNNER_TENANTS_<KIND> is set, the effective tenant (header claim
 	// or assignment) must be on that kind's allow-list.
 	HeaderTenantID = "X-Runkite-Tenant-Id"
+	// HeaderSimulation marks a create-run as fixture replay. The server
+	// sets run metadata.simulation = true only when this is set and the
+	// caller is allowed (see AllowsSimulation). Clients cannot set the
+	// flag through the metadata body.
+	HeaderSimulation = "X-Runkite-Simulation"
 )
 
 // MiddlewareOpts configures optional authorization behavior for Middleware.
@@ -354,6 +359,24 @@ func authorizedAdmin(result *AuthResult, strict bool) bool {
 		return !strict
 	}
 	return hasPermission(result.Permissions, "admin", "", "")
+}
+
+// AllowsSimulation is the same rule as Admin: fixture replay is tagged
+// only for callers who could already mutate governance. write and
+// agents:<id>:run are not enough. No auth configured (result nil) and
+// empty permissions with strict=false follow the Admin convention.
+func AllowsSimulation(result *AuthResult, strict bool) bool {
+	return authorizedAdmin(result, strict)
+}
+
+// SimulationRequested reports whether a header value asks for fixture replay.
+func SimulationRequested(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // hasPermission reports whether permissions grants required. "admin"

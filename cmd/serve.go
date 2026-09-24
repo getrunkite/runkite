@@ -540,14 +540,16 @@ func startServer(opts serverOpts) {
 	} else {
 		adminSessions = auth.NewAdminSessionStore(0)
 	}
+	strictPerms := authStrictPermissions(opts.configPath)
+	apiServer.SetStrictPermissions(strictPerms)
 	apiServer.SetAdminSessions(&auth.AdminSessionHandlers{
 		Store:         adminSessions,
 		AdminProvider: adminAuthProvider,
 		Provider:      authProvider,
-		Strict:        authStrictPermissions(opts.configPath),
+		Strict:        strictPerms,
 	})
 	authOpts := auth.MiddlewareOpts{
-		StrictPermissions: authStrictPermissions(opts.configPath),
+		StrictPermissions: strictPerms,
 		AdminSessions:     adminSessions,
 		// Derive tenant/agent on store/vector/connector proxy calls from
 		// the in-flight RunAssignment (runners must send run id +

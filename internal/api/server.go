@@ -55,6 +55,10 @@ type Server struct {
 	a2aMaxDepth       int                             // 0 means "use the default" -- see SetA2AMaxDepth
 	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
 	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
+	// strictPermissions is the same bit auth middleware uses
+	// (auth.strict_permissions). Stored at construction so fixture-replay
+	// checks do not re-read langgraph.json per request. Default false.
+	strictPermissions bool
 	// finopsBaseline is the file langgraph.json finops section (immutable
 	// after SetFinOps). finopsEffective is baseline ∪ SQL overlay; swapped
 	// atomically on Admin write and sibling poll — never mutate in place.
@@ -180,6 +184,15 @@ func (s *Server) a2aMaxBreadthOrDefault() int {
 // admission_limits config. Nil or all-zero disables checks.
 func (s *Server) SetAdmissionLimits(l *AdmissionLimits) {
 	s.admissionLimits = l
+}
+
+// SetStrictPermissions stores auth.strict_permissions for AllowsSimulation
+// at create-run time. Pass the same value given to MiddlewareOpts.
+func (s *Server) SetStrictPermissions(strict bool) {
+	if s == nil {
+		return
+	}
+	s.strictPermissions = strict
 }
 
 // SetAliasResolver attaches A/B deployment routing (see alias.go).
@@ -1258,6 +1271,11 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	var breadthExceeded *ErrA2ABreadthExceeded
 	var admissionExceeded *state.ErrAdmissionLimitExceeded
 	switch {
+	case errors.Is(err, errSimulationRequiresAdmin):
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"message":     err.Error(),
+			"reason_code": "simulation_requires_admin",
+		})
 	case errors.As(err, &notFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.As(err, &conflict):

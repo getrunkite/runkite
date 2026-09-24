@@ -6,7 +6,7 @@ import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
 import type { AdminRun, RunManifest } from "../api/types";
-import { DocsLink, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
+import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -172,7 +172,10 @@ export function RunDetail() {
           </CardHeader>
           <CardContent>
             <DetailRow label="Status">
-              <StatusBadge status={run.data.status} />
+              <span className="inline-flex items-center gap-1.5">
+                <StatusBadge status={run.data.status} />
+                {isSimulationRun(run.data.metadata) ? <Badge variant="outline">sim</Badge> : null}
+              </span>
             </DetailRow>
             <DetailRow label="Agent">{run.data.agent_id}</DetailRow>
             <DetailRow label="Tenant">

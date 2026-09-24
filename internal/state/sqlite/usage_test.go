@@ -85,3 +85,42 @@ func TestCountRunsSince(t *testing.T) {
 		t.Fatalf("CountRunsSince other = %d err=%v", n, err)
 	}
 }
+
+func TestCountRunsSince_ExcludesSimulation(t *testing.T) {
+	s, err := New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := tenant.WithContext(context.Background(), "acme")
+	if err := s.Init(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := s.CreateThread(ctx, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	// COALESCE is load-bearing: a missing simulation key must still COUNT.
+	// Do not simplify the SQL predicate; NULL <> 'true' is NULL in SQLite.
+	rows := []struct {
+		id   string
+		meta map[string]interface{}
+	}{
+		{"r-missing", map[string]interface{}{"other": "x"}},
+		{"r-bool", map[string]interface{}{"simulation": true}},
+		{"r-str", map[string]interface{}{"simulation": "true"}},
+	}
+	for _, row := range rows {
+		if err := s.CreateRun(ctx, &models.Run{
+			RunID: row.id, ThreadID: "t1", AgentID: "echo", Status: models.RunStatusPending,
+			Metadata: row.meta, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.CountRunsSince(context.Background(), "acme", "echo", now.Add(-time.Minute))
+	if err != nil || n != 1 {
+		t.Fatalf("CountRunsSince = %d err=%v, want 1 (only missing-key row)", n, err)
+	}
+}

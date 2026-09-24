@@ -211,6 +211,9 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 	if s == nil || run == nil || len(run.Output) == 0 {
 		return
 	}
+	if models.RunIsSimulation(run.Metadata) {
+		return
+	}
 	if !isTerminalStatus(run.Status) {
 		return
 	}
@@ -320,6 +323,9 @@ func (s *Server) usageHolds() (usageHoldStore, bool) {
 
 func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
 	if s == nil || run == nil || s.FinOps() == nil || !s.FinOps().ReservationEnabled() {
+		return
+	}
+	if models.RunIsSimulation(run.Metadata) {
 		return
 	}
 	hs, ok := s.usageHolds()

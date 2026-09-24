@@ -32,7 +32,7 @@ import (
 // --- Shared run creation logic ---
 
 func (s *Server) createRun(r *http.Request, threadID string, req *models.RunCreate) (*models.Run, *transport.RunAssignment, error) {
-	return s.createRunCtx(r.Context(), threadID, req)
+	return s.createRunCtx(withSimulationHeader(r.Context(), r.Header.Get(auth.HeaderSimulation)), threadID, req)
 }
 
 // findRunForRetry implements client-retriable run creation: a client that
@@ -234,6 +234,12 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		req.CheckpointRef = nil
 	}
 
+	headerSim := simulationRequested(ctx)
+	if headerSim && !s.allowsSimulation(ctx) {
+		return nil, nil, errSimulationRequiresAdmin
+	}
+	sim := headerSim
+
 	now := time.Now().UTC()
 	// Client-supplied run_id (retry idempotency, see RunID's own doc
 	// comment) -- the common, empty case still gets a fresh server-side
@@ -395,7 +401,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// A2A delegation (ParentRunID set) must not short-circuit on cache:
 	// the cache check runs before depth/breadth enforcement below, and a
 	// hit would return a run with no parent/depth bookkeeping at all.
-	if req.ResumeCommand == nil && req.ParentRunID == nil {
+	if req.ResumeCommand == nil && req.ParentRunID == nil && !headerSim {
 		if run, hit, err := s.tryServeCachedRun(ctx, runID, threadID, req, now, requestedAlias, agentForRun); hit || err != nil {
 			return run, nil, err
 		}
@@ -474,6 +480,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		parent, err = s.store.GetRun(ctx, *req.ParentRunID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("a2a: look up parent run %s: %w", *req.ParentRunID, err)
+		}
+		if models.RunIsSimulation(parent.Metadata) {
+			sim = true
 		}
 		depth = parent.Depth + 1
 		if depth > s.a2aMaxDepthOrDefault() {
@@ -563,6 +572,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		depth:            depth,
 	})
 	run.Metadata["run_manifest"] = runManifestToMetadata(manifest)
+	if sim {
+		run.Metadata["simulation"] = true
+	}
 
 	// admission_limits (when configured) use CreateRunAdmitted: scope
 	// lock + COUNT + INSERT on one connection/tx so a burst cannot all

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -83,7 +84,7 @@ func (s *SQLiteStore) SumUsage(ctx context.Context, tenantID, agentID string, si
 
 // CountRunsSince counts runs created at/after since for tenant (optional agent).
 func (s *SQLiteStore) CountRunsSince(ctx context.Context, tenantID, agentID string, since time.Time) (int64, error) {
-	query := `SELECT COUNT(*) FROM runs WHERE tenant_id = ? AND created_at >= ?`
+	query := `SELECT COUNT(*) FROM runs WHERE tenant_id = ? AND created_at >= ?` + state.SQLExcludeSimulationSQLite
 	args := []interface{}{tenantID, since.UTC().Format(time.RFC3339)}
 	if agentID != "" {
 		query += ` AND agent_id = ?`

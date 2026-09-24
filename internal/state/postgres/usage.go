@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -86,7 +87,7 @@ func (s *Store) SumUsage(ctx context.Context, tenantID, agentID string, since, u
 
 // CountRunsSince counts runs created at/after since for tenant (optional agent).
 func (s *Store) CountRunsSince(ctx context.Context, tenantID, agentID string, since time.Time) (int64, error) {
-	query := `SELECT COUNT(*) FROM runs WHERE tenant_id = $1 AND created_at >= $2`
+	query := `SELECT COUNT(*) FROM runs WHERE tenant_id = $1 AND created_at >= $2` + state.SQLExcludeSimulationPostgres
 	args := []interface{}{tenantID, since.UTC()}
 	if agentID != "" {
 		query += ` AND agent_id = $3`

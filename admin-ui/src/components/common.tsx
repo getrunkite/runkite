@@ -99,6 +99,12 @@ export function EmptyState({
   );
 }
 
+/** Fixture-replay runs set metadata.simulation = true on the plane. */
+export function isSimulationRun(metadata: Record<string, unknown> | undefined): boolean {
+  const v = metadata?.simulation;
+  return v === true || v === "true" || v === "1";
+}
+
 /** Public product host that fronts this Admin with a marketing site. */
 export function isPublicDemoHost(): boolean {
   if (typeof window === "undefined") return false;

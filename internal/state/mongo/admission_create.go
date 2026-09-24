@@ -48,9 +48,12 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 			return int(n), err
 		}
 		countSince := func(since time.Time, agentID string) (int, error) {
+			// Boolean-only: the plane writes JSON true. Missing key still
+			// matches $ne true. The Go helper also accepts string "true".
 			filter := bson.M{
-				"tenant_id":  tid,
-				"created_at": bson.M{"$gte": since.UTC()},
+				"tenant_id":           tid,
+				"created_at":          bson.M{"$gte": since.UTC()},
+				"metadata.simulation": bson.M{"$ne": true},
 			}
 			if agentID != "" {
 				filter["agent_id"] = agentID

@@ -4,7 +4,7 @@ import { Workflow } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRun } from "../api/types";
-import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
+import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
@@ -47,7 +47,12 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
   {
     accessorKey: "status",
     header: "Status",
-    cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+    cell: ({ row }) => (
+      <span className="inline-flex items-center gap-1.5">
+        <StatusBadge status={row.original.status} />
+        {isSimulationRun(row.original.metadata) ? <Badge variant="outline">sim</Badge> : null}
+      </span>
+    ),
   },
   {
     accessorKey: "tenant_id",
