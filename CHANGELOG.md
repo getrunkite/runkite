@@ -2,11 +2,25 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
-## [Unreleased]
+## [0.5.0] — 2026-09-24
+
+Fixture replay (`runkite sim`) and opt-in connector MCP payload shrink. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
 
 ### Added
 - Fixture replay: `runkite sim -f fixtures.yaml` creates runs with `X-Runkite-Simulation` (admin-gated). Spend holds, usage ingest, and UTC-day run caps skip; concurrent admission, rate limits, kill, and connector policy stay. Admin `sim` badge. YAML matcher for deny/pending audit rows (SQL). See [docs/sim.md](docs/sim.md).
 - Opt-in connector MCP payload shrink (`payload_shrink` in `langgraph.json`, default off). Over-cap `tools/call` results stash in Redis; the runner sees a preview plus `runkite_retrieve_payload`. Not a token SLA; audit keeps the preview, not the original body.
+
+### Notes
+- No Python or TypeScript runner logic change -- version lockstep only.
+- Fixture replay is in this tag. CI uses an admin key on purpose (same blast radius as Admin).
+- Payload shrink is off by default. Enabling it means durable audit keeps the preview plus ref, not the original MCP body. No Redis = no shrink.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.5.0]: https://github.com/getrunkite/runkite/releases/tag/v0.5.0
 
 ## [0.4.1] — 2026-09-15
 
