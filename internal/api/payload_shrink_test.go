@@ -105,11 +105,9 @@ func TestPayloadShrink_DisabledByteIdentical(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
-	if rec.Body.String() != string(fixture)+"\n" && rec.Body.String() != string(fixture) {
-		// httptest may not add newline; compare bytes
-		if string(rec.Body.Bytes()) != string(fixture) {
-			t.Fatalf("want fixture bytes\n got %s", rec.Body.String())
-		}
+	got := rec.Body.String()
+	if got != string(fixture) && got != string(fixture)+"\n" {
+		t.Fatalf("want fixture bytes\n got %s", got)
 	}
 }
 
@@ -118,7 +116,7 @@ func TestPayloadShrink_DefaultOmitByteIdentical(t *testing.T) {
 	down := newMCPDown(t, fixture, 200)
 	s := newShrinkAPI(t, down.URL, payloadshrink.Settings{}, nil, nil)
 	rec := doMCP(t, s, payrollBinding(), shrinkCallBody("query", `{}`))
-	if string(rec.Body.Bytes()) != string(fixture) {
+	if rec.Body.String() != string(fixture) {
 		t.Fatalf("omit shrink must match v0.4.1 bytes")
 	}
 }
@@ -240,7 +238,7 @@ func TestPayloadShrink_RedisDownPassesOriginal(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
-	if string(rec.Body.Bytes()) != string(fixture) {
+	if rec.Body.String() != string(fixture) {
 		t.Fatal("redis error must forward original body")
 	}
 }
@@ -252,7 +250,7 @@ func TestPayloadShrink_ToolsListInjectIffLive(t *testing.T) {
 
 	off := newShrinkAPI(t, down.URL, payloadshrink.Settings{}, nil, nil)
 	recOff := doMCP(t, off, payrollBinding(), body)
-	if string(recOff.Body.Bytes()) != string(listBody) {
+	if recOff.Body.String() != string(listBody) {
 		t.Fatalf("off list must be identical, got %s", recOff.Body.String())
 	}
 

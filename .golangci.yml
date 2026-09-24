@@ -43,9 +43,10 @@ linters:
         # response left to send an error on, and the handler is
         # returning right after in every one of these call sites. Same
         # "writing to an output stream nobody recovers from failing"
-        # reasoning covers the CLI's tabwriter output (Fprintln/Flush
+        # reasoning covers the CLI's tabwriter output (Fprint/Fprintln/Flush
         # to stdout).
         - (net/http.ResponseWriter).Write
+        - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
         - (*encoding/json.Encoder).Encode
