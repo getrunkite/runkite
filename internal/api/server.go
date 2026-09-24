@@ -29,6 +29,7 @@ import (
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/payloadshrink"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/ratelimit"
 	"github.com/getrunkite/runkite/internal/state"
@@ -59,6 +60,8 @@ type Server struct {
 	// (auth.strict_permissions). Stored at construction so fixture-replay
 	// checks do not re-read langgraph.json per request. Default false.
 	strictPermissions bool
+	payloadShrink     payloadshrink.Settings
+	payloadStore      payloadshrink.Store
 	// finopsBaseline is the file langgraph.json finops section (immutable
 	// after SetFinOps). finopsEffective is baseline ∪ SQL overlay; swapped
 	// atomically on Admin write and sibling poll — never mutate in place.
@@ -987,9 +990,16 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Policy on tools/call only (other MCP methods stay transparent after
 	// the connector's own static tool filter inside ProxyMCPRequest).
+	// Retrieve is plane-served (run-bound session already proved) and
+	// must not require a connector grant.
+	method, tool, args := extractToolsCall(body)
+	if method == "tools/call" && tool == payloadshrink.ToolName {
+		s.servePayloadRetrieve(w, r, extractJSONRPCID(body), args)
+		return
+	}
 	// One-shot capability (Admin-approved pending) is checked before Decide
 	// so a cached or re-pending webhook cannot block the approved retry.
-	if method, tool, args := extractToolsCall(body); method == "tools/call" {
+	if method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
 		in.Args, in.ArgsDigest, in.ArgsMeta = policy.BindArgs(args)
 		if !s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest) {
@@ -1061,6 +1071,11 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, msg)
 		return
 	}
+
+	if method == "tools/call" {
+		result.Body = s.maybeShrinkMCP(r.Context(), result.StatusCode, result.Body)
+	}
+	result.Body = s.maybeInjectRetrieveTool(method, result.Body)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(result.StatusCode)

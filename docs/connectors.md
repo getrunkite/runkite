@@ -60,6 +60,15 @@ The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just a
 
 **What this does and doesn't cover, precisely**: neither `GetSession` nor `GET /internal/connectors[/{name}]` ever hand out the connector's raw downstream credentials or raw MCP URL when MCP is configured (found and fixed after two of those leaks slipped through review) -- so there's no *Runkite-issued* way for an agent to reach the real server directly instead of through the proxy. What this can't and doesn't claim to cover: if an agent author independently has their own valid credentials or URL for that same downstream service (hardcoded, from an environment variable, from anywhere outside this system), nothing here can stop code using them directly -- that's a fundamentally different threat this feature was never positioned to solve, since Runkite can only mediate access to things it hands out itself.
 
+### Payload shrink (opt-in)
+
+After a successful connector MCP `tools/call`, the plane can stash the original result in Redis and return a preview plus a retrieve ref. In-graph tool results never arrive here. Off by default; see [Configuration](configuration.md#payload-shrink).
+
+- Requires `REDIS_URL`. Without Redis, the original body is forwarded.
+- Retrieve is `runkite_retrieve_payload` on that connector's `tools/list`, served by the plane (run+generation bound). It does not need a connector grant. A reclaimed run (new generation) cannot read the old keys.
+- Token spend may drop if the runner then sends fewer bytes to the model. That effect is **inferred** from whatever the runner already reports. No percent, no invoice, no FinOps SLA. Shrink does not write `usage_events`.
+- **Audit sees the preview plus ref, not the original body.** Grants, pending, HITL, and kill stay fully audited. Operators who need the full MCP result on the audit path leave shrink off. Retrieve exists for the agent during TTL, not for after-the-fact forensics.
+
 ### Circuit breakers
 
 Every OAuth2 connector (`oauth2_client_credentials`, `oauth2_token_exchange`) gets a per-connector circuit breaker guarding its actual token-fetch network call -- always on, with tunable thresholds:

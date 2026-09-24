@@ -286,6 +286,16 @@ func startServer(opts serverOpts) {
 		apiServer.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
 	}
 
+	shrinkCfg, shrinkStore := initPayloadShrink(opts.configPath, rdb)
+	apiServer.SetPayloadShrink(shrinkCfg, shrinkStore)
+	if shrinkCfg.Enabled && shrinkStore != nil {
+		slog.Info("payload_shrink: enabled",
+			"max_bytes", shrinkCfg.MaxBytes,
+			"preview_bytes", shrinkCfg.PreviewBytes,
+			"cache_ttl", shrinkCfg.CacheTTL,
+			"max_store_bytes", shrinkCfg.MaxStoreBytes)
+	}
+
 	// Event hooks + webhook delivery first so policy.siem can register
 	// an async policy_decision sink on the same Dispatcher.
 	hookDispatcher := initHooks(opts.configPath, store)

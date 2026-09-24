@@ -138,6 +138,13 @@ type LangGraphConfig struct {
 	// run admission (after kill + authz; break-glass does not bypass
 	// hard budgets).
 	FinOps *FinOpsEntry `json:"finops,omitempty"`
+	// PayloadShrink is control-plane-wide, first-file (see
+	// initPayloadShrink in cmd/payload_shrink.go). Caps connector MCP
+	// tools/call results after a successful downstream response. Absent
+	// or enabled:false is a no-op (byte-identical to a plane without
+	// this section). Redis is required for a live shrink; without it
+	// the original body is forwarded.
+	PayloadShrink *PayloadShrinkEntry `json:"payload_shrink,omitempty"`
 }
 
 // PolicyEntry is the "policy" section of langgraph.json.

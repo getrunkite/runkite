@@ -261,6 +261,16 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
   }
 ]</pre>
 
+        <h2>Step 4c (optional), cap oversized MCP results</h2>
+        <p>
+          <code>payload_shrink</code> in the first <code>langgraph.json</code> can stash a large
+          connector <code>tools/call</code> result in Redis and return a preview plus
+          <code>runkite_retrieve_payload</code>. Off by default. Needs <code>REDIS_URL</code>.
+          In-graph tools never go through this path. Audit for that hop keeps the preview,
+          not the original body. Token spend moves only if the runner reports fewer tokens;
+          shrink does not write <code>usage_events</code>.
+        </p>
+
         <h2>Step 5 (optional), force a human to approve first</h2>
         <p>
           For anything you never want an agent doing fully on its own, sending an email,

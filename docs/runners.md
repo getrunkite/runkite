@@ -27,6 +27,8 @@ Framework adapters under `python/adapters/` are not on PyPI yet — use
 `PYTHONPATH` as below, after installing each adapter's own dependencies (see
 each adapter's README).
 
+The plane does not proxy model HTTP and does not pick models. Put an LLM gateway in front of the runner if you want per-call model routing.
+
 Two runner SDKs today, both implementing the exact same Runner Protocol against the exact same Go control plane -- proof that the protocol is actually language-agnostic, not just designed to look that way on paper:
 
 | | Python (`python/runkite_runner/`) | TypeScript (`typescript/runkite-runner/`) |

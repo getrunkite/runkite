@@ -124,6 +124,38 @@ Redis keys are `rk:rl:{scope}:{id}` (same `rk:*` prefix as the Redis transport).
 
 The scheduler polls every 15 seconds. A **restarting** schedule (one that has fired at least once before, per `cron_claims`) catches up to the single latest fire missed while the process was down, not a backlog of every missed one -- a catch-up storm isn't what "cron" means to most users. A **brand new** schedule (never claimed before) starts counting from the moment it's registered instead, so adding a schedule doesn't surprise-fire it immediately just because its expression's most recent occurrence already passed before it existed. With multiple control-plane replicas sharing one Postgres database, the `cron_claims` table (`INSERT ... ON CONFLICT DO NOTHING` keyed on `(schedule_name, fire_time)`) guarantees exactly one replica dispatches each fire -- verified live against two real control-plane instances sharing one Postgres + Redis: two consecutive minute-boundary fires, each dispatched by exactly one instance, the other's scheduler loop correctly losing the claim both times. A dispatch that fails transiently (rate limit, momentary store error) releases its claim so the next tick retries the same fire; a dispatch rejected because the schedule's own previous run is still in flight keeps the claim (that occurrence is skipped, not retried) rather than resigning it to overlap with a run that's still busy. This claim table grows by one row per schedule per fire (typically hourly/daily -- slow, but unbounded without cleanup); see the Retention section above's `cron_claims_max_age` for the periodic sweep that covers it. Inspect what's actually registered at `GET /internal/cron`. See `examples/cron_agent/`.
 
+### Payload shrink
+
+Opt-in cap on **connector MCP `tools/call` results** after a successful downstream response. Off by default (missing section or `"enabled": false` is byte-identical to a plane without this feature). First-file, like `policy` / `finops`. Restart to change. No Admin CRUD.
+
+```json
+"payload_shrink": {
+  "enabled": false,
+  "max_bytes": 32768,
+  "preview_bytes": 2048,
+  "cache_ttl": "15m",
+  "max_store_bytes": 67108864
+}
+```
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `enabled` | `false` | missing section = off |
+| `max_bytes` | `32768` | shrink when the JSON-RPC **body** is longer than this |
+| `preview_bytes` | `2048` | prefix kept in the stub (`0` is valid: notice only) |
+| `cache_ttl` | `15m` | Redis TTL (`time.ParseDuration`); must be in `[1m, 24h]` |
+| `max_store_bytes` | `64 MiB` | per `(run_id, generation)` stash budget |
+
+`max_bytes >= 1024`, `preview_bytes < max_bytes`, `max_store_bytes >= max_bytes`. Invalid config exits at serve.
+
+Requires `REDIS_URL`. Enabled without Redis: original body is forwarded (warn once at startup). Shrink never fails the tool call: a Redis error after a successful downstream response passes the original body through.
+
+No-op (original `respBody`) when: disabled; Redis nil; method is not `tools/call`; JSON-RPC `error`; body `<= max_bytes`; stub would be larger; stash/budget Redis error; budget would exceed `max_store_bytes`.
+
+`tools/list` gains `runkite_retrieve_payload` only when shrink is live. Retrieve is plane-served (session-bound) and does not need a connector grant. Keys: `rk:payload:v:{run}:{gen}:{ref}` and `rk:payload:b:{run}:{gen}`.
+
+See [Connectors](connectors.md).
+
 ### Fixture replay header
 
 `X-Runkite-Simulation` is an HTTP header on create-run (`runkite sim`), not a `langgraph.json` field. See [Fixture replay](sim.md).

@@ -159,6 +159,7 @@
           <li>Reading cost from gateways that report it out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard), routing calls through one works today (it's a plain client <code>base_url</code> change, nothing Runkite-specific), but its cost won't reach Runkite unless it inlines cost the way OpenRouter does; those runs price from tokens × pricebook like any direct-provider run.</li>
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>
+          <li>Connector payload shrink does not write <code>usage_events</code>. Admin Spend moves only if the runner reports fewer tokens.</li>
         </ul>
         <h2>Practical stance</h2>
         <p>
