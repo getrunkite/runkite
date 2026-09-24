@@ -1,0 +1,24 @@
+# Fixture replay for connector argument predicates. Point `agent` at a graph
+# that actually calls the connector tool; this file is a shape, not a stubbed
+# downstream. Pending does not auto-approve: the case passes when audit shows
+# pending even if the run later errors because the tool was refused.
+agent: payroll
+cases:
+  - id: small-transfer
+    input:
+      messages:
+        - role: user
+          content: "send 40 to vendors"
+    expect:
+      policy_effects: []
+  - id: large-transfer
+    input:
+      messages:
+        - role: user
+          content: "send 5000 to vendors"
+    expect:
+      policy_effects:
+        - connector: bank
+          tool: transfer
+          effect: pending
+          reason_code: predicate_amount

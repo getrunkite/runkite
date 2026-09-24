@@ -45,6 +45,7 @@
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
           <a  href="grants.html">Grants &amp; HITL</a>
+          <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
           <a  href="run-manifest.html">Run manifest</a>
@@ -118,6 +119,7 @@
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Statuses</strong>: pending → running → success / error / interrupted (HITL).</li>
+          <li><strong>sim badge</strong>: runs created with <code>X-Runkite-Simulation</code> (<code>runkite sim</code>) show <code>sim</code> on the list and detail. Spend and daily caps skip; policy still runs. See <a href="sim.html">Fixture replay</a>.</li>
           <li><strong>Streaming</strong>: same events Admin replays are what clients see on the stream.</li>
           <li><strong>Reclaim</strong>: if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
         </ul>

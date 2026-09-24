@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agents (Python / JS) · Runkite Docs</title>
-    <meta name="description" content="Register and run agents on Runkite. Python and TypeScript runners." />
+    <title>Fixture replay · Runkite Docs</title>
+    <meta name="description" content="Replay YAML cases against a live plane. Policy still runs; spend and daily caps skip." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +17,7 @@
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
         <p class="brand-sub">docs</p>
-                                        <nav>
+        <nav>
           <div class="nav-group">Start</div>
           <a  href="./">Overview</a>
           <a  href="try.html">Try it</a>
@@ -30,7 +30,7 @@
           <a  href="install.html">Install</a>
           <a  href="production.html">Production day-0</a>
           <a  href="first-agent.html">First agent</a>
-          <a class="active" href="agents.html">Agents (Py / JS)</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
           <a  href="checkpoints.html">Checkpoints</a>
@@ -45,7 +45,7 @@
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
           <a  href="grants.html">Grants &amp; HITL</a>
-          <a  href="sim.html">Fixture replay</a>
+          <a class="active" href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
           <a  href="run-manifest.html">Run manifest</a>
@@ -71,65 +71,58 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Build</p>
-        <h1>Agents</h1>
-        <p class="lede">An agent is a graph (or adapter) the plane can dispatch. Clients never talk to the runner process, they create runs on the plane; runners pull jobs.</p>
+        <p class="kicker">Govern</p>
+        <h1>Fixture replay</h1>
+        <p class="lede">YAML cases against a live plane. Connector policy still runs. Spend and daily run caps skip. Not a sandbox.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              Agents are declared in a runner config (<code>langgraph.json</code> or adapter config).
-              Each agent has an <code>agent_id</code>. Python and TypeScript runners implement the same
-              Runner Protocol against one Go control plane, mixed fleets are normal.
+              <code>runkite sim -f fixtures.yaml</code> creates a fresh thread per case, starts a run with
+              <code>X-Runkite-Simulation</code>, polls until terminal, and optionally matches Admin audit
+              deny/pending rows. Admin lists those runs with a <code>sim</code> badge.
             </p>
           </section>
           <section>
             <h2>Why it is here</h2>
             <p>
-              Without a plane, every agent process owns secrets, HITL, and logs. With Runkite, many
-              agents share connectors, grants, kill, and audit while staying framework-native inside the runner.
+              Predicate and HITL checks need a real MCP path. Replay is how CI proves the plane still
+              pending a large transfer without filling the day cap or the spend ledger.
             </p>
           </section>
         </div>
 
         <h2>How to implement</h2>
         <ol class="steps">
-          <li><strong>Python (LangGraph)</strong>: install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
-          <li><strong>TypeScript (LangGraph.js)</strong>: install the TS runner, same config shape, same plane.</li>
-          <li><strong>Adapters</strong>: CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
-          <li><strong>Verify</strong>: Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
+          <li>Write YAML: <code>agent</code>, <code>cases[].input</code>, optional <code>expect.policy_effects</code>.</li>
+          <li>Use an <strong>admin</strong> API key when auth is on. A write-only key gets 403.</li>
+          <li>Run <code>runkite sim -f … --url … --api-key …</code>. Exit 0 means every case passed.</li>
+          <li>Expecting <code>pending</code> does not approve the HITL row. Approve stays in Admin.</li>
         </ol>
-        <pre class="mono-block"># Python
-pip install runkite-runner
-runkite-runner --config path/to/langgraph.json \
-  --grpc-address 127.0.0.1:50051 \
-  --http-address http://127.0.0.1:2026
+        <pre class="mono-block">runkite sim -f examples/sim/predicates.yaml \
+  --url http://127.0.0.1:2026 \
+  --api-key "$RUNKITE_API_KEY" \
+  --timeout 2m</pre>
 
-# TypeScript
-npm install -g runkite-runner
-runkite-runner --config path/to/langgraph.json \
-  --grpc-address 127.0.0.1:50051 \
-  --http-address http://127.0.0.1:2026</pre>
-
-        <h2>In the product</h2>
-        <figure class="shot">
-          <div class="cap">Admin → Agents: registered agents</div>
-          <img src="../assets/ui-agents.png" alt="Runkite Admin Agents" width="960" height="600" />
-        </figure>
+        <h2>What skips</h2>
+        <ul class="expect">
+          <li><strong>Skip</strong>: FinOps holds, usage ingest, daily <code>max_runs_per_day</code>, LLM cache.</li>
+          <li><strong>Keep</strong>: concurrent admission, rate limits, kill, connector policy, HITL.</li>
+          <li><strong>SQL</strong> required for policy asserts. Mongo fails those cases with a clear error.</li>
+        </ul>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Success</strong>: agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
-          <li><strong>Routing</strong>: jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
-          <li><strong>Which agents appear</strong>: only the <code>graphs</code> keys in your control plane's <code>langgraph.json</code> at boot; production lists your agents, not demo examples unless you point config there.</li>
-          <li><strong>Limits</strong>: framework adapters differ on concurrency safety; see runners doc.</li>
+          <li>Allow cases call the real connector. Downstream is not stubbed.</li>
+          <li>In-graph tools that never hit connector MCP stay ungoverned.</li>
+          <li>The admin key is a real Admin credential (kill, grants, spend), not a sim-only permission.</li>
+          <li>Stdout is PASS/FAIL lines. No JSON output in this release.</li>
         </ul>
         <p class="note">
-          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>
-          · <a href="./admin-guide.html#2-agents">Admin UI guide → Agents</a>
-          · <a href="./try.html">Try path</a>
-          · <a href="./protocol.html">Protocols</a>
+          Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/sim.md">docs/sim.md</a>
+          · <a href="grants.html">Grants &amp; HITL</a>
+          · <a href="runs.html">Runs &amp; threads</a>
         </p>
 
       </main>

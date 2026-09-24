@@ -27,7 +27,7 @@ vet:
 # Default: SQLite + in-memory only (no external services needed).
 # Explicitly unset backend env vars so inherited shell env doesn't leak.
 test:
-	POSTGRES_DSN= REDIS_URL= go test ./internal/... -race -count=1
+	POSTGRES_DSN= REDIS_URL= go test ./internal/... ./cmd/... -race -count=1
 	$(MAKE) test-protocol-fixtures
 
 # Runner Protocol example fixtures (schema + lifecycle invariants).

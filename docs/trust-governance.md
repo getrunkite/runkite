@@ -86,6 +86,10 @@ Optional per-graph allowlist in `langgraph.json`:
 - Replacing your IdP
 - Equal security / governance proofs on Mongo or Experimental backends (see [Governance durability](#governance-durability-sql-backends))
 
+## Fixture replay
+
+`runkite sim` drives the same connector policy path with `X-Runkite-Simulation`. FinOps holds and UTC-day run caps skip; concurrent admission, rate limits, kill, and HITL still apply. Not a sandbox. See [Fixture replay](sim.md).
+
 ## Governance durability (SQL backends)
 
 Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs on every state backend when `policy` is configured. The **durable governance trail** needs SQL:

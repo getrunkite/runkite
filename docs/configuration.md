@@ -124,6 +124,10 @@ Redis keys are `rk:rl:{scope}:{id}` (same `rk:*` prefix as the Redis transport).
 
 The scheduler polls every 15 seconds. A **restarting** schedule (one that has fired at least once before, per `cron_claims`) catches up to the single latest fire missed while the process was down, not a backlog of every missed one -- a catch-up storm isn't what "cron" means to most users. A **brand new** schedule (never claimed before) starts counting from the moment it's registered instead, so adding a schedule doesn't surprise-fire it immediately just because its expression's most recent occurrence already passed before it existed. With multiple control-plane replicas sharing one Postgres database, the `cron_claims` table (`INSERT ... ON CONFLICT DO NOTHING` keyed on `(schedule_name, fire_time)`) guarantees exactly one replica dispatches each fire -- verified live against two real control-plane instances sharing one Postgres + Redis: two consecutive minute-boundary fires, each dispatched by exactly one instance, the other's scheduler loop correctly losing the claim both times. A dispatch that fails transiently (rate limit, momentary store error) releases its claim so the next tick retries the same fire; a dispatch rejected because the schedule's own previous run is still in flight keeps the claim (that occurrence is skipped, not retried) rather than resigning it to overlap with a run that's still busy. This claim table grows by one row per schedule per fire (typically hourly/daily -- slow, but unbounded without cleanup); see the Retention section above's `cron_claims_max_age` for the periodic sweep that covers it. Inspect what's actually registered at `GET /internal/cron`. See `examples/cron_agent/`.
 
+### Fixture replay header
+
+`X-Runkite-Simulation` is an HTTP header on create-run (`runkite sim`), not a `langgraph.json` field. See [Fixture replay](sim.md).
+
 ### Environment Variables
 
 | Variable | Default | Description |

@@ -51,6 +51,7 @@
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
           <a  href="grants.html">Grants &amp; HITL</a>
+          <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
           <a  href="run-manifest.html">Run manifest</a>
@@ -86,6 +87,7 @@
           <li>Authz is route-level (+ optional agent run grants), not per-tool ACLs outside connector policy (MCP grants + argument predicates).</li>
           <li>Tenancy is flat <code>tenant_id</code>: no org/team UI.</li>
           <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
+          <li>Fixture replay (<code>runkite sim</code>) is not a sandbox: in-graph tools stay ungoverned; allow cases hit the real connector; pending does not auto-approve.</li>
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) with alerts, export, holds, and alias routing on SQL. Overshoot possible when reservation is unset or estimates are wrong; no mid-run budget kill.</li>
           <li>Kubernetes/Helm: kind K0–K3 ops-proven; Compatible for production cloud until a named soak (K4). Compose proves multi-CP HA today.</li>
         </ul>
