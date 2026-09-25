@@ -1,49 +1,33 @@
-/* Landing — dark rack/ops product surface on brand.css.
-   No stars, aurora, or cobalt glow. Terminal-panel hero. */
+/* Landing — dark canvas with an amber bloom on the fold.
+   Docs/support stay hard-edged NOC in brand.css. This file may glow. */
 
 .shell {
   position: relative;
   z-index: 1;
   background:
-    linear-gradient(180deg, var(--bg) 0%, #0c0c0e 40%, var(--bg) 100%);
+    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(245, 165, 36, 0.18), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 12%, rgba(255, 200, 87, 0.08), transparent 55%),
+    radial-gradient(ellipse 40% 35% at 0% 18%, rgba(245, 165, 36, 0.07), transparent 50%),
+    linear-gradient(180deg, #100e0a 0%, var(--bg) 42%, var(--bg) 100%);
 }
 
 .hero {
   position: relative;
-  padding: clamp(2.75rem, 8vw, 4.5rem) 0 2.25rem;
+  padding: clamp(2.5rem, 7vw, 4.25rem) 0 3rem;
   text-align: center;
   overflow: hidden;
 }
 
-/* Faint moving grid — reads as "live console," not a cinematic glow.
-   Two layered gradients drift at different speeds so it never repeats
-   in an obviously loopy way. */
 .hero::before {
   content: "";
   position: absolute;
-  inset: -10% -10% auto -10%;
-  height: 130%;
+  inset: -8% -8% auto -8%;
+  height: 120%;
   background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 42px 42px;
-  opacity: 0.05;
-  animation: grid-drift 40s linear infinite;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Slow horizontal sweep, like a status scan — amber, low-opacity, never
-   a full-bleed glow. */
-.hero::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -30%;
-  width: 30%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 10%, transparent), transparent);
-  animation: hero-sweep 9s ease-in-out infinite;
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--accent) 28%, transparent) 1px, transparent 0);
+  background-size: 28px 28px;
+  opacity: 0.22;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 20%, transparent 75%);
   pointer-events: none;
   z-index: 0;
 }
@@ -53,108 +37,8 @@
   z-index: 1;
 }
 
-@keyframes grid-drift {
-  from {
-    background-position: 0 0, 0 0;
-  }
-  to {
-    background-position: 84px 42px, 42px 84px;
-  }
-}
-
-@keyframes hero-sweep {
-  0%,
-  100% {
-    left: -30%;
-  }
-  50% {
-    left: 100%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero::before,
-  .hero::after,
-  .cube,
-  .live-pill .pulse {
-    animation: none;
-  }
-}
-
-/* Wireframe cubes: motion like a live console, amber edges, no aurora. */
-.hero-cubes {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  perspective: 1100px;
-  overflow: hidden;
-  z-index: 0;
-}
-
-.cube {
-  position: absolute;
-  width: var(--s);
-  height: var(--s);
-  transform-style: preserve-3d;
-  animation: cube-spin 32s linear infinite;
-}
-
-.cube-a {
-  --s: 240px;
-  --h: 120px;
-  left: 6%;
-  top: 14%;
-  opacity: 0.48;
-}
-
-.cube-b {
-  --s: 150px;
-  --h: 75px;
-  right: 8%;
-  top: 22%;
-  opacity: 0.28;
-  animation-duration: 46s;
-  animation-direction: reverse;
-}
-
-.cube .face {
-  position: absolute;
-  width: var(--s);
-  height: var(--s);
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 10%, transparent),
-    transparent 58%
-  );
-}
-
-.cube .ft {
-  transform: rotateY(0deg) translateZ(var(--h));
-}
-.cube .bk {
-  transform: rotateY(180deg) translateZ(var(--h));
-}
-.cube .rt {
-  transform: rotateY(90deg) translateZ(var(--h));
-}
-.cube .lt {
-  transform: rotateY(-90deg) translateZ(var(--h));
-}
-.cube .tp {
-  transform: rotateX(90deg) translateZ(var(--h));
-}
-.cube .bm {
-  transform: rotateX(-90deg) translateZ(var(--h));
-}
-
-@keyframes cube-spin {
-  from {
-    transform: rotateX(-18deg) rotateY(0deg);
-  }
-  to {
-    transform: rotateX(-18deg) rotateY(360deg);
-  }
+.hero .btn {
+  border-radius: 10px;
 }
 
 .live-pill {
@@ -199,17 +83,6 @@
   }
 }
 
-@media (max-width: 720px) {
-  .cube-b {
-    display: none;
-  }
-  .cube-a {
-    left: 50%;
-    margin-left: calc(var(--s) / -2);
-    opacity: 0.32;
-  }
-}
-
 .hero .brand-mark {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -246,27 +119,9 @@
 
 .hero .lede {
   margin: 0 auto 1rem;
-  max-width: 36rem;
+  max-width: 38rem;
   color: var(--muted);
   font-size: 1.12rem;
-  min-height: 1.7em;
-}
-
-.hero .lede .typed::after {
-  content: "";
-  display: inline-block;
-  width: 0.55ch;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -0.1em;
-  background: var(--accent);
-  animation: blink 1s steps(1) infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
 }
 
 .hero-cta {
@@ -274,7 +129,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 0.5rem;
 }
 
 /* Rack console bezel around the product GIF — the GIF is the try-Admin control. */
@@ -282,11 +137,11 @@
   position: relative;
   display: block;
   width: min(960px, 100%);
-  margin: 0 auto;
-  border-radius: var(--radius);
+  margin: 0 auto 0.5rem;
+  border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), 0 0 80px -24px color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--bg-elev);
   text-decoration: none;
   color: inherit;
@@ -330,6 +185,296 @@
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* Fold diagram: clients → plane → runners/connectors, particles on the wires. */
+.hop {
+  --hop-r: 18px;
+  position: relative;
+  margin: 2.25rem auto 0;
+  max-width: 1100px;
+  min-height: 28rem;
+}
+
+.hop-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hop-path {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+.hop-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(9.5rem, 0.85fr) minmax(16rem, 1.15fr) minmax(11rem, 1fr);
+  gap: clamp(1.25rem, 4vw, 3.5rem);
+  align-items: center;
+  min-height: 28rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.hop-kicker {
+  margin: 0 0 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+}
+
+.hop-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.hop-col-out {
+  gap: 1rem;
+}
+
+.hop-node,
+.hop-cluster,
+.hop-plane {
+  border-radius: var(--hop-r);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--bg-elev) 78%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px -28px rgba(0, 0, 0, 0.8);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Entrance: cards settle in from their own side rather than just
+   appearing, so the fold reads as a system assembling itself, not a
+   static screenshot. Above the fold already, so this runs on load, not
+   on scroll (the .reveal IntersectionObserver is for lower sections). */
+.hop-col .hop-node,
+.hop-plane,
+.hop-col-out .hop-cluster {
+  opacity: 0;
+  animation: hop-settle 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hop-col .hop-node {
+  animation-name: hop-settle-left;
+}
+
+.hop-col-out .hop-cluster {
+  animation-name: hop-settle-right;
+}
+
+.hop-col .hop-node:nth-child(2) {
+  animation-delay: 0.55s;
+}
+.hop-col .hop-node:nth-child(3) {
+  animation-delay: 0.7s;
+}
+.hop-col .hop-node:nth-child(4) {
+  animation-delay: 0.85s;
+}
+/* .hop-plane's own entrance delay (0.3s) is set on its full `animation`
+   shorthand below, alongside the idle breathe loop -- a shorthand
+   there would otherwise reset a delay set only here. */
+.hop-col-out .hop-cluster:nth-child(1) {
+  animation-delay: 0.65s;
+}
+.hop-col-out .hop-cluster:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+@keyframes hop-settle-left {
+  from {
+    opacity: 0;
+    translate: -14px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes hop-settle-right {
+  from {
+    opacity: 0;
+    translate: 14px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes hop-settle {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+    scale: 0.98;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+.hop-node:hover,
+.hop-cluster:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 20px 40px -24px rgba(0, 0, 0, 0.85),
+    0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.hop-node {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  color: var(--ink);
+  font-weight: 550;
+  text-align: left;
+}
+
+.hop-ico {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  color: #1a1002;
+  background: var(--accent);
+}
+
+.hop-plane {
+  position: relative;
+  padding: 1.35rem 1.25rem 1.2rem;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--bg-elev) 88%, transparent));
+  animation: hop-settle 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards, hop-breathe 5s ease-in-out 0.9s infinite;
+}
+
+/* Slow, low-amplitude glow so the plane card reads as live/on even
+   between particle arrivals -- not a pulse anyone should consciously
+   notice, just enough that the card never looks switched off. */
+@keyframes hop-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+      0 0 70px -12px color-mix(in srgb, var(--accent) 40%, transparent),
+      0 24px 50px -30px rgba(0, 0, 0, 0.7);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent),
+      0 0 90px -8px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 24px 50px -30px rgba(0, 0, 0, 0.7);
+  }
+}
+
+.hop-plane::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: calc(var(--hop-r) + 10px);
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  pointer-events: none;
+}
+
+.hop-plane-mark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 550;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.hop-plane-sub {
+  margin: 0.15rem 0 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+
+.hop-cap {
+  display: block;
+  margin-top: 0.45rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--ink-dim);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.hop-cluster {
+  padding: 0.9rem 0.9rem 1rem;
+  text-align: left;
+}
+
+.hop-cluster .hop-kicker {
+  margin-bottom: 0.55rem;
+}
+
+.hop-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.hop-tiles span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+  font-weight: 550;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .hop,
+  .hop-stage {
+    min-height: 0;
+  }
+  .hop-wires {
+    display: none;
+  }
+  .hop-stage {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .hop-plane::before {
+    display: none;
+  }
 }
 
 .section {
@@ -537,21 +682,34 @@
     transform: none;
     transition: none;
   }
-  .hero .lede .typed::after {
+  .live-pill .pulse {
+    animation: none;
+  }
+  .hop-wires circle {
+    display: none;
+  }
+  .hop-col .hop-node,
+  .hop-plane,
+  .hop-col-out .hop-cluster {
+    opacity: 1;
     animation: none;
   }
   .panel,
   .gov-item,
   .arch-links a,
   .eco-box,
-  .eco-col {
+  .eco-col,
+  .hop-node,
+  .hop-cluster {
     transition: none;
   }
   .panel:hover,
   .gov-item:hover,
   .arch-links a:hover,
   .eco-box:hover,
-  .eco-col:hover {
+  .eco-col:hover,
+  .hop-node:hover,
+  .hop-cluster:hover {
     transform: none;
   }
 }

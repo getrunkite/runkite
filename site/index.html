@@ -26,8 +26,8 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./brand.css?v=20260920b" />
-    <link rel="stylesheet" href="./landing.css?v=20260920b" />
+    <link rel="stylesheet" href="./brand.css?v=20260925" />
+    <link rel="stylesheet" href="./landing.css?v=20260925" />
   </head>
   <body>
     <div class="shell">
@@ -50,28 +50,12 @@
 
       <main>
         <section class="hero">
-          <div class="hero-cubes" aria-hidden="true">
-            <div class="cube cube-a">
-              <div class="face ft"></div>
-              <div class="face bk"></div>
-              <div class="face rt"></div>
-              <div class="face lt"></div>
-              <div class="face tp"></div>
-              <div class="face bm"></div>
-            </div>
-            <div class="cube cube-b">
-              <div class="face ft"></div>
-              <div class="face bk"></div>
-              <div class="face rt"></div>
-              <div class="face lt"></div>
-              <div class="face tp"></div>
-              <div class="face bm"></div>
-            </div>
-          </div>
           <div class="wrap">
             <p class="brand-mark">Runkite</p>
             <h1>Open <em>agent control plane</em></h1>
-            <p class="lede"><span class="typed" id="typed"></span></p>
+            <p class="lede">
+              Any framework. One self-hosted plane for dispatch, connectors, HITL, and audit.
+            </p>
             <p class="live-pill">
               <span class="pulse" aria-hidden="true"></span>
               Live Admin at getrunkite.com/admin. A real Runkite process, not a mock
@@ -80,18 +64,129 @@
               <a class="btn btn-primary" href="https://getrunkite.com/admin/">Open live Admin</a>
               <a class="btn btn-ghost" href="./support/install.html">Deploy on your infra</a>
             </div>
-            <a class="hero-visual" href="https://getrunkite.com/admin/">
-              <div class="chrome">
-                live plane · same binary as runkite serve
-                <span class="chrome-cta">Open Admin →</span>
+
+            <div
+              class="hop"
+              role="img"
+              aria-label="Clients and Admin talk to the Runkite control plane over Agent Protocol. Runners pull jobs over Runner Protocol. Connector MCP is proxied by the plane."
+            >
+              <svg class="hop-wires" viewBox="0 0 1100 480" fill="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="hopStroke" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#f5a524" stop-opacity="0" />
+                    <stop offset="0.35" stop-color="#f5a524" stop-opacity="0.55" />
+                    <stop offset="1" stop-color="#ffc857" stop-opacity="0.9" />
+                  </linearGradient>
+                  <filter id="hopGlow" x="-120%" y="-120%" width="340%" height="340%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="5.5" result="halo" />
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="core" />
+                    <feMerge>
+                      <feMergeNode in="halo" />
+                      <feMergeNode in="core" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                <path
+                  class="hop-path"
+                  stroke="url(#hopStroke)"
+                  d="M 168 92 C 280 92, 310 210, 455 228"
+                />
+                <path
+                  class="hop-path"
+                  stroke="url(#hopStroke)"
+                  d="M 168 228 C 290 228, 320 228, 455 228"
+                />
+                <path
+                  class="hop-path"
+                  stroke="url(#hopStroke)"
+                  d="M 168 364 C 280 364, 310 250, 455 228"
+                />
+                <path
+                  class="hop-path hop-path-out"
+                  stroke="url(#hopStroke)"
+                  d="M 645 188 C 760 140, 820 118, 932 118"
+                />
+                <path
+                  class="hop-path hop-path-out"
+                  stroke="url(#hopStroke)"
+                  d="M 645 268 C 760 320, 820 348, 932 348"
+                />
+                <!--
+                  animateMotion maps the circle's origin onto the path.
+                  cx/cy must stay 0,0 or the dot sits at path-point + (cx,cy)
+                  and leaves the wire. Delayed circles start opacity 0 so they
+                  do not stack at the SVG origin before begin.
+                -->
+                <circle r="3.2" cx="0" cy="0" fill="#ffc857" filter="url(#hopGlow)">
+                  <animateMotion dur="2.8s" repeatCount="indefinite" path="M 168 92 C 280 92, 310 210, 455 228" />
+                </circle>
+                <circle r="3.2" cx="0" cy="0" fill="#ffc857" filter="url(#hopGlow)" opacity="0">
+                  <set attributeName="opacity" to="1" begin="0.7s" />
+                  <animateMotion dur="3.2s" begin="0.7s" repeatCount="indefinite" path="M 168 228 C 290 228, 320 228, 455 228" />
+                </circle>
+                <circle r="3.2" cx="0" cy="0" fill="#ffc857" filter="url(#hopGlow)" opacity="0">
+                  <set attributeName="opacity" to="1" begin="1.3s" />
+                  <animateMotion dur="3s" begin="1.3s" repeatCount="indefinite" path="M 168 364 C 280 364, 310 250, 455 228" />
+                </circle>
+                <circle r="3.2" cx="0" cy="0" fill="#ffe0a0" filter="url(#hopGlow)" opacity="0">
+                  <set attributeName="opacity" to="1" begin="0.4s" />
+                  <animateMotion dur="2.6s" begin="0.4s" repeatCount="indefinite" path="M 645 188 C 760 140, 820 118, 932 118" />
+                </circle>
+                <circle r="3.2" cx="0" cy="0" fill="#ffe0a0" filter="url(#hopGlow)" opacity="0">
+                  <set attributeName="opacity" to="1" begin="1.1s" />
+                  <animateMotion dur="3.1s" begin="1.1s" repeatCount="indefinite" path="M 645 268 C 760 320, 820 348, 932 348" />
+                </circle>
+              </svg>
+
+              <div class="hop-stage">
+                <div class="hop-col">
+                  <p class="hop-kicker">Your agents</p>
+                  <div class="hop-node">
+                    <span class="hop-ico" aria-hidden="true">SDK</span>
+                    Clients
+                  </div>
+                  <div class="hop-node">
+                    <span class="hop-ico" aria-hidden="true">UI</span>
+                    Admin
+                  </div>
+                  <div class="hop-node">
+                    <span class="hop-ico" aria-hidden="true">CR</span>
+                    Cron
+                  </div>
+                </div>
+
+                <div class="hop-plane">
+                  <p class="hop-plane-mark">Runkite</p>
+                  <p class="hop-plane-sub">control plane</p>
+                  <div class="hop-cap">Dispatch</div>
+                  <div class="hop-cap">Connectors</div>
+                  <div class="hop-cap">HITL</div>
+                  <div class="hop-cap">Audit</div>
+                </div>
+
+                <div class="hop-col hop-col-out">
+                  <div class="hop-cluster">
+                    <p class="hop-kicker">Runners</p>
+                    <div class="hop-tiles">
+                      <span>LangGraph</span>
+                      <span>CrewAI</span>
+                      <span>LlamaIndex</span>
+                      <span>AutoGen</span>
+                    </div>
+                  </div>
+                  <div class="hop-cluster">
+                    <p class="hop-kicker">Connectors</p>
+                    <div class="hop-tiles">
+                      <span>MCP proxy</span>
+                      <span>HITL</span>
+                      <span>Grants</span>
+                      <span>Sessions</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <img
-                src="./assets/admin-walkthrough.gif"
-                alt="Runkite Admin walkthrough: overview, agents, runs, connectors, grants, HITL, kill, audit. Click to open the live plane."
-                width="960"
-                height="600"
-              />
-            </a>
+            </div>
           </div>
         </section>
 
@@ -134,7 +229,19 @@
               not a screenshot. Shared key below. Fake agents, no SLA. Your real graphs stay
               on your runners: Compose, Helm, Kubernetes, a VM.
             </p>
-            <p class="section-copy" style="font-family: var(--font-mono); font-size: 0.88rem; word-break: break-all;">
+            <a class="hero-visual" href="https://getrunkite.com/admin/">
+              <div class="chrome">
+                live plane · same binary as runkite serve
+                <span class="chrome-cta">Open Admin →</span>
+              </div>
+              <img
+                src="./assets/admin-walkthrough.gif"
+                alt="Runkite Admin walkthrough: overview, agents, runs, connectors, grants, HITL, kill, audit. Click to open the live plane."
+                width="960"
+                height="600"
+              />
+            </a>
+            <p class="section-copy" style="font-family: var(--font-mono); font-size: 0.88rem; word-break: break-all; margin-top: 1.25rem;">
               600d9704de73d08db3b5d621b6e17c9172053cb480415ae8
             </p>
             <a class="btn btn-primary" href="https://getrunkite.com/admin/">Open live Admin</a>
@@ -285,42 +392,6 @@
 
     <script>
       (function () {
-        var phrases = [
-          "Any framework. One self-hosted control plane.",
-          "This Admin is a running plane, not a mock.",
-          "Dispatch, connectors, HITL, fencing, audit.",
-          "Clients never talk to runners directly.",
-        ];
-        var el = document.getElementById("typed");
-        if (el) {
-          var pi = 0,
-            ci = 0,
-            del = false;
-          function tick() {
-            var p = phrases[pi];
-            el.textContent = p.slice(0, ci);
-            if (!del && ci < p.length) {
-              ci++;
-              setTimeout(tick, 28);
-            } else if (!del && ci === p.length) {
-              del = true;
-              setTimeout(tick, 1600);
-            } else if (del && ci > 0) {
-              ci--;
-              setTimeout(tick, 16);
-            } else {
-              del = false;
-              pi = (pi + 1) % phrases.length;
-              setTimeout(tick, 320);
-            }
-          }
-          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-            el.textContent = phrases[0];
-          } else {
-            tick();
-          }
-        }
-
         var nodes = document.querySelectorAll(".reveal");
         if (nodes.length) {
           if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {

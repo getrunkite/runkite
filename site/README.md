@@ -5,7 +5,7 @@ Visuals live in `assets/`.
 
 **Live:** https://getrunkite.com/
 
-**Brand system:** [`brand.css`](./brand.css), dark rack/ops canvas, Fraunces + IBM Plex Sans + JetBrains Mono, amber signal (no aurora/stars/cobalt glow). Shared by landing, support, and design notes.
+**Brand system:** [`brand.css`](./brand.css) is the shared NOC canvas (Fraunces + IBM Plex Sans + JetBrains Mono, amber). The product landing ([`landing.css`](./landing.css)) adds an amber bloom and a moving hop diagram on the fold. Support and design notes stay hard-edged.
 
 **Routes (uniform multi-page nav):**
 - [`/`](./index.html), product landing
