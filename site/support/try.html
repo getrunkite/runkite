@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Try it · Runkite Docs</title>
-    <meta name="description" content="5-minute Docker path: compose, echo, HITL." />
+    <meta name="description" content="5-minute Docker path: compose, refund, Admin Pending." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
@@ -77,8 +77,8 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <h1 class="one-line">Compose → echo → HITL</h1>
-        <p class="lede">Public Admin first. Your agents run on your infra (Compose, Helm, Kubernetes).</p>
+        <h1 class="one-line">Compose → refund → Pending</h1>
+        <p class="lede">Public Admin first. Cause a hold, approve it, screenshot the audit row.</p>
 
         <div class="callout" style="border:1px solid rgba(244,244,245,0.18);padding:1rem 1.15rem;margin:0 0 1.75rem;background:#121214">
           <p><strong>Live sandbox</strong>:
@@ -90,10 +90,10 @@
 
         <div class="try-visual">
           <div class="flow-grid">
-            <div class="flow-card"><span class="n">01</span><h3>Compose is up</h3><p>Plane on :2026. Runner waiting. Admin opens with <em>no login</em> (auth off).</p></div>
-            <div class="flow-card"><span class="n">02</span><h3>Echo agent</h3><p>POST a run. Wait. See the echoed message.</p></div>
-            <div class="flow-card"><span class="n">03</span><h3>HITL interrupt</h3><p><code>approval_agent</code> pauses, status interrupted.</p></div>
-            <div class="flow-card"><span class="n">04</span><h3>You approve</h3><p>Resume with <code>{"command":{"resume":true}}</code>. Run completes.</p></div>
+            <div class="flow-card"><span class="n">01</span><h3>Compose is up</h3><p>Plane on :2026. Fake bank MCP. Admin opens with <em>no login</em> (auth off).</p></div>
+            <div class="flow-card"><span class="n">02</span><h3>Refund $500</h3><p>Try agent → <code>pending_agent</code>. The plane holds the call.</p></div>
+            <div class="flow-card"><span class="n">03</span><h3>Pending</h3><p>Admin → Pending. Approve. Same arguments only; a different amount is a new row.</p></div>
+            <div class="flow-card"><span class="n">04</span><h3>Audit</h3><p>The audit row is the screenshot. Send the same amount again to finish the fake refund.</p></div>
           </div>
           <figure class="try-admin">
             <div class="cap">What you’ll see in Admin: Overview after Try compose is up</div>
@@ -108,40 +108,35 @@ docker compose -f docker-compose.dev.yml up -d --build
 curl -sf http://localhost:2026/readyz && echo OK
 # Admin → http://localhost:2026/admin/</pre>
         <p>
-          Dev compose is SQLite + in-memory transport, no Postgres/Redis required.
-          First build takes a few minutes.
+          Dev compose is SQLite + in-memory transport plus a fake bank MCP.
+          First build takes a few minutes. SQLite is enough for Pending.
         </p>
 
-        <h2>2. Echo</h2>
+        <h2>2. Refund that needs a human</h2>
+        <p>
+          Fastest: Admin → Try agent → <code>pending_agent</code> → send
+          <code>Refund $500 to the vendor</code>. Then Admin → Pending → approve.
+          Or curl:
+        </p>
         <pre class="mono-block">BASE=http://localhost:2026
 THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
 curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
   -H 'Content-Type: application/json' \
-  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"Hello, Runkite!"}]}}' \
-  | python3 -m json.tool</pre>
-        <p>Expect <code>status: success</code> and an AI message that echoes your string.</p>
-
-        <h2>3. HITL interrupt + resume</h2>
-        <p>Use a <em>new</em> thread, do not reuse the echo thread id.</p>
-        <pre class="mono-block">THREAD=$(curl -sf -X POST "$BASE/threads" -H 'Content-Type: application/json' -d '{}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["thread_id"])')
-# Stream until you see interrupted, then Ctrl-C
-curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'
-
-# Resume
-curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
-  -H 'Content-Type: application/json' \
-  -d '{"agent_id":"approval_agent","command":{"resume":true}}' \
-  | python3 -m json.tool</pre>
+  -d '{"agent_id":"pending_agent","input":{"messages":[{"role":"user","content":"Refund $500 to the vendor"}]}}' \
+  | python3 -m json.tool
+# Admin → Pending → approve, then send the same amount on a new run.</pre>
+        <p>
+          Expect a message that the plane held the refund, and a row in Pending.
+          This is connector policy, not <code>command.resume</code>.
+          Echo still works as a smoke test: agent_id <code>echo_agent</code>.
+        </p>
 
         <h2>What you should have seen</h2>
         <ul>
-          <li>Dispatch through the plane (client never talks to the runner).</li>
-          <li>Streaming / wait semantics on Agent Protocol.</li>
-          <li>A human gate before a side-effecting step continues.</li>
+          <li>A tool call that never reached the fake bank until you approved.</li>
+          <li>Pending bound to the argument digest (a different amount is a new row).</li>
+          <li>An audit row you can screenshot.</li>
         </ul>
         <h2>Next steps</h2>
         <ul class="expect">

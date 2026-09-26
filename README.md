@@ -82,7 +82,7 @@ runkite-runner --config examples/echo_agent/langgraph.json \
 
 Admin: http://localhost:2026/admin/ · Health: http://localhost:2026/health
 
-The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, `sim`, and more).
+The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `pending_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, `sim`, and more).
 
 ## Architecture
 

@@ -31,6 +31,7 @@ export function TryAgent() {
   const [raw, setRaw] = useState<RawLine[]>([]);
   const [usage, setUsage] = useState<Record<string, unknown> | null>(null);
   const [hitl, setHitl] = useState(false);
+  const [connectorPending, setConnectorPending] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -46,8 +47,10 @@ export function TryAgent() {
         if (urlAgent) {
           setAgentId(urlAgent);
         } else if (!agentId && rows?.length) {
-          setAgentId(rows[0].agent_id);
-          setTenantId(rows[0].tenant_id || "default");
+          const pending = rows.find((a) => a.agent_id === "pending_agent");
+          const pick = pending ?? rows[0];
+          setAgentId(pick.agent_id);
+          setTenantId(urlTenant || pick.tenant_id || "default");
         } else if (urlTenant && !urlAgent && rows?.length) {
           const match = rows.find((a) => a.tenant_id === urlTenant);
           if (match) setAgentId(match.agent_id);
@@ -90,6 +93,7 @@ export function TryAgent() {
       const tid = await ensureThread();
       setBusy(true);
       setHitl(false);
+      setConnectorPending(false);
       let lastAi = "";
       return new Promise<void>((resolve) => {
         abortRef.current?.();
@@ -117,6 +121,10 @@ export function TryAgent() {
               if (text) lastAi = text;
               const u = extractUsage(data);
               if (u) setUsage(u);
+            }
+            if (method === "tool_auth") {
+              const effect = (data as { effect?: string } | null)?.effect;
+              if (effect === "pending") setConnectorPending(true);
             }
             if (method === "end") {
               if (lastAi) {
@@ -193,6 +201,7 @@ export function TryAgent() {
     setRaw([]);
     setUsage(null);
     setHitl(false);
+    setConnectorPending(false);
   };
 
   if (loadError) return <ErrorState message={loadError} />;
@@ -210,7 +219,7 @@ export function TryAgent() {
     <div>
       <PageHeader
         title="Try agent"
-        subtitle="Run any registered agent through the real control plane — live protocol and per-turn usage, same path clients use."
+        subtitle="Run any registered agent through the real control plane. Start with pending_agent: a refund at or over $100 lands in Pending."
         actions={<DocsLink href={supportPage("admin-guide.html#3-try-agent")}>Docs: try agent →</DocsLink>}
       />
 
@@ -218,7 +227,7 @@ export function TryAgent() {
         <p>
           <strong className="font-medium text-foreground">LLM keys live on the runner, not here.</strong>{" "}
           Try agent is a client — it dispatches to whatever graph your runner loaded. Demo agents
-          (echo, react, approval) come from <code>examples/all_agents</code> in
+          (pending_agent, echo, react, approval) come from <code>examples/all_agents</code> in
           <code>docker-compose.dev.yml</code>, not from Admin itself; production uses your own{" "}
           <code>langgraph.json</code> <code>graphs</code> keys only. Real models need{" "}
           <code className="text-xs text-foreground">GOOGLE_API_KEY</code> /{" "}
@@ -279,7 +288,11 @@ export function TryAgent() {
         <div className="flex min-h-[28rem] flex-col rounded-sm border border-border bg-card">
           <div className="flex-1 space-y-3 overflow-y-auto p-3">
             {chat.length === 0 && (
-              <p className="text-sm text-muted-foreground">Send a prompt to exercise this agent end-to-end.</p>
+              <p className="text-sm text-muted-foreground">
+                {agentId === "pending_agent"
+                  ? 'Send "Refund $500 to the vendor". The plane holds it in Pending. Approve there, then send the same amount again.'
+                  : "Send a prompt to exercise this agent end-to-end."}
+              </p>
             )}
             {chat.map((m, i) => (
               <div key={i} className="text-sm">
@@ -290,7 +303,15 @@ export function TryAgent() {
               </div>
             ))}
           </div>
-          {hitl && (
+          {connectorPending && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Held for a human on the plane (not a graph interrupt).</span>
+              <Link className="font-medium text-primary hover:underline" to="/admin/pending">
+                Open Pending →
+              </Link>
+            </div>
+          )}
+          {hitl && !connectorPending && (
             <div className="flex items-center gap-2 border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
               <span className="text-muted-foreground">Interrupted (HITL)</span>
               <Button type="button" size="sm" onClick={() => void onResume(true)} disabled={busy}>
@@ -311,7 +332,7 @@ export function TryAgent() {
             <Input
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Message…"
+              placeholder={agentId === "pending_agent" ? "Refund $500 to the vendor" : "Message…"}
               disabled={busy || !agentId}
             />
             <Button type="submit" disabled={busy || !agentId || !prompt.trim()}>

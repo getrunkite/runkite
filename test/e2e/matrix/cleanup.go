@@ -25,7 +25,7 @@ import (
 // have scenarios here), so cleanup must match that full set exactly or
 // it silently leaves rows behind.
 var matrixAgentIDs = []string{
-	"echo_agent", "slow_agent", "approval_agent", "react_agent", "store_agent", // python-langgraph (all_agents)
+	"echo_agent", "slow_agent", "approval_agent", "react_agent", "store_agent", "pending_agent", // python-langgraph (all_agents)
 	"echo_agent_ts", "slow_agent_ts", "approval_agent_ts", "factory_agent_ts", "llm_sim_agent_ts", // typescript-langgraphjs
 	"langchain_agent",  // python-langchain
 	"crewai_agent",     // python-crewai

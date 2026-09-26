@@ -4,11 +4,58 @@
     "slow_agent": "../slow_agent/graph.py:graph",
     "approval_agent": "../approval_agent/graph.py:graph",
     "react_agent": "../react_agent/graph.py:graph",
-    "store_agent": "../store_agent/graph.py:graph"
+    "store_agent": "../store_agent/graph.py:graph",
+    "pending_agent": "../pending_agent/graph.py:graph"
   },
-  "dependencies": ["../echo_agent", "../slow_agent", "../approval_agent", "../react_agent", "../store_agent"],
+  "dependencies": [
+    "../echo_agent",
+    "../slow_agent",
+    "../approval_agent",
+    "../react_agent",
+    "../store_agent",
+    "../pending_agent"
+  ],
   "llm_cache": {
     "echo_agent": {"ttl_seconds": 3600}
+  },
+  "connectors": {
+    "bank": {
+      "auth": {
+        "type": "api_key",
+        "api_key": "demo-bank-not-a-secret"
+      },
+      "mcp": {
+        "url": "${PENDING_MCP_URL:-http://127.0.0.1:8091}"
+      },
+      "tools": {
+        "allow": ["refund"]
+      }
+    }
+  },
+  "policy": {
+    "default_effect": "deny",
+    "grants": [
+      {
+        "id": "demo-bank-refund",
+        "tenant_id": "default",
+        "agent_id": "pending_agent",
+        "connector": "bank",
+        "tools": { "allow": ["refund"] }
+      }
+    ],
+    "predicates": [
+      {
+        "id": "refund-over-99",
+        "tenant_id": "default",
+        "agent_id": "pending_agent",
+        "connector": "bank",
+        "tool": "refund",
+        "when": { "path": "amount", "op": "gte", "value": 100 },
+        "effect": "pending",
+        "reason": "refunds at or over 100 need a human",
+        "reason_code": "predicate_amount"
+      }
+    ]
   },
   "cron": {
     "yearly-echo": {

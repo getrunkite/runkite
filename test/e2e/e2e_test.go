@@ -176,7 +176,7 @@ func startStack() (cleanup func(), err error) {
 
 	// 4. Wait for all example agents to actually be registered and for the
 	// runner to be dispatch-ready (poll agents/search, not just a sleep).
-	wantAgents := []string{"echo_agent", "slow_agent", "approval_agent", "react_agent", "store_agent"}
+	wantAgents := []string{"echo_agent", "slow_agent", "approval_agent", "react_agent", "store_agent", "pending_agent"}
 	if err := waitForAgents(wantAgents, 20*time.Second); err != nil {
 		cleanupAll()
 		return nil, fmt.Errorf("agents never registered: %w\n--- control plane output ---\n%s\n--- runner output ---\n%s",

@@ -1,11 +1,27 @@
 # Zero-dependency development stack, for local DX.
-# Control plane + Python runner only — no Postgres/Redis.
-# Uses embedded SQLite + in-memory transport.
+# Control plane + Python runner + fake bank MCP (first-hour Pending).
+# SQLite + in-memory transport (no Postgres/Redis).
 #
 # Usage:
 #   docker compose -f docker-compose.dev.yml up -d --build
 #   docker compose -f docker-compose.dev.yml down -v
 services:
+  pending-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    entrypoint: ["python"]
+    command: ["/app/examples/pending_agent/mcp_server.py"]
+    environment:
+      PORT: "8091"
+    volumes:
+      - ./examples:/app/examples:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
   runkite:
     build:
       context: .
@@ -17,6 +33,7 @@ services:
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      PENDING_MCP_URL: http://pending-mcp:8091
       # Override for prod-like local runs: mount your own langgraph.json and set
       # LANGGRAPH_CONFIG to it — only graphs listed there appear in Admin.
       DATABASE_PATH: /tmp/runkite.db
@@ -27,6 +44,9 @@ services:
       RUNKITE_ALLOW_INSECURE_SERVE: "1"
     volumes:
       - ./examples:/app/examples:ro
+    depends_on:
+      pending-mcp:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2026/readyz"]
       interval: 5s

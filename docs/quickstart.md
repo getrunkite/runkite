@@ -230,6 +230,8 @@ async def main():
 asyncio.run(main())
 ```
 
+Connector pending (the Admin Pending page) is a different path: `pending_agent` calls a fake bank `refund` through the plane. Refunds at or over 100 land in Admin → Pending. Approve, then send the same amount again (digest-bound). Compose starts that MCP for you (`docker compose -f docker-compose.dev.yml up`). Graph `interrupt()` / `command.resume` above does not create a Pending row.
+
 ## 7. Verify with curl
 
 You can also interact directly with the HTTP API:

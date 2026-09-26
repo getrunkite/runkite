@@ -186,10 +186,10 @@
           <li>Pick an agent from the dropdown, only agents the plane already knows about show up here; you cannot author a new one from this page.</li>
           <li>Type a prompt and send it. A real thread and run are created against that agent's tenant, and the reply streams in as it's produced.</li>
           <li>
-            If the agent pauses for human approval mid-run (HITL), an
-            <strong>Interrupted</strong> banner appears with <strong>Approve</strong> /
-            <strong>Deny</strong> buttons right in the chat, resuming replays through the same
-            stream so you see the rest of the run continue live.
+            If the agent is <code>pending_agent</code>, a refund at or over $100 is held on the
+            <strong>Pending</strong> page (connector policy). Approve there, then send the same
+            amount again. Graph interrupt (<code>approval_agent</code>) still uses the in-chat
+            Approve / Deny buttons; that is a different path.
           </li>
           <li>The <strong>Usage</strong> panel shows that turn's token counts and estimated cost the moment the run finishes; click through to <strong>Spend</strong> for the tenant-wide rollup.</li>
           <li>Every run you start here is a real run, it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>

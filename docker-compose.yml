@@ -47,6 +47,20 @@ services:
       timeout: 3s
       retries: 10
 
+  pending-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    entrypoint: ["python"]
+    command: ["/app/examples/pending_agent/mcp_server.py"]
+    environment:
+      PORT: "8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
   runkite:
     build:
       context: .
@@ -60,6 +74,7 @@ services:
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      PENDING_MCP_URL: http://pending-mcp:8091
       # Runner auth (production mode): protects the gRPC bridge and
       # /internal/* routes so only runners with this token can dequeue
       # jobs, stream events, or fetch connector credentials. No
@@ -79,6 +94,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      pending-mcp:
         condition: service_healthy
     # Longer than Compose's own 10s default: the server's graceful
     # shutdown drains in-flight HTTP/SSE and gRPC work with its own 15s

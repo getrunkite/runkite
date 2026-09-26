@@ -83,6 +83,20 @@ services:
       timeout: 3s
       retries: 10
 
+  pending-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    entrypoint: ["python"]
+    command: ["/app/examples/pending_agent/mcp_server.py"]
+    environment:
+      PORT: "8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
   runkite-1: &runkite-replica
     build:
       context: .
@@ -93,6 +107,7 @@ services:
       HTTP_PORT: "2026"
       GRPC_PORT: "50051"
       LANGGRAPH_CONFIG: /app/examples/all_agents/langgraph.json
+      PENDING_MCP_URL: http://pending-mcp:8091
       RUNNER_TOKEN_PYTHON_LANGGRAPH: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
       # No client-facing auth configured -- this stack's purpose is
       # proving multi-instance backend/runner-token wiring, not modeling
@@ -108,6 +123,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      pending-mcp:
         condition: service_healthy
     # Longer than Compose's own 10s default: the server's graceful
     # shutdown drains in-flight HTTP/SSE and gRPC work with its own 15s
