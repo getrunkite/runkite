@@ -2,8 +2,8 @@ apiVersion: v2
 name: runkite
 description: Runkite control plane (multi-replica) with optional Python runner
 type: application
-version: 0.5.0
-appVersion: "0.5.0"
+version: 0.5.1
+appVersion: "0.5.1"
 keywords:
   - runkite
   - agents

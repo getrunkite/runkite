@@ -2,6 +2,26 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## [0.5.1] — 2026-09-26
+
+First-hour Try loop: connector Pending on a fake bank refund. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
+
+### Added
+- `pending_agent` example: no-LLM graph calls connector MCP `refund`; predicate `amount >= 100` holds in Admin Pending; digest-bound retry after approve
+- Fake bank MCP (`examples/pending_agent/mcp_server.py`) and `pending-mcp` in `docker-compose*.yml`
+- Try Agent defaults to `pending_agent` and links connector pending to Admin Pending
+- Public Try-it / admin-guide / feature-map copy for the refund hold
+
+### Notes
+- No Python or TypeScript runner package logic change -- version lockstep only. Policy pending stays JSON-RPC `-32000` in the MCP body (HTTP 200).
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.5.1]: https://github.com/getrunkite/runkite/releases/tag/v0.5.1
+
 ## [0.5.0] — 2026-09-24
 
 Fixture replay (`runkite sim`) and opt-in connector MCP payload shrink. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
