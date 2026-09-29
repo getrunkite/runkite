@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Check, Loader2, ShieldAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -18,10 +18,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/toolti
 const STATUS_OPTIONS = ["pending", "approved", "denied", "consumed", "all"];
 
 export function PendingActions() {
-  const [tenantId, setTenantId] = useState("");
+  const [searchParams] = useSearchParams();
+  const [tenantId, setTenantId] = useState(() => searchParams.get("tenant_id") ?? "");
   const [status, setStatus] = useState("pending");
   const [connector, setConnector] = useState("");
-  const [runId, setRunId] = useState("");
+  const [runId, setRunId] = useState(() => searchParams.get("run_id") ?? "");
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const cursor = cursorStack.length ? cursorStack[cursorStack.length - 1] : undefined;
   const [busyId, setBusyId] = useState<string | null>(null);

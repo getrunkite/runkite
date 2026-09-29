@@ -7,12 +7,14 @@ import type { AdminAgent } from "../api/types";
 import { DocsLink, EmptyState, ErrorState, PageHeader, supportPage } from "../components/common";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { RunHop } from "../components/run-hop";
 import {
   extractAssistantText,
   extractUsage,
   parseSseData,
   parseSseMethod,
 } from "../lib/agentMessages";
+import { parseToolAuth } from "../lib/runHop";
 
 type ChatMsg = { role: "user" | "assistant" | "system"; text: string };
 type RawLine = { ts: string; event: string; preview: string };
@@ -32,6 +34,9 @@ export function TryAgent() {
   const [usage, setUsage] = useState<Record<string, unknown> | null>(null);
   const [hitl, setHitl] = useState(false);
   const [connectorPending, setConnectorPending] = useState(false);
+  const [authConnector, setAuthConnector] = useState<string | null>(null);
+  const [authTool, setAuthTool] = useState<string | null>(null);
+  const [authEffect, setAuthEffect] = useState<string | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -94,6 +99,9 @@ export function TryAgent() {
       setBusy(true);
       setHitl(false);
       setConnectorPending(false);
+      setAuthConnector(null);
+      setAuthTool(null);
+      setAuthEffect(null);
       let lastAi = "";
       return new Promise<void>((resolve) => {
         abortRef.current?.();
@@ -123,8 +131,15 @@ export function TryAgent() {
               if (u) setUsage(u);
             }
             if (method === "tool_auth") {
-              const effect = (data as { effect?: string } | null)?.effect;
-              if (effect === "pending") setConnectorPending(true);
+              const auth = parseToolAuth(data);
+              if (auth) {
+                setAuthConnector(auth.connector || null);
+                setAuthTool(auth.tool || null);
+                setAuthEffect(auth.effect || null);
+                if (auth.effect === "pending") setConnectorPending(true);
+              } else if ((data as { effect?: string } | null)?.effect === "pending") {
+                setConnectorPending(true);
+              }
             }
             if (method === "end") {
               if (lastAi) {
@@ -202,6 +217,9 @@ export function TryAgent() {
     setUsage(null);
     setHitl(false);
     setConnectorPending(false);
+    setAuthConnector(null);
+    setAuthTool(null);
+    setAuthEffect(null);
   };
 
   if (loadError) return <ErrorState message={loadError} />;
@@ -342,6 +360,16 @@ export function TryAgent() {
         </div>
 
         <div className="flex min-h-[28rem] flex-col gap-3">
+          <RunHop
+            agentId={agentId}
+            tenantId={tenantId}
+            runId={runId}
+            busy={busy}
+            connectorPending={connectorPending}
+            connector={authConnector}
+            tool={authTool}
+            effect={authEffect}
+          />
           <div className="rounded-sm border border-border bg-card px-3 py-2">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usage (this turn)</p>
             <pre className="mt-1 max-h-24 overflow-auto font-mono text-xs text-foreground">
