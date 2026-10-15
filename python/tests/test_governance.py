@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -204,6 +205,62 @@ def test_timeout():
         stop(server)
 
 
+def test_cancel_before_call():
+    def respond(handler):
+        reply(handler, 200, {"effect": "allow"})
+
+    server, url = serve(respond)
+    try:
+        cancelled = threading.Event()
+        cancelled.set()
+        client = GovernanceClient(url)
+        try:
+            client.resolve(**CALL, cancelled=cancelled)
+            check("cancel before call raises", False)
+        except GovernanceError as exc:
+            check("cancel before call", exc.status == 499 and str(exc) == "governance poll aborted")
+        check("cancel before call makes no request", len(server.hits) == 0)
+    finally:
+        stop(server)
+
+
+def test_cancel_during_poll():
+    def respond(handler):
+        if handler.path == "/governance/decide":
+            reply(handler, 200, {"effect": "pending", "action_id": "pending-wait"})
+            return
+        reply(handler, 200, {"action_id": "pending-wait", "status": "pending"})
+
+    server, url = serve(respond)
+    cancelled = threading.Event()
+    caught = {}
+
+    def run():
+        client = GovernanceClient(url, interval_ms=400, timeout_ms=10_000)
+        try:
+            client.resolve(**CALL, cancelled=cancelled)
+        except GovernanceError as exc:
+            caught["error"] = exc
+
+    worker = threading.Thread(target=run)
+    try:
+        worker.start()
+        deadline = time.time() + 2
+        while time.time() < deadline and not any(hit["method"] == "GET" for hit in server.hits):
+            time.sleep(0.01)
+        check("poll started", any(hit["method"] == "GET" for hit in server.hits))
+        cancelled.set()
+        worker.join(2)
+        check("cancel stopped the thread", not worker.is_alive())
+        error = caught.get("error")
+        check("cancel during poll", isinstance(error, GovernanceError) and error.status == 499)
+        check("one poll", len([hit for hit in server.hits if hit["method"] == "GET"]) == 1)
+    finally:
+        cancelled.set()
+        worker.join(2)
+        stop(server)
+
+
 def test_http_error():
     def respond(handler):
         reply(handler, 403, {"message": "governance:decide permission required"})
@@ -225,5 +282,7 @@ if __name__ == "__main__":
     test_resolve_approved()
     test_rejected_and_consumed()
     test_timeout()
+    test_cancel_before_call()
+    test_cancel_during_poll()
     test_http_error()
     print("ok")

@@ -10,6 +10,7 @@ typescript/runkite-governance.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -78,7 +79,10 @@ class GovernanceClient:
         tenant_id: str | None = None,
         interval_ms: int | None = None,
         timeout_ms: int | None = None,
+        cancelled: threading.Event | None = None,
     ) -> dict[str, Any]:
+        """Poll until the row settles. Set cancelled from another thread to stop, including during the wait."""
+        _raise_if_cancelled(cancelled)
         decision = self.decide(
             agent_id=agent_id,
             connector=connector,
@@ -102,12 +106,16 @@ class GovernanceClient:
         limit = self._timeout_ms if timeout_ms is None else timeout_ms
         deadline = time.monotonic() + limit / 1000
         while True:
+            _raise_if_cancelled(cancelled)
             action = self.action(action_id)
             if action["status"] != "pending":
                 return _outcome(action)
             if time.monotonic() >= deadline:
                 raise GovernanceError("governance poll timed out", 408)
-            time.sleep(every / 1000)
+            if cancelled is not None and cancelled.wait(every / 1000):
+                raise GovernanceError("governance poll aborted", 499)
+            if cancelled is None:
+                time.sleep(every / 1000)
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         data = None
@@ -190,6 +198,11 @@ def _optional_str(value: Any) -> str | None:
 
 def _compact(row: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in row.items() if value is not None}
+
+
+def _raise_if_cancelled(cancelled: threading.Event | None) -> None:
+    if cancelled is not None and cancelled.is_set():
+        raise GovernanceError("governance poll aborted", 499)
 
 
 def _message(raw: bytes, fallback: str) -> str:

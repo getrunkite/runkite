@@ -81,7 +81,7 @@ Until that ships, “SDK” in docs means **LangGraph SDK** (or any Agent Protoc
 
 ## Embedded governance helper
 
-[`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs, and they are not published. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds.
+[`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs, and they are not published. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Pass an `AbortSignal` (TypeScript) or a `threading.Event` (Python) and the poll stops when the caller aborts.
 
 ## Related
 

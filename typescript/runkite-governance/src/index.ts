@@ -65,10 +65,17 @@ export type GovernanceClientOptions = {
   timeoutMs?: number;
 };
 
+export type GovernanceWait = {
+  intervalMs?: number;
+  timeoutMs?: number;
+  /** Stops the poll, including an in-flight request. A closed chat tab passes its AbortSignal here. */
+  signal?: AbortSignal;
+};
+
 export type GovernanceClient = {
-  decide(call: GovernanceCall): Promise<GovernanceDecision>;
-  action(actionId: string): Promise<GovernanceAction>;
-  resolve(call: GovernanceCall, wait?: { intervalMs?: number; timeoutMs?: number }): Promise<GovernanceOutcome>;
+  decide(call: GovernanceCall, signal?: AbortSignal): Promise<GovernanceDecision>;
+  action(actionId: string, signal?: AbortSignal): Promise<GovernanceAction>;
+  resolve(call: GovernanceCall, wait?: GovernanceWait): Promise<GovernanceOutcome>;
 };
 
 const DEFAULT_INTERVAL_MS = 500;
@@ -80,7 +87,8 @@ export function createGovernanceClient(options: GovernanceClientOptions): Govern
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
+  async function request(method: string, path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted();
     const headers: Record<string, string> = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (options.apiKey) headers.Authorization = `Bearer ${options.apiKey}`;
@@ -88,6 +96,7 @@ export function createGovernanceClient(options: GovernanceClientOptions): Govern
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
     const text = await res.text();
     let parsed: unknown = undefined;
@@ -109,25 +118,31 @@ export function createGovernanceClient(options: GovernanceClientOptions): Govern
   }
 
   return {
-    async decide(call) {
-      const raw = await request("POST", "/governance/decide", {
-        agent_id: call.agentId,
-        connector: call.connector,
-        tool: call.tool,
-        args: call.args ?? {},
-        run_id: call.runId ?? "",
-        ...(call.tenantId ? { tenant_id: call.tenantId } : {}),
-      });
+    async decide(call, signal) {
+      const raw = await request(
+        "POST",
+        "/governance/decide",
+        {
+          agent_id: call.agentId,
+          connector: call.connector,
+          tool: call.tool,
+          args: call.args ?? {},
+          run_id: call.runId ?? "",
+          ...(call.tenantId ? { tenant_id: call.tenantId } : {}),
+        },
+        signal,
+      );
       return asDecision(raw);
     },
 
-    async action(actionId) {
-      const raw = await request("GET", `/governance/actions/${encodeURIComponent(actionId)}`);
+    async action(actionId, signal) {
+      const raw = await request("GET", `/governance/actions/${encodeURIComponent(actionId)}`, undefined, signal);
       return asAction(raw);
     },
 
     async resolve(call, wait) {
-      const decision = await this.decide(call);
+      const signal = wait?.signal;
+      const decision = await this.decide(call, signal);
       if (decision.effect !== "pending") {
         return compact({ effect: decision.effect, reason: decision.reason, reasonCode: decision.reasonCode });
       }
@@ -138,12 +153,12 @@ export function createGovernanceClient(options: GovernanceClientOptions): Govern
       const every = wait?.intervalMs ?? intervalMs;
       const deadline = Date.now() + (wait?.timeoutMs ?? timeoutMs);
       for (;;) {
-        const action = await this.action(actionId);
+        const action = await this.action(actionId, signal);
         if (action.status !== "pending") return outcomeFromAction(action);
         if (Date.now() >= deadline) {
           throw new GovernanceError("governance poll timed out", 408);
         }
-        await sleep(every);
+        await sleep(every, signal);
       }
     },
   };
@@ -202,6 +217,21 @@ function compact<T extends Record<string, unknown>>(row: T): T {
   return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined)) as T;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (abort: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (abort) reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+      else resolve();
+    };
+    const onAbort = () => finish(true);
+    const timer = setTimeout(() => finish(false), ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }

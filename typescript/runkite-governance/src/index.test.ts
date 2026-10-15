@@ -152,6 +152,54 @@ test("resolve times out while the row stays pending", async () => {
   }
 });
 
+test("an already aborted signal does not call the plane", async () => {
+  const plane = await fakePlane((_req, res) => {
+    json(res, 200, { effect: "allow" });
+  });
+  try {
+    const signal = AbortSignal.abort();
+    const client = createGovernanceClient({ baseUrl: plane.url });
+    await assert.rejects(() => client.resolve(call, { signal }), (err: unknown) => {
+      assert.ok(err instanceof DOMException);
+      assert.equal(err.name, "AbortError");
+      return true;
+    });
+    assert.equal(plane.hits.length, 0);
+  } finally {
+    await plane.close();
+  }
+});
+
+test("resolve stops polling when the signal aborts", async () => {
+  const plane = await fakePlane((req, res) => {
+    if (req.url === "/governance/decide") {
+      json(res, 200, { effect: "pending", action_id: "pending-wait" });
+      return;
+    }
+    json(res, 200, { action_id: "pending-wait", status: "pending" });
+  });
+  try {
+    const controller = new AbortController();
+    const client = createGovernanceClient({ baseUrl: plane.url, intervalMs: 500, timeoutMs: 10_000 });
+    const pending = client.resolve(call, { signal: controller.signal });
+    const started = Date.now();
+    while (!plane.hits.some((hit) => hit.method === "GET")) {
+      if (Date.now() - started > 1000) throw new Error("poll did not start");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    controller.abort();
+    await assert.rejects(pending, (err: unknown) => {
+      assert.ok(err instanceof DOMException);
+      assert.equal(err.name, "AbortError");
+      return true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(plane.hits.filter((hit) => hit.method === "GET").length, 1);
+  } finally {
+    await plane.close();
+  }
+});
+
 test("non-2xx surfaces the plane message", async () => {
   const plane = await fakePlane((_req, res) => {
     json(res, 403, { message: "governance:decide permission required" });
