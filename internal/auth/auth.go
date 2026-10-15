@@ -258,7 +258,7 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{
-				"message": "insufficient permissions for " + r.Method + " (requires '" + requiredPermission(r.Method) + "')",
+				"message": "insufficient permissions for " + r.Method + " (requires '" + requiredPermission(r.Method, path) + "')",
 			})
 			return
 		}
@@ -311,16 +311,33 @@ func isAdminAPIPath(path string) bool {
 	return path == "/admin-api" || strings.HasPrefix(path, "/admin-api/")
 }
 
+// GovernanceDecidePermission is the permission for POST /governance/decide.
+// It is not implied by "write" or by agents:<id>:run. "admin" still implies
+// it, via hasPermission. An empty permission list stays unrestricted when
+// strict mode is off, same as every other client route.
+const GovernanceDecidePermission = "governance:decide"
+
 // requiredPermission maps an HTTP method to the permission string a caller
-// must hold to use it: reads need "read", mutations need "write". This is
-// deliberately coarse-grained (route-level RBAC, not per-resource ACLs) --
-// matches the "read"/"write" permission strings already used throughout the
-// auth providers and connector config examples.
-func requiredPermission(method string) string {
+// must hold to use it: reads need "read", mutations need "write", except
+// POST /governance/decide, which needs GovernanceDecidePermission.
+// This is deliberately coarse-grained (route-level RBAC, not per-resource
+// ACLs) and matches the "read"/"write" permission strings already used
+// throughout the auth providers and connector config examples.
+func requiredPermission(method, path string) string {
+	if isGovernanceDecidePath(method, path) {
+		return GovernanceDecidePermission
+	}
 	if method == http.MethodGet || method == http.MethodHead {
 		return "read"
 	}
 	return "write"
+}
+
+// isGovernanceDecidePath reports the embedded-governance decide call.
+// Checked in the auth middleware, which runs before the mux, so a trailing
+// slash has to match here too.
+func isGovernanceDecidePath(method, path string) bool {
+	return method == http.MethodPost && strings.TrimSuffix(path, "/") == "/governance/decide"
 }
 
 // authorized checks whether an authenticated caller may perform the given
@@ -336,8 +353,9 @@ func requiredPermission(method string) string {
 // A NON-EMPTY list is always a real allow-list: the caller must hold the
 // specific permission the request requires. "write" implies "read"
 // (a writer can GET). "admin" implies everything. agents:<id>:run
-// satisfies "write" only on run-create paths (see isRunCreatePath) —
-// never on DELETE/cancel/store/thread mutations.
+// satisfies "write" only on run-create paths (see isRunCreatePath),
+// never on DELETE/cancel/store/thread mutations, and never on
+// POST /governance/decide.
 func authorized(result *AuthResult, method, path string, strict bool) bool {
 	if result == nil {
 		return !strict
@@ -345,7 +363,7 @@ func authorized(result *AuthResult, method, path string, strict bool) bool {
 	if len(result.Permissions) == 0 {
 		return !strict
 	}
-	return hasPermission(result.Permissions, requiredPermission(method), method, path)
+	return hasPermission(result.Permissions, requiredPermission(method, path), method, path)
 }
 
 // authorizedAdmin is the /admin-api/* gate: requires "admin" when
@@ -400,16 +418,16 @@ func hasPermission(permissions []string, required, method, path string) bool {
 }
 
 // appPermission reports whether p is one of this control plane's own
-// RBAC vocabulary strings (read/write/admin, or agents:<id>:run).
-// Anything else -- OIDC consent scopes, Auth0 API permissions like
-// "read:messages", custom realm roles -- is not something authorized()
-// understands, and must NOT be kept in AuthResult.Permissions: a
-// non-empty list of unknown strings is treated as a restrictive
+// RBAC vocabulary strings (read/write/admin, governance:decide, or
+// agents:<id>:run). Anything else (OIDC consent scopes, Auth0 API
+// permissions like "read:messages", custom realm roles) is not something
+// authorized() understands, and must NOT be kept in AuthResult.Permissions:
+// a non-empty list of unknown strings is treated as a restrictive
 // allow-list and silently 403s every real request (the Keycloak scope
 // bug; same class for an always-on "permissions" claim from Auth0).
 func appPermission(p string) bool {
 	switch p {
-	case "read", "write", "admin":
+	case "read", "write", "admin", GovernanceDecidePermission:
 		return true
 	default:
 		return isAgentRunPermission(p)

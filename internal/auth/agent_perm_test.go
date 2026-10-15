@@ -38,6 +38,36 @@ func TestCanRunAgent(t *testing.T) {
 	}
 }
 
+func TestGovernanceDecidePermission_NotImpliedByWriteOrRun(t *testing.T) {
+	h := func(perms []string) http.Handler {
+		p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+			"k": {Permissions: perms},
+		})
+		return auth.Middleware(p, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+		}))
+	}
+	post := func(handler http.Handler) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/governance/decide", nil)
+		req.Header.Set("Authorization", "Bearer k")
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := post(h([]string{"write"})); got != http.StatusForbidden {
+		t.Fatalf("write: got %d", got)
+	}
+	if got := post(h([]string{auth.AgentRunPermission("partner")})); got != http.StatusForbidden {
+		t.Fatalf("agents run: got %d", got)
+	}
+	if got := post(h([]string{auth.GovernanceDecidePermission})); got != 200 {
+		t.Fatalf("governance:decide: got %d", got)
+	}
+	if got := post(h([]string{"admin"})); got != 200 {
+		t.Fatalf("admin: got %d", got)
+	}
+}
+
 func TestAgentRunPermission_OnlyRunCreateRoutes(t *testing.T) {
 	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
 		"fine": {Permissions: []string{auth.AgentRunPermission("echo")}},

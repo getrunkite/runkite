@@ -153,6 +153,12 @@ Observational lifecycle webhooks (`webhooks` in config) cannot reject runs. Sync
 
 ### Governance & connector proxy (see other docs)
 
+```
+POST   /governance/decide          Allow or deny one tool call (no run, no job)
+```
+
+Permission is `governance:decide` (`write` and `agents:<id>:run` do not grant it). The response effect is `allow` or `deny`. An engine `pending` result is returned as `deny` with the engine `reason_code`; the audit row still says `pending`. Kill switches and spend caps are not applied. See [`spec/openapi.json`](../spec/openapi.json).
+
 Plane policy and SQL Admin governance are documented in full elsewhere — this reference is the Agent Protocol / client surface. Pointers:
 
 | Surface | Where |

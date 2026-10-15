@@ -279,6 +279,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /livez", s.handleLivez)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 
+	// Embedded governance: an in-process app asks allow/deny for a tool
+	// call without a Runner-Protocol run. See governance_decide.go.
+	mux.HandleFunc("POST /governance/decide", s.handleGovernanceDecide)
+
 	// Agents (AP-001..007)
 	mux.HandleFunc("POST /agents/search", s.handleSearchAgents)
 	mux.HandleFunc("GET /agents/{agentID}", s.handleGetAgent)

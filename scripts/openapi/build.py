@@ -269,6 +269,47 @@ def _new_schemas() -> dict:
             },
             "title": "RunCostDetail",
         },
+        "GovernanceDecideRequest": {
+            "type": "object",
+            "required": ["agent_id", "connector", "tool"],
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": "Caller-supplied. Not looked up in the agents table. Matched against grants as a string.",
+                },
+                "connector": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": "Grant key. May be a logical name with no MCP server behind it.",
+                },
+                "tool": {"type": "string", "maxLength": 256},
+                "args": {"description": "Tool arguments. Omitted or null is treated as {}."},
+                "run_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": "Opaque id stored on the audit row. Does not create a thread or a run. May be empty in this slice.",
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "description": "Not used to select the tenant. If present and different from the authenticated key's tenant, the call is 403.",
+                },
+            },
+            "title": "GovernanceDecideRequest",
+        },
+        "GovernanceDecideResponse": {
+            "type": "object",
+            "required": ["effect"],
+            "properties": {
+                "effect": {"type": "string", "enum": ["allow", "deny"]},
+                "reason": {"type": "string"},
+                "reason_code": {
+                    "type": "string",
+                    "description": "Engine reason code, including when an engine pending result is returned as deny.",
+                },
+            },
+            "title": "GovernanceDecideResponse",
+        },
     }
 
 
@@ -297,6 +338,7 @@ def _build_public_spec() -> dict:
         {"name": "Health", "description": "Liveness, readiness, and legacy health probes."},
         {"name": "Cost", "description": "A2A delegation cost attribution."},
         {"name": "Platform", "description": "Infrastructure: MCP server, custom routes, metrics, pprof, admin UI."},
+        {"name": "Governance", "description": "Embedded allow/deny for an in-process tool call. Does not create a run."},
     ]:
         if tag["name"] not in existing_tag_names:
             spec["tags"].append(tag)
@@ -706,6 +748,46 @@ def _build_public_spec() -> dict:
             "operationId": "search_vectors",
             "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("VectorSearchRequest")}}},
             "responses": {**_json_response("200", "Success", _ref("VectorSearchResponse"))},
+        }
+    }
+
+    # Embedded governance: allow/deny for one tool call, no run.
+    paths["/governance/decide"] = {
+        "post": {
+            "tags": ["Governance"],
+            "summary": "Decide a tool call",
+            "description": (
+                "Allow or deny one tool call for an in-process app. Does not create a run, "
+                "dispatch a job, or apply kill switches or spend caps. The caller executes the tool. "
+                "Requires permission governance:decide (admin implies it; write and agents:<id>:run do not). "
+                "Tenant is the authenticated key's tenant. "
+                "An engine effect of pending is returned as deny; reason_code is unchanged; "
+                "the audit row still records pending; no pending action is stored."
+            ),
+            "operationId": "governance_decide",
+            "requestBody": {
+                "required": True,
+                "content": {"application/json": {"schema": _ref("GovernanceDecideRequest")}},
+            },
+            "responses": {
+                **_json_response("200", "Allow or deny. Pending is not returned.", _ref("GovernanceDecideResponse")),
+                "400": {
+                    "description": "Invalid JSON, missing agent_id/connector/tool, or an id longer than 256 characters",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "403": {
+                    "description": "tenant_id does not match the authenticated tenant, or the caller lacks governance:decide",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "409": {
+                    "description": "Policy engine is not enabled",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "429": {
+                    "description": "Per-agent rate limit exceeded",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+            },
         }
     }
 

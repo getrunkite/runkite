@@ -150,10 +150,11 @@ func (l *Limiter) AllowTenant(tenantID string) bool {
 }
 
 // Middleware enforces the global, per-user, and per-tenant dimensions.
-// Per-agent enforcement happens separately, directly in createRun
-// (internal/api), where agent_id is already parsed from the request body
-// -- sniffing it generically here would mean buffering and restoring the
-// request body on every route just for the few that create runs.
+// Per-agent enforcement happens separately, directly in handlers that
+// have already parsed agent_id from the body (createRun and
+// POST /governance/decide). Sniffing it generically here would mean
+// buffering and restoring the request body on every route just for
+// those few.
 //
 // Must be mounted inside auth.Middleware (i.e. auth runs first) so
 // auth.FromContext has an identity, and tenant.FromContext has a tenant,

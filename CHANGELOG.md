@@ -2,6 +2,11 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## Unreleased
+
+### Added
+- `POST /governance/decide`: allow or deny one in-process tool call. Permission `governance:decide` (not implied by `write` or `agents:<id>:run`). An engine pending result is returned as deny until waitable pending exists. Kill switches and spend caps are not applied.
+
 ## [0.5.2] — 2026-09-29
 
 Try Agent hop: agent → plane → tool, live from connector `tool_auth`. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
