@@ -259,4 +259,6 @@ All eight questions are decided. None are still open.
 - [x] §4.2 poll path implemented locally (2026-10-15). Webhook is still later.
       §4.4 stays out of this release.
 - [x] TypeScript helper implemented locally (2026-10-15) in
-      `typescript/runkite-governance`. `decide`, then poll. Python is still later.
+      `typescript/runkite-governance`. `decide`, then poll.
+- [x] Python helper implemented locally (2026-10-15) in `python/runkite_governance`.
+      Same two calls. Webhook is still later. §4.4 stays out of this release.

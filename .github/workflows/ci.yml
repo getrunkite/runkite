@@ -237,6 +237,7 @@ jobs:
           python python/tests/test_otel_callbacks.py
           python python/tests/test_checkpoint_concurrent_setup.py
           python python/tests/test_proxy_checkpoint.py
+          python python/tests/test_governance.py
           # Live LangGraph SDK tests skip cleanly when /health is down (no
           # control plane in this step). They run for real when
           # RUNKITE_URL points at a live stack.

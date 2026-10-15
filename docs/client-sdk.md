@@ -81,7 +81,7 @@ Until that ships, “SDK” in docs means **LangGraph SDK** (or any Agent Protoc
 
 ## Embedded governance helper
 
-[`typescript/runkite-governance`](../typescript/runkite-governance) is a small TypeScript client for `POST /governance/decide` and `GET /governance/actions/{action_id}`. It is not the SDK above. It does not create threads or runs, and it does not publish to npm. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Python comes later.
+[`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs, and they are not published. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds.
 
 ## Related
 

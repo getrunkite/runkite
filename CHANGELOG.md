@@ -6,7 +6,8 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 - `POST /governance/decide`: allow, deny, or pending for one in-process tool call. Permission `governance:decide` (not implied by `read`, `write`, or `agents:<id>:run`). Pending returns `action_id` and requires `run_id`. `GET /governance/actions/{action_id}` polls it. Admin approve and deny use the existing pending row. Embedded rows still pending after 24h are rejected. Connector HITL rows are not expired. Kill switches and spend caps are not applied.
-- TypeScript helper `typescript/runkite-governance`: `decide`, then poll until approved or rejected. Not the full client SDK. Python later.
+- TypeScript helper `typescript/runkite-governance`: `decide`, then poll until approved or rejected. Not the full client SDK.
+- Python helper `python/runkite_governance`: the same decide-then-poll calls. Stdlib only. Not the full client SDK.
 
 ## [0.5.2] — 2026-09-29
 
