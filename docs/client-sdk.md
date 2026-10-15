@@ -79,6 +79,10 @@ If/when traction warrants it, build a **thin** first-party client (not a full mi
 
 Until that ships, “SDK” in docs means **LangGraph SDK** (or any Agent Protocol client), not a Runkite-branded package.
 
+## Embedded governance helper
+
+[`typescript/runkite-governance`](../typescript/runkite-governance) is a small TypeScript client for `POST /governance/decide` and `GET /governance/actions/{action_id}`. It is not the SDK above. It does not create threads or runs, and it does not publish to npm. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Python comes later.
+
 ## Related
 
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)

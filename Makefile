@@ -328,6 +328,7 @@ test-adapters:
 # generation, cancel/interrupt handling -- no live control plane needed).
 test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
+	node --experimental-strip-types --test typescript/runkite-governance/src/index.test.ts
 
 # --- Lint / format ---
 #

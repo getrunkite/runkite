@@ -1,0 +1,15 @@
+{
+  "name": "runkite-governance",
+  "version": "0.5.2",
+  "private": true,
+  "description": "Decide and poll helper for Runkite embedded governance. Not the full client SDK.",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/index.test.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "BUSL-1.1"
+}

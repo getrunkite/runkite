@@ -282,6 +282,9 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npx tsx --test src/*.test.ts
 
+      - name: TypeScript governance helper
+        run: node --experimental-strip-types --test typescript/runkite-governance/src/index.test.ts
+
       - name: TypeScript runner dist/ is in sync with src/
         # Unit tests above run against src/ directly via tsx, never touching
         # dist/ -- the actual npm-published, `bin`/`main`-referenced build
