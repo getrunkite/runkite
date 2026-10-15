@@ -288,7 +288,7 @@ def _new_schemas() -> dict:
                 "run_id": {
                     "type": "string",
                     "maxLength": 256,
-                    "description": "Opaque id stored on the audit row. Does not create a thread or a run. May be empty in this slice.",
+                    "description": "Opaque id stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny.",
                 },
                 "tenant_id": {
                     "type": "string",
@@ -301,14 +301,33 @@ def _new_schemas() -> dict:
             "type": "object",
             "required": ["effect"],
             "properties": {
-                "effect": {"type": "string", "enum": ["allow", "deny"]},
+                "effect": {"type": "string", "enum": ["allow", "deny", "pending"]},
                 "reason": {"type": "string"},
-                "reason_code": {
+                "reason_code": {"type": "string"},
+                "action_id": {
                     "type": "string",
-                    "description": "Engine reason code, including when an engine pending result is returned as deny.",
+                    "description": "Set when effect is pending. Poll GET /governance/actions/{action_id}.",
                 },
             },
             "title": "GovernanceDecideResponse",
+        },
+        "GovernanceActionResponse": {
+            "type": "object",
+            "required": ["action_id", "status"],
+            "properties": {
+                "action_id": {"type": "string"},
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "approved", "rejected", "consumed"],
+                    "description": "Operator deny is rejected. consumed means a runner already used the one-shot approval.",
+                },
+                "reason": {"type": "string"},
+                "reason_code": {
+                    "type": "string",
+                    "description": "pending_expired when the embedded row passed its 24h ceiling while still pending.",
+                },
+            },
+            "title": "GovernanceActionResponse",
         },
     }
 
@@ -759,10 +778,12 @@ def _build_public_spec() -> dict:
             "description": (
                 "Allow or deny one tool call for an in-process app. Does not create a run, "
                 "dispatch a job, or apply kill switches or spend caps. The caller executes the tool. "
-                "Requires permission governance:decide (admin implies it; write and agents:<id>:run do not). "
+                "Requires permission governance:decide (admin implies it; write, read, and agents:<id>:run do not). "
                 "Tenant is the authenticated key's tenant. "
-                "An engine effect of pending is returned as deny; reason_code is unchanged; "
-                "the audit row still records pending; no pending action is stored."
+                "An engine effect of pending is returned as pending with action_id when run_id is set. "
+                "The same run_id, generation 0, connector, tool, and argument digest reuses the open row. "
+                "Poll GET /governance/actions/{action_id}. Admin approves or denies that row. "
+                "Embedded rows expire after 24h if still pending. Connector HITL rows do not."
             ),
             "operationId": "governance_decide",
             "requestBody": {
@@ -770,9 +791,9 @@ def _build_public_spec() -> dict:
                 "content": {"application/json": {"schema": _ref("GovernanceDecideRequest")}},
             },
             "responses": {
-                **_json_response("200", "Allow or deny. Pending is not returned.", _ref("GovernanceDecideResponse")),
+                **_json_response("200", "Allow, deny, or pending.", _ref("GovernanceDecideResponse")),
                 "400": {
-                    "description": "Invalid JSON, missing agent_id/connector/tool, or an id longer than 256 characters",
+                    "description": "Invalid JSON, missing agent_id/connector/tool, an id longer than 256 characters, or run_id missing when the decision is pending",
                     "content": {"application/json": {"schema": _ref("ErrorResponse")}},
                 },
                 "403": {
@@ -785,6 +806,39 @@ def _build_public_spec() -> dict:
                 },
                 "429": {
                     "description": "Per-agent rate limit exceeded",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "501": {
+                    "description": "Pending actions require a SQL state backend",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+            },
+        }
+    }
+    paths["/governance/actions/{action_id}"] = {
+        "get": {
+            "tags": ["Governance"],
+            "summary": "Poll a governance action",
+            "description": (
+                "Returns the operator decision for one embedded pending row. "
+                "Does not consume the approval and does not execute the tool. "
+                "Requires governance:decide. Another tenant's id is 404. "
+                "A row still pending after 24h is rejected with reason_code pending_expired."
+            ),
+            "operationId": "governance_get_action",
+            "parameters": [_path_param("action_id", "The pending action id.", fmt="")],
+            "responses": {
+                **_json_response("200", "Current status.", _ref("GovernanceActionResponse")),
+                "403": {
+                    "description": "Caller lacks governance:decide",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "404": {
+                    "description": "No such action in the caller's tenant",
+                    "content": {"application/json": {"schema": _ref("ErrorResponse")}},
+                },
+                "501": {
+                    "description": "Pending actions require a SQL state backend",
                     "content": {"application/json": {"schema": _ref("ErrorResponse")}},
                 },
             },

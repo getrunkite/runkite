@@ -252,6 +252,15 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return nil
 			},
 		},
+		{
+			Version: 15,
+			Name:    "pending_actions_expires_at",
+			Up:      s.upPendingActionsExpiresAt,
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `ALTER TABLE pending_actions DROP COLUMN expires_at`)
+				return err
+			},
+		},
 	}
 }
 

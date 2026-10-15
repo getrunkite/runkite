@@ -5,7 +5,7 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 ## Unreleased
 
 ### Added
-- `POST /governance/decide`: allow or deny one in-process tool call. Permission `governance:decide` (not implied by `write` or `agents:<id>:run`). An engine pending result is returned as deny until waitable pending exists. Kill switches and spend caps are not applied.
+- `POST /governance/decide`: allow, deny, or pending for one in-process tool call. Permission `governance:decide` (not implied by `read`, `write`, or `agents:<id>:run`). Pending returns `action_id` and requires `run_id`. `GET /governance/actions/{action_id}` polls it. Admin approve and deny use the existing pending row. Embedded rows still pending after 24h are rejected. Connector HITL rows are not expired. Kill switches and spend caps are not applied.
 
 ## [0.5.2] — 2026-09-29
 

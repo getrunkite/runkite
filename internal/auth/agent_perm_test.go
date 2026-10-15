@@ -66,6 +66,22 @@ func TestGovernanceDecidePermission_NotImpliedByWriteOrRun(t *testing.T) {
 	if got := post(h([]string{"admin"})); got != 200 {
 		t.Fatalf("admin: got %d", got)
 	}
+	get := func(perms []string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/governance/actions/pending-1", nil)
+		req.Header.Set("Authorization", "Bearer k")
+		h(perms).ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := get([]string{"read"}); got != http.StatusForbidden {
+		t.Fatalf("read poll: got %d", got)
+	}
+	if got := get([]string{"write"}); got != http.StatusForbidden {
+		t.Fatalf("write poll: got %d", got)
+	}
+	if got := get([]string{auth.GovernanceDecidePermission}); got != 200 {
+		t.Fatalf("governance poll: got %d", got)
+	}
 }
 
 func TestAgentRunPermission_OnlyRunCreateRoutes(t *testing.T) {

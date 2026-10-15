@@ -311,20 +311,21 @@ func isAdminAPIPath(path string) bool {
 	return path == "/admin-api" || strings.HasPrefix(path, "/admin-api/")
 }
 
-// GovernanceDecidePermission is the permission for POST /governance/decide.
-// It is not implied by "write" or by agents:<id>:run. "admin" still implies
-// it, via hasPermission. An empty permission list stays unrestricted when
-// strict mode is off, same as every other client route.
+// GovernanceDecidePermission is the permission for POST /governance/decide
+// and GET /governance/actions/{id}. It is not implied by "write", "read",
+// or agents:<id>:run. "admin" still implies it, via hasPermission. An
+// empty permission list stays unrestricted when strict mode is off, same
+// as every other client route.
 const GovernanceDecidePermission = "governance:decide"
 
 // requiredPermission maps an HTTP method to the permission string a caller
 // must hold to use it: reads need "read", mutations need "write", except
-// POST /governance/decide, which needs GovernanceDecidePermission.
+// the embedded governance routes, which need GovernanceDecidePermission.
 // This is deliberately coarse-grained (route-level RBAC, not per-resource
 // ACLs) and matches the "read"/"write" permission strings already used
 // throughout the auth providers and connector config examples.
 func requiredPermission(method, path string) string {
-	if isGovernanceDecidePath(method, path) {
+	if isGovernanceClientPath(method, path) {
 		return GovernanceDecidePermission
 	}
 	if method == http.MethodGet || method == http.MethodHead {
@@ -333,11 +334,16 @@ func requiredPermission(method, path string) string {
 	return "write"
 }
 
-// isGovernanceDecidePath reports the embedded-governance decide call.
-// Checked in the auth middleware, which runs before the mux, so a trailing
-// slash has to match here too.
-func isGovernanceDecidePath(method, path string) bool {
-	return method == http.MethodPost && strings.TrimSuffix(path, "/") == "/governance/decide"
+// isGovernanceClientPath reports the embedded-governance decide and poll
+// routes. Checked in the auth middleware, which runs before the mux, so a
+// trailing slash has to match here too.
+func isGovernanceClientPath(method, path string) bool {
+	path = strings.TrimSuffix(path, "/")
+	if method == http.MethodPost && path == "/governance/decide" {
+		return true
+	}
+	return method == http.MethodGet && strings.HasPrefix(path, "/governance/actions/") &&
+		len(path) > len("/governance/actions/")
 }
 
 // authorized checks whether an authenticated caller may perform the given
@@ -354,8 +360,8 @@ func isGovernanceDecidePath(method, path string) bool {
 // specific permission the request requires. "write" implies "read"
 // (a writer can GET). "admin" implies everything. agents:<id>:run
 // satisfies "write" only on run-create paths (see isRunCreatePath),
-// never on DELETE/cancel/store/thread mutations, and never on
-// POST /governance/decide.
+// never on DELETE/cancel/store/thread mutations, and never on the
+// embedded governance routes.
 func authorized(result *AuthResult, method, path string, strict bool) bool {
 	if result == nil {
 		return !strict

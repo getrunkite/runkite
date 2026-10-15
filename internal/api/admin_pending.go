@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
@@ -20,6 +21,9 @@ type pendingActionStore interface {
 	SetPendingActionApproved(ctx context.Context, id, decidedBy string) error
 	FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error)
 	ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error)
+	// ExpireGovernancePending denies embedded rows whose expires_at has
+	// passed. Connector rows (nil expires_at) stay pending.
+	ExpireGovernancePending(ctx context.Context, now time.Time) error
 }
 
 func (s *Server) pendingActions() (pendingActionStore, bool) {

@@ -236,7 +236,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 
 // persistPendingAction stores (or reuses) a pending HITL row for this
 // exact argument digest. Returns action id.
-func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput, connectorName, tool string, dec policy.PolicyDecision) (string, error) {
+func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput, connectorName, tool string, dec policy.PolicyDecision, expiresAt *time.Time) (string, error) {
 	store, ok := s.pendingActions()
 	if !ok {
 		return "", errString("pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
@@ -271,6 +271,7 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 		Status:     models.PendingStatusPending,
 		ArgsDigest: digest,
 		Args:       in.ArgsMeta,
+		ExpiresAt:  expiresAt,
 	}
 	if a.ReasonCode == "" {
 		a.ReasonCode = policy.ReasonPolicyPending

@@ -11,6 +11,11 @@ const (
 	PendingStatusApproved = "approved"
 	PendingStatusDenied   = "denied"
 	PendingStatusConsumed = "consumed"
+
+	// PendingReasonExpired is set when an embedded-governance row passes
+	// its expires_at while still pending. Connector HITL rows leave
+	// expires_at empty and are not swept.
+	PendingReasonExpired = "pending_expired"
 )
 
 // PendingAction is one connector tool call waiting on operator approval.
@@ -31,6 +36,9 @@ type PendingAction struct {
 	DecidedBy  string         `json:"decided_by,omitempty"`
 	CreatedAt  time.Time      `json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
+	// ExpiresAt is set only for embedded-governance rows. Nil means the
+	// row waits until an operator decides, which is connector HITL.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // MarshalPendingArgs is the JSON stored on pending_actions.args (display map).

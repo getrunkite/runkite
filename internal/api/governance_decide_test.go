@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/getrunkite/runkite/internal/api"
 	"github.com/getrunkite/runkite/internal/auth"
@@ -46,11 +47,24 @@ func TestGovernanceDecide_AllowDenyAndPending(t *testing.T) {
 		t.Fatalf("deny: status %d effect %q body %s", deny.Code, deny.Effect, deny.Raw)
 	}
 
-	// Mandatory HITL would be pending. This slice has no wait handle, so
-	// the HTTP effect is deny and the reason_code is the engine's.
 	held := postGovernance(t, srv, "", `{"agent_id":"partner","connector":"workspace","tool":"uploadFile","run_id":"turn-1"}`)
-	if held.Code != http.StatusOK || held.Effect != "deny" || held.ReasonCode != policy.ReasonMandatoryHITL {
-		t.Fatalf("pending mapped to deny: status %d effect %q code %q body %s", held.Code, held.Effect, held.ReasonCode, held.Raw)
+	if held.Code != http.StatusOK || held.Effect != "pending" || held.ReasonCode != policy.ReasonMandatoryHITL || held.ActionID == "" {
+		t.Fatalf("pending: status %d effect %q code %q id %q body %s", held.Code, held.Effect, held.ReasonCode, held.ActionID, held.Raw)
+	}
+	again := postGovernance(t, srv, "", `{"agent_id":"partner","connector":"workspace","tool":"uploadFile","run_id":"turn-1"}`)
+	if again.ActionID != held.ActionID {
+		t.Fatalf("same turn reused action %q, want %q", again.ActionID, held.ActionID)
+	}
+	missingRun := postGovernance(t, srv, "", `{"agent_id":"partner","connector":"workspace","tool":"uploadFile"}`)
+	if missingRun.Code != http.StatusBadRequest {
+		t.Fatalf("pending without run_id: status %d body %s", missingRun.Code, missingRun.Raw)
+	}
+	rows, err := store.SearchPendingActions(tenant.SystemContext(context.Background()), &models.PendingActionSearchRequest{RunID: "turn-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != held.ActionID || rows[0].ExpiresAt == nil {
+		t.Fatalf("pending rows %#v", rows)
 	}
 
 	events, err := store.SearchAuditEvents(tenant.SystemContext(context.Background()), &models.AuditSearchRequest{
@@ -59,8 +73,8 @@ func TestGovernanceDecide_AllowDenyAndPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 3 {
-		t.Fatalf("audit rows %d, want 3", len(events))
+	if len(events) != 4 {
+		t.Fatalf("audit rows %d, want 4", len(events))
 	}
 	sawPending := false
 	for _, ev := range events {
@@ -144,6 +158,74 @@ func TestGovernanceDecide_BadBodyAndLongID(t *testing.T) {
 	}
 }
 
+func TestGovernancePending_PollApproveDenyExpire(t *testing.T) {
+	store := newGovernanceSQLite(t)
+	eng := policy.New(policy.Config{
+		Grants: []policy.Grant{{
+			ID: "g1", TenantID: "default", AgentID: "partner", Connector: "workspace",
+		}},
+		MandatoryHITL: []policy.MandatoryHITLRule{{
+			ID: "hold", TenantID: "default", AgentID: "partner", Connector: "workspace",
+		}},
+	})
+	provider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
+		"gov":  {Name: "gov", Permissions: []string{auth.GovernanceDecidePermission}},
+		"acme": {Name: "acme", Permissions: []string{auth.GovernanceDecidePermission}, TenantID: "acme"},
+		"read": {Name: "read", Permissions: []string{"read"}},
+	})
+	apiServer := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	apiServer.SetPolicyEngine(eng)
+	srv := httptest.NewServer(auth.Middleware(provider, nil, nil, apiServer.Handler()))
+	t.Cleanup(srv.Close)
+	ctx := tenant.SystemContext(context.Background())
+
+	held := postGovernance(t, srv, "gov", `{"agent_id":"partner","connector":"workspace","tool":"deleteFile","run_id":"turn-a"}`)
+	if held.Code != http.StatusOK || held.Effect != "pending" || held.ActionID == "" {
+		t.Fatalf("decide: status %d effect %q body %s", held.Code, held.Effect, held.Raw)
+	}
+	polled := getGovernance(t, srv, "gov", held.ActionID)
+	if polled.Code != http.StatusOK || polled.Status != "pending" {
+		t.Fatalf("poll pending: status %d body %s", polled.Code, polled.Raw)
+	}
+	if got := getGovernance(t, srv, "read", held.ActionID); got.Code != http.StatusForbidden {
+		t.Fatalf("read key poll: status %d body %s", got.Code, got.Raw)
+	}
+	if got := getGovernance(t, srv, "acme", held.ActionID); got.Code != http.StatusNotFound {
+		t.Fatalf("other tenant: status %d body %s", got.Code, got.Raw)
+	}
+
+	if err := store.SetPendingActionApproved(ctx, held.ActionID, "ops"); err != nil {
+		t.Fatal(err)
+	}
+	approved := getGovernance(t, srv, "gov", held.ActionID)
+	if approved.Code != http.StatusOK || approved.Status != "approved" {
+		t.Fatalf("approved: status %d body %s", approved.Code, approved.Raw)
+	}
+
+	denied := postGovernance(t, srv, "gov", `{"agent_id":"partner","connector":"workspace","tool":"deleteFile","run_id":"turn-b"}`)
+	if denied.Effect != "pending" || denied.ActionID == "" || denied.ActionID == held.ActionID {
+		t.Fatalf("second action: %+v", denied)
+	}
+	if err := store.SetPendingActionStatus(ctx, denied.ActionID, models.PendingStatusPending, models.PendingStatusDenied); err != nil {
+		t.Fatal(err)
+	}
+	rejected := getGovernance(t, srv, "gov", denied.ActionID)
+	if rejected.Status != "rejected" {
+		t.Fatalf("rejected: status %d body %s", rejected.Code, rejected.Raw)
+	}
+
+	restore := api.SetGovernancePendingTTLForTest(-time.Hour)
+	t.Cleanup(restore)
+	stale := postGovernance(t, srv, "gov", `{"agent_id":"partner","connector":"workspace","tool":"deleteFile","run_id":"turn-c"}`)
+	if stale.Effect != "pending" || stale.ActionID == "" {
+		t.Fatalf("stale decide: %+v", stale)
+	}
+	expired := getGovernance(t, srv, "gov", stale.ActionID)
+	if expired.Status != "rejected" || expired.ReasonCode != models.PendingReasonExpired {
+		t.Fatalf("expired: status %d body %s", expired.Code, expired.Raw)
+	}
+}
+
 func TestGovernanceDecide_PermissionAndAgentRateLimit(t *testing.T) {
 	store := newGovernanceSQLite(t)
 	eng := policy.New(policy.Config{
@@ -196,7 +278,9 @@ func TestGovernanceDecide_PermissionAndAgentRateLimit(t *testing.T) {
 type governanceResult struct {
 	Code       int
 	Effect     string
+	Status     string
 	ReasonCode string
+	ActionID   string
 	Raw        string
 }
 
@@ -243,8 +327,41 @@ func postGovernance(t *testing.T, srv *httptest.Server, apiKey, body string) gov
 	raw, _ := io.ReadAll(resp.Body)
 	var parsed struct {
 		Effect     string `json:"effect"`
+		Status     string `json:"status"`
 		ReasonCode string `json:"reason_code"`
+		ActionID   string `json:"action_id"`
 	}
 	_ = json.Unmarshal(raw, &parsed)
-	return governanceResult{Code: resp.StatusCode, Effect: parsed.Effect, ReasonCode: parsed.ReasonCode, Raw: string(bytes.TrimSpace(raw))}
+	return governanceResult{
+		Code: resp.StatusCode, Effect: parsed.Effect, Status: parsed.Status,
+		ReasonCode: parsed.ReasonCode, ActionID: parsed.ActionID, Raw: string(bytes.TrimSpace(raw)),
+	}
+}
+
+func getGovernance(t *testing.T, srv *httptest.Server, apiKey, actionID string) governanceResult {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/governance/actions/"+actionID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var parsed struct {
+		Effect     string `json:"effect"`
+		Status     string `json:"status"`
+		ReasonCode string `json:"reason_code"`
+		ActionID   string `json:"action_id"`
+	}
+	_ = json.Unmarshal(raw, &parsed)
+	return governanceResult{
+		Code: resp.StatusCode, Effect: parsed.Effect, Status: parsed.Status,
+		ReasonCode: parsed.ReasonCode, ActionID: parsed.ActionID, Raw: string(bytes.TrimSpace(raw)),
+	}
 }

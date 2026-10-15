@@ -151,9 +151,16 @@ Needed:
 - Admin resolves the row the way it resolves connector HITL today. Reuse the pending
   pages. `handleAdminApprovePendingAction` already re-runs `Decide` and refuses the
   approve if policy now denies.
-- Orphan expiry for an action nobody polls.
+- Orphan expiry for an action nobody polls. Implemented as a 24h `expires_at` on
+  rows this door creates. A sweep on decide and poll sets those still-pending rows
+  to denied with `reason_code` `pending_expired`, which the poll reports as
+  `rejected`. Connector HITL rows leave `expires_at` empty and are not swept.
 - `persistPendingAction` can store a caller-supplied `run_id`. It must not be empty, and
-  it must not change between the decide and the poll.
+  it must not change between the decide and the poll. An empty `run_id` on a pending
+  decision is `400`. The same `(run_id, generation 0, connector, tool, args_digest)`
+  reuses the open row. Poll status is `pending`, `approved`, `rejected` (stored
+  `denied`), or `consumed` if a runner already used the one-shot. Another tenant's
+  id is `404`. `GET` requires `governance:decide`.
 
 Two different approvers. Do not collapse them:
 
@@ -249,4 +256,5 @@ All eight questions are decided. None are still open.
 - [x] All eight questions decided. Status is final.
 - [x] §4.1 implemented locally (2026-10-15). A separate written estimate was not
       produced; implementation started on request. HTTP effect is allow or deny only.
-- [ ] §4.2 waitable pending. Not started. §4.4 stays out of this release.
+- [x] §4.2 poll path implemented locally (2026-10-15). Webhook is still later.
+      §4.4 stays out of this release.

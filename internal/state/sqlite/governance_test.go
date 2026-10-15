@@ -64,6 +64,32 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 	if err != nil || id != "" {
 		t.Fatalf("second consume want empty, got %q err=%v", id, err)
 	}
+
+	past := time.Now().UTC().Add(-time.Hour)
+	if err := s.CreatePendingAction(ctx, &models.PendingAction{
+		ID: "keep", RunID: "r-keep", TenantID: "acme", AgentID: "sales",
+		Connector: "sf", Tool: "list", Status: models.PendingStatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreatePendingAction(ctx, &models.PendingAction{
+		ID: "drop", RunID: "r-drop", TenantID: "acme", AgentID: "sales",
+		Connector: "workspace", Tool: "deleteFile", Status: models.PendingStatusPending,
+		ExpiresAt: &past,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ExpireGovernancePending(ctx, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := s.GetPendingAction(ctx, "keep")
+	if err != nil || kept.Status != models.PendingStatusPending {
+		t.Fatalf("connector row expired: %#v err=%v", kept, err)
+	}
+	dropped, err := s.GetPendingAction(ctx, "drop")
+	if err != nil || dropped.Status != models.PendingStatusDenied || dropped.ReasonCode != models.PendingReasonExpired {
+		t.Fatalf("embedded row not expired: %#v err=%v", dropped, err)
+	}
 }
 
 func TestPendingAction_ArgsDigestBound(t *testing.T) {

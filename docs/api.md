@@ -154,10 +154,11 @@ Observational lifecycle webhooks (`webhooks` in config) cannot reject runs. Sync
 ### Governance & connector proxy (see other docs)
 
 ```
-POST   /governance/decide          Allow or deny one tool call (no run, no job)
+POST   /governance/decide                 Allow, deny, or pending for one tool call (no run, no job)
+GET    /governance/actions/{action_id}    Poll that pending row
 ```
 
-Permission is `governance:decide` (`write` and `agents:<id>:run` do not grant it). The response effect is `allow` or `deny`. An engine `pending` result is returned as `deny` with the engine `reason_code`; the audit row still says `pending`. Kill switches and spend caps are not applied. See [`spec/openapi.json`](../spec/openapi.json).
+Permission is `governance:decide` (`read`, `write`, and `agents:<id>:run` do not grant it). `pending` includes `action_id` and requires `run_id`. Admin approves or denies the same row as connector HITL. Poll status is `pending`, `approved`, or `rejected` (`consumed` if a runner already used the one-shot). An embedded row still pending after 24 hours is rejected with `pending_expired`. Connector HITL rows are not expired. Kill switches and spend caps are not applied. See [`spec/openapi.json`](../spec/openapi.json).
 
 Plane policy and SQL Admin governance are documented in full elsewhere — this reference is the Agent Protocol / client surface. Pointers:
 

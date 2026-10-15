@@ -92,8 +92,13 @@ func (s *Store) upPendingActionsArgs(ctx context.Context, db migrate.DB) error {
 	return err
 }
 
+func (s *Store) upPendingActionsExpiresAt(ctx context.Context, db migrate.DB) error {
+	_, err := db.ExecContext(ctx, `ALTER TABLE pending_actions ADD COLUMN expires_at DATETIME(6) NULL`)
+	return err
+}
+
 const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by`
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at`
 
 // WriteAuditEvent persists one policy/security decision.
 func (s *Store) WriteAuditEvent(ctx context.Context, ev *models.AuditEvent) error {
@@ -409,11 +414,24 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			args_digest, args, decided_by, expires_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt,
-		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy)
+		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy, a.ExpiresAt)
+	return err
+}
+
+// ExpireGovernancePending denies embedded rows past expires_at.
+// ponytail: no index on expires_at. Upgrade path is an index on
+// (status, expires_at) if this sweep shows up in traces.
+func (s *Store) ExpireGovernancePending(ctx context.Context, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE pending_actions
+		SET status = ?, reason_code = ?, updated_at = ?
+		WHERE status = ? AND expires_at IS NOT NULL AND expires_at <= ?
+	`, models.PendingStatusDenied, models.PendingReasonExpired, now.UTC(),
+		models.PendingStatusPending, now.UTC())
 	return err
 }
 
@@ -591,14 +609,19 @@ func scanPendingAction(row govScanner) (*models.PendingAction, error) {
 	var a models.PendingAction
 	var reason sql.NullString
 	var argsRaw []byte
+	var expires sql.NullTime
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
-		&a.ArgsDigest, &argsRaw, &a.DecidedBy,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &expires,
 	); err != nil {
 		return nil, err
 	}
 	a.Reason = reason.String
+	if expires.Valid {
+		t := expires.Time.UTC()
+		a.ExpiresAt = &t
+	}
 	a.Args = models.UnmarshalPendingArgs(argsRaw)
 	return &a, nil
 }

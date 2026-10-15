@@ -97,11 +97,25 @@ func (s *SQLiteStore) upPendingActionsArgs(ctx context.Context) error {
 	return nil
 }
 
+func (s *SQLiteStore) upPendingActionsExpiresAt(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `ALTER TABLE pending_actions ADD COLUMN expires_at TEXT`)
+	return err
+}
+
 const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by`
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at`
 
 func formatTS(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
+}
+
+// formatExpiry uses second precision so SQLite text comparison matches
+// chronological order. Nil stays NULL (connector HITL, no sweep).
+func formatExpiry(t *time.Time) any {
+	if t == nil || t.IsZero() {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func parseTS(s string) (time.Time, error) {
@@ -419,11 +433,24 @@ func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.Pending
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			args_digest, args, decided_by, expires_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, formatTS(a.CreatedAt), formatTS(a.UpdatedAt),
-		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy)
+		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy, formatExpiry(a.ExpiresAt))
+	return err
+}
+
+// ExpireGovernancePending denies embedded rows past expires_at.
+// ponytail: no index on expires_at. Upgrade path is an index on
+// (status, expires_at) if this sweep shows up in traces.
+func (s *SQLiteStore) ExpireGovernancePending(ctx context.Context, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE pending_actions
+		SET status = ?, reason_code = ?, updated_at = ?
+		WHERE status = ? AND expires_at IS NOT NULL AND expires_at <= ?
+	`, models.PendingStatusDenied, models.PendingReasonExpired, formatTS(now),
+		models.PendingStatusPending, now.UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -600,10 +627,11 @@ func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, runID string, g
 func scanPendingAction(row govScanner) (*models.PendingAction, error) {
 	var a models.PendingAction
 	var createdRaw, updatedRaw, argsRaw string
+	var expiresRaw sql.NullString
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &createdRaw, &updatedRaw,
-		&a.ArgsDigest, &argsRaw, &a.DecidedBy,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &expiresRaw,
 	); err != nil {
 		return nil, err
 	}
@@ -612,6 +640,11 @@ func scanPendingAction(row govScanner) (*models.PendingAction, error) {
 	}
 	if t, err := parseTS(updatedRaw); err == nil {
 		a.UpdatedAt = t
+	}
+	if expiresRaw.Valid && expiresRaw.String != "" {
+		if t, err := time.Parse(time.RFC3339, expiresRaw.String); err == nil {
+			a.ExpiresAt = &t
+		}
 	}
 	a.Args = models.UnmarshalPendingArgs([]byte(argsRaw))
 	return &a, nil

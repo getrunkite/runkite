@@ -314,6 +314,17 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 15,
+			Name:    "pending_actions_expires_at",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActionsExpiresAt(ctx, conn)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := conn.Exec(ctx, `ALTER TABLE pending_actions DROP COLUMN IF EXISTS expires_at`)
+				return err
+			},
+		},
 	}
 }
 
@@ -3051,8 +3062,13 @@ func (s *Store) upPendingActionsArgs(ctx context.Context, conn *pgxpool.Conn) er
 	return err
 }
 
+func (s *Store) upPendingActionsExpiresAt(ctx context.Context, conn *pgxpool.Conn) error {
+	_, err := conn.Exec(ctx, `ALTER TABLE pending_actions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`)
+	return err
+}
+
 const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by`
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at`
 
 // CreatePendingAction inserts a new pending HITL row.
 func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction) error {
@@ -3071,11 +3087,24 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			args_digest, args, decided_by, expires_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 	`, a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt,
-		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy)
+		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy, a.ExpiresAt)
+	return err
+}
+
+// ExpireGovernancePending denies embedded rows past expires_at.
+// ponytail: no index on expires_at. Upgrade path is an index on
+// (status, expires_at) if this sweep shows up in traces.
+func (s *Store) ExpireGovernancePending(ctx context.Context, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pending_actions
+		SET status = $1, reason_code = $2, updated_at = $3
+		WHERE status = $4 AND expires_at IS NOT NULL AND expires_at <= $5
+	`, models.PendingStatusDenied, models.PendingReasonExpired, now.UTC(),
+		models.PendingStatusPending, now.UTC())
 	return err
 }
 
@@ -3257,7 +3286,7 @@ func scanPendingAction(row policyGrantScanner) (*models.PendingAction, error) {
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
-		&a.ArgsDigest, &argsRaw, &a.DecidedBy,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &a.ExpiresAt,
 	); err != nil {
 		return nil, err
 	}

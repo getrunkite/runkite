@@ -347,6 +347,17 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{
+			Version: 15,
+			Name:    "pending_actions_expires_at",
+			Up: func(ctx context.Context) error {
+				return s.upPendingActionsExpiresAt(ctx, db)
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `ALTER TABLE pending_actions DROP COLUMN expires_at`)
+				return err
+			},
+		},
 	}
 }
 

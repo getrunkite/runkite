@@ -282,6 +282,7 @@ func (s *Server) Handler() http.Handler {
 	// Embedded governance: an in-process app asks allow/deny for a tool
 	// call without a Runner-Protocol run. See governance_decide.go.
 	mux.HandleFunc("POST /governance/decide", s.handleGovernanceDecide)
+	mux.HandleFunc("GET /governance/actions/{actionID}", s.handleGovernanceGetAction)
 
 	// Agents (AP-001..007)
 	mux.HandleFunc("POST /agents/search", s.handleSearchAgents)
@@ -1010,7 +1011,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 			if dec, deny := s.checkConnectorPolicy(r.Context(), in); deny {
 				actionID := ""
 				if dec.Effect == policy.EffectPending {
-					id, err := s.persistPendingAction(r.Context(), in, name, tool, dec)
+					id, err := s.persistPendingAction(r.Context(), in, name, tool, dec, nil)
 					if err != nil {
 						slog.Warn("policy: persist pending action failed", "error", err, "connector", name, "tool", tool)
 						dec.Effect = policy.EffectDeny
