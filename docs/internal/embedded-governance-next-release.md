@@ -63,8 +63,6 @@ Runkite's README says it is not another agent framework and that it governs what
 around the agent. A second, lighter entry point to the same policy engine completes that
 promise for this shape of app.
 
-Partner Assistant is one example of the shape, not the customer this has to land in.
-
 ## 3. Verified facts (checked against source, not assumed)
 
 - `Engine.Decide(ctx, PolicyInput) PolicyDecision` is plain Go. `internal/policy/policy.go:311`.
@@ -166,8 +164,8 @@ Two different approvers. Do not collapse them:
 
 - Chat user. The AI SDK `needsApproval` flag pauses the tool until that user approves
   inside the chat, on a later request. Runkite's job there is the allow/deny (and the
-  audit row). The app already has to render the approval control. Partner Assistant sets
-  `needsApproval: false` on the write tools because that control does not exist yet.
+  audit row). The app already has to render the approval control. Without that
+  control, a write tool has to skip approval or the turn hangs.
 - Operator in Admin. `needsApproval` does not wake up when someone clicks approve in
   Admin. The app polls (or receives a webhook) and then feeds the resolution back into
   its own message stream. A long wait does not fit one open HTTP request. That resume
@@ -211,8 +209,8 @@ release as budget enforcement or as a kill switch for in-process apps.
 - No requirement to move thread or message storage into Runkite. The app keeps its own
   database.
 - No Agent Protocol rewrite. `useChat` / `UIMessage` stay as they are.
-- This is not "Partner Assistant integrates with Runkite." That app does not need this
-  today: one agent, six file tools, each scoped to the caller's own workspace prefix.
+- This is not a mandate that any one app integrate with Runkite. An app whose
+  tools are already scoped to the caller does not need this door today.
   The note exists so a Vercel-AI-SDK-shaped app can adopt Runkite when it crosses a
   trigger below.
 
