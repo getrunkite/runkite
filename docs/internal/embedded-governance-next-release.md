@@ -262,3 +262,6 @@ All eight questions are decided. None are still open.
       `typescript/runkite-governance`. `decide`, then poll.
 - [x] Python helper implemented locally (2026-10-15) in `python/runkite_governance`.
       Same two calls. Webhook is still later. §4.4 stays out of this release.
+- [ ] How a Vercel AI SDK app would call this door, including Partner
+      Assistant, is a separate proposed note:
+      `docs/internal/vercel-ai-sdk-app-fit.md` (2026-10-16). Not started.
