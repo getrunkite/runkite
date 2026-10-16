@@ -4,11 +4,25 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.5.3] - 2026-10-16
+
+In-process tool governance for an app that keeps its own model loop. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
+
 ### Added
-- `POST /governance/decide`: allow, deny, or pending for one in-process tool call. Permission `governance:decide` (not implied by `read`, `write`, or `agents:<id>:run`). Pending returns `action_id` and requires `run_id`. `GET /governance/actions/{action_id}` polls it. Admin approve and deny use the existing pending row. Embedded rows still pending after 24h are rejected. Connector HITL rows are not expired. Kill switches and spend caps are not applied.
-- TypeScript helper `typescript/runkite-governance`: `decide`, then poll until approved or rejected. Not the full client SDK.
-- Python helper `python/runkite_governance`: the same decide-then-poll calls. Stdlib only. Not the full client SDK.
+- `POST /governance/decide`: allow, deny, or pending for one in-process tool call. Permission `governance:decide` (not implied by `read`, `write`, or `agents:<id>:run`). Pending returns `action_id` and requires `run_id`. `GET /governance/actions/{action_id}` polls it. Admin approve and deny use the existing pending row. Embedded rows still pending after 24h are rejected. Connector HITL rows are not expired. Kill switches, break-glass, and spend caps are not applied. Admin Threads and Runs do not list that caller.
+- TypeScript helper `typescript/runkite-governance`: `decide`, then poll until approved or rejected. Not the full client SDK. Not published.
+- Python helper `python/runkite_governance`: the same decide-then-poll calls. Stdlib only. Not the full client SDK. Not published.
 - Governance helpers stop polling when the caller aborts. TypeScript takes an `AbortSignal`. Python takes a `threading.Event`.
+
+### Notes
+- No Python or TypeScript runner package logic change -- version lockstep only. The helpers live in the repo and are not the published runner packages.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak).
+- Governance + FinOps durability remain SQL-only; Mongo returns `501` / fail-closed on those routes.
+- Runner Protocol stays independently versioned (Draft 0.1.0). Agent Protocol OpenAPI remains 0.1.6.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.5.3]: https://github.com/getrunkite/runkite/releases/tag/v0.5.3
 
 ## [0.5.2] — 2026-09-29
 

@@ -6,7 +6,9 @@ This page documents the trust boundary and what is (and is not) enforced today. 
 
 **Announce bar (verify, don’t rebuild):** run-binding, connector policy deny + durable audit, Admin audit search, and connector HITL (pending → approve → one-shot retry) are exercised by `make smoke-governance` on Postgres. That smoke is the laptop proof for those exits — not Mongo parity, not in-graph tool sandboxing, not a paid cloud soak, and not a full FinOps BI warehouse (Admin Spend on SQL is separate).
 
-**Admin UI (SQL):** `/admin/grants`, `/admin/mandatory-hitl`, `/admin/pending`, `/admin/kill`, `/admin/break-glass`, `/admin/audit` — see [Admin UI](admin.md#governance-pages-sql-backends).
+**Admin UI (SQL):** `/admin/grants`, `/admin/mandatory-hitl`, `/admin/pending`, `/admin/kill`, `/admin/break-glass`, `/admin/audit`. See [Admin UI](admin.md#governance-pages-sql-backends).
+
+**In-process tool decide:** `POST /governance/decide` answers one tool call for an app that keeps its own model loop. It does not create a thread or a run, so Admin Threads and Runs stay empty for that app. Grants, mandatory HITL, the pending queue, and audit apply. Kill switches, break-glass, and spend caps do not. The app executes the tool after allow, or after the pending row is approved.
 
 ## Trust boundary
 
