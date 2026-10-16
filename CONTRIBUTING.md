@@ -32,7 +32,7 @@ cd runkite
 make build
 ```
 
-See [`docs/quickstart.md`](docs/quickstart.md) for a full walkthrough (writing an agent, running the control plane + a runner, auth, connectors). Prerequisites: Go 1.25+, Python 3.12+ (for the Python runner/adapters), Node.js (for the TypeScript runner/Admin UI), Docker (optional, for Postgres/MySQL/Redis/MongoDB/Qdrant).
+See [`docs/quickstart.md`](docs/quickstart.md) for a full walkthrough (writing an agent, running the control plane + a runner, auth, connectors). Prerequisites: Go 1.26+, Python 3.12+ (for the Python runner/adapters), Node.js (for the TypeScript runner/Admin UI), Docker (optional, for Postgres/MySQL/Redis/MongoDB/Qdrant).
 
 ## Running tests
 

@@ -18,7 +18,7 @@ Pin a release when you need reproducibility (`pip install runkite-runner==…`, 
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Go | 1.25+ | Build the control plane |
+| Go | 1.26+ | Build the control plane |
 | Python | 3.12+ | Run agents |
 | Docker | Any recent | Optional, for Postgres/Redis |
 | uv | Latest | Python package manager (recommended) |

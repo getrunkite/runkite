@@ -20,6 +20,9 @@ typescript/*/dist/
 # in a dev machine's installed example deps (and their CVEs) alongside the
 # examples/*/langgraph.json files the image genuinely needs.
 **/node_modules/
+# Lockfiles are not installed here. The plane only needs examples/*/langgraph.json.
+# Leaving a lockfile in the image makes the vulnerability scan fail on example deps.
+**/package-lock.json
 **/.venv/
 **/__pycache__/
 **/*.pyc
