@@ -4,6 +4,19 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.5.5] - 2026-10-16
+
+The TypeScript runner image can be built again. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.
+
+### Fixed
+- `Dockerfile.runner-ts` can see `package-lock.json`. The control-plane image still drops example lockfiles after copy, so its vulnerability scan stays clean.
+
+### Notes
+- No runner behavior change.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+
+[0.5.5]: https://github.com/getrunkite/runkite/releases/tag/v0.5.5
+
 ## [0.5.4] - 2026-10-16
 
 Patch so the control-plane image and the TypeScript runner clear the current vulnerability scan. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.

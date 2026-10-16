@@ -40,6 +40,11 @@ RUN apk upgrade --no-cache && \
 
 COPY --from=builder /app/runkite /usr/local/bin/runkite
 COPY --from=builder --chown=runkite:runkite /app/examples /app/examples
+# The plane does not install example deps. A lockfile left next to
+# langgraph.json fails the image scan. The TypeScript runner image uses
+# this same build context and does npm ci from those files, so the
+# delete stays in this image only.
+RUN find /app/examples -name package-lock.json -delete
 
 # SQLite default path when POSTGRES_DSN/MYSQL_DSN/MONGO_URI are unset --
 # /tmp is world-writable so the non-root user can create the DB file
