@@ -4,6 +4,23 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.5.4] - 2026-10-16
+
+Patch so the control-plane image and the TypeScript runner clear the current vulnerability scan. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.
+
+### Fixed
+- Control plane builds with Go 1.26.9. `golang.org/x/net` is v0.60.0 and OpenTelemetry is v1.45.0. Example lockfiles are no longer copied into the image.
+- The custom-route proxy uses `Rewrite` instead of the deprecated `Director`.
+- Admin UI lockfile resolves `source-map-js` 1.2.2.
+- TypeScript runner lockfile resolves `@grpc/grpc-js` 1.14.6 and `undici` 8.12.2.
+
+### Notes
+- No runner behavior change beyond those dependency patches. The governance helpers are unchanged.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.5.4]: https://github.com/getrunkite/runkite/releases/tag/v0.5.4
+
 ## [0.5.3] - 2026-10-16
 
 In-process tool governance for an app that keeps its own model loop. Preview (BUSL) -- not a 1.0 production claim, and **not** a hosted control plane.
