@@ -104,14 +104,20 @@ func NewProxy(target *url.URL, mount string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		w.WriteHeader(http.StatusBadGateway)
-	}
-	baseDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		baseDirector(req)
-		injectIdentity(req)
+	proxy := &httputil.ReverseProxy{
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			w.WriteHeader(http.StatusBadGateway)
+		},
+		// Rewrite, not Director: Go 1.26 rejects Director, and a client can
+		// strip headers a Director adds. SetURL joins the stripped path onto
+		// the target. Putting the inbound Host back matches the old
+		// single-host proxy, which did not rewrite Host.
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.Host = r.In.Host
+			r.SetXForwarded()
+			injectIdentity(r.Out)
+		},
 	}
 	return http.StripPrefix(mount, proxy), nil
 }
