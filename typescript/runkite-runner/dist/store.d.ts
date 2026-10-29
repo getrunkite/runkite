@@ -42,6 +42,7 @@ export declare class RunkiteStore extends BaseStore {
         postgresDsn?: string;
         httpBaseUrl?: string;
         runnerToken?: string;
+        runnerKind?: string;
         poolSize?: number;
     });
     close(): Promise<void>;

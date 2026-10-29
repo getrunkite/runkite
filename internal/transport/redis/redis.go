@@ -356,17 +356,34 @@ func (q *Queue) drainPending(ctx context.Context) (int, error) {
 	return int(n), nil
 }
 
-// fencingCheck is shared Lua logic (via a comment, not a callable Lua
-// function -- these scripts are each their own standalone EVAL) between
-// ackScript and renewScript: given the CURRENT generation on record for
+// checkGenerationScript shares the atomic fence between ackScript and
+// renewScript: given the current generation on record for
 // a run_id (from inflightGenKey, not parsed out of the job payload --
 // see that key's own doc comment for why) and a presented generation,
-// decide whether to proceed. generation 0 (from a pre-fencing runner
-// build) or a current generation of 0 (a run_id tracked before this
-// field existed -- only possible during a rolling upgrade window) both
-// mean "don't enforce fencing here," matching how Ack/Renew behaved
-// unconditionally before fencing existed -- see transport.JobQueue's
-// Ack/Renew doc comments for the full rationale.
+// decide whether to proceed. The generations must match exactly. Zero may
+// identify a legacy assignment, but cannot renew or acknowledge a newer one.
+// If the generation index predates this schema, decode only the top-level
+// payload generation in the same atomic script. Missing index is not zero.
+const checkGenerationScript = `
+local current_gen_str = redis.call('HGET', gen_key, run_id)
+if not current_gen_str then
+    local ok, job = pcall(cjson.decode, redis.call('HGET', data_key, run_id))
+    if not ok or type(job) ~= 'table' then
+        return 0
+    end
+    if job.generation == nil then
+        current_gen_str = '0'
+    elseif type(job.generation) == 'number' then
+        current_gen_str = tostring(job.generation)
+    else
+        return 0
+    end
+end
+local current_gen = tonumber(current_gen_str)
+if current_gen == nil or current_gen ~= generation then
+    return 0
+end
+`
 
 // ackScript atomically checks the presented generation against the
 // in-flight run's own recorded generation before removing it -- see
@@ -385,15 +402,7 @@ local generation = tonumber(ARGV[2])
 if redis.call('HEXISTS', data_key, run_id) == 0 then
     return 0
 end
-
-if generation ~= 0 then
-    local current_gen_str = redis.call('HGET', gen_key, run_id)
-    local current_gen = current_gen_str and tonumber(current_gen_str) or 0
-    if current_gen ~= 0 and current_gen ~= generation then
-        return 0
-    end
-end
-
+` + checkGenerationScript + `
 redis.call('HDEL', data_key, run_id)
 redis.call('ZREM', zset_key, run_id)
 redis.call('HDEL', gen_key, run_id)
@@ -434,15 +443,7 @@ local generation = tonumber(ARGV[3])
 if redis.call('HEXISTS', data_key, run_id) == 0 then
     return 0
 end
-
-if generation ~= 0 then
-    local current_gen_str = redis.call('HGET', gen_key, run_id)
-    local current_gen = current_gen_str and tonumber(current_gen_str) or 0
-    if current_gen ~= 0 and current_gen ~= generation then
-        return 0
-    end
-end
-
+` + checkGenerationScript + `
 redis.call('ZADD', zset_key, score, run_id)
 return 1
 `
@@ -521,20 +522,13 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 	return nil
 }
 
-// reclaimStaleScript atomically finds every in-flight job older than the
-// given cutoff, removes it from in-flight tracking, and re-enqueues it
-// (unless it's been canceled meanwhile) -- all as one Redis-server-side
-// operation. That atomicity is the actual point, not just an optimization:
-// Redis executes one Lua script to completion before starting the next
-// command from ANY client, so if every control-plane replica's reaper
-// ticker calls this same script, only the replica whose call Redis happens
-// to run first will find and claim each stale entry -- by the time a
-// second replica's call runs (a few milliseconds later at most, never
-// concurrently), those entries are already gone from the zset. This is
-// what makes ReclaimStale safe to call from every replica simultaneously,
-// the same correctness property TryClaimCronFire's SQL "INSERT ... ON
-// CONFLICT DO NOTHING" gives cron claiming, achieved here via Redis's own
-// single-threaded script execution instead of a SQL unique constraint.
+// reclaimStaleScript atomically finds stale in-flight jobs. Ordinary jobs
+// are removed from in-flight tracking and re-enqueued with a new generation.
+// Redis runs each script to completion before another command, so concurrent
+// replicas cannot re-enqueue the same ordinary stale dispatch twice. Poison
+// assignments remain in-flight with the SAME generation and are returned on
+// later stale sweeps until durable completion is Ack'd. Duplicate poison
+// callbacks are safe because completion and acknowledgement are idempotent.
 //
 // Bumping the fencing generation is done via HINCRBY on the dedicated
 // gen_key, NOT by finding-and-replacing an existing "generation":N
@@ -570,10 +564,10 @@ local dead = {}
 
 for _, run_id in ipairs(stale_ids) do
     local job_json = redis.call('HGET', data_key, run_id)
-    redis.call('ZREM', zset_key, run_id)
-    redis.call('HDEL', data_key, run_id)
-
-    if job_json then
+    if not job_json then
+        redis.call('ZREM', zset_key, run_id)
+        redis.call('HDEL', gen_key, run_id)
+    else
         local cscore = redis.call('ZSCORE', canceled_key, run_id)
         local is_canceled = false
         if cscore then
@@ -583,24 +577,53 @@ for _, run_id in ipairs(stale_ids) do
             is_canceled = true
           end
         end
-        if not is_canceled then
-            local new_gen = redis.call('HINCRBY', gen_key, run_id, 1)
-            if max_retries > 0 and new_gen > max_retries then
-                redis.call('HDEL', gen_key, run_id)
-                table.insert(dead, run_id .. ':' .. tostring(new_gen) .. ':' .. job_json)
+        if is_canceled then
+            redis.call('ZREM', zset_key, run_id)
+            redis.call('HDEL', data_key, run_id)
+            redis.call('HDEL', gen_key, run_id)
+        else
+            -- Validate before removing any recoverable payload. Legacy records
+            -- without a generation index use only the top-level numeric field,
+            -- exactly like Ack/Renew; a nested value or string is not a fence.
+            local ok, job = pcall(cjson.decode, job_json)
+            if not ok or type(job) ~= 'table' then
+                return redis.error_reply('invalid inflight assignment')
+            end
+            local current_gen_str = redis.call('HGET', gen_key, run_id)
+            local missing_generation_index = not current_gen_str
+            if missing_generation_index then
+                if job.generation == nil then
+                    current_gen_str = '0'
+                elseif type(job.generation) == 'number' then
+                    current_gen_str = tostring(job.generation)
+                else
+                    return redis.error_reply('invalid inflight generation')
+                end
+            end
+            local current_gen = tonumber(current_gen_str)
+            if current_gen == nil or current_gen < 0 or current_gen % 1 ~= 0 then
+                return redis.error_reply('invalid inflight generation')
+            end
+            if missing_generation_index then
+                redis.call('HSET', gen_key, run_id, current_gen_str)
+            end
+            local next_gen = current_gen + 1
+            if max_retries > 0 and next_gen > max_retries then
+                -- The diagnostic pill names the rejected next generation.
+                -- Preserve the SAME live lease and generation so failed SQL
+                -- completion can retry. Only Ack(next_gen-1), after durable
+                -- completion/finalization, removes this poison assignment.
+                table.insert(dead, run_id .. ':' .. tostring(next_gen) .. ':' .. job_json)
             else
-                local job = cjson.decode(job_json)
-                -- Go's json.Marshal never emits trailing whitespace, so a
-                -- compact JSON object's very last byte is always '}' --
-                -- anchoring on that (not searching for any existing
-                -- "generation" text) is what makes this append safe
-                -- regardless of what the rest of the payload contains.
+                local new_gen = redis.call('HINCRBY', gen_key, run_id, 1)
+                -- Append the top-level generation without re-encoding user
+                -- input or changing empty-array shapes in the job payload.
                 local new_job_json = job_json:gsub('}$', ',"generation":' .. new_gen .. '}')
+                redis.call('ZREM', zset_key, run_id)
+                redis.call('HDEL', data_key, run_id)
                 redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
                 reclaimed = reclaimed + 1
             end
-        else
-            redis.call('HDEL', gen_key, run_id)
         end
     end
 end
@@ -617,8 +640,11 @@ return {reclaimed, dead}
 // payloads left on rk:inflight:pending (crash between BLMOVE and promote).
 //
 // maxRetries is the poison-pill ceiling: when the next generation would
-// exceed it, the job is removed from inflight and returned in dead
-// instead of re-enqueued. 0 means unlimited (legacy behavior).
+// exceed it, the SAME live lease is retained and returned in dead instead
+// of re-enqueued. Its diagnostic Generation is the rejected next attempt;
+// the reaper must persist/finalize terminal state, then Ack(Generation-1).
+// Until that Ack, later stale sweeps return the same pill for retry.
+// 0 means unlimited (legacy behavior).
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	if _, err := q.drainPending(ctx); err != nil {
 		return 0, nil, err

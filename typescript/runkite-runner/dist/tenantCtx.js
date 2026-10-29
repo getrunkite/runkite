@@ -19,6 +19,7 @@ export function runWithTenant(tenantId, fn) {
     const tid = (tenantId ?? "").trim() || DEFAULT_TENANT;
     const prev = als.getStore();
     return als.run({
+        ...prev,
         tenantId: tid,
         runId: prev?.runId ?? "",
         generation: prev?.generation ?? 0,
@@ -31,6 +32,8 @@ export function runWithBinding(opts, fn) {
         tenantId: tid,
         runId: (opts.runId ?? "").trim(),
         generation: opts.generation ?? 0,
+        runnerKind: opts.runnerKind,
+        runnerToken: opts.runnerToken,
     }, fn);
 }
 export function tenantHeaders() {
@@ -43,6 +46,17 @@ export function tenantHeaders() {
         headers[HEADER_GENERATION] = String(store.generation ?? 0);
     }
     return headers;
+}
+/** Shared kind-scoped authentication for helpers called inside a worker. */
+export function runnerHeaders(runnerToken, runnerKind) {
+    const binding = als.getStore();
+    const token = runnerToken ?? binding?.runnerToken ?? process.env.RUNNER_TOKEN;
+    return {
+        ...tenantHeaders(),
+        ...(token
+            ? { "X-Runner-Kind": runnerKind ?? binding?.runnerKind ?? "typescript-langgraphjs", "X-Runner-Token": token }
+            : {}),
+    };
 }
 /** LangGraph checkpointer key for this assignment's logical thread.
  * Empty / "default" → bare threadId (existing single-tenant rows stay

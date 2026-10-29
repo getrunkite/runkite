@@ -260,6 +260,10 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_otel_callbacks.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_proxy_checkpoint.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_governance.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_governance_deadlines.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_runner_identity.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_completion.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_completion.py && \
 		python/.venv/bin/python tests/sdk_client_test.py && \
 		python/.venv/bin/python tests/sdk_e2e_test.py && \
 		python/.venv/bin/python tests/sdk_cancel_hitl_test.py; \
@@ -295,6 +299,9 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_otel_callbacks.py && \
 		PYTHONPATH=python python3 python/tests/test_proxy_checkpoint.py && \
 		PYTHONPATH=python python3 python/tests/test_governance.py && \
+		PYTHONPATH=python python3 python/tests/test_governance_deadlines.py && \
+		PYTHONPATH=python python3 python/tests/test_runner_identity.py && \
+		PYTHONPATH=python python3 python/tests/test_completion.py && \
 		python3 tests/sdk_client_test.py && \
 		python3 tests/sdk_e2e_test.py && \
 		python3 tests/sdk_cancel_hitl_test.py; \
@@ -330,7 +337,8 @@ test-adapters:
 # generation, cancel/interrupt handling -- no live control plane needed).
 test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
-	node --experimental-strip-types --test typescript/runkite-governance/src/index.test.ts
+	node --experimental-strip-types --test typescript/runkite-governance/src/*.test.ts
+	node --experimental-strip-types --test examples/governance_ai_sdk/state.test.ts
 
 # --- Lint / format ---
 #

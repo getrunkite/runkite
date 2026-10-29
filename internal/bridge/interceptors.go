@@ -22,23 +22,30 @@ const (
 // authenticateRunner validates the runner-kind/runner-token metadata pair
 // against the configured RunnerTokens. In local mode (no tokens configured)
 // this always succeeds, a deliberate zero-friction default.
-func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) error {
+type runnerIdentityKey struct{}
+
+func authenticatedRunner(ctx context.Context) string {
+	kind, _ := ctx.Value(runnerIdentityKey{}).(string)
+	return kind
+}
+
+func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) (context.Context, error) {
 	if !rt.Enabled() {
-		return nil
+		return ctx, nil
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return status.Error(codes.Unauthenticated, "missing runner credentials")
+		return nil, status.Error(codes.Unauthenticated, "missing runner credentials")
 	}
 	kind := firstOrEmpty(md.Get(metaRunnerKind))
 	token := firstOrEmpty(md.Get(metaRunnerToken))
 	if kind == "" || token == "" {
-		return status.Error(codes.Unauthenticated, "missing runner-kind/runner-token metadata")
+		return nil, status.Error(codes.Unauthenticated, "missing runner-kind/runner-token metadata")
 	}
 	if !rt.Validate(kind, token) {
-		return status.Error(codes.Unauthenticated, "invalid runner token")
+		return nil, status.Error(codes.Unauthenticated, "invalid runner token")
 	}
-	return nil
+	return context.WithValue(ctx, runnerIdentityKey{}, kind), nil
 }
 
 func firstOrEmpty(vals []string) string {
@@ -51,19 +58,28 @@ func firstOrEmpty(vals []string) string {
 // UnaryAuthInterceptor enforces runner auth on unary RPCs (GetJob, ReportStatus).
 func UnaryAuthInterceptor(rt *auth.RunnerTokens) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if err := authenticateRunner(ctx, rt); err != nil {
+		authenticated, err := authenticateRunner(ctx, rt)
+		if err != nil {
 			return nil, err
 		}
-		return handler(ctx, req)
+		return handler(authenticated, req)
 	}
 }
 
 // StreamAuthInterceptor enforces runner auth on streaming RPCs (StreamEvents, WatchCancels).
 func StreamAuthInterceptor(rt *auth.RunnerTokens) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if err := authenticateRunner(ss.Context(), rt); err != nil {
+		authenticated, err := authenticateRunner(ss.Context(), rt)
+		if err != nil {
 			return err
 		}
-		return handler(srv, ss)
+		return handler(srv, &authenticatedServerStream{ServerStream: ss, ctx: authenticated})
 	}
 }
+
+type authenticatedServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *authenticatedServerStream) Context() context.Context { return s.ctx }

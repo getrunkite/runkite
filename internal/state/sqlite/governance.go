@@ -416,7 +416,9 @@ func scanPolicyGrants(rows *sql.Rows) ([]*models.PolicyGrant, error) {
 	return out, rows.Err()
 }
 
-// CreatePendingAction inserts a new pending HITL row.
+// CreatePendingAction inserts or reuses a scoped open approval. The canonical
+// action ID is written back to a.ID. A nullable unique key arbitrates concurrent
+// creates; legacy rows are reused without changing their stored history.
 func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.PendingAction) error {
 	if a == nil {
 		return nil
@@ -429,16 +431,47 @@ func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.Pending
 	if a.Status == "" {
 		a.Status = models.PendingStatusPending
 	}
+	var openKey any
+	if a.Status == models.PendingStatusPending {
+		existing, err := s.FindOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			a.ID = existing.ID
+			return nil
+		}
+		openKey = models.PendingActionKey(a)
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by, expires_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			args_digest, args, decided_by, expires_at, pending_key
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (pending_key) DO NOTHING`,
 		a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, formatTS(a.CreatedAt), formatTS(a.UpdatedAt),
-		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy, formatExpiry(a.ExpiresAt))
-	return err
+		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy, formatExpiry(a.ExpiresAt), openKey)
+	if err != nil {
+		return err
+	}
+	if openKey != nil {
+		existing, err := s.FindOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			a.ID = existing.ID
+			return nil
+		}
+		// A concurrent approval can remove the open key after the insert.
+		// Return only an action that actually exists, otherwise ask the caller to retry.
+		if _, err := s.GetPendingAction(ctx, a.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ExpireGovernancePending denies embedded rows past expires_at.
@@ -447,7 +480,7 @@ func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.Pending
 func (s *SQLiteStore) ExpireGovernancePending(ctx context.Context, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE pending_actions
-		SET status = ?, reason_code = ?, updated_at = ?
+		SET status = ?, reason_code = ?, updated_at = ?, pending_key = NULL
 		WHERE status = ? AND expires_at IS NOT NULL AND expires_at <= ?
 	`, models.PendingStatusDenied, models.PendingReasonExpired, formatTS(now),
 		models.PendingStatusPending, now.UTC().Format(time.RFC3339))
@@ -537,7 +570,7 @@ func (s *SQLiteStore) SearchPendingActions(ctx context.Context, req *models.Pend
 // SetPendingActionStatus updates status if still in fromStatus.
 func (s *SQLiteStore) SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error {
 	res, err := s.db.ExecContext(ctx, `
-		UPDATE pending_actions SET status = ?, updated_at = ?
+		UPDATE pending_actions SET status = ?, updated_at = ?, pending_key = NULL
 		WHERE id = ? AND status = ?`,
 		toStatus, formatTS(time.Now().UTC()), id, fromStatus)
 	if err != nil {
@@ -552,14 +585,15 @@ func (s *SQLiteStore) SetPendingActionStatus(ctx context.Context, id, fromStatus
 
 // FindOpenPendingAction returns the oldest still-pending row for this
 // call tuple and argument digest.
-func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error) {
+func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool) (*models.PendingAction, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
 		  AND status = ? AND args_digest = ?
+		  AND tenant_id = ? AND agent_id = ? AND (expires_at IS NOT NULL) = ?
 		ORDER BY created_at ASC LIMIT 1`,
-		runID, generation, connector, tool, models.PendingStatusPending, argsDigest)
+		runID, generation, connector, tool, models.PendingStatusPending, argsDigest, tenantID, agentID, embedded)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -571,22 +605,23 @@ func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, runID string, g
 }
 
 func (s *SQLiteStore) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
+	now := time.Now().UTC()
 	res, err := s.db.ExecContext(ctx, `
-		UPDATE pending_actions SET status = ?, decided_by = ?, updated_at = ?
-		WHERE id = ? AND status = ?`,
-		models.PendingStatusApproved, decidedBy, formatTS(time.Now().UTC()), id, models.PendingStatusPending)
+		UPDATE pending_actions SET status = ?, decided_by = ?, updated_at = ?, pending_key = NULL
+		WHERE id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)`,
+		models.PendingStatusApproved, decidedBy, formatTS(now), id, models.PendingStatusPending, formatExpiry(&now))
 	if err != nil {
 		return err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed"}
+		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed or approval expired"}
 	}
 	return nil
 }
 
 // ConsumeApprovedAction atomically marks an approved action consumed.
-func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
+func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -599,8 +634,9 @@ func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, runID string, g
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
 		  AND status = ?
 		  AND (args_digest = ? OR args_digest = '')
+		  AND tenant_id = ? AND agent_id = ? AND expires_at IS NULL
 		ORDER BY (args_digest = ?) DESC, created_at ASC LIMIT 1`,
-		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, argsDigest).Scan(&id)
+		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, tenantID, agentID, argsDigest).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
@@ -608,7 +644,7 @@ func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, runID string, g
 		return "", err
 	}
 	res, err := tx.ExecContext(ctx, `
-		UPDATE pending_actions SET status = ?, updated_at = ?
+		UPDATE pending_actions SET status = ?, updated_at = ?, pending_key = NULL
 		WHERE id = ? AND status = ?`,
 		models.PendingStatusConsumed, formatTS(time.Now().UTC()), id, models.PendingStatusApproved)
 	if err != nil {

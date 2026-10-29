@@ -36,6 +36,8 @@ Example (webhook sidecar):
 
 `cache_ttl_seconds > 0` caches a result per (credential, method, path) combination -- for a REST API whose paths embed resource IDs (`/threads/{id}/runs/{id}`), that's effectively one entry per distinct resource a caller has ever touched, not one per caller, so the cache is a size-bounded, TTL-evicting LRU rather than a plain map (`cache_max_entries`, default 10000) -- otherwise it would grow for the lifetime of a long-running control plane under completely normal traffic, not just under abuse.
 
+**Attempt identity:** the generation sent on a bound HTTP request or run-specific gRPC message must exactly equal the active assignment's generation. Zero never bypasses fencing, and the bridge never replaces a missing or zero worker generation with the current one. An actual legacy generation-zero assignment accepts zero only; after reclaim increments it, a zero-reporting runner is superseded. Upgrade custom or older runners to echo the generation from `GetJob`. The Python and TypeScript runners in this tree already echo it.
+
 ## TLS / mTLS
 
 Every network hop in this project is plaintext until you configure otherwise -- HTTP, the gRPC bridge, and both runners' calls back to the control plane's HTTP API. TLS is opt-in and env-var-driven, off by default, same convention as `POSTGRES_DSN`/`REDIS_URL`/`RUNNER_TOKEN_*`, not a `langgraph.json` field -- this is deployment infrastructure, not agent config.

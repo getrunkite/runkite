@@ -23,6 +23,7 @@ import grpc
 # Generated protobuf stubs
 from . import runner_pb2, runner_pb2_grpc
 from .checkpoint import CheckpointerManager, resolve_checkpoint_http_url
+from .completion import CompletionDeliveryError, finish_run
 from .custom_app import load_asgi_app, serve_custom_app
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
@@ -903,7 +904,7 @@ async def _handle_job(
 
         # Scope direct/proxy store+vector ops to this run's tenant for the
         # whole job (ContextVar -- safe under --concurrency > 1).
-        from .tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+        from .tenant_ctx import bind_run, bind_runner, bind_tenant, reset_run, reset_runner, reset_tenant
 
         with run_span(
             run_id,
@@ -914,6 +915,7 @@ async def _handle_job(
         ) as span:
             tenant_token = bind_tenant(assignment.get("tenant_id"))
             run_token = bind_run(run_id, generation)
+            runner_binding = bind_runner(runner_kind, runner_token)
             try:
                 status = await _run_assigned_job(
                     stub,
@@ -932,9 +934,12 @@ async def _handle_job(
                 if status:
                     set_run_status(span, status)
             finally:
+                reset_runner(runner_binding)
                 reset_run(run_token)
                 reset_tenant(tenant_token)
 
+    except CompletionDeliveryError as e:
+        logger.error("%s; leaving the assignment recoverable", e)
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
     except Exception as e:
@@ -1020,49 +1025,35 @@ async def _run_assigned_job(
     )
 
     try:
-        # Start the gRPC stream call
         stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
 
         async def run_stream():
             return await stream_call
 
         stream_task = asyncio.ensure_future(run_stream())
-
-        # Execute the agent with cancel support
-        status = await execute_run(adapter, assignment, send_event, cancel_event=cancel_event)
+        # Consume an early failure without an unhandled task warning. The
+        # same result is awaited below before any final status is sent.
+        stream_task.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        try:
+            status = await execute_run(adapter, assignment, send_event, cancel_event=cancel_event)
+        except Exception as exc:
+            logger.exception("Run %s execution failed: %s", run_id, exc)
+            status = "error"
+        await event_queue.put(None)
+        status = await finish_run(stub, run_id, generation, status, stream_task, auth_metadata)
+        if status:
+            logger.info(f"Run completed: run_id={run_id} status={status}")
+        return status
     finally:
         heartbeat_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat_task
-        # Always clear the cancel registration, even if execute_run
-        # itself raised -- otherwise a failure here would leak an
-        # entry in pending_cancels for every job that hits it.
+        if stream_task is not None and not stream_task.done():
+            stream_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stream_task
         async with pending_cancels_lock:
             pending_cancels.pop(run_id, None)
-
-    # Signal end of stream and wait for gRPC to finish
-    await event_queue.put(None)
-    if stream_task is not None:
-        try:
-            await stream_task
-        except Exception as e:
-            logger.error(f"Stream finalization error: {e}")
-
-    # Report final status -- must always happen once run_id is known,
-    # even if StreamEvents setup failed above (otherwise the run
-    # stays "running" forever on the control plane).
-    await stub.ReportStatus(
-        runner_pb2.ReportStatusRequest(
-            run_id=run_id,
-            status=status,
-            error_message="" if status != "error" else "see error event",
-            generation=generation,
-        ),
-        metadata=auth_metadata,
-    )
-
-    logger.info(f"Run completed: run_id={run_id} status={status}")
-    return status
 
 
 async def _poll_loop(

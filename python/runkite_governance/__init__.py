@@ -10,6 +10,8 @@ typescript/runkite-governance.
 from __future__ import annotations
 
 import json
+import math
+import queue
 import threading
 import time
 import urllib.error
@@ -19,6 +21,9 @@ from typing import Any
 
 DEFAULT_INTERVAL_MS = 500
 DEFAULT_TIMEOUT_MS = 60_000
+
+# Bound abandoned resolver/socket operations as well as the caller wait.
+_HTTP_WORKERS = threading.BoundedSemaphore(32)
 
 __all__ = ["DEFAULT_INTERVAL_MS", "DEFAULT_TIMEOUT_MS", "GovernanceClient", "GovernanceError"]
 
@@ -52,6 +57,8 @@ class GovernanceClient:
         args: dict[str, Any] | None = None,
         run_id: str = "",
         tenant_id: str | None = None,
+        cancelled: threading.Event | None = None,
+        timeout_ms: float | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "agent_id": agent_id,
@@ -62,11 +69,15 @@ class GovernanceClient:
         }
         if tenant_id:
             body["tenant_id"] = tenant_id
-        return _as_decision(self._request("POST", "/governance/decide", body))
+        return _as_decision(
+            self._request("POST", "/governance/decide", body, cancelled=cancelled, timeout_ms=timeout_ms)
+        )
 
-    def action(self, action_id: str) -> dict[str, Any]:
+    def action(
+        self, action_id: str, *, cancelled: threading.Event | None = None, timeout_ms: float | None = None
+    ) -> dict[str, Any]:
         path = "/governance/actions/" + urllib.parse.quote(action_id, safe="")
-        return _as_action(self._request("GET", path))
+        return _as_action(self._request("GET", path, cancelled=cancelled, timeout_ms=timeout_ms))
 
     def resolve(
         self,
@@ -83,6 +94,10 @@ class GovernanceClient:
     ) -> dict[str, Any]:
         """Poll until the row settles. Set cancelled from another thread to stop, including during the wait."""
         _raise_if_cancelled(cancelled)
+        limit = self._timeout_ms if timeout_ms is None else timeout_ms
+        if not math.isfinite(limit) or limit <= 0:
+            raise GovernanceError("governance poll timed out", 408)
+        deadline = time.monotonic() + limit / 1000
         decision = self.decide(
             agent_id=agent_id,
             connector=connector,
@@ -90,6 +105,8 @@ class GovernanceClient:
             args=args,
             run_id=run_id,
             tenant_id=tenant_id,
+            cancelled=cancelled,
+            timeout_ms=_remaining(deadline, cancelled) * 1000,
         )
         if decision["effect"] != "pending":
             return _compact(
@@ -103,21 +120,38 @@ class GovernanceClient:
         if not isinstance(action_id, str) or not action_id:
             raise GovernanceError("pending decision missing action_id", 502)
         every = self._interval_ms if interval_ms is None else interval_ms
-        limit = self._timeout_ms if timeout_ms is None else timeout_ms
-        deadline = time.monotonic() + limit / 1000
+        if not math.isfinite(every) or every < 0:
+            raise GovernanceError("interval_ms must be non-negative", 400)
         while True:
-            _raise_if_cancelled(cancelled)
-            action = self.action(action_id)
+            action = self.action(action_id, cancelled=cancelled, timeout_ms=_remaining(deadline, cancelled) * 1000)
             if action["status"] != "pending":
                 return _outcome(action)
-            if time.monotonic() >= deadline:
-                raise GovernanceError("governance poll timed out", 408)
-            if cancelled is not None and cancelled.wait(every / 1000):
+            pause = min(every / 1000, _remaining(deadline, cancelled))
+            if cancelled is not None and cancelled.wait(pause):
                 raise GovernanceError("governance poll aborted", 499)
             if cancelled is None:
-                time.sleep(every / 1000)
+                time.sleep(pause)
 
-    def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        cancelled: threading.Event | None = None,
+        timeout_ms: float | None = None,
+    ) -> Any:
+        """Bound the caller's entire request, including headers and response body.
+
+        urllib is blocking. A daemon transport worker lets cancellation stop
+        the caller immediately. Its socket deadline and chunk checks bound
+        cleanup without replaying a decision that the plane may have received.
+        """
+        limit = self._timeout_ms if timeout_ms is None else timeout_ms
+        if not math.isfinite(limit) or limit <= 0:
+            raise GovernanceError("governance poll timed out", 408)
+        deadline = time.monotonic() + limit / 1000
+        _remaining(deadline, cancelled)
         data = None
         headers = {"Accept": "application/json"}
         if body is not None:
@@ -126,17 +160,63 @@ class GovernanceClient:
         if self._api_key:
             headers["Authorization"] = "Bearer " + self._api_key
         req = urllib.request.Request(self._base + path, data=data, headers=headers, method=method)
+        results: queue.Queue = queue.Queue(maxsize=1)
+        workers = _HTTP_WORKERS
+
+        def read_body(resp) -> bytes:
+            chunks = []
+            while True:
+                _remaining(deadline, cancelled)
+                chunk = resp.read1(64 * 1024)
+                if not chunk:
+                    return b"".join(chunks)
+                chunks.append(chunk)
+
+        def transport() -> None:
+            try:
+                with urllib.request.urlopen(req, timeout=_remaining(deadline, cancelled)) as resp:
+                    raw = read_body(resp)
+                results.put((True, json.loads(raw) if raw else None))
+            except urllib.error.HTTPError as exc:
+                # Error bodies are subject to the same outer wall-clock limit.
+                try:
+                    message = _message(read_body(exc), exc.reason or "")
+                    results.put((False, GovernanceError(message, exc.code)))
+                except Exception as error:
+                    results.put((False, error))
+                finally:
+                    exc.close()
+            except json.JSONDecodeError:
+                results.put((True, None))
+            except Exception as exc:
+                results.put((False, exc))
+            finally:
+                workers.release()
+
+        while not workers.acquire(timeout=min(_remaining(deadline, cancelled), 0.025)):
+            pass
         try:
-            with urllib.request.urlopen(req) as resp:
-                raw = resp.read()
-        except urllib.error.HTTPError as exc:
-            raise GovernanceError(_message(exc.read(), exc.reason or ""), exc.code) from exc
-        if not raw:
-            return None
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return None
+            _remaining(deadline, cancelled)
+            threading.Thread(target=transport, daemon=True, name="runkite-governance-http").start()
+        except BaseException:
+            workers.release()
+            raise
+        while True:
+            remaining = _remaining(deadline, cancelled)
+            try:
+                ok, value = results.get(timeout=min(remaining, 0.025))
+            except queue.Empty:
+                continue
+            _remaining(deadline, cancelled)
+            if ok:
+                return value
+            if (
+                isinstance(value, (TimeoutError,))
+                or isinstance(value, urllib.error.URLError)
+                and isinstance(value.reason, TimeoutError)
+            ):
+                raise GovernanceError("governance poll timed out", 408) from value
+            raise value
 
 
 def _as_decision(raw: Any) -> dict[str, Any]:
@@ -203,6 +283,14 @@ def _compact(row: dict[str, Any]) -> dict[str, Any]:
 def _raise_if_cancelled(cancelled: threading.Event | None) -> None:
     if cancelled is not None and cancelled.is_set():
         raise GovernanceError("governance poll aborted", 499)
+
+
+def _remaining(deadline: float, cancelled: threading.Event | None) -> float:
+    _raise_if_cancelled(cancelled)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise GovernanceError("governance poll timed out", 408)
+    return remaining
 
 
 def _message(raw: bytes, fallback: str) -> str:

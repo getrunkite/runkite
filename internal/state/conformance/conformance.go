@@ -25,6 +25,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("registry", func(t *testing.T) { runRegistryTests(t, factory) })
 	t.Run("threads", func(t *testing.T) { runThreadTests(t, factory) })
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })
+	t.Run("completion", func(t *testing.T) { runCompletionTests(t, factory) })
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
 	t.Run("checkpoints", func(t *testing.T) { runCheckpointTests(t, factory) })
 	t.Run("opaque_checkpoints", func(t *testing.T) { runOpaqueCheckpointTests(t, factory) })

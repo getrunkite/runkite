@@ -138,7 +138,20 @@ func initReclaimMaxAge(configPath string) time.Duration {
 	return maxAge
 }
 
-func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxAge time.Duration, maxRetries int, statusCallback func(runID, status, errorMsg string)) {
+type reclaimCompletion func(context.Context, transport.PoisonPill, string) (bool, error)
+
+func finishPoisonPill(ctx context.Context, queue transport.JobQueue, pill transport.PoisonPill, message string, complete reclaimCompletion) (bool, error) {
+	if complete == nil {
+		return false, nil
+	}
+	accepted, err := complete(ctx, pill, message)
+	if err != nil || !accepted {
+		return false, err
+	}
+	return queue.Ack(ctx, pill.RunID, pill.Generation-1)
+}
+
+func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxAge time.Duration, maxRetries int, complete reclaimCompletion) {
 	r, ok := queue.(staleReclaimer)
 	if !ok {
 		return
@@ -190,6 +203,16 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 					"max retries exceeded (generation %d): runner crashed %d times without completing",
 					pill.Generation, pill.Generation,
 				)
+				completionCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				finished, err := finishPoisonPill(completionCtx, queue, pill, msg, complete)
+				cancel()
+				if err != nil {
+					slog.Warn("poison-pill completion failed; retaining assignment for retry", "run_id", pill.RunID, "error", err)
+					continue
+				}
+				if !finished {
+					continue
+				}
 				slog.Warn("poison pill detected",
 					"run_id", pill.RunID,
 					"generation", pill.Generation,
@@ -206,9 +229,6 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 					tenant = "default"
 				}
 				metrics.PoisonPillTotal.WithLabelValues(agent, tenant).Inc()
-				if statusCallback != nil {
-					statusCallback(pill.RunID, "error", msg)
-				}
 			}
 			if n > 0 {
 				slog.Info("reclaimed stale jobs", "count", n)

@@ -261,6 +261,24 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 16, Name: "pending_actions_scoped_key",
+			Up: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `ALTER TABLE pending_actions ADD COLUMN pending_key TEXT`)
+				if err != nil {
+					return err
+				}
+				_, err = s.db.ExecContext(ctx, `CREATE UNIQUE INDEX uq_pending_actions_key ON pending_actions(pending_key)`)
+				return err
+			},
+			Down: func(ctx context.Context) error {
+				_, err := s.db.ExecContext(ctx, `DROP INDEX uq_pending_actions_key`)
+				if err != nil {
+					return err
+				}
+				_, err = s.db.ExecContext(ctx, `ALTER TABLE pending_actions DROP COLUMN pending_key`)
+				return err
+			},
+		},
 	}
 }
 

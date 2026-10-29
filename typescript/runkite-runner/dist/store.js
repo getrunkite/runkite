@@ -23,7 +23,7 @@
 import { BaseStore } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
 import { logger } from "./logger.js";
-import { currentTenant, tenantHeaders } from "./tenantCtx.js";
+import { currentTenant, runnerHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export const NS_DELIM = "\x1f";
 /** Exported for direct unit testing of the round-trip/boundary-safety
@@ -107,8 +107,9 @@ export class RunkiteStore extends BaseStore {
         if (opts.httpBaseUrl) {
             this.baseUrl = opts.httpBaseUrl.replace(/\/+$/, "");
         }
+        if (opts.runnerKind)
+            this.headers["X-Runner-Kind"] = opts.runnerKind;
         if (opts.runnerToken) {
-            this.headers["X-Runner-Kind"] = "typescript-langgraphjs";
             this.headers["X-Runner-Token"] = opts.runnerToken;
         }
     }
@@ -193,7 +194,10 @@ export class RunkiteStore extends BaseStore {
         // boundary -- see internal/auth/auth.go.
         if (isGetOp(op)) {
             const url = `${this.baseUrl}/internal/store/items?namespace=${encodeURIComponent(op.namespace.join(","))}&key=${encodeURIComponent(op.key)}`;
-            const opts = { headers: { ...this.headers, ...tenantHeaders() }, dispatcher: this.dispatcher };
+            const opts = {
+                headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
+                dispatcher: this.dispatcher,
+            };
             const resp = await fetch(url, opts);
             if (resp.status === 404)
                 return null;
@@ -205,7 +209,11 @@ export class RunkiteStore extends BaseStore {
             if (op.value === null) {
                 const opts = {
                     method: "DELETE",
-                    headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
+                    headers: {
+                        ...this.headers,
+                        ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]),
+                        "Content-Type": "application/json",
+                    },
                     body: JSON.stringify({ namespace: op.namespace, key: op.key }),
                     dispatcher: this.dispatcher,
                 };
@@ -226,7 +234,11 @@ export class RunkiteStore extends BaseStore {
                     body.ttl_minutes = ttlMinutes;
                 const opts = {
                     method: "PUT",
-                    headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
+                    headers: {
+                        ...this.headers,
+                        ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]),
+                        "Content-Type": "application/json",
+                    },
                     body: JSON.stringify(body),
                     dispatcher: this.dispatcher,
                 };
@@ -239,7 +251,11 @@ export class RunkiteStore extends BaseStore {
         if (isSearchOp(op)) {
             const opts = {
                 method: "POST",
-                headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
+                headers: {
+                    ...this.headers,
+                    ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]),
+                    "Content-Type": "application/json",
+                },
                 body: JSON.stringify({
                     namespace_prefix: op.namespacePrefix,
                     filter: op.filter ?? {},
@@ -259,7 +275,11 @@ export class RunkiteStore extends BaseStore {
             const suffix = op.matchConditions?.find((c) => c.matchType === "suffix")?.path;
             const opts = {
                 method: "POST",
-                headers: { ...this.headers, ...tenantHeaders(), "Content-Type": "application/json" },
+                headers: {
+                    ...this.headers,
+                    ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]),
+                    "Content-Type": "application/json",
+                },
                 body: JSON.stringify({
                     prefix: prefix ?? null,
                     suffix: suffix ?? null,

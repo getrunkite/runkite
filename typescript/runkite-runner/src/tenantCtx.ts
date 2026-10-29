@@ -13,6 +13,8 @@ export type RunBinding = {
   tenantId: string;
   runId: string;
   generation: number;
+  runnerKind?: string;
+  runnerToken?: string;
 };
 
 const als = new AsyncLocalStorage<RunBinding>();
@@ -31,6 +33,7 @@ export function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise
   const prev = als.getStore();
   return als.run(
     {
+      ...prev,
       tenantId: tid,
       runId: prev?.runId ?? "",
       generation: prev?.generation ?? 0,
@@ -41,7 +44,7 @@ export function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise
 
 /** Bind tenant + run id/generation for the duration of fn (proxy headers). */
 export function runWithBinding<T>(
-  opts: { tenantId?: string; runId: string; generation?: number },
+  opts: { tenantId?: string; runId: string; generation?: number; runnerKind?: string; runnerToken?: string },
   fn: () => Promise<T>,
 ): Promise<T> {
   const tid = (opts.tenantId ?? "").trim() || DEFAULT_TENANT;
@@ -50,6 +53,8 @@ export function runWithBinding<T>(
       tenantId: tid,
       runId: (opts.runId ?? "").trim(),
       generation: opts.generation ?? 0,
+      runnerKind: opts.runnerKind,
+      runnerToken: opts.runnerToken,
     },
     fn,
   );
@@ -65,6 +70,18 @@ export function tenantHeaders(): Record<string, string> {
     headers[HEADER_GENERATION] = String(store.generation ?? 0);
   }
   return headers;
+}
+
+/** Shared kind-scoped authentication for helpers called inside a worker. */
+export function runnerHeaders(runnerToken?: string, runnerKind?: string): Record<string, string> {
+  const binding = als.getStore();
+  const token = runnerToken ?? binding?.runnerToken ?? process.env.RUNNER_TOKEN;
+  return {
+    ...tenantHeaders(),
+    ...(token
+      ? { "X-Runner-Kind": runnerKind ?? binding?.runnerKind ?? "typescript-langgraphjs", "X-Runner-Token": token }
+      : {}),
+  };
 }
 
 /** LangGraph checkpointer key for this assignment's logical thread.

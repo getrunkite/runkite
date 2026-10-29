@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
+import { reconcileRun } from "../api/reconcile-run";
 import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
@@ -64,6 +65,8 @@ export function RunDetail() {
   const [cancelling, setCancelling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef(run.data?.status);
+  statusRef.current = run.data?.status;
 
   const handleCancel = async () => {
     if (!runId) return;
@@ -86,16 +89,36 @@ export function RunDetail() {
     if (!runId) return;
     setEvents([]);
     setStreaming(true);
+    let active = true;
+    let stopRefresh: (() => void) | undefined;
+    const reconcile = () => {
+      if (!active || stopRefresh) return;
+      stopRefresh = reconcileRun(() => {
+        run.reload();
+        children.reload();
+      }, () => TERMINAL_STATUSES.has(statusRef.current ?? ""));
+    };
     const abort = streamSSE(
       `/runs/${runId}/stream`,
-      (event) =>
+      (event) => {
+        if (!active) return;
+        if (event.event === "end" || event.event === "error") reconcile();
         setEvents((prev) => {
           const next = [...prev, { ...event, receivedAt: Date.now() }];
           return next.length > MAX_RUN_EVENTS ? next.slice(-MAX_RUN_EVENTS) : next;
-        }),
-      () => setStreaming(false),
+        });
+      },
+      () => {
+        if (!active) return;
+        setStreaming(false);
+        reconcile();
+      },
     );
-    return abort;
+    return () => {
+      active = false;
+      stopRefresh?.();
+      abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 

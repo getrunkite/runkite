@@ -141,7 +141,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `stream_modes` | array of strings | No | Which event types the control plane wants. Well-known values: `values`, `updates`, `messages`, `custom`. Default: `["values"]`. Runners SHOULD treat unknown mode strings as pass-through (forward compatibility -- the control plane may map client-requested modes like `events` or `debug` before dispatch, or new modes may be added in future spec versions). The runner SHOULD only emit data events matching these modes (optimization, not a hard requirement -- the control plane filters regardless). **`lifecycle` and `end`/`error` events are always emitted regardless of `stream_modes`** -- they are control events, not data events. |
 | `connector_needs` | array of strings | No | Pre-warm hint. The control plane MAY call GetSession for these connectors at dispatch (e.g. warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
 | `allowed_tools` | array of strings | No | Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = the runner MUST refuse tool names not listed before framework tool side effects (emit `tool_call`, then `tool_auth` deny + `error` + `end` status error). Distinct from connector policy grants on the MCP/proxy path. |
-| `generation` | integer | No | Fencing token for this dispatch attempt. Starts at 1 when a run is created; the control plane increments it on reclaim so a superseded runner's late Heartbeat / StreamEvents / ReportStatus can be rejected. Absent / 0 = pre-fencing runner (treated as always-matching for backward compatibility). |
+| `generation` | integer | No | Fencing token for this dispatch attempt. Starts at 1 when a run is created; the control plane increments it on reclaim so a superseded runner's late Heartbeat / StreamEvents / ReportStatus can be rejected. The runner MUST echo the assigned value on every run-specific RPC and bound HTTP call. Zero matches only an actual generation-zero assignment; it never bypasses fencing or inherits a newer attempt. Older runners that omit the field must upgrade for positive-generation assignments. |
 | `tenant_id` | string | No | Tenant that authenticated the originating request. Runners MUST scope direct-mode `store_items`/`vector_items` SQL (and proxy `X-Runkite-Tenant-Id` on `/internal/*`) to this value. Absent on older control planes -- runners fall back to `"default"`. LangGraph runners MUST also encode this into the checkpointer key: `configurable.thread_id` is the bare `thread_id` when tenant is `"default"`/absent, otherwise `"{tenant_id}:{thread_id}"` (logical thread remains the top-level `thread_id` field; avoid `:` inside tenant ids -- the encoding is a single colon split). Proxy-mode: after kind-token auth the control plane accepts the runner-supplied `X-Runkite-Tenant-Id`, optionally constrained by `RUNNER_TENANTS_<kind>` when configured; see docs/auth.md. |
 | `trace_context` | object | No | W3C Trace Context for cross-process observability. The runner SHOULD set this as the active trace context before executing the agent, so that all spans (LLM calls, tool invocations, etc.) are children of this trace. |
 
@@ -197,9 +197,46 @@ A `RunEvent` is a JSON object published by the runner back to the control plane.
 | `error` | Error event. The run failed. | `{ "message": "string", "type": "string (optional)", "stacktrace": "string (optional)" }` |
 | `tool_auth` | Connector policy denial / pending HITL (control plane), or in-graph `allowed_tools` denial (runner; `reason_code: tool_not_allowed`, `stage: tool.call`, no connector). | `{ "stage": "tool.call" \| "connector.session", "effect": "deny" \| "pending", "connector": "string", "tool": "string", "reason": "string", "reason_code": "string", "rule_id": "string", "generation": number, "action_id"?: "string" }` |
 
+### Attempt identity on stored events
+
+The bridge stamps accepted events with the authenticated assignment generation
+and appends `:gN` to event IDs on attempts after generation 1. Runner-authored
+JSON cannot override that generation. A runner's `seq` restarts for each attempt;
+replay consumers should track `(generation, seq)` and deduplicate by event ID.
+The optional `generation` field on stored events remains readable for historical
+records. Incoming worker generations must exactly match the active assignment;
+the bridge never promotes a missing or zero generation to the current one.
+An actual legacy generation-zero assignment matches zero only. Reclaim increments
+that generation, after which an unversioned runner is superseded. Both shipped
+runners echo the assigned generation; custom and older runners must do the same.
+Final output is selected only from events with the accepted attempt generation,
+so unversioned historical values cannot replace a positive attempt's result.
+
+Completion persists final output, thread values, a checkpoint and run status
+under one attempt-fenced state transaction before the queue lease is removed.
+If persistence fails, ReportStatus fails so the runner can retry while retaining
+its heartbeat during delivery retries. Retries do not rerun the agent. If event
+stream delivery fails or its acknowledgement is lost, completion remains
+unconfirmed and its lease stays recoverable. The runner MUST NOT report an
+agent `error` solely because stream acknowledgement failed. The plane can
+recover an already delivered terminal stream before redispatching work.
+The same recovery runs before a retry-ceiling error is applied. Only a terminal
+from the recorded attempt generation is eligible, including a recorded zero
+attempt; an unversioned event cannot complete a positive attempt. At the ceiling,
+the assignment remains in flight at that actual generation without another
+enqueue. `CompleteReclaimedRun` must confirm durable completion and finalization
+before the reaper acknowledges it. Database, broker and finalization errors leave
+it available for the next reaper tick. A same-attempt late ReportStatus and the
+fallback error use the existing terminal transaction; the first durable terminal
+wins. A terminal arriving after the recovery check has no guaranteed precedence.
+`/wait` returns
+the accepted persisted output even if an older terminal event was replayed.
+Queue generation checks and event publication are not one cross-backend atomic
+operation, so raw SSE remains advisory during the narrow reclaim race.
+
 ### 4.4 Rules
 
-- `seq` MUST be monotonically increasing within a run. The runner MUST NOT reuse or skip sequence numbers.
+- `seq` MUST be monotonically increasing within one dispatch attempt. It may restart when the generation changes. The runner MUST NOT reuse or skip sequence numbers within an attempt.
 - `event_id` MUST be unique within a run. The recommended format is `{run_id}_evt_{seq}`. Control-plane `tool_auth` events use `{run_id}_tool_auth_{hex}` so they never collide with runner IDs; their `seq` is best-effort (`max(replay)+1`) and may interleave with concurrent runner publishes — clients MUST dedupe by `event_id`.
 - Every run MUST end with either an `end` event (status=success or status=interrupted) or an `error` event. A run with no terminal event is considered crashed.
 - The `lifecycle` method with `event: "running"` SHOULD be the first event emitted after the runner begins execution.
@@ -700,12 +737,22 @@ If the runner itself fails (not the agent -- e.g., cannot connect to the checkpo
 
 ### 13.3 Retry Behavior
 
-The runner does not implement retry logic. Retry is managed by the control plane:
+Agent execution retries are managed by the control plane. A runner may retry
+ReportStatus delivery for the same generation and result without rerunning the
+agent. Failed or missing event-stream acknowledgement leaves completion
+unconfirmed instead of changing the agent's result to `error`. Execution recovery
+continues through the control plane:
 
-1. If a runner crashes (lease expires, no terminal event), the control plane's reaper re-enqueues the job.
-2. Each re-enqueue increments a `_retry_count` in the job metadata.
-3. After `max_retries` (default: 3), the control plane marks the run as permanently failed.
-4. The runner receives the `_retry_count` in the RunAssignment (in `config.configurable._retry_count` or a metadata field) but does not act on it -- it is informational.
+1. If a runner crashes and its lease expires, normal reclaim re-enqueues the job with an incremented generation. A delivered terminal from the recorded attempt is recovered before work is dispatched again.
+2. `reclaim.max_retries` is a generation ceiling (default `3`; `0` disables the ceiling). The runner echoes the assignment's generation; there is no separate `_retry_count` field in this contract.
+3. Once the next generation would exceed the ceiling, the queue returns a poison pill whose diagnostic generation is the next generation, but retains the actual in-flight assignment and its unchanged generation. It does not enqueue another attempt or acknowledge the exhausted delivery yet.
+4. The plane tries matching terminal-event recovery, then a fenced `error` fallback. Only after durable completion and finalization succeed does the reaper call `Ack(run_id, pill.Generation - 1)`. A database, broker, finalization or acknowledgement failure remains retryable on a later reaper tick. Same-attempt terminal races use the first durable terminal transaction, without guaranteed priority for a terminal arriving after the recovery check.
+
+NATS sends `+WPI` on exhausted reaper ticks to extend the native delivery lease
+while completion is retried. If native redelivery still occurs, the existing
+`BeginRunAttempt` fence and delivered-result recovery apply before dispatch.
+This uses the existing lease and completion paths; it does not make queue checks
+and state writes globally atomic or change Experimental Kafka guarantees.
 
 ---
 

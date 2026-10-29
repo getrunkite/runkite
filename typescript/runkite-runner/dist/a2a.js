@@ -24,6 +24,7 @@
  * replica of the same runner_kind, or `wait: false` + polling the
  * child run yourself) for any graph that delegates synchronously.
  */
+import { runnerHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export class A2AError extends Error {
 }
@@ -79,12 +80,7 @@ export async function callAgent(config, agentId, input, opts = {}) {
         }
     }
     const baseUrl = (opts.controlPlaneUrl ?? process.env.RUNKITE_HTTP_URL ?? "http://localhost:2026").replace(/\/+$/, "");
-    const headers = { "Content-Type": "application/json" };
-    const runnerToken = process.env.RUNNER_TOKEN;
-    if (runnerToken) {
-        headers["X-Runner-Kind"] = "typescript-langgraphjs";
-        headers["X-Runner-Token"] = runnerToken;
-    }
+    const headers = { "Content-Type": "application/json", ...runnerHeaders() };
     const fetchOpts = {
         method: "POST",
         headers,

@@ -81,7 +81,7 @@ export interface HeartbeatResponse {
 export interface RunnerServiceClient extends Client {
     getJob(req: GetJobRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: GetJobResponse) => void): void;
     streamEvents(metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: StreamEventsResponse) => void): import("@grpc/grpc-js").ClientWritableStream<RunEventProto>;
-    reportStatus(req: ReportStatusRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: ReportStatusResponse) => void): void;
+    reportStatus(req: ReportStatusRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: ReportStatusResponse) => void): import("@grpc/grpc-js").ClientUnaryCall | void;
     watchCancels(req: WatchCancelsRequest, metadata: import("@grpc/grpc-js").Metadata): import("@grpc/grpc-js").ClientReadableStream<CancelSignal>;
     heartbeat(req: HeartbeatRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): void;
 }

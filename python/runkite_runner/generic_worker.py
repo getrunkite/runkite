@@ -31,6 +31,7 @@ from typing import Any, Protocol
 import grpc
 
 from . import runner_pb2, runner_pb2_grpc
+from .completion import CompletionDeliveryError, finish_run
 from .heartbeat import heartbeat_loop
 from .run_status import should_skip_run
 from .tls_utils import grpc_channel_credentials
@@ -311,7 +312,7 @@ async def _handle_job(
     execute_run(...))."""
     from .checkpoint import resolve_checkpoint_http_url
     from .opaque_checkpoint import OpaqueCheckpointClient, adapter_supports_checkpoints
-    from .tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
+    from .tenant_ctx import bind_run, bind_runner, bind_tenant, reset_run, reset_runner, reset_tenant
 
     run_id = None
     stream_task = None
@@ -341,6 +342,7 @@ async def _handle_job(
 
         tenant_token = bind_tenant(assignment.get("tenant_id"))
         run_token = bind_run(run_id, generation)
+        runner_binding = bind_runner(runner_kind, runner_token)
         try:
             with run_span(
                 run_id,
@@ -383,6 +385,7 @@ async def _handle_job(
                 try:
                     stream_call = stub.StreamEvents(event_generator(), metadata=auth_metadata)
                     stream_task = asyncio.ensure_future(stream_call)
+                    stream_task.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
 
                     try:
                         # Non-LangGraph frameworks have no checkpoint_id
@@ -415,41 +418,31 @@ async def _handle_job(
                         make_event = make_event_factory(run_id)
                         await send_event(make_event("error", {"message": str(e), "type": type(e).__name__}))
                         status = "error"
+                    await event_queue.put(None)
+                    if stream_task is None:
+                        raise CompletionDeliveryError(f"event stream was not established for {run_id}")
+                    status = await finish_run(stub, run_id, generation, status, stream_task, auth_metadata)
                 finally:
                     heartbeat_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await heartbeat_task
-                    # Always clear the cancel registration, even on an
-                    # unexpected failure above -- otherwise it leaks an entry in
-                    # pending_cancels for every job that hits this path.
+                    if stream_task is not None and not stream_task.done():
+                        stream_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await stream_task
                     async with pending_cancels_lock:
                         pending_cancels.pop(run_id, None)
 
-                await event_queue.put(None)
-                if stream_task is not None:
-                    try:
-                        await stream_task
-                    except Exception as e:
-                        logger.error(f"Stream finalization error: {e}")
-
-                # Always report once run_id is known -- StreamEvents setup
-                # failures used to skip this and leave the run "running" forever.
-                await stub.ReportStatus(
-                    runner_pb2.ReportStatusRequest(
-                        run_id=run_id,
-                        status=status,
-                        error_message="" if status != "error" else "see error event",
-                        generation=generation,
-                    ),
-                    metadata=auth_metadata,
-                )
-
-                set_run_status(span, status)
-                logger.info(f"Run completed: run_id={run_id} status={status}")
+                if status:
+                    set_run_status(span, status)
+                    logger.info(f"Run completed: run_id={run_id} status={status}")
         finally:
+            reset_runner(runner_binding)
             reset_run(run_token)
             reset_tenant(tenant_token)
 
+    except CompletionDeliveryError as e:
+        logger.error("%s; leaving the assignment recoverable", e)
     except grpc.aio.AioRpcError as e:
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
     except Exception as e:

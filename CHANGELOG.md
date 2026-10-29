@@ -4,6 +4,31 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.5.6] - 2026-10-29
+
+Runner identity, completion, and approval fixes from the v0.5.5 review. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.
+
+### Fixed
+- A runner token is bound to its kind. That kind cannot dequeue, watch cancels, heartbeat, stream, or complete another kind's run. Local mode with no runner tokens is unchanged.
+- A run result is stored before its queue lease is acknowledged. A failed write leaves the job reclaimable. Events and stored output stay on the attempt that produced them. Generation 0 cannot renew, acknowledge, or complete a later attempt.
+- An assignment that has used its reclaim retries stays leased until completion and finalization succeed.
+- An open approval is reused only for the same tenant, agent, and call. Approving an expired embedded row is rejected in the same database write.
+- MCP allow and deny use one strict JSON reading, and that reading is what is forwarded. Duplicate or differently spelled method and tool names are rejected. Request and response bodies are size-capped.
+- Governance helper deadlines cover the blocked HTTP call. Python and TypeScript workers report their own runner kind. Helm `runner.extraEnv` accepts `value` or `valueFrom`. Admin Run Detail reloads the stored run after the live stream ends.
+
+### Added
+- Connectors can set `mcp.transport` to `streamable_http`. The default remains a single JSON POST. Each call uses its own upstream session, and a failed response is not retried as another tool call.
+- `examples/deepagents_agent` and `examples/governance_ai_sdk` show an offline Deep Agents graph and an app that keeps its own model loop.
+
+### Notes
+- Runners must send the generation from the assignment. Omitting it no longer matches a newer attempt.
+- The governance helpers are still unpublished.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+- **Supported HA:** Postgres + Redis. Kubernetes/Helm is Compatible (kind + EKS smoke, not a multi-hour cloud HA soak). This cut did not add a new multi-replica soak.
+- Limitations: [`docs/limitations.md`](docs/limitations.md)
+
+[0.5.6]: https://github.com/getrunkite/runkite/releases/tag/v0.5.6
+
 ## [0.5.5] - 2026-10-16
 
 The TypeScript runner image can be built again. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.

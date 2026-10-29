@@ -60,6 +60,59 @@ The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just a
 
 **What this does and doesn't cover, precisely**: neither `GetSession` nor `GET /internal/connectors[/{name}]` ever hand out the connector's raw downstream credentials or raw MCP URL when MCP is configured (found and fixed after two of those leaks slipped through review) -- so there's no *Runkite-issued* way for an agent to reach the real server directly instead of through the proxy. What this can't and doesn't claim to cover: if an agent author independently has their own valid credentials or URL for that same downstream service (hardcoded, from an environment variable, from anywhere outside this system), nothing here can stop code using them directly -- that's a fundamentally different threat this feature was never positioned to solve, since Runkite can only mediate access to things it hands out itself.
 
+### Negotiated upstream MCP transport
+
+The existing default (`mcp.transport: json`, or omitted) forwards a single JSON
+POST. Set `transport: streamable_http` for an upstream that requires MCP
+negotiation, session headers, or SSE responses:
+
+```yaml
+auth:
+  type: bearer
+  secret_ref: env:GITHUB_SERVICE_TOKEN
+mcp:
+  url: http://github-mcp:8082/mcp  # upstream started with --base-path /mcp
+  transport: streamable_http
+tools:
+  allow: [get_file_contents, list_issues]
+```
+
+The control plane uses the existing Go MCP SDK to negotiate with the upstream.
+Each proxy operation gets a fresh upstream session, performs the operation, then
+closes the session. This works across control-plane replicas without sticky
+routing or a shared upstream session store. Upstream session state does not
+persist across separate tool calls. Connector capability tokens remain bound to
+the live run and generation as before; grants, argument policy, HITL and tool
+filters still run before dispatch. Credentials remain on the plane.
+
+Supported methods are `initialize`, `notifications/initialized`, `ping`,
+`tools/list`, `tools/call`, `resources/list`, `resources/templates/list`,
+`resources/read`, `prompts/list` and `prompts/get`. Unknown methods return
+JSON-RPC method-not-found. Standalone server pushes, subscriptions, sampling and
+elicitation are not exposed by this request-scoped adapter. The runner-facing
+reply remains JSON, so existing Python and TypeScript connector helpers work
+unchanged. The SDK handles upstream protocol headers, legacy session IDs and
+POST SSE decoding. Tool schemas are fetched before execution so negotiated
+parameter headers can be derived from the advertised schema.
+
+Upstream connection and operation share a 30-second deadline. Automatic
+transport reconnect retries are disabled: an uncertain tool response must not
+cause a write tool to execute twice. Operators should use narrowly scoped
+service credentials and upstream resource permissions as well as Runkite grants.
+
+### Connector body limits
+
+Raw MCP requests are limited to 1 MiB before parsing or forwarding. MCP responses
+(including streamed upstream responses) are limited to 8 MiB, and OAuth token
+responses to 1 MiB. Oversized requests return `413`; oversized upstream results
+return an explicit `502` with `reason_code: connector_response_too_large`.
+The tool may already have executed when its result is rejected. Do not
+automatically retry it. Payload shrink runs after the upstream size check and
+does not replace a memory bound.
+
+The proxy rejects duplicate or case-conflicting protocol keys and forwards the
+same canonical envelope inspected by policy. Argument keys retain their case.
+
 ### Payload shrink (opt-in)
 
 After a successful connector MCP `tools/call`, the plane can stash the original result in Redis and return a preview plus a retrieve ref. In-graph tool results never arrive here. Off by default; see [Configuration](configuration.md#payload-shrink).

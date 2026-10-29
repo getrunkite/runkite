@@ -64,7 +64,7 @@ from langgraph.store.base import (
 )
 
 from . import pg_pool
-from .tenant_ctx import current_tenant, tenant_headers
+from .tenant_ctx import current_tenant, runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 logger = logging.getLogger("runkite.store")
@@ -150,6 +150,7 @@ class RunkiteStore(BaseStore):
         postgres_dsn: str | None = None,
         http_base_url: str | None = None,
         runner_token: str | None = None,
+        runner_kind: str | None = None,
         ttl_config: dict | None = None,
         pool_size: int = 4,
     ):
@@ -161,10 +162,8 @@ class RunkiteStore(BaseStore):
         self.ttl_config = ttl_config
         self._dsn = postgres_dsn
         self._base_url = http_base_url.rstrip("/") if http_base_url else None
-        self._headers: dict[str, str] = {}
-        if runner_token:
-            self._headers["X-Runner-Kind"] = "python-langgraph"
-            self._headers["X-Runner-Token"] = runner_token
+        self._runner_token = runner_token
+        self._runner_kind = runner_kind
         self.mode = "direct" if postgres_dsn else "proxy"
         self._pool_size = pool_size
         self._pool = None  # AsyncConnectionPool, opened lazily on first direct-mode use
@@ -298,7 +297,7 @@ class RunkiteStore(BaseStore):
     # -- proxy mode: HTTP calls to the control plane -----------------------
 
     async def _abatch_proxy(self, ops: list[Op]) -> list[Result]:
-        headers = {**self._headers, **tenant_headers()}
+        headers = runner_headers(self._runner_token, self._runner_kind)
         async with httpx.AsyncClient(
             base_url=self._base_url, headers=headers, timeout=10.0, **httpx_tls_kwargs()
         ) as client:

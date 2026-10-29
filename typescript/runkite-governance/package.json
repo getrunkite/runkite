@@ -1,15 +1,36 @@
 {
   "name": "runkite-governance",
-  "version": "0.5.5",
-  "private": true,
+  "version": "0.5.6",
   "description": "Decide and poll helper for Runkite embedded governance. Not the full client SDK.",
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/index.test.ts"
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test": "node --experimental-strip-types --test src/*.test.ts"
   },
   "engines": {
     "node": ">=22"
   },
-  "license": "BUSL-1.1"
+  "license": "BUSL-1.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "typescript": "7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getrunkite/runkite.git",
+    "directory": "typescript/runkite-governance"
+  }
 }

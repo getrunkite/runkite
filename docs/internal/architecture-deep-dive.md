@@ -3438,9 +3438,9 @@ Use a gRPC-aware load balancer that respects HTTP/2 connection multiplexing. Or 
 
 # 47. Deep Dive — Why Generation Starts at 1, Not 0
 
-Generation 0 is reserved as a compatibility value meaning "unknown / legacy runner." Older runners that were built before generation fencing was added would send generation 0 (or not send it at all). The control plane treats generation 0 as a bypass: it does not enforce fencing for generation 0 heartbeats or ReportStatus calls.
+Generation 0 is an ordinary legacy generation, not a bypass. Every worker RPC and bound HTTP request must present exactly the generation assigned by `GetJob`. Zero matches an actual generation-zero assignment only; it cannot renew, acknowledge, publish events for, or complete a positive-generation attempt. The bridge does not replace a missing or zero worker generation with the current assignment generation, and final output selection requires events from the accepted generation.
 
-This allows mixed-version rollouts: you can upgrade the control plane with fencing support while old runners still work (they just do not get fencing protection). But for production safety, all runners should send real generation values (1+). Generation 0 should be treated as a temporary compatibility measure, not a permanent state.
+This tightens mixed-version rollout compatibility. Both shipped runners echo their assigned generation. Custom or older runners that omit it must be upgraded before they handle positive-generation jobs. Existing generation-zero assignments can still match zero, but reclaim advances their generation and a zero-reporting worker becomes superseded. A stale worker cannot restore its authority by sending zero. Trusted control-plane cancellation resolves the current attempt under the state transaction and is separate from this worker-facing rule.
 
 Starting at 1 makes "uninitialized/zero-value" distinguishable from "first actual attempt." If generation were 0-based, you could not tell "this runner never set a generation" from "this is the first attempt."
 

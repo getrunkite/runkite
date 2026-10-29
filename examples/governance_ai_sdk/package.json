@@ -1,0 +1,23 @@
+{
+  "name": "runkite-governance-ai-sdk-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types server.ts",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test state.test.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "ai": "7.0.155",
+    "@ai-sdk/openai": "4.0.104",
+    "runkite-governance": "file:../../typescript/runkite-governance"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "7.0.2"
+  }
+}

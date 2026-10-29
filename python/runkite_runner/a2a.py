@@ -29,6 +29,7 @@ from typing import Any
 
 import httpx
 
+from .tenant_ctx import runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 
@@ -120,11 +121,7 @@ async def call_agent(
             body["on_behalf_of"] = on_behalf_of
 
     base_url = control_plane_url or os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026")
-    headers: dict[str, str] = {}
-    runner_token = os.environ.get("RUNNER_TOKEN")
-    if runner_token:
-        headers["X-Runner-Kind"] = "python-langgraph"
-        headers["X-Runner-Token"] = runner_token
+    headers = runner_headers()
 
     async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
         resp = await client.post(f"{base_url}/internal/a2a/runs", json=body, headers=headers)

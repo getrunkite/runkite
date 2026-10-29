@@ -85,6 +85,33 @@ func TestMiddleware_RunBindingGenerationMismatch(t *testing.T) {
 	}
 }
 
+func TestMiddleware_RunBindingGenerationZeroIsNotWildcard(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		assignment int64
+		presented  int64
+		want       int
+	}{
+		{"legacy_cannot_use_current", 2, 0, http.StatusForbidden},
+		{"current_cannot_use_legacy", 0, 2, http.StatusForbidden},
+		{"actual_legacy_matches", 0, 0, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inflight := mapInflight{"run": {RunID: "run", Generation: tc.assignment, TenantID: "acme"}}
+			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight},
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+			req := httptest.NewRequest("POST", "/internal/connectors/example/session", nil)
+			req.Header.Set(auth.HeaderRunID, "run")
+			req.Header.Set(auth.HeaderGeneration, strconv.FormatInt(tc.presented, 10))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestMiddleware_RunBindingRequiredOnCheckpoints(t *testing.T) {
 	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: mapInflight{}},
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
@@ -167,5 +194,25 @@ func TestMiddleware_UnboundInternalStillUsesTenantHeader(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if got != "acme" {
 		t.Fatalf("tenant=%q", got)
+	}
+}
+
+func TestMiddleware_RunBindingRequiresRunnerKindOwner(t *testing.T) {
+	t.Setenv("RUNNER_TOKEN_PYTHON_LANGGRAPH", "tok-py")
+	t.Setenv("RUNNER_TENANTS_PYTHON_LANGGRAPH", "acme")
+	tokens := auth.LoadRunnerTokensFromEnv()
+	inflight := mapInflight{"run-foreign": {RunID: "run-foreign", RunnerKind: "typescript-langgraphjs", Generation: 1, TenantID: "acme"}}
+	handler := auth.MiddlewareWithOpts(nil, nil, tokens, auth.MiddlewareOpts{Inflight: inflight}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("foreign run reached handler") }))
+	req := httptest.NewRequest("GET", "/internal/store/items", nil)
+	req.Header.Set("X-Runner-Kind", "python-langgraph")
+	req.Header.Set("X-Runner-Token", "tok-py")
+	req.Header.Set(auth.HeaderRunID, "run-foreign")
+	req.Header.Set(auth.HeaderGeneration, "1")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusForbidden || body["reason_code"] != auth.ReasonRunRunnerKindMismatch {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

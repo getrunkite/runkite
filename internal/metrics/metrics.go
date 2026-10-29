@@ -73,14 +73,13 @@ var (
 		[]string{"event_type"},
 	)
 
-	// PoisonPillTotal counts runs permanently failed by the reclaim
-	// generation ceiling (max_retries) -- a crash-looping job that would
-	// otherwise sacrifice healthy runners forever. Labels identify the
+	// PoisonPillTotal counts assignments finalized after reaching the reclaim
+	// generation ceiling, including recovered results. Labels identify the
 	// agent/tenant when known from the assignment payload.
 	PoisonPillTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "runkite_poison_pill_total",
-			Help: "Runs killed by reclaim max_retries (poison-pill generation ceiling)",
+			Help: "Assignments finalized after reaching reclaim max_retries, including recovered results",
 		},
 		[]string{"agent_id", "tenant_id"},
 	)

@@ -24,11 +24,14 @@ from runkite_runner.tenant_ctx import (  # noqa: E402
     HEADER_RUN_ID,
     HEADER_TENANT_ID,
     bind_run,
+    bind_runner,
     bind_tenant,
     checkpoint_thread_id,
     current_tenant,
     reset_run,
+    reset_runner,
     reset_tenant,
+    runner_headers,
     storage_thread_id,
     tenant_headers,
 )
@@ -137,6 +140,26 @@ def test_run_binding_headers():
     check("run headers cleared after reset", HEADER_RUN_ID not in tenant_headers())
 
 
+def test_runner_identity_is_task_local():
+    async def job(kind):
+        token = bind_runner(kind, kind + "-token")
+        try:
+            await asyncio.sleep(0)
+            check(kind + " identity preserved", runner_headers()["X-Runner-Kind"] == kind)
+            check(kind + " credential preserved", runner_headers()["X-Runner-Token"] == kind + "-token")
+        finally:
+            reset_runner(token)
+
+    async def run():
+        await asyncio.gather(job("python-crewai"), job("custom-worker"))
+
+    asyncio.run(run())
+    check(
+        "explicit runner kind supported outside execution",
+        runner_headers("token", "python-autogen")["X-Runner-Kind"] == "python-autogen",
+    )
+
+
 def main():
     test_default_tenant()
     test_bind_and_reset()
@@ -145,6 +168,7 @@ def main():
     test_checkpoint_thread_id_encoding()
     test_storage_thread_id_strips_active_tenant_prefix()
     test_run_binding_headers()
+    test_runner_identity_is_task_local()
     print("\nAll checks passed.")
 
 

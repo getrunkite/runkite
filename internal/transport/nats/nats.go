@@ -275,9 +275,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 // fenced looks up the inflight entry for runID and decides whether the
 // presented generation is allowed to act on it -- shared logic between
 // Ack and Renew, mirroring redistransport's ackScript/renewScript
-// fencing check (generation 0, from either side, bypasses fencing --
-// see transport.JobQueue's own doc comment for the pre-fencing-runner
-// compat rationale this preserves).
+// fencing check. Every generation, including zero, must match exactly.
 func (q *Queue) fenced(ctx context.Context, runID string, generation int64) (entry inflightEntry, revision uint64, ok bool) {
 	kve, err := q.inflight.Get(ctx, runID)
 	if err != nil {
@@ -286,7 +284,7 @@ func (q *Queue) fenced(ctx context.Context, runID string, generation int64) (ent
 	if err := json.Unmarshal(kve.Value(), &entry); err != nil {
 		return inflightEntry{}, 0, false
 	}
-	if generation != 0 && entry.Generation != 0 && entry.Generation != generation {
+	if entry.Generation != generation {
 		return inflightEntry{}, 0, false
 	}
 	return entry, kve.Revision(), true
@@ -437,19 +435,21 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 		}
 		newGen := entry.Generation + 1
 		if maxRetries > 0 && newGen > int64(maxRetries) {
-			// Terminally fail: Ack (remove from JetStream) instead of NAK
-			// so the crash-looping message is not redelivered.
-			_ = q.nc.Publish(entry.Reply, []byte("+ACK"))
-			if err := q.inflight.Delete(ctx, key, jetstream.LastRevision(kve.Revision())); err == nil {
-				var job transport.RunAssignment
-				_ = json.Unmarshal(entry.Job, &job)
-				dead = append(dead, transport.PoisonPill{
-					RunID:      key,
-					Generation: newGen,
-					AgentID:    job.GraphID,
-					TenantID:   job.TenantID,
-				})
+			// Keep the exhausted delivery recoverable until the control plane
+			// commits its terminal result and Acks the actual generation.
+			// Do not touch the stale timestamp: every reaper tick must offer
+			// this pill again and extend native AckWait while persistence retries.
+			if err := q.nc.Publish(entry.Reply, []byte("+WPI")); err != nil {
+				continue
 			}
+			var job transport.RunAssignment
+			_ = json.Unmarshal(entry.Job, &job)
+			dead = append(dead, transport.PoisonPill{
+				RunID:      key,
+				Generation: newGen,
+				AgentID:    job.GraphID,
+				TenantID:   job.TenantID,
+			})
 			continue
 		}
 		if err := q.nc.Publish(entry.Reply, []byte("-NAK")); err != nil {

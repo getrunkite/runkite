@@ -29,6 +29,7 @@ const (
 	ReasonRunGenerationMismatch    = "run_generation_mismatch"
 	ReasonRunBindingLookupFailed   = "run_binding_lookup_failed"
 	ReasonRunThreadMismatch        = "run_thread_mismatch"
+	ReasonRunRunnerKindMismatch    = "run_runner_kind_mismatch"
 )
 
 // InflightLookup resolves the currently in-flight RunAssignment for a
@@ -109,9 +110,13 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 			"run is not in-flight")
 		return nil, false
 	}
-	// generation 0 from either side bypasses fencing -- same pre-fencing
-	// runner compat as Ack/Renew.
-	if generation != 0 && assignment.Generation != 0 && generation != assignment.Generation {
+	if tokens.Enabled() && assignment.RunnerKind != kind {
+		writeDenied(w, http.StatusForbidden, ReasonRunRunnerKindMismatch,
+			"run belongs to another runner kind")
+		return nil, false
+	}
+	// Missing or legacy generations cannot act on a versioned assignment.
+	if generation != assignment.Generation {
 		writeDenied(w, http.StatusForbidden, ReasonRunGenerationMismatch,
 			"run generation mismatch")
 		return nil, false

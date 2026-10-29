@@ -37,7 +37,7 @@
  */
 import { VectorStore } from "@langchain/core/vectorstores";
 import { Document } from "@langchain/core/documents";
-import { tenantHeaders } from "./tenantCtx.js";
+import { runnerHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 function itemToDocument(item) {
     return new Document({ pageContent: item.content ?? "", metadata: item.metadata ?? {}, id: item.id });
@@ -56,8 +56,9 @@ export class RunkiteVectorStore extends VectorStore {
         this.namespace = opts.namespace;
         this.baseUrl = opts.httpBaseUrl.replace(/\/+$/, "");
         this.headers = { "Content-Type": "application/json" };
+        if (opts.runnerKind)
+            this.headers["X-Runner-Kind"] = opts.runnerKind;
         if (opts.runnerToken) {
-            this.headers["X-Runner-Kind"] = "typescript-langgraphjs";
             this.headers["X-Runner-Token"] = opts.runnerToken;
         }
     }
@@ -107,7 +108,7 @@ export class RunkiteVectorStore extends VectorStore {
     async upsert(id, content, metadata, embedding) {
         const opts = {
             method: "PUT",
-            headers: { ...this.headers, ...tenantHeaders() },
+            headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
             dispatcher: this.dispatcher,
         };
@@ -118,7 +119,7 @@ export class RunkiteVectorStore extends VectorStore {
     async deleteOne(id) {
         const opts = {
             method: "DELETE",
-            headers: { ...this.headers, ...tenantHeaders() },
+            headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, id }),
             dispatcher: this.dispatcher,
         };
@@ -129,7 +130,7 @@ export class RunkiteVectorStore extends VectorStore {
     async search(embedding, topK, filter) {
         const opts = {
             method: "POST",
-            headers: { ...this.headers, ...tenantHeaders() },
+            headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),
             dispatcher: this.dispatcher,
         };

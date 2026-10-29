@@ -1,6 +1,8 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 )
@@ -74,4 +76,13 @@ type PendingActionSearchRequest struct {
 	Limit     int    `json:"limit,omitempty"`
 	Offset    int    `json:"offset,omitempty"`
 	Cursor    string `json:"cursor,omitempty"`
+}
+
+// PendingActionKey is an unambiguous, fixed-size key for an open approval.
+// Embedded decisions and connector capabilities occupy different namespaces.
+func PendingActionKey(a *PendingAction) string {
+	value, _ := json.Marshal([]any{a.TenantID, a.AgentID, a.ExpiresAt != nil,
+		a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest})
+	sum := sha256.Sum256(value)
+	return hex.EncodeToString(sum[:])
 }

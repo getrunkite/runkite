@@ -58,6 +58,7 @@ class _MultiJobFakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.setdefault(evt.run_id, []).append(json.loads(evt.event_json))
+            return runner_pb2.StreamEventsResponse(ok=True)
 
         return asyncio.ensure_future(_drain())
 
@@ -66,7 +67,7 @@ class _MultiJobFakeStub:
 
     async def ReportStatus(self, request, metadata=None):
         self.reported_status[request.run_id] = request.status
-        return runner_pb2.ReportStatusResponse()
+        return runner_pb2.ReportStatusResponse(ok=True)
 
 
 class _ConcurrencyTrackingController:

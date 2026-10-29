@@ -1,6 +1,6 @@
 {
   "name": "runkite-runner",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "TypeScript/LangGraph.js runner for Runkite — gRPC Agent Protocol worker with streaming, cancel, and optional Postgres checkpoints.",
   "type": "module",
   "bin": {
@@ -57,7 +57,7 @@
     "pg": "^8.22.0",
     "tsx": "^4.23.1",
     "undici": "^8.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

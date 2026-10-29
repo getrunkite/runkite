@@ -56,11 +56,11 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 	if err := s.SetPendingActionStatus(ctx, "p1", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.ConsumeApprovedAction(ctx, "r1", 2, "sf", "delete_repo", "")
+	id, err := s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "")
 	if err != nil || id != "p1" {
 		t.Fatalf("ConsumeApprovedAction: id=%q err=%v", id, err)
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "r1", 2, "sf", "delete_repo", "")
+	id, err = s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "")
 	if err != nil || id != "" {
 		t.Fatalf("second consume want empty, got %q err=%v", id, err)
 	}
@@ -120,15 +120,15 @@ func TestPendingAction_ArgsDigestBound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := s.FindOpenPendingAction(ctx, "r-digest", 1, "bank", "transfer", "digest-500")
+	got, err := s.FindOpenPendingAction(ctx, "acme", "payroll", "r-digest", 1, "bank", "transfer", "digest-500", false)
 	if err != nil || got == nil || got.ID != "p-low" {
 		t.Fatalf("FindOpen low: %#v err=%v", got, err)
 	}
-	got, err = s.FindOpenPendingAction(ctx, "r-digest", 1, "bank", "transfer", "digest-5m")
+	got, err = s.FindOpenPendingAction(ctx, "acme", "payroll", "r-digest", 1, "bank", "transfer", "digest-5m", false)
 	if err != nil || got == nil || got.ID != "p-high" {
 		t.Fatalf("FindOpen high: %#v err=%v", got, err)
 	}
-	got, err = s.FindOpenPendingAction(ctx, "r-digest", 1, "bank", "transfer", "digest-other")
+	got, err = s.FindOpenPendingAction(ctx, "acme", "payroll", "r-digest", 1, "bank", "transfer", "digest-other", false)
 	if err != nil || got != nil {
 		t.Fatalf("FindOpen other want nil, got %#v err=%v", got, err)
 	}
@@ -144,7 +144,7 @@ func TestPendingAction_ArgsDigestBound(t *testing.T) {
 		t.Fatalf("approved row: %+v", approved)
 	}
 
-	id, err := s.ConsumeApprovedAction(ctx, "r-digest", 1, "bank", "transfer", "digest-5m")
+	id, err := s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-digest", 1, "bank", "transfer", "digest-5m")
 	if err != nil || id != "" {
 		t.Fatalf("consume 5m against 500-approved want empty, got %q err=%v", id, err)
 	}
@@ -153,7 +153,7 @@ func TestPendingAction_ArgsDigestBound(t *testing.T) {
 		t.Fatalf("500 row must stay approved, got %+v err=%v", still, err)
 	}
 
-	id, err = s.ConsumeApprovedAction(ctx, "r-digest", 1, "bank", "transfer", "digest-500")
+	id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-digest", 1, "bank", "transfer", "digest-500")
 	if err != nil || id != "p-low" {
 		t.Fatalf("consume 500: id=%q err=%v", id, err)
 	}
@@ -172,11 +172,11 @@ func TestPendingAction_ArgsDigestBound(t *testing.T) {
 	if err := s.SetPendingActionStatus(ctx, "p-legacy", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "r-legacy", 1, "bank", "transfer", "digest-500")
+	id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-legacy", 1, "bank", "transfer", "digest-500")
 	if err != nil || id != "p-legacy" {
 		t.Fatalf("legacy empty digest should consume once, id=%q err=%v", id, err)
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "r-legacy", 1, "bank", "transfer", "digest-500")
+	id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-legacy", 1, "bank", "transfer", "digest-500")
 	if err != nil || id != "" {
 		t.Fatalf("legacy second consume want empty, got %q err=%v", id, err)
 	}

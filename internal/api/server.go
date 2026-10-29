@@ -27,7 +27,6 @@ import (
 	"github.com/getrunkite/runkite/internal/customroutes"
 	"github.com/getrunkite/runkite/internal/finops"
 	"github.com/getrunkite/runkite/internal/hooks"
-	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/payloadshrink"
 	"github.com/getrunkite/runkite/internal/policy"
@@ -540,112 +539,32 @@ func (s *Server) handleListWebhookDeadLetters(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, dls)
 }
 
-// StatusCallback returns a function the bridge server calls on ReportStatus.
+// StatusCallback is a legacy trusted control-plane completion entry point.
+// Production runners use generation-bearing lifecycle callbacks, and the
+// reaper uses CompleteReclaimedRun so persistence failures retain the lease.
 func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 	return func(runID, statusStr, errorMsg string) {
-		status := models.RunStatus(statusStr)
-
-		// ReportStatus arrives from the runner over gRPC keyed only by
-		// runID -- no authenticated HTTP request to derive a tenant
-		// context from. A regular tenant-filtered GetRun would never
-		// find the run (it doesn't know which tenant to filter by yet),
-		// so this first lookup uses a system context, then every
-		// subsequent operation in this callback re-derives a REGULAR
-		// (non-system) context scoped to the run's own tenant -- not
-		// system bypass -- so the writes below (status, thread reset,
-		// checkpoint, cache) are correctly tagged with that tenant
-		// rather than silently landing in "default".
-		run, err := s.store.GetRun(tenant.SystemContext(context.Background()), runID)
+		ctx := tenant.SystemContext(context.Background())
+		run, err := s.store.GetRun(ctx, runID)
 		if err != nil {
-			slog.Error("status callback: failed to get run", "run_id", runID, "error", err)
+			slog.Error("status callback: run lookup failed", "run_id", runID, "error", err)
 			return
 		}
-		ctx := tenant.WithContext(context.Background(), run.TenantID)
-
-		// Persist checkpoint + thread.values BEFORE advertising a terminal
-		// run status. Clients that poll create+GET /runs until success then
-		// immediately GET /threads/{id} must not observe success with empty
-		// values -- that race was a real CI flake in the LangChain adapter
-		// e2e (status flipped first; values write landed a moment later).
-		// Still unconditional for every run (not only wait/stream handlers):
-		// fire-and-forget create + poll is a first-class Agent Protocol path.
-		var cachedVals map[string]interface{}
-		if events, replayErr := s.broker.Replay(ctx, runID, 0); replayErr == nil {
-			for i := len(events) - 1; i >= 0; i-- {
-				if events[i].Method == "values" {
-					var vals map[string]interface{}
-					if json.Unmarshal(events[i].Data, &vals) == nil && len(vals) > 0 {
-						cachedVals = vals
-						s.saveRunCheckpoint(ctx, run.ThreadID, vals)
-						if _, err := s.store.UpdateThread(ctx, run.ThreadID, &models.ThreadPatch{Values: vals}); err != nil {
-							slog.Error("status callback: failed to update thread values", "thread_id", run.ThreadID, "error", err)
-						}
-					}
-					break
-				}
+		if models.RunStatus(statusStr) == models.RunStatusError && !state.TerminalRunStatus(run.Status) {
+			accepted, err := s.recoverDeliveredCompletion(ctx, run)
+			if err != nil {
+				slog.Error("status callback: completion recovery failed", "run_id", runID, "error", err)
+				return
 			}
-		} else {
-			slog.Error("status callback: failed to replay events for checkpoint", "run_id", runID, "error", replayErr)
-		}
-
-		var outputJSON []byte
-		if cachedVals != nil {
-			outputJSON, _ = json.Marshal(cachedVals)
-		}
-
-		if !tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
-			return s.store.UpdateRunStatus(ctx, runID, status, outputJSON, errorMsg)
-		}) {
-			return
-		}
-
-		if isTerminalStatus(status) {
-			run.Status = status
-			if len(outputJSON) > 0 {
-				run.Output = outputJSON
+			if accepted {
+				return
 			}
-			s.ingestTerminalUsage(ctx, run)
-			// Always drop the optimistic create-time hold once the run
-			// is terminal (success/error/interrupt/timeout), even when
-			// Output.usage was empty so ingest was a no-op.
-			s.releaseUsageHold(ctx, runID)
-			// If this terminal tipped a hard day cap, optionally drain
-			// remaining inflight (finops.on_hard_breach=cancel_inflight).
-			s.maybeCancelInflightAfterTerminal(ctx, run)
 		}
-
-		if status == models.RunStatusSuccess && cachedVals != nil {
-			s.maybeCacheRunResult(ctx, run, cachedVals)
+		generation := state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
+		_, err = s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: generation, Status: models.RunStatus(statusStr), Error: errorMsg})
+		if err != nil {
+			slog.Error("status callback: durable completion failed", "run_id", runID, "error", err)
 		}
-
-		// Record run completion metrics
-		metrics.ActiveRuns.Dec()
-
-		metrics.RunsTotal.WithLabelValues(run.AgentID, string(status)).Inc()
-		metrics.RunDuration.WithLabelValues(run.AgentID).Observe(time.Since(run.CreatedAt).Seconds())
-		// Only release the thread if no OTHER in-flight run owns it.
-		// Atomic ReleaseThreadIfNoOtherActive closes the old check-then-act
-		// race where SearchRuns + SetThreadStatus could idle a thread a
-		// newer run had already claimed via TryClaimThread.
-		threadStatus := models.ThreadStatusIdle
-		if status == models.RunStatusInterrupted {
-			threadStatus = models.ThreadStatusInterrupted
-		}
-		var released bool
-		ok := tryStatusTransition("release_thread", run.ThreadID, runID, func() error {
-			var err error
-			released, err = s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, runID, threadStatus)
-			return err
-		})
-		if ok && !released {
-			slog.Info("status callback: skipping thread release; another run is in-flight or thread already released",
-				"thread_id", run.ThreadID, "completed_run_id", runID)
-		}
-
-		// Close the event broker so SSE/wait consumers know the run is done
-		_ = s.broker.Close(runID)
-
-		s.finishRun(runID, run.ThreadID, run.AgentID, run.TenantID, status, errorMsg)
 	}
 }
 
@@ -665,13 +584,14 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // a redundant claim when cancel+status race on the same process. The
 // claim write is skipped entirely when no sinks are registered
 // (HasSinks) -- zero cost when webhooks are unconfigured. A claim-store
-// error fail-opens (still dispatches) so a DB blip cannot silence every
-// terminal webhook.
-func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) {
+// error is retryable, so completion does not acknowledge missing bookkeeping.
+func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) error {
 	// Cancel/timeout may finish without StatusCallback ever releasing the
 	// create-time hold. DELETE is idempotent with the status-path release.
 	if isTerminalStatus(status) {
-		s.releaseUsageHold(tenant.WithContext(context.Background(), tenantID), runID)
+		if err := s.releaseUsageHold(tenant.WithContext(context.Background(), tenantID), runID); err != nil {
+			return err
+		}
 	}
 	if v, ok := s.runSpans.LoadAndDelete(runID); ok {
 		span := v.(trace.Span)
@@ -686,20 +606,26 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 		span.End()
 	}
 
-	if _, already := s.finishedRuns.LoadOrStore(runID, struct{}{}); already {
-		return
+	if _, already := s.finishedRuns.Load(runID); already {
+		return nil
 	}
-	time.AfterFunc(finishedRunTTL, func() { s.finishedRuns.Delete(runID) })
+	markFinished := func() {
+		s.finishedRuns.Store(runID, struct{}{})
+		time.AfterFunc(finishedRunTTL, func() { s.finishedRuns.Delete(runID) })
+	}
 
 	if !s.hooks.HasSinks() {
-		return
+		markFinished()
+		return nil
 	}
 
 	won, err := s.store.TryClaimTerminalHook(context.Background(), runID)
 	if err != nil {
-		slog.Error("terminal webhook claim failed; dispatching anyway", "run_id", runID, "error", err)
+		slog.Error("terminal webhook claim failed", "run_id", runID, "error", err)
+		return err
 	} else if !won {
-		return
+		markFinished()
+		return nil
 	}
 
 	hookType := hooks.RunComplete
@@ -714,6 +640,8 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 		Data:      map[string]interface{}{"status": string(status), "error": errorMsg},
 		Timestamp: time.Now().UTC(),
 	})
+	markFinished()
+	return nil
 }
 
 // maybeCacheRunResult saves a run's final values to the LLM response cache
@@ -726,20 +654,23 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 // JSON on write), which would silently produce a different hash than the
 // one computed from the original raw request bytes at lookup time -- a
 // real bug found via live testing, not a hypothetical.
-func (s *Server) maybeCacheRunResult(ctx context.Context, run *models.Run, vals map[string]interface{}) {
+func (s *Server) maybeCacheRunResult(ctx context.Context, run *models.Run, vals map[string]interface{}) error {
 	cacheKey, ok := run.Metadata["cache_key"].(string)
 	if !ok || cacheKey == "" {
-		return
+		return nil
 	}
 	agent, err := s.store.GetAgent(ctx, run.AgentID)
 	if err != nil || agent == nil {
-		return
+		return nil
 	}
 	ttlSeconds := cacheTTLSeconds(agent.Metadata)
 	if ttlSeconds <= 0 {
-		return
+		return nil
 	}
-	now := time.Now().UTC()
+	now := run.UpdatedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	err = s.store.SaveCachedRunResult(ctx, &models.CachedRunResult{
 		CacheKey:  cacheKey,
 		AgentID:   run.AgentID,
@@ -750,6 +681,7 @@ func (s *Server) maybeCacheRunResult(ctx context.Context, run *models.Run, vals 
 	if err != nil {
 		slog.Error("failed to save run result to cache", "run_id", run.RunID, "agent_id", run.AgentID, "error", err)
 	}
+	return err
 }
 
 // saveRunCheckpoint persists a checkpoint with the given values for a thread.
@@ -982,11 +914,23 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	defer r.Body.Close()
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, connector.MaxMCPRequestBytes))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "MCP request body exceeds size limit")
+		} else {
+			writeError(w, http.StatusBadRequest, "failed to read request body")
+		}
 		return
 	}
+	rpc, err := connector.ParseMCPRequest(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	body = rpc.Body
 
 	var userCtx map[string]interface{}
 	if raw := r.Header.Get("X-Runkite-User-Context"); raw != "" {
@@ -997,9 +941,9 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	// the connector's own static tool filter inside ProxyMCPRequest).
 	// Retrieve is plane-served (run-bound session already proved) and
 	// must not require a connector grant.
-	method, tool, args := extractToolsCall(body)
+	method, tool, args := rpc.Method, rpc.Tool, rpc.Arguments
 	if method == "tools/call" && tool == payloadshrink.ToolName {
-		s.servePayloadRetrieve(w, r, extractJSONRPCID(body), args)
+		s.servePayloadRetrieve(w, r, rpc.ID, args)
 		return
 	}
 	// One-shot capability (Admin-approved pending) is checked before Decide
@@ -1037,7 +981,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 						msg = "denied by policy"
 					}
 				}
-				denied, err := connector.DeniedRPCResult(extractJSONRPCID(body), msg, mcpPolicyDenyData(dec, actionID))
+				denied, err := connector.DeniedRPCResult(rpc.ID, msg, mcpPolicyDenyData(dec, actionID))
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
 					return
@@ -1052,6 +996,10 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.connectors.ProxyMCPRequest(r.Context(), name, userCtx, body)
 	if err != nil {
+		if errors.Is(err, connector.ErrBodyTooLarge) {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"message": "connector response exceeds size limit; the tool may have executed", "reason_code": "connector_response_too_large"})
+			return
+		}
 		if errors.Is(err, connector.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "connector not found: "+name)
 			return

@@ -207,30 +207,34 @@ func (s *Server) shouldEmitApproachAlert(tenantID, agentID, scope, kind string, 
 
 // ingestTerminalUsage writes a usage_events row from run Output when
 // present. Best-effort; no-ops on Mongo or empty/zero usage.
-func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
+func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) error {
+	return s.persistTerminalUsage(ctx, run, true)
+}
+
+func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, alerts bool) error {
 	if s == nil || run == nil || len(run.Output) == 0 {
-		return
+		return nil
 	}
 	if models.RunIsSimulation(run.Metadata) {
-		return
+		return nil
 	}
 	if !isTerminalStatus(run.Status) {
-		return
+		return nil
 	}
 	store, ok := s.usageEvents()
 	if !ok {
-		return
+		return nil
 	}
 	usage, model := extractRunUsageWithModel(run.Output)
 	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CostUSD == 0 && !usage.Unmetered {
-		return
+		return nil
 	}
 	var pb finops.Pricebook
 	if s.FinOps() != nil {
 		pb = s.FinOps().Pricebook
 	}
 	usd := pb.EstimateUSD(model, usage.PromptTokens, usage.CompletionTokens, usage.CostUSD)
-	if usage.CostUSD == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) &&
+	if alerts && usage.CostUSD == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) &&
 		len(pb) > 0 && !pb.HasModel(model) {
 		// Pricebook is configured but this model id is missing — the
 		// "admin swapped models, forgot to update the pricebook" case.
@@ -252,7 +256,7 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 			},
 		})
 	}
-	if usage.Unmetered {
+	if alerts && usage.Unmetered {
 		// The runner found an AI-shaped reply (a real model turn ran) but
 		// could not extract any token/cost data from it in any recognized
 		// shape -- most likely a provider/framework integration this
@@ -280,7 +284,7 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 	id := "usage-" + run.RunID
 	ev := &models.UsageEvent{
 		ID:          id,
-		TS:          time.Now().UTC(),
+		TS:          run.UpdatedAt,
 		TenantID:    run.TenantID,
 		RunID:       run.RunID,
 		AgentID:     run.AgentID,
@@ -292,7 +296,9 @@ func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) {
 	}
 	if err := store.WriteUsageEvent(ctx, ev); err != nil {
 		slog.Warn("usage event write failed", "run_id", run.RunID, "error", err)
+		return err
 	}
+	return nil
 }
 
 // extractRunUsageWithModel is extractRunUsage plus optional usage.model.
@@ -349,14 +355,16 @@ func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
 	}
 }
 
-func (s *Server) releaseUsageHold(ctx context.Context, runID string) {
+func (s *Server) releaseUsageHold(ctx context.Context, runID string) error {
 	hs, ok := s.usageHolds()
 	if !ok {
-		return
+		return nil
 	}
 	if err := hs.ReleaseUsageHold(ctx, runID); err != nil {
 		slog.Warn("usage hold release failed", "run_id", runID, "error", err)
+		return err
 	}
+	return nil
 }
 
 // applyFinOpsRouting rewrites agentID to a cheaper configured target when

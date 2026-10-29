@@ -2,6 +2,8 @@ export type RunBinding = {
     tenantId: string;
     runId: string;
     generation: number;
+    runnerKind?: string;
+    runnerToken?: string;
 };
 /** Header runners send on /internal/* (matches internal/auth.HeaderTenantID). */
 export declare const HEADER_TENANT_ID = "X-Runkite-Tenant-Id";
@@ -14,8 +16,12 @@ export declare function runWithBinding<T>(opts: {
     tenantId?: string;
     runId: string;
     generation?: number;
+    runnerKind?: string;
+    runnerToken?: string;
 }, fn: () => Promise<T>): Promise<T>;
 export declare function tenantHeaders(): Record<string, string>;
+/** Shared kind-scoped authentication for helpers called inside a worker. */
+export declare function runnerHeaders(runnerToken?: string, runnerKind?: string): Record<string, string>;
 /** LangGraph checkpointer key for this assignment's logical thread.
  * Empty / "default" → bare threadId (existing single-tenant rows stay
  * reachable). Any other tenant → `${tenantId}:${threadId}`. */

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -400,7 +402,7 @@ func (q *ackErrorQueue) Ack(ctx context.Context, runID string, generation int64)
 // than the rare case a stale report slips through during that same
 // outage (reclaim itself needs the same backend, so a second runner
 // reporting concurrently during an outage is unlikely anyway).
-func TestReportStatus_QueueErrorStillAppliesStatusNotTreatedAsSuperseded(t *testing.T) {
+func TestReportStatus_QueueErrorReturnsRetryableFailureAfterPersistence(t *testing.T) {
 	queue := &ackErrorQueue{Queue: inprocess.NewQueue()}
 	var reportedStatuses []string
 	srv := NewServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), func(runID, status, errorMsg string) {
@@ -418,10 +420,10 @@ func TestReportStatus_QueueErrorStillAppliesStatusNotTreatedAsSuperseded(t *test
 	}
 
 	resp, err := srv.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: runID, Status: "success", Generation: 1})
-	if err != nil {
-		t.Fatalf("ReportStatus should not itself error just because Ack did: %v", err)
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("Ack error must be retryable after persistence, got response=%v err=%v", resp, err)
 	}
-	if resp.Superseded {
+	if resp != nil && resp.Superseded {
 		t.Fatalf("a queue/transport error must not be reported as Superseded=true -- that's a fencing signal, not an infrastructure one, got %v", resp)
 	}
 	if len(reportedStatuses) != 1 || reportedStatuses[0] != "success" {

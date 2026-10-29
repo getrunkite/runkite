@@ -56,8 +56,21 @@ spec:
             {{- end }}
             {{- end }}
             {{- range $k, $v := .Values.runner.extraEnv }}
-            - name: {{ $k }}
+            - name: {{ $k | quote }}
+              {{- if kindIs "map" $v }}
+              {{- if and (hasKey $v "value") (hasKey $v "valueFrom") }}
+              {{- fail (printf "runner.extraEnv.%s must specify only one of value or valueFrom" $k) }}
+              {{- else if hasKey $v "valueFrom" }}
+              valueFrom:
+                {{- toYaml $v.valueFrom | nindent 16 }}
+              {{- else if hasKey $v "value" }}
+              value: {{ $v.value | quote }}
+              {{- else }}
+              {{- fail (printf "runner.extraEnv.%s requires value or valueFrom" $k) }}
+              {{- end }}
+              {{- else }}
               value: {{ $v | quote }}
+              {{- end }}
             {{- end }}
           {{- if .Values.tls.enabled }}
           volumeMounts:

@@ -213,5 +213,12 @@ runner:
     tag: latest
     pullPolicy: IfNotPresent
   resources: {}
-  # Extra env for the runner pod (e.g. an LLM API key via valueFrom).
+  # Scalar values stay supported. Structured entries accept value or valueFrom.
+  # extraEnv:
+  #   LOG_LEVEL: info
+  #   MODEL_API_KEY:
+  #     valueFrom:
+  #       secretKeyRef:
+  #         name: runner-model-credentials
+  #         key: api-key
   extraEnv: {}

@@ -556,15 +556,13 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 
 // fenced looks up the state entry for runID and decides whether the
 // presented generation is allowed to act on it -- same shape as
-// natstransport's own fenced helper (generation 0 from either side
-// bypasses fencing, matching transport.JobQueue's own pre-fencing-
-// runner-build compat rationale).
+// natstransport's own fenced helper. Zero is not a wildcard.
 func (q *Queue) fenced(runID string, generation int64) (stateEntry, bool) {
 	entry, ok := q.getState(runID)
 	if !ok || entry.Canceled {
 		return stateEntry{}, false
 	}
-	if generation != 0 && entry.Generation != 0 && entry.Generation != generation {
+	if entry.Generation != generation {
 		return stateEntry{}, false
 	}
 	return entry, true
@@ -682,9 +680,9 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 		}
 		newGen := s.entry.Generation + 1
 		if maxRetries > 0 && newGen > int64(maxRetries) {
-			if err := q.putState(ctx, s.runID, nil); err != nil {
-				continue
-			}
+			// Retain the authoritative entry and its current generation until
+			// the plane commits the terminal result and Acks newGen-1. A failed
+			// completion must remain visible on subsequent reaper ticks.
 			var job transport.RunAssignment
 			_ = json.Unmarshal(s.entry.Job, &job)
 			dead = append(dead, transport.PoisonPill{

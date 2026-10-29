@@ -19,6 +19,7 @@ collide when two tenants reuse the same client-chosen thread id.
 
 from __future__ import annotations
 
+import os
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
@@ -33,6 +34,7 @@ class _RunBinding:
 
 
 _run: ContextVar[_RunBinding | None] = ContextVar("runkite_run", default=None)
+_runner: ContextVar[tuple[str, str | None]] = ContextVar("runkite_runner", default=("python-langgraph", None))
 
 # Header runners send on /internal/* so proxy-mode handlers scope the
 # same way as client auth (see internal/auth.HeaderTenantID).
@@ -74,6 +76,32 @@ def tenant_headers() -> dict[str, str]:
     if binding is not None:
         headers[HEADER_RUN_ID] = binding.run_id
         headers[HEADER_GENERATION] = str(binding.generation)
+    return headers
+
+
+def bind_runner(kind: str, token: str | None = None) -> Token[tuple[str, str | None]]:
+    """Bind the authenticated worker identity for task-local HTTP helpers."""
+    return _runner.set((kind, token or None))
+
+
+def reset_runner(token: Token[tuple[str, str | None]]) -> None:
+    _runner.reset(token)
+
+
+def runner_headers(runner_token: str | None = None, runner_kind: str | None = None) -> dict[str, str]:
+    """Run/tenant headers plus the current worker's kind-scoped credential.
+
+    Explicit constructor options take precedence. Outside a worker binding,
+    the historical LangGraph kind and RUNNER_TOKEN environment remain valid.
+    """
+    bound_kind, bound_token = _runner.get()
+    token = runner_token if runner_token is not None else bound_token
+    if token is None:
+        token = os.environ.get("RUNNER_TOKEN")
+    headers = tenant_headers()
+    if token:
+        headers["X-Runner-Kind"] = runner_kind or bound_kind
+        headers["X-Runner-Token"] = token
     return headers
 
 

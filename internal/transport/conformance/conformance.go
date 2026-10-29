@@ -309,7 +309,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
 
-		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || !current {
+		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
 			t.Fatalf("Renew failed: current=%v err=%v", current, err)
 		}
 
@@ -335,14 +335,14 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if err != nil || got == nil {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
 			t.Fatalf("Ack failed: accepted=%v err=%v", accepted, err)
 		}
 
 		// A heartbeat racing (or arriving after) completion must not
 		// resurrect the job -- e.g. by creating a phantom in-flight
 		// entry a later ReclaimStale would incorrectly re-queue.
-		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || current {
+		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || current {
 			t.Fatalf("Renew after Ack should be a safe no-op reporting current=false, got current=%v err=%v", current, err)
 		}
 
@@ -450,26 +450,55 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 	})
 
-	t.Run("generation_zero_bypasses_fencing_for_pre-fencing_runner_builds", func(t *testing.T) {
+	t.Run("generation_zero_cannot_act_on_versioned_assignment", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
 		job := makeAssignment("run-fence-3", "test-runner", "echo")
 		job.Generation = 1
 		_ = q.Enqueue(ctx, job)
-		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
-			t.Fatalf("Dequeue: %v", err)
+		got, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || got == nil {
+			t.Fatalf("Dequeue: job=%v err=%v", got, err)
 		}
 
-		// A runner build that predates fencing never sends a
-		// generation at all, which unmarshals to the Go zero value 0
-		// -- must be treated as "always matches" (the exact
-		// unconditional-trust behavior Ack/Renew had before fencing
-		// existed), not as a real, mismatched generation number.
-		if current, err := q.Renew(ctx, "run-fence-3", 0); err != nil || !current {
-			t.Fatalf("generation-0 Renew should bypass fencing, got current=%v err=%v", current, err)
+		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || current {
+			t.Fatalf("generation-0 Renew must be superseded, got current=%v err=%v", current, err)
 		}
-		if accepted, err := q.Ack(ctx, "run-fence-3", 0); err != nil || !accepted {
-			t.Fatalf("generation-0 Ack should bypass fencing, got accepted=%v err=%v", accepted, err)
+		if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || accepted {
+			t.Fatalf("generation-0 Ack must be superseded, got accepted=%v err=%v", accepted, err)
+		}
+		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
+			t.Fatalf("current Renew after rejected zero: current=%v err=%v", current, err)
+		}
+		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+			t.Fatalf("current Ack after rejected zero: accepted=%v err=%v", accepted, err)
+		}
+	})
+
+	t.Run("unversioned_assignment_matches_only_its_dispatch_generation", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-fence-legacy", "test-runner", "echo")
+		if err := q.Enqueue(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		got, err := q.Dequeue(ctx, "test-runner", time.Second)
+		if err != nil || got == nil {
+			t.Fatalf("Dequeue: job=%v err=%v", got, err)
+		}
+		// Some transports assign a positive delivery generation at dequeue.
+		wrong := got.Generation + 1
+		if current, err := q.Renew(ctx, got.RunID, wrong); err != nil || current {
+			t.Fatalf("mismatched Renew accepted: current=%v err=%v", current, err)
+		}
+		if accepted, err := q.Ack(ctx, got.RunID, wrong); err != nil || accepted {
+			t.Fatalf("mismatched Ack accepted: accepted=%v err=%v", accepted, err)
+		}
+		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
+			t.Fatalf("exact Renew: current=%v err=%v", current, err)
+		}
+		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+			t.Fatalf("exact Ack: accepted=%v err=%v", accepted, err)
 		}
 	})
 
@@ -649,10 +678,55 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("dead generation %d must be > maxRetries %d", dead[0].Generation, maxRetries)
 		}
 
-		extra, _ := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
+		extra, err := q.Dequeue(ctx, "test-runner", 200*time.Millisecond)
+		if err != nil {
+			t.Fatalf("poison dequeue check: %v", err)
+		}
 		if extra != nil {
 			t.Fatalf("poisoned job must not reappear on queue, got %+v", extra)
 		}
+		liveGeneration := again.Generation
+		for attempt := 0; attempt < 3; attempt++ {
+			// A failed durable callback performs no Ack. The next sweep must
+			// present the same pill without advancing or losing its lease.
+			n, repeated, err := r.ReclaimStale(ctx, -time.Second, maxRetries)
+			if err != nil || n != 0 || len(repeated) != 1 || repeated[0] != dead[0] {
+				t.Fatalf("failed completion retry %d: n=%d pills=%+v err=%v", attempt, n, repeated, err)
+			}
+			live, err := q.LookupInflight(ctx, job.RunID)
+			if err != nil || live == nil || live.Generation != liveGeneration || string(live.Input) != string(job.Input) {
+				t.Fatalf("poison lease changed before durable completion: assignment=%+v err=%v", live, err)
+			}
+			if depth, err := q.Len(ctx); err != nil || depth != 0 {
+				t.Fatalf("poison was queued: depth=%d err=%v", depth, err)
+			}
+		}
+		if accepted, err := q.Ack(ctx, job.RunID, dead[0].Generation); err != nil || accepted {
+			t.Fatalf("diagnostic next-generation Ack must be rejected: accepted=%t err=%v", accepted, err)
+		}
+		if accepted, err := q.Ack(ctx, job.RunID, 0); err != nil || accepted {
+			t.Fatalf("zero Ack must not consume positive poison lease: accepted=%t err=%v", accepted, err)
+		}
+		if current, err := q.Renew(ctx, job.RunID, liveGeneration); err != nil || !current {
+			t.Fatalf("same-attempt renewal lost before completion: current=%t err=%v", current, err)
+		}
+		n, repeated, err := r.ReclaimStale(ctx, -time.Second, maxRetries)
+		if err != nil || n != 0 || len(repeated) != 1 || repeated[0] != dead[0] {
+			t.Fatalf("renew changed poison identity: n=%d pills=%+v err=%v", n, repeated, err)
+		}
+		// Only a successfully persisted/finalized result may acknowledge the
+		// retained live generation, which is diagnostic Generation-1.
+		if accepted, err := q.Ack(ctx, job.RunID, dead[0].Generation-1); err != nil || !accepted {
+			t.Fatalf("durable completion Ack failed: accepted=%t err=%v", accepted, err)
+		}
+		if live, err := q.LookupInflight(ctx, job.RunID); err != nil || live != nil {
+			t.Fatalf("completed poison lease remains: assignment=%+v err=%v", live, err)
+		}
+		n, repeated, err = r.ReclaimStale(ctx, -time.Second, maxRetries)
+		if err != nil || n != 0 || len(repeated) != 0 {
+			t.Fatalf("completed poison was returned again: n=%d pills=%+v err=%v", n, repeated, err)
+		}
+
 	})
 }
 

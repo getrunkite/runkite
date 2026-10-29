@@ -130,7 +130,7 @@
     "generation": {
       "type": "integer",
       "minimum": 0,
-      "description": "Fencing token for this dispatch attempt. Starts at 1 when a run is created; incremented on reclaim so a superseded runner's late report can be rejected. Absent or 0 = pre-fencing runner (always-matching for backward compatibility)."
+      "description": "Fencing token for this dispatch attempt. Starts at 1 when a run is created; incremented on reclaim so a superseded runner's late report can be rejected. The runner must echo the exact assigned value on run-specific RPCs and bound HTTP calls. Zero matches only an actual generation-zero assignment; it never bypasses fencing."
     },
     "trace_context": {
       "type": "object",

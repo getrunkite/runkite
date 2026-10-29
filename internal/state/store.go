@@ -16,6 +16,8 @@ import (
 
 // Store is the persistence interface for all control plane metadata.
 type Store interface {
+	RunCompletionStore
+
 	// --- Agents ---
 	GetAgent(ctx context.Context, agentID string) (*models.Agent, error)
 	SearchAgents(ctx context.Context, req *models.AgentSearchRequest) ([]*models.Agent, error)

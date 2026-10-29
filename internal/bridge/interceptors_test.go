@@ -2,9 +2,11 @@ package bridge
 
 import (
 	"context"
+	"github.com/getrunkite/runkite/internal/transport"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -38,7 +40,11 @@ func withEnv(t *testing.T, kv map[string]string) {
 // exactly as cmd/serve.go does. Returns a connected client and a cleanup func.
 func startTestBridge(t *testing.T, rt *auth.RunnerTokens) pb.RunnerServiceClient {
 	t.Helper()
-	queue := inprocess.NewQueue()
+	return startTestBridgeWithQueue(t, rt, inprocess.NewQueue())
+}
+
+func startTestBridgeWithQueue(t *testing.T, rt *auth.RunnerTokens, queue *inprocess.Queue) pb.RunnerServiceClient {
+	t.Helper()
 	broker := inprocess.NewBroker()
 	cancelBus := inprocess.NewCancelBus()
 	srv := NewServer(queue, broker, cancelBus, nil)
@@ -149,5 +155,53 @@ func TestGRPCAuth_StreamingRPCEnforced(t *testing.T) {
 	_, err = stream.Recv()
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expected Unauthenticated on first Recv, got %v", status.Code(err))
+	}
+}
+
+func TestGRPCAuth_AuthenticatedKindCannotSelectAnotherQueue(t *testing.T) {
+	withEnv(t, map[string]string{"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok-py"})
+	client := startTestBridge(t, auth.LoadRunnerTokensFromEnv())
+	ctx := ctxWithRunnerAuth("python-langgraph", "tok-py")
+	if _, err := client.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "typescript-langgraphjs", TimeoutSeconds: 1}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("cross-kind queue selection: %v", err)
+	}
+	stream, err := client.WatchCancels(ctx, &pb.WatchCancelsRequest{RunnerKind: "typescript-langgraphjs"})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("cross-kind cancel watch: %v", err)
+	}
+}
+
+func TestGRPCAuth_RunMutationRequiresAssignmentOwner(t *testing.T) {
+	withEnv(t, map[string]string{"RUNNER_TOKEN_PYTHON_LANGGRAPH": "tok-py"})
+	q := inprocess.NewQueue()
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "foreign", RunnerKind: "typescript-langgraphjs", Generation: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Dequeue(ctx, "typescript-langgraphjs", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	client := startTestBridgeWithQueue(t, auth.LoadRunnerTokensFromEnv(), q)
+	caller := ctxWithRunnerAuth("python-langgraph", "tok-py")
+	if _, err := client.Heartbeat(caller, &pb.HeartbeatRequest{RunId: "foreign", Generation: 1}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign heartbeat: %v", err)
+	}
+	if _, err := client.ReportStatus(caller, &pb.ReportStatusRequest{RunId: "foreign", Generation: 1, Status: "success"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign completion: %v", err)
+	}
+	stream, err := client.StreamEvents(caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.Send(&pb.RunEventProto{RunId: "foreign", Generation: 1, EventJson: `{"method":"values","data":{"stolen":true}}`})
+	if _, err := stream.CloseAndRecv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign event injection: %v", err)
+	}
+	assignment, _ := q.LookupInflight(ctx, "foreign")
+	if assignment == nil {
+		t.Fatal("unauthorized completion removed foreign lease")
 	}
 }

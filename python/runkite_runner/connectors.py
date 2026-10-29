@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from .tenant_ctx import HEADER_GENERATION, HEADER_RUN_ID, tenant_headers
+from .tenant_ctx import HEADER_GENERATION, HEADER_RUN_ID, runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 HEADER_CONNECTOR_SESSION = "X-Runkite-Connector-Session"
@@ -50,14 +50,9 @@ def _run_bound_headers(config: dict | None) -> dict[str, str]:
             "called with the RunnableConfig a graph node itself received "
             "(build_run_config sets run_id and generation)"
         )
-    headers = {**tenant_headers()}
+    headers = runner_headers()
     headers[HEADER_RUN_ID] = str(run_id)
     headers[HEADER_GENERATION] = str(int(cfg.get("generation") or 0))
-    runner_token = os.environ.get("RUNNER_TOKEN")
-    if runner_token:
-        # Same hardcoded kind as store.py / a2a.py (no RUNNER_KIND env).
-        headers["X-Runner-Kind"] = "python-langgraph"
-        headers["X-Runner-Token"] = runner_token
     return headers
 
 

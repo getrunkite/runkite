@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -102,34 +101,19 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 	if c.Config.MCP == nil {
 		return nil, fmt.Errorf("connector %s has no MCP endpoint configured", name)
 	}
-
-	var req jsonRPCRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, fmt.Errorf("invalid JSON-RPC request: %w", err)
+	if mode := c.Config.MCP.Transport; mode != "" && mode != "json" && mode != "streamable_http" {
+		return nil, fmt.Errorf("connector %s: unsupported MCP transport %q", name, mode)
 	}
 
+	req, err := ParseMCPRequest(body)
+	if err != nil {
+		return nil, err
+	}
+	body = req.Body
+
 	if req.Method == "tools/call" {
-		var params struct {
-			Name string `json:"name"`
-		}
-		_ = json.Unmarshal(req.Params, &params)
-		// A tools/call with no name is never a legitimate request,
-		// REGARDLESS of the connector's allow/deny configuration -- so
-		// this is checked as its own structural rule, before consulting
-		// the filter at all, not folded into isAllowed. Found live on
-		// review, the hard way: an
-		// earlier version of this fix just called isAllowed(filter, "")
-		// unconditionally, which is correct FOR isAllowed's OWN
-		// semantics with an allow-list (empty string matches no allow
-		// entry, denied) but wrong for a deny-only filter -- deny-only
-		// means "allow everything except these," and "" isn't on the
-		// deny list, so isAllowed correctly-per-its-own-contract
-		// returned true. Confirmed live: a deny-only connector forwarded
-		// an empty-name tools/call straight to the downstream server.
-		// An empty name should never reach a real MCP server no matter
-		// what the filter shape is, so it's rejected here unconditionally.
-		if params.Name == "" || !isAllowed(c.Config.Tools, params.Name) {
-			return deniedToolResult(req.ID, name, params.Name)
+		if req.Tool == "" || !isAllowed(c.Config.Tools, req.Tool) {
+			return deniedToolResult(req.ID, name, req.Tool)
 		}
 	}
 
@@ -143,7 +127,13 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 		return nil, fmt.Errorf("connector %s: %w", name, err)
 	}
 
-	respBody, statusCode, err := forwardMCPRequest(ctx, c.Config.MCP.URL, token.AccessToken, body)
+	var respBody []byte
+	var statusCode int
+	if c.Config.MCP.Transport == "streamable_http" {
+		respBody, statusCode, err = forwardStreamableMCP(ctx, c.Config.MCP.URL, token.AccessToken, req)
+	} else {
+		respBody, statusCode, err = forwardMCPRequest(ctx, c.Config.MCP.URL, token.AccessToken, body)
+	}
 	if err != nil {
 		c.breaker.RecordFailure()
 		return nil, fmt.Errorf("connector %s: mcp request failed: %w", name, err)
@@ -213,7 +203,7 @@ func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readLimitedBody(resp.Body, MaxMCPResponseBytes)
 	if err != nil {
 		return nil, 0, fmt.Errorf("read response: %w", err)
 	}
@@ -233,28 +223,31 @@ func filterToolsListResponse(body []byte, filter *ToolFilter) []byte {
 	if filter == nil {
 		return body
 	}
-	var resp struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      json.RawMessage `json:"id,omitempty"`
-		Result  *struct {
-			Tools []json.RawMessage `json:"tools"`
-		} `json:"result,omitempty"`
-		Error json.RawMessage `json:"error,omitempty"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Result == nil {
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(body, &resp); err != nil {
 		return body
 	}
-
-	filtered := make([]json.RawMessage, 0, len(resp.Result.Tools))
-	for _, raw := range resp.Result.Tools {
-		var tool struct {
-			Name string `json:"name"`
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(resp["result"], &result); err != nil || result == nil {
+		return body
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(result["tools"], &tools); err != nil {
+		return body
+	}
+	filtered := make([]json.RawMessage, 0, len(tools))
+	for _, raw := range tools {
+		var tool map[string]json.RawMessage
+		if json.Unmarshal(raw, &tool) != nil {
+			continue
 		}
-		if json.Unmarshal(raw, &tool) == nil && isAllowed(filter, tool.Name) {
+		var name string
+		if json.Unmarshal(tool["name"], &name) == nil && isAllowed(filter, name) {
 			filtered = append(filtered, raw)
 		}
 	}
-	resp.Result.Tools = filtered
+	result["tools"], _ = json.Marshal(filtered)
+	resp["result"], _ = json.Marshal(result)
 
 	out, err := json.Marshal(resp)
 	if err != nil {

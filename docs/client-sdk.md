@@ -83,6 +83,28 @@ Until that ships, “SDK” in docs means **LangGraph SDK** (or any Agent Protoc
 
 [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs, and they are not published. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Pass an `AbortSignal` (TypeScript) or a `threading.Event` (Python) and the poll stops when the caller aborts.
 
+### Local package builds
+
+The small helpers now include packaging metadata, compiled JavaScript and type
+declarations, plus a standalone Python wheel with no runtime dependencies.
+They remain unpublished until a maintainer releases them to npm and PyPI.
+
+```sh
+cd typescript/runkite-governance
+npm ci
+npm pack
+cd ../..
+python -m pip install ./python/runkite_governance
+```
+
+Install the npm tarball in the application that owns the model loop. See each
+package README and the [AI SDK example](../examples/governance_ai_sdk/README.md).
+The default 60-second timeout covers decide, polling HTTP headers/bodies and
+waits. TypeScript composes a deadline with the caller's abort signal. Python
+bounds the caller wait and the number of blocking stdlib transport workers;
+those workers use the remaining socket timeout and close responses on unwind.
+Cancellation can return before an operating-system DNS lookup finishes.
+
 ## Related
 
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)

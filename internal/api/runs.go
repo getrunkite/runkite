@@ -571,6 +571,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		parentRunID:      req.ParentRunID,
 		depth:            depth,
 	})
+	// Dispatch fences are server-owned even when clients supply run metadata.
+	delete(run.Metadata, state.AttemptGenerationKey)
+	delete(run.Metadata, state.CompletionGenerationKey)
 	run.Metadata["run_manifest"] = runManifestToMetadata(manifest)
 	if sim {
 		run.Metadata["simulation"] = true
@@ -1552,7 +1555,7 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 	}
 
 	// Replay all past events to find the high-water mark
-	var maxReplayedSeq int64
+	maxReplayedSeq := map[int64]int64{}
 	pastEvents, _ := s.broker.Replay(r.Context(), runID, 0)
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -1567,8 +1570,8 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 	// Send replayed (historical) events
 	for _, ev := range pastEvents {
 		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", ev.EventID, ev.Method, string(ev.Data))
-		if ev.Seq > maxReplayedSeq {
-			maxReplayedSeq = ev.Seq
+		if ev.Seq > maxReplayedSeq[ev.Generation] {
+			maxReplayedSeq[ev.Generation] = ev.Seq
 		}
 		if ev.IsTerminal() {
 			flusher.Flush()
@@ -1579,7 +1582,7 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 
 	// Tail live events, skipping any already sent via replay (dedup on Seq)
 	for event := range eventCh {
-		if event.Seq <= maxReplayedSeq {
+		if event.Seq <= maxReplayedSeq[event.Generation] {
 			continue
 		}
 		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Method, string(event.Data))
@@ -1649,63 +1652,42 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	}
 
 	// Wait for terminal event
-	var lastValues json.RawMessage
 	var terminalStatus string
+	var terminalGeneration int64
 	for event := range eventCh {
-		if event.Method == "values" {
-			lastValues = event.Data
-		}
 		if event.IsTerminal() {
 			// Extract status from the end event data (e.g. {"status":"success"})
 			var endData map[string]interface{}
 			if json.Unmarshal(event.Data, &endData) == nil {
 				if s, ok := endData["status"].(string); ok {
 					terminalStatus = s
+					terminalGeneration = event.Generation
 				}
 			}
 			break
 		}
 	}
 
-	// Note: checkpoint/thread-values persistence happens centrally in
-	// StatusCallback (fired by the runner's ReportStatus RPC), not here, so
-	// it's consistent regardless of how the client observes the run.
-
-	// Get final run state — ReportStatus may not have arrived yet, so
-	// overlay the status from the terminal event if the store is still
-	// stale, AND persist it here too (real bug found via load testing,
-	// see waitForExistingRun's identical fix for the full rationale --
-	// without this, a plain GET immediately after this response could
-	// still see "pending" even though this response says "success").
-	finalRun, _ := s.store.GetRun(ctx, run.RunID)
-	if finalRun == nil {
-		finalRun = run
+	// A terminal event can beat ReportStatus. Use the same transactional
+	// completion path rather than publishing status and idling the thread before
+	// its result and checkpoint are durable.
+	finalRun, err := s.completeObservedRun(ctx, run, terminalStatus, terminalGeneration)
+	if err != nil {
+		return nil, err
 	}
-	if terminalStatus != "" && !isTerminalStatus(finalRun.Status) {
-		tryStatusTransition("update_run_status", finalRun.ThreadID, run.RunID, func() error {
-			return s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatus(terminalStatus), nil, "")
-		})
-		// See waitForExistingRun's identical fix for the full rationale:
-		// the thread's own status must be reset too, not just the run's,
-		// or a fast wait-then-immediately-create-the-next-run on the
-		// same thread can get a spurious 409 (TryClaimThread sees a
-		// still-"busy" thread until StatusCallback's later write).
-		threadStatus := models.ThreadStatusIdle
-		if terminalStatus == string(models.RunStatusInterrupted) {
-			threadStatus = models.ThreadStatusInterrupted
+
+	if !isTerminalStatus(finalRun.Status) {
+		finalRun, err = s.awaitDurableCompletion(ctx, run)
+		if err != nil {
+			return nil, err
 		}
-		tryStatusTransition("set_thread_status", finalRun.ThreadID, run.RunID, func() error {
-			return s.store.SetThreadStatus(ctx, finalRun.ThreadID, threadStatus)
-		})
-		finalRun.Status = models.RunStatus(terminalStatus)
 	}
-
 	resp := models.RunWaitResponse{
 		Run: finalRun,
 	}
-	if lastValues != nil {
+	if len(finalRun.Output) > 0 {
 		var vals map[string]interface{}
-		json.Unmarshal(lastValues, &vals)
+		json.Unmarshal(finalRun.Output, &vals)
 		resp.Values = vals
 	}
 	return &resp, nil
@@ -1719,19 +1701,12 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 	}
 
 	if isTerminalStatus(run.Status) {
-		// Replay to find the last values event for a complete response
+		// Durable output survives the event broker replay retention window.
 		resp := models.RunWaitResponse{Run: run}
-		if past, replayErr := s.broker.Replay(r.Context(), runID, 0); replayErr == nil {
-			for i := len(past) - 1; i >= 0; i-- {
-				if past[i].Method == "values" {
-					var vals map[string]interface{}
-					if json.Unmarshal(past[i].Data, &vals) == nil {
-						resp.Values = vals
-					}
-					break
-				}
-			}
+		if len(run.Output) > 0 {
+			_ = json.Unmarshal(run.Output, &resp.Values)
 		}
+
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -1743,24 +1718,22 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		return
 	}
 
-	var lastValues json.RawMessage
 	var terminalStatus string
-	var maxReplayedSeq int64
+	var terminalGeneration int64
+	maxReplayedSeq := map[int64]int64{}
 
 	// Replay past events to catch values already emitted
 	if past, replayErr := s.broker.Replay(r.Context(), runID, 0); replayErr == nil {
 		for _, ev := range past {
-			if ev.Seq > maxReplayedSeq {
-				maxReplayedSeq = ev.Seq
-			}
-			if ev.Method == "values" {
-				lastValues = ev.Data
+			if ev.Seq > maxReplayedSeq[ev.Generation] {
+				maxReplayedSeq[ev.Generation] = ev.Seq
 			}
 			if ev.IsTerminal() {
 				var endData map[string]interface{}
 				if json.Unmarshal(ev.Data, &endData) == nil {
 					if s, ok := endData["status"].(string); ok {
 						terminalStatus = s
+						terminalGeneration = ev.Generation
 					}
 				}
 			}
@@ -1770,17 +1743,15 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 	// If replay already contained a terminal event, no need to wait on live channel
 	if terminalStatus == "" {
 		for event := range eventCh {
-			if event.Seq <= maxReplayedSeq {
+			if event.Seq <= maxReplayedSeq[event.Generation] {
 				continue
-			}
-			if event.Method == "values" {
-				lastValues = event.Data
 			}
 			if event.IsTerminal() {
 				var endData map[string]interface{}
 				if json.Unmarshal(event.Data, &endData) == nil {
 					if s, ok := endData["status"].(string); ok {
 						terminalStatus = s
+						terminalGeneration = event.Generation
 					}
 				}
 				break
@@ -1788,52 +1759,23 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		}
 	}
 
-	finalRun, _ := s.store.GetRun(r.Context(), runID)
-	if finalRun == nil {
-		finalRun = run
-	}
-	if terminalStatus != "" && !isTerminalStatus(finalRun.Status) {
-		// Real bug found via load testing: this used to only patch
-		// finalRun.Status in memory for THIS response, never writing it
-		// back -- so /wait correctly reported "success" (derived from
-		// observing the terminal event) while a plain GET immediately
-		// afterward still saw "pending", because the runner's separate
-		// ReportStatus RPC (which is what StatusCallback in server.go
-		// normally persists this from) hadn't arrived yet. Persisting
-		// it here closes that window; StatusCallback's own later write
-		// of the same status is a harmless, idempotent no-op overwrite.
-		// output stays nil here (matching StatusCallback's own
-		// UpdateRunStatus call) -- that field is populated elsewhere,
-		// not derived from a "values" event.
-		tryStatusTransition("update_run_status", finalRun.ThreadID, runID, func() error {
-			return s.store.UpdateRunStatus(r.Context(), runID, models.RunStatus(terminalStatus), nil, "")
-		})
-		// Real gap found in review: persisting the run's status (above)
-		// isn't enough on its own -- TryClaimThread (createRunCtx) still
-		// checks the THREAD's own status, which otherwise stays "busy"
-		// until StatusCallback's later SetThreadStatus call. A fast
-		// client doing wait-then-immediately-create-the-next-run on the
-		// same thread could get a spurious 409 in that gap. Resetting it
-		// here too closes that window the same way the run-status fix
-		// did; StatusCallback's later write is again a harmless no-op.
-		// Deliberately NOT replicating StatusCallback's other side
-		// effects here (checkpoint save, thread.values update, cache
-		// population) -- those are more involved and still solely
-		// StatusCallback's job, same as before this fix.
-		threadStatus := models.ThreadStatusIdle
-		if terminalStatus == string(models.RunStatusInterrupted) {
-			threadStatus = models.ThreadStatusInterrupted
-		}
-		tryStatusTransition("set_thread_status", finalRun.ThreadID, runID, func() error {
-			return s.store.SetThreadStatus(r.Context(), finalRun.ThreadID, threadStatus)
-		})
-		finalRun.Status = models.RunStatus(terminalStatus)
+	finalRun, err := s.completeObservedRun(r.Context(), run, terminalStatus, terminalGeneration)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "failed to persist run completion")
+		return
 	}
 
+	if !isTerminalStatus(finalRun.Status) {
+		finalRun, err = s.awaitDurableCompletion(r.Context(), run)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "failed to observe durable completion")
+			return
+		}
+	}
 	resp := models.RunWaitResponse{Run: finalRun}
-	if lastValues != nil {
+	if len(finalRun.Output) > 0 {
 		var vals map[string]interface{}
-		json.Unmarshal(lastValues, &vals)
+		json.Unmarshal(finalRun.Output, &vals)
 		resp.Values = vals
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -1945,29 +1887,34 @@ func (s *Server) cancelRunCore(ctx context.Context, runID string, wait, rollback
 func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool) (*models.Run, error) {
 	runID := run.RunID
 
-	if isTerminalStatus(run.Status) {
+	if isTerminalStatus(run.Status) && run.Status != models.RunStatusInterrupted {
 		return run, nil
 	}
 
-	tryStatusTransition("queue_cancel", run.ThreadID, runID, func() error {
-		return s.queue.Cancel(ctx, runID)
-	})
-	tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error {
-		return s.cancel.PublishCancel(ctx, runID)
-	})
-	tryStatusTransition("update_run_status", run.ThreadID, runID, func() error {
-		return s.store.UpdateRunStatus(ctx, runID, models.RunStatusInterrupted, nil, "")
-	})
-	tryStatusTransition("set_thread_status", run.ThreadID, runID, func() error {
-		return s.store.SetThreadStatus(ctx, run.ThreadID, models.ThreadStatusInterrupted)
-	})
-
-	// Finish the run's terminal bookkeeping (OTel span + on_interrupt hook)
-	// here defensively -- cancel is a terminal outcome even if the runner's
-	// own StatusCallback never arrives (runner already dead, etc). Safe if
-	// StatusCallback ALSO fires later: finishRun's LoadAndDelete guard
-	// means only whichever call arrives first does anything.
-	s.finishRun(runID, run.ThreadID, run.AgentID, run.TenantID, models.RunStatusInterrupted, "")
+	// Commit cancellation before removing its recoverable lease. The transaction
+	// targets the current attempt, while refusing to overwrite a terminal winner.
+	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+	if !accepted {
+		if completionErr != nil {
+			return nil, completionErr
+		}
+		current, err := s.store.GetRun(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		if current.Status != models.RunStatusInterrupted {
+			return current, nil
+		}
+	}
+	if !tryStatusTransition("queue_cancel", run.ThreadID, runID, func() error { return s.queue.Cancel(ctx, runID) }) {
+		return nil, fmt.Errorf("failed to cancel run queue lease")
+	}
+	if !tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID) }) {
+		return nil, fmt.Errorf("failed to publish runner cancellation")
+	}
+	if completionErr != nil {
+		return nil, completionErr
+	}
 
 	// Give runner time to emit its own terminal event, then close broker.
 	closeBroker := func() {

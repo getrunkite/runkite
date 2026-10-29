@@ -2,7 +2,7 @@
 
 **A self-hosted control plane for AI agents — one Go binary that owns the operational side (auth, dispatch, connectors, human approval, spend, audit) so your agent code can stay a plain LangGraph, CrewAI, LlamaIndex, AutoGen, or LangChain program.**
 
-If you already know [LangSmith Deployments](https://docs.smith.langchain.com/deployment): Runkite is what that would be if it were open source, framework-agnostic instead of LangGraph-only, and shipped as a single binary you run yourself instead of a hosted API you depend on.
+If you already know [LangSmith Deployments](https://docs.smith.langchain.com/deployment): Runkite is what that would be if it were self-hosted under BUSL-1.1, framework-agnostic instead of LangGraph-only, and shipped as a single binary you run yourself instead of a hosted API you depend on.
 
 [![CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getrunkite/runkite/actions/workflows/ci.yml?query=branch%3Amain)
 [![Matrix](https://img.shields.io/badge/matrix-nightly-6F42C1)](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
@@ -55,7 +55,7 @@ Being clear about scope matters as much as being clear about capability:
 - **Not another agent framework.** Runkite doesn't tell your agent how to think, plan, or call tools — LangGraph, CrewAI, and the rest still do that. Runkite governs what happens around the agent: dispatch, credentials, approval, spend, audit.
 - **Not a managed LLM gateway.** Your agent still calls its model provider directly (or through whatever gateway you already use). Runkite doesn't sit in that request path by default.
 - **Not a billing company.** FinOps here means budget caps and an honestly-labeled cost *estimate* enforced on the plane — not invoicing, payment processing, or a Stripe integration.
-- **Not (yet) a hosted service.** Self-hosting is what ships today; a fully managed cloud control plane is on the roadmap, not a current substitute for running the binary yourself.
+- **Self-hosted only.** You operate the control plane and its state and transport backends on your own infrastructure.
 
 ## Quick start
 
@@ -153,7 +153,7 @@ sequenceDiagram
 | Getting started | [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) |
 | Core | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) |
 | Worker contract (gRPC + opaque checkpoints) | [Runner Protocol](runner-protocol/README.md) · [PROTOCOL.md](runner-protocol/PROTOCOL.md) · [public mirror](https://github.com/getrunkite/runner-protocol) |
-| Features | [Connectors](docs/connectors.md) (MCP proxy, optional payload shrink) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
+| Features | [Connectors](docs/connectors.md) (MCP proxy, optional payload shrink) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Integrations](docs/integrations.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
 | Operations | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Trust & governance](docs/trust-governance.md) · [Fixture replay](docs/sim.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) |
 
 The [documentation site](https://getrunkite.com/support/) covers the same material with a guided, page-by-page walkthrough — including a full [Admin UI guide](https://getrunkite.com/support/admin-guide.html) and an occasional [blog post](https://getrunkite.com/support/blog/) — if you'd rather read in that format than jump between Markdown files.

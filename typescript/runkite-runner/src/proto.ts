@@ -130,7 +130,7 @@ export interface RunnerServiceClient extends Client {
     req: ReportStatusRequest,
     metadata: import("@grpc/grpc-js").Metadata,
     callback: (err: Error | null, resp: ReportStatusResponse) => void,
-  ): void;
+  ): import("@grpc/grpc-js").ClientUnaryCall | void;
   watchCancels(
     req: WatchCancelsRequest,
     metadata: import("@grpc/grpc-js").Metadata,

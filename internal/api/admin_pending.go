@@ -14,13 +14,13 @@ import (
 
 // pendingActionStore is the SQL Admin + one-shot capability surface.
 type pendingActionStore interface {
+	// CreatePendingAction returns the canonical scoped action ID through a.ID.
 	CreatePendingAction(ctx context.Context, a *models.PendingAction) error
 	GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error)
 	SearchPendingActions(ctx context.Context, req *models.PendingActionSearchRequest) ([]*models.PendingAction, error)
 	SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error
 	SetPendingActionApproved(ctx context.Context, id, decidedBy string) error
-	FindOpenPendingAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (*models.PendingAction, error)
-	ConsumeApprovedAction(ctx context.Context, runID string, generation int64, connector, tool, argsDigest string) (string, error)
+	ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error)
 	// ExpireGovernancePending denies embedded rows whose expires_at has
 	// passed. Connector rows (nil expires_at) stay pending.
 	ExpireGovernancePending(ctx context.Context, now time.Time) error

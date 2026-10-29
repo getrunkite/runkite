@@ -10,6 +10,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { LangGraphAdapter, loadCustomAppConfig } from "./adapter.js";
 import { CheckpointerManager, resolveCheckpointHttpUrl } from "./checkpoint.js";
+import { CompletionDeliveryError, finishRun } from "./completion.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import { RunkiteStore } from "./store.js";
 import { executeRun, type RunAssignment, type RunEvent } from "./executeRun.js";
@@ -346,23 +347,33 @@ export async function handleJob(
         traceContext: tc,
       },
       async (span) => {
-        await runWithBinding({ tenantId: assignment.tenant_id, runId: runId!, generation }, async () => {
-          const status = await handleJobUnderTenant(
-            client,
-            adapter,
-            assignment,
-            runId!,
+        await runWithBinding(
+          {
+            tenantId: assignment.tenant_id,
+            runId: runId!,
             generation,
-            metadata,
-            pendingCancels,
-            opts,
-          );
-          if (status) setRunStatus(span, status);
-        });
+            runnerKind: opts?.runnerKind,
+            runnerToken: opts?.runnerToken,
+          },
+          async () => {
+            const status = await handleJobUnderTenant(
+              client,
+              adapter,
+              assignment,
+              runId!,
+              generation,
+              metadata,
+              pendingCancels,
+              opts,
+            );
+            if (status) setRunStatus(span, status);
+          },
+        );
       },
     );
   } catch (err) {
     logger.error(`Worker error handling run_id=${runId}:`, err);
+    if (err instanceof CompletionDeliveryError) return;
     if (runId !== undefined) {
       const failedRunId = runId;
       await new Promise<void>((resolve) => {
@@ -428,6 +439,8 @@ async function handleJobUnderTenant(
       resolveStream = resolve;
       rejectStream = reject;
     });
+    // Observe early rejection while the graph is still executing.
+    void streamDone.catch(() => {});
     const call: ClientWritableStream<RunEventProto> = client.streamEvents(metadata, (err, resp) => {
       if (err) rejectStream(err);
       else resolveStream(resp);
@@ -440,30 +453,21 @@ async function handleJobUnderTenant(
     const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
 
     call.end();
-    try {
-      await streamDone;
-    } catch (err) {
-      logger.error("Stream finalization error:", err);
-    }
+    const completedStatus = await finishRun(
+      client,
+      {
+        runId,
+        status,
+        errorMessage: status === "error" ? "see error event" : "",
+        generation: String(generation),
+      },
+      streamDone,
+      metadata,
+      { cancelStream: () => call.cancel?.() },
+    );
 
-    await new Promise<void>((resolve, reject) => {
-      client.reportStatus(
-        {
-          runId: runId!,
-          status,
-          errorMessage: status === "error" ? "see error event" : "",
-          generation: String(generation),
-        },
-        metadata,
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        },
-      );
-    });
-
-    logger.info(`Run completed: run_id=${runId} status=${status}`);
-    return status;
+    logger.info(`Run completed: run_id=${runId} status=${completedStatus}`);
+    return completedStatus;
   } finally {
     heartbeat.stop();
     // Always clear the cancel registration, even if executeRun itself

@@ -77,7 +77,7 @@ class _FakeCall:
 
     def __await__(self):
         async def _noop():
-            return None
+            return runner_pb2.StreamEventsResponse(ok=True)
 
         return _noop().__await__()
 
@@ -108,6 +108,7 @@ class _FakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.append(json.loads(evt.event_json))
+            return runner_pb2.StreamEventsResponse(ok=True)
 
         return asyncio.ensure_future(_drain())
 
@@ -117,7 +118,7 @@ class _FakeStub:
     async def ReportStatus(self, request, metadata=None):
         self.reported_status = request.status
         self.reported_error = request.error_message
-        return runner_pb2.ReportStatusResponse()
+        return runner_pb2.ReportStatusResponse(ok=True)
 
 
 class _SucceedingAdapter:
@@ -160,6 +161,7 @@ class _MultiJobFakeStub:
         async def _drain():
             async for evt in event_generator:
                 self.sent_events.setdefault(evt.run_id, []).append(json.loads(evt.event_json))
+            return runner_pb2.StreamEventsResponse(ok=True)
 
         return asyncio.ensure_future(_drain())
 
@@ -168,7 +170,7 @@ class _MultiJobFakeStub:
 
     async def ReportStatus(self, request, metadata=None):
         self.reported_status[request.run_id] = request.status
-        return runner_pb2.ReportStatusResponse()
+        return runner_pb2.ReportStatusResponse(ok=True)
 
 
 class _ConcurrencyTrackingAdapter:
@@ -501,10 +503,11 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
 
 
 async def test_stream_events_setup_failure_still_reports_status():
-    """Regression: if StreamEvents raises before the stream task is
-    created, _handle_job used to hit an unbound stream_task/status and
-    skip ReportStatus entirely -- leaving the run stuck "running" on
-    the control plane. Must still report error once run_id is known."""
+    """A constructor failure happens before a stream task exists.
+
+    Cleanup must retain the original startup error and report it once the
+    run id is known. stream_task is already initialized to None.
+    """
 
     class _StreamFailsStub(_FakeStub):
         def StreamEvents(self, event_generator, metadata=None):
@@ -526,6 +529,7 @@ async def test_stream_events_setup_failure_still_reports_status():
         await task
 
     check("StreamEvents setup failure still reports a status", stub.reported_status == "error")
+    check("StreamEvents setup failure retains original error", stub.reported_error == "stream setup failed")
     check("pending_cancels did not leak the failed run", "r-stream-fail" not in pending_cancels)
 
 

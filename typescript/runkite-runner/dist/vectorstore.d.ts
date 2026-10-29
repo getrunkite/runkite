@@ -42,6 +42,7 @@ export interface RunkiteVectorStoreOptions {
     namespace: string;
     httpBaseUrl: string;
     runnerToken?: string;
+    runnerKind?: string;
 }
 export declare class RunkiteVectorStore extends VectorStore {
     private readonly namespace;

@@ -43,7 +43,9 @@ Proxy paths that touch tenant data or credentials require an **active run**:
 | `/internal/vectors/*` | Required |
 | Other `/internal/*` (schema, status, A2A, connector metadata) | Runner token only |
 
-Runners send `X-Runkite-Run-Id` and `X-Runkite-Generation` (the fencing generation from `GetJob`). The control plane looks up the in-flight `RunAssignment` and derives `tenant_id` / agent (`graph_id`) / principal (`user`) from that record. Runner-supplied `X-Runkite-Tenant-Id` is **not** trusted on bound paths. Generation `0` on either side bypasses fencing (pre-fencing runner compat, same as Ack/Renew) — production runners must send the real generation from `GetJob`.
+Runners send `X-Runkite-Run-Id` and `X-Runkite-Generation` (the fencing generation from `GetJob`). The control plane looks up the in-flight `RunAssignment` and derives `tenant_id` / agent (`graph_id`) / principal (`user`) from that record. Runner-supplied `X-Runkite-Tenant-Id` is **not** trusted on bound paths. The supplied generation must exactly match the active assignment, including when either value is `0`. Zero is never a wildcard: a caller sending `0` cannot bind to generation `1` or a reclaimed generation `2`. An actual legacy assignment at generation `0` accepts only `0` until it is reclaimed.
+
+Runners and custom proxy clients must echo the generation received from `GetJob` on every bound HTTP call, Heartbeat, StreamEvents and ReportStatus. Both shipped runners already do this. Older clients that omit the field must be upgraded for positive-generation assignments; the plane does not infer their attempt from the current lease. This closes the old compatibility bypass that let an unversioned stale worker act on a newer attempt.
 
 Stable `reason_code` values on denials include:
 

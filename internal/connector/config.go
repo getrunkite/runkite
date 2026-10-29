@@ -51,6 +51,9 @@ type AuthConfig struct {
 // MCPConfig points to an MCP server endpoint.
 type MCPConfig struct {
 	URL string `json:"url" yaml:"url"`
+	// Transport defaults to the existing single-POST JSON proxy. The SDK
+	// mode negotiates an upstream session for each proxied operation.
+	Transport string `json:"transport,omitempty" yaml:"transport,omitempty"` // json or streamable_http
 }
 
 // ToolFilter controls which MCP tools a connector exposes.

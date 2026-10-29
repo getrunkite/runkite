@@ -7,22 +7,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
+	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // Server implements the RunnerService gRPC server.
 type Server struct {
 	pb.UnimplementedRunnerServiceServer
-	queue          transport.JobQueue
-	broker         transport.EventBroker
-	cancelBus      transport.CancelBroker
-	statusCallback func(runID, status, errorMsg string)
+	queue              transport.JobQueue
+	broker             transport.EventBroker
+	cancelBus          transport.CancelBroker
+	statusCallback     func(runID, status, errorMsg string)
+	attemptCallback    func(context.Context, string, int64) (bool, error)
+	completionCallback func(context.Context, *state.RunCompletion) (bool, error)
 
 	mu       sync.Mutex
 	watchers map[string][]chan string      // runner_kind -> channels carrying runID
@@ -39,6 +47,12 @@ func NewServer(queue transport.JobQueue, broker transport.EventBroker, cancelBus
 		watchers:       make(map[string][]chan string),
 		runDone:        make(map[string]context.CancelFunc),
 	}
+}
+
+// SetRunLifecycle attaches durable attempt fencing and completion persistence.
+func (s *Server) SetRunLifecycle(attempt func(context.Context, string, int64) (bool, error), complete func(context.Context, *state.RunCompletion) (bool, error)) {
+	s.attemptCallback = attempt
+	s.completionCallback = complete
 }
 
 func (s *Server) addWatcher(kind string, ch chan string) {
@@ -82,6 +96,9 @@ func (s *Server) cleanupRun(runID string) {
 
 // GetJob implements the long-poll pattern: blocks until a job is available.
 func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobResponse, error) {
+	if err := requireRunnerKind(ctx, req.RunnerKind); err != nil {
+		return nil, err
+	}
 	timeout := time.Duration(req.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -110,6 +127,21 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	if ctx.Err() != nil {
 		_ = s.queue.Nack(context.Background(), job.RunID)
 		return nil, ctx.Err()
+	}
+
+	if s.attemptCallback != nil {
+		accepted, err := s.attemptCallback(ctx, job.RunID, job.Generation)
+		if err != nil {
+			_ = s.queue.Nack(context.Background(), job.RunID)
+			return nil, status.Error(codes.Unavailable, "failed to persist dispatch attempt")
+		}
+		if !accepted {
+			_, err := s.queue.Ack(ctx, job.RunID, job.Generation)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "failed to discard completed assignment")
+			}
+			return &pb.GetJobResponse{HasJob: false}, nil
+		}
 	}
 
 	data, err := json.Marshal(job)
@@ -145,6 +177,9 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 		watchCancel()
 	} else {
 		s.mu.Lock()
+		if old := s.runDone[runID]; old != nil {
+			old()
+		}
 		s.runDone[runID] = watchCancel
 		s.mu.Unlock()
 
@@ -170,77 +205,38 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 // them to the event broker for SSE fan-out.
 func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error {
 	var lastRunID string
-	seenFirstEvent := map[string]bool{}
 	for {
 		msg, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			return stream.SendAndClose(&pb.StreamEventsResponse{Ok: true})
 		}
 		if err != nil {
-			slog.Error("stream recv error", "run_id", lastRunID, "error", err)
 			return err
 		}
-
-		lastRunID = msg.RunId
-		// First event from a runner proves delivery succeeded -- Renew
-		// (not Ack) the in-flight lease so the reclaimer won't re-enqueue
-		// a job that's actively running. Deliberately NOT a full Ack here
-		// any more (found via a live incident): removing the job from
-		// in-flight tracking entirely at this point meant NOTHING
-		// watched it for the rest of its execution -- a runner crash any
-		// time after its first event left the run permanently stuck,
-		// confirmed live. Renew keeps it in-flight; the Heartbeat RPC
-		// (called periodically by the runner for the whole run, not just
-		// here once) keeps renewing it throughout execution. The true,
-		// final Ack now only happens in ReportStatus below, once the run
-		// actually completes.
-		//
-		// Not fenced on the returned `current` bool here (unlike
-		// Heartbeat below) -- deliberately: this is a stream, there's no
-		// per-message response to carry a "you've been superseded"
-		// signal back to the runner even if we wanted to reject it here,
-		// and rejecting would just mean NOT renewing, which the runner
-		// can't observe anyway from inside StreamEvents. Heartbeat is
-		// the channel a stale runner actually learns it's been
-		// superseded through and can act on (see its own handler).
-		if !seenFirstEvent[msg.RunId] {
-			_, _ = s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
-			seenFirstEvent[msg.RunId] = true
+		_, err = s.requireRunOwner(stream.Context(), msg.RunId)
+		if err != nil {
+			return err
 		}
-
-		var event transport.RunEvent
-		if err := json.Unmarshal([]byte(msg.EventJson), &event); err != nil {
-			slog.Error("invalid event JSON from runner", "run_id", msg.RunId, "error", err)
+		lastRunID = msg.RunId
+		current, err := s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
+		if err != nil {
+			return status.Error(codes.Unavailable, "failed to fence run event")
+		}
+		if !current {
+			slog.Warn("dropping event from superseded run", "run_id", lastRunID, "generation", msg.Generation)
 			continue
 		}
-
-		// A terminal event ("end"/"error") is what callers waiting on
-		// this run (the HTTP long-poll path, and any SSE subscriber)
-		// treat as authoritative for the run's final outcome -- unlike
-		// an ordinary progress event, publishing a stale one would
-		// actively corrupt a caller's view of what happened, not just
-		// look confusing. So terminal events specifically are checked
-		// against the current generation before publishing (using the
-		// same Renew call the rest of this stream already relies on,
-		// purely for its true/false answer here -- extending the lease
-		// one more time this late in a run's life is harmless): a
-		// runner that was reclaimed and superseded, but finishes its
-		// own now-pointless execution anyway, has its terminal event
-		// silently dropped instead of being believed. The gRPC call
-		// itself still succeeds either way -- there's no per-message
-		// response in this streaming RPC to report a rejection through,
-		// and the runner doesn't need one for this to be safe.
-		if event.IsTerminal() {
-			current, _ := s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
-			if !current {
-				slog.Warn("dropping terminal event from a superseded run", "run_id", msg.RunId, "method", event.Method, "generation", msg.Generation)
-				continue
-			}
-			slog.Info("run terminal event", "run_id", msg.RunId, "method", event.Method)
+		var event transport.RunEvent
+		if err := json.Unmarshal([]byte(msg.EventJson), &event); err != nil {
+			return status.Error(codes.InvalidArgument, "invalid run event JSON")
 		}
-
+		event.Generation = msg.Generation
+		if event.Generation > 1 {
+			event.EventID = fmt.Sprintf("%s:g%d", event.EventID, event.Generation)
+		}
 		if err := s.broker.Publish(stream.Context(), msg.RunId, &event); err != nil {
-			slog.Error("failed to publish event", "run_id", msg.RunId, "error", err)
+			slog.Error("failed to publish event", "run_id", lastRunID, "error", err)
+			return status.Error(codes.Unavailable, "failed to persist run event")
 		}
 	}
 }
@@ -255,34 +251,43 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 // attempt -- would let it clobber or race the real outcome. See
 // RunAssignment.Generation's own doc comment for the full mechanism.
 func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) (*pb.ReportStatusResponse, error) {
-	accepted, err := s.queue.Ack(ctx, req.RunId, req.Generation)
-	if err != nil {
-		// A queue/transport error here is not evidence that this report
-		// is stale -- treating it as "superseded" would silently drop a
-		// genuinely current run's real result just because the backend
-		// had a transient hiccup, which is a worse outcome than the
-		// rare case a stale report slips through during that same
-		// outage (reclaim itself depends on the same backend, so a
-		// second runner reporting concurrently during an outage is
-		// unlikely anyway). Fail toward applying the status, not toward
-		// dropping it.
-		slog.Error("failed to ack run status via queue, applying status anyway", "run_id", req.RunId, "error", err)
-		accepted = true
+	if !state.TerminalRunStatus(models.RunStatus(req.Status)) {
+		return nil, status.Error(codes.InvalidArgument, "invalid terminal run status")
 	}
-	if !accepted {
-		slog.Warn("ignored superseded status report", "run_id", req.RunId, "status", req.Status, "generation", req.Generation)
+	assignment, err := s.requireRunOwner(ctx, req.RunId)
+	if err != nil {
+		return nil, err
+	}
+	if assignment == nil && s.completionCallback == nil {
 		return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
 	}
-
-	slog.Info("run status reported", "run_id", req.RunId, "status", req.Status)
-
-	// Clean up the cancel-watcher goroutine for this run
-	s.cleanupRun(req.RunId)
-
-	if s.statusCallback != nil {
+	if assignment != nil {
+		current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "failed to fence run completion")
+		}
+		if !current {
+			return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
+		}
+	}
+	if s.completionCallback != nil {
+		accepted, err := s.completionCallback(ctx, &state.RunCompletion{RunID: req.RunId, Generation: req.Generation, Status: models.RunStatus(req.Status), Error: req.ErrorMessage, RunnerKind: authenticatedRunner(ctx), ReplayOnly: assignment == nil})
+		if err != nil {
+			slog.Error("durable completion failed", "run_id", req.RunId, "error", err)
+			return nil, status.Error(codes.Unavailable, "failed to persist run completion")
+		}
+		if !accepted {
+			return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
+		}
+	} else if s.statusCallback != nil {
 		s.statusCallback(req.RunId, req.Status, req.ErrorMessage)
 	}
-
+	if assignment != nil {
+		if _, err := s.queue.Ack(ctx, req.RunId, req.Generation); err != nil {
+			return nil, status.Error(codes.Unavailable, "failed to acknowledge persisted completion")
+		}
+	}
+	s.cleanupRun(req.RunId)
 	return &pb.ReportStatusResponse{Ok: true}, nil
 }
 
@@ -305,6 +310,9 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 // should stop, delivered at the next ~2s heartbeat tick rather than
 // only once it eventually finishes and calls ReportStatus.
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+	if _, err := s.requireRunOwner(ctx, req.RunId); err != nil {
+		return nil, err
+	}
 	current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
 	if err != nil {
 		slog.Error("failed to renew heartbeat lease", "run_id", req.RunId, "error", err)
@@ -321,6 +329,9 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 // once at startup. The bridge sends a CancelSignal whenever a run dispatched
 // to this runner_kind is cancelled.
 func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerService_WatchCancelsServer) error {
+	if err := requireRunnerKind(stream.Context(), req.RunnerKind); err != nil {
+		return err
+	}
 	slog.Info("runner watching for cancels", "runner_kind", req.RunnerKind)
 
 	ch := make(chan string, 64)
@@ -339,4 +350,26 @@ func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerServi
 			slog.Info("cancel signal sent to runner", "run_id", runID, "runner_kind", req.RunnerKind)
 		}
 	}
+}
+
+// requireRunnerKind binds request fields to the identity authenticated by the
+// interceptor. An absent identity is the explicit local development mode.
+func requireRunnerKind(ctx context.Context, kind string) error {
+	if authenticated := authenticatedRunner(ctx); authenticated != "" && authenticated != kind {
+		return status.Error(codes.PermissionDenied, "runner kind does not match authenticated identity")
+	}
+	return nil
+}
+
+func (s *Server) requireRunOwner(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	assignment, err := s.queue.LookupInflight(ctx, runID)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "failed to resolve run assignment")
+	}
+	if assignment != nil {
+		if err := requireRunnerKind(ctx, assignment.RunnerKind); err != nil {
+			return nil, err
+		}
+	}
+	return assignment, nil
 }

@@ -6,7 +6,7 @@
  * (set by buildRunConfig) plus tenantHeaders(). MCP calls also send
  * X-Runkite-Connector-Session (auto-minted when not provided).
  */
-import { HEADER_GENERATION, HEADER_RUN_ID, tenantHeaders } from "./tenantCtx.js";
+import { HEADER_GENERATION, HEADER_RUN_ID, runnerHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export const HEADER_CONNECTOR_SESSION = "X-Runkite-Connector-Session";
 export class ConnectorError extends Error {
@@ -29,16 +29,10 @@ function runBoundHeaders(config) {
     }
     const headers = {
         "Content-Type": "application/json",
-        ...tenantHeaders(),
+        ...runnerHeaders(),
         [HEADER_RUN_ID]: String(runId),
         [HEADER_GENERATION]: String(cfg.generation ?? 0),
     };
-    const runnerToken = process.env.RUNNER_TOKEN;
-    if (runnerToken) {
-        // Same hardcoded kind as store.ts / a2a.ts (no RUNNER_KIND env).
-        headers["X-Runner-Kind"] = "typescript-langgraphjs";
-        headers["X-Runner-Token"] = runnerToken;
-    }
     return headers;
 }
 function baseUrl(controlPlaneUrl) {

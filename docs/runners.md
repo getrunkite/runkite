@@ -43,6 +43,33 @@ Two runner SDKs today, both implementing the exact same Runner Protocol against 
 
 A run is routed to whichever runner declared the target agent: `langgraph.json`'s top-level `runner_kind` is stashed into that agent's metadata at bootstrap, and `createRun` reads it back to set `RunAssignment.runner_kind` -- not hardcoded, so a single control plane can serve a Python runner and a TypeScript runner side by side, each only ever receiving jobs for the agents its own config declared. Falls back to `python-langgraph` when an agent predates this field or its lookup fails, so every existing deployment keeps working unchanged.
 
+### Dispatch generations and completion delivery
+
+Every run-specific RPC and bound `/internal/*` request must echo the exact
+`generation` from `GetJob`. A new run starts at generation `1`; reclaim increments
+it. Zero is an ordinary legacy value, never a wildcard for a positive attempt.
+An older runner that omits generation can act only on an actual generation-zero
+assignment and stops matching after reclaim. Upgrade custom runners to preserve
+this field. Both shipped runners already propagate it.
+
+The runner waits for event-stream acknowledgement before reporting completion.
+If stream delivery fails or its acknowledgement is lost, completion stays
+unconfirmed and the lease remains recoverable. The runner must not invent an
+agent `error` result solely because delivery failed. ReportStatus delivery can
+be retried with the same attempt and result, without rerunning the agent. A
+confirmed terminal stream can be recovered by the plane if the final status
+report was interrupted, including at the reclaim generation ceiling.
+
+At that ceiling, the plane retains the assignment at its current generation and
+does not re-enqueue it. It retries durable completion and finalization before
+acknowledging the lease. A matching delivered terminal is recovered first;
+otherwise the plane attempts an `error` result. A same-attempt late ReportStatus
+can race that fallback, and the first durable terminal transaction wins. A
+terminal arriving after the recovery check is not guaranteed to win. NATS keeps
+the exhausted delivery leased with `+WPI`; any native redelivery still passes the
+existing generation fence and completion recovery before execution. See
+[Runner Protocol](../runner-protocol/PROTOCOL.md).
+
 ### Concurrency (both runners)
 
 By default a runner process (Python's `worker.py` and every `generic_worker`-based adapter, or the TypeScript runner) handles exactly one job at a time -- `--concurrency N` / `RUNKITE_CONCURRENCY=N` (default `1`, fully backward compatible) lets it dispatch up to `N` jobs concurrently instead, via a semaphore-bounded dispatcher (one `asyncio.Task` per job in Python; one un-awaited promise per job, tracked by a small hand-rolled `Semaphore` class, in TypeScript -- Node has no `asyncio.Semaphore` equivalent built in). The control plane needs zero changes for this: `GetJob`/`StreamEvents`/`WatchCancels` were already safe for multiple concurrent calls from one runner connection, and the job queue's dequeue is already atomic across concurrent callers. Setting `N` also sizes each runner's direct-mode Postgres connection pool (Python: `psycopg_pool.AsyncConnectionPool`, replacing a single shared connection behind a lock; TypeScript: `pg.Pool`'s own `max`, floored at node-postgres's default of 10 so a low `N` can't shrink it below that) for both the store and the checkpointer, so concurrent jobs' store/checkpoint I/O don't serialize on one connection either.

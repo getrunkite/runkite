@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -39,7 +38,7 @@ func oauth2ClientCredentials(ctx context.Context, cfg AuthConfig) (*CachedToken,
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, MaxOAuthResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read token response: %w", err)
 	}
@@ -114,7 +113,7 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, MaxOAuthResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read token exchange response: %w", err)
 	}

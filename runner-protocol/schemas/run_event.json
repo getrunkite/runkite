@@ -7,6 +7,11 @@
   "required": ["event_id", "seq", "method", "namespace", "data", "ts"],
   "additionalProperties": true,
   "properties": {
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Attempt generation stamped by the control plane. Sequence ordering is per generation. Incoming generations must match the active assignment exactly; zero is not a wildcard."
+    },
     "event_id": {
       "type": "string",
       "minLength": 1,

@@ -358,6 +358,16 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 16, Name: "pending_actions_scoped_key",
+			Up: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `ALTER TABLE pending_actions ADD COLUMN pending_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL, ADD UNIQUE KEY uq_pending_actions_key (pending_key)`)
+				return err
+			},
+			Down: func(ctx context.Context) error {
+				_, err := db.ExecContext(ctx, `ALTER TABLE pending_actions DROP INDEX uq_pending_actions_key, DROP COLUMN pending_key`)
+				return err
+			},
+		},
 	}
 }
 

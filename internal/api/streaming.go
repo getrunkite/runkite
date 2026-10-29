@@ -126,14 +126,14 @@ func replayAndTail(
 		}, true
 	}
 
-	var maxReplayedSeq int64
+	maxReplayedSeq := map[int64]int64{}
 	if past, replayErr := broker.Replay(ctx, runID, 0); replayErr == nil {
 		for _, event := range past {
 			if since != nil && event.Seq <= *since {
 				continue
 			}
-			if event.Seq > maxReplayedSeq {
-				maxReplayedSeq = event.Seq
+			if event.Seq > maxReplayedSeq[event.Generation] {
+				maxReplayedSeq[event.Generation] = event.Seq
 			}
 			if se, ok := toStreamEvent(event); ok {
 				emit(event, se)
@@ -145,7 +145,7 @@ func replayAndTail(
 	}
 
 	for event := range eventCh {
-		if event.Seq <= maxReplayedSeq {
+		if event.Seq <= maxReplayedSeq[event.Generation] {
 			continue
 		}
 		if since != nil && event.Seq <= *since {

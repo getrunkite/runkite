@@ -38,7 +38,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
 from . import pg_pool, runner_loop
-from .tenant_ctx import current_tenant, tenant_headers
+from .tenant_ctx import current_tenant, runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 
@@ -57,16 +57,15 @@ class RunkiteVectorStore(VectorStore):
         postgres_dsn: str | None = None,
         http_base_url: str | None = None,
         runner_token: str | None = None,
+        runner_kind: str | None = None,
         pool_size: int = 4,
     ):
         if not postgres_dsn and not http_base_url:
             raise ValueError("RunkiteVectorStore requires postgres_dsn or http_base_url")
         self._embedding = embedding
         self._namespace = namespace
-        self._headers: dict[str, str] = {}
-        if runner_token:
-            self._headers["X-Runner-Kind"] = "python-langgraph"
-            self._headers["X-Runner-Token"] = runner_token
+        self._runner_token = runner_token
+        self._runner_kind = runner_kind
         # Proxy wins when both are set -- see module docstring. Direct
         # mode only with an explicit DSN and no HTTP base URL.
         if http_base_url:
@@ -263,7 +262,10 @@ class RunkiteVectorStore(VectorStore):
 
     async def _upsert_proxy(self, doc_id: str, content: str, metadata: dict, embedding: list[float]) -> None:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url,
+            headers=runner_headers(self._runner_token, self._runner_kind),
+            timeout=10.0,
+            **httpx_tls_kwargs(),
         ) as client:
             resp = await client.put(
                 "/internal/vectors/items",
@@ -279,7 +281,10 @@ class RunkiteVectorStore(VectorStore):
 
     async def _delete_proxy(self, doc_id: str) -> None:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url,
+            headers=runner_headers(self._runner_token, self._runner_kind),
+            timeout=10.0,
+            **httpx_tls_kwargs(),
         ) as client:
             resp = await client.request(
                 "DELETE", "/internal/vectors/items", json={"namespace": self._namespace, "id": doc_id}
@@ -288,7 +293,10 @@ class RunkiteVectorStore(VectorStore):
 
     async def _search_proxy(self, embedding: list[float], k: int, filter_: dict | None) -> list[dict]:
         async with httpx.AsyncClient(
-            base_url=self._base_url, headers={**self._headers, **tenant_headers()}, timeout=10.0, **httpx_tls_kwargs()
+            base_url=self._base_url,
+            headers=runner_headers(self._runner_token, self._runner_kind),
+            timeout=10.0,
+            **httpx_tls_kwargs(),
         ) as client:
             resp = await client.post(
                 "/internal/vectors/search",

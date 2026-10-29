@@ -131,10 +131,9 @@ type RunEventProto struct {
 	EventJson string                 `protobuf:"bytes,2,opt,name=event_json,json=eventJson,proto3" json:"event_json,omitempty"` // JSON-encoded RunEvent
 	// generation is the attempt number this runner was handed in its
 	// RunAssignment (see internal/transport/types.go's RunAssignment.Generation
-	// doc comment for the full fencing rationale) -- 0 from an older
-	// runner build that predates fencing, treated the same as "always
-	// matches" for backward compat (see server.go's Heartbeat/ReportStatus
-	// handlers).
+	// doc comment for the full fencing rationale). The runner must echo
+	// this exact value. Zero matches only a generation-zero assignment;
+	// it never bypasses fencing or inherits the current generation.
 	Generation    int64 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

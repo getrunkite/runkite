@@ -265,10 +265,10 @@ func startServer(opts serverOpts) {
 
 	// Reclaim jobs dequeued by a runner that then died before Ack
 	// (zombie GetJob long-poll / crash between Dequeue and first event).
-	// Starts after apiServer so StatusCallback can mark poison-pill
+	// Starts after apiServer so durable completion can mark poison-pill
 	// deaths. Passes rdb so Kafka+Redis HA can elect a single reclaim
 	// leader (see tryAcquireReclaimLeader).
-	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxAge(opts.configPath), initReclaimMaxRetries(opts.configPath), apiServer.StatusCallback())
+	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxAge(opts.configPath), initReclaimMaxRetries(opts.configPath), apiServer.CompleteReclaimedRun)
 
 	// Wire connector registry if configured
 	if reg := bootstrapConnectors(opts.configPath); reg != nil {
@@ -449,7 +449,8 @@ func startServer(opts serverOpts) {
 	go runStoreTTLSweep(ctx, store)
 
 	// gRPC bridge server
-	bridgeServer := bridge.NewServer(queue, broker, cancelBus, apiServer.StatusCallback())
+	bridgeServer := bridge.NewServer(queue, broker, cancelBus, nil)
+	bridgeServer.SetRunLifecycle(apiServer.BeginRunAttempt, apiServer.CompleteRun)
 
 	// Runner auth uses a two-tier model: local mode (no RUNNER_TOKEN_*
 	// env vars) trusts runners implicitly, zero setup.

@@ -184,36 +184,6 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// extractJSONRPCID pulls the JSON-RPC id from a raw body for deny responses.
-func extractJSONRPCID(body []byte) json.RawMessage {
-	var envelope struct {
-		ID json.RawMessage `json:"id"`
-	}
-	_ = json.Unmarshal(body, &envelope)
-	return envelope.ID
-}
-
-// extractToolsCall returns method, params.name, and params.arguments for
-// a tools/call body. arguments is nil when absent.
-func extractToolsCall(body []byte) (method, tool string, args json.RawMessage) {
-	var envelope struct {
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
-	if json.Unmarshal(body, &envelope) != nil {
-		return "", "", nil
-	}
-	if envelope.Method != "tools/call" {
-		return envelope.Method, "", nil
-	}
-	var params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	_ = json.Unmarshal(envelope.Params, &params)
-	return envelope.Method, params.Name, params.Arguments
-}
-
 // tryConsumePendingCapability burns one approved pending_action for this
 // tools/call when the argument digest matches. Returns true when the call
 // should proceed without Decide.
@@ -226,7 +196,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 	if in.RunID == "" {
 		return false
 	}
-	id, err := store.ConsumeApprovedAction(ctx, in.RunID, in.Generation, connectorName, tool, argsDigest)
+	id, err := store.ConsumeApprovedAction(ctx, in.TenantID, in.AgentID, in.RunID, in.Generation, connectorName, tool, argsDigest)
 	if err != nil {
 		slog.Warn("policy: consume approved action failed", "error", err, "run_id", in.RunID)
 		return false
@@ -247,11 +217,6 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 	digest := in.ArgsDigest
 	if digest == "" {
 		_, digest, _ = policy.BindArgs(nil)
-	}
-	if existing, err := store.FindOpenPendingAction(ctx, in.RunID, in.Generation, connectorName, tool, digest); err != nil {
-		return "", err
-	} else if existing != nil {
-		return existing.ID, nil
 	}
 	suffix, err := randomHex(8)
 	if err != nil {

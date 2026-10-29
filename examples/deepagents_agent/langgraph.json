@@ -1,0 +1,5 @@
+{
+  "graphs": {"deep_agent": "./graph.py:graph"},
+  "dependencies": ["."],
+  "runner_kind": "python-langgraph"
+}

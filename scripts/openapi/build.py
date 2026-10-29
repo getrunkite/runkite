@@ -418,12 +418,49 @@ def _build_public_spec() -> dict:
                     props["assistant_id"] = {"type": "string", "description": "SDK compat: mirrors agent_id."}
                 break
 
-    # -- extend RunCreate with run_id, assistant_id --
+    # Keep request-only capabilities discoverable for generated clients.
     rc = spec["components"]["schemas"].get("RunCreate", {}).get("properties", {})
     if "run_id" not in rc:
         rc["run_id"] = {"type": "string", "description": "Client-supplied run ID for idempotent creation."}
     if "assistant_id" not in rc:
         rc["assistant_id"] = {"type": "string", "description": "SDK compat alias for agent_id."}
+    rc.update(
+        {
+            "stream_mode": {
+                "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+                "description": "Requested event modes. Unknown modes are forwarded to the runner.",
+                "default": ["values", "updates"],
+            },
+            "checkpoint_ref": {
+                "type": ["string", "null"],
+                "description": "Opaque checkpoint ID for LangGraph time travel. Absent, null or blank resumes latest. Other runners reject a nonempty ID.",
+            },
+            "resume_command": {
+                "type": ["object", "null"],
+                "description": 'Resume an interrupted run, for example {"response": true}.',
+            },
+            "command": {
+                "type": ["object", "null"],
+                "properties": {"resume": {}},
+                "description": "LangGraph SDK compatibility form. command.resume maps to resume_command.response when resume_command is absent.",
+            },
+        }
+    )
+    # The imported base had response-only required fields on RunStream.
+    # It is a request schema and inherits the same modes as RunCreate.
+    for part in spec["components"]["schemas"].get("RunStream", {}).get("allOf", []):
+        if "properties" in part:
+            part.pop("required", None)
+            part["title"] = "RunStream"
+            part["properties"]["stream_mode"] = copy.deepcopy(rc["stream_mode"])
+    for part in run_extra_props.get("allOf", []):
+        if "run_id" in part.get("properties", {}):
+            part["properties"].update(
+                {
+                    "output": {"description": "Final JSON output reported by the runner."},
+                    "error": {"type": "string", "description": "Run failure message, when present."},
+                }
+            )
 
     # -- correct cancel_run responses + honest rollback wording --
     # Implementation returns 200+Run when an updated run is available, else 204.

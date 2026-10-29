@@ -84,6 +84,59 @@ def _check_spec_integrity(name: str, spec: dict) -> list[str]:
     return problems
 
 
+def _schema_shape(spec: dict, schema: dict, seen: frozenset[str] = frozenset()) -> tuple[set[str], set[str]]:
+    """Collect object properties and requirements through local refs/allOf."""
+    fields = set(schema.get("properties", {}))
+    required = set(schema.get("required", []))
+    ref = schema.get("$ref", "")
+    if ref.startswith("#/components/schemas/") and ref not in seen:
+        target = spec.get("components", {}).get("schemas", {}).get(ref.rsplit("/", 1)[-1], {})
+        nested_fields, nested_required = _schema_shape(spec, target, seen | {ref})
+        fields.update(nested_fields)
+        required.update(nested_required)
+    for part in schema.get("allOf", []):
+        nested_fields, nested_required = _schema_shape(spec, part, seen)
+        fields.update(nested_fields)
+        required.update(nested_required)
+    return fields, required
+
+
+def _check_model_contract(spec: dict) -> list[str]:
+    """Catch field drift that route coverage cannot detect."""
+    source = (REPO_ROOT / "internal" / "models" / "models.go").read_text()
+    schemas = spec.get("components", {}).get("schemas", {})
+    problems = []
+    for model in ("RunCreate", "Run"):
+        match = re.search(r"^type " + model + r" struct \{\n(.*?)^\}", source, re.M | re.S)
+        if match is None:
+            problems.append(f"cannot find Go model {model}")
+            continue
+        wire = set(re.findall(r'`json:"([^",]+)', match.group(1))) - {"-"}
+        fields, _ = _schema_shape(spec, schemas.get(model, {}))
+        for field in sorted(wire - fields):
+            problems.append(f"openapi.json: {model} missing Go JSON field {field}")
+
+    # Validate the actual endpoint request schema, including inherited fields.
+    paths = (
+        "/runs",
+        "/runs/stream",
+        "/runs/wait",
+        "/threads/{thread_id}/runs",
+        "/threads/{thread_id}/runs/stream",
+        "/threads/{thread_id}/runs/wait",
+    )
+    expected, _ = _schema_shape(spec, schemas.get("RunCreate", {}))
+    for path in paths:
+        request = spec.get("paths", {}).get(path, {}).get("post", {}).get("requestBody", {})
+        body = request.get("content", {}).get("application/json", {}).get("schema", {})
+        fields, required = _schema_shape(spec, body)
+        for field in sorted(expected - fields):
+            problems.append(f"openapi.json: POST {path} request missing {field}")
+        for field in sorted(required & {"created_at", "updated_at", "status", "run_id"}):
+            problems.append(f"openapi.json: POST {path} requires server-assigned field {field}")
+    return problems
+
+
 def main() -> None:
     public = _load_spec("openapi.json")
     admin = _load_spec("openapi-admin.json")
@@ -125,6 +178,7 @@ def main() -> None:
         ("openapi-internal.json", internal),
     ):
         integrity.extend(_check_spec_integrity(name, spec))
+    integrity.extend(_check_model_contract(public))
 
     if missing or integrity:
         if missing:

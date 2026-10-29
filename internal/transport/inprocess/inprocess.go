@@ -89,16 +89,9 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 	}
 }
 
-// generationMatches implements the fencing rule shared by Ack and Renew
-// -- see transport.JobQueue's own doc comments for the full rationale.
-// generation 0 (pre-fencing runner build) or a tracked job whose own
-// Generation is 0 (predates this field) both mean "don't enforce
-// fencing," matching how Ack/Renew behaved unconditionally before
-// fencing existed.
+// generationMatches requires the exact dispatch generation for Ack and Renew.
+// Zero is a legacy generation, never a wildcard for a newer attempt.
 func generationMatches(entry *inflightEntry, generation int64) bool {
-	if generation == 0 || entry.job.Generation == 0 {
-		return true
-	}
 	return entry.job.Generation == generation
 }
 
@@ -210,7 +203,9 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 					AgentID:    entry.job.GraphID,
 					TenantID:   entry.job.TenantID,
 				})
-				delete(q.inflight, runID)
+				// Keep this exact dispatch recoverable until its terminal
+				// state is durable. The reaper Acks newGen-1 after persistence;
+				// a failed completion sees the same pill on its next tick.
 				continue
 			}
 			entry.job.Generation = newGen
