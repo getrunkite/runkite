@@ -70,6 +70,7 @@ func TestRedisAdminSession_CreateGetDeleteShared(t *testing.T) {
 	got := b.Get(sess.ID)
 	if got == nil {
 		t.Fatal("replica B Get: nil")
+		return
 	}
 	if got.CSRF != sess.CSRF || got.Result.Identity != "admin@example.com" || got.Result.TenantID != "acme" {
 		t.Fatalf("Get mismatch: %+v", got)

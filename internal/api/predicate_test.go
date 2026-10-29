@@ -209,6 +209,7 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("missing audit row for predicate pending")
+		return
 	}
 	digest, _ := found.Attrs["args_digest"].(string)
 	if digest == "" {

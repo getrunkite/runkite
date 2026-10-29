@@ -29,6 +29,7 @@ func TestInitRunTimeoutConfig_Configured(t *testing.T) {
 	rc := initRunTimeoutConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil runTimeoutConfig")
+		return
 	}
 	if rc.maxDuration != 30*time.Minute {
 		t.Errorf("maxDuration = %v, want 30m", rc.maxDuration)
@@ -48,6 +49,7 @@ func TestInitRunTimeoutConfig_DefaultInterval(t *testing.T) {
 	rc := initRunTimeoutConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil runTimeoutConfig")
+		return
 	}
 	if rc.interval != 15*time.Second {
 		t.Errorf("interval = %v, want default 15s", rc.interval)

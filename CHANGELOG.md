@@ -7,6 +7,7 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 ### Fixed
 - Admin UI uses Vite 8.2.4. Vite 8.2.2 has a high advisory.
 - The control plane builds with Go 1.26.10. Go 1.26.9 is affected by CVE-2026-111943 (`crypto/x509`).
+- golangci-lint passes on the v0.5.6 completion code. Deferred SQL rollbacks and best-effort run cleanup no longer leave errors unchecked. Test nil checks return after `t.Fatal`, which staticcheck does not treat as an exit on Go 1.26.10.
 
 ## [0.5.6] - 2026-10-29
 

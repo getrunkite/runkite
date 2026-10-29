@@ -75,6 +75,7 @@ func TestApproachCap(t *testing.T) {
 	v := finops.ApproachCap(cap, snap, "tenant", 80)
 	if v == nil {
 		t.Fatal("expected approach verdict at 85% of hard cap")
+		return
 	}
 	if v.Hard || !v.Soft {
 		t.Fatalf("want soft approach, got %+v", v)

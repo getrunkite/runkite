@@ -88,7 +88,7 @@ func (d Driver) BeginRunAttempt(ctx context.Context, runID string, generation in
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	tid, _, st, meta, err := d.load(ctx, tx, runID)
 	if err != nil {
 		return false, err
@@ -114,7 +114,7 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 	if err != nil {
 		return state.CompletionResult{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	tid, threadID, st, meta, err := d.load(ctx, tx, c.RunID)
 	if err != nil {
 		return state.CompletionResult{}, err

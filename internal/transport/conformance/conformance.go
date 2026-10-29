@@ -72,6 +72,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		if got == nil {
 			t.Fatal("Dequeue returned nil")
+			return
 		}
 		if got.RunID != "run-001" {
 			t.Errorf("RunID = %q, want %q", got.RunID, "run-001")
@@ -169,6 +170,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		if got == nil {
 			t.Fatal("Dequeue returned nil for large payload")
+			return
 		}
 		if len(got.Input) != len(job.Input) {
 			t.Errorf("Input length = %d, want %d", len(got.Input), len(job.Input))
@@ -233,6 +235,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		if got == nil {
 			t.Fatal("expected run-skip-b after skipping canceled run-skip-a")
+			return
 		}
 		if got.RunID != "run-skip-b" {
 			t.Errorf("RunID = %q, want run-skip-b", got.RunID)
@@ -532,6 +535,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		if looked == nil {
 			t.Fatal("LookupInflight after dequeue want assignment, got nil")
+			return
 		}
 		if looked.RunID != "run-lookup-1" || looked.GraphID != "echo" {
 			t.Fatalf("LookupInflight identity mismatch: %+v", looked)
@@ -625,6 +629,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		if looked == nil {
 			t.Fatal("LookupInflight after redequeue want assignment, got nil")
+			return
 		}
 		if looked.Generation != 2 {
 			t.Fatalf("LookupInflight generation=%d, want 2 (authoritative after reclaim)", looked.Generation)

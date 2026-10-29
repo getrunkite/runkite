@@ -97,6 +97,7 @@ func TestLoadConnectorConfigs_InlineCircuitBreaker(t *testing.T) {
 	cb := cfgs["flaky"].CircuitBreaker
 	if cb == nil {
 		t.Fatal("expected inline circuit_breaker config to be preserved, got nil")
+		return
 	}
 	if cb.FailureThreshold != 2 || cb.CooldownSeconds != 30 {
 		t.Errorf("circuit breaker fields wrong: %+v", cb)

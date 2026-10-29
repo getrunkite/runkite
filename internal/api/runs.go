@@ -778,7 +778,9 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	if tid == "" {
 		tid = tenant.FromContext(ctx)
 	}
-	s.finishRun(run.RunID, run.ThreadID, run.AgentID, tid, models.RunStatusError, "enqueue failed")
+	// The run is already marked failed. A webhook claim error is logged inside
+	// finishRun and is not recoverable from this rollback.
+	_ = s.finishRun(run.RunID, run.ThreadID, run.AgentID, tid, models.RunStatusError, "enqueue failed")
 }
 
 // DispatchScheduledRun creates and enqueues a run with no HTTP request
@@ -923,17 +925,18 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	// creation time, so persist it in a separate, explicit update.
 	if err := s.store.UpdateRunStatus(ctx, runID, models.RunStatusSuccess, outputJSON, ""); err != nil {
 		slog.Error("failed to persist cached run output", "run_id", runID, "error", err)
-		// Still drop the create-time hold — this run is terminal for
+		// Still drop the create-time hold. This run is terminal for
 		// budgeting purposes either way (cache hit has no further work).
-		s.releaseUsageHold(ctx, runID)
+		// releaseUsageHold logs its own failure.
+		_ = s.releaseUsageHold(ctx, runID)
 	} else {
 		run.Status = models.RunStatusSuccess
 		run.Output = outputJSON
 		if run.TenantID == "" {
 			run.TenantID = tenant.FromContext(ctx)
 		}
-		s.ingestTerminalUsage(ctx, run)
-		s.releaseUsageHold(ctx, runID)
+		_ = s.ingestTerminalUsage(ctx, run)
+		_ = s.releaseUsageHold(ctx, runID)
 		s.maybeCancelInflightAfterTerminal(ctx, run)
 	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "cache_hit").Inc()

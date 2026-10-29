@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/jackc/pgx/v5"
@@ -14,7 +15,7 @@ func (t completionTx) Exec(ctx context.Context, q string, a ...interface{}) erro
 	return err
 }
 func (t completionTx) Row(ctx context.Context, q string, a ...interface{}) sqlcompletion.Row {
-	return t.Tx.QueryRow(ctx, q, a...)
+	return t.QueryRow(ctx, q, a...)
 }
 func (s *Store) completionDriver() sqlcompletion.Driver {
 	return sqlcompletion.Driver{Dialect: "postgres", Begin: func(ctx context.Context) (sqlcompletion.Tx, error) {

@@ -25,6 +25,7 @@ func TestExtractAllowedToolsExplicitEmpty(t *testing.T) {
 	got := extractAllowedTools(meta)
 	if got == nil {
 		t.Fatal("expected non-nil pointer for explicit empty allowlist")
+		return
 	}
 	if len(*got) != 0 {
 		t.Fatalf("got %v, want empty slice", *got)
@@ -39,6 +40,7 @@ func TestExtractAllowedToolsJSONRoundTrip(t *testing.T) {
 	got := extractAllowedTools(meta)
 	if got == nil {
 		t.Fatal("expected allowlist")
+		return
 	}
 	want := []string{"search", "get_record"}
 	if !reflect.DeepEqual(*got, want) {

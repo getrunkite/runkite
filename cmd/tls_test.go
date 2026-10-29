@@ -91,6 +91,7 @@ func TestServerTLSConfig_LoadsCertAndEnablesTLS(t *testing.T) {
 	}
 	if cfg == nil {
 		t.Fatal("expected a non-nil TLS config")
+		return
 	}
 	if len(cfg.Certificates) != 1 {
 		t.Fatalf("expected 1 loaded certificate, got %d", len(cfg.Certificates))

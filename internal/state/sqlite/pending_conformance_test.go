@@ -1,8 +1,9 @@
 package sqlite
 
 import (
-	"github.com/getrunkite/runkite/internal/state/conformance"
 	"testing"
+
+	"github.com/getrunkite/runkite/internal/state/conformance"
 )
 
 func TestPendingSecurityConformance(t *testing.T) {

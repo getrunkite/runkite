@@ -77,6 +77,7 @@ func TestRunSpan_StartedOnCreateEndedOnTerminal(t *testing.T) {
 	}
 	if runSpan == nil {
 		t.Fatalf("expected a 'run' span to be exported after StatusCallback, got spans: %+v", spans)
+		return
 	}
 
 	attrs := map[string]string{}

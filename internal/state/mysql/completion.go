@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 )

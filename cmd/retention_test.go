@@ -39,6 +39,7 @@ func TestInitRetentionConfig_BothDimensionsConfigured(t *testing.T) {
 	rc := initRetentionConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil retentionConfig")
+		return
 	}
 	if rc.runsMaxAge != 720*time.Hour {
 		t.Errorf("runsMaxAge = %v, want 720h", rc.runsMaxAge)
@@ -69,6 +70,7 @@ func TestInitRetentionConfig_TerminalHookClaimsOnly(t *testing.T) {
 	rc := initRetentionConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil retentionConfig when only terminal_hook_claims_max_age is set")
+		return
 	}
 	if rc.terminalHookClaimsMaxAge != 48*time.Hour {
 		t.Errorf("terminalHookClaimsMaxAge = %v, want 48h", rc.terminalHookClaimsMaxAge)
@@ -84,6 +86,7 @@ func TestInitRetentionConfig_WebhookDeadLettersOnly(t *testing.T) {
 	rc := initRetentionConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil retentionConfig when only DLQ age is set")
+		return
 	}
 	if rc.webhookDeadLettersMaxAge != 48*time.Hour {
 		t.Errorf("webhookDeadLettersMaxAge = %v, want 48h", rc.webhookDeadLettersMaxAge)
@@ -100,6 +103,7 @@ func TestInitRetentionConfig_DefaultInterval(t *testing.T) {
 	rc := initRetentionConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil retentionConfig")
+		return
 	}
 	if rc.interval != 60*time.Minute {
 		t.Errorf("interval = %v, want default 60m", rc.interval)
@@ -120,6 +124,7 @@ func TestInitRetentionConfig_InvalidDurationDisablesRunPruningOnly(t *testing.T)
 	rc := initRetentionConfig(path)
 	if rc == nil {
 		t.Fatal("expected non-nil retentionConfig (checkpoints_keep_last is still valid)")
+		return
 	}
 	if rc.runsMaxAge != 0 {
 		t.Errorf("expected runsMaxAge=0 after invalid duration, got %v", rc.runsMaxAge)
