@@ -88,6 +88,13 @@ Before approval, continuation returns HTTP 202 and the stored pending job. Rejec
 
 `state.ts` serializes mutations and atomically replaces one application state file. The note and its execution record change together, which makes continuation idempotent across concurrent requests and process restarts in this single-process example. `npm test` exercises the real AI SDK with an offline mock model and a fake policy transport: allow, deny, pending continuation, plane failure, cancellation and app-owned idempotency. No provider key or running plane is needed for tests. `npm run check` validates the integration against the pinned AI SDK types.
 
+`stream.test.ts` also consumes the full `streamText` event stream with text chunks
+and ordinary single-result guarded tools. It checks allow, deny and pending tool
+results, a policy failure while the decision is outstanding, and cancellation of
+the decision request. Streaming model output does not add support for
+AsyncIterable/streaming tool executors. Pending still returns a stored action ID
+without polling, creating a managed run or executing before approval.
+
 From the repository root, `make test-governance-ts` builds the helper and runs
 both suites. CI runs the same helper and SDK checks on pull requests.
 

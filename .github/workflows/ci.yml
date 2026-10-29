@@ -297,6 +297,12 @@ jobs:
           npm run check
           npm test
 
+      - name: Microsoft Agent Framework governance integration (offline model)
+        run: |
+          make test-governance-agent-framework
+          ruff check examples/governance_agent_framework
+          ruff format --check examples/governance_agent_framework
+
       - name: TypeScript runner dist/ is in sync with src/
         # Unit tests above run against src/ directly via tsx, never touching
         # dist/ -- the actual npm-published, `bin`/`main`-referenced build

@@ -122,6 +122,25 @@ started. Streaming tool executors are outside this helper's scope. See the
 `tools.ts` for typed AI SDK integration. Run visibility, kill switches, spend
 caps and execution idempotency remain outside this decision-only guard.
 
+The AI SDK example also tests ordinary guarded tools inside `streamText`,
+including text chunks, allow/deny/pending results, policy failure and cancellation.
+Streaming chat output does not require streaming tool executors.
+
+### Microsoft Agent Framework function middleware
+
+The Python helper has an optional `agent-framework` extra, pinned to the tested
+framework core. `runkite_governance.agent_framework` exports
+`GovernanceFunctionMiddleware` for local `FunctionTool` calls. It decides once,
+executes only after allow, and stops the agent with a native middleware failure
+on deny, pending or policy failure. The base client remains dependency-free.
+
+An async pending callback persists the action ID and exact frozen arguments.
+The app continues its own operation on a later request; the middleware never
+polls or resumes the model loop. See the [Microsoft example](../examples/governance_agent_framework/README.md)
+for JSON argument constraints, durable continuation, native streaming tests and
+`make test-governance-agent-framework`. This uses the same decision-only boundary
+as the TypeScript guard, with no managed run, run controls or spend caps.
+
 ## Related
 
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)

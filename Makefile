@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-governance-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all eks-up eks-down eks-smoke eks-soak-loop multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-governance-ts test-governance-agent-framework test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all eks-up eks-down eks-smoke eks-soak-loop multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -343,6 +343,18 @@ test-ts:
 test-governance-ts:
 	cd typescript/runkite-governance && npm ci && npm run build && npm test
 	cd examples/governance_ai_sdk && npm ci && npm run check && npm test
+
+# Keep framework dependencies out of the shared runner environment.
+# Prefer 3.12 (CI and the package requires >=3.11). Plain `python3` on
+# older hosts often cannot editable-install a pyproject-only package.
+GOVERNANCE_PYTHON ?= $(shell command -v python3.12 >/dev/null && echo python3.12 || echo python3)
+GOVERNANCE_FRAMEWORK_VENV ?= examples/governance_agent_framework/.venv
+test-governance-agent-framework:
+	"$(GOVERNANCE_PYTHON)" -m venv "$(GOVERNANCE_FRAMEWORK_VENV)"
+	"$(GOVERNANCE_FRAMEWORK_VENV)/bin/python" -m pip install -U pip
+	"$(GOVERNANCE_FRAMEWORK_VENV)/bin/python" -m pip install -e './python/runkite_governance[agent-framework]'
+	PYTHONPATH=python "$(GOVERNANCE_FRAMEWORK_VENV)/bin/python" python/tests/test_governance_agent_framework.py
+	PYTHONPATH=python "$(GOVERNANCE_FRAMEWORK_VENV)/bin/python" -m unittest discover -s examples/governance_agent_framework -p 'test_*.py'
 
 # --- Lint / format ---
 #

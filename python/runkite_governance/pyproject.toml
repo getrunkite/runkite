@@ -12,6 +12,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+agent-framework = ["agent-framework-core==1.23.0"]
+
 [project.urls]
 Repository = "https://github.com/getrunkite/runkite"
 Documentation = "https://github.com/getrunkite/runkite/blob/main/docs/client-sdk.md"

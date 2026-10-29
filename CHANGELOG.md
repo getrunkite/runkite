@@ -5,7 +5,8 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 ## Unreleased
 
 ### Added
-- TypeScript `createGovernedExecute` guards a single-result app-owned tool with one decide call. The AI SDK example uses it. Pending continuation stays in the app. The helper remains unpublished.
+- TypeScript `createGovernedExecute` guards a single-result app-owned tool with one decide call. The AI SDK example uses it, including `streamText` coverage for ordinary tools. Pending continuation stays in the app. The helper remains unpublished.
+- Optional Python `GovernanceFunctionMiddleware` for Microsoft Agent Framework local function tools. Same decide API, app-owned pending continuation, and an offline example. Install via the `agent-framework` extra.
 
 ## [0.5.7] - 2026-10-29
 

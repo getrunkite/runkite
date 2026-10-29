@@ -27,4 +27,30 @@ Your application executes after `allow`, refuses after `deny`, and persists the 
 
 Use a server-side key with `governance:decide`. Tenant identity comes from that key. The caller retains its model loop and tool execution. This path creates no Runkite thread or run and does not apply run kill switches, break-glass or spend caps. It is separate from the deliberately deferred full client SDK.
 
+## Optional Microsoft Agent Framework middleware
+
+Install the pinned optional dependency from the checkout:
+
+```sh
+python -m pip install './python/runkite_governance[agent-framework]'
+```
+
+Import `GovernanceFunctionMiddleware`, `GovernedFunction`,
+`GovernanceBlockedError` and `PendingInvocation` from
+`runkite_governance.agent_framework`. Register exact local `FunctionTool` objects,
+server-owned policy identities and an application operation-ID callback. Install
+the guard last, after argument repair. It snapshots JSON arguments and Python
+defaults, decides once, and reaches native execution only after allow. Deny and
+pending stop the agent with a native `MiddlewareFailure`; an optional async
+`on_pending` callback persists the exact frozen proposal first.
+
+The app owns pending continuation and execution idempotency. Rich Python types,
+coercing validators and provider-executed tools are outside this adapter's scope.
+See the [framework example](../../examples/governance_agent_framework/README.md)
+for a durable application transaction, offline streaming and non-streaming tests,
+and supported argument constraints. Execution retains native mutable containers;
+the app must not mutate invocation arguments after authorization. Importing the
+base client does not import the optional framework. This extra is not a runner
+adapter and creates no run.
+
 License: BUSL-1.1, with the repository's additional use grant. See `LICENSE`.
