@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a class="active" href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -96,6 +97,23 @@
           adapters fold prior turns into the next invoke string / AutoGen model context.
           <code>checkpoint_ref</code> time-travel stays LangGraph-only.
         </p>
+        <h2>Fail-closed opaque completion (v0.5.8+)</h2>
+        <p>
+          From v0.5.8 the generic Python worker removes warning-and-continue
+          fallback. A failed state read prevents execution. A failed serialize or save
+          withholds completion and leaves the assignment recoverable; completion and HITL-ready
+          events follow the state commit. Invalid message checkpoint versions fail explicitly.
+        </p>
+        <h2>Managed AI SDK history (v0.5.8+)</h2>
+        <p>
+          The TypeScript AI SDK backend persists native model messages and tool results,
+          validates framework/agent identity, and uses strong ETags with conditional writes.
+          Success follows a confirmed commit. Reclaim can replay a committed current-run
+          receipt without repeating its model or tools. This is distinct from the older
+          Python adapters' message-only state and unconditional PUT. A crash before commit
+          can still repeat an external effect, so use downstream idempotency. See
+          <a href="sdk-integration.html#managed">managed AI SDK integration</a>.
+        </p>
         <h2>Why opaque</h2>
         <p>
           The plane must not parse framework checkpoint schemas. That keeps Agent Protocol
@@ -104,8 +122,8 @@
         </p>
         <h2>How to choose</h2>
         <ul>
-          <li><strong>Supported HA</strong>: Postgres direct or HTTP proxy against a durable store.</li>
-          <li><strong>Demo</strong>: memory mode from <code>docker-compose.dev.yml</code> (lost on restart).</li>
+          <li><strong>Supported profile</strong>: Postgres state + Redis transport, with auth, runner tokens and TLS. LangGraph can use direct Postgres or the HTTP proxy. Other backend tiers remain as documented.</li>
+          <li><strong>Demo</strong>: <code>docker-compose.dev.yml</code> sets <code>RUNKITE_HTTP_URL</code>, so checkpoints use the HTTP proxy into the plane's SQLite file. They survive runner and same-container restarts. The file is not volume-mounted, so recreating the plane container loses it.</li>
           <li>Never put production traffic on memory just because health checks are green.</li>
         </ul>
         <p class="note">

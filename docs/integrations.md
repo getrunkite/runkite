@@ -40,7 +40,15 @@ loader, runner protocol, checkpoint/store attachment and cancellation channel
 remain the integration points. Native upstream subagents remain inside that
 graph; they are not automatically separate plane runs.
 
-## Vercel AI SDK keeps the application loop
+## Vercel AI SDK: choose execution ownership
+
+The [managed runner example](../examples/managed_ai_sdk/README.md) ships in
+**v0.5.8** with `runkite-runner`. A per-run factory returns public AI SDK
+settings; `--framework ai-sdk` executes the agent inside the TypeScript runner.
+The app creates real Runkite Threads/Runs and consumes results through an
+application-side `useChat` bridge. The model loop moves out of its HTTP handler.
+This uses the existing Runner Protocol and checkpoint surface, not a Vercel fork
+or a JavaScript runtime inside the Go plane.
 
 [The server-side example](../examples/governance_ai_sdk/README.md) wraps a tool
 with the small governance client. It persists a pending action ID in the app,
@@ -52,6 +60,25 @@ different from an operator's Admin approval.
 
 Upstream: [vercel/ai](https://github.com/vercel/ai). Helper package preparation
 does not publish a package or imply that an upstream contribution was accepted.
+
+Both paths support streaming chat with ordinary single-result tools. Streaming
+tool outputs and native approval/resume are outside the initial managed adapter.
+Neither an app-owned allow decision nor an operation `run_id` proves execution
+or supplies idempotency. See [client integration guidance](client-sdk.md).
+
+## Microsoft Agent Framework: function middleware
+
+The [Python example](../examples/governance_agent_framework/README.md) attaches
+the unpublished helper's optional `GovernanceFunctionMiddleware` to local
+`FunctionTool` objects. It asks Decide once and stops on deny or pending. The
+app saves the exact proposal and continues its own operation later; it does not
+create a Runkite run or resume a managed Microsoft agent. The tested optional
+core is pinned to `agent-framework-core==1.23.0`. A Microsoft managed runner is
+not implemented.
+
+Upstream: [microsoft/agent-framework](https://github.com/microsoft/agent-framework).
+Use public function middleware APIs; no upstream fork, second approval service
+or embedded framework server is needed.
 
 ## Phoenix receives existing OTLP traces
 

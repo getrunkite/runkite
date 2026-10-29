@@ -33,6 +33,7 @@
           <a class="active" href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -73,7 +74,8 @@
 
         <p class="kicker">Build</p>
         <h1>Agents</h1>
-        <p class="lede">An agent is a graph (or adapter) the plane can dispatch. Clients never talk to the runner process, they create runs on the plane; runners pull jobs.</p>
+        <p class="lede">A registered agent is an entrypoint the plane can dispatch. Clients create managed runs on the plane; runners pull jobs and execute the model loop.</p>
+        <p class="note">An app-owned tool decision does not register or dispatch an agent. See <a href="./sdk-integration.html">SDK integration paths</a> for that boundary and the managed AI SDK backend (v0.5.8+).</p>
 
         <div class="guide-grid">
           <section>
@@ -97,7 +99,8 @@
         <ol class="steps">
           <li><strong>Python (LangGraph)</strong>: install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
           <li><strong>TypeScript (LangGraph.js)</strong>: install the TS runner, same config shape, same plane.</li>
-          <li><strong>Adapters</strong>: CrewAI / LlamaIndex / AutoGen / LangChain adapters use the shared generic worker loop (see <code>docs/runners.md</code>).</li>
+          <li><strong>Checkout adapters</strong>: CrewAI / LlamaIndex / AutoGen / LangChain use the shared generic worker loop and their own dependency setup. They are not packaged in the published Python runner.</li>
+          <li><strong>Managed AI SDK (v0.5.8+)</strong>: use <code>runkite-runner</code> with a per-run settings factory and <code>--framework ai-sdk</code> (peer <code>ai@7.0.155</code>). Follow <a href="./sdk-integration.html">the integration guide</a>.</li>
           <li><strong>Verify</strong>: Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
         </ol>
         <pre class="mono-block"># Python
@@ -123,7 +126,8 @@ runkite-runner --config path/to/langgraph.json \
           <li><strong>Success</strong>: agent listed in Admin; <code>runs/wait</code> returns <code>success</code> for a healthy graph.</li>
           <li><strong>Routing</strong>: jobs go only to runners that declared that agent’s <code>runner_kind</code>.</li>
           <li><strong>Which agents appear</strong>: only the <code>graphs</code> keys in your control plane's <code>langgraph.json</code> at boot; production lists your agents, not demo examples unless you point config there.</li>
-          <li><strong>Limits</strong>: framework adapters differ on concurrency safety; see runners doc.</li>
+          <li><strong>Attempt identity</strong>: custom runners must echo the assignment generation on run-specific messages. Generation <code>0</code> only matches an actual generation-zero assignment. Tokens are bound to their authenticated runner kind.</li>
+          <li><strong>Limits</strong>: framework adapters differ on native resume, state and concurrency; see the <a href="./frameworks.html">framework matrix</a>.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/runners.md">docs/runners.md</a>

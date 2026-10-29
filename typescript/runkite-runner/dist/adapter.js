@@ -20,6 +20,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyGraphExport } from "./factoryGraph.js";
 import { logger } from "./logger.js";
+import { executeRun } from "./executeRun.js";
 export class LangGraphAdapter {
     configPath;
     graphs = new Map();
@@ -30,6 +31,9 @@ export class LangGraphAdapter {
     constructor(configPath) {
         this.configPath = configPath;
         this.configDir = path.dirname(path.resolve(configPath));
+    }
+    execute(assignment, emit, isCancelled) {
+        return executeRun(this, assignment, emit, isCancelled);
     }
     async load() {
         const config = JSON.parse(readFileSync(this.configPath, "utf-8"));

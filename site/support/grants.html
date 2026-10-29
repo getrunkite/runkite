@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -93,6 +94,11 @@
           </section>
         </div>
 
+        <p>
+          The same policy engine also serves app-owned <code>/governance/decide</code>
+          requests. That path creates no managed run and the app owns execution,
+          continuation and idempotency. See <a href="sdk-integration.html">SDK integrations</a>.
+        </p>
         <h2>How to implement</h2>
         <ol class="steps">
           <li>Define connector policy / grants (config defaults + Admin overlays on SQL).</li>
@@ -131,6 +137,14 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
   -H 'Content-Type: application/json' \
   -d '{"agent_id":"approval_agent","input":{"messages":[{"role":"user","content":"send the email"}]}}'</pre>
 
+        <p>
+          An open pending action is bound to tenant and agent as well as the call and
+          argument digest. Embedded rows expire after 24 hours and cannot be approved
+          after expiry. An approval changes the row; it does not itself call the tool or
+          resume a framework. Connector retry consumption is one-shot under the original
+          active run/generation, while an app polling
+          an embedded approval must enforce its own execution idempotency.
+        </p>
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin → Grants: durable connector overlays (SQL)</div>

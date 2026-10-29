@@ -6,13 +6,13 @@
     <title>Runkite · open agent control plane</title>
     <meta
       name="description"
-      content="Self-hosted control plane for agents: Agent Protocol clients, Runner Protocol workers, connectors, HITL, fencing, and audit. One Go binary."
+      content="Self-hosted agent control plane: managed runs, app-owned tool decisions, connector policy, approvals, spend, and audit. One Go binary."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <meta property="og:title" content="Runkite · open agent control plane" />
     <meta
       property="og:description"
-      content="Any framework. One self-hosted control plane: dispatch, connectors, HITL, fencing, audit."
+      content="Self-hosted agent operations: managed runs, connector policy, audit, and app-owned tool decisions."
     />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://getrunkite.com/assets/ecosystem.png" />
@@ -54,11 +54,12 @@
             <p class="brand-mark">Runkite</p>
             <h1>Open <em>agent control plane</em></h1>
             <p class="lede">
-              Any framework. One self-hosted plane for dispatch, connectors, HITL, and audit.
+              Your agent logic. One self-hosted plane for dispatch, connector policy, approvals, spend, and audit.
             </p>
+            <p><a href="./support/sdk-integration.html">Choose managed runs or app-owned tool governance</a>.</p>
             <p class="live-pill">
               <span class="pulse" aria-hidden="true"></span>
-              Live Admin at getrunkite.com/admin. A real Runkite process, not a mock
+              Public demo Admin. Deploy your production control plane on your own infrastructure.
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="https://getrunkite.com/admin/">Open live Admin</a>
@@ -254,13 +255,14 @@
             <p class="kicker">On the plane</p>
             <h2>Governance that fails closed</h2>
             <p class="section-copy">
-              Grants, HITL, fencing, and reclaim ceilings live on the plane, not as
-              afterthought middleware in every script.
+              Connector policy and managed-run admission use the plane's existing gates.
+              Apps that keep their own loop can request a tool decision through the same policy engine.
+              Tools that bypass these gates are not automatically governed.
             </p>
             <div class="gov-strip">
               <div class="gov-item">
                 <strong>Connectors</strong>
-                <span>Minted per run. Workers never hold long-lived provider secrets.</span>
+                <span>Run-bound connector sessions. The plane injects configured credentials on outgoing connector calls.</span>
               </div>
               <div class="gov-item">
                 <strong>HITL</strong>
@@ -272,7 +274,7 @@
               </div>
               <div class="gov-item">
                 <strong>Poison pill</strong>
-                <span>Crash-loop jobs stop reclaiming after a hard ceiling.</span>
+                <span>Retain exhausted jobs until durable completion and finalization succeed.</span>
               </div>
             </div>
           </div>
@@ -282,12 +284,12 @@
         <section class="section reveal" id="architecture">
           <div class="wrap">
             <p class="kicker">Architecture</p>
-            <h2>Clients never talk to runners</h2>
+            <h2>Managed execution uses two protocols</h2>
             <p class="section-copy">
-              Agent Protocol on the front. Runner Protocol on the back. The plane owns
-              <span class="keep-phrase">lifecycle, policy, and proof</span>.
-              State, transport, and vectors plug in under an honest tier model.
-              Supported for Postgres + Redis. Compatible for the rest.
+              For dispatched agents, clients use Agent Protocol and workers use Runner Protocol.
+              The plane owns the run lifecycle; the runner owns the model loop.
+              App-owned tool execution uses the decision API separately.
+              Supported HA uses Postgres + Redis; other backend tiers are documented.
             </p>
             <div class="eco" role="img" aria-label="Runkite architecture: clients call the control plane over Agent Protocol, runners pull jobs over Runner Protocol, and state, transport, and vector stores plug in underneath">
               <div class="eco-row eco-top">
@@ -345,6 +347,7 @@
               </div>
             </div>
             <ul class="arch-links">
+              <li><a href="./support/sdk-integration.html">SDK integration paths <span>managed runs · app-owned decisions · release status</span></a></li>
               <li>
                 <a href="./design/"
                   >Engineering notes <span>fencing · subscribe · createRunCtx · poison</span></a
@@ -380,7 +383,7 @@
       </main>
 
       <footer class="site-footer">
-        <div>Runkite · open agent control plane</div>
+        <div>Runkite · self-hosted agent control plane · BUSL-1.1</div>
         <div>
           <a href="https://getrunkite.com/admin/">Admin</a>
           <a href="./support/">Docs</a>

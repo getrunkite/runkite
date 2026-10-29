@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -91,6 +92,13 @@
           </section>
         </div>
 
+        <p>
+          These are managed executions dispatched by the plane. A decision-only
+          <code>/governance/decide</code> call creates neither record. The AI SDK
+          runner creates real records when the app routes chat turns through Runkite; it
+          does not automatically migrate an existing app-owned loop. See
+          <a href="sdk-integration.html">SDK integrations</a>.
+        </p>
         <h2>How to use it</h2>
         <ol class="steps">
           <li>Create a thread via Agent Protocol <code>POST /threads</code>.</li>
@@ -118,9 +126,9 @@
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Statuses</strong>: pending → running → success / error / interrupted (HITL).</li>
+          <li><strong>Statuses</strong>: pending, running, success, error and interrupted. Cancellation and supported framework interrupts can produce interrupted; native resume support depends on the adapter.</li>
           <li><strong>sim badge</strong>: runs created with <code>X-Runkite-Simulation</code> (<code>runkite sim</code>) show <code>sim</code> on the list and detail. Spend and daily caps skip; policy still runs. See <a href="sim.html">Fixture replay</a>.</li>
-          <li><strong>Streaming</strong>: same events Admin replays are what clients see on the stream.</li>
+          <li><strong>Streaming</strong>: Admin and clients read the same event stream. Raw SSE is advisory during reclaim; Run Detail reloads durable status/output when it ends. Use <code>/wait</code> or the stored run for the authoritative result.</li>
           <li><strong>Reclaim</strong>: if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
         </ul>
         <p class="note">

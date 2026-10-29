@@ -1,7 +1,7 @@
 {
   "name": "runkite-runner",
-  "version": "0.5.7",
-  "description": "TypeScript/LangGraph.js runner for Runkite — gRPC Agent Protocol worker with streaming, cancel, and optional Postgres checkpoints.",
+  "version": "0.5.8",
+  "description": "TypeScript runner for Runkite: LangGraph.js and optional AI SDK managed agents over Runner Protocol.",
   "type": "module",
   "bin": {
     "runkite-runner": "dist/cli.js"
@@ -64,6 +64,31 @@
     "@types/pg": "^8.20.0",
     "oxlint": "^1.76.0",
     "prettier": "^3.9.6",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "ai": "7.0.155"
+  },
+  "peerDependencies": {
+    "ai": "7.0.155"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/aiSdkAdapter.d.ts",
+      "import": "./dist/aiSdkAdapter.js",
+      "default": "./dist/aiSdkAdapter.js"
+    },
+    "./dist/*": "./dist/*",
+    "./proto/*": "./proto/*",
+    "./package.json": "./package.json",
+    "./*": "./*"
   }
 }

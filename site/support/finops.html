@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -114,13 +115,14 @@
           <li>
             Terminal <code>Output.usage</code> → SQL <code>usage_events</code>
             (LangGraph Python/TS; CrewAI/LlamaIndex/LangChain/AutoGen adapters when metrics exist).
-            A HITL pause or a mid-run cancel still meters whatever tokens ran before the
-            pause/cancel, it does not wait for a terminal <code>success</code> to record them.
+            Interrupted output can carry usage without a terminal <code>success</code>.
+            Cancellation can settle before trailing runner events arrive, so complete
+            canceled-run accounting is not guaranteed.
             Webhook event <code>budget_alert</code> + Admin alerts strip (approach alerts deduped once per UTC day per process).
           </li>
           <li>
             Admin <code>/admin/spend</code> labels dollars <strong>Estimated USD</strong>, not
-            "Cost": tokens are exact (from the model response), dollars are tokens ×
+            "Cost": token counts use recognized provider-reported fields; dollars are tokens ×
             your <code>finops.pricebook</code> rate, unless the runner is talking to an LLM
             gateway that reports cost inline with usage (OpenRouter's <code>usage.cost</code>,
             and OpenAI-compatible gateways following the same convention), in which case that
@@ -158,9 +160,17 @@
           <li>Reconciling against a provider's account-level billing API (OpenAI/Anthropic Costs/Usage endpoints) after the fact; multi-currency / warehouse BI.</li>
           <li>Reading cost from gateways that report it out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard), routing calls through one works today (it's a plain client <code>base_url</code> change, nothing Runkite-specific), but its cost won't reach Runkite unless it inlines cost the way OpenRouter does; those runs price from tokens × pricebook like any direct-provider run.</li>
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
-          <li>Frameworks with no token metrics still report empty <code>Output.usage</code> (best-effort only).</li>
+          <li>When recognized model output has no reported token/cost data, runners emit an explicit unmetered marker instead of presenting missing usage as free. Arbitrary work inside a tool can still be outside the SDK's reported usage.</li>
+          <li>Decision-only <code>/governance/decide</code> calls create no managed usage record and do not enforce spend caps.</li>
           <li>Connector payload shrink does not write <code>usage_events</code>. Admin Spend moves only if the runner reports fewer tokens.</li>
         </ul>
+        <p>
+          The managed AI SDK runner reports current-turn provider tokens and
+          model IDs to the same pricebook path. Its successful-turn receipt prevents
+          duplicate billing when a committed turn is recovered after reclaim. This is
+          not continuous metering or complete canceled-run spend. See
+          <a href="sdk-integration.html">SDK integrations</a>.
+        </p>
         <h2>Practical stance</h2>
         <p>
           Cost caps and metering sit next to kill, grants, and HITL. Wire

@@ -1,8 +1,9 @@
 """First-hour agent: always calls connector MCP refund through the plane.
 
 No LLM. The plane's argument predicate holds refunds at or over 100 in
-Admin Pending. After approve, send the same amount again to consume the
-one-shot (digest-bound) retry.
+Admin Pending. This graph ends after reporting the hold. Admin approval
+does not resume it, and a new run cannot consume the old run's approval.
+A connector retry needs the same active run, generation and arguments.
 """
 
 from __future__ import annotations
@@ -39,14 +40,16 @@ def _pending_text(body: dict[str, Any], amount: float) -> str:
         data = err["data"]
     code = data.get("reason_code") or ""
     action = data.get("action_id") or ""
-    bits = [
-        f"Held a ${amount:g} refund for a human ({code or 'pending'}).",
-        "Open Admin → Pending, approve it, then send the same amount again.",
-        "Approve is bound to these arguments; a different amount is a new row.",
-    ]
     if action:
-        bits.append(f"action_id={action}")
-    return " ".join(bits)
+        return " ".join(
+            [
+                f"Held a ${amount:g} refund for a human ({code or 'pending'}).",
+                "Review the record in Admin → Pending and Audit. This demo ends after the hold.",
+                "Approval does not resume this graph; a new run cannot consume this run's approval.",
+                f"action_id={action}",
+            ]
+        )
+    return f"Refund did not execute ({code or 'connector_error'}). No pending action was returned; inspect the policy or upstream error."
 
 
 async def refund_node(state: State, config: RunnableConfig) -> State:

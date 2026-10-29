@@ -3,6 +3,7 @@ import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { CheckpointerManager } from "./checkpoint.js";
 import type { RunkiteStore } from "./store.js";
 import { type FactoryGraphBuild, type RunFactoryContext } from "./factoryGraph.js";
+import { type RunAssignment, type RunEvent, type RunStatus } from "./executeRun.js";
 /** Minimal surface of a compiled LangGraph.js graph this runner needs.
  * Matches Pregel's actual instance shape (see node_modules/@langchain/
  * langgraph/dist/pregel/index.d.ts) without importing its full generic
@@ -24,6 +25,7 @@ export declare class LangGraphAdapter {
     private checkpointerManager;
     private store;
     constructor(configPath: string);
+    execute(assignment: RunAssignment, emit: (event: RunEvent) => Promise<void>, isCancelled: () => boolean): Promise<RunStatus>;
     load(): Promise<void>;
     isFactory(graphId: string): boolean;
     /** Returns the compiled graph for a STATIC graph_id. Throws for a

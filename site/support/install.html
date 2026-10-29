@@ -39,6 +39,7 @@
           <a href="agents.html">Agents (Py / JS)</a>
           <a href="migrate-agents.html">Migrate agents</a>
           <a href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a href="checkpoints.html">Checkpoints</a>
           <a href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
@@ -79,19 +80,20 @@
 
         <h1>Install</h1>
         <p class="lede">
-          Three ways to run Runkite, in order of how real they are: a laptop demo (SQLite,
-          no auth, throw it away when you're done), the Supported Docker Compose profile
-          (Postgres + Redis, this is the one to trust), and Kubernetes/Helm (same topology,
-          packaged for a cluster). Pick based on what you're actually doing today.
+          Choose a local demo, a production-shaped Compose stack, or Kubernetes/Helm.
+          Postgres + Redis are the Supported HA backend pair. Complete that production
+          profile with client authentication, kind-scoped runner tokens and tenant
+          allowlists, TLS and your normal operational controls.
         </p>
 
         <h2>Option 1: laptop demo (5 minutes, not for anything real)</h2>
         <pre class="mono-block">git clone https://github.com/getrunkite/runkite.git && cd runkite
 docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p>
-          This uses SQLite and an in-memory job queue, everything runs in one container,
-          nothing survives a restart, and there's no authentication at all. That's
-          intentional: it's for kicking the tires and following
+          This starts the plane, a Python runner and the fake bank MCP service. It uses
+          SQLite in the plane container and an in-process queue, with no client authentication.
+          The queue is process-local; the SQLite file is not backed by a named volume and
+          is lost when that container is recreated. This profile is intentional: it's for kicking the tires and following
           <a href="first-agent.html">First agent</a>, not for anything you'd point real
           traffic at. If you just want to see it work without cloning anything, use
           <a href="try.html">Try it</a> instead, same idea, zero setup.
@@ -99,20 +101,20 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
 
         <h2>Option 2: Supported profile (Postgres + Redis)</h2>
         <p>
-          This is the profile Runkite is actually tested and soaked against for
-          multi-replica production use. Two things make it "Supported" instead of "it
-          probably works": <strong>Postgres</strong> holds every agent/thread/run/audit
-          record so a control-plane restart (or running 3 replicas behind a load balancer)
-          never loses or duplicates state, and <strong>Redis</strong> is the shared job
-          queue and locking layer so those replicas coordinate correctly instead of each
-          thinking it owns the whole world.
+          This stack uses the backend pair covered by the multi-replica Compose proof.
+          It is a local wiring example until you add client authentication and TLS.
+          <strong>Postgres</strong> holds every agent/thread/run/audit
+          record across replicas, and <strong>Redis</strong> supplies the shared queue,
+          event broker and cancellation path. Attempt fencing protects durable run
+          completion during reclaim. External tool writes still need downstream
+          idempotency; these backends do not make arbitrary side effects exactly once.
         </p>
         <p><strong>Steps:</strong></p>
         <ol class="steps">
           <li>
             <pre class="mono-block">cp .env.example .env</pre>
-            Open <code>.env</code> and fill in two values: <code>POSTGRES_PASSWORD</code>
-            (any password, this stays inside your Docker network) and
+            Open <code>.env</code> and fill in two values: a generated <code>POSTGRES_PASSWORD</code>
+            and
             <code>RUNNER_TOKEN</code> (generate one with
             <code>openssl rand -hex 32</code>). Both are required, the stack refuses to
             start with a placeholder or empty value instead of silently booting with a
@@ -120,8 +122,8 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           </li>
           <li>
             <pre class="mono-block">docker compose up -d --build</pre>
-            This starts four containers: Postgres, Redis, the control plane, and a Python
-            runner loading the bundled example agents.
+            This starts five services: Postgres, Redis, the control plane, a Python
+            runner loading the bundled agents, and the fake bank MCP service.
           </li>
           <li>
             <pre class="mono-block">curl -sf http://localhost:2026/readyz && echo OK</pre>
@@ -178,6 +180,10 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           Until that longer cloud soak exists, treat a Kubernetes install as "packaging and
           day-1 ops are solid" rather than "identical HA guarantees to Compose."
         </p>
+
+        <h2>Package and upgrade boundaries</h2>
+        <p>Registry installs follow the <a href="https://github.com/getrunkite/runkite/releases/latest">latest tagged release</a>. From v0.5.8, published <code>runkite-runner</code> includes LangGraph defaults and the optional AI SDK backend (<code>--framework ai-sdk</code>). Governance helpers (<code>createGovernedExecute</code>, Microsoft function middleware) remain unpublished packages; install them from the repository. See <a href="./sdk-integration.html">the integration guide</a>.</p>
+        <p>Custom or older runners must echo the assignment's exact generation on run-specific RPCs and bound HTTP calls. Generation <code>0</code> is not a wildcard for a later attempt. Runner tokens are bound to their kind. Upgrade and test custom runners with the plane before replacing production replicas.</p>
 
         <h2>What to expect</h2>
         <ul class="expect">

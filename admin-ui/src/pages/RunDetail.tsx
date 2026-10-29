@@ -168,8 +168,9 @@ export function RunDetail() {
                   <DialogHeader>
                     <DialogTitle>Cancel this run?</DialogTitle>
                     <DialogDescription>
-                      Requests a graceful stop of <code className="font-mono">{run.data!.run_id}</code>. The runner
-                      finishes its current step before the run transitions to <code>interrupted</code>.
+                      Requests cancellation of <code className="font-mono">{run.data!.run_id}</code>. Accepted
+                      cancellations mark the run interrupted and signal its runner to stop cooperatively.
+                      A tool's completed external effect cannot be undone by cancellation.
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>

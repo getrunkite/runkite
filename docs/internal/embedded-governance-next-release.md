@@ -1,19 +1,26 @@
-# Embedded Governance: design notes for the next release
+# Embedded governance: historical design record
 
-> **Status:** final (2026-10-15). Design is locked. Implementation can start. Working notes,
-> cross-checked against the Go source on the v0.5.2 tree. A review corrected three claims:
-> `PolicyInput` does have `Generation`; kill switches and budgets do not run inside
-> `Engine.Decide`; the AI SDK `needsApproval` flag is the chat user, not Admin.
+> **Status:** implemented API, original proposal preserved. The HTTP decision and
+> pending-poll endpoints shipped in v0.5.3. This narrative records reasoning from
+> the v0.5.2 tree on 2026-10-15; statements below about what did not exist then
+> are historical, not the current feature inventory.
+>
+> Current implementation: `internal/api/governance_decide.go`,
+> `python/runkite_governance` and `typescript/runkite-governance`.
+> The helper guards/Microsoft middleware and managed AI SDK runner are separate
+> unreleased additions. See [client integration guidance](../client-sdk.md) and
+> [CHANGELOG](../../CHANGELOG.md#unreleased) for availability and boundaries.
 >
 > **One-line goal:** let an app that owns its own request/response loop (Vercel AI SDK,
 > `ToolLoopAgent`, or anything similar) call Runkite's existing policy engine for a tool
 > decision (grants, predicates, mandatory HITL, audit) without becoming a Runner-Protocol
 > runner. This release does not enforce kill switches or spend caps. See §4.4.
 >
-> **Locked decisions:** `POST /governance/decide`. New permission `governance:decide`, not
-> implied by `agents:<id>:run`. Tenant comes from the key. `agent_id` is caller-supplied
-> and does not have to be pre-registered. Allow and deny ship first. Pending is poll-only
-> until a later slice. TypeScript helper first. Kill and budget stay out.
+> **Implemented decision contract:** `POST /governance/decide` returns allow,
+> deny or pending. `GET /governance/actions/{action_id}` reads approval status.
+> `governance:decide` is not implied by a managed-run grant. Tenant comes from
+> the key; agent identity need not be pre-registered. The app owns continuation,
+> storage and idempotency. There is no managed thread/run, kill or budget gate.
 
 ---
 
@@ -76,8 +83,9 @@ promise for this shape of app.
   `StageRunCreate` says run.create skips connector matching, and that authz and kill
   switches run in the admission gate. Grant matching on connector and tool happens only at
   `tool.call` (`internal/policy/static.go:69`). That is the stage the new call should use.
-- `EffectPending` is documented as connector HITL: Admin approves, then Runkite retries the
-  proxied MCP call. `persistPendingAction` (`internal/api/policy.go:244`) refuses an empty
+- `EffectPending` uses connector HITL: Admin updates the pending record, then an
+  active caller must retry the bound MCP call. Approval does not itself retry or
+  resume the agent. `persistPendingAction` refuses an empty
   `RunID` ("pending actions require run binding"). It does not look up a row in `runs`.
   `pending_actions.run_id` is `TEXT NOT NULL` with no foreign key. An opaque caller id
   works if it is non-empty and stable for that turn. `FindOpenPendingAction` and
@@ -137,8 +145,10 @@ POST /governance/decide
 
 ### 4.2 Waitable pending (separate estimate)
 
-New state, not a thin wrapper. Today pending means "Admin approves, then Runkite retries
-the MCP call it proxied." That retry does not exist when the app executed the tool.
+New state is required for the app-owned path. Connector approval lets an active
+caller retry the same bound MCP operation; Admin does not perform that retry.
+An app that executes its own tool instead needs a saved operation and a separate
+continuation after polling approval.
 
 Needed:
 

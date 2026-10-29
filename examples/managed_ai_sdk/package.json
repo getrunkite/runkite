@@ -1,0 +1,21 @@
+{
+  "name": "runkite-managed-ai-sdk-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test bridge.test.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "ai": "7.0.155"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "7.0.2",
+    "runkite-runner": "file:../../typescript/runkite-runner"
+  }
+}

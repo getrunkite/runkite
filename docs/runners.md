@@ -29,7 +29,10 @@ each adapter's README).
 
 The plane does not proxy model HTTP and does not pick models. Put an LLM gateway in front of the runner if you want per-call model routing.
 
-Two runner SDKs today, both implementing the exact same Runner Protocol against the exact same Go control plane -- proof that the protocol is actually language-agnostic, not just designed to look that way on paper:
+The published Python and TypeScript runner runtimes implement the same Runner
+Protocol. The install commands above describe their LangGraph defaults. The
+managed AI SDK backend described below ships in `runkite-runner` from `v0.5.8`
+(`--framework ai-sdk`, optional peer `ai@7.0.155`).
 
 | | Python (`python/runkite_runner/`) | TypeScript (`typescript/runkite-runner/`) |
 |---|---|---|
@@ -103,7 +106,39 @@ Kept separate rather than merged into the main compose file because a single con
 
 Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).
 
+### Managed AI SDK TypeScript runner
+
+The optional `typescript-ai-sdk` backend runs native Vercel AI SDK agents as
+Runkite-managed runs. It uses a per-run factory returning public SDK settings,
+the existing Runner Protocol worker, and the plane's opaque checkpoint API.
+Use `--framework ai-sdk` and install the tested `ai@7.0.155` alongside the runner.
+See the [managed AI SDK example](../examples/managed_ai_sdk/README.md).
+
+These runs appear in Admin Threads and Runs. Admission, queueing, cancel and
+usage follow the existing managed-run path. Native text and local JSON-result
+tools are supported. The runner checks `allowed_tools` before local execution,
+but arbitrary tools do not automatically acquire connector grants or HITL.
+Native approval resume, binary/client/provider tools, streaming tool outputs,
+`checkpoint_ref`, whole-run caching and partial-turn resume are unsupported.
+AI SDK UI clients need the example's application-side stream bridge.
+
+History stays in its native message format, with framework/agent validation,
+run/tenant/generation binding and conditional writes. State must commit before
+terminal success. Reclaim can replay an already-committed turn without repeating
+tools. Earlier crashes remain subject to downstream side-effect idempotency.
+
 ### Framework Adapters
+
+Opaque-state hardening (from v0.5.8) stops execution when configured state
+cannot be loaded and withholds completion when a required save fails. A rejected
+`403 run_not_inflight` write is not treated as saved state. Invalid versioned
+message blobs fail before agent execution. This replaces warning-and-continue
+behavior; it does not add full framework HITL resume.
+
+The older Python generic opaque client still uses unconditional PUT. The new
+AI SDK path uses CAS and committed-turn receipts. Do not infer those stronger
+recovery properties for every existing adapter. Neither path guarantees exactly
+once external effects before state commit.
 
 **Opaque multi-turn (proxy):** when an adapter sets `checkpoint_framework` and `RUNKITE_HTTP_URL` (or the worker http address) is set, `generic_worker` loads `GET /internal/checkpoints/{thread}/adapter-state` before execute and `PUT`s that same id after success/interrupted — so clients can send only the new turn. This is **message continuity**, not LangGraph channel-state HITL: LlamaIndex restores native chat history; CrewAI / LangChain typically fold prior turns into the next prompt; AutoGen seeds model context. Not full CrewAI crew-memory restore. `checkpoint_ref` stays LangGraph-only (adapters reject it). Without an HTTP base URL, adapters stay single-shot. Same `/internal/checkpoints` surface as LangGraph proxy mode; adapters must not use `.../latest` on shared threads. See Runner Protocol §6.5 and `docs/limitations.md`.
 

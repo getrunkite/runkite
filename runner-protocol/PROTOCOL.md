@@ -383,7 +383,19 @@ Body: [
 
 ### 6.4 Threat model (proxy checkpoints)
 
-Proxy checkpoint I/O is run-bound, not a free blob store: every `/internal/checkpoints/*` request must present an active assignment (`X-Runkite-Run-Id` + `X-Runkite-Generation`, plus `X-Runner-Kind` / `X-Runner-Token` when production runner auth is enabled). Missing or non-dispatched assignment → `403 run_not_inflight`; live assignment whose bare `thread_id` does not match the path → `403 run_thread_mismatch`. Tenant is taken from the assignment, never trusted from a free-form path prefix. The control plane treats bodies as opaque octets up to **16 MiB** (`413` above that) and does not parse LangGraph envelopes; a corrupt or cross-runtime blob is the runner's problem (serde decode fails the run; the CP still returns the bytes unchanged). Savers MUST soft-no-op late writes after cancel/reclaim and MUST refuse updates when a GET 200 lacks an ETag, so a cancelled run or ETag-stripping proxy cannot crash the worker or silently disable CAS.
+Proxy checkpoint I/O is run-bound, not a free blob store: every
+`/internal/checkpoints/*` request must present an active assignment
+(`X-Runkite-Run-Id` + `X-Runkite-Generation`, plus `X-Runner-Kind` /
+`X-Runner-Token` when production runner auth is enabled). Missing or
+non-dispatched assignment returns `403 run_not_inflight`; a different path thread
+returns `403 run_thread_mismatch`. Tenant comes from the assignment. The plane
+stores opaque octets up to **16 MiB** and returns `413` above that limit.
+
+LangGraph's savers tolerate late writes after cancel/reclaim as described in
+§6.3. That behavior MUST NOT be used by a durable adapter to claim that its final
+state committed. Adapters following §6.5 MUST withhold successful completion if
+their required write is rejected. CAS users MUST refuse an update when a GET 200
+lacks a valid ETag; an ETag-stripping proxy must not silently disable CAS.
 
 ### 6.5 Non-LangGraph (adapter) opaque state
 
@@ -392,7 +404,19 @@ LangGraph proxy savers (§6.3) own many checkpoint ids per thread (one per step 
 - **Stable id.** Adapters that opt in MUST read and write a framework-owned concrete `checkpoint_id` (Runkite's Python generic worker uses `adapter-state`). They MUST NOT load via `GET .../latest` on a thread that may also hold LangGraph UUID blobs — `latest` is ordered by `checkpoint_id` and can return the wrong framework's bytes.
 - **Fidelity ceiling.** Adapter blobs are **message-continuity** state (prior turns for the next invoke), **not** LangGraph channel-state / mid-superstep pending writes / crew-memory graphs. LlamaIndex MAY restore a native chat history; CrewAI / LangChain typically fold prior turns into the next prompt string; AutoGen typically seeds model context. This is not full-fidelity HITL interrupt→resume for those frameworks.
 - **`checkpoint_ref`.** Time-travel via `RunAssignment.checkpoint_ref` remains LangGraph-only. Adapters MUST reject a non-empty `checkpoint_ref` rather than silently ignore it.
-- **Writes.** A single-id adapter MAY overwrite with unconditional PUT (no `If-Match` required). Soft size cap and run-binding (§6.3–6.4) still apply. Load / prepare / save failures SHOULD soft-fail (run continues with the client-supplied input) rather than crash the worker.
+- **Writes and failures.** A single-id adapter MAY use unconditional PUT, but
+  must document that it lacks CAS. The existing Python generic client does so;
+  the AI SDK adapter uses conditional create/update. The 16 MiB limit and run
+  binding still apply. A configured durable adapter MUST NOT silently discard
+  prior state after a load/prepare failure. Required state writes MUST succeed
+  before authoritative completion or resumable HITL-ready events are published.
+  Failed I/O leaves the assignment recoverable; invalid state may fail the run
+  before agent execution. Neither outcome may pretend that history was saved.
+- **Committed-turn receipts.** An adapter MAY persist a completed turn keyed to
+  its run and input, then replay it after reclaim without invoking tools again.
+  The unreleased AI SDK profile does this for successful native message history.
+  It does not supply partial-turn or native approval resume. A crash before the
+  receipt commits still needs downstream side-effect idempotency.
 - **Envelope.** Bytes remain opaque to the control plane. Cross-framework or cross-language resume of adapter blobs is unsupported unless an adapter explicitly documents a shared schema.
 
 ---

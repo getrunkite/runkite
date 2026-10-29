@@ -68,13 +68,32 @@ When a runner dies mid-job, the control plane reclaims the lease and may re-enqu
 - Absent `max_age` → default `6s`
 - Env override: `RUNKITE_RECLAIM_MAX_AGE` (Go duration string, loaded at process start)
 
-**Ceiling (`max_retries`):** when the next reclaim would exceed the ceiling, the run is marked `error`, the thread is released, and a terminal status/hook fires — it is **not** re-enqueued forever.
+**Ceiling (`max_retries`):** when another generation would exceed the ceiling,
+the queue retains the current assignment and stops re-enqueueing it. The reaper
+first tries to recover a terminal event from that exact attempt; otherwise it
+attempts an error completion. It acknowledges the retained generation only after
+durable completion and finalization succeed. Database, broker or finalization
+failures leave it for the next tick. The poison record names the rejected next
+generation, not a newly dispatched attempt.
 
 - Absent section / field → default `3`
 - Explicit `0` → unlimited (legacy)
 - Env override: `RUNKITE_RECLAIM_MAX_RETRIES` (loaded at process start)
 
 This is distinct from **cancel** (live runner) and **kill switches** (admission + drain). See [Limitations](limitations.md).
+
+**Upgrade custom runners together with the plane.** Every run-specific RPC and
+bound HTTP call must echo the generation assigned by `GetJob`. Generation zero
+matches only an actual legacy-zero assignment. Kind tokens cannot dequeue,
+watch or act on another kind's run. A stale/zero event is not promoted into the
+current attempt. A delivery failure must leave completion recoverable instead
+of reporting a replacement agent error.
+
+**Reconcile durable completion.** Raw SSE is advisory during the check/publish
+race. Read the stored run or use `/wait` before presenting success as final.
+For failed opaque state writes in the unreleased adapter update, expect withheld
+completion and reclaim rather than a successful run with lost history. Inspect
+state availability before retrying external writes; they still need idempotency.
 
 ## 3. Kill and cancel
 
@@ -104,6 +123,12 @@ Mongo: kill/break-glass Admin APIs return `501` — governance durability is SQL
 **Do not:** put runner tokens in Redis/NATS/Kafka connection strings; embed long-lived connector secrets in the run assignment payload (helpers mint at use time).
 
 ## 5. Checkpoint mode reminder
+
+The modes below describe LangGraph. The managed AI SDK backend (v0.5.8+) uses
+the run-bound HTTP opaque API, even when the plane stores data in Postgres. It
+does not use LangGraph's direct-mode tables or support native approval resume.
+Successful-turn receipts support recovery after commit; a new turn after cancel
+uses only previously committed history.
 
 | Mode | Runner needs | Survives restart |
 |------|----------------|------------------|

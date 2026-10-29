@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -105,11 +106,26 @@
           One thing to watch: a job that keeps crash-looping (bad graph code, a dependency
           that's always down) would otherwise reclaim forever. There's a ceiling. <code>reclaim.max_retries</code> in <code>langgraph.json</code> (default 3, or set
           <code>RUNKITE_RECLAIM_MAX_RETRIES</code>), after which the plane stops retrying
-          and marks the run as failed instead of endlessly recycling it. Set it to
-          <code>0</code> for unlimited retries if you'd rather it keep trying forever (not
-          recommended for anything but a very short-lived debugging session).
+          and retains the current lease. The reaper first recovers an eligible delivered
+          terminal, otherwise it commits an error; only successful completion and finalization
+          allow Ack. A database failure leaves the assignment for the next tick. Set
+          <code>0</code> for unlimited retries when explicitly needed.
         </p>
 
+        <p>
+          Since v0.5.6, generation <code>0</code> is exact, not a wildcard. Old custom
+          runners must echo the assigned generation. The event check and publish are still
+          two operations, so use the stored run or <code>/wait</code> for the authoritative
+          outcome; a raw SSE terminal can be advisory during reclaim.
+        </p>
+        <h2>Completion delivery</h2>
+        <p>
+          Status and output commit before queue acknowledgement. Failed completion writes
+          leave the job recoverable. A stream acknowledgement failure does not rewrite an
+          agent success as an agent error. Recovery can complete from an already delivered,
+          current-generation terminal; without one, a later attempt may execute again.
+          External tool writes still need downstream idempotency.
+        </p>
         <h2>Stopping a run that's gone wrong</h2>
         <p>
           For one specific run: cancel it from <a href="admin-guide.html#5-threads--runs">Admin
@@ -128,12 +144,22 @@
           while you fix the actual root cause.
         </p>
 
+        <h2>Which application calls these controls cover</h2>
+        <p>
+          Run controls apply to managed executions that Runkite dispatches. An app calling
+          <code>POST /governance/decide</code> keeps its own loop and is not listed in
+          Threads/Runs; run kill switches, break-glass and spend caps do not cover that
+          path. The AI SDK runner provides a managed alternative. See
+          <a href="sdk-integration.html">SDK integrations</a> for both ownership models.
+        </p>
         <h2>Where secrets actually live</h2>
         <p>
           Provider credentials (a Salesforce OAuth secret, a GitHub token) live in your
           connector config or a secrets manager, never copied into every agent's process
           environment. When an agent needs to call out, the plane mints a short-lived,
-          run-bound session at the moment it's needed and hands back only that. See
+          run-bound session at the moment it is needed. MCP credentials stay on the plane
+          and are injected on outbound proxy calls; non-MCP sessions can return credentials
+          to trusted runner code. The plane does not maintain a database of user OAuth tokens. See
           <a href="secrets.html">Secrets</a> for the three ways to reference a credential
           (env var, mounted file, or HashiCorp Vault) and <a href="connectors.html">Connectors
           &amp; HITL</a> for the full setup.
@@ -145,7 +171,7 @@
             <thead><tr><th>Loop</th><th>Cadence</th><th>What it does</th></tr></thead>
             <tbody>
               <tr><td>Reclaim sweep</td><td>every 2s</td><td>Finds jobs whose heartbeat went stale (~6s) and re-queues them</td></tr>
-              <tr><td>Cron scheduler</td><td>configurable (default check every ~15s)</td><td>Fires due scheduled agents, exactly once even with multiple replicas</td></tr>
+              <tr><td>Cron scheduler</td><td>configurable (default check every ~15s)</td><td>Claims due schedule slots across replicas; execution retains normal reclaim and side-effect idempotency limits</td></tr>
               <tr><td>Policy overlay poll</td><td>every 15s</td><td>Picks up Admin-created grants / mandatory-HITL rules on replicas that didn't create them</td></tr>
               <tr><td>Queue depth sample</td><td>every 5s</td><td>Refreshes the human-facing queue-depth gauge (metrics only, not used for decisions)</td></tr>
             </tbody>

@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a class="active" href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -73,7 +74,8 @@
 
         <p class="kicker">Build</p>
         <h1>Migrate existing agents</h1>
-        <p class="lede">You already have graphs or crews. Goal: runners speak Runner Protocol; clients keep Agent Protocol; the plane owns governance, without rewriting your whole product.</p>
+        <p class="lede">Choose which process owns execution. A managed runner moves the model loop behind Runkite dispatch. A tool-decision integration keeps the loop in your app.</p>
+        <p class="note">Start with <a href="./sdk-integration.html">SDK integration paths</a>. The managed AI SDK backend ships in v0.5.8 <code>runkite-runner</code>; the governance helpers remain unpublished packages.</p>
 
         <div class="guide-grid">
           <section>
@@ -91,13 +93,17 @@
           </section>
         </div>
 
-        <h2>How to implement</h2>
+        <h2>For a Vercel AI SDK app</h2>
+        <p>To keep execution in Next/Nuxt, wrap selected local tools with the unpublished <code>createGovernedExecute</code> helper. The app persists pending operations and executes after approval; Admin Threads/Runs, kill switches, break-glass and spend caps do not cover these decision-only calls.</p>
+        <p>For managed execution, the AI SDK runner loads a per-run settings factory and starts turns through Runkite Threads/Runs. Keep UI authentication and chat-to-thread ownership in the app, and use the example's <code>useChat</code> bridge. This changes the request path; it does not transparently wrap an unchanged app-owned loop. Native approval/resume and unfinished-turn restoration are not included.</p>
+
+        <h2>How to implement managed runners</h2>
         <ol class="steps">
           <li><strong>Inventory</strong>: list agent entrypoints, checkpoint stores, tools that need secrets, HITL points, cron/triggers.</li>
-          <li><strong>Pick runner kind</strong>: LangGraph stay on LangGraph runners; others use <code>python/adapters/*</code> (see <a href="./frameworks.html">matrix</a>).</li>
+          <li><strong>Pick runner kind</strong>: LangGraph stays on the published runners. Other existing Python frameworks use checkout-only <code>python/adapters/*</code>. The AI SDK kind is <code>typescript-ai-sdk</code> (see <a href="./frameworks.html">matrix</a>).</li>
           <li><strong>Wire config</strong>: <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
           <li><strong>Checkpoints</strong>: LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts, clients can send only the new turn.</li>
-          <li><strong>Secrets</strong>: stop baking tokens in agent env long-term; move side-effect tools to connectors + grants.</li>
+          <li><strong>Connector secrets</strong>: configure <code>secret_ref</code> with <code>env:</code>, <code>file:</code> or <code>vault:</code>. Sessions resolve these references and the plane injects credentials on outgoing connector calls. Use actual connector gates for governed external access.</li>
           <li><strong>Cutover</strong>: run shadow traffic on the plane; compare outputs; switch clients to plane base URL + API keys.</li>
         </ol>
 
@@ -109,7 +115,7 @@
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Same client shape</strong>: last human message in, AI message out keeps multi-framework fleets manageable.</li>
+          <li><strong>State and client shape</strong>: existing adapters accept the Agent Protocol message shape. The managed AI SDK backend accepts new user text only; the runner restores native history. Its UI bridge translates Agent Protocol events into AI SDK UI chunks.</li>
           <li><strong>Concurrency</strong>: CrewAI/AutoGen may serialize per graph; do not assume <code>--concurrency N</code> equals N parallel crews.</li>
           <li><strong>Honesty</strong>: registry publish ≠ deploy; you still wire runners.</li>
         </ul>

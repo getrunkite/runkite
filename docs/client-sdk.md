@@ -4,6 +4,47 @@ How to call Runkite from application code today, and when (if ever) we ship a fi
 
 This page is the durable decision record so the plan survives chat sessions.
 
+## Choose who owns execution
+
+Use **managed execution** when the caller needs Runkite Threads/Runs, runner
+dispatch, managed-run admission, cancellation and usage accounting. The app
+creates a run over Agent Protocol; a separate runner executes its framework.
+The app keeps UI authentication and streams the result back to its user.
+
+Use **app-owned execution** when the SDK loop must stay in the application's
+backend. The governance helper asks about one tool call. Its decision and pending
+approval can be audited on SQL, but no Runkite thread or run is created. Run kill
+switches, break-glass and spend caps do not cover that path. The app owns pending
+continuation, exact saved arguments and execution idempotency.
+
+Terminology matters: framework SDKs execute agents; Agent Protocol clients call
+the plane; the published `runkite-runner` packages execute assignments; the
+unpublished governance helpers only request decisions. There is no general
+first-party Runkite client SDK yet. The public
+[integration guide](../site/support/sdk-integration.html) compares the paths.
+
+### Managed Vercel AI SDK (v0.5.8)
+
+The optional TypeScript backend uses `--framework ai-sdk`, runner kind
+`typescript-ai-sdk`, and public `ToolLoopAgent` APIs. Export a per-run factory
+returning supported `AiSdkAgentDefinition` settings; the plane dispatches it
+through the existing Runner Protocol. See the
+[managed example](../examples/managed_ai_sdk/README.md) for configuration and the
+application-side `useChat` bridge. AI SDK's UI stream differs from Agent Protocol
+SSE, so pointing an unchanged frontend directly at `/runs/stream` is insufficient.
+
+The app must route these agents through Runkite instead of owning their model
+loop in its HTTP handler. Native successful-turn history is stored by the runner
+through the plane; frontend presentation history stays with the app. Initial
+support is text and local JSON-result tools. Native approvals/resume, streaming
+tool outputs, binary/client/provider tools, time travel and whole-run caching
+are unsupported. A Microsoft managed runner is not implemented.
+
+This backend ships in tagged `v0.5.8` `runkite-runner` artifacts. Install the
+tested optional `ai@7.0.155` peer with the runner. The app-side bridge needs a
+server key that can create, read and cancel managed runs; `governance:decide`
+alone is insufficient.
+
 ## Use today (recommended)
 
 Runkite’s public HTTP surface is [Agent Protocol](https://github.com/langchain-ai/agent-protocol) plus documented Runkite extensions. The machine-readable contract is:
@@ -77,7 +118,9 @@ If/when traction warrants it, build a **thin** first-party client (not a full mi
 | CI | smoke against `runkite serve` + echo agent |
 | Out of v1 | admin-api, internal runner API, full MCP surface, 1:1 coverage of every OpenAPI op |
 
-Until that ships, “SDK” in docs means **LangGraph SDK** (or any Agent Protocol client), not a Runkite-branded package.
+Until that client ships, use LangGraph SDK or another Agent Protocol client to
+call the plane. The runner packages and governance helpers are separate APIs;
+they are not substitutes for a full application client.
 
 ## Embedded governance helper
 
@@ -126,6 +169,11 @@ The AI SDK example also tests ordinary guarded tools inside `streamText`,
 including text chunks, allow/deny/pending results, policy failure and cancellation.
 Streaming chat output does not require streaming tool executors.
 
+`createGovernedExecute` lives in the unpublished `runkite-governance` package,
+not in published `runkite-runner`. Its `runId` is a stable application operation
+identifier. Neither the helper nor the decision endpoint deduplicates tool
+effects, creates managed runs, or proves an allowed tool actually executed.
+
 ### Microsoft Agent Framework function middleware
 
 The Python helper has an optional `agent-framework` extra, pinned to the tested
@@ -133,6 +181,10 @@ framework core. `runkite_governance.agent_framework` exports
 `GovernanceFunctionMiddleware` for local `FunctionTool` calls. It decides once,
 executes only after allow, and stops the agent with a native middleware failure
 on deny, pending or policy failure. The base client remains dependency-free.
+
+This middleware ships in the unpublished Python `runkite_governance` package
+(extra `agent-framework`, pinned to `agent-framework-core==1.23.0`). It does not
+implement a managed Microsoft runner or create Admin Threads/Runs.
 
 An async pending callback persists the action ID and exact frozen arguments.
 The app continues its own operation on a later request; the middleware never

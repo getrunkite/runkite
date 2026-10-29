@@ -896,8 +896,8 @@ async def _handle_job(
     try:
         assignment = json.loads(response.assignment_json)
         run_id = assignment["run_id"]
-        # Defaults to 0 (unfenced) for a control plane that predates
-        # this field, same convention as the Go side.
+        # Legacy assignments may omit this field. Zero is an exact legacy
+        # generation, not a bypass for a current positive-generation job.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
         _log_trace_context(run_id, assignment.get("trace_context"))

@@ -40,8 +40,8 @@ export interface RunAssignment {
   // attached. See runnerUser.ts.
   user?: Record<string, unknown>;
   // Fencing token -- see heartbeat.ts's doc comment.
-  // Absent (undefined) from a control plane that predates this field,
-  // treated the same as 0 (unfenced) by worker.ts's own `?? 0`.
+  // Legacy assignments may omit this field and decode as zero. Current planes
+  // require an exact match; zero never bypasses a positive attempt's fence.
   generation?: number;
   // Tenant that authenticated the originating request -- scopes
   // direct-mode store SQL, proxy X-Runkite-Tenant-Id, and (for

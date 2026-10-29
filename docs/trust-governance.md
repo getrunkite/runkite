@@ -29,7 +29,25 @@ Clients (SDK / HTTP / Admin UI)
 
 **What the plane always sees:** client identity (when auth is configured), run create/cancel/stream, job dispatch/fencing, connector session minting, MCP proxy forwards, proxy-mode store/vector calls.
 
-**What the plane does not see:** raw LLM prompts/completions (unless you add your own proxy), framework-native tool bodies that bypass connectors, direct-mode Postgres/pgvector access from the runner process.
+**Data the plane handles:** managed-run input, streamed/final output, thread
+values and opaque checkpoints can contain chat text, tool arguments and tool
+results. They are not automatically redacted merely because built-in tracing is
+metadata-only. Treat the state store, event broker, backups and Admin access as
+access to those payloads.
+
+**What the plane does not automatically observe:** every model-provider HTTP
+request or response, framework-native tool bodies that bypass connectors, and
+direct-mode Postgres/pgvector access from the runner. Runkite does not proxy model
+HTTP by default or inspect prompts for safety/PII. Its built-in OTLP spans carry
+metadata rather than full prompt/completion capture; `LOG_FORMAT=json` separately
+controls stdout log formatting.
+
+**Execution ownership:** an app-owned Decide call has no managed run and an
+allow is not evidence of execution. The managed AI SDK runner creates
+actual Threads/Runs, but local tools still need real connector gates for policy
+enforcement. Cancellation cannot undo completed effects, and trailing usage can
+arrive after the plane has settled a cancellation. See
+[integration guidance](client-sdk.md#choose-who-owns-execution).
 
 ## Run-binding (current)
 

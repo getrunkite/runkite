@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -77,6 +78,8 @@
           how it looks in Admin, and what you should expect. Reference markdown still lives in
           <code>docs/</code> on GitHub, these pages are the product guide.
         </p>
+
+        <p class="note">Choose your execution boundary first: <a href="./sdk-integration.html">managed Threads/Runs or app-owned tool decisions</a>. The guide labels released APIs, unpublished helpers, and the managed AI SDK backend (v0.5.8+) separately.</p>
 
         <div class="card">
           <strong>Start here</strong>
@@ -135,7 +138,8 @@
         <ul class="links">
           <li><a href="./install.html">Install</a>: Supported profile, compose, Helm</li>
           <li><a href="./agents.html">Agents</a>: register &amp; run Python / TypeScript graphs</li>
-          <li><a href="./frameworks.html">Framework matrix</a>: LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain</li>
+          <li><a href="./frameworks.html">Framework matrix</a>: published LangGraph runners, checkout adapters, and AI SDK managed support (v0.5.8+)</li>
+          <li><a href="./sdk-integration.html">SDK integration paths</a>: Vercel AI SDK and Microsoft function middleware, with explicit lifecycle boundaries</li>
           <li><a href="./checkpoints.html">Checkpoints</a>: opaque durable state</li>
           <li><a href="./connectors.html">Connectors</a>: run-bound sessions, MCP proxy, optional payload shrink</li>
           <li><a href="./registry.html">Registry</a>: publish &amp; search agent definitions</li>

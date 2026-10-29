@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -108,11 +109,13 @@
           </section>
         </div>
 
+        <p class="note">This walkthrough uses the published LangGraph runner. For an existing app-owned loop or the managed AI SDK backend (v0.5.8+), start with <a href="./sdk-integration.html">SDK integration paths</a>. The decision API alone does not create a thread or run.</p>
+
         <h2>Step 1: get the control plane running</h2>
         <p>
           Either the 5-minute <a href="./try.html">Try it</a> demo or a full
           <a href="./install.html">Install</a> works, you just need
-          <code>http://localhost:2026/health</code> to respond before continuing.
+          <code>http://localhost:2026/readyz</code> to pass before continuing.
         </p>
 
         <h2>Step 2: write the agent</h2>

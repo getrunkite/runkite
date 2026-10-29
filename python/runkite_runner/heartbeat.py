@@ -70,9 +70,9 @@ async def heartbeat_loop(
     job might get reclaimed a bit earlier than a perfectly-tuned system
     would.
 
-    generation defaults to 0 (unfenced -- matches a pre-fencing control
-    plane, or a caller that doesn't track it) so existing callers don't
-    have to change to keep working. If the response comes back
+    generation defaults to the legacy value 0. Current planes require an
+    exact match: zero works only for an actual generation-zero assignment.
+    Callers must echo the generation from GetJob. If the response comes back
     superseded=True -- a newer generation has already been dispatched,
     meaning this runner was reclaimed while genuinely still executing --
     this sets cancel_event (if given) and stops looping: continuing to

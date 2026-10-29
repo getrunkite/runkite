@@ -1,5 +1,5 @@
 /**
- * Worker main loop: long-poll for jobs, execute LangGraph.js agents,
+ * Worker main loop: long-poll for jobs, execute framework adapters,
  * stream events back, watch for cancels, report final status. TypeScript
  * mirror of the Python runner's run_worker()/_poll_loop()/watch_cancels()
  * in worker.py -- same gRPC call sequence, same client-streaming-per-run
@@ -8,12 +8,10 @@
 import { Metadata } from "@grpc/grpc-js";
 import path from "node:path";
 import { readFileSync } from "node:fs";
-import { LangGraphAdapter, loadCustomAppConfig } from "./adapter.js";
-import { CheckpointerManager, resolveCheckpointHttpUrl } from "./checkpoint.js";
+import { loadCustomAppConfig } from "./adapter.js";
 import { CompletionDeliveryError, finishRun } from "./completion.js";
 import { startHeartbeatLoop } from "./heartbeat.js";
-import { RunkiteStore } from "./store.js";
-import { executeRun } from "./executeRun.js";
+import { LangGraphExecutionAdapter } from "./langGraphExecution.js";
 import { runWithBinding } from "./tenantCtx.js";
 import { initTracing, setRunStatus, withRunSpan } from "./tracing.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
@@ -142,8 +140,6 @@ function logTraceContext(runId, tc) {
 }
 export async function runWorker(opts) {
     const tracingShutdown = await initTracing();
-    const adapter = new LangGraphAdapter(opts.configPath);
-    await adapter.load();
     // Runner auth, two-tier model: if the control plane has
     // RUNNER_TOKEN_<KIND> configured (production mode), this runner must
     // send a matching runner-kind/runner-token pair as gRPC metadata on
@@ -156,34 +152,15 @@ export async function runWorker(opts) {
         metadata.set("runner-token", runnerToken);
     }
     const concurrency = opts.concurrency ?? 1;
-    // node-postgres's own default pool size (10) is already fine for the
-    // concurrency=1 common case -- a single in-flight job can still fan
-    // out to several concurrent store/checkpoint calls internally (e.g.
-    // a graph with parallel nodes each touching the store). Only grow the
-    // pool for a HIGHER --concurrency, never shrink it below that
-    // default; passing poolSize=1 here would be a real regression from
-    // today's unconfigured behavior, not "mirroring Python's
-    // pool_size=concurrency" -- Python's psycopg_pool has no equivalent
-    // implicit floor to preserve.
-    const poolSize = Math.max(concurrency, 10);
-    const postgresDsn = process.env.POSTGRES_DSN;
-    // Proxy URL from resolveCheckpointHttpUrl (blank RUNKITE_HTTP_URL → memory),
-    // not raw --http-address, so an empty env does not force proxy errors.
-    const checkpointHttp = postgresDsn ? undefined : resolveCheckpointHttpUrl(opts.httpAddress);
-    const checkpointerManager = new CheckpointerManager();
-    await checkpointerManager.start(postgresDsn, poolSize, {
-        httpBaseUrl: checkpointHttp,
-        runnerToken: checkpointHttp ? runnerToken || undefined : undefined,
-    });
-    adapter.attachCheckpointer(checkpointerManager);
-    const store = new RunkiteStore({
-        postgresDsn,
-        httpBaseUrl: opts.httpAddress,
-        runnerToken: runnerToken || undefined,
-        poolSize,
-    });
-    adapter.attachStore(store);
-    logger.info(`Store mode: ${store.mode}`);
+    const adapter = opts.adapter ??
+        new LangGraphExecutionAdapter(opts.configPath, { httpAddress: opts.httpAddress, runnerToken, concurrency });
+    try {
+        await adapter.load();
+    }
+    catch (error) {
+        await tracingShutdown();
+        throw error;
+    }
     // grpcChannelCredentials() (not just "did TLS env vars get read") is
     // the actual signal createRunnerClient itself uses to decide
     // insecure vs TLS -- checking the same function here (rather than
@@ -250,8 +227,7 @@ export async function runWorker(opts) {
             logger.info(`Draining ${inFlight.size} in-flight job(s) before shutdown...`);
             await Promise.allSettled([...inFlight]);
         }
-        await checkpointerManager.stop();
-        await store.close();
+        await adapter.close();
         await tracingShutdown();
     }
 }
@@ -282,8 +258,8 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
     try {
         const assignment = JSON.parse(response.assignmentJson);
         runId = assignment.run_id;
-        // Defaults to 0 (unfenced) for a control plane that predates this
-        // field, same convention as the Go/Python side.
+        // Legacy assignments may omit this field. Zero matches only a legacy-zero
+        // assignment; it cannot renew or complete a positive-generation attempt.
         generation = assignment.generation ?? 0;
         logger.info(`Got job: run_id=${runId} graph_id=${assignment.graph_id}`);
         const tc = assignment.trace_context;
@@ -369,7 +345,21 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
         const sendEvent = async (event) => {
             call.write({ runId: runId, eventJson: JSON.stringify(event), generation: String(generation) });
         };
-        const status = await executeRun(adapter, assignment, sendEvent, () => cancelState.cancelled);
+        let status;
+        try {
+            status = await adapter.execute(assignment, sendEvent, () => cancelState.cancelled);
+        }
+        catch (error) {
+            // A persistence failure may deliberately leave the assignment recoverable.
+            // Close this transport without replacing the executor's original failure.
+            try {
+                call.cancel?.();
+            }
+            catch {
+                /* retain the original execution error */
+            }
+            throw error;
+        }
         call.end();
         const completedStatus = await finishRun(client, {
             runId,

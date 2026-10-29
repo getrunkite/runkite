@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "runkite-governance"
-version = "0.5.7"
+version = "0.5.8"
 description = "Small decide and pending-action helper for app-owned agent loops."
 readme = "README.md"
 license = "BUSL-1.1"

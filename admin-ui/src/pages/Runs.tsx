@@ -88,8 +88,11 @@ export function Runs() {
     <div>
       <PageHeader
         title="Runs"
-        subtitle="Across every tenant. Auto-refreshes every 8s. Click any column to sort the current page."
-        actions={<DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>}
+        subtitle="Managed runs across every tenant. Refreshes every 8s. Decision-only tool calls do not create runs."
+        actions={<>
+          <DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>
+          <DocsLink href={supportPage("sdk-integration.html")}>SDK integration →</DocsLink>
+        </>}
       />
 
       <div className="mb-4 flex items-center gap-3">
@@ -120,7 +123,7 @@ export function Runs() {
           title={status === "all" ? "No runs yet" : "No matching runs"}
           message={
             status === "all"
-              ? "Create a thread and run via the Agent Protocol API, or smoke-test with examples/echo_agent after runkite serve + a runner."
+              ? "Start a managed run through the Agent Protocol API and a matching runner. Calls to /governance/decide alone will not appear here."
               : `No runs with status “${status}”. Try another filter.`
           }
           learnMore={

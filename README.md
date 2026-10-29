@@ -1,8 +1,11 @@
 # Runkite
 
-**A self-hosted control plane for AI agents — one Go binary that owns the operational side (auth, dispatch, connectors, human approval, spend, audit) so your agent code can stay a plain LangGraph, CrewAI, LlamaIndex, AutoGen, or LangChain program.**
+**A self-hosted control plane for AI agents. One Go binary handles auth, dispatch, connectors, human approval, spend and audit while your agent keeps its framework and model loop.**
 
-If you already know [LangSmith Deployments](https://docs.smith.langchain.com/deployment): Runkite is what that would be if it were self-hosted under BUSL-1.1, framework-agnostic instead of LangGraph-only, and shipped as a single binary you run yourself instead of a hosted API you depend on.
+For managed execution, the plane dispatches agents to separate framework runners.
+Apps that keep execution in their own backend can ask the same plane for an
+individual tool decision. These paths have different visibility and controls;
+see [Choose an integration path](#choose-an-integration-path).
 
 [![CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getrunkite/runkite/actions/workflows/ci.yml?query=branch%3Amain)
 [![Matrix](https://img.shields.io/badge/matrix-nightly-6F42C1)](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
@@ -41,11 +44,11 @@ The problem Runkite exists for: one agent, one `.env`, one deploy is easy. A sec
 | Capability | What it means in practice |
 |---|---|
 | **Agent Protocol, in Go** | HTTP / SSE / WebSocket, auth, streaming, job dispatch, persistence, connectors — one static binary, no runtime dependencies for the control plane itself |
-| **Bring your framework** | LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain, and LangGraph.js all attach the same way, over one gRPC Runner Protocol — the plane never special-cases any of them |
+| **Bring your framework** | Existing LangGraph, LangGraph.js, CrewAI, LlamaIndex, AutoGen and LangChain runners use one gRPC Runner Protocol. The optional AI SDK managed runner ships in `runkite-runner` with `--framework ai-sdk`. Framework support and package availability are listed in [Runners](docs/runners.md). |
 | **Governance lives on the plane, not just in the agent** | Fail-closed connector grants, optional argument predicates on MCP `tools/call`, durable policy audit, connector human-in-the-loop approval, kill/pause switches, and time-boxed break-glass bypass — all with their own Admin UI pages, all provable with `make smoke-governance`. Details: [Trust & governance](docs/trust-governance.md) · [Admin UI](docs/admin.md) |
 | **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`), with depth limits and parent/root bookkeeping enforced by the plane, not left to each agent to get right — [docs/a2a.md](docs/a2a.md) |
-| **Ops without a second deploy** | The Admin UI is a React app embedded into the binary via Go's `embed.FS` — there's no separate frontend to host, and no Node.js runtime needed anywhere in production |
-| **Spend governance, not a billing platform** | Per-tenant and per-agent daily budgets enforced at admission time, before money is spent — not a dashboard you read the morning after |
+| **Ops without a second deploy** | Admin is a static React app embedded with Go's `embed.FS`. The control plane needs no separate frontend server or Node.js runtime. Framework runners retain their own Python or Node.js runtime. |
+| **Spend governance, not a billing platform** | Managed-run admission checks tenant and agent daily caps against recorded usage and configured reservations. Estimated USD, concurrent spending and cancellation accounting have explicit [limits](docs/limitations.md). |
 | **Honest about backend maturity** | **Supported:** Postgres + Redis HA — this is the profile to run in production today. Also wired and tested, at varying maturity: SQLite, MySQL, MongoDB, NATS, Kafka, and several vector stores. See the real [tier breakdown](docs/architecture.md#backend-support-tiers) rather than a marketing claim that everything is equally production-ready |
 
 ## What Runkite is not
@@ -83,6 +86,30 @@ runkite-runner --config examples/echo_agent/langgraph.json \
 Admin: http://localhost:2026/admin/ · Health: http://localhost:2026/health
 
 The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `pending_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, `sim`, and more).
+
+## Choose an integration path
+
+**Runkite owns execution:** an Agent Protocol client creates a thread and run.
+The plane dispatches a runner, records its output and streams results to the app.
+These executions appear in Admin Threads and Runs and use managed-run admission,
+cancel and usage accounting. Your UI and user authentication can stay in the app.
+Model calls execute in the runner, not inside the Go binary.
+
+**Your app owns execution:** a tool calls `POST /governance/decide`, then the app
+executes only after allow or continues its own saved operation after approval.
+This creates no Runkite thread or run. Run kill switches, break-glass and spend
+caps do not apply. `run_id` is an app operation correlation value, not execution
+idempotency or proof that the tool ran.
+
+The [AI SDK managed example](examples/managed_ai_sdk/README.md) and `useChat`
+bridge ship in **v0.5.8** with `runkite-runner` (`--framework ai-sdk`, peer
+`ai@7.0.155`). The app-owned
+[AI SDK guard](examples/governance_ai_sdk/README.md) and
+[Microsoft function middleware](examples/governance_agent_framework/README.md)
+use the unpublished `runkite-governance` helpers (install from the repository).
+A Microsoft managed runner is not implemented. See [CHANGELOG](CHANGELOG.md),
+[client integration guidance](docs/client-sdk.md), and the
+[support guide](site/support/sdk-integration.html).
 
 ## Architecture
 

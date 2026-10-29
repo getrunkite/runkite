@@ -1,18 +1,20 @@
 /**
- * Worker main loop: long-poll for jobs, execute LangGraph.js agents,
+ * Worker main loop: long-poll for jobs, execute framework adapters,
  * stream events back, watch for cancels, report final status. TypeScript
  * mirror of the Python runner's run_worker()/_poll_loop()/watch_cancels()
  * in worker.py -- same gRPC call sequence, same client-streaming-per-run
  * pattern, same cancel-registration approach.
  */
 import { Metadata } from "@grpc/grpc-js";
-import { LangGraphAdapter } from "./adapter.js";
+import type { ExecutionAdapter, RunExecutor } from "./execution.js";
 import { type GetJobResponse, type RunnerServiceClient } from "./proto.js";
 export interface WorkerOptions {
     configPath: string;
     grpcAddress: string;
     httpAddress: string;
     runnerKind: string;
+    /** Defaults to the existing LangGraph.js adapter and its storage modes. */
+    adapter?: ExecutionAdapter;
     /** Max concurrent in-flight jobs per runner process -- mirrors the
      * Python runner's --concurrency/RUNKITE_CONCURRENCY. Default 1
      * preserves the original one-job-at-a-time behavior exactly. */
@@ -91,7 +93,7 @@ export declare function runWorker(opts: WorkerOptions): Promise<void>;
  * with it. The old single-job loop caught these at the outer
  * `while (true)` level; that's no longer where "one job" lives.
  */
-export declare function handleJob(client: RunnerServiceClient, adapter: LangGraphAdapter, response: GetJobResponse, metadata: Metadata, pendingCancels: Map<string, CancelState>, opts?: {
+export declare function handleJob(client: RunnerServiceClient, adapter: RunExecutor, response: GetJobResponse, metadata: Metadata, pendingCancels: Map<string, CancelState>, opts?: {
     httpAddress?: string;
     runnerKind?: string;
     runnerToken?: string;
@@ -113,7 +115,7 @@ export declare function handleJob(client: RunnerServiceClient, adapter: LangGrap
  * depend on) out from under them, the instant this while(true) loop
  * happens to exit, would be a real bug, not just an edge case.
  */
-export declare function pollLoop(client: RunnerServiceClient, adapter: LangGraphAdapter, runnerKind: string, metadata: Metadata, pendingCancels: Map<string, CancelState>, concurrency?: number, inFlight?: Set<Promise<void>>, jobOpts?: {
+export declare function pollLoop(client: RunnerServiceClient, adapter: RunExecutor, runnerKind: string, metadata: Metadata, pendingCancels: Map<string, CancelState>, concurrency?: number, inFlight?: Set<Promise<void>>, jobOpts?: {
     httpAddress?: string;
     runnerToken?: string;
 }): Promise<void>;

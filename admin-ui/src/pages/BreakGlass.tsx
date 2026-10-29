@@ -208,7 +208,7 @@ export function BreakGlass() {
     <div>
       <PageHeader
         title="Break-glass"
-        subtitle="Time-bounded policy bypass (max 24h). Does not override kill, agent authz, or admission limits. SQL backends only."
+        subtitle="Managed-run and connector policy bypass, up to 24h. Does not override kill, authz or admission limits, and does not apply to /governance/decide. SQL backends only."
         actions={
           <>
             <DocsLink href={supportPage("admin-guide.html#13-break-glass")}>Docs: break-glass →</DocsLink>

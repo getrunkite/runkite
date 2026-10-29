@@ -7,7 +7,7 @@
     <title>Engineering notes · Runkite Docs</title>
     <meta
       name="description"
-      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS."
+      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS, managed AI SDK receipts."
     />
     <link
       rel="icon"
@@ -42,6 +42,7 @@
           <a href="agents.html">Agents (Py / JS)</a>
           <a href="migrate-agents.html">Migrate agents</a>
           <a href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a href="checkpoints.html">Checkpoints</a>
           <a href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
@@ -99,13 +100,16 @@
             <a href="../design/create-run-ctx.html">3 · createRunCtx / fail-closed serve</a>: One admission funnel; production serve refuses an insecure posture.
           </li>
           <li>
-            <a href="../design/poison-pill.html">4 · Poison pill / reclaim ceiling</a>: Crash-loop jobs stop reclaiming after a hard max_retries ceiling.
+            <a href="../design/poison-pill.html">4 · Poison pill / reclaim ceiling</a>: Stop dispatch at the ceiling, then acknowledge only after durable completion and finalization.
           </li>
           <li>
             <a href="../design/finops-holds.html">5 · Optimistic spend holds</a>: Reserve an estimate at create time so concurrent runs can't all pass a terminal-only budget check at once.
           </li>
           <li>
             <a href="../design/rls-grant.html">6 · The RLS grant that can't grant itself</a>: A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN.
+          </li>
+          <li>
+            <a href="../design/managed-ai-sdk.html">7 · Managed AI SDK receipts</a>: Commit native history before success; recover a committed turn without repeating model or tool work.
           </li>
         </ul>
 

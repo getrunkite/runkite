@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -102,7 +103,7 @@
           A control plane is where you solve each of these <em>once</em>, centrally, instead
           of once per agent. Your agent code keeps using whatever framework it already uses
           (LangGraph, CrewAI, plain LangChain, whatever). The plane sits underneath and handles
-          the parts that have nothing to do with what the agent is actually thinking about.
+          shared operational gates. For an app that keeps its own model loop, the decision API can govern selected tool calls without moving execution into a runner. That lighter path does not create managed Threads/Runs or apply run kill switches, break-glass or spend caps. See <a href="./sdk-integration.html">the two integration paths</a>.
         </p>
 
         <div class="guide-grid">
@@ -111,7 +112,7 @@
             <ul>
               <li>You have (or will soon have) more than one agent that needs the <em>same</em> connectors, human-approval rules, kill switch, and audit trail.</li>
               <li>You want a clean split: clients talk a stable Agent Protocol API, workers (in any language) talk a separate Runner Protocol, so you can change frameworks or add a second language without touching client code.</li>
-              <li>You need admission and failure handling that fails <em>closed</em> by default (a misconfigured deploy refuses to start rather than quietly running insecurely), and a worker crash mid-job to be handled correctly instead of silently losing or duplicating the run.</li>
+              <li>You need fail-closed admission and recoverable runner assignments. Attempt fencing protects durable completion after reclaim; external side effects still need downstream idempotency.</li>
             </ul>
           </div>
           <div class="card">
@@ -119,7 +120,7 @@
             <ul>
               <li>You have one agent, one environment, and nothing else needs to share what it uses.</li>
               <li>You're still prototyping prompts and don't have a "production" yet. Add the plane when you do, not before.</li>
-              <li>You need a fully managed cloud control plane today with zero self-hosting. Runkite is self-host first; a hosted option is on the roadmap, not available yet.</li>
+              <li>You need a hosted control plane. Runkite is self-host only; no hosted service is promised by this product.</li>
             </ul>
           </div>
         </div>

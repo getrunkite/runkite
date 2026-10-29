@@ -2,9 +2,11 @@
 
 Version lives in [`VERSION`](../VERSION). Keep Python (`pyproject.toml` /
 `__version__`), npm (`package.json`), Helm `appVersion`, and the git tag
-`v$VERSION` in sync. **Public install docs stay unpinned** (`pip install
-runkite-runner`, `npm install -g runkite-runner`, `docker pull …:latest`) so
-README/site do not need edits on every bump — badges show the current version.
+`v$VERSION` in sync. Public Runkite install commands normally stay unpinned
+(`pip install runkite-runner`, `npm install -g runkite-runner`, image `:latest`).
+Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
+Release availability labels still need review on every feature release; a badge
+cannot make a checkout-only adapter part of an older registry artifact.
 
 ## What a tag publishes
 
@@ -16,6 +18,31 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
 | Control-plane + runner images (`:<version>` and `:latest`) | `ghcr.io/getrunkite/*` | `packages: write` (automatic) |
 | `runkite-runner` wheel | PyPI | repo secret **`PYPI_API_TOKEN`** |
 | `runkite-runner` npm package | npmjs.com | **Trusted Publisher (OIDC)** preferred; else **`NPM_TOKEN`** |
+
+This workflow does not publish `runkite-governance` to npm or PyPI. Its packaging
+metadata, local wheel/tarball checks and optional Microsoft middleware do not
+change that. Do not describe those helpers as published without a separate,
+verified maintainer publication.
+
+## Documentation and embedded UI release checks
+
+- Keep `CHANGELOG.md` Unreleased separate from the latest tag. Move an item only
+  when the corresponding source and artifact are included in the release.
+- Check the README, `docs/client-sdk.md`, `docs/runners.md`, integration examples
+  and `site/support/sdk-integration.html` for matching framework/package status.
+- Keep managed execution and app-owned Decide distinct in product, support and
+  Admin copy. Do not imply that tool middleware creates runs, that Admin approval
+  resumes a caller automatically, or that cancellation undoes external effects.
+- Rebuild Admin with `cd admin-ui && npm ci && npm run build` after source edits.
+  Commit the resulting `internal/adminui/dist` assets with the source; the binary
+  embeds those assets, not the Vite development tree. Run UI tests and lint.
+- Check local links in changed Markdown/HTML and compile the Go binary when
+  embedded assets change. Historical engineering notes should link to current
+  contracts rather than present old behavior as current implementation.
+- A push to `main` touching `site/**` triggers Pages independently of a tag.
+  Keep unreleased labels until public artifacts contain the feature. Protocol
+  documentation has its own mirror workflow; inspect it when changing that
+  contract. These checks do not authorize a deployment or publication.
 
 ## Maintainer checklist (cut a release)
 

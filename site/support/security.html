@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -142,19 +143,22 @@
           unbound tenant claim).
         </p>
 
-        <h2>What the plane genuinely cannot see or control</h2>
+        <h2>What the plane stores and where control stops</h2>
         <p>
-          Being precise about this matters more than sounding impressive. The plane does
-          <strong>not</strong> see raw LLM prompts or completions by default, it sees
-          run-level metadata and whatever your agent code explicitly streams back as events.
-          If you want full prompt/completion capture, you add your own OTel/observability
-          proxy; the plane doesn't do this for you automatically, on purpose (that data is
-          often sensitive and shouldn't flow through infrastructure that didn't ask for it).
-          Likewise, connector policy only governs calls that actually go through a configured
-          connector, if your agent code has its own hardcoded credential to some other
-          service and calls it directly, nothing here can see or stop that. Governing access
-          you didn't hand out yourself isn't a gap in this feature; it's outside what any
-          proxy-based system can do.
+          The plane persists managed run input/output, thread values, published events
+          and opaque checkpoints. Those payloads can contain prompts, model replies and
+          tool results; restrict read access and configure retention accordingly. Opaque
+          means the plane does not interpret a framework's checkpoint schema, not that its
+          bytes are absent from storage.
+        </p>
+        <p>
+          Built-in OTLP spans export run/model/tool metadata without automatic full-body
+          prompt/completion capture. Point <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> at your
+          chosen collector or backend; logs remain on stdout, with <code>LOG_FORMAT=json</code>
+          configured separately. Add deliberate SDK instrumentation if richer trace content
+          is required. Connector policy covers calls that pass through its gate. Code using
+          independently supplied credentials or an unguarded local tool remains outside that
+          execution boundary.
         </p>
 
         <p class="note">

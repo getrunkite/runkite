@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -89,9 +90,20 @@
           <li>Governance durability (audit/grants/pending/kill/usage) is SQL-only; Mongo returns 501 on those Admin routes.</li>
           <li>Fixture replay (<code>runkite sim</code>) is not a sandbox: in-graph tools stay ungoverned; allow cases hit the real connector; pending does not auto-approve.</li>
           <li>Payload shrink is opt-in, Redis-backed, connector MCP only. Not a token SLA. Enabled shrink means audit keeps the preview, not the original body.</li>
-          <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) with alerts, export, holds, and alias routing on SQL. Overshoot possible when reservation is unset or estimates are wrong; no mid-run budget kill.</li>
-          <li>Kubernetes/Helm: kind K0–K3 ops-proven; Compatible for production cloud until a named soak (K4). Compose proves multi-CP HA today.</li>
+          <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) run on SQL. Holds reduce admission overshoot; estimates can be wrong. <code>on_hard_breach: cancel_inflight</code> can cancel in-scope runs after a hard breach, but usage is not continuously metered and canceled-run accounting can be incomplete.</li>
+          <li>Kubernetes/Helm: kind K0–K3 ops proofs and a named EKS smoke exist. Packaging is Compatible; a longer cloud HA soak is still outstanding. Supported backend HA evidence remains the Compose topology.</li>
+          <li><code>POST /governance/decide</code> creates no managed thread or run and applies no run kill switch, break-glass or spend cap. The app executes and owns pending continuation.</li>
+          <li>Every runner generation, including zero, must match exactly. Queue fencing and event publish remain two operations; raw SSE is advisory while durable completion and <code>/wait</code> reject superseded results.</li>
         </ul>
+        <h2>Managed AI SDK profile (v0.5.8+)</h2>
+        <p>
+          The TypeScript AI SDK runner adds managed Threads/Runs and native successful-turn
+          history. Initial support is text and local JSON-result tools. Native approval/resume,
+          client/provider tools, streaming tool outputs, binary input, time travel, partial-turn
+          restore and whole-run caching are unsupported. The UI bridge requires an app-side
+          request-path change. See
+          <a href="sdk-integration.html">SDK integrations and availability</a>.
+        </p>
         <p class="note">
           Full list:
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/limitations.md">docs/limitations.md</a>

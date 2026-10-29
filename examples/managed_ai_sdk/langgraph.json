@@ -1,0 +1,6 @@
+{
+  "runner_kind": "typescript-ai-sdk",
+  "graphs": {
+    "managed_ai_sdk": "./agent.ts:createAgent"
+  }
+}

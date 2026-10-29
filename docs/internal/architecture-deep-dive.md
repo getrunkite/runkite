@@ -1,6 +1,16 @@
-# Runkite — Complete Technical Explanation
+# Runkite: Historical Architecture Walkthrough
 
-> **What this document is.** These are study notes, written so the founder (or anyone who inherits this codebase) can understand every part of the product without reading raw code first. It was written after the v0.2 cut and updated after v0.3 shipped — chapters 1-93 are the original v0.2-era walkthrough; chapters 94 onward cover what changed since (FinOps, the run manifest, universal checkpoints, RLS, and the hardening pass before the v0.3.0 tag). If you found this file by browsing the repo: welcome, and I hope it's actually useful rather than just long.
+> **Historical study notes.** Chapters 1-93 began as a v0.2 walkthrough; later chapters describe the v0.3 hardening work. This refresh corrects selected lifecycle, durability, governance and integration sections against the current source. It is not a complete revalidation of every historical example, diagram or operational claim below. Use [Architecture](../architecture.md), [Limitations](../limitations.md), [Runners](../runners.md), [Trust and governance](../trust-governance.md) and [the changelog](../../CHANGELOG.md) for current supported behavior.
+
+## Current status of this walkthrough
+
+- **Released in v0.5.6:** authenticated runner-kind binding, exact generation fencing including generation 0, final persistence and finalization before queue acknowledgement, retained leases at the retry ceiling, strict MCP parsing and opt-in upstream `streamable_http`. Follow `internal/bridge/server.go:StreamEvents/ReportStatus`, `internal/api/completion.go:BeginRunAttempt/CompleteRun/CompleteReclaimedRun`, `cmd/reclaim.go:finishPoisonPill`, and `internal/connector/mcpproxy.go`.
+- **Released in v0.5.7:** Go and Admin UI build dependency security updates, with no additional runner behavior change. Postgres and Redis remain the supported HA pair. Runkite remains self-host only.
+- **On main, untagged and unpublished:** app-owned TypeScript `createGovernedExecute` and Python Microsoft Agent Framework function middleware use the existing decision API. `internal/api/governance_decide.go` does not create Threads or Runs, dispatch a job, or apply managed-run kill switches, break-glass or spend caps. An allow is a decision, not evidence that a tool ran.
+- **Managed AI SDK (v0.5.8+):** `typescript/runkite-runner/src/aiSdkAdapter.ts` uses public `ToolLoopAgent` APIs; `examples/managed_ai_sdk/bridge.ts` bridges the app to managed runs. These executions create Runkite Threads and Runs because the app dispatches its model loop to a runner. Native history and committed-turn receipts use run-bound opaque checkpoints with CAS. See [the managed example](../../examples/managed_ai_sdk/README.md) for limits, including no native approval/resume, streaming tool outputs, time travel or whole-run caching.
+- **Prepared opaque checkpoint hardening, unreleased:** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
+
+Managed execution and app-owned tool governance are separate entry paths. Neither one governs a native tool that bypasses its policy hook or the connector proxy. The new managed AI SDK integration checks do not establish a new live multi-replica HA soak or exactly-once external side effects before a checkpoint commit.
 
 **Author: Opus 4.6 (Anthropic), updated by Claude Sonnet 5 (Anthropic) for the v0.3.0 pass**
 
@@ -8,7 +18,7 @@
 
 ## What This Document Is
 
-This document explains Runkite from absolute zero. If you have never seen the codebase, never heard of Agent Protocol, and only vaguely know what gRPC means, you should still be able to read this top-to-bottom and come away understanding every component, how they connect, why they exist, and where the code lives.
+This document introduces the original managed-run architecture from first principles. Read the status note above before applying its older examples to a current deployment, and verify behavior against the linked source and current guides.
 
 I will explain things the way I would if we were sitting together at a whiteboard. When I use a technical term for the first time, I will explain it right there. I will not assume you remember something from a previous paragraph — I will reconnect ideas explicitly.
 
@@ -22,28 +32,28 @@ The document is long on purpose. Brevity creates confusion. I would rather over-
 
 **Core Architecture (Chapters 1-22)**
 
-1. [The Big Picture — What Is Runkite?](#1-the-big-picture)
-2. [The Three Processes — Control Plane, Runner, Client](#2-the-three-processes)
-3. [The Two Protocols — How They Talk](#3-the-two-protocols)
+1. [The Big Picture](#1-the-big-picture)
+2. [The Three Processes](#2-the-three-processes)
+3. [The Two Protocols](#3-the-two-protocols)
 4. [A Complete Run From Start to Finish](#4-a-complete-run-from-start-to-finish)
-5. [Multi-Replica — Running Multiple Control Planes](#5-multi-replica)
-6. [Thread and Run Lifecycles — The Status Machines](#6-thread-and-run-lifecycles)
-7. [Cancel — How to Stop a Running Agent](#7-cancel)
-8. [Crash Recovery — What Happens When Things Die](#8-crash-recovery)
-9. [Agent-to-Agent Communication](#9-agent-to-agent)
-10. [Human In The Loop — Two Completely Different Kinds](#10-human-in-the-loop)
-11. [Governance — Who Can Do What](#11-governance)
-12. [Connectors — How Agents Use External Tools Safely](#12-connectors)
-13. [Cron — Scheduled Runs](#13-cron)
-14. [The Admin UI — What Operators See](#14-the-admin-ui)
+5. [Multi-Replica: Running Multiple Control Planes](#5-multi-replica--running-multiple-control-planes)
+6. [Thread and Run Lifecycles](#6-thread-and-run-lifecycles)
+7. [Cancel: How to Stop a Running Agent](#7-cancel-how-to-stop-a-running-agent)
+8. [Crash Recovery: What Happens When Things Die](#8-crash-recovery--what-happens-when-things-die)
+9. [Agent-to-Agent Communication](#9-agent-to-agent-communication)
+10. [Human In The Loop: Three Continuation Paths](#10-human-in-the-loop-three-continuation-paths)
+11. [Governance: Who Can Do What](#11-governance--who-can-do-what)
+12. [Connectors: How Agents Use External Tools Safely](#12-connectors--how-agents-use-external-tools-safely)
+13. [Cron: Scheduled Runs](#13-cron--scheduled-runs)
+14. [The Admin UI](#14-the-admin-ui)
 15. [Rate Limiting](#15-rate-limiting)
-16. [Fail-Closed Serve — Why Production Refuses to Start Insecurely](#16-fail-closed-serve)
-17. [Conformance — How We Test Multiple Backends](#17-conformance)
+16. [Fail-Closed Serve: Why Production Refuses to Start Insecurely](#16-fail-closed-serve--why-production-refuses-to-start-insecurely)
+17. [Conformance: How We Test Multiple Backends](#17-conformance--how-we-test-multiple-backends)
 18. [Gaps and Honest Limitations](#18-gaps-and-honest-limitations)
-19. [Observability — OpenTelemetry and Prometheus](#19-observability)
-20. [Boot Path — What Happens When the Server Starts](#20-boot-path)
-21. [Security Findings — What We Fixed and What Remains](#21-security-findings)
-22. [File Map — Where Everything Lives in the Code](#22-file-map)
+19. [Observability: OpenTelemetry and Prometheus](#19-observability--opentelemetry-and-prometheus)
+20. [Boot Path: What Happens When the Server Starts](#20-boot-path--what-happens-when-the-server-starts)
+21. [Security Findings: What We Fixed and What Remains](#21-security-findings--what-we-fixed-and-what-remains)
+22. [File Map: Where Everything Lives in the Code](#22-file-map--where-everything-lives-in-the-code)
 
 **Deep Dives (Chapters 23-93)** — detailed explorations of specific mechanisms, extended narratives, failure scenarios, analogies, and the topics added in the second pass:
 
@@ -142,7 +152,7 @@ What the control plane does:
 - Stores run/thread/agent metadata in a database (Postgres, MySQL, SQLite, or MongoDB)
 - Dispatches work to runners via a job queue (Redis, NATS, or Kafka)
 - Streams events from runners back to clients (via Redis fan-out)
-- Manages connector credentials (API keys, OAuth tokens for external services)
+- Resolves configured connector credentials at session time, including `secret_ref` values from env, file or Vault; it does not maintain a database of user OAuth tokens
 - Enforces policy decisions (can this agent call this tool?)
 - Provides the Admin UI for operators
 - Handles cancellation, timeouts, crash recovery
@@ -730,7 +740,7 @@ Client: SSE frame arrives:
 LLM → Runner-1 → gRPC → CP2 → XADD Redis Stream → XREAD CP1 goroutine → Go channel → SSE → Client
 ```
 
-**Steps E-H repeat for every token.** When the run finishes, Runner-1 calls `ReportStatus("success")` to CP2. CP2 Acks the inflight entry, updates Postgres (status=success, release thread). The final "end" event flows through the same Redis Stream → CP1 → client path, and CP1 closes the SSE connection.
+**Steps E-H repeat for every token.** The runner also delivers its terminal event through the broker. On `ReportStatus("success")`, CP2 commits terminal output and thread release, completes finalization, then acknowledges the in-flight lease. The live terminal event can arrive before that commit, so confirm the durable outcome with the run record or `/wait`.
 
 **Who does what (summary):**
 
@@ -744,81 +754,21 @@ LLM → Runner-1 → gRPC → CP2 → XADD Redis Stream → XREAD CP1 goroutine 
 
 CP1 and CP2 never communicate with each other. The Redis Stream is the mailbox: CP2 drops letters in, CP1 picks them up.
 
-## Step 4b-persistence: When does Postgres get updated? (The "before and after photo" vs "live video")
+## Step 4b-persistence: Durable state and the live stream
 
-A common question: "If tokens flow through Redis Streams, when and how does Postgres know what's happening?"
+Postgres records managed run input, metadata, attempt fences and final output; it is not written for every streamed token. Redis carries live events and coordination when it is the selected transport. The important order is:
 
-The answer: **Postgres is NOT updated on every token.** It records the bookends (start and finish), not the live stream. Think of it as:
+1. `createRunCtx` creates the pending run and claims its thread before enqueueing the assignment.
+2. `GetJob` dequeues the assignment. Before delivery, `BeginRunAttempt` records its generation in durable metadata. `internal/state/sqlcompletion/completion.go:BeginRunAttempt` does not change the status to `running`.
+3. Every `StreamEvents` message checks the authenticated runner kind and renews the exact assignment generation before publication. Generation 0 is not substituted with a later attempt's generation. This handler publishes to the event broker; it does not update the SQL run status on the first event.
+4. `ReportStatus` calls `CompleteRun`. It replays the event broker and selects final `values` only from the completing generation. The state store commits terminal status, output, completion fence and thread release in a transaction.
+5. `finalizeCommittedRun` persists idempotent terminal usage, releases holds, handles result caching, closes the broker and finishes lifecycle hooks. Only after accepted completion and finalization does `ReportStatus` acknowledge the queue lease. A database or finalization error leaves the assignment recoverable. A retry of an already committed result retries finalization without applying that result twice.
 
-- **Redis Stream** = the live video feed (every token, real-time, ephemeral, expires in 24h)
-- **Postgres** = the before-and-after photo (status changes, final output, permanent)
+Do not treat a stored `pending` status as proof that no runner is executing. The normal dispatch path records an attempt fence without writing `running`. Run Detail and Try Agent also consume SSE, so Admin can show live events alongside its durable record. Run Detail reloads the stored run when the stream ends; a terminal SSE frame alone is not a durable completion receipt.
 
-**The exact moments Postgres is written to during a run's lifetime:**
+**If Redis fails:** event publication, replay, lease renewal or SSE can fail. Before final completion is committed, `CompleteRun` depends on the replayed `values` event. Losing that event can lose the output needed for completion; do not promise that SQL will recover arbitrary broker data loss. Once completion is committed, the stored run and output can be read independently of a live SSE connection. Queue durability, broker retention and backups still matter.
 
-```
-t=0s:    createRunCtx
-         Postgres: INSERT INTO runs (run_id='run_abc', status='pending', ...)
-         Postgres: UPDATE threads SET status='busy' WHERE thread_id='thr_42'
-         → Admin UI can query: "show me all pending runs"
-
-t=0.1s:  Runner picks up job via GetJob
-         Postgres: nothing changes.
-         (Redis inflight tracking is updated, but Postgres still says "pending")
-
-t=0.3s:  First StreamEvents message arrives at CP2
-         Postgres: UPDATE runs SET status='running' WHERE run_id='run_abc'
-         → Admin UI can query: "show me all running runs"
-
-t=0.5s:  Tokens "Hello", "world", "!" flow through
-         Postgres: NOTHING CHANGES. Still just status='running'.
-         Redis Stream: tokens written via XADD, read via XREAD by CP1, sent to client via SSE.
-         These tokens are NOT in Postgres. They exist only in Redis (for 24h) and in the client's SSE stream.
-
-t=5s:    Run completes. ReportStatus("success") arrives at CP2.
-         StatusCallback fires — this is where the burst of Postgres writes happens:
-
-         1. broker.Replay("run_abc", 0)
-            → Read ALL events back from Redis Stream
-            → Find the last "values" event (the final output)
-
-         2. UPDATE threads SET values = '{"messages":[...final output...]}' WHERE thread_id='thr_42'
-            → Thread now carries the final conversation state
-
-         3. Save checkpoint (for multi-turn conversations)
-
-         4. UPDATE runs SET status='success', updated_at=NOW() WHERE run_id='run_abc'
-            → Run is now permanently marked as successful
-
-         5. UPDATE threads SET status='idle' WHERE thread_id='thr_42'
-            → Thread is free for the next run
-
-         6. Cache result (if caching enabled, for identical future queries)
-
-         → Admin UI can query: "show me completed runs" + see final output
-```
-
-**What the Admin UI can see at each stage:**
-
-| Stage | Admin UI shows | Source |
-|-------|---------------|--------|
-| Run created | run_abc: pending | Postgres |
-| Runner executing | run_abc: running | Postgres |
-| Tokens streaming | run_abc: running (no token detail) | Postgres (unchanged) |
-| Run complete | run_abc: success + final output | Postgres |
-
-The Admin UI queries Postgres. It can see WHICH runs exist and their status, but it cannot see individual tokens mid-stream. The live token stream goes exclusively through: Redis Stream → CP1 → SSE → client. The Admin UI is a dashboard, not a live token viewer.
-
-**Why not write every token to Postgres?**
-
-Performance. An agent might produce 500 tokens in 5 seconds. Writing each one to Postgres would be 100 writes/second per run. With 100 concurrent runs, that's 10,000 writes/second just for streaming data that nobody queries from the database. Redis Streams handle this volume trivially (it's in-memory). Postgres is reserved for durable state that needs to survive Redis restarts.
-
-**What happens if Redis dies mid-stream?**
-
-The live SSE stream breaks (XREAD fails, no more events). The client's connection errors out. BUT: the run row in Postgres still says `status='running'`. The runner is still executing (it talks to the CP via gRPC, not Redis). When the runner finishes and calls ReportStatus, Postgres is updated to `success`. The run's OUTPUT is saved. The client missed the live stream but can poll `GET /runs/run_abc` later and get the complete result.
-
-Redis is the fast path (live streaming). Postgres is the durable path (final state). Losing Redis degrades the UX (no live tokens) but doesn't lose data (final output still lands in Postgres).
-
-**Code:** `internal/api/server.go:StatusCallback` (the burst of Postgres writes on completion), `internal/bridge/server.go:StreamEvents` (first-event → status=running), `internal/transport/redis/redis.go:Publish/Subscribe` (Redis Stream operations).
+**Source:** `cmd/serve.go` wires `SetRunLifecycle(apiServer.BeginRunAttempt, apiServer.CompleteRun)`. Follow `internal/bridge/server.go:GetJob/StreamEvents/ReportStatus`, `internal/api/completion.go:CompleteRun/finalizeCommittedRun`, `internal/state/sqlcompletion/completion.go`, `internal/state/mongo/completion.go`, and `admin-ui/src/pages/RunDetail.tsx` / `TryAgent.tsx`. The older `StatusCallback` walkthrough is not the production lifecycle wiring.
 
 ## Step 4b-scalability: The goroutine-per-run model — where it works and where it hits a wall
 
@@ -953,13 +903,13 @@ This connection just sits there, permanently. The CP only sends a message on it 
 **The full cancel flow:**
 
 ```
-1. Client: POST /runs/run_abc/cancel → arrives at CP1
-2. CP1: publishes to Redis pub/sub channel "rk:cancel:run_abc"
-3. CP2 (which subscribed to that channel during GetJob): receives signal
-4. CP2: sends CancelSignal{run_id: "run_abc"} down the WatchCancels stream
-5. Runner: receives signal → sets cancel_event for run_abc
-6. execute_run: after its current chunk, checks cancel_event.is_set() → True → stops
-7. Runner: calls ReportStatus(status="interrupted")
+1. Client: POST /threads/{thread_id}/runs/run_abc/cancel → CP1
+2. CP1: CompleteRun commits interrupted and releases thread, then cancels queue lease
+3. CP1: publishes the CancelBroker signal for run_abc
+4. CP2: receives its GetJob-time subscription signal and sends WatchCancels notification
+5. Runner: receives signal and cooperatively cancels execution
+6. Runner: may report interrupted; the durable cancellation already exists
+7. Client: reads the durable run or /wait to confirm the result
 ```
 
 **How does the runner stop execution?** Cooperatively. The `cancel_event` is an `asyncio.Event` shared with `execute_run`. Inside the execution loop, after every streamed chunk (every token from the LLM), the code checks:
@@ -1054,14 +1004,14 @@ Redis pub/sub channels are NOT like Kafka topics (permanent, requiring creation/
 **Corrected lifecycle:**
 
 ```
-1. createRunCtx:   Postgres status='pending', enqueue to Redis ready queue
-2. GetJob:         BLMOVE claims from ready → inflight (Redis only)
-3. First event:    Postgres status='running' (proves delivery)
-4. Heartbeats:     Every 2s, Renew refreshes the lease score in Redis
-5a. Success:       ReportStatus → Postgres status='success', Ack removes from Redis inflight
-5b. Runner crash:  Heartbeats stop → lease score ages → reclaim fires:
-                   Remove from inflight, generation++ , re-enqueue to ready queue
-                   (Any runner picks it up fresh via GetJob with new generation)
+1. createRunCtx:   Postgres run='pending', thread='busy', enqueue assignment
+2. GetJob:         Claim queue lease; BeginRunAttempt persists generation before delivery
+3. StreamEvents:   Exact-generation lease check, then event broker publication; no SQL running write
+4. Heartbeats:     Every 2s by default, Renew refreshes the matching generation's lease
+5a. Success:       CompleteRun commits terminal result, finalization succeeds, then Ack
+5b. Runner crash:  Lease becomes stale; reclaim advances generation and requeues
+                   At the retry ceiling, retain the lease until durable completion and finalization
+                   A delivered eligible terminal event may recover completion without agent replay
 ```
 
 ## Step 6: Runner executes the agent
@@ -1072,7 +1022,7 @@ During execution, two things happen in parallel:
 
 **Heartbeat loop (per-run, NOT per-runner):** Every two seconds, the runner calls the Heartbeat RPC with the run_id and generation. Each job gets its OWN independent heartbeat task — if a runner handles 5 concurrent jobs, it has 5 heartbeat loops running in parallel, each reporting a different run_id.
 
-Why per-run? Because the system has NO concept of "runner identity." There is no runner_id stored anywhere. The CP only cares "is run_abc alive?" not "is runner_1 alive?" This gives finer-grained liveness: even if the runner process is alive but one specific job is stuck, the per-run heartbeat for THAT job would stop while others continue — allowing the reaper to reclaim only the stuck job.
+Each run has its own lease and heartbeat task. This detects a missing heartbeat for one assignment independently of others, but it does not detect every hung tool or model call. The separate heartbeat task can keep renewing while execution is stuck. A runner process crash stops its tasks; a blocked event loop can also prevent heartbeats. Configure run deadlines for execution that continues heartbeating without useful progress. Authenticated runner tokens are bound to a runner kind, not to a unique process identity.
 
 No mapping of "runner → runs" is stored anywhere. The sorted set contains ONLY `(run_id → last_heartbeat_timestamp)`. If runner_1 crashes with 3 jobs, those 3 timestamps stop getting refreshed. Runner_2 and runner_3's jobs continue heartbeating independently. After 6 seconds, only the dead runner's 3 stale entries are reclaimed.
 
@@ -1096,17 +1046,11 @@ The client sees tokens appearing in their SSE stream in real-time, just as the a
 
 ## Step 8: Run completes
 
-When the agent finishes, the runner calls `ReportStatus` with `status: "success"` (or "error" if something went wrong) and the generation it was assigned.
+The runner first delivers its events, including the agent's terminal event, then calls `ReportStatus` with terminal status and the assigned generation. A stream delivery failure must not rewrite an already successful agent outcome as an agent error. Recovery can use a delivered eligible terminal event when the final stream acknowledgement or status RPC was lost.
 
-The control plane receives this and does several things:
+`internal/bridge/server.go:ReportStatus` checks runner kind and exact generation, calls the durable completion callback, and acknowledges the queue lease only after completion and finalization succeed. `internal/api/completion.go:CompleteRun` selects same-generation final values and commits the result and thread release. `finalizeCommittedRun` retries idempotent usage, hold release, caching and lifecycle finalization after a lost response or transient error.
 
-1. **Ack the inflight record** in Redis — this removes the lease tracking because the job is done.
-2. **Update Postgres** — set the run status to "success" and the thread status back to "idle" (freeing it for new runs).
-3. **Publish a terminal event** to the Redis Stream so SSE clients know the run is finished.
-4. **Close the OTel span** for observability.
-5. **Fire completion hooks** (if configured — like a webhook notification that the run finished).
-
-The client receives the terminal SSE event, knows the run is complete, and can GET the final result.
+The runner's terminal event can reach SSE before this durable commit. Clients needing a confirmed outcome use the durable run record or `/wait`. The raw live SSE handler stops at the first terminal event it receives; its generation check and publication are separate operations, so live events remain advisory during a reclaim race. The managed AI SDK UI bridge waits for durable completion and rejects mixed generations before finishing its UI stream.
 
 ## Step 9: Everything is cleaned up
 
@@ -1203,7 +1147,7 @@ A run is a single execution of an agent on a thread. It has: an ID, a thread it 
 ## Run statuses
 
 - **pending** — The run has been created in Postgres and the job is in the Redis queue, but no runner has picked it up yet.
-- **running** — A runner has taken the job and is actively executing it. (When exactly this transition fires depends on the implementation — often on first meaningful activity.)
+- **running**: A status supported by the model. The current normal `GetJob` and `StreamEvents` lifecycle does not write this status automatically. A pending run may already be executing; inspect attempt and stream information as well.
 - **success** — The agent completed normally. This is terminal.
 - **error** — Something went wrong. This is terminal.
 - **interrupted** — The run was cancelled, timed out, or stopped by the framework for a human-in-the-loop pause. This is terminal for this run (though a new run can resume the conversation).
@@ -1213,54 +1157,34 @@ Terminal means: no further status changes. Once a run is success/error/interrupt
 
 ## Who writes these transitions
 
-- **createRunCtx** writes: thread → busy, run → pending.
-- **Runner executing** may write: run → running (when the status callback path fires).
-- **Runner completing** writes: run → success or error, thread → idle. (Via ReportStatus → status callback in the control plane.)
-- **Cancel** writes: run → interrupted, thread → idle.
-- **Timeout** writes: run → timeout, thread → idle.
-- **Rollback** (if enqueue fails): run → error, thread → idle.
-- **Reclaim** does NOT write a new status — it reassigns the work. The winning runner's eventual ReportStatus writes the terminal status.
+- **`createRunCtx`** creates the pending run and claims the thread.
+- **`BeginRunAttempt`** records an attempt generation before dispatch, without setting `running`.
+- **`ReportStatus` through `CompleteRun`** commits terminal status, same-generation output and thread release before queue acknowledgement.
+- **Cancel** calls `CompleteRun` for the current attempt before cancelling the queue lease and publishing the runner signal. It cannot overwrite a terminal winner.
+- **Timeout and dispatch failure** use their control-plane termination paths; follow `cmd/run_timeout.go` and `internal/api/runs.go`.
+- **Reclaim** reassigns eligible work. At its retry ceiling, `CompleteReclaimedRun` first recovers an eligible delivered terminal event or commits an error, then finalizes before the retained lease is acknowledged.
 
 
 
 ## The key invariant
 
-At most one non-terminal run should own a thread claim at any time. If you ever see a thread stuck in "busy" with no active run, that is a bug (likely a crash during the status callback that should have released it). The fix involves checking Postgres for orphaned states.
+At most one non-terminal run should own a thread claim at any time. Terminal completion and thread release now share a state-store transaction. Investigate a stuck claim against the durable run and queue lease before changing database state manually; a pending status alone does not establish that the run is inactive.
 
 ---
 
 
 
-# 7. Cancel — How to Stop a Running Agent
+# 7. Cancel: How to Stop a Running Agent
 
+A cancel request can arrive at a different replica from the runner's gRPC connection. `internal/api/runs.go:cancelRunSingle` separates the durable outcome from the cooperative stop signal:
 
+1. Authenticate and locate the run. `CompleteRun` commits `interrupted` for the current attempt and releases its thread, while refusing to overwrite a different terminal winner.
+2. Cancel the recoverable queue lease with `queue.Cancel`, then publish the cross-replica signal with `PublishCancel`. If durable finalization failed after acceptance, the handler still attempts the queue and signal operations before returning the error.
+3. The dispatching replica receives the CancelBroker signal through the subscription it established during `GetJob`. `WatchCancels` forwards it to the runner.
+4. The runner cooperatively stops its execution. A late `ReportStatus` is checked against the durable committed outcome; it is not required to make the cancellation durable and cannot replace a terminal winner.
+5. Clients can read the stored terminal run even if a live signal or event was missed. The cancel path also schedules a broker close after its grace period.
 
-## Why cancel is hard
-
-The client that wants to cancel sends an HTTP request to one control plane replica. The runner that needs to stop might be connected to a completely different replica via gRPC. The cancel signal must cross process boundaries without assuming the same replica handles both.
-
-## How it works, step by step
-
-1. **Client sends cancel.** `POST /threads/{id}/runs/{run_id}/cancel` hits some CP replica (call it CP-A). CP-A validates auth.
-2. **CP-A publishes to Redis.** CP-A calls `PublishCancel(run_id)` on the CancelBroker, which writes a message to a Redis Pub/Sub channel for that run_id.
-3. **CP-B receives the signal.** When the runner's GetJob was served (by CP-B), CP-B subscribed to that run's cancel channel. Now CP-B's subscription fires and it receives the cancel signal.
-4. **CP-B notifies the runner.** The runner has a WatchCancels gRPC stream open to CP-B. CP-B pushes a cancel signal down that stream.
-5. **Runner cooperatively stops.** The runner receives the cancel on its WatchCancels stream, cancels the local framework execution (e.g., cancels the asyncio task running the LangGraph graph), and calls ReportStatus with `status: "interrupted"`.
-6. **Normal completion path.** The control plane Acks the inflight record, updates Postgres (run → interrupted, thread → idle), and publishes the terminal event to SSE.
-
-
-
-## Critical detail: no replay
-
-The CancelBroker is fire-and-forget with NO replay. If you publish a cancel signal and nobody is subscribed at that exact moment, the signal is lost forever. This is why the control plane subscribes to the cancel channel for a run BEFORE returning the assignment to the runner in GetJob. The subscription must exist before the runner starts, so that a cancel arriving at any moment will be caught.
-
-## Cancel is cooperative
-
-The runner is not forcibly killed. It receives a signal and must decide to stop. Well-behaved runners cancel their framework execution immediately. A crashed runner that never reads the cancel will eventually be caught by heartbeat timeout and reclaim. Cancel is the fast path; reclaim is the safety net.
-
----
-
-
+The CancelBroker has no replay. Subscribe-before-delivery reduces the signal race, but a lost notification can still leave external execution running. Cancel is not process termination and cannot undo tool side effects. The durable cancellation remains authoritative even when a runner ignores or never receives the signal. Reclaim handles stale leases on assignments that remain recoverable; it is not a substitute for undoing external work.
 
 # 8. Crash Recovery — What Happens When Things Die
 
@@ -1348,36 +1272,15 @@ This scenario is the oral exam for crash recovery:
 
 Runner A never corrupted anything. The system recovered automatically.
 
-## The poison pill problem — what if reclaim loops forever?
+## Poison assignments and the retry ceiling
 
-A "poison pill" is a job that always kills its runner. Maybe the input triggers an OOM (out of memory), or the agent's code has a bug that segfaults on this specific input. No matter which runner picks it up, it dies.
+A job that repeatedly crashes its runner does not need to loop indefinitely. `cmd/reclaim.go:initReclaimMaxRetries` defaults to `3`; `reclaim.max_retries` in configuration and `RUNKITE_RECLAIM_MAX_RETRIES` can override it. Explicit `0` means unlimited. Queue reclaim rejects a next generation above the configured ceiling.
 
-What happens without protection:
+The exhausted assignment stays in flight. The poison record names the rejected next generation, while its retained lease still belongs to the previous generation. `internal/api/completion.go:CompleteReclaimedRun` tries to recover a delivered terminal event for that retained attempt first. Otherwise it commits an error through the normal fenced completion path. `cmd/reclaim.go:finishPoisonPill` acknowledges `pill.Generation - 1` only after accepted completion and finalization. A database or finalization failure leaves the retained lease for another tick.
 
-```
-t=0s:    Runner-A picks up job → OOM → dies
-t=6s:    Reclaim fires. Generation 1→2. Job re-enqueued.
-t=7s:    Runner-B picks up job → OOM → dies
-t=13s:   Reclaim fires. Generation 2→3. Job re-enqueued.
-...every ~7 seconds, a healthy runner dies
-```
-
-The generation counter increments (1→2→3→4→...) but has no ceiling today. The loop continues until something external stops it.
-
-**Existing mitigations (partial):**
-
-- **Run timeout** (`cmd/run_timeout.go`): If configured, kills the run after a wall-clock deadline (e.g., 5 minutes). But it takes that full duration before it kicks in.
-- **Kubernetes CrashLoopBackOff:** Runner pods restart with increasing backoff (10s, 20s, 40s, ..., 5 min). This SLOWS the loop but doesn't stop it. Other runners still pick up the poison job.
-- **Kill switch (manual):** An operator notices the alerts and kills the agent. Effective but requires human intervention.
-- **Queue depth alerting:** Prometheus metrics show the queue growing. Detection only — doesn't fix the problem.
-
-**What's missing (documented gap):** A `max_retries` generation ceiling. The reclaim code already tracks generation per run — it just needs a cap: "if generation exceeds N, mark the run as error instead of re-enqueuing." This is ~10 lines of code in the reclaim Lua script. The detailed requirement is at `plans/poison_pill_max_retries.md`.
-
-**The bottom line:** Today, run timeout + operator alerting + kill switch cover this. A generation ceiling would make it fully automatic. Until then, always configure `run_timeout` for production agents as a safety net.
+Run deadlines, metrics and operator alerts are still useful for slow or stuck execution, especially when an independent heartbeat continues. The retry ceiling limits reassignments; it is not an exactly-once guarantee for tools or a detector for every hung task.
 
 ---
-
-
 
 # 9. Agent-to-Agent Communication
 
@@ -1419,9 +1322,9 @@ To prevent fork bombs (Agent A spawning 10,000 children), there is a configurabl
 
 
 
-# 10. Human In The Loop — Two Completely Different Kinds
+# 10. Human In The Loop: Three Continuation Paths
 
-This chapter is critical. There are two types of HITL (Human In The Loop) in Runkite and they solve completely different problems with completely different mechanisms. Confusing them is the #1 mistake people make.
+The original study described framework interrupts and connector approvals. Current code also supports app-owned tool decisions. These three paths share some operator vocabulary but use different continuation mechanisms. This chapter has been refreshed against that behavior; see [Trust and governance](../trust-governance.md) and [Client SDK](../client-sdk.md) for the current contracts.
 
 ## Kind 1: Framework Interrupt/Resume
 
@@ -1429,11 +1332,11 @@ This chapter is critical. There are two types of HITL (Human In The Loop) in Run
 
 **How it works:**
 
-1. The LangGraph graph calls `interrupt("Which flight?")` (or equivalent in other frameworks).
+1. A LangGraph graph calls `interrupt("Which flight?")`. Other adapters only support native resume when they explicitly implement it.
 2. The runner reports this as an interrupted state, possibly with the question/options as part of the event stream.
 3. The client (your application) shows the question to the end user.
 4. The end user responds ("Flight B").
-5. The client creates a NEW run on the same thread with a `resume_command` containing the user's response.
+5. The client creates a new run on the same thread with `command.resume` containing the user's response (`resume_command` is also accepted).
 6. This new run goes through the normal createRunCtx + enqueue + GetJob cycle.
 7. The runner loads the checkpoint (the saved graph state from where it paused), applies the resume command, and continues execution.
 
@@ -1442,7 +1345,7 @@ This chapter is critical. There are two types of HITL (Human In The Loop) in Run
 - The AGENT decides to pause (it is in the code)
 - The END USER resumes (via the client application)
 - Uses Agent Protocol (HTTP/WS) for the resume
-- Requires durable checkpoints in Postgres for reliable resume across crashes
+- Reliable resume across crashes requires durable checkpoints. LangGraph can use direct Postgres or the control plane's HTTP checkpoint proxy; an in-memory checkpointer is ephemeral.
 - This is about the agent's conversational flow, not security
 
 
@@ -1458,11 +1361,11 @@ This chapter is critical. There are two types of HITL (Human In The Loop) in Run
 3. The control plane's policy engine evaluates: "Is tenant X's agent Y allowed to call `transfer_funds` on connector `bank`?"
 4. The policy (either from a webhook to your OPA/Cedar service, or from a mandatory HITL rule) returns `effect: "pending"` — meaning "this needs human approval."
 5. The control plane does NOT pause the LangGraph graph. It simply returns an error to the MCP call: `{"error": {"code": -32000, "data": {"reason_code": "policy_pending", "action_id": "act_abc123"}}}`.
-6. The control plane writes a row to the `pending_actions` table in Postgres.
+6. For pending, the control plane writes a row to `pending_actions` on a SQL backend (Postgres, MySQL or SQLite). A plain deny does not create a pending row; inspect its policy audit instead.
 7. The control plane optionally publishes a `tool_auth` event on the run's SSE stream so dashboards/UIs can show "waiting for approval."
 8. An ADMINISTRATOR opens the Admin UI (`/admin/pending`), sees the pending action, reviews it, and clicks "Approve."
-9. On approve: the control plane re-checks policy (in case a hard deny rule was added in the meantime), and if still OK, stores a one-shot capability for this specific (run_id, generation, connector, tool, args_digest) combination.
-10. The agent code must RETRY the same tools/call. On this retry, the control plane sees the one-shot capability, consumes it, and forwards the call to the actual upstream service. The tool executes once.
+9. On approve, the control plane re-checks policy and refuses a hard deny. Otherwise it records approval bound to `(tenant_id, agent_id, run_id, generation, connector, tool, args_digest)`. The digest covers the submitted arguments; the Args display map is capped and redacted for operator review, and is used for approval-time policy re-evaluation.
+10. The caller must retry the same `tools/call` while the original run and generation are still in flight. A matching retry consumes the one-shot capability and forwards the call. Admin does not invoke the tool or resume the framework. If that run has ended, a new run cannot consume its approval.
 11. If the agent calls the same tool a third time, there is no capability remaining, and it goes back to pending/deny.
 
 **Key characteristics:**
@@ -1470,19 +1373,24 @@ This chapter is critical. There are two types of HITL (Human In The Loop) in Run
 - The PLATFORM decides to block (based on policy rules)
 - An ADMINISTRATOR approves (via Admin UI, not the end user)
 - The agent framework does NOT pause or enter an interrupt state — it simply gets an error on the tool call
-- If the agent framework swallows the error without retrying, nothing happens — the agent appears "stuck" but it is an agent bug, not a platform bug
+- The caller owns waiting and retrying under its active binding. An agent may instead report the hold and end, as `pending_agent` does; approving that row does not continue its completed run.
 - Requires SQL backends (Postgres/MySQL/SQLite) for the pending_actions table — MongoDB cannot store these and fails closed to deny
 
 
 
+## Kind 3: App-Owned Tool Decisions
+
+An app that keeps its SDK loop can call `POST /governance/decide` before one local tool execution. Allow permits the app to execute; deny prevents it. Pending creates an SQL approval row and returns an action ID. The app saves that ID and the exact proposed arguments, then polls `GET /governance/actions/{action_id}` on a later authenticated request. It continues its saved operation only after `approved`, with application-owned execution idempotency. Admin approval and polling do not execute the tool or consume that approval.
+
+Here `run_id` is an opaque application-operation correlation value, not a managed-run reference or an idempotency guarantee. `agent_id` need not be registered. This path creates no Runkite thread or run and has no active runner binding to resume. It does not inherit run kill switches, break-glass or spend caps. Embedded rows still pending after 24 hours expire; connector pending rows have no such TTL.
+
 ## Why this distinction matters
 
-If a support engineer sees "agent is stuck" and tries to fix it by approving something in the Admin pending UI: that only helps if it is Kind 2 (connector pending). If the agent is actually stuck because of Kind 1 (framework interrupt waiting for user input), admin approval does nothing — the user needs to send a resume command via the application.
+- For a framework interrupt, use that adapter's supported resume API and saved checkpoint. An Approve button in a client may submit a resume response; it does not use the Admin pending endpoint.
+- For a connector pending row, approve in Admin and have the caller retry under the same active run, generation and argument digest. Creating a new run cannot continue the old connector approval.
+- For an app-owned pending row, approve in Admin and have the app continue its exact stored operation after polling. No managed run is created or resumed.
 
-Conversely, if someone tries to resume a governance-blocked agent by sending a resume command through the SDK: that creates a new run entirely, which will hit the same policy block again. The fix is admin approval, not user resume.
-
-**Never use the word "resume" for Kind 2. Say "approve" and "retry."**
-**Never use the word "approve" for Kind 1. Say "resume."**
+The pending record identifies an operator decision. It does not establish that the caller is paused or that the approved tool actually executed.
 
 ---
 
@@ -1587,9 +1495,9 @@ This is a deliberate product design choice. We are honest about it in `docs/limi
 
 ## What a connector is
 
-A connector is a named external service that agents can use through the control plane. Examples: `github`, `salesforce`, `slack`, `stripe`. Each connector has configuration (how to reach the upstream service) and credentials (API keys, OAuth tokens) stored in the control plane.
+A connector is a named external service that agents can use through the control plane. Connector configuration describes its upstream and auth flow. `internal/connector/registry.go:GetSession` resolves `secret_ref` at session time through `internal/connector/secretref.go:ResolveSecretRef` (`env:`, `file:`, `vault:`). Configured client credentials and token exchange are not a database of user OAuth tokens.
 
-The critical design principle: **runners never hold real credentials.** Instead of baking API keys into every runner container and hoping policy lives in prompts, the control plane mints short-lived session tokens and proxies requests. The runner gets a temporary pass, not the master key.
+For MCP connectors, the control plane returns a proxy session and injects the upstream credential on the outbound call. The runner does not receive that connector credential. Scope this guarantee to the proxy path: a connector without MCP can return raw credentials, and runners can still hold model-provider or direct-checkpoint credentials. Native tools that bypass the proxy do not acquire its enforcement automatically.
 
 ## Two HTTP paths from runner to control plane
 
@@ -1895,7 +1803,7 @@ This is the list of things that do NOT work perfectly, that have known race cond
 
 **MCP sticky routing:** Agent Protocol MCP sessions (`/mcp`) store state in process memory. Multi-replica deployments MUST configure sticky load balancing for this path or sessions break randomly.
 
-**Non-terminal event non-fencing:** Progress events (tokens, intermediate updates) from a superseded runner are NOT filtered. Only terminal (completion) events are generation-fenced. This means you might see a few stray progress events from a dead runner before it receives `superseded: true` on its next heartbeat. The final status is always correct.
+**Event check and publish race:** `StreamEvents` checks the exact in-flight generation for every event, including tokens and terminal events. Zero cannot borrow a later attempt. The queue check and broker publication are still separate operations, so a reclaim between them can leave a stale event in the live stream. Final output selection requires the completing generation, and durable completion has its own state-store fence. Raw SSE remains advisory and stops at its first terminal event; use the durable record or `/wait` to confirm completion.
 
 **A2A breadth race:** Concurrent fan-out under the same parent can exceed max_breadth due to the check-then-create pattern without locking. Documented, tolerated as a safety-net rather than an iron guarantee.
 
@@ -1933,7 +1841,7 @@ The control plane and runners all use the standard OpenTelemetry libraries:
 
 **How correlation works:** When createRunCtx builds the assignment, it includes a W3C `traceparent` header in the assignment JSON. The runner reads this and creates its child spans as children of the control plane's span. This gives you a complete distributed trace: client → CP HTTP span → queue wait → runner execution span → LLM call span → back through CP to client.
 
-**What is NOT captured:** Prompt and completion content. Runkite does not capture what the LLM said. This is deliberate: "govern the plane, not the prompt." Use Langfuse, LangSmith, or your observability backend for prompt-level tracing.
+**Trace payload boundary:** Control-plane OTLP instrumentation emits operational metadata, not a general prompt/completion transcript. This does not mean prompts or outputs are absent from Runkite storage. Managed run input, final output, thread values, broker events and framework checkpoints can contain conversation content. Apply retention and access controls to those stores. Runner or app instrumentation may also export content according to its own configuration. `internal/tracing/tracing.go:Init` already exports traces to an OTLP backend using standard endpoint, protocol and header variables; logs remain on stdout, with `LOG_FORMAT=json` configured separately.
 
 ## Prometheus
 
@@ -1958,7 +1866,7 @@ When you run `runkite serve`, here is the sequence:
 5. **Initialize shared Redis client** (if `REDIS_URL` set). Used by: transport, admin sessions, rate limits, reclaim leader, queue depth polling.
 6. **Initialize authentication.** Load auth config (JWT, API keys, webhook), runner tokens from `RUNNER_TOKEN_`* env vars, admin keys, session config.
 7. **Initialize policy engine.** Load grants from config, connect webhook client if configured, load SQL overlays from database, set up cache.
-8. **Initialize connectors.** Load connector configs, set up session stores, circuit breakers, OAuth token managers.
+8. **Initialize connectors.** Load connector configs, session stores, circuit breakers and configured auth flows. Resolve primary `secret_ref` credentials when sessions are minted; do not infer a persistent user OAuth token vault from these auth helpers.
 9. **Build the API server.** Wire all the above into `api.NewServer(...)`. This creates the HTTP mux with all routes.
 10. **Start background goroutines:**
   - Reclaim loop (every 2s, checks for stale inflight jobs)
@@ -2021,7 +1929,7 @@ An external review of the codebase right before the v0.3.0 tag surfaced several 
 - **Direct-mode trust:** Runner holds database credentials. Multi-tenant risk.
 - `/metrics` **unauthenticated by default:** Network-restrict or use token.
 - **MongoDB governance gap:** 501 on admin governance routes.
-- **Non-terminal event non-fencing:** Stray progress events from stale runners.
+- **Event check and publish race:** All events check generation before publication, but those operations are not atomic. Confirm completion against the durable run or `/wait`.
 - `/mcp` **requires sticky routing:** Process-local sessions.
 - **Kafka without Redis:** Not safe for multi-replica reclaim.
 - **A2A breadth race:** Can overshoot under concurrency.
@@ -3506,7 +3414,7 @@ No single layer alone is sufficient. The strength is in their combination: even 
 A self-hosted Agent Protocol control plane that coordinates AI agent execution across any framework, providing dispatch, streaming, multi-tenancy, governance, and credential management in one Go binary.
 
 **"How does a run execute?"**
-Client HTTP → CP writes Postgres (run pending, thread busy) → CP pushes Redis (job queue) → Runner gRPC polls Redis (GetJob) → Runner executes agent → Runner streams events (gRPC → CP → Redis → SSE) → Runner reports status → CP Acks Redis + updates Postgres → Thread idle.
+Client HTTP → durable pending run and thread claim → queue → `GetJob` and durable attempt fence → runner executes → generation-checked events → SSE → `ReportStatus` → durable terminal result and thread release → finalization → queue Ack.
 
 **"How do you handle crashes?"**
 Runner heartbeats every 2s. Lease in Redis. Stale after 6s → reclaim bumps generation → requeue. New runner wins. Old runner gets "superseded" on next heartbeat and stops. Generation fencing prevents stale writes.
@@ -3991,9 +3899,9 @@ This means: if something works in `dev` but not in `serve`, the issue is likely 
 
 # 64. Final Summary — The Mental Model in One Page
 
-**Architecture:** Client (HTTP) → Control Plane (Go binary) → Runner (Python/TS, gRPC). The CP never runs agent code. The runner never serves end users. The CP is the middleman for everything.
+**Managed architecture:** Client (HTTP) → Control Plane (Go binary) → Runner (Python/TS, gRPC). The control plane dispatches managed runs and the runner executes agent code. Apps that retain their own model loop instead submit individual decisions to `/governance/decide`; those calls create no managed Thread or Run.
 
-**Data flow for a run:** HTTP create → Postgres (run pending, thread busy) → Redis (job queued) → Runner GetJob (Redis dequeue) → Runner executes (LLM calls) → StreamEvents (Redis publish) → SSE (Redis subscribe, any replica) → ReportStatus (Redis Ack, Postgres success/idle).
+**Data flow for a managed run:** HTTP create → durable pending run and thread claim → queue → `GetJob` and durable attempt fence → runner execution → generation-checked event publication → live SSE → `ReportStatus` → durable terminal result and finalization → queue Ack.
 
 **Crash recovery:** Heartbeat every 2s → Redis lease. Stale >6s → reclaim bumps generation → requeue. New runner wins. Old runner gets superseded on next heartbeat, stops, cannot overwrite.
 
@@ -4005,7 +3913,7 @@ This means: if something works in `dev` but not in `serve`, the issue is likely 
 
 **Tenancy:** Flat string tenant_id. Scoped queries. Run-binding prevents forgery on proxy paths. RUNNER_TENANTS allowlists limit blast radius.
 
-**Honest gaps:** Mongo no governance durability. Kafka needs Redis. /mcp needs sticky. Non-terminal events unfenced. A2A breadth race. Direct-mode trust. Memory rate limits wrong on multi-pod.
+**Honest gaps:** Mongo has no governance durability. Kafka needs Redis for the supported distributed coordination shapes. `/mcp` needs sticky routing. Event generation checks and publication are separate steps. A2A breadth can race. Direct checkpoint mode trusts runner database credentials. Memory rate limits multiply across replicas. See the current limitations guide for the full support boundary.
 
 When you can explain all of the above from memory without looking at notes, you understand the product completely.
 
@@ -4054,7 +3962,7 @@ Runner-B starts executing: loads the graph, begins from scratch (or from checkpo
 
 ## Runner-B completes successfully
 
-The agent finishes its work. Runner-B calls ReportStatus with `run_id=run_77, status=success, generation=2`. Some CP receives this, calls `queue.Ack(run_77, generation=2)`. Generation matches the current inflight — Ack succeeds. The inflight entry is removed. Postgres updates: run_77 status = success, thread status = idle. Terminal event published to Redis Stream. Client sees success.
+Runner-B delivers its terminal event and calls `ReportStatus` with `run_id=run_77, status=success, generation=2`. The receiving replica checks the exact in-flight generation, commits the fenced terminal result and thread release, finishes idempotent finalization, then calls `queue.Ack(run_77, generation=2)`. A failed durable write or finalization keeps the assignment recoverable. The live terminal event can precede durable completion.
 
 ## What if Runner-A somehow comes back?
 
@@ -4185,34 +4093,21 @@ If the agent did not wait and the run already completed (or errored), the approv
 
 
 
-# 67. Extended Narrative — A Full Cancel Story Across Replicas
+# 67. Extended Narrative: A Full Cancel Story Across Replicas
 
+Run `run_55` is executing on Runner-A through CP-2. The client reads SSE from CP-1, while an admin sends cancel to CP-3.
 
+1. CP-3 authenticates the request and calls `cancelRunSingle`. `CompleteRun` commits `interrupted` and thread release for the current attempt, unless another terminal result already won.
+2. CP-3 cancels the queue lease, then publishes the CancelBroker signal. The database outcome does not depend on Runner-A later reporting interruption.
+3. CP-2's subscription, established during `GetJob`, receives the signal. Its `WatchCancels` stream tells Runner-A to stop.
+4. Runner-A cancels its execution cooperatively. It may report `interrupted`, but a late report only reconciles with the committed terminal outcome. It cannot replace another terminal winner.
+5. CP-1's client can fetch the durable interrupted run or use `/wait`, even if the live event or signal was missed. SSE notification and broker closure are separate from the terminal state transaction.
 
-## Setup
+CP-3 commits and signals; CP-2 routes the stop notification; CP-1 serves the client's stream and durable reads. Shared Postgres carries the terminal outcome, while the CancelBroker carries a non-replayed notification. This does not kill a remote process or undo an external side effect.
 
-Run `run_55` is executing on Runner-A. Runner-A's gRPC connection goes to CP-2. The client's SSE connection is on CP-1. An admin decides to cancel the run via the Admin UI, which is on CP-3.
-
-## The cancel flow
-
-1. **Admin clicks cancel on CP-3.** CP-3's admin API handler validates admin auth and calls `PublishCancel(run_55)` on the CancelBroker.
-2. **Redis Pub/Sub receives the signal.** CP-3 publishes to Redis channel `cancel:run_55`.
-3. **CP-2 receives the signal.** When Runner-A's GetJob was served on CP-2, CP-2 created a subscription to `cancel:run_55`. That subscription goroutine on CP-2 fires now. It calls `notifyWatchers("python-langgraph", "run_55")` — this writes to an in-memory channel that Runner-A's WatchCancels stream is reading from.
-4. **Runner-A receives cancel.** Runner-A's WatchCancels goroutine reads the cancel signal from the gRPC stream. It sets a cancellation flag that the heartbeat loop and execution loop check.
-5. **Runner-A cooperatively stops.** The agent framework's execution is cancelled (asyncio task cancelled, or similar). Partial results may be discarded. The heartbeat loop stops.
-6. **Runner-A reports interrupted.** Runner-A calls ReportStatus with `run_55, status=interrupted, generation=1`. This hits some CP (maybe CP-1 via the LB). CP-1 Acks the inflight record in Redis (generation 1 is current — Ack succeeds). CP-1 updates Postgres: run=interrupted, thread=idle. Publishes terminal event to Redis Stream.
-7. **Client sees interruption.** CP-1's SSE connection (which the client has open) receives the terminal event from Redis. Sends the final SSE frame. Client knows the run was cancelled.
-
-Notice: the cancel signal traveled through THREE different replicas and arrived correctly. CP-3 published (admin), CP-2 routed (subscriber from GetJob), and CP-1 finalized (status update from runner). This works because:
-
-- Redis Pub/Sub is the cross-replica signal bus
-- The subscription was created at GetJob time on the dispatching CP
-- WatchCancels is co-located with the subscription (same gRPC connection)
-- Final status update uses shared Postgres (any CP can write)
+**Source:** `internal/api/runs.go:cancelRunSingle`, `internal/api/completion.go:CompleteRun`, `internal/bridge/server.go:WatchCancels/ReportStatus`.
 
 ---
-
-
 
 # 68. Extended Narrative — What Exactly the Boot Sequence Looks Like in Logs
 
@@ -4491,7 +4386,7 @@ After reading this complete document, you should be able to:
 3. **Explain crash recovery** with the specific numbers: 2s heartbeat, 6s stale, generation fencing, superseded response, exactly one winner writes the final status.
 4. **Distinguish the two HITLs** without mixing vocabulary: framework interrupt (agent decides, user resumes) vs connector pending (policy decides, admin approves, agent retries).
 5. **Describe governance** with a concrete example: this tenant, this agent, this connector, this tool — allow/deny/pending, from where, with what audit trail.
-6. **Name the honest gaps** without hedging: Mongo governance, Kafka HA, /mcp sticky, non-terminal non-fencing, A2A breadth race, direct-mode trust.
+6. **Name the current boundaries** accurately: Mongo governance, Kafka coordination, `/mcp` sticky routing, the separate event fence and publish steps, A2A breadth races and direct-mode trust. Confirm them in the current limitations guide.
 7. **Find any file** in the codebase given a product concept: "where is run creation?" → internal/api/runs.go. "Where is reclaim?" → cmd/reclaim.go. "Where is policy?" → internal/policy/.
 8. **Read production logs** and understand what each key message means.
 9. **Draw the HA diagram** on a whiteboard: three CPs, one Postgres, one Redis, one LB, runners. Label what flows over each arrow.

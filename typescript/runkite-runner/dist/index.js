@@ -1,5 +1,6 @@
 /** Public exports for `import { ... } from "runkite-runner"` usage (embedding the runner as a library rather than running the CLI directly). */
 export { runWorker } from "./worker.js";
+export { LangGraphExecutionAdapter } from "./langGraphExecution.js";
 export { LangGraphAdapter, loadCustomAppConfig } from "./adapter.js";
 export { CheckpointerManager, resolveCheckpointHttpUrl } from "./checkpoint.js";
 export { ProxyCheckpointSaver } from "./proxyCheckpoint.js";

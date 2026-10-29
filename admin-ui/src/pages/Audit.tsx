@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router";
 import { Shield } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
@@ -103,18 +102,14 @@ const columns: ColumnDef<AdminAuditEvent, unknown>[] = [
   },
   {
     accessorKey: "run_id",
-    header: "Run",
+    header: "Run / operation",
     cell: ({ row }) =>
       row.original.run_id ? (
-        <Link
-          to={`/admin/runs/${row.original.run_id}`}
-          onClick={(e) => e.stopPropagation()}
-          className="font-mono text-xs font-medium text-primary hover:underline"
-        >
+        <span className="font-mono text-xs" title="Correlation ID. An in-process tool decision does not create a managed run.">
           {row.original.run_id}
-        </Link>
+        </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">No ID</span>
       ),
   },
 ];
@@ -149,7 +144,7 @@ export function Audit() {
     <div>
       <PageHeader
         title="Audit"
-        subtitle="Policy decisions across every tenant (SQL backends). Hover Args on a tools/call row for the capped arguments. Click any column to sort the current page."
+        subtitle="Policy decisions across every tenant (SQL backends), including in-process tool decisions. Hover Args for capped arguments; a decision does not prove execution."
         actions={<DocsLink href={supportPage("admin-guide.html#14-audit")}>Docs: audit →</DocsLink>}
       />
 

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDK integrations · Runkite Docs</title>
+    <meta name="description" content="Choose app-owned tool decisions or managed Runkite runs, with release availability and AI SDK migration boundaries." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./support.css?v=20260920" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                                <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a class="active" href="sdk-integration.html">SDK integrations</a>
+          <a href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering notes</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Build · execution ownership</p>
+        <h1>SDK integrations</h1>
+        <p class="lede">
+          Keep your SDK's model loop in the app and ask for tool decisions, or move that
+          loop into a Runkite runner and create managed Threads/Runs. Choose the boundary
+          your caller needs. The frontend can remain in Next, Nuxt or another app.
+        </p>
+        <p class="note">
+          <strong>Availability checked 2026-10-29.</strong> The latest published tag is
+          <a href="https://github.com/getrunkite/runkite/releases/tag/v0.5.8">v0.5.8</a>.
+          The decision API shipped in v0.5.3. The managed AI SDK runner ships in
+          <code>runkite-runner</code> from v0.5.8 (optional peer <code>ai@7.0.155</code>).
+          Repository helper guards and Microsoft function middleware remain unpublished
+          as <code>runkite-governance</code> packages. See
+          <a href="https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md">CHANGELOG</a>
+          before selecting a package version.
+        </p>
+
+        <h2>Choose the execution boundary</h2>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead><tr><th>Caller</th><th>App keeps its loop</th><th>Runkite dispatches the loop</th></tr></thead>
+            <tbody>
+              <tr><td>Entry point</td><td><code>POST /governance/decide</code></td><td>Agent Protocol thread/run routes</td></tr>
+              <tr><td>Who executes a tool?</td><td>Your app, after allow or later approval</td><td>The SDK inside a runner; actual connector gates govern connector calls</td></tr>
+              <tr><td>Admin Threads/Runs</td><td>No records for this caller</td><td>Real managed records</td></tr>
+              <tr><td>Run controls</td><td>No run kill switch, break-glass or spend cap</td><td>Existing admission, queueing, cancellation and reported-usage path</td></tr>
+              <tr><td>Pending continuation</td><td>App-owned saved operation</td><td>Framework-dependent; initial AI SDK runner has no native approval/resume</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="app-owned">App-owned tool governance</h2>
+        <p>
+          A normal AI SDK <code>tool.execute</code> or a Microsoft local function can
+          ask Runkite once before execution. Use a server-side key with the explicit
+          <code>governance:decide</code> permission; read/write and agent-run permissions
+          do not imply it. The key selects the tenant. Policy identities and the target
+          arguments must come from trusted server code.
+        </p>
+        <ol class="steps">
+          <li>Submit agent, connector, tool and exact arguments to <code>/governance/decide</code>.</li>
+          <li>Execute only after <code>allow</code>. An allow is permission, not evidence that the tool executed.</li>
+          <li>For <code>pending</code>, persist the action ID and original operation in the app, then return promptly.</li>
+          <li>On a later authenticated request, poll <code>GET /governance/actions/{action_id}</code> and execute the saved operation only after <code>approved</code>.</li>
+          <li>Reject fresh replacement arguments and use an application transaction, downstream idempotency key or outbox to prevent duplicate effects.</li>
+        </ol>
+        <p>
+          <code>run_id</code> on this door is a stable application correlation value, not
+          a managed Runkite run or an execution-idempotency guarantee. Polling does not
+          consume approval. Rejected or consumed actions must not execute. Embedded
+          pending rows expire after 24 hours on SQL; expired rows cannot be approved.
+          Admin approval updates the pending row and does not execute or resume your app.
+        </p>
+        <p>
+          The repository's TypeScript <code>createGovernedExecute</code> decides once and
+          never polls or retries. It supports ordinary single-result JSON tools inside
+          <code>generateText</code> and <code>streamText</code>; async-iterable tool outputs
+          are outside that helper. The optional Python Microsoft
+          <code>GovernanceFunctionMiddleware</code> uses the same door for local function
+          tools, tested with <code>agent-framework-core==1.23.0</code>. It is not a
+          Microsoft managed runner and creates no Admin run.
+        </p>
+        <ul>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/typescript/runkite-governance">TypeScript helper source and usage</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_ai_sdk">App-owned AI SDK example</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework">Microsoft function-middleware example</a></li>
+        </ul>
+
+        <h2 id="managed">Managed Vercel AI SDK runs</h2>
+        <p>
+          The new TypeScript backend executes public AI SDK <code>ToolLoopAgent</code>
+          code inside the runner. Your app creates a Runkite run and consumes its stream
+          instead of calling the model loop in its HTTP handler. Runkite owns operational
+          dispatch and records; the SDK still owns the model loop. No upstream fork,
+          second scheduler, policy engine or SDK runtime inside the Go binary is needed.
+        </p>
+        <pre class="mono-block">{
+  "runner_kind": "typescript-ai-sdk",
+  "graphs": { "managed_ai_sdk": "./agent.ts:createAgent" }
+}</pre>
+        <p>
+          Each export is a per-run factory returning <code>AiSdkAgentDefinition</code>
+          settings. The runner constructs the native SDK agent using those settings.
+          This supported factory shape lets it supply trusted run context and check
+          <code>allowed_tools</code> before local execution. An arbitrary opaque agent
+          object is not automatically fully governable.
+        </p>
+        <pre class="mono-block"># From a v0.5.8+ checkout or installed runkite-runner; no provider key for this example
+cd typescript/runkite-runner
+npm ci
+npm run build
+cd ../../examples/managed_ai_sdk
+npm ci
+cd ../..
+
+# Local development plane, separate terminal
+runkite dev --config examples/managed_ai_sdk/langgraph.json
+
+# Matching runner
+node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
+  --config examples/managed_ai_sdk/langgraph.json \
+  --grpc-address localhost:50051 --http-address http://localhost:2026</pre>
+        <p>
+          <code>ai@7.0.155</code> is the tested optional peer. The updated runner package
+          exposes <code>runkite-runner/ai-sdk</code>. The example keeps the existing
+          <code>langgraph.json</code> filename and graph mapping; the protocol does not
+          require the agent to use LangGraph. For production, use the normal
+          <a href="production.html">auth, runner-token, TLS and deployment profile</a>.
+        </p>
+
+        <h2>Keep the AI SDK chat UI</h2>
+        <p>
+          AI SDK <code>useChat</code> reads its own UI message protocol. The example's
+          app-side bridge converts the runner's <code>custom:ai_sdk</code> events through
+          the SDK's public UI APIs and waits for durable Runkite completion before UI
+          finish. Your existing app authenticates the user, checks chat ownership, maps
+          chat IDs to server-owned threads, and keeps the Runkite key on the server.
+          Use managed-run read/write permissions for that route; a governance-only key
+          cannot create, read and cancel managed runs.
+        </p>
+        <p>
+          Only the new user text enters the runner. Browser history is presentation state
+          and cannot replace its stored native model/tool history. A different attempt
+          after rendering begins causes a delivery error rather than mixing two assistant
+          replies. Automatic reconnect, regeneration and browser tool approvals are not
+          part of this initial bridge.
+        </p>
+
+        <h2>Durability and limits</h2>
+        <ul>
+          <li>Native successful-turn history uses the existing run-bound opaque checkpoint API, with framework/agent validation, exact generation and tenant binding, strong ETags and CAS.</li>
+          <li>State must commit before success. A committed current-run receipt replays after reclaim without repeating its model or tools. A crash before commit can still repeat external writes; downstream idempotency is required.</li>
+          <li>Initial scope is text and local JSON-result tools. No native approval/resume, client/provider tools, async-iterable tool outputs, binary attachments, time travel, partial-turn restore or whole-run caching.</li>
+          <li>Run lifecycle does not automatically govern every native tool body. Connector policy still requires the real connector path. Cancellation cannot undo an already completed effect.</li>
+          <li>Successful turns report provider tokens. The plane can settle cancellation before trailing usage arrives, so complete canceled-run spend is not guaranteed.</li>
+          <li>State is capped at 16 MiB, a turn's UI receipt at 8 MiB and final output at 3 MiB. The example bridge has its own documented request/frame limits.</li>
+        </ul>
+        <p>
+          <code>make test-managed-ai-sdk</code> exercises native SDK calls, the UI consumer
+          and a real Go plane. Set <code>RUNKITE_TEST_POSTGRES_DSN</code> and
+          <code>RUNKITE_TEST_REDIS_URL</code> together to select its Postgres + Redis
+          profile, including crash-after-commit receipt replay without duplicate tool
+          work or usage. This suite uses one plane process; it is not a multi-replica HA soak.
+        </p>
+        <p class="note">
+          Source and runnable example:
+          <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_ai_sdk">examples/managed_ai_sdk</a>.
+          Existing CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain
+          checkout integrations, not published adapter packages. See the
+          <a href="frameworks.html">framework matrix</a> and
+          <a href="limitations.html">limitations</a> before claiming feature parity.
+        </p>
+      </main>
+    </div>
+      <script src="./docs.js?v=20260920" defer></script>
+  </body>
+</html>

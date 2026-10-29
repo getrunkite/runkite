@@ -13,7 +13,6 @@ the LangGraph proxy path.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 from urllib.parse import quote
 
@@ -21,8 +20,6 @@ import httpx
 
 from .tenant_ctx import tenant_headers
 from .tls_utils import httpx_tls_kwargs
-
-logger = logging.getLogger("runkite.checkpoint.opaque")
 
 HEADER_FRAMEWORK = "X-Runkite-Checkpoint-Framework"
 # Stable id per thread for adapter state (not "latest" — that path is reserved).
@@ -98,13 +95,6 @@ class OpaqueCheckpointClient:
             "Content-Type": "application/octet-stream",
         }
         resp = await client.put(self._url(thread_id, checkpoint_id), content=data, headers=headers)
-        if resp.status_code == 403 and "run_not_inflight" in resp.text:
-            logger.warning(
-                "opaque checkpoint put dropped (run not in-flight) thread_id=%s framework=%s",
-                thread_id,
-                self._framework,
-            )
-            return
         resp.raise_for_status()
 
 

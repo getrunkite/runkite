@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -93,7 +94,7 @@
             <div class="flow-card"><span class="n">01</span><h3>Compose is up</h3><p>Plane on :2026. Fake bank MCP. Admin opens with <em>no login</em> (auth off).</p></div>
             <div class="flow-card"><span class="n">02</span><h3>Refund $500</h3><p>Try agent → <code>pending_agent</code>. The plane holds the call.</p></div>
             <div class="flow-card"><span class="n">03</span><h3>Pending</h3><p>Admin → Pending. Approve. Same arguments only; a different amount is a new row.</p></div>
-            <div class="flow-card"><span class="n">04</span><h3>Audit</h3><p>The audit row is the screenshot. Send the same amount again to finish the fake refund.</p></div>
+            <div class="flow-card"><span class="n">04</span><h3>Audit</h3><p>Inspect the held call and approval row. Approval alone does not execute the fake refund.</p></div>
           </div>
           <figure class="try-admin">
             <div class="cap">What you’ll see in Admin: Overview after Try compose is up</div>
@@ -125,16 +126,21 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
   -H 'Content-Type: application/json' \
   -d '{"agent_id":"pending_agent","input":{"messages":[{"role":"user","content":"Refund $500 to the vendor"}]}}' \
   | python3 -m json.tool
-# Admin → Pending → approve, then send the same amount on a new run.</pre>
+# Admin → Pending → approve to inspect the decision; this example does not retry.</pre>
         <p>
           Expect a message that the plane held the refund, and a row in Pending.
-          This is connector policy, not <code>command.resume</code>.
+          This example returns a normal message and ends its run on pending. Approval
+          updates the row but does not call the fake bank. A new run has a different
+          binding and cannot consume the old approval. A real approved connector retry
+          must keep the original run and generation active and use the same arguments.
+          This is separate from <code>command.resume</code>. For continuation on a later
+          app request, see the <a href="sdk-integration.html#app-owned">app-owned decision path</a>.
           Echo still works as a smoke test: agent_id <code>echo_agent</code>.
         </p>
 
         <h2>What you should have seen</h2>
         <ul>
-          <li>A tool call that never reached the fake bank until you approved.</li>
+          <li>A held call that never reached the fake bank. Approval changes the row without performing the refund.</li>
           <li>Pending bound to the argument digest (a different amount is a new row).</li>
           <li>An audit row you can screenshot.</li>
         </ul>

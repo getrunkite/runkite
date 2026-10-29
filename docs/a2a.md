@@ -1,6 +1,6 @@
 # Agent-to-Agent (A2A)
 
-> Deep dive. Diagram also on the [root README](../README.md#agent-to-agent); protocol path in [architecture.md](architecture.md#agent-protocol-vs-runner-protocol).
+> Deep dive. Diagram also on the [root README](../README.md#architecture); protocol path in [architecture.md](architecture.md#agent-protocol-vs-runner-protocol).
 
 An agent calls another agent as a sub-task, mid-execution -- native sub-agent delegation via the same Agent Protocol API. The mechanism is deliberately **not** a new protocol surface -- it's the exact same `POST /threads/{id}/runs` + wait-for-result path any client already uses, just reachable from inside a runner's own process via one new internal route (`POST /internal/a2a/runs`) instead of a public one.
 

@@ -158,7 +158,13 @@ POST   /governance/decide                 Allow, deny, or pending for one tool c
 GET    /governance/actions/{action_id}    Poll that pending row
 ```
 
-Permission is `governance:decide` (`read`, `write`, and `agents:<id>:run` do not grant it). `pending` includes `action_id` and requires `run_id`. Admin approves or denies the same row as connector HITL. Poll status is `pending`, `approved`, or `rejected` (`consumed` if a runner already used the one-shot). An embedded row still pending after 24 hours is rejected with `pending_expired`. Connector HITL rows are not expired. Kill switches and spend caps are not applied. Helpers in [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call decide and poll. See [`spec/openapi.json`](../spec/openapi.json).
+Permission is `governance:decide` (`read`, `write`, and `agents:<id>:run` do not grant it). Conversely, a key carrying only `governance:decide` cannot create, read or cancel managed runs. Tenant identity comes from the authenticated credential, and a conflicting body `tenant_id` is rejected.
+
+`agent_id` is a policy identity and need not name a registered agent. `run_id` is an opaque application-operation correlation value, required if the decision is pending. It is not resolved against a managed run and provides neither execution idempotency nor proof that an allowed tool executed. Decision-only calls create no rows in Admin Threads or Runs; pending decisions and policy audit use their submitted correlation values.
+
+`pending` includes `action_id`. Admin approval changes that row; it does not invoke the tool or resume an application. The app persists the action ID and exact original arguments, polls, then continues the same operation only after `approved`, using its own execution idempotency. GET does not consume approval. Poll status is `pending`, `approved`, or `rejected` (`consumed` is also exposed for a consumed connector one-shot). An embedded row still pending after 24 hours is rejected with `pending_expired`; connector HITL rows have no expiry.
+
+Run kill switches, break-glass and spend caps are not applied on this path. The checkout-only helpers in [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) expose decide and bounded polling. `createGovernedExecute` and the optional Microsoft function middleware decide once before a local tool executor; pending continuation stays with the app. For managed AI SDK threads and runs, use the runner path in [Client SDK](client-sdk.md#managed-vercel-ai-sdk-v058). See [`spec/openapi.json`](../spec/openapi.json).
 
 Plane policy and SQL Admin governance are documented in full elsewhere — this reference is the Agent Protocol / client surface. Pointers:
 

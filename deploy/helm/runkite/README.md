@@ -98,6 +98,41 @@ path. That file **must** include an `auth` section or the pod will
 crash-loop on admission. Do **not** paper over this with
 `RUNKITE_ALLOW_INSECURE_SERVE=1` in production.
 
+## Other runner kinds
+
+The optional runner Deployment defaults to the Python LangGraph image. Its
+values expose image, environment, resources and TLS settings, with no
+`command` or `args` override. The control-plane `config.langgraphJson` mount is
+not mounted into runner pods. A different image must already contain its agent
+code, dependencies and runner configuration, and its entrypoint must choose the
+correct backend.
+
+The managed AI SDK backend in this working tree requires an updated checkout
+build until its package/image is released. It needs both
+`runner_kind: "typescript-ai-sdk"` in its config and worker arguments
+`--framework ai-sdk --config /path/to/langgraph.json`. Setting
+`runner.image.repository` to the TypeScript image alone starts that image's
+default LangGraph.js example instead. Use a separate worker Deployment with
+explicit arguments, or an application image whose entrypoint supplies them.
+Set `runner.enabled: false` when replacing the Python fleet; leave it enabled
+when the two fleets serve different agents.
+
+Register the same AI SDK agent IDs and runner kind in the control-plane config.
+With `secrets.existingSecret`, add `RUNNER_TOKEN_TYPESCRIPT_AI_SDK` and
+`RUNNER_TENANTS_TYPESCRIPT_AI_SDK` to that Secret; the control-plane pod imports
+its keys through `envFrom`. The separate worker presents one matching
+`RUNNER_TOKEN` and connects to the chart Service's HTTP and gRPC ports. Apply
+its existing TLS/mTLS settings if enabled. `config.extraEnv` is a plain-string
+ConfigMap, so put credentials in the Secret rather than that map.
+
+`runner.extraEnv` supports either a literal `value` or a Kubernetes `valueFrom`
+source for each additional environment variable. Supplying both is a render
+error. These are environment settings, not a way to select CLI arguments.
+
+See [deployment](../../../docs/deployment.md#managed-ai-sdk-runner-unreleased-checkout)
+and the [managed AI SDK example](../../../examples/managed_ai_sdk/README.md) for
+worker setup and the app-to-run bridge.
+
 ## What this chart creates
 
 | Resource | Purpose |
@@ -130,7 +165,8 @@ ID does not exist on the first `initialize` call.
 | `podDisruptionBudget.enabled` | `true` | Skipped when `replicaCount` is 1 |
 | `terminationGracePeriodSeconds` | `30` | Covers the control plane's drain budget |
 | `autoscaling.enabled` | `false` | Needs `resources.requests.cpu` if turned on |
-| `runner.enabled` | `true` | Set `false` if runners run elsewhere |
+| `runner.enabled` | `true` | Optional Python fleet; set `false` if runners run elsewhere |
+| `runner.extraEnv` | `{}` | Literal `value` or `valueFrom`, one per variable; no command/args override |
 | `secrets.runnerTokenAllowlist` | `""` | CP `RUNNER_TOKEN_*` allowlist; see [Runner token allowlist](#runner-token-allowlist) |
 | `networkPolicy.enabled` | `false` | Opt-in; requires a NetworkPolicy-capable CNI |
 | `tls.enabled` | `false` | Pod TLS/mTLS; see [Pod TLS / mTLS](#pod-tls--mtls) |

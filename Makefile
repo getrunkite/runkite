@@ -339,6 +339,17 @@ test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
 	$(MAKE) test-governance-ts
 
+# Managed AI SDK runner with native SDK tests and a real local control plane.
+.PHONY: test-managed-ai-sdk
+test-managed-ai-sdk:
+	cd typescript/runkite-runner && npm ci && npm run build
+	cd examples/managed_ai_sdk && npm ci && npm run check && npm test
+	@managed_test_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$managed_test_dir"' EXIT; \
+	go build -o "$$managed_test_dir/runkite" ./cmd && \
+	cd typescript/runkite-runner && \
+	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" node --import tsx --test src/aiSdk*.test.ts
+
 # App-owned tool governance, including real SDK execution with an offline model.
 test-governance-ts:
 	cd typescript/runkite-governance && npm ci && npm run build && npm test

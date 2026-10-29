@@ -228,7 +228,7 @@ export function MandatoryHITL() {
     <div>
       <PageHeader
         title="Mandatory HITL"
-        subtitle="Force matching tool.call allows to pending (Admin approve → one-shot retry). Config baselines + SQL overlays. Hard deny still wins. SQL backends only."
+        subtitle="Hold matching tool decisions for operator approval. Connector callers retry once; in-process callers continue their saved app operation. Hard deny still wins. SQL backends only."
         actions={
           <>
             <DocsLink href={supportPage("admin-guide.html#10-mandatory-hitl")}>Docs: mandatory HITL →</DocsLink>

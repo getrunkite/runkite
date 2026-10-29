@@ -39,6 +39,7 @@
           <a  href="../agents.html">Agents (Py / JS)</a>
           <a  href="../migrate-agents.html">Migrate agents</a>
           <a  href="../frameworks.html">Framework matrix</a>
+          <a href="../sdk-integration.html">SDK integrations</a>
           <a  href="../checkpoints.html">Checkpoints</a>
           <a  href="../connectors.html">Connectors</a>
           <a  href="../registry.html">Registry</a>
@@ -79,6 +80,13 @@
         </div>
         <h1>3 · Two protocols</h1>
         <p class="lede">Public client surface vs private worker surface, different jobs, different shapes.</p>
+        <p class="note">
+          This chapter describes managed execution through Agent Protocol and a runner.
+          An app can also keep its own loop and ask <code>/governance/decide</code> for
+          individual tool decisions, without creating a managed thread or run. See the
+          <a href="../sdk-integration.html">SDK integration guide</a> for current availability
+          and the managed AI SDK profile (v0.5.8+).
+        </p>
 
         <h2>Agent Protocol (client → plane)</h2>
         <p>

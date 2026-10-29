@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Managed AI SDK receipts · Runkite engineering</title>
+    <meta
+      name="description"
+      content="How the managed AI SDK runner commits native history and recovers a completed turn without repeating tools."
+    />
+    <meta name="theme-color" content="#0a0a0b" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./story.css?v=20260920" />
+  </head>
+  <body>
+        <div class="shell">
+      <header class="note-header">
+        <a class="site-logo" href="../">~/ <span>runkite</span></a>
+        <nav class="note-nav" aria-label="Primary">
+          <a href="../">Product</a>
+          <a href="https://getrunkite.com/admin/">Admin</a>
+          <a href="../support/try.html">Try</a>
+          <a href="../support/">Docs</a>
+          <a class="active" href="./">Notes</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="kicker">Engineering note · 7 of 7 · v0.5.8</p>
+      <h1>Commit the turn before <em>success</em>.</h1>
+      <p class="lede">
+        A managed AI SDK runner can finish a tool and persist its native conversation,
+        then crash before the plane sees completion. A saved current-run receipt lets
+        the next attempt deliver that result without executing the tool again.
+      </p>
+      <p>
+        This note describes the TypeScript AI SDK backend that ships in v0.5.8
+        <code>runkite-runner</code>. The app-owned tool-decision helper remains a separate option.
+        See <a href="../support/sdk-integration.html">SDK integrations</a> for availability
+        and the request-path change.
+      </p>
+
+      <h2>Two completion boundaries</h2>
+      <div class="diagram" role="img" aria-label="Native state commit precedes UI finish and run completion">
+        <pre>
+app → Runkite run → native ToolLoopAgent
+                      → model/tool messages
+                      → <span class="ok">CAS state + current-run receipt</span>
+                      → final values + native UI finish
+                      → end / ReportStatus
+plane → <span class="ok">durable current-attempt completion</span> → finalization → Ack
+        </pre>
+      </div>
+      <p>
+        The runner commits native state through the existing opaque HTTP API before
+        publishing success. The plane separately commits the run's current-attempt
+        outcome before acknowledging its queue lease. These are different transactions;
+        the recovery design must handle a process disappearing between them.
+      </p>
+
+      <h2>The crash after PUT</h2>
+      <p>
+        Native state contains full model/tool message history and a receipt for the last
+        successful turn. The receipt binds the run ID and canonical new-turn input inside
+        that thread's agent-scoped state. A reclaimed assignment loads it. If that run and
+        input match, it replays committed UI/text events and final values with the new
+        attempt's identity. It does not call the factory, model or tool again.
+      </p>
+      <p>
+        The next ordinary user turn instead restores native message history and executes
+        a new SDK invocation. Old usage is not added to the new turn. The existing
+        durable run-completion keys prevent a recovered turn from being charged twice.
+      </p>
+
+      <h2>What CAS protects</h2>
+      <p>
+        Reads require the expected framework, agent and strong numeric ETag. Writes use
+        <code>If-Match</code>, or create-only <code>If-None-Match: *</code>. Tenant, runner
+        kind, run ID and generation use the existing bound headers. A conflict or an
+        uncertain commit leaves completion recoverable instead of silently overwriting
+        another writer's history. A strict JSON/Unicode codec refuses unsupported values.
+        The Go plane stores opaque bytes and does not import the SDK or its schema.
+      </p>
+
+      <h2>The boundary before commit</h2>
+      <p>
+        If a tool's external write succeeds but the process dies before the state commit,
+        the next attempt cannot infer that write from an absent receipt. It may execute
+        again. Use a downstream idempotency key or the application's existing outbox.
+        A local receipt does not provide exactly-once remote effects.
+      </p>
+      <p>
+        Interruptions retain only previously committed turns. Native approval/resume,
+        partial-turn restoration, binary/client/provider tools, streaming tool outputs,
+        time travel and whole-run caching are outside the initial profile. The older
+        generic Python adapters do not acquire this receipt/CAS contract merely by
+        using the same opaque endpoint.
+      </p>
+
+      <h2>UI delivery is another boundary</h2>
+      <p>
+        Ordinary progress can stream before state commits. Native UI finish waits for
+        that commit, and the app bridge waits for the plane's durable <code>/wait</code>
+        result with matching attempt/message identity. Raw SSE stays advisory during
+        reclaim. If a new attempt starts after text has rendered, the bridge reports
+        a delivery error rather than combining attempts. The app keeps authentication,
+        chat ownership and the server-side plane key.
+      </p>
+
+      <h2>Proof and source</h2>
+      <p>
+        The subprocess suite kills a real runner after the plane accepts PUT but before
+        the runner receives its response. Reclaim advances generation; the next runner
+        completes from the receipt with one original tool effect and one usage charge.
+        The suite has SQLite and Postgres + Redis profiles, each with one plane process.
+        It does not establish multi-replica HA behavior.
+      </p>
+      <ul>
+        <li><a href="https://github.com/getrunkite/runkite/blob/main/typescript/runkite-runner/src/aiSdkAdapter.ts"><code>AiSdkAdapter.executeBound</code></a>: native loop, receipt replay and event ordering.</li>
+        <li><a href="https://github.com/getrunkite/runkite/blob/main/typescript/runkite-runner/src/aiSdkState.ts"><code>AiSdkState.load/save</code></a>: bound HTTP, strict codec and conditional writes.</li>
+        <li><a href="https://github.com/getrunkite/runkite/blob/main/typescript/runkite-runner/src/aiSdk.e2e.test.ts">Subprocess integration tests</a>: <code>make test-managed-ai-sdk</code>.</li>
+      </ul>
+
+      <div class="siblings">
+        <a href="./fencing.html">Fencing</a>
+        <a href="./subscribe-before-enqueue.html">Subscribe-before-enqueue</a>
+        <a href="./create-run-ctx.html">createRunCtx</a>
+        <a href="./poison-pill.html">Poison pill</a>
+        <a href="./finops-holds.html">FinOps holds</a>
+        <a href="./rls-grant.html">Postgres RLS grant</a>
+        <a class="here" href="./managed-ai-sdk.html">AI SDK receipts</a>
+      </div>
+
+      <footer class="note-footer">
+        <div>© Runkite · engineering notes</div>
+        <div>
+          <a href="../">Landing</a> ·
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">Architecture docs</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

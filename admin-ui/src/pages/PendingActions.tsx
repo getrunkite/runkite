@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { Check, Loader2, ShieldAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -52,7 +52,9 @@ export function PendingActions() {
     try {
       await api.post(`/pending-actions/${encodeURIComponent(a.id)}/${verb}`);
       toast.success(verb === "approve" ? "Approved" : "Denied", {
-        description: `${a.connector}.${a.tool} on run ${a.run_id}`,
+        description: verb === "approve"
+          ? `${a.connector}.${a.tool} for operation ${a.run_id}. The caller can continue the approved operation.`
+          : `${a.connector}.${a.tool} for operation ${a.run_id} remains blocked.`,
       });
       reload();
     } catch (err) {
@@ -128,13 +130,13 @@ export function PendingActions() {
     },
     {
       accessorKey: "run_id",
-      header: "Run",
+      header: "Run / operation",
       cell: ({ getValue }) => {
         const id = getValue() as string;
         return (
-          <Link to={`/admin/runs/${encodeURIComponent(id)}`} className="font-mono text-xs text-primary hover:underline">
+          <span className="font-mono text-xs" title="Correlation ID. An in-process tool decision does not create a managed run.">
             {id}
-          </Link>
+          </span>
         );
       },
     },
@@ -189,8 +191,11 @@ export function PendingActions() {
     <div>
       <PageHeader
         title="Pending actions"
-        subtitle="Connector HITL queue (SQL backends). Approve binds this payload for one matching tools/call; a different amount is a new row."
-        actions={<DocsLink href={supportPage("admin-guide.html#11-pending-approval-queue")}>Docs: pending →</DocsLink>}
+        subtitle="Connector and in-process tool approvals (SQL backends). Approval records a decision; the caller still executes the matching operation."
+        actions={<>
+          <DocsLink href={supportPage("admin-guide.html#11-pending-approval-queue")}>Docs: pending →</DocsLink>
+          <DocsLink href={supportPage("sdk-integration.html")}>SDK integration →</DocsLink>
+        </>}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -232,7 +237,7 @@ export function PendingActions() {
         />
         <Input
           className="w-44"
-          placeholder="Run ID"
+          placeholder="Run / operation ID"
           value={runId}
           onChange={(e) => {
             setRunId(e.target.value);
@@ -248,8 +253,8 @@ export function PendingActions() {
           title={hasFilter ? "No matching actions" : "No pending actions"}
           message={
             hasFilter
-              ? "Nothing matches these filters. Clear them, or confirm policy webhook returns effect pending on a SQL backend."
-              : "Rows appear when a connector webhook returns effect pending. Requires a SQL state backend and an enabled policy webhook."
+              ? "No pending decisions match these filters. Clear them or inspect the caller's tenant, agent and operation ID."
+              : "Rows appear when a matching mandatory HITL rule, argument predicate or policy webhook holds a tool call. Embedded approvals expire after 24 hours; connector rows do not."
           }
           learnMore={
             hasFilter

@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -105,10 +106,10 @@
           Concretely, here's what changes:
         </p>
         <ul class="expect">
-          <li><strong>One credential, minted fresh per call</strong>: the Salesforce secret lives in one place (Vault, a file, or an env var, see <a href="secrets.html">Secrets</a>), and each agent gets a short-lived, run-bound session instead of holding the real credential itself.</li>
-          <li><strong>One human-approval rule, applies to all three</strong>: a single mandatory-HITL rule on the "delete record" tool covers the support bot, the research agent, and the ops agent identically, with no framework-specific plumbing.</li>
+          <li><strong>One connector credential source</strong>: the secret lives in Vault, a file or an env var (see <a href="secrets.html">Secrets</a>). For MCP proxy calls the plane injects it on the way out and gives the runner a run-bound capability. Non-MCP sessions can return credentials to trusted runner code.</li>
+          <li><strong>One policy engine</strong>: a mandatory-HITL rule gates matching connector calls from all three frameworks. Each agent still needs connector wiring and explicit handling for pending and approved retry under its active run binding.</li>
           <li><strong>One kill switch</strong>: if the research agent starts misbehaving, stop just that agent (or the whole tenant) from <a href="admin-guide.html#12-kill-switches">Admin → Kill switches</a>, no SSH required.</li>
-          <li><strong>One audit trail</strong>: every Salesforce call from any of the three agents lands in the same searchable log, filterable by agent, so "what did we do to Salesforce last Tuesday" has a real, complete answer.</li>
+          <li><strong>One audit trail for governed calls</strong>: connector decisions share a searchable SQL log, filterable by agent. Direct calls using independently supplied credentials remain outside that gate and audit.</li>
         </ul>
         <p>
           Under the hood: clients create threads and runs by calling the plane's Agent

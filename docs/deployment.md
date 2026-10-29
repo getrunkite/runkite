@@ -8,24 +8,26 @@ Control-plane and runner images (`Dockerfile`, `Dockerfile.runner`, `Dockerfile.
 
 ### Full-stack deployment
 
-`docker-compose.yml` runs the whole system -- Postgres, Redis, the control plane, and a Python runner -- built from `Dockerfile` and `Dockerfile.runner`:
+`docker-compose.yml` runs five services: Postgres, Redis, the control plane, a Python runner and the pending-approval demo MCP server. Application images are built from `Dockerfile` and `Dockerfile.runner`:
 
 ```bash
 cp .env.example .env   # fill in POSTGRES_PASSWORD and RUNNER_TOKEN with real values
 docker compose up -d --build
-curl http://localhost:2026/health
-docker compose down -v
+curl http://localhost:2026/readyz
+docker compose down
 ```
 
 `POSTGRES_PASSWORD` and `RUNNER_TOKEN` are required, on purpose -- there's no built-in fallback, so `docker compose up` fails fast with a clear error if either is unset rather than silently starting with a well-known password or a shared "change-me-in-production" token nobody actually changes. Postgres and Redis also don't publish any port to the host in this file -- only the `runkite`/`runner` services on the same compose network need to reach them by service name.
 
-`docker-compose.dev.yml` is the zero-dependency local stack — control plane + Python runner only (SQLite + in-memory transport, no Postgres/Redis), with source-mounted `examples/` and `python/`:
+Postgres data lives in the named `postgres_data` volume. Ordinary `docker compose down` retains it; adding `-v` deletes it. This example opts out of client-facing auth for a local demonstration. Configure real client auth and remove `RUNKITE_ALLOW_INSECURE_SERVE` before using it as a production deployment.
+
+`docker-compose.dev.yml` runs three services: the control plane, Python runner and pending-approval demo MCP server. It uses SQLite and in-process transport, with no Postgres or Redis, and mounts `examples/` and `python/` from the source tree:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Full-stack compose uses Postgres/Redis on 5432/6379; stop local services on those ports first, or override via a compose override file.
+The dev SQLite file is `/tmp/runkite.db` in the control-plane container's writable layer. Restarting that same container retains it; recreating or removing the container loses it because this profile mounts no database volume. The full-stack Postgres and Redis ports are private to their Compose network, so local services on host ports 5432 and 6379 do not conflict. Both profiles publish host ports 2026 and 50051 and cannot use those same host bindings simultaneously.
 
 ### Kubernetes (Helm)
 
@@ -34,6 +36,45 @@ Full-stack compose uses Postgres/Redis on 5432/6379; stop local services on thos
 **Supported profile:** install with `-f values.yaml -f values-supported.yaml` (optional `-f values-tls.yaml` for pod TLS). See [`deploy/helm/runkite/README.md`](../deploy/helm/runkite/README.md#supported-profile). Compose `make smoke-multi` / `make soak-multi` is the Supported correctness proof ([`bench/soak/WRITEUP.md`](../bench/soak/WRITEUP.md)). Kind K0–K3 ops proofs: `make kind-helm-all` (or the individual `kind-helm-*` targets) — install, token rotation, mid-run reclaim, Ingress+NetworkPolicy ([`docs/k8s-kind-proof.md`](k8s-kind-proof.md)). Named EKS smoke/reclaim (K4) is recorded in [`k8s-eks-soak-results.md`](k8s-eks-soak-results.md) — packaging proven on a real cloud cluster; not a multi-hour multi-AZ HA soak. Compose remains the Supported multi-CP HA correctness proof.
 
 `serve`'s production admission check still requires client-facing auth: the chart mounts a default `langgraph.json` (via ConfigMap) with `auth.type=api_key` and substitutes `${RUNKITE_API_KEY}` from `secrets.apiKey`, so you do not need to rebuild the image just to boot.
+
+### Managed AI SDK runner (v0.5.8+)
+
+The managed AI SDK backend is in the working tree and needs a newly built
+TypeScript runner until its updated package/image is released. Register a
+configuration with `runner_kind: "typescript-ai-sdk"` in the plane, and load the
+matching file in the worker. Its `graphs` entries point to agent factories; the
+code and its dependencies must be available in the worker image. Keep
+`llm_cache` disabled for these agents. See
+[the example](../examples/managed_ai_sdk/README.md) for the factory and app bridge.
+
+For a local container connected to an already running plane:
+
+```bash
+docker build -t runkite-runner-ts:managed-local -f Dockerfile.runner-ts .
+docker run --rm --network host \
+  -e RUNNER_TOKEN \
+  runkite-runner-ts:managed-local \
+  --framework ai-sdk \
+  --config /app/examples/managed_ai_sdk/langgraph.json \
+  --grpc-address localhost:50051 \
+  --http-address http://localhost:2026
+```
+
+This command uses host networking on Linux. For Docker Desktop, use your
+configured host-networking support or replace the addresses with reachable
+control-plane service addresses on a shared container network. Set
+`RUNNER_TOKEN_TYPESCRIPT_AI_SDK` and `RUNNER_TENANTS_TYPESCRIPT_AI_SDK` on the
+plane and present the matching `RUNNER_TOKEN` in the worker when runner auth is
+enabled. Reuse the deployment's TLS settings.
+
+The Helm chart's optional runner starts the Python image by default and exposes
+no command/args override. Changing its image alone does not select the AI SDK
+backend. Deploy an explicit TypeScript worker Deployment with the arguments
+above, or supply an application image whose entrypoint selects them. Disable
+`runner.enabled` if replacing the chart's Python fleet; keep it enabled if both
+fleets are needed. The chart mounts `config.langgraphJson` only in control-plane
+pods, so provide the worker's own matching config and agent code. See
+[Helm runner selection](../deploy/helm/runkite/README.md#other-runner-kinds).
 
 ### Test infrastructure
 
@@ -60,6 +101,7 @@ make test-matrix    # Framework × backend golden matrix (~32 cells; nightly CI 
 make test-protocol-fixtures  # Runner Protocol examples/*.json schema + lifecycle invariants
 make test-python    # Python runner unit tests
 make test-ts        # TypeScript runner unit tests
+make test-managed-ai-sdk  # Checkout AI SDK + UI bridge + real SQLite dispatch/recovery
 make test-adapters  # CrewAI/LlamaIndex/AutoGen adapter unit tests (requires their isolated venvs, see python/adapters/*/README.md)
 make infra-up       # Start ephemeral Postgres + MySQL + Redis + MongoDB + Qdrant via Docker
 make infra-down     # Stop test infrastructure

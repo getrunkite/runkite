@@ -61,15 +61,18 @@ export function Threads() {
     <div>
       <PageHeader
         title="Threads"
-        subtitle="Across every tenant. Click any column to sort the current page."
-        actions={<DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>}
+        subtitle="Managed conversations across every tenant. Decision-only callers keep their conversation history in the app."
+        actions={<>
+          <DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>
+          <DocsLink href={supportPage("sdk-integration.html")}>SDK integration →</DocsLink>
+        </>}
       />
       {error && !data && <ErrorState message={error} />}
       {data && data.length === 0 && onFirstPage && (
         <EmptyState
           icon={MessagesSquare}
           title="No threads yet"
-          message="A thread is created when a client POSTs /threads (or starts a run that allocates one). Empty is normal on a fresh deploy."
+          message="Create a thread with POST /threads, or start a managed run that allocates one. /governance/decide does not create a thread."
         
           learnMore={{ href: supportPage("runs.html"), label: "Docs: runs & threads →" }}
         />

@@ -24,6 +24,7 @@ import type { CheckpointerManager } from "./checkpoint.js";
 import type { RunkiteStore } from "./store.js";
 import { classifyGraphExport, FactoryGraph, type FactoryGraphBuild, type RunFactoryContext } from "./factoryGraph.js";
 import { logger } from "./logger.js";
+import { executeRun, type RunAssignment, type RunEvent, type RunStatus } from "./executeRun.js";
 
 /** Minimal surface of a compiled LangGraph.js graph this runner needs.
  * Matches Pregel's actual instance shape (see node_modules/@langchain/
@@ -57,6 +58,14 @@ export class LangGraphAdapter {
 
   constructor(private configPath: string) {
     this.configDir = path.dirname(path.resolve(configPath));
+  }
+
+  execute(
+    assignment: RunAssignment,
+    emit: (event: RunEvent) => Promise<void>,
+    isCancelled: () => boolean,
+  ): Promise<RunStatus> {
+    return executeRun(this, assignment, emit, isCancelled);
   }
 
   async load(): Promise<void> {

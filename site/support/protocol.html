@@ -39,6 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -86,7 +87,7 @@
         </p>
         <ul>
           <li>Create thread → create run → wait or stream</li>
-          <li>Cancel / interrupt / resume for HITL</li>
+          <li>Cancel; framework-native interrupt/resume when the adapter supports it</li>
           <li>No knowledge of which runner pod holds the job</li>
         </ul>
         <h2>Runner Protocol (back door)</h2>
@@ -97,8 +98,19 @@
         <ul>
           <li>Dequeue assignment with generation / fencing token</li>
           <li>Heartbeat; on <code>superseded: true</code> cancel local work</li>
-          <li>Report status / stream events; stale generation is ignored</li>
+          <li>Report status / stream events with the exact assignment generation, including zero</li>
+          <li>Authenticated runner kind must match dequeue/watch requests and the run's assignment</li>
+          <li>Persist completion and finalize before queue Ack; delivery failure leaves recovery work</li>
         </ul>
+        <h2>App-owned tool decisions</h2>
+        <p>
+          An app that keeps its model loop can instead call
+          <code>POST /governance/decide</code> and poll
+          <code>GET /governance/actions/{action_id}</code>. This HTTP policy boundary does
+          not create a managed thread/run or dispatch a runner. The app executes the tool
+          and owns pending continuation. It does not inherit run kill switches, break-glass
+          or spend caps. See <a href="sdk-integration.html">SDK integrations</a>.
+        </p>
         <h2>Why not one protocol</h2>
         <p>
           Collapsing them either leaks reclaim/fencing internals to every client, or starves

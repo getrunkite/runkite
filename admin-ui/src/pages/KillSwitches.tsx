@@ -205,7 +205,7 @@ export function KillSwitches() {
     <div>
       <PageHeader
         title="Kill switches"
-        subtitle="Block new runs for a tenant or tenant+agent. Kill also drains pending/running runs on this replica. SQL backends only."
+        subtitle="Block new managed runs for a tenant or tenant+agent. Kill also requests cancellation of queued and active runs. Decision-only calls are outside this control. SQL backends only."
         actions={
           <>
             <DocsLink href={supportPage("admin-guide.html#12-kill-switches")}>Docs: kill switches →</DocsLink>

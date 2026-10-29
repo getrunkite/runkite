@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Framework matrix · Runkite Docs</title>
-    <meta name="description" content="What each runner kind supports today. LangGraph, CrewAI, LlamaIndex, AutoGen, LangChain." />
+    <meta name="description" content="Published runners, checkout adapters, and AI SDK managed execution. Compare lifecycle, state, approval, and installation boundaries." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a class="active" href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -73,19 +74,20 @@
 
         <p class="kicker">Build</p>
         <h1>Framework matrix</h1>
-        <p class="lede">Same control plane, many runners. The plane never assumes LangGraph, adapters share a generic worker loop and speak Runner Protocol.</p>
+        <p class="lede">One control plane, several execution adapters. Compare what is installed from a registry, what requires a checkout, and what remains an unpublished helper package.</p>
+        <p class="note">For an app that keeps its own model loop, use the separate <a href="./sdk-integration.html">tool-decision path</a>. That path does not create managed Threads or Runs.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              Python LangGraph + TypeScript LangGraph.js are first-class. CrewAI, LlamaIndex, AutoGen, and plain LangChain ship as thin adapters under <code>python/adapters/</code>.
+              The published Python and npm runner packages execute LangGraph and LangGraph.js. CrewAI, LlamaIndex, AutoGen, and plain LangChain have in-repository adapters under <code>python/adapters/</code>; they are not included in the published Python package.
             </p>
           </section>
           <section>
             <h2>Why it is here</h2>
             <p>
-              “Framework-agnostic” only counts if dispatch, cancel, HITL, and connectors work the same way for every runner kind, with honest gaps called out.
+              Runner Protocol shares dispatch and lifecycle machinery. Native checkpoint formats, approval resume, streaming and concurrency differ by adapter; support is not identical across frameworks.
             </p>
           </section>
         </div>
@@ -107,11 +109,11 @@
             <tbody>
               <tr><td>Dispatch via plane</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
               <tr><td>Cancel (WatchCancels)</td><td>Yes</td><td>Yes*</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-              <tr><td>HITL interrupt / resume</td><td>Yes</td><td>Yes*</td><td>Limited</td><td>Limited</td><td>Limited</td><td>Limited</td></tr>
+              <tr><td>Native interrupt / resume</td><td>Yes</td><td>Yes*</td><td>Not implemented</td><td>Not implemented</td><td>Not implemented</td><td>Not implemented</td></tr>
               <tr><td>Opaque checkpoint proxy</td><td>Yes</td><td>Yes</td><td>Yes†</td><td>Yes</td><td>Yes†</td><td>Yes†</td></tr>
-              <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>, </td><td>, </td><td>, </td><td>, </td></tr>
+              <tr><td>Direct Postgres saver</td><td>Yes</td><td>Yes</td><td>Not supported</td><td>Not supported</td><td>Not supported</td><td>Not supported</td></tr>
               <tr><td>True --concurrency N</td><td>Yes</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td><td>Serialized per graph</td><td>Yes</td></tr>
-              <tr><td>Isolated adapter venv</td><td>, </td><td>, </td><td>Yes</td><td>Yes</td><td>Yes</td><td>Shared</td></tr>
+              <tr><td>Dependency environment</td><td>Runner venv</td><td>Node process</td><td>Isolated venv</td><td>Isolated venv</td><td>Isolated venv</td><td>Runner venv</td></tr>
               <tr><td>E2E in CI matrix</td><td>Yes</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Happy path</td><td>Yes</td></tr>
             </tbody>
           </table>
@@ -119,7 +121,15 @@
         <p class="note">* TypeScript cancel/HITL verified live; matrix CI scenarios today lean on LangGraph-Python example agents.
           † CrewAI / AutoGen / LangChain restore a message transcript on the plane and fold prior turns into the next invoke
           (not a full framework-native memory graph). LlamaIndex restores <code>chat_history</code> natively. LangGraph keeps
-          its own saver (direct Postgres or HTTP proxy). <code>checkpoint_ref</code> time-travel remains LangGraph-only.</p>
+          its own saver (direct Postgres or HTTP proxy). <code>checkpoint_ref</code> time-travel remains LangGraph-only. Cancellation is cooperative and cannot undo completed external writes.</p>
+
+        <h2>AI SDK and app-owned helpers</h2>
+        <ul class="expect">
+          <li><strong>Managed AI SDK (TypeScript, v0.5.8+)</strong>: the <code>typescript-ai-sdk</code> backend uses <code>--framework ai-sdk</code> and a per-run factory. It creates real Threads/Runs, streams through the plane, and restores committed native history. Ships in <code>runkite-runner</code> with optional peer <code>ai@7.0.155</code>.</li>
+          <li><strong>AI SDK scope</strong>: new text turns and local JSON-result tools; no native approval/resume, binary/client/provider tools, streaming tool outputs, whole-run cache or time travel. The app needs a <code>useChat</code> bridge. Canceled-run spend can be incomplete.</li>
+          <li><strong>App-owned helpers</strong>: TypeScript <code>createGovernedExecute</code> and optional Python Microsoft <code>GovernanceFunctionMiddleware</code> guard tool calls through the decision API. Helpers remain unpublished packages. Ordinary guarded tools work inside streamed chat; async-iterable tool outputs are unsupported. Microsoft middleware is not a managed Microsoft runner.</li>
+        </ul>
+        <p>Read <a href="./sdk-integration.html">SDK integration paths</a> before choosing a migration. The new AI SDK proof uses a real plane on SQLite/in-process and Postgres/Redis, including runner restart and crash-after-commit recovery; it is not a multi-replica HA soak.</p>
 
         <h2>How to implement</h2>
         <ol class="steps">
@@ -137,7 +147,7 @@
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Same plane features</strong>: connectors, grants, kill, webhooks apply regardless of framework.</li>
+          <li><strong>Scope of enforcement</strong>: dispatched runs use admission, cancellation and lifecycle controls. Connector grants and approval apply when calls pass through the connector gate; arbitrary in-process tools are not automatically governed.</li>
           <li><strong>Honest limits</strong>: adapter opaque checkpoints need <code>RUNKITE_HTTP_URL</code> (or the worker http address); they store message transcripts, not LangGraph channel state. Time-travel <code>checkpoint_ref</code> is LangGraph-only.</li>
           <li><strong>Dependency isolation</strong>: don’t install CrewAI into the LangGraph venv (protobuf pin fights).</li>
         </ul>

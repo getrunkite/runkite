@@ -4,9 +4,30 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.5.8] - 2026-10-29
+
+Managed AI SDK runs, opaque checkpoint fail-closed behavior, and docs/Admin copy
+aligned to the current ownership model. Preview (BUSL), not a 1.0 production
+claim, and **not** a hosted control plane.
+
 ### Added
-- TypeScript `createGovernedExecute` guards a single-result app-owned tool with one decide call. The AI SDK example uses it, including `streamText` coverage for ordinary tools. Pending continuation stays in the app. The helper remains unpublished.
-- Optional Python `GovernanceFunctionMiddleware` for Microsoft Agent Framework local function tools. Same decide API, app-owned pending continuation, and an offline example. Install via the `agent-framework` extra.
+- TypeScript `createGovernedExecute` guards a single-result app-owned tool with one decide call. The AI SDK example uses it, including `streamText` coverage for ordinary tools. Pending continuation stays in the app. The helper remains unpublished on npm.
+- Optional Python `GovernanceFunctionMiddleware` for Microsoft Agent Framework local function tools. Same decide API, app-owned pending continuation, and an offline example. Install via the `agent-framework` extra. The helper remains unpublished on PyPI.
+- Managed AI SDK TypeScript runner, selected with `--framework ai-sdk`, using public `ToolLoopAgent` APIs and per-run factories. Native history and committed-turn receipts use run-bound opaque checkpoints with CAS. Managed executions appear in Admin Threads and Runs.
+- Application-side AI SDK UI stream bridge and an offline example in `examples/managed_ai_sdk`. The bridge confirms durable completion before UI finish and keeps Runkite credentials and chat ownership in the app.
+- Small TypeScript execution interface shared by the existing LangGraph backend and optional AI SDK backend. The SDK peer is pinned to the tested `ai@7.0.155`.
+
+### Fixed
+- Non-LangGraph Python adapters with opaque persistence stop on failed state reads. Completion and HITL-ready events follow a confirmed state save. Failed writes leave the assignment recoverable; rejected `run_not_inflight` writes no longer pretend to succeed.
+- Malformed or unsupported adapter message checkpoints fail before execution instead of silently discarding history.
+
+### Notes
+- Managed AI SDK ships in this release's `runkite-runner` npm package and TypeScript runner image. Install optional peer `ai@7.0.155`. Initial support is new text turns and local JSON-result tools. Native approval/resume, binary/client/provider tools, streaming tool outputs, time travel and whole-run caching are unsupported. See [Runners](docs/runners.md) and [Limitations](docs/limitations.md).
+- The Release workflow still publishes only `runkite-runner`. `runkite-governance` stays unpublished; install from the repository or a local pack/wheel.
+- SQLite/in-process and single-plane Postgres/Redis integration checks cover restart and crash-after-commit receipt recovery. They do not establish a new multi-replica HA soak or exactly-once external writes before state commit.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+
+[0.5.8]: https://github.com/getrunkite/runkite/releases/tag/v0.5.8
 
 ## [0.5.7] - 2026-10-29
 

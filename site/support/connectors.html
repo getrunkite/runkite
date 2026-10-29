@@ -39,6 +39,7 @@
           <a href="agents.html">Agents (Py / JS)</a>
           <a href="migrate-agents.html">Migrate agents</a>
           <a href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a href="checkpoints.html">Checkpoints</a>
           <a class="active" href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
@@ -79,10 +80,11 @@
 
         <h1>Connectors &amp; HITL</h1>
         <p class="lede">
-          A connector is how your agent talks to an outside service (Salesforce, GitHub,
-          your own internal API) without ever holding that service's credentials itself.
-          The plane holds the real secret, mints a short-lived session for one specific
-          run, and can pause a call for a human to approve first. This page is the full
+          A connector gives an agent a run-bound route to an outside service, such as
+          Salesforce, GitHub or your own API. For MCP connectors, the plane holds the
+          credential and forwards allowed calls. A connector without MCP can return
+          credentials to a trusted runner. The plane can require human approval before
+          a governed call proceeds. This page is the full
           setup: configure one, control which of its tools an agent can use, and turn on
           human approval.
         </p>
@@ -91,9 +93,8 @@
         <p>
           Nothing stops your agent code from calling an external API directly with its own
           hardcoded key, that's not something the plane can prevent. The reason to go
-          through a connector instead: the real credential never has to live in your
-          agent's process or environment variables, every call is automatically tied to
-          the run that made it (so "who called Salesforce and why" always has an answer),
+          through an MCP connector instead: the upstream credential stays in the plane,
+          and each mediated call is tied to the run that made it, so its audit has a caller,
           and you get tool-level allow/deny lists and human-approval gates for free,
           enforced by the plane instead of by code inside every agent.
         </p>
@@ -101,8 +102,8 @@
         <h2>Step 1: configure the connector</h2>
         <p>
           A connector is a small YAML file, referenced by name from <code>langgraph.json</code>.
-          Here's a complete, working example for a Salesforce connector using OAuth
-          client-credentials:
+          This example assumes you have deployed an MCP server for Salesforce with the
+          named tools and configured Salesforce OAuth client credentials:
         </p>
         <pre class="mono-block"># connectors/salesforce.yaml
 auth:
@@ -111,7 +112,7 @@ auth:
   client_id: ${SF_CLIENT_ID}
   client_secret: ${SF_CLIENT_SECRET}
 mcp:
-  url: https://salesforce-mcp.internal/sse
+  url: http://salesforce-mcp:8080/mcp
 tools:
   allow: [soqlQuery, getObjectSchema]
   deny: [deleteRecord, bulkUpdate]
@@ -185,24 +186,70 @@ errors:
 
         <h2>Step 3: call it from your agent code</h2>
         <p>
-          Use the SDK helper, not a raw HTTP call, it automatically attaches the headers
-          that tie the request to your currently-running run (explained below):
+          Use the MCP proxy helper with the node's own config. It attaches the current
+          run binding and mints the short-lived connector capability. Match the tool name
+          and argument schema advertised by your upstream server:
         </p>
         <pre class="mono-block"># Python (inside a graph node)
-from runkite_runner.connectors import get_connector_session
+from runkite_runner.connectors import proxy_connector_mcp
 
 async def my_node(state, config):
-    sess = await get_connector_session(config, "salesforce")
-    # sess.credentials["access_token"] is ready to use right now</pre>
+    reply = await proxy_connector_mcp(config, "salesforce", {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "soqlQuery",
+            "arguments": {"query": "SELECT Id, Name FROM Account LIMIT 10"},
+        },
+    })
+    # Handle a JSON-RPC error or tool result before continuing.
+    return {"salesforce_reply": reply}</pre>
         <pre class="mono-block">// TypeScript
-import { getConnectorSession } from "runkite-runner";
+import { proxyConnectorMcp } from "runkite-runner";
 
-const sess = await getConnectorSession(config, "salesforce");</pre>
+const reply = await proxyConnectorMcp(config, "salesforce", {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "tools/call",
+  params: {
+    name: "soqlQuery",
+    arguments: { query: "SELECT Id, Name FROM Account LIMIT 10" },
+  },
+});
+// Handle a JSON-RPC error or tool result before continuing.</pre>
+        <p>
+          A pending or denied policy decision is returned to the caller; the helper does
+          not pause your framework or retry approval for you. For a connector without MCP,
+          <code>get_connector_session</code> / <code>getConnectorSession</code> returns the
+          session object to the trusted runner, which then calls the service itself.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Connectors: configured connectors and their health</div>
           <img src="../assets/ui-connectors.png" alt="Runkite Admin Connectors" width="960" height="600" />
         </figure>
 
+        <h2>Upstream MCP transport</h2>
+        <p>
+          Since v0.5.6, <code>mcp.transport: streamable_http</code> opts a connector into
+          upstream MCP negotiation, session headers and POST SSE response decoding. Omitted
+          or <code>json</code> keeps the existing single JSON POST. Each operation opens and
+          closes its own upstream session; cross-call subscriptions, sampling and elicitation
+          are not exposed. The runner-facing connector reply and public Agent Protocol
+          <code>/mcp</code> route remain JSON. This flag changes only the connector's
+          upstream transport.
+        </p>
+        <pre class="mono-block">mcp:
+  url: http://your-mcp-service:8080/mcp
+  transport: streamable_http</pre>
+        <p>
+          One strict parse drives policy and forwarding. Duplicate or case-conflicting
+          protocol keys are rejected; argument key case stays intact. Requests are capped
+          at 1 MiB, MCP responses at 8 MiB and OAuth token responses at 1 MiB. An oversized
+          result can fail after the tool has executed, so do not automatically retry a write.
+          Upstream negotiation/operation share a 30-second deadline and reconnect retries
+          are disabled. See the source <a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">transport guide</a>.
+        </p>
         <h2>What "run-bound" actually means (and why you'll see a 401 if you skip it)</h2>
         <p>
           A connector session is only ever minted for a run that's actually in progress
@@ -275,7 +322,9 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
         <p>
           For anything you never want an agent doing fully on its own, sending an email,
           approving a refund, deleting a record, add a mandatory human-in-the-loop (HITL)
-          rule. Once this is in place, a matching call doesn't fail and doesn't succeed, it <strong>pauses</strong> until a human looks at it.
+          rule. A matching connector call is held before its side effect and returns
+          pending. Your agent or application must handle that outcome and decide how to
+          pause, retry or resume its own workflow.
         </p>
         <pre class="mono-block"># langgraph.json, every call to salesforce's deleteRecord tool must be approved
 "policy": {
@@ -289,7 +338,7 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
           <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
           <li>Instead of running, the call is refused with JSON-RPC pending and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> (connector, tool, reason, and the triggering display map on the <strong>Args</strong> column).</li>
           <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
-          <li><strong>Approved</strong>: the plane mints a one-shot permission for the next matching call with that same argument digest. A retry with a different amount does not consume it. <strong>Denied</strong>: the run resumes with a denial instead, and your agent code decides what to do (retry differently, apologize to the user, escalate).</li>
+          <li><strong>Approved</strong>: a one-shot permission enables the next matching connector call with the same tenant, agent and argument digest. A different payload does not consume it. <strong>Denied</strong>: the caller must not perform that write and decides how to continue. The caller must retry under the original active run/generation. Neither Admin action automatically executes the tool or resumes a run.</li>
           <li>This is a one-time unlock, not a standing exception, the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>
         </ol>
         <figure class="shot">
@@ -301,7 +350,7 @@ const sess = await getConnectorSession(config, "salesforce");</pre>
         <ul class="expect">
           <li><strong>"My grant isn't taking effect."</strong>: if you added it in Admin on a different replica than the one serving your traffic, give it up to ~15 seconds to propagate.</li>
           <li><strong>"Nothing happened when my agent called the tool."</strong>: check <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> first; it's very likely paused there waiting for approval, not silently failed.</li>
-          <li><strong>Credentials never leave the plane on their own</strong>: <code>GetSession</code> and the connector status endpoint never hand back a connector's raw downstream URL when MCP is configured, and MCP session tokens are 15-minute, run-bound, and single-purpose. This does not stop your own agent code from independently having a different, hardcoded credential to the same service, the plane can only govern access it hands out itself.</li>
+          <li><strong>MCP credentials stay on the plane</strong>: <code>GetSession</code> and the connector status endpoint never hand back a connector's raw downstream URL when MCP is configured, and MCP session tokens are 15-minute, run-bound, and single-purpose. This does not stop your own agent code from independently having a different, hardcoded credential to the same service, the plane can only govern access it hands out itself.</li>
           <li><strong>A cached OAuth token keeps working even mid-outage</strong>: if the token refresh endpoint is down and the breaker trips, a still-valid cached token keeps being served; only <em>new</em> token fetches fail fast.</li>
         </ul>
         <p class="note">

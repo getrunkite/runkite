@@ -6,7 +6,7 @@
     <title>Engineering notes · Runkite</title>
     <meta
       name="description"
-      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS."
+      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS, managed AI SDK receipts."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -59,7 +59,7 @@
         </li>
         <li>
           <a href="./poison-pill.html">4 · Poison pill / reclaim ceiling</a>
-          <p>Crash-loop jobs stop reclaiming after a hard max_retries ceiling.</p>
+          <p>Exhausted jobs stay recoverable until durable completion and finalization allow acknowledgement.</p>
         </li>
         <li>
           <a href="./finops-holds.html">5 · Optimistic spend holds</a>
@@ -68,6 +68,10 @@
         <li>
           <a href="./rls-grant.html">6 · The RLS grant that can't grant itself</a>
           <p>A Postgres 16 circular-grant gotcha that only shows up on a non-superuser DSN, and why superuser-only test coverage hid it.</p>
+        </li>
+        <li>
+          <a href="./managed-ai-sdk.html">7 · Managed AI SDK receipts</a>
+          <p>Commit native history before success; recover a committed turn without repeating tools.</p>
         </li>
       </ul>
 

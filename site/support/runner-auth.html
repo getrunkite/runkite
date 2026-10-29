@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -96,7 +97,7 @@
           <li>Choose kinds matching your runners (e.g. python-langgraph, typescript-langgraphjs).</li>
           <li>Generate tokens; set plane env + runner env; restart plane after allow-list changes.</li>
           <li>Set <code>RUNNER_TENANTS_*</code> when client auth is enabled.</li>
-          <li>Confirm jobs flow: create a run, watch Admin → Runs move pending → running → success.</li>
+          <li>Confirm jobs flow: create a run, watch its streamed execution, then verify its durable success in Admin → Runs.</li>
           <li>Rotate by appending a new token to the allow-list, rolling runners, then removing the old.</li>
         </ol>
         <pre class="mono-block"># Control plane (illustrative)
@@ -111,6 +112,19 @@ export RUNNER_TOKEN="tok_b"</pre>
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs" width="960" height="600" />
         </figure>
 
+        <h2>Kind and attempt binding</h2>
+        <p>
+          Since v0.5.6, token authentication binds the runner kind on the server context.
+          <code>GetJob</code> and <code>WatchCancels</code> reject a different requested kind;
+          heartbeat, event and completion calls must match the in-flight run's kind.
+          Local mode without runner tokens remains explicitly trusted.
+        </p>
+        <p>
+          Tokens identify a fleet kind rather than individual pods. Every run-specific call
+          must also echo the assignment generation. Generation <code>0</code> matches only
+          an actual generation-zero assignment, so older/custom runners that omit the field
+          must upgrade for current positive-generation jobs.
+        </p>
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Not for Admin login</strong>: pasting a runner token into Admin fails.</li>

@@ -31,6 +31,22 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 ## Deep dive
 
+- **Managed AI SDK is a separate runner profile.** The new `typescript-ai-sdk`
+  backend manages real Threads/Runs, native text/local JSON-result tools and
+  successful-turn history. It requires the plane's opaque HTTP checkpoint API.
+  Native approval/resume, streaming tool outputs, binary/client/provider tools,
+  time travel, whole-run caching and unfinished-turn restoration are unsupported.
+  AI SDK UI clients need the application bridge in
+  [the example](../examples/managed_ai_sdk/README.md). Raw SSE is advisory; the
+  bridge confirms durable completion and refuses to combine attempts after a
+  reclaim. Interrupted turns retain only previously committed history.
+- **Opaque adapter persistence now fails closed.** An unavailable state read
+  prevents execution. Failed state writes withhold completion and leave the
+  assignment recoverable. Malformed or unsupported message checkpoints fail
+  before execution. These semantics replace the previous warning-and-continue
+  fallback for non-LangGraph adapters. A crash before state commit can still
+  repeat external effects. Downstream idempotency remains required.
+
 Honest gaps, not hidden ones:
 
 - **Crash reclaim has a generation ceiling (`reclaim.max_retries`, default 3).** At the ceiling, the reaper stops re-enqueuing and retains the current assignment and generation until durable completion and finalization succeed, then acknowledges that exact generation. It first recovers an eligible delivered terminal event; otherwise it attempts an `error` completion. Database, broker, or finalization failures leave the assignment available for the next reaper tick. A same-attempt late report and the fallback error compete through the existing terminal transaction: the first durable terminal wins, so a terminal arriving after the recovery check has no guaranteed precedence. NATS sends `+WPI` while completion is retried; native redelivery still passes the normal attempt fence and recovery before dispatch. Backend support tiers and Kafka's documented coordination limits remain unchanged. Set `"reclaim": {"max_retries": 0}` or `RUNKITE_RECLAIM_MAX_RETRIES=0` for unlimited reclaim. Applies on Redis, NATS, Kafka, and in-process transports.

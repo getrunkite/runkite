@@ -34,6 +34,18 @@ sequenceDiagram
 
 ### Agent Protocol vs Runner Protocol
 
+These protocols describe managed execution. The separate
+`POST /governance/decide` API lets an app retain its own loop and submit one tool
+decision without creating a thread, run or runner assignment. That path does not
+apply run kill switches, break-glass or spend caps. See
+[client integration guidance](client-sdk.md#choose-who-owns-execution).
+
+The managed AI SDK TypeScript backend and UI stream bridge ship in v0.5.8.
+They reuse these protocols and opaque checkpoint APIs;
+they do not put a JavaScript runtime in the Go binary or turn the app-owned
+decision helper into a managed runner. The app changes its request path to
+create managed runs, while keeping UI authentication.
+
 **Creating threads, posting runs, streaming results** are [Agent Protocol](https://github.com/langchain-ai/agent-protocol) — a public, framework-agnostic client API. The control plane implements that surface.
 
 **Runner Protocol is not that standard.** It is Runkite’s own worker contract ([`runner-protocol/PROTOCOL.md`](../runner-protocol/PROTOCOL.md), also published at [getrunkite/runner-protocol](https://github.com/getrunkite/runner-protocol); gRPC in [`proto/runner.proto`](../proto/runner.proto)): how the plane hands work to a worker process and how the worker streams events back. Clients never see it.
@@ -147,7 +159,29 @@ With the Redis transport, in-flight tracking lives in Redis itself, not in any o
 
 Live-verified end to end on the real multi-instance topology: dispatched a `slow_agent` run, `docker pause`d the runner that dequeued it (freezing it mid-execution, not killing it); a surviving replica's reaper reclaimed the job (`"reclaimed stale jobs" count=1`) and a second runner completed it `status=success`. `docker unpause`d the first runner -- it resumed unaware it had been reclaimed, and its very next heartbeat came back superseded (`"heartbeat superseded, signaling runner to stop"`); the runner stopped and reported `status=interrupted`, but that report was itself rejected (`"ignored superseded status report"`) rather than overwriting the real outcome. The run's final status stayed `"success"` from the runner that actually earned it, and the thread ended `"idle"`, not stuck.
 
-A stale runner's terminal ("end") event is also filtered before it ever reaches a subscriber, not just its final status report -- otherwise a client long-polling for this run's result (or watching it live over SSE) could observe the stale runner's own spurious outcome before the real one arrives. Only terminal events are checked this way; ordinary progress events are not, since nothing treats them as authoritative the way a run's final status is.
+`StreamEvents` checks the exact assignment generation before every publication,
+including progress events. `Heartbeat` and `ReportStatus` use the same attempt
+identity. Zero matches only an actual generation-zero assignment; it never
+inherits a later generation or disables the fence. Runner tokens also bind these
+calls to the authenticated kind.
+
+The queue check and broker publication are separate operations. Raw SSE can
+therefore briefly expose a stale event during reclaim, including a terminal
+event. Durable completion and `/wait` select only values from the accepted
+generation. Live stream consumers must reconcile the durable run before treating
+an advisory terminal as its final result. Admin Run Detail does this after SSE
+ends; the AI SDK UI bridge also checks the durable attempt before UI finish.
+
+`internal/api/completion.go` (`BeginRunAttempt`, `CompleteRun`) and the state
+store's terminal transaction persist output and status before the lease is
+acknowledged. A failed event-stream acknowledgement is a delivery failure, not
+proof that the agent failed. Retries and reaper recovery use the existing attempt
+and committed result; they must not rewrite it with a replacement error.
+
+At the reclaim ceiling, the retained assignment remains recoverable until its
+matching terminal result, or the fallback error, and finalization succeed.
+This is not exactly-once external execution: tools need downstream idempotency
+when a crash happens before their execution state commits.
 
 ### Store dual mode
 

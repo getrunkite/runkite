@@ -6,7 +6,7 @@
     <title>Generation fencing · Runkite engineering</title>
     <meta
       name="description"
-      content="How Runkite stops a revived runner from clobbering the winner after reclaim, generation fencing on heartbeats, status, and terminal events."
+      content="Exact generation fences, durable completion before queue acknowledgement, and the remaining advisory SSE race."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -35,11 +35,12 @@
         </nav>
       </header>
 
-      <p class="kicker">Engineering note · 1 of 6</p>
+      <p class="kicker">Engineering note · 1 of 7</p>
       <h1>A stale runner <em>cannot</em> win.</h1>
       <p class="lede">
-        When a job is reclaimed, the next attempt gets a higher generation. Every later
-        heartbeat, status report, and terminal event from the old attempt is rejected, so a network blip cannot rewrite the winner’s result.
+        Reclaim gives the next attempt a higher generation. Heartbeats, event publication
+        and completion check that exact attempt. The durable completion transaction prevents
+        a superseded runner from replacing the current result.
       </p>
 
       <h2>The race that breaks queues</h2>
@@ -54,7 +55,7 @@
 <span class="dim">t=6</span>   reclaim → B dequeues  <span class="ok">generation=2</span>  · B reports success
 <span class="dim">t=?</span>   A recovers · ReportStatus(gen=1)
 
-<span class="bad">without fencing:</span>  A’s late Ack overwrites B  →  corrupt final status
+<span class="bad">without fencing:</span>  A’s late completion overwrites B  →  corrupt final status
 <span class="ok">with fencing:</span>     Ack(gen=1) rejected · Heartbeat returns superseded=true
         </pre>
       </div>
@@ -70,22 +71,44 @@
           thread stays on B’s terminal state.
         </li>
         <li>
-          <strong>Terminal StreamEvents</strong>: completion events from a superseded
-          generation are dropped before publish.
+          <strong>All StreamEvents</strong>: the bridge checks the message's generation
+          against the live assignment before each publish, including progress events.
         </li>
       </ul>
       <p>
-        Progress tokens from a dying runner can still slip through until the next
-        heartbeat, only the <strong>final status</strong> is iron-fenced. That trade
-        is deliberate and documented.
+        The queue check and broker publish are separate operations. Reclaim can happen
+        between them, so raw SSE is advisory and can briefly expose a stale event. The
+        durable completion path and <code>/wait</code> select only the current attempt's
+        result. Admin Run Detail reloads the stored record when its stream ends.
       </p>
 
-      <h2>Same idea, three transports</h2>
+      <h2>Zero is an exact generation</h2>
+      <p>
+        Since v0.5.6, <code>0</code> matches only an actual generation-zero assignment.
+        It cannot borrow a later attempt's generation or bypass Renew/Ack. New assignments
+        start at <code>1</code>. Upgrade custom and older runners to echo the assignment's
+        generation on every run-bound RPC and internal HTTP call.
+      </p>
+
+      <h2>Complete before acknowledging</h2>
+      <p>
+        <code>ReportStatus</code> commits the current attempt's status and output before
+        <code>Ack</code> removes its queue lease. Failed database writes leave the job
+        recoverable. A lost response can retry an already committed result without writing
+        it twice. Stream delivery failure is a delivery error, not a replacement agent error.
+      </p>
+      <p>
+        Source: <a href="https://github.com/getrunkite/runkite/blob/main/internal/bridge/server.go"><code>StreamEvents</code> / <code>ReportStatus</code></a>,
+        <a href="https://github.com/getrunkite/runkite/blob/main/internal/api/completion.go"><code>CompleteRun</code></a>.
+      </p>
+
+      <h2>Same contract across transports</h2>
       <p>
         Redis bumps a hand-rolled counter on reclaim. NATS reuses JetStream
         <code>NumDelivered</code>. Kafka stores generation in the compacted state topic
         and bumps it on every re-produce. The Runner Protocol surface is identical:
-        carry generation on every bound RPC.
+        carry generation on every bound RPC. The single-instance in-process queue uses
+        the same exact-match rule. Transport support tiers remain as documented.
       </p>
 
       <div class="takeaway">
@@ -102,6 +125,7 @@
         <a href="./poison-pill.html">Poison pill</a>
         <a href="./finops-holds.html">FinOps holds</a>
         <a href="./rls-grant.html">Postgres RLS grant</a>
+        <a href="./managed-ai-sdk.html">AI SDK receipts</a>
       </div>
 
       <footer class="note-footer">

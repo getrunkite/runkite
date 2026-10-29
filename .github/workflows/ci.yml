@@ -283,6 +283,9 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npx tsx --test src/*.test.ts
 
+      - name: Managed AI SDK runner and UI bridge (offline model)
+        run: make test-managed-ai-sdk
+
       - name: TypeScript governance helper
         working-directory: typescript/runkite-governance
         run: |

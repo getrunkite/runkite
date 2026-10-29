@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Metadata, type ClientWritableStream } from "@grpc/grpc-js";
 import { Semaphore, pollLoop, handleJob, type CancelState } from "./worker.js";
-import type { LangGraphAdapter, RunnableGraph } from "./adapter.js";
+import { LangGraphAdapter, type RunnableGraph } from "./adapter.js";
 import type { RunnerServiceClient, GetJobResponse, StreamEventsResponse, ReportStatusResponse } from "./proto.js";
 
 function sleep(ms: number): Promise<void> {
@@ -87,7 +87,11 @@ function fakeGraph(delayMs: number): RunnableGraph {
 }
 
 function fakeAdapter(graph: RunnableGraph): LangGraphAdapter {
-  return { isFactory: () => false, getGraph: () => graph } as unknown as LangGraphAdapter;
+  return {
+    isFactory: () => false,
+    getGraph: () => graph,
+    execute: LangGraphAdapter.prototype.execute,
+  } as unknown as LangGraphAdapter;
 }
 
 function makeAssignment(runId: string, graphId = "test_graph") {
@@ -244,6 +248,7 @@ test("pollLoop with concurrency=2 dispatches a 3rd job only once a slot frees up
 test("handleJob reports status=error and does not throw when the graph is missing (adapter.getGraph fails)", async () => {
   const adapter = {
     isFactory: () => false,
+    execute: LangGraphAdapter.prototype.execute,
     getGraph: () => {
       throw new Error("Graph not found: nonexistent_graph");
     },
@@ -265,6 +270,7 @@ test("pollLoop: one job failing (bad graph_id) does not stop the dispatcher from
   const goodGraph = fakeGraph(5);
   const adapter = {
     isFactory: () => false,
+    execute: LangGraphAdapter.prototype.execute,
     getGraph: (graphId: string) => {
       if (graphId === "missing_graph") throw new Error(`Graph not found: ${graphId}`);
       return goodGraph;
@@ -347,6 +353,7 @@ test("runWorker-style shutdown: draining inFlight before teardown lets a still-r
 test("handleJob clears its pendingCancels entry even when the job fails", async () => {
   const adapter = {
     isFactory: () => false,
+    execute: LangGraphAdapter.prototype.execute,
     getGraph: () => {
       throw new Error("boom");
     },

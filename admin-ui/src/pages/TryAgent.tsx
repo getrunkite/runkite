@@ -228,7 +228,7 @@ export function TryAgent() {
       <EmptyState
         icon={FlaskConical}
         title="No agents registered"
-        message="Start a runner so agents appear here, then try a prompt."
+        message="Register agents in the control-plane configuration and start the matching runner, then try a prompt."
       />
     );
   }
@@ -237,20 +237,23 @@ export function TryAgent() {
     <div>
       <PageHeader
         title="Try agent"
-        subtitle="Run any registered agent through the real control plane. Start with pending_agent: a refund at or over $100 lands in Pending."
-        actions={<DocsLink href={supportPage("admin-guide.html#3-try-agent")}>Docs: try agent →</DocsLink>}
+        subtitle="Run a registered agent through managed execution. The pending_agent demo records approval requests for refunds of $100 or more."
+        actions={<>
+          <DocsLink href={supportPage("admin-guide.html#3-try-agent")}>Docs: try agent →</DocsLink>
+          <DocsLink href={supportPage("sdk-integration.html")}>SDK integration →</DocsLink>
+        </>}
       />
 
       <div className="mb-4 rounded-sm border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
         <p>
           <strong className="font-medium text-foreground">LLM keys live on the runner, not here.</strong>{" "}
-          Try agent is a client — it dispatches to whatever graph your runner loaded. Demo agents
+          Try agent is a client. It dispatches to an agent loaded by the matching runner. Demo agents
           (pending_agent, echo, react, approval) come from <code>examples/all_agents</code> in
           <code>docker-compose.dev.yml</code>, not from Admin itself; production uses your own{" "}
           <code>langgraph.json</code> <code>graphs</code> keys only. Real models need{" "}
           <code className="text-xs text-foreground">GOOGLE_API_KEY</code> /{" "}
           <code className="text-xs text-foreground">OPENAI_API_KEY</code> (etc.) in the runner
-          process before you start it. The dropdown lists every agent the control plane knows about —
+          process before you start it. The dropdown lists every agent the control plane knows about;
           if you see <code className="text-xs">Graph not found</code>, pick one your runner actually
           loaded or align CP + runner config.{" "}
           <a
@@ -308,7 +311,7 @@ export function TryAgent() {
             {chat.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 {agentId === "pending_agent"
-                  ? 'Send "Refund $500 to the vendor". The plane holds it in Pending. Approve there, then send the same amount again.'
+                  ? 'Send "Refund $500 to the vendor". Inspect the held action in Pending and its decision in Audit. This demo does not continue the refund after approval.'
                   : "Send a prompt to exercise this agent end-to-end."}
               </p>
             )}
@@ -331,7 +334,7 @@ export function TryAgent() {
           )}
           {hitl && !connectorPending && (
             <div className="flex items-center gap-2 border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-              <span className="text-muted-foreground">Interrupted (HITL)</span>
+              <span className="text-muted-foreground">Framework interrupt (resume support depends on the runner)</span>
               <Button type="button" size="sm" onClick={() => void onResume(true)} disabled={busy}>
                 Approve
               </Button>

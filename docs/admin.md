@@ -4,7 +4,17 @@
 
 ![Admin UI walkthrough](assets/admin-walkthrough.gif)
 
-A web dashboard (React + TypeScript, embedded into the `runkite` binary via Go's `embed.FS` -- no separate deploy step, no Node.js runtime dependency for end users) for operational visibility across every tenant: overview counts, agents (with a per-agent detail page: schema, metadata, version history), a built-in **Try agent** playground (run any registered agent through the real create/stream path, with a raw live-protocol feed and per-turn usage -- not a graph builder, just a client you don't have to write), the registry (publish, edit, and delete catalog entries directly from Admin, not only via the API), threads, runs (with a live/replayed SSE event log for debugging a specific run), connectors, cron schedules, and webhook dead-letters — plus SQL governance pages: durable policy grants, mandatory HITL overlays, the connector HITL pending queue, kill/pause switches, break-glass windows, policy audit search, and FinOps spend (with a live pricebook/budget overlay editor -- change a rate or a day cap without touching `langgraph.json` or restarting). The walkthrough GIF cycles Overview → Agents → Registry → Threads → Runs → Connectors → Cron → Webhooks → Grants → Mandatory HITL → Pending → Kill → Break-glass → Audit; Try agent and Spend are newer additions covered below.
+Admin is a React and TypeScript dashboard embedded into the `runkite` binary.
+It needs no separate frontend deployment or Node.js runtime for end users. It
+shows operational counts, registered agents, schemas and versions, registry
+entries, managed threads/runs, connectors, schedules, webhook dead letters and a
+Try agent client. SQL backends also provide durable grants, mandatory HITL,
+pending decisions, kill/pause, break-glass, audit and estimated spend with live
+FinOps overlays.
+
+The walkthrough GIF shows an earlier navigation sequence. Try agent and Spend
+are documented below, and Pending now includes app-owned in-process approvals
+as well as connector approvals.
 
 ```
 runkite serve --config langgraph.json
@@ -50,9 +60,9 @@ POST /admin-api/mandatory-hitl              Create/upsert a rule; hot-reloads th
 GET /admin-api/mandatory-hitl/{id}          Get one rule
 PUT /admin-api/mandatory-hitl/{id}          Replace a rule; hot-reloads this replica (siblings via poll)
 DELETE /admin-api/mandatory-hitl/{id}       Delete a rule; hot-reloads this replica (siblings via poll)
-GET /admin-api/pending-actions              Connector HITL queue (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
+GET /admin-api/pending-actions              Connector and in-process tool approvals (SQL; ?tenant_id=&status=&run_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/pending-actions/{id}         Get one pending action
-POST /admin-api/pending-actions/{id}/approve  Mint one-shot capability bound to this row's args_digest (refuses if policy hard-denies)
+POST /admin-api/pending-actions/{id}/approve  Record approval (refuses hard deny or expired embedded row); caller continues the matching operation
 POST /admin-api/pending-actions/{id}/deny   Mark denied
 GET /admin-api/kill-switches                Tenant/agent kill or pause flags (SQL; ?tenant_id=&agent_id=; X-Next-Cursor). 501 on Mongo.
 POST /admin-api/kill-switches               Upsert kill/pause; unless pause_only, cancel non-terminal runs in scope
@@ -76,13 +86,41 @@ Building the UI from source (only needed if you're changing `admin-ui/` itself -
 cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui/dist/
 ```
 
+## Managed runs and in-process decisions
+
+Threads, Runs and Try agent show executions Runkite creates and dispatches to a
+runner. The optional managed AI SDK runner in this working tree uses these same
+records after the app adopts the managed request path. It is unreleased until a
+maintainer publishes a runner package/image containing it. Its initial scope is
+text and local JSON-result tools, without native approval/resume or time travel.
+See [Runners](runners.md) and the [integration guide](../site/support/sdk-integration.html).
+
+An app that keeps its model loop calls `POST /governance/decide` for one tool
+instead. That call creates no managed thread or run, even if its caller is an AI
+SDK or Microsoft Agent Framework app. The caller's `run_id` is an operation
+correlation ID and its `agent_id` need not be registered. Such IDs in Audit or
+Pending do not imply that an Admin run/agent detail record exists.
+
+Approval only changes the pending row. It does not resume a graph, invoke a
+connector, or run the app's executor. A connector caller retries the same
+argument-bound operation and consumes its one-shot capability. An embedded caller
+checks `GET /governance/actions/{action_id}` and continues the exact stored
+operation after `approved`, using app-owned idempotency. Embedded approvals still
+pending after 24 hours expire; connector rows have no corresponding TTL.
+
+Kill switches, break-glass and spend caps apply to their managed-run/connector
+paths, not to standalone decisions. An allow or audit row proves a decision,
+not execution. Spend is Estimated USD from metered managed runs, not a provider
+invoice; cancellation can settle before trailing usage arrives. Cancellation
+signals cooperative runner work and cannot undo an external side effect.
+
 ## Governance pages (SQL backends)
 
 | Route | Purpose |
 | --- | --- |
 | `/admin/grants` | List / create / edit / delete durable `policy-grants` overlays (writer hot-reloads; other replicas poll ≤15s). Argument predicates are **not** this page — `policy.predicates` in `langgraph.json` (config-only). |
 | `/admin/mandatory-hitl` | List / create / edit / delete durable mandatory-HITL overlays (same hot-reload / poll) |
-| `/admin/pending` | Connector HITL queue — approve (one-shot, bound to this row's `args_digest`) or deny. Pending **Args** column shows the display map. |
+| `/admin/pending` | Connector and in-process approvals. Connector retry consumes one matching capability; embedded callers poll and continue their exact stored app operation. Args shows the display map. |
 | `/admin/kill` | Activate / clear tenant or tenant+agent kill or pause (drain pending/running unless pause-only) |
 | `/admin/break-glass` | Mint / revoke time-bounded policy bypass (max 24h; kill/authz/limits still apply) |
 | `/admin/audit` | Search policy decisions. Connector `tools/call` rows include an Args column (`attrs.args_digest` + capped `attrs.args`). |

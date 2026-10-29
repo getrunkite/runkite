@@ -6,7 +6,7 @@
     <title>Poison pill / reclaim ceiling · Runkite engineering</title>
     <meta
       name="description"
-      content="How Runkite stops crash-loop jobs from reclaiming forever, reclaim.max_retries as a hard ceiling on Redis, NATS, and Kafka."
+      content="How Runkite limits crash-loop retries and retains the current assignment until durable completion and finalization succeed."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -35,13 +35,13 @@
         </nav>
       </header>
 
-      <p class="kicker">Engineering note · 4 of 6</p>
+      <p class="kicker">Engineering note · 4 of 7</p>
       <h1>Crash loops must <em>end</em>.</h1>
       <p class="lede">
         Generation fencing stops a <em>late</em> runner from winning. The poison pill
-        stops a <em>cursed</em> job from reclaiming forever, after
-        <code>reclaim.max_retries</code>, the run is terminal error, the thread is
-        released, and hooks fire. No infinite re-enqueue.
+        stops a crash-looping job from being dispatched forever. At
+        <code>reclaim.max_retries</code>, no further attempt is enqueued. The current
+        assignment stays recoverable until terminal persistence and finalization succeed.
       </p>
 
       <h2>What “poison” means here</h2>
@@ -56,22 +56,30 @@
 <span class="dim">attempt 2</span>  dequeue · crash · reclaim   <span class="ok">generation++</span>
 <span class="dim">attempt 3</span>  dequeue · crash · next reclaim would be 4th
 
-<span class="ok">ceiling (default 3):</span>  mark <span class="bad">error</span> · release thread · terminal event · <span class="bad">do not re-enqueue</span>
+<span class="ok">ceiling (default 3):</span>  retain attempt 3 · reject next generation 4
+                         recover its delivered terminal, or commit <span class="bad">error</span>
+                         finalize · Ack generation 3 · <span class="bad">do not re-enqueue</span>
         </pre>
       </div>
 
       <h2>Config</h2>
       <ul>
         <li>
-          <code>reclaim.max_retries</code> in agent config (default <strong>3</strong>).
+          <code>reclaim.max_retries</code> in the control plane's first discovered config
+          (default <strong>3</strong>).
         </li>
         <li>Missing field → default 3. Explicit <code>0</code> → unlimited (legacy escape).</li>
         <li>Env override at process start: <code>RUNKITE_RECLAIM_MAX_RETRIES</code>.</li>
       </ul>
       <p>
-        Applies on <strong>Redis, NATS, and Kafka</strong>: same ceiling, no
-        transport-only asymmetry. Distinct from live <strong>cancel</strong> and from
-        Admin <strong>kill switches</strong>.
+        Applies on the in-process, Redis, NATS and Kafka queues; their existing support
+        tiers are unchanged. A poison record names the rejected <em>next</em> generation.
+        <code>finishPoisonPill</code> acknowledges the retained generation only after
+        completion and finalization succeed. Database or finalization failure leaves its
+        lease for the next tick. This is separate from live cancel and Admin kill switches.
+      </p>
+      <p>
+        Source: <a href="https://github.com/getrunkite/runkite/blob/main/cmd/reclaim.go"><code>finishPoisonPill</code> / <code>reclaimStaleJobs</code></a>.
       </p>
 
       <h2>How it pairs with fencing</h2>
@@ -83,8 +91,8 @@
 
       <div class="takeaway">
         <p>
-          Operators get a hard stop they can explain: “it failed after N reclaims,”
-          not “the queue is haunted.”
+          Exhausting retries stops dispatch, while a storage outage cannot silently
+          discard the assignment that still needs a durable outcome.
         </p>
       </div>
 
@@ -95,6 +103,7 @@
         <a class="here" href="./poison-pill.html">Poison pill</a>
         <a href="./finops-holds.html">FinOps holds</a>
         <a href="./rls-grant.html">Postgres RLS grant</a>
+        <a href="./managed-ai-sdk.html">AI SDK receipts</a>
       </div>
 
       <footer class="note-footer">

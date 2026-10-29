@@ -33,6 +33,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -80,7 +81,7 @@
             <h2>Graph interrupt</h2>
             <p>
               The agent graph pauses (<code>interrupted</code>). Client or Admin resumes with
-              <code>{"command":{"resume":…}}</code> on the same thread/run. Used by Try’s <code>approval_agent</code>.
+              <code>{"command":{"resume":…}}</code> in a new run on the same thread. Used by Try's <code>approval_agent</code>.
               No connector grant required.
             </p>
           </section>
@@ -96,11 +97,19 @@
         <h2>How to operate</h2>
         <ol class="steps">
           <li><strong>Interrupted run</strong>: open Run detail / stream; resume via API or continue the client session. Not the Pending page.</li>
-          <li><strong>Pending row</strong>: Admin → Pending → Approve or Deny. Agent retries the tool after approve.</li>
+          <li><strong>Connector pending row</strong>: approve or deny in Admin. Approval enables a matching one-shot connector retry while the original run and generation remain in flight. The Admin action does not execute the tool or resume a run by itself.</li>
+          <li><strong>App-owned pending row</strong>: save the action ID and exact arguments in the app, then poll and continue that saved operation after approval. The row's run ID can be an app correlation ID with no Runkite run.</li>
           <li><strong>Mandatory HITL</strong>: rules force pending even when a grant would allow; configure under Mandatory HITL.</li>
-          <li><strong>Audit</strong>: policy decisions searchable on SQL.</li>
+          <li><strong>Audit</strong>: policy decisions searchable on SQL. Embedded approvals expire after 24 hours; expired rows cannot be approved. Connector pending rows do not use that TTL.</li>
         </ol>
 
+        <p>
+          Open approvals match tenant, agent, run correlation, generation, connector, tool
+          and argument digest. Polling an approved embedded action does not consume it;
+          application idempotency must prevent repeated execution. The AI SDK
+          managed runner does not implement native approval/resume. See
+          <a href="sdk-integration.html">SDK integrations</a> for the supported paths.
+        </p>
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin → Mandatory HITL: force pending even when a grant would allow</div>

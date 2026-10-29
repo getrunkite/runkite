@@ -1,5 +1,13 @@
 # Quickstart
 
+This walkthrough uses the published LangGraph runner path. If your app keeps its
+own SDK loop, use the [decision-only helper](client-sdk.md#embedded-governance-helper)
+instead; it does not create Threads/Runs. For managed Vercel AI SDK execution,
+the [managed AI SDK example](../examples/managed_ai_sdk/README.md) includes
+the runner factory and app-side UI stream bridge. Existing `v0.5.7` registry
+artifacts do not contain that backend. Compare the paths in
+[client integration guidance](client-sdk.md#choose-who-owns-execution).
+
 End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
 
 ## Install (published artifacts)
@@ -230,7 +238,14 @@ async def main():
 asyncio.run(main())
 ```
 
-Connector pending (the Admin Pending page) is a different path: `pending_agent` calls a fake bank `refund` through the plane. Refunds at or over 100 land in Admin → Pending. Approve, then send the same amount again (digest-bound). Compose starts that MCP for you (`docker compose -f docker-compose.dev.yml up`). Graph `interrupt()` / `command.resume` above does not create a Pending row.
+Connector pending is a different path. `pending_agent` calls a fake bank
+`refund` through the plane; amounts at or over 100 land in Admin Pending.
+This demo ends after reporting the hold. Approval updates the record and audit
+trail but does not resume the graph. A new run has a different binding and
+cannot consume the old approval; a real caller must retry within the same active
+run/generation using the approved arguments. Compose starts the fake MCP service
+for you. Graph `interrupt()` / `command.resume` above does not create a Pending
+row, and embedded app-owned decisions use their own stored-operation continuation.
 
 ## 7. Verify with curl
 

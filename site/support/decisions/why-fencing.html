@@ -42,6 +42,7 @@
           <a  href="../agents.html">Agents (Py / JS)</a>
           <a  href="../migrate-agents.html">Migrate agents</a>
           <a  href="../frameworks.html">Framework matrix</a>
+          <a href="../sdk-integration.html">SDK integrations</a>
           <a  href="../checkpoints.html">Checkpoints</a>
           <a  href="../connectors.html">Connectors</a>
           <a  href="../registry.html">Registry</a>
@@ -89,6 +90,13 @@
           Every reclaim bumps a <strong>generation</strong>. Heartbeats, status, and terminal
           events from an older generation are rejected. The superseded runner learns on the
           next heartbeat and stops cooperatively.
+        </p>
+        <p class="note">
+          Implementation update in v0.5.6: every event is checked before publish and zero
+          is an exact generation, never a wildcard. Queue check and broker publish remain
+          two operations; durable completion and <code>/wait</code> reject superseded
+          output even if advisory SSE exposed a stale event. See the
+          <a href="../../design/fencing.html">current fencing note</a>.
         </p>
         <h2>Consequences</h2>
         <ul>

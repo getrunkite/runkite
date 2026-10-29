@@ -19,6 +19,7 @@ from runkite_runner.adapter_checkpoint import (  # noqa: E402
     encode_messages_checkpoint,
     merge_messages_input,
 )
+from runkite_runner.completion import CompletionDeliveryError  # noqa: E402
 from runkite_runner.generic_worker import _execute_with_opaque_checkpoint  # noqa: E402
 from runkite_runner.opaque_checkpoint import (  # noqa: E402
     ADAPTER_CHECKPOINT_ID,
@@ -39,6 +40,26 @@ def test_messages_blob_roundtrip():
     blob = encode_messages_checkpoint(msgs)
     check("decode roundtrip", decode_messages_checkpoint(blob) == msgs)
     check("empty decode", decode_messages_checkpoint(None) == [])
+
+
+def test_messages_blob_rejects_invalid_or_unknown_state():
+    for blob in (
+        b"",
+        b"null",
+        b"[]",
+        b"{}",
+        b'{"messages":[]}',
+        b'{"v":true,"messages":[]}',
+        b'{"v":2,"messages":[]}',
+        b'{"v":1,"messages":null}',
+    ):
+        try:
+            decode_messages_checkpoint(blob)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Invalid or unknown durable state was reset to empty history")
+    check("invalid and unknown state rejected", True)
 
 
 def test_merge_prepends_when_client_sends_new_turn_only():
@@ -202,8 +223,8 @@ def test_get_ignores_lexicographically_newer_langgraph_blob():
     asyncio.run(_run())
 
 
-def test_execute_soft_fails_corrupt_prepare():
-    """Corrupt blob / prepare raising must not kill the run."""
+def test_execute_rejects_corrupt_prepare():
+    """Corrupt durable state must not silently execute with empty history."""
     import httpx
 
     fake = _FakeTransport()
@@ -244,27 +265,203 @@ def test_execute_soft_fails_corrupt_prepare():
             raw = {"messages": [{"role": "human", "content": "only-new"}]}
             a = {"run_id": "run-c", "thread_id": "thr_y", "graph_id": "g", "input": raw}
 
-            async def send(_e):
-                return None
+            events = []
 
-            st = await _execute_with_opaque_checkpoint(
-                FragileAdapter(),
-                a,
-                send,
-                asyncio.Event(),
-                http_address="http://cp.test",
-                runner_kind="python-crewai",
-                runner_token="",
-                resolve_http_url=resolve,
-                OpaqueCheckpointClient=client_factory,
-                adapter_supports_checkpoints=adapter_supports_checkpoints,
-            )
-            check("status success despite corrupt prior", st == "success")
-            check("raw client input kept", FragileAdapter.saw_input == raw)
+            async def send(event):
+                events.append(event)
+
+            try:
+                await _execute_with_opaque_checkpoint(
+                    FragileAdapter(),
+                    a,
+                    send,
+                    asyncio.Event(),
+                    http_address="http://cp.test",
+                    runner_kind="python-crewai",
+                    runner_token="",
+                    resolve_http_url=resolve,
+                    OpaqueCheckpointClient=client_factory,
+                    adapter_supports_checkpoints=adapter_supports_checkpoints,
+                )
+            except UnicodeDecodeError:
+                pass
+            else:
+                raise AssertionError("Invalid checkpoint was accepted")
+            check("corrupt prior prevents execution", FragileAdapter.saw_input is None)
+            check("corrupt prior publishes no success", not events)
             check("original assignment input unchanged", a["input"] == raw)
         finally:
             reset_run(rt)
             reset_tenant(tt)
+
+    asyncio.run(_run())
+
+
+def test_durable_completion_waits_for_state_commit():
+    """Live progress streams, but completion and HITL wait for committed state."""
+
+    async def _case(status, fail=False):
+        events = []
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class Client:
+            closed = False
+            blob = None
+
+            async def get(self, _thread):
+                return None
+
+            async def put(self, _thread, blob):
+                started.set()
+                await release.wait()
+                if fail:
+                    raise OSError("checkpoint unavailable")
+                self.blob = blob
+
+            async def aclose(self):
+                self.closed = True
+
+        client = Client()
+
+        class Adapter:
+            checkpoint_framework = "test"
+
+            def prepare_checkpoint_input(self, prior, input_data):
+                return input_data
+
+            def serialize_checkpoint(self, assignment, values, outcome):
+                check("serialized original outcome", outcome == status)
+                return encode_messages_checkpoint(values["messages"])
+
+            async def execute(self, assignment, send, cancel):
+                await send({"method": "lifecycle", "data": {"event": "running"}, "seq": 1})
+                await send({"method": "values", "data": {"messages": ["partial or final"]}, "seq": 2})
+                await send(
+                    {
+                        "method": "lifecycle",
+                        "data": {"event": "interrupted" if status == "interrupted" else "completed"},
+                        "seq": 3,
+                    }
+                )
+                if status == "interrupted":
+                    await send({"method": "input.requested", "data": {"interrupt_id": "approval"}, "seq": 4})
+                await send({"method": "end", "data": {"status": status}, "seq": 5})
+                return status
+
+        async def send(event):
+            if event["method"] in {"end", "input.requested"}:
+                check("completion follows durable blob", client.blob is not None)
+            events.append(event)
+
+        task = asyncio.create_task(
+            _execute_with_opaque_checkpoint(
+                Adapter(),
+                {"run_id": "run", "thread_id": "thread", "input": {}},
+                send,
+                asyncio.Event(),
+                http_address="http://plane",
+                runner_kind="python-test",
+                runner_token="",
+                resolve_http_url=lambda _http: "http://plane",
+                OpaqueCheckpointClient=lambda **_kwargs: client,
+                adapter_supports_checkpoints=adapter_supports_checkpoints,
+            )
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+        check("progress visible during save", [e["method"] for e in events] == ["lifecycle", "values"])
+        release.set()
+        if fail:
+            try:
+                await task
+            except CompletionDeliveryError:
+                pass
+            else:
+                raise AssertionError("Failed save accepted completion")
+            check("failed save leaves no terminal or ready interrupt", len(events) == 2)
+        else:
+            check("completion retains outcome", await task == status)
+            check("one terminal", sum(e["method"] == "end" for e in events) == 1)
+            check("event order preserved", [e["seq"] for e in events] == sorted(e["seq"] for e in events))
+        check("checkpoint client closed", client.closed)
+
+    asyncio.run(_case("success"))
+    asyncio.run(_case("interrupted"))
+    asyncio.run(_case("success", fail=True))
+    asyncio.run(_case("interrupted", fail=True))
+
+
+def test_failed_state_load_prevents_execution():
+    async def _run():
+        executed = []
+
+        class Client:
+            closed = False
+
+            async def get(self, _thread):
+                raise OSError("checkpoint unavailable")
+
+            async def aclose(self):
+                self.closed = True
+
+        client = Client()
+
+        class Adapter:
+            checkpoint_framework = "test"
+
+            def prepare_checkpoint_input(self, prior, input_data):
+                raise AssertionError("Must not prepare absent history after a failed read")
+
+            def serialize_checkpoint(self, assignment, values, status):
+                return None
+
+            async def execute(self, assignment, send, cancel):
+                executed.append(True)
+
+        async def send(_event):
+            raise AssertionError("Must not publish after a failed load")
+
+        try:
+            await _execute_with_opaque_checkpoint(
+                Adapter(),
+                {"run_id": "run", "thread_id": "thread", "input": {}},
+                send,
+                asyncio.Event(),
+                http_address="http://plane",
+                runner_kind="python-test",
+                runner_token="",
+                resolve_http_url=lambda _http: "http://plane",
+                OpaqueCheckpointClient=lambda **_kwargs: client,
+                adapter_supports_checkpoints=adapter_supports_checkpoints,
+            )
+        except CompletionDeliveryError:
+            pass
+        else:
+            raise AssertionError("Failed read was ignored")
+        check("failed state read prevents execution", not executed)
+        check("failed state read closes client", client.closed)
+
+    asyncio.run(_run())
+
+
+def test_opaque_client_rejects_discarded_write():
+    """A fenced-out checkpoint write is not an accepted durable save."""
+    import httpx
+
+    async def _run():
+        client = OpaqueCheckpointClient(
+            http_base_url="http://plane",
+            framework="test",
+            transport=httpx.MockTransport(lambda _request: httpx.Response(403, json={"error": "run_not_inflight"})),
+        )
+        try:
+            await client.put("thread", b"state")
+        except httpx.HTTPStatusError:
+            pass
+        else:
+            raise AssertionError("Fenced-out state write was accepted")
+        finally:
+            await client.aclose()
 
     asyncio.run(_run())
 
@@ -526,6 +723,7 @@ def test_execute_opaque_survives_fresh_client():
 
 if __name__ == "__main__":
     test_messages_blob_roundtrip()
+    test_messages_blob_rejects_invalid_or_unknown_state()
     test_merge_prepends_when_client_sends_new_turn_only()
     test_merge_prefers_longer_client_history()
     test_merge_equal_length_prefers_client()
@@ -533,7 +731,10 @@ if __name__ == "__main__":
     test_adapter_supports_checkpoints()
     test_opaque_client_get_put()
     test_get_ignores_lexicographically_newer_langgraph_blob()
-    test_execute_soft_fails_corrupt_prepare()
+    test_execute_rejects_corrupt_prepare()
+    test_durable_completion_waits_for_state_commit()
+    test_failed_state_load_prevents_execution()
+    test_opaque_client_rejects_discarded_write()
     test_execute_with_opaque_two_turns()
     test_execute_opaque_survives_fresh_client()
     print("all adapter checkpoint checks passed")

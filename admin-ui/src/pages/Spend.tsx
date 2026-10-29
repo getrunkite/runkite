@@ -253,7 +253,7 @@ export function Spend() {
     <div>
       <PageHeader
         title="Spend"
-        subtitle="Estimated spend from metered runs. Tokens come from the model; dollars come from your pricebook (or a gateway cost)."
+        subtitle="Estimated spend from metered managed runs. In-process tool decisions are not metered here. Dollars come from your pricebook or a reported gateway cost."
         actions={
           <>
             <DocsLink href={supportPage("admin-guide.html#15-spend-finops")}>Docs: spend →</DocsLink>
@@ -298,6 +298,10 @@ export function Spend() {
             showing $0, so a genuinely unmetered agent is never mistaken for a free one.
           </li>
         </ol>
+        <p className="mt-3 text-muted-foreground">
+          Cancellation can settle before final usage arrives, so canceled-run spend can be incomplete.
+          These estimates do not replace a provider invoice.
+        </p>
         <p className="mt-3 text-muted-foreground">
           Needs a SQL state backend (Postgres / MySQL / SQLite).{" "}
           <ExternalDocLink href={DOCS.production}>Production day-0</ExternalDocLink>

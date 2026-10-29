@@ -42,6 +42,7 @@
           <a href="agents.html">Agents (Py / JS)</a>
           <a href="migrate-agents.html">Migrate agents</a>
           <a href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
           <a href="checkpoints.html">Checkpoints</a>
           <a href="connectors.html">Connectors</a>
           <a href="registry.html">Registry</a>
@@ -86,6 +87,11 @@
           Everything you can see and do in the Admin dashboard, one section at a time. If you
           just want to log in, see <a href="admin-login.html">Admin login</a> first, this page
           picks up from there and walks through every screen you land on afterward.
+        </p>
+        <p class="note">
+          Screenshots illustrate an earlier UI revision. The descriptions below reflect
+          current behavior; some screenshot labels and links predate app-owned tool
+          decisions and the updated approval wording.
         </p>
 
         <div class="card">
@@ -189,11 +195,15 @@
             If the agent is <code>pending_agent</code>, a refund at or over $100 is held on the
             <strong>Pending</strong> page (connector policy). The hop strip on the right
             (agent, plane, tool) turns amber on that hold; click the tool hop to open Pending
-            filtered to the run. Approve there, then send the same amount again. Graph interrupt
-            (<code>approval_agent</code>) still uses the in-chat Approve / Deny buttons; that is a
-            different path.
+            filtered to the run. This example ends its run after receiving pending.
+            Approval records the decision; it does not execute the refund or let a new run
+            consume the old approval. A connector retry needs the original active run and
+            generation. See <a href="try.html">Try a governed tool call</a> and the
+            <a href="sdk-integration.html#app-owned">app-owned continuation</a> alternative.
+            Graph interrupt (<code>approval_agent</code>) uses the in-chat Approve / Deny
+            buttons, which resume the framework through a separate path.
           </li>
-          <li>The <strong>Usage</strong> panel shows that turn's token counts and estimated cost the moment the run finishes; click through to <strong>Spend</strong> for the tenant-wide rollup.</li>
+          <li>The <strong>Usage</strong> panel shows provider usage that the runner reported and the plane persisted. Missing or late cancellation usage is not a complete spend record; <strong>Spend</strong> shows the recorded tenant-wide rollup and alerts.</li>
           <li>Every run you start here is a real run, it shows up in Threads/Runs like any other, counts toward FinOps budgets, and is subject to the same kill switches and policy grants as a production call.</li>
         </ol>
         <p class="note">This is deliberately not an agent builder: it runs whatever graph is already deployed. To change what the agent does, edit and redeploy the graph itself, see <a href="first-agent.html">First agent</a>.</p>
@@ -398,7 +408,7 @@
           <code>langgraph.json</code> as <code>policy.predicates</code> (config-only; restart the control plane).
           They run after a matching grant and before the sync webhook, on connector MCP <code>tools/call</code> only.
           Copy the example on <a href="grants.html#argument-predicates">Grants &amp; HITL → argument predicates</a>.
-          After a pending or deny, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column, approve binds that display map (Audit still has digest + args as well).
+          For pending, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column to review its capped, redacted display map. Approval binds the submitted arguments' digest, not that display map. A plain deny creates no pending row; inspect its decision in <a href="#14-audit">Audit</a>.
         </p>
         <figure class="shot">
           <div class="cap">Admin → Grants: durable connector allowlist</div>
@@ -414,9 +424,10 @@
         </p>
         <p>
           <strong>What you'll see:</strong> a table of rules, each one saying "any call to
-          connector X (optionally, specific tool Y) must pause for approval." Runs that hit a
-          rule here don't fail, they pause and wait, and show up in the <strong>Pending</strong>
-          screen (next section) for someone to approve or deny.
+          connector X (optionally, specific tool Y) requires approval before its write."
+          A matching call returns pending and appears in the <strong>Pending</strong>
+          screen. Your agent or app must handle that outcome; the rule does not itself
+          pause or resume its framework.
         </p>
         <p><strong>How to create one:</strong></p>
         <ol class="steps">
@@ -431,25 +442,25 @@
 
         <h2 id="11-pending-approval-queue">11. Pending (approval queue)</h2>
         <p>
-          <strong>What it's for:</strong> the inbox for every connector call that's currently
-          paused waiting for a human, whether it paused because of a Mandatory HITL rule above,
-          or because the agent code itself asked for approval before a sensitive action.
+          <strong>What it's for:</strong> the inbox for held connector and embedded
+          tool decisions awaiting an operator. A row records a policy decision; it does
+          not prove that the caller's SDK is paused or that a managed run exists.
         </p>
         <p>
           <strong>What you'll see:</strong> a list of pending actions, each showing which run
-          triggered it, which connector/tool it wants to call, the reason, and the
-          <strong>Args</strong> display map, so you can see the amount you are binding
-          before deciding.
+          or app correlation ID triggered it, which connector/tool it wants to call, the reason, and the
+          capped, redacted <strong>Args</strong> display map for review, alongside the
+          digest that binds the submitted arguments.
         </p>
         <p><strong>How to approve or deny:</strong></p>
         <ol class="steps">
-          <li>Open a pending action and read the connector, tool, reason, and <strong>Args</strong> column (hover for the display map). Approve binds that payload, a later call with a different amount is a new row, not a silent send.</li>
-          <li><strong>Approve</strong>: the plane mints a one-shot permission for the next matching call with that same argument digest; the run resumes, and the tool executes normally.</li>
-          <li><strong>Deny</strong>: the run resumes with a denial instead; your agent code decides what to do next (retry differently, tell the user, give up).</li>
+          <li>Read the connector, tool, reason and <strong>Args</strong> column (hover for the capped, redacted display map). Approval binds the submitted argument digest. A connector call with different arguments needs a new policy decision; an app continuation must keep its exact stored arguments.</li>
+          <li><strong>Approve</strong>: a connector call receives a one-shot permission for a matching retry with the same tenant, agent and argument digest. The caller must retry while the original run/generation remain active; Admin does not execute the tool automatically.</li>
+          <li><strong>Deny</strong>: the pending call is rejected. The caller decides how to continue without performing that write.</li>
         </ol>
-        <p class="note">Approving here does not create a standing grant, it's a one-time unlock for this specific paused call. The next time the agent tries the same thing, it pauses again unless you've also added a Grant or removed the Mandatory HITL rule.</p>
+        <p class="note">Approving does not create a standing grant. Connector retry consumption is one-shot. Embedded <code>/governance/decide</code> rows belong to an app-owned operation that may have no managed run; the app polls and continues the exact saved arguments with its own idempotency. Embedded rows expire after 24 hours and cannot be approved after expiry. See <a href="sdk-integration.html">SDK integrations</a>.</p>
         <figure class="shot">
-          <div class="cap">Admin → Pending: approve or deny a paused tool call</div>
+          <div class="cap">Admin → Pending: approve or deny a held tool decision</div>
           <img src="../assets/ui-pending.png" alt="Runkite Admin Pending Actions" width="960" height="600" />
         </figure>
 

@@ -33,11 +33,27 @@ async function main(): Promise<void> {
     configPath: args.config ?? "langgraph.json",
     grpcAddress: args["grpc-address"] ?? process.env.RUNKITE_GRPC_URL ?? "localhost:50051",
     httpAddress: args["http-address"] ?? process.env.RUNKITE_HTTP_URL ?? "http://localhost:2026",
-    runnerKind: args["runner-kind"] ?? "typescript-langgraphjs",
+    runnerKind: args["runner-kind"] ?? (args.framework === "ai-sdk" ? "typescript-ai-sdk" : "typescript-langgraphjs"),
     concurrency,
   };
 
-  await runWorker(opts);
+  if (args.framework === "ai-sdk") {
+    const { register } = await import("tsx/esm/api");
+    register();
+    const { AiSdkAdapter } = await import("./aiSdkAdapter.js");
+    await runWorker({
+      ...opts,
+      adapter: new AiSdkAdapter(opts.configPath, {
+        httpAddress: opts.httpAddress,
+        runnerKind: opts.runnerKind,
+        runnerToken: process.env.RUNNER_TOKEN,
+      }),
+    });
+  } else if (!args.framework || args.framework === "langgraphjs") {
+    await runWorker(opts);
+  } else {
+    throw new Error(`unsupported framework ${args.framework}; use langgraphjs or ai-sdk`);
+  }
 }
 
 main().catch((err) => {

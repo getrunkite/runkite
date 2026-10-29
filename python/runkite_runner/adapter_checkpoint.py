@@ -20,13 +20,15 @@ def encode_messages_checkpoint(messages: list) -> bytes:
 
 
 def decode_messages_checkpoint(data: bytes | None) -> list:
-    if not data:
+    if data is None:
         return []
     raw = json.loads(data.decode("utf-8"))
-    if not isinstance(raw, dict):
-        return []
+    if not isinstance(raw, dict) or type(raw.get("v")) is not int or raw["v"] != BLOB_VERSION:
+        raise ValueError("Invalid or unsupported adapter message checkpoint")
     msgs = raw.get("messages")
-    return list(msgs) if isinstance(msgs, list) else []
+    if not isinstance(msgs, list):
+        raise ValueError("Adapter message checkpoint must contain a messages array")
+    return list(msgs)
 
 
 def merge_messages_input(prior_messages: list, input_data: dict) -> dict:

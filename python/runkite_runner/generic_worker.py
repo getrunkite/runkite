@@ -325,8 +325,8 @@ async def _handle_job(
     try:
         assignment = json.loads(response.assignment_json)
         run_id = assignment["run_id"]
-        # Defaults to 0 (unfenced) for a control plane that predates
-        # this field, same convention as the Go side.
+        # Legacy assignments may omit this field. Zero is an exact legacy
+        # generation, not a bypass for a current positive-generation job.
         generation = assignment.get("generation", 0)
         logger.info(f"Got job: run_id={run_id} graph_id={assignment['graph_id']}")
         _log_trace_context(run_id, assignment.get("trace_context"))
@@ -409,6 +409,10 @@ async def _handle_job(
                                 OpaqueCheckpointClient=OpaqueCheckpointClient,
                                 adapter_supports_checkpoints=adapter_supports_checkpoints,
                             )
+                    except CompletionDeliveryError:
+                        # No durable checkpoint means no completion to report.
+                        # The exact assignment must remain recoverable.
+                        raise
                     except Exception as e:
                         # A misbehaving adapter that raises instead of returning
                         # a status must not leave the run stuck "running"
@@ -494,69 +498,86 @@ async def _execute_with_opaque_checkpoint(
     OpaqueCheckpointClient,
     adapter_supports_checkpoints,
 ) -> str:
-    """Load/save opaque checkpoints around adapter.execute when opted in."""
+    """Commit opaque state before publishing completion for opted-in adapters.
+
+    Failed reads never execute with silently missing history. Failed writes
+    leave the assignment recoverable, without an authoritative terminal event
+    or ReportStatus that could acknowledge an incomplete conversation.
+    """
     use_cp = adapter_supports_checkpoints(adapter)
     http_base = resolve_http_url(http_address) if use_cp else None
-    client = None
+    if not (use_cp and http_base):
+        return await adapter.execute(assignment, send_event, cancel_event)
+
+    framework = str(adapter.checkpoint_framework).strip()
+    client = OpaqueCheckpointClient(
+        http_base_url=http_base,
+        framework=framework,
+        runner_kind=runner_kind,
+        runner_token=runner_token or None,
+    )
     last_values: dict = {}
+    completion_events: list[dict] = []
 
     async def capturing_send(event: dict):
         if event.get("method") == "values" and isinstance(event.get("data"), dict):
             last_values.clear()
-            last_values.update(event["data"])
-        await send_event(event)
-
-    if use_cp and http_base:
-        framework = str(adapter.checkpoint_framework).strip()
-        client = OpaqueCheckpointClient(
-            http_base_url=http_base,
-            framework=framework,
-            runner_kind=runner_kind,
-            runner_token=runner_token or None,
+            last_values.update(json.loads(json.dumps(event["data"])))
+        # Once completion starts, preserve event order through the commit.
+        # In particular, do not expose a resumable HITL prompt before its state.
+        method = event.get("method")
+        completion = method in {"end", "error", "input.requested"} or (
+            method == "lifecycle"
+            and isinstance(event.get("data"), dict)
+            and event["data"].get("event") in {"completed", "failed", "interrupted"}
         )
+        if completion or completion_events:
+            completion_events.append(json.loads(json.dumps(event)))
+        else:
+            await send_event(event)
+
+    try:
         thread_id = assignment.get("thread_id") or ""
+        if not thread_id:
+            raise ValueError("thread_id is required for durable adapter state")
+        prepare = getattr(adapter, "prepare_checkpoint_input", None)
+        serialize = getattr(adapter, "serialize_checkpoint", None)
+        if not callable(prepare) or not callable(serialize):
+            raise ValueError("Opaque checkpoint adapters must implement prepare and serialize hooks")
         # Work on a shallow copy so callers still see the raw client input
         # on the original assignment dict after this returns.
         assignment = {**assignment}
-        prior = None
         try:
-            # Load the fixed adapter-state id — never GET .../latest
+            # Load the fixed adapter-state id; never GET .../latest.
             # (checkpoint_id DESC can return a LangGraph UUID blob).
-            prior = await client.get(thread_id) if thread_id else None
-            prepare = getattr(adapter, "prepare_checkpoint_input", None)
-            if callable(prepare):
-                assignment["input"] = prepare(prior, assignment.get("input") or {})
-        except Exception as e:
-            # Soft-fail: keep a one-line warning (no traceback spam in CI /
-            # operator logs). Corrupt LG blobs on a shared thread are expected.
-            logger.warning(
-                "opaque checkpoint load/prepare failed (%s: %s); continuing without prior state",
-                type(e).__name__,
-                e,
-            )
-            # Leave assignment["input"] as the raw client payload.
+            prior = await client.get(thread_id)
+        except Exception as exc:
+            raise CompletionDeliveryError("opaque checkpoint load failed before execution") from exc
+        assignment["input"] = prepare(prior, assignment.get("input") or {})
 
-    status = "error"
-    try:
-        status = await adapter.execute(assignment, capturing_send if client else send_event, cancel_event)
-    finally:
-        if client is not None:
+        status = await adapter.execute(assignment, capturing_send, cancel_event)
+        if status in ("success", "interrupted"):
             try:
-                if status in ("success", "interrupted"):
-                    serialize = getattr(adapter, "serialize_checkpoint", None)
-                    if callable(serialize):
-                        blob = serialize(assignment, last_values, status)
-                        if blob:
-                            await client.put(assignment.get("thread_id") or "", blob)
-            except Exception as e:
-                logger.warning(
-                    "opaque checkpoint save failed (%s: %s)",
-                    type(e).__name__,
-                    e,
-                )
-            await client.aclose()
+                blob = serialize(assignment, last_values, status)
+                if blob is not None:
+                    if not isinstance(blob, bytes) or not blob:
+                        raise ValueError("Opaque checkpoint state must be nonempty bytes")
+                    await client.put(thread_id, blob)
+                elif status == "success" or last_values:
+                    raise ValueError("The adapter did not serialize its completed state")
+                # An interrupt before any state/output leaves the prior blob
+                # intact, matching adapters cancelled before their first reply.
+            except Exception as exc:
+                raise CompletionDeliveryError("opaque checkpoint save failed before completion") from exc
 
-    return status
+        for event in completion_events:
+            await send_event(event)
+        return status
+    finally:
+        try:
+            await client.aclose()
+        except Exception as exc:
+            logger.warning("opaque checkpoint client close failed (%s)", type(exc).__name__)
 
 
 async def _poll_loop(

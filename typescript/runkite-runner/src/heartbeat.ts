@@ -53,9 +53,8 @@ export interface HeartbeatHandle {
 }
 
 export interface HeartbeatLoopOptions {
-  /** Fencing token from this run's RunAssignment (see this module's own
-   * doc comment) -- 0 (the default) is "unfenced," matching a control
-   * plane that predates this field. */
+  /** Echo the token from GetJob. The default zero matches only a legacy
+   * generation-zero assignment; it never disables current-attempt fencing. */
   generation?: number;
   /** Fired the FIRST time a heartbeat comes back superseded=true, then
    * the loop stops itself -- see this module's own doc comment for why
