@@ -4,6 +4,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Fixed
+- Admin UI uses Vite 8.2.4. Vite 8.2.2 has a high advisory.
+- The control plane builds with Go 1.26.10. Go 1.26.9 is affected by CVE-2026-111943 (`crypto/x509`).
+
 ## [0.5.6] - 2026-10-29
 
 Runner identity, completion, and approval fixes from the v0.5.5 review. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.
