@@ -284,7 +284,18 @@ jobs:
           npx tsx --test src/*.test.ts
 
       - name: TypeScript governance helper
-        run: node --experimental-strip-types --test typescript/runkite-governance/src/index.test.ts
+        working-directory: typescript/runkite-governance
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+      - name: AI SDK governance integration (offline)
+        working-directory: examples/governance_ai_sdk
+        run: |
+          npm ci
+          npm run check
+          npm test
 
       - name: TypeScript runner dist/ is in sync with src/
         # Unit tests above run against src/ directly via tsx, never touching

@@ -84,6 +84,301 @@ export type GovernanceClient = {
   ): Promise<GovernanceOutcome>;
 };
 
+/** Identity for one application-owned tool operation, not a managed Runkite run. */
+export type GovernanceExecutionIdentity = {
+  agentId: string;
+  connector: string;
+  tool: string;
+  /** A stable application operation ID, reused for retries of the same operation. */
+  runId: string;
+  tenantId?: string;
+};
+
+export type GovernanceExecutionOptions = { abortSignal?: AbortSignal };
+
+/** The guard executes a frozen JSON copy. Plain object copies have no inherited properties. */
+export type DeepReadonly<T> = T extends readonly (infer Item)[]
+  ? readonly DeepReadonly<Item>[]
+  : T extends object
+    ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+    : T;
+
+export type GovernanceDeniedDecision = Readonly<
+  GovernanceDecision & { effect: "deny" }
+>;
+export type GovernancePendingDecision = Readonly<
+  GovernanceDecision & { effect: "pending"; actionId: string }
+>;
+
+export type GovernedExecuteConfig<
+  Input,
+  Output,
+  Options extends GovernanceExecutionOptions = GovernanceExecutionOptions,
+> = {
+  client: Pick<GovernanceClient, "decide">;
+  /** Runs synchronously on validated, frozen JSON before the first HTTP await. */
+  identify: (
+    input: DeepReadonly<Input>,
+    options: Options,
+  ) => GovernanceExecutionIdentity;
+  /** Single-result tools only. AsyncIterable/streaming results are unsupported. */
+  execute: (
+    input: DeepReadonly<Input>,
+    options: Options,
+  ) => Output | PromiseLike<Output>;
+  onDenied?: (
+    input: DeepReadonly<Input>,
+    options: Options,
+    decision: GovernanceDeniedDecision,
+  ) => Output | PromiseLike<Output>;
+  /** Persist the action ID and original input in the application before returning. */
+  onPending?: (
+    input: DeepReadonly<Input>,
+    options: Options,
+    decision: GovernancePendingDecision,
+  ) => Output | PromiseLike<Output>;
+};
+
+/** A blocked operation. It contains decision metadata, never the submitted arguments. */
+export class GovernanceBlockedError extends Error {
+  readonly decision: GovernanceDeniedDecision | GovernancePendingDecision;
+
+  constructor(decision: GovernanceDeniedDecision | GovernancePendingDecision) {
+    super(
+      decision.effect === "pending"
+        ? "Tool execution is pending governance approval"
+        : "Tool execution was denied by governance",
+    );
+    this.name = "GovernanceBlockedError";
+    const checked = executionDecision(decision);
+    if (checked.effect === "allow")
+      throw new GovernanceError("blocked decision cannot allow execution", 502);
+    this.decision = checked;
+  }
+}
+
+/**
+ * Guard a single-result tool executor without taking ownership of the model loop.
+ * It decides once, never polls or retries, and executes only after allow.
+ * Input must be a plain JSON object; nested JSON values and arrays are supported.
+ * Options stay outside policy arguments; put every authorization-relevant value in input.
+ * The application owns persistence, idempotency and later approval continuation.
+ */
+export function createGovernedExecute<
+  Input,
+  Output,
+  Options extends GovernanceExecutionOptions = GovernanceExecutionOptions,
+>(
+  config: GovernedExecuteConfig<Input, Output, Options>,
+): (input: Input, options: Options) => Promise<Output> {
+  // Capture the operation and callbacks once. Mutating config during a decision
+  // must not replace the executor that will run after authorization.
+  const decide = config.client.decide.bind(config.client);
+  const { identify, execute, onDenied, onPending } = config;
+
+  return async (input, options) => {
+    const signal = options.abortSignal;
+    signal?.throwIfAborted();
+    const snapshot = snapshotExecutionInput(input);
+    const identity = executionIdentity(identify(snapshot, options));
+    const call = Object.freeze({ ...identity, args: snapshot });
+    signal?.throwIfAborted();
+    const rawDecision = await decide(call, signal);
+    signal?.throwIfAborted();
+    const decision = executionDecision(rawDecision);
+    // A custom client's response validation must not introduce an abort window.
+    signal?.throwIfAborted();
+    let result: Output;
+    if (decision.effect === "allow") {
+      result = await execute(snapshot, options);
+    } else if (decision.effect === "deny") {
+      if (!onDenied) throw new GovernanceBlockedError(decision);
+      result = await onDenied(snapshot, options, decision);
+    } else {
+      if (!onPending) throw new GovernanceBlockedError(decision);
+      result = await onPending(snapshot, options, decision);
+    }
+    if (
+      result != null &&
+      (typeof result === "object" || typeof result === "function") &&
+      Symbol.asyncIterator in result
+    ) {
+      throw new GovernanceError(
+        "streaming tool results are not supported by createGovernedExecute",
+        400,
+      );
+    }
+    return result;
+  };
+}
+
+function executionIdentity(
+  raw: GovernanceExecutionIdentity,
+): GovernanceExecutionIdentity {
+  if (!raw || typeof raw !== "object")
+    throw new GovernanceError(
+      "governance execution identity must be an object",
+      400,
+    );
+  const read = (key: keyof GovernanceExecutionIdentity, required: boolean) => {
+    const descriptor = Object.getOwnPropertyDescriptor(raw, key);
+    if (!descriptor && !required) return undefined;
+    if (
+      !descriptor ||
+      !("value" in descriptor) ||
+      !validExecutionID(descriptor.value)
+    ) {
+      throw new GovernanceError(
+        `governance execution ${key} must be a nonempty canonical string of at most 256 UTF-8 bytes`,
+        400,
+      );
+    }
+    return descriptor.value as string;
+  };
+  const agentId = read("agentId", true)!;
+  const connector = read("connector", true)!;
+  const tool = read("tool", true)!;
+  const runId = read("runId", true)!;
+  const tenantId = read("tenantId", false);
+  return tenantId === undefined
+    ? { agentId, connector, tool, runId }
+    : { agentId, connector, tool, runId, tenantId };
+}
+
+type ExecutionDecision =
+  | Readonly<GovernanceDecision & { effect: "allow" }>
+  | GovernanceDeniedDecision
+  | GovernancePendingDecision;
+
+function executionDecision(raw: unknown): ExecutionDecision {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    throw new GovernanceError(
+      "governance decide response must be an object",
+      502,
+    );
+  const read = (key: string): unknown => {
+    const descriptor = Object.getOwnPropertyDescriptor(raw, key);
+    if (!descriptor) return undefined;
+    if (!("value" in descriptor))
+      throw new GovernanceError(
+        "governance decide response contains an accessor",
+        502,
+      );
+    return descriptor.value;
+  };
+  const effect = read("effect");
+  if (effect !== "allow" && effect !== "deny" && effect !== "pending")
+    throw new GovernanceError("governance decide response missing effect", 502);
+  const metadata: { reason?: string; reasonCode?: string; actionId?: string } =
+    {};
+  for (const key of ["reason", "reasonCode", "actionId"] as const) {
+    const value = read(key);
+    if (value !== undefined) {
+      if (typeof value !== "string")
+        throw new GovernanceError(
+          "governance decide response metadata must be strings",
+          502,
+        );
+      metadata[key] = value;
+    }
+  }
+  if (effect === "pending") {
+    if (!validExecutionID(metadata.actionId))
+      throw new GovernanceError("pending decision missing action_id", 502);
+    return Object.freeze({ ...metadata, effect, actionId: metadata.actionId });
+  }
+  return Object.freeze({ ...metadata, effect });
+}
+
+function snapshotExecutionInput<Input>(input: Input): DeepReadonly<Input> {
+  const ancestors = new Set<object>();
+  const invalid = (): never => {
+    throw new GovernanceError(
+      "tool input must be lossless JSON data without accessors or cycles",
+      400,
+    );
+  };
+  if (input === null || typeof input !== "object" || Array.isArray(input))
+    return invalid();
+  const copy = (value: unknown): unknown => {
+    if (value === null || typeof value === "boolean") return value;
+    if (typeof value === "string")
+      return wellFormedExecutionString(value) ? value : invalid();
+    if (typeof value === "number") {
+      if (!Number.isFinite(value) || Object.is(value, -0)) return invalid();
+      return value;
+    }
+    if (typeof value !== "object") return invalid();
+    if (ancestors.has(value)) return invalid();
+    const array = Array.isArray(value);
+    const prototype = Object.getPrototypeOf(value);
+    if (
+      array
+        ? prototype !== Array.prototype
+        : prototype !== Object.prototype && prototype !== null
+    )
+      return invalid();
+    ancestors.add(value);
+    try {
+      const keys = Reflect.ownKeys(value);
+      if (keys.some((key) => typeof key !== "string")) return invalid();
+      const result = array ? [] : Object.create(null);
+      const length = array
+        ? Object.getOwnPropertyDescriptor(value, "length")?.value
+        : undefined;
+      if (
+        array &&
+        (!Number.isSafeInteger(length) ||
+          length < 0 ||
+          keys.length !== length + 1)
+      )
+        return invalid();
+      for (const key of keys) {
+        if (typeof key !== "string" || !wellFormedExecutionString(key))
+          return invalid();
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !("value" in descriptor)) return invalid();
+        if (array && key === "length") continue;
+        if (!descriptor.enumerable) return invalid();
+        if (array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length))
+          return invalid();
+        Object.defineProperty(result, key, {
+          value: copy(descriptor.value),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+      return Object.freeze(result);
+    } finally {
+      ancestors.delete(value);
+    }
+  };
+  // The validator preserves every JSON property and value before this type assertion.
+  return copy(input) as DeepReadonly<Input>;
+}
+
+function wellFormedExecutionString(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+
+function validExecutionID(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !/^[\p{White_Space}\uFEFF]|[\p{White_Space}\uFEFF]$/u.test(value) &&
+    wellFormedExecutionString(value) &&
+    new TextEncoder().encode(value).length <= 256
+  );
+}
+
 const DEFAULT_INTERVAL_MS = 500;
 const DEFAULT_TIMEOUT_MS = 60_000;
 

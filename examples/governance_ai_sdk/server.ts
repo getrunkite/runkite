@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { generateText, jsonSchema, tool } from "ai";
+import { timingSafeEqual } from "node:crypto";
+import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGovernanceClient } from "runkite-governance";
-import { NoteStore, type NoteArgs, type NoteJob } from "./state.ts";
+import { NoteStore, type NoteJob } from "./state.ts";
+import { createNoteTool } from "./tools.ts";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -20,27 +21,6 @@ const governance = createGovernanceClient({
 });
 const store = new NoteStore(process.env.APP_STATE_FILE ?? "data/state.json");
 
-const schema = jsonSchema<NoteArgs>({
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    title: { type: "string", minLength: 1, maxLength: 200 },
-    body: { type: "string", maxLength: 10_000 },
-  },
-  required: ["title", "body"],
-});
-function validateNote(input: NoteArgs): NoteArgs {
-  if (
-    typeof input.title !== "string" ||
-    !input.title ||
-    input.title.length > 200 ||
-    typeof input.body !== "string" ||
-    input.body.length > 10_000
-  )
-    throw new Error("Invalid note arguments");
-  return { title: input.title, body: input.body };
-}
-
 createServer(async (request, response) => {
   const send = (status: number, value: unknown) => {
     response.writeHead(status, {
@@ -50,7 +30,9 @@ createServer(async (request, response) => {
     response.end(JSON.stringify(value));
   };
   const authorization = request.headers.authorization ?? "";
-  const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+  const supplied = Buffer.from(
+    authorization.startsWith("Bearer ") ? authorization.slice(7) : "",
+  );
   if (
     supplied.length !== appToken.length ||
     !timingSafeEqual(supplied, appToken)
@@ -105,38 +87,11 @@ createServer(async (request, response) => {
         model,
         prompt,
         tools: {
-          createNote: tool({
-            description:
-              "Create a local application note, subject to Runkite operator policy.",
-            inputSchema: schema,
-            execute: async (input, options) => {
-              const args = validateNote(input);
-              const id = createHash("sha256")
-                .update(turnId + ":" + options.toolCallId)
-                .digest("hex");
-              const decision = await governance.decide({
-                agentId: "notes-app",
-                connector: "workspace",
-                tool: "createNote",
-                args,
-                runId: id,
-              });
-              if (decision.effect === "pending" && !decision.actionId)
-                throw new Error("Pending decision missing action ID");
-              const job = await store.addDecision(
-                {
-                  id,
-                  turnId,
-                  args,
-                  actionId: decision.actionId,
-                  status: decision.effect === "deny" ? "denied" : "pending",
-                },
-                decision.effect === "allow",
-              );
-              jobs.push(job);
-              // Return the action ID immediately. Admin approval is resumed by a later app request.
-              return job;
-            },
+          createNote: createNoteTool({
+            client: governance,
+            store,
+            turnId,
+            onJob: (job) => jobs.push(job),
           }),
         },
       });

@@ -13,7 +13,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all eks-up eks-down eks-smoke eks-soak-loop multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
+.PHONY: build vet test test-all test-all-v test-pg test-mysql test-redis test-mongo test-qdrant test-weaviate test-pinecone test-nats test-kafka test-e2e test-matrix test-matrix-record test-protocol-fixtures test-protocol-execute test-llm-matrix test-llm-structural test-python test-ts test-governance-ts test-adapters smoke-multi smoke-governance soak-multi soak-multi-short kind-helm-smoke kind-helm-rotate kind-helm-reclaim kind-helm-net kind-helm-all eks-up eks-down eks-smoke eks-soak-loop multi-up multi-down up down dev-up dev-down logs infra-up infra-down proto-gen lint lint-go lint-python lint-ts fmt fmt-go fmt-python fmt-ts openapi openapi-check
 
 # --- Build ---
 build:
@@ -337,8 +337,12 @@ test-adapters:
 # generation, cancel/interrupt handling -- no live control plane needed).
 test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
-	node --experimental-strip-types --test typescript/runkite-governance/src/*.test.ts
-	node --experimental-strip-types --test examples/governance_ai_sdk/state.test.ts
+	$(MAKE) test-governance-ts
+
+# App-owned tool governance, including real SDK execution with an offline model.
+test-governance-ts:
+	cd typescript/runkite-governance && npm ci && npm run build && npm test
+	cd examples/governance_ai_sdk && npm ci && npm run check && npm test
 
 # --- Lint / format ---
 #

@@ -2,6 +2,11 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
+## Unreleased
+
+### Added
+- TypeScript `createGovernedExecute` guards a single-result app-owned tool with one decide call. The AI SDK example uses it. Pending continuation stays in the app. The helper remains unpublished.
+
 ## [0.5.7] - 2026-10-29
 
 The control plane image and Go binaries use Go 1.26.10. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.

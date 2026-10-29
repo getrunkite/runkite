@@ -2,6 +2,20 @@
 
 This runnable server keeps its Vercel AI SDK request loop and application state. Runkite decides whether its `createNote` tool is allowed. The note is a local application object, so the example performs no external write. The model provider is called only when you submit a new turn.
 
+`tools.ts` uses the reusable `createGovernedExecute` helper inside an ordinary
+AI SDK `tool.execute`. The helper calls Decide once with an immutable JSON
+snapshot. Only allow reaches the note executor. Denied and pending handlers
+record an application job and return it to the SDK immediately. The pending
+handler saves the plane action ID and the exact arguments for the existing
+continuation route; browser approval flags never authorize execution.
+
+The guard supports single-result tools with JSON object arguments. It does not
+wrap provider-executed tools or streaming tool executors. It checks cancellation
+before invoking a callback; application code owns cancellation after that point.
+AI SDK can expose a thrown guard error as a tool-error and continue its loop.
+This example uses the explicit denied/pending handlers so the tool result is an
+application job with a clear status instead.
+
 For a pending decision, the server persists and returns the plane's `actionId` immediately. An operator resolves that action in Runkite Admin. A later application request continues the exact stored operation. It never holds an HTTP request open while waiting for operator approval.
 
 This example uses pinned `ai@7.0.155` and `@ai-sdk/openai@4.0.104` public `generateText`, `tool`, `jsonSchema` and `createOpenAI` APIs. It does not use the SDK's chat-user approval flags as a substitute for operator approval.
@@ -72,7 +86,10 @@ Before approval, continuation returns HTTP 202 and the stored pending job. Rejec
 
 ## What the application owns
 
-`state.ts` serializes mutations and atomically replaces one application state file. The note and its execution record change together, which makes continuation idempotent across concurrent requests and process restarts in this single-process example. `npm test` proves that behavior without a model or a plane. `npm run check` validates the SDK integration types.
+`state.ts` serializes mutations and atomically replaces one application state file. The note and its execution record change together, which makes continuation idempotent across concurrent requests and process restarts in this single-process example. `npm test` exercises the real AI SDK with an offline mock model and a fake policy transport: allow, deny, pending continuation, plane failure, cancellation and app-owned idempotency. No provider key or running plane is needed for tests. `npm run check` validates the integration against the pinned AI SDK types.
+
+From the repository root, `make test-governance-ts` builds the helper and runs
+both suites. CI runs the same helper and SDK checks on pull requests.
 
 For a deployed multi-replica app, use its own database transaction and unique operation key in place of this file. For an external side effect, also pass an idempotency key to the downstream API or use the application's existing outbox. Runkite approval alone cannot provide exactly-once external execution. A process failure during a model turn may leave that turn marked `processing`; repeating its key returns any recorded jobs without automatically repeating the model or tool calls. The application must decide how to recover an incomplete model turn.
 

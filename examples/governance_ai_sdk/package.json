@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --experimental-strip-types server.ts",
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test state.test.ts"
+    "test": "node --experimental-strip-types --test state.test.ts tools.test.ts"
   },
   "engines": {
     "node": ">=22.13"

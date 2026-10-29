@@ -105,6 +105,23 @@ bounds the caller wait and the number of blocking stdlib transport workers;
 those workers use the remaining socket timeout and close responses on unwind.
 Cancellation can return before an operating-system DNS lookup finishes.
 
+### Guard an application-owned tool
+
+The TypeScript helper exports `createGovernedExecute` for single-result tool
+functions, including AI SDK `tool.execute`. It snapshots and freezes JSON object
+arguments, asks the plane once, and invokes the executor only after `allow`.
+Denied and pending calls throw `GovernanceBlockedError` by default. Explicit
+`onDenied` and `onPending` handlers can return application results instead;
+the pending handler must persist the action ID and exact original operation
+before returning. The guard never polls, resumes or retries execution.
+
+An `AbortSignal` stops decision work and prevents starting callbacks after
+cancellation. The application controls cancellation once its callback has
+started. Streaming tool executors are outside this helper's scope. See the
+[helper usage](../typescript/runkite-governance/README.md) and the example's
+`tools.ts` for typed AI SDK integration. Run visibility, kill switches, spend
+caps and execution idempotency remain outside this decision-only guard.
+
 ## Related
 
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)
