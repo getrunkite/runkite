@@ -32,7 +32,16 @@ def main():
 
     setup_logging()
 
-    asyncio.run(run_worker(AutoGenAdapter(), args.config, args.grpc_address, args.runner_kind, args.concurrency, http_address=args.http_address))
+    asyncio.run(
+        run_worker(
+            AutoGenAdapter(),
+            args.config,
+            args.grpc_address,
+            args.runner_kind,
+            args.concurrency,
+            http_address=args.http_address,
+        )
+    )
 
 
 if __name__ == "__main__":
