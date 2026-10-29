@@ -138,13 +138,18 @@ func startStack() (cleanup func(), err error) {
 	if _, statErr := os.Stat(venvPython); statErr != nil {
 		venvPython = "python3"
 	}
+	// Opaque checkpoint load is fail-closed. The runner must reach this
+	// plane's HTTP port (2029), not the default localhost:2026.
+	httpAddr := "http://localhost:" + httpPort
 	runnerCmd := exec.Command(venvPython, "-m", "langchain_adapter",
 		"--config", configPath,
 		"--grpc-address", "localhost:"+grpcPort,
+		"--http-address", httpAddr,
 	)
 	runnerCmd.Dir = repoRoot
 	runnerCmd.Env = append(os.Environ(),
 		"PYTHONPATH="+filepath.Join(repoRoot, "python")+string(os.PathListSeparator)+filepath.Join(repoRoot, "python", "adapters"),
+		"RUNKITE_HTTP_URL="+httpAddr,
 	)
 	logBuf := &syncBuffer{}
 	runnerCmd.Stdout = logBuf

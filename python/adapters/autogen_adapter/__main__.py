@@ -23,11 +23,16 @@ def main():
         default=int(os.environ.get("RUNKITE_CONCURRENCY", "1")),
         help="Max concurrent in-flight jobs per runner process (env: RUNKITE_CONCURRENCY, default: 1)",
     )
+    parser.add_argument(
+        "--http-address",
+        default=os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026"),
+        help="Control plane HTTP address for opaque checkpoints (env: RUNKITE_HTTP_URL)",
+    )
     args = parser.parse_args()
 
     setup_logging()
 
-    asyncio.run(run_worker(AutoGenAdapter(), args.config, args.grpc_address, args.runner_kind, args.concurrency))
+    asyncio.run(run_worker(AutoGenAdapter(), args.config, args.grpc_address, args.runner_kind, args.concurrency, http_address=args.http_address))
 
 
 if __name__ == "__main__":

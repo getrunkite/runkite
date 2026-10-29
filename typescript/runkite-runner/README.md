@@ -45,10 +45,9 @@ From a clone: `npm ci && npm run build` then `npx runkite-runner --config …`.
 
 ## Managed Vercel AI SDK agents
 
-This checkout adds an optional AI SDK backend alongside LangGraph.js. Install
-`ai@7.0.155` in the same application as the updated runner package. Select it
-with `--framework ai-sdk`; the default runner kind is `typescript-ai-sdk`.
-Existing published releases need a maintainer release containing this backend.
+Optional AI SDK backend alongside LangGraph.js (from v0.5.8). Install
+`ai@7.0.155` next to `runkite-runner`. Select it with `--framework ai-sdk`;
+the default runner kind is `typescript-ai-sdk`.
 
 ```sh
 # From this checkout

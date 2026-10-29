@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "node -e \"try{require.resolve('ai/package.json')}catch{process.exit(1)}\" || npm install --no-save --no-package-lock ai@7.0.155 && npm run build",
     "dev": "tsx src/cli.ts",
     "test": "tsx --test src/**/*.test.ts",
     "lint": "oxlint src/",

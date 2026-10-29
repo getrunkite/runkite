@@ -70,10 +70,8 @@ func lookupEnv(name string) string { return os.Getenv(name) }
 // framework × CP integration over gRPC (+ HTTP for status/store proxy);
 // runner direct-mode DB sharing is a separate contract.
 //
-// httpAddr is exported as RUNKITE_HTTP_URL rather than a CLI flag:
-// python-langgraph accepts --http-address, but the framework adapters
-// (langchain/crewai/llamaindex/autogen) share a narrower argparse and
-// reject the flag. Every runner already reads RUNKITE_HTTP_URL.
+// httpAddr is exported as RUNKITE_HTTP_URL for every runner. Adapters also
+// accept --http-address; the env keeps launch helpers uniform.
 func runnerLaunchEnv(httpAddr string) []string {
 	env := append([]string(nil), os.Environ()...)
 	for _, name := range allBackendSelectionVars {
