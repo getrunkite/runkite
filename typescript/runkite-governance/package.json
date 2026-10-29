@@ -1,6 +1,6 @@
 {
   "name": "runkite-governance",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Decide and poll helper for Runkite embedded governance. Not the full client SDK.",
   "type": "module",
   "exports": {

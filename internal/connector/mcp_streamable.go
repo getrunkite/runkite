@@ -28,7 +28,7 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 	var oversized atomic.Bool
 	client.Transport = mcpAuthTransport{next: base, token: token, oversized: &oversized, scope: ctx}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	upstream := mcp.NewClient(&mcp.Implementation{Name: "runkite-connector", Version: "0.5.6"},
+	upstream := mcp.NewClient(&mcp.Implementation{Name: "runkite-connector", Version: "0.5.7"},
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	session, err := upstream.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint: endpoint, HTTPClient: &client, MaxRetries: -1, DisableStandaloneSSE: true,

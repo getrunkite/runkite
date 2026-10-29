@@ -2,12 +2,21 @@
 
 All notable releases are documented here. Version source of truth: [`VERSION`](./VERSION).
 
-## Unreleased
+## [0.5.7] - 2026-10-29
+
+The control plane image and Go binaries use Go 1.26.10. Preview (BUSL), not a 1.0 production claim, and **not** a hosted control plane.
 
 ### Fixed
 - Admin UI uses Vite 8.2.4. Vite 8.2.2 has a high advisory.
 - The control plane builds with Go 1.26.10. Go 1.26.9 is affected by CVE-2026-111943 (`crypto/x509`).
 - golangci-lint passes on the v0.5.6 completion code. Deferred SQL rollbacks and best-effort run cleanup no longer leave errors unchecked. Test nil checks return after `t.Fatal`, which staticcheck does not treat as an exit on Go 1.26.10.
+
+### Notes
+- No runner behavior change.
+- The governance helpers are still unpublished.
+- **Self-host only.** A managed/hosted control plane is not in this release.
+
+[0.5.7]: https://github.com/getrunkite/runkite/releases/tag/v0.5.7
 
 ## [0.5.6] - 2026-10-29
 
