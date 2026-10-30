@@ -342,7 +342,7 @@ test-adapters:
 test-agent-framework:
 	uv venv --clear --python 3.12 python/adapters/agent_framework_adapter/.venv
 	uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python \
-		'agent-framework-core==1.23.0' grpcio protobuf httpx
+		'agent-framework-core==1.23.0' 'agent-framework-openai==1.17.0' grpcio protobuf httpx
 	PYTHONPATH=python:python/adapters:examples/managed_agent_framework \
 		python/adapters/agent_framework_adapter/.venv/bin/python \
 		-m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'

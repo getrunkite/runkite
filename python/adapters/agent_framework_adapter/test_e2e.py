@@ -5,6 +5,8 @@ Optional RUNKITE_TEST_POSTGRES_DSN + RUNKITE_TEST_REDIS_URL select dedicated
 external test services; otherwise this uses SQLite and the in-process queue.
 The harness installs the wheel's agent-framework extra into a fresh consumer
 venv with uv. UV_CACHE_DIR and UV_OFFLINE are honored for dependency preparation.
+The Microsoft profile uses fictional USD rates to prove real spend settlement
+and admission caps, without contacting a provider.
 """
 
 from __future__ import annotations
@@ -88,12 +90,20 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
     counters_env = "RUNKITE_MS_E2E_COUNTERS"
     metadata_key = "agent_framework"
     fixture_label = "ms"
-    extra_graph_factories: tuple[str, ...] = ()
+    extra_graph_factories: tuple[str, ...] = ("error_agent", "budget_agent")
     extra_runner_args: tuple[str, ...] = ()
     extra_worker_environment: dict[str, str] = {}
 
     def additional_configuration(self) -> dict[str, Any]:
-        return {}
+        return {
+            "finops": {
+                # Fictional prices, deliberately unrelated to provider prices.
+                "pricebook": {"offline-managed-ms-e2e": {"input_per_1k": 1, "output_per_1k": 2}},
+                "budgets": {
+                    "agents": {f"{self.tenant_a}/{self.extra_graphs['budget_agent']}": {"max_usd_per_day": 0.02}}
+                },
+            }
+        }
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix=f"runkite-{self.fixture_label}-e2e-")
@@ -358,6 +368,12 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         self.assertEqual(run["status"], "success", json.dumps(run))
         usage = run["output"]["usage"]
         self.assertEqual((usage["prompt_tokens"], usage["completion_tokens"]), (prompt, completion))
+        if self.install_extra == "agent-framework":
+            self.assertEqual(usage["model"], "offline-managed-ms-e2e")
+
+    def expect_cost(self, agent: str, expected: float) -> None:
+        rows = self.request(f"/admin-api/usage/summary?agent_id={agent}", key="e2e-admin")
+        self.assertAlmostEqual(sum(row["usd_estimate"] for row in rows), expected, places=9)
 
     def wait_provisional_usage(self, thread: str, run_id: str, *, key: str = "e2e-a") -> None:
         route = f"{self.base}/threads/{thread}/runs/{run_id}/stream"
@@ -488,6 +504,8 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             wait_for("native model cancellation", lambda: self.records(slow_run, "canceled"))
             usage = canceled["output"]["usage"]
             self.assertEqual((usage["prompt_tokens"], usage["completion_tokens"]), (10, 4))
+            if self.install_extra == "agent-framework":
+                self.assertEqual(usage["model"], "offline-managed-ms-e2e")
             self.assertEqual(len(self.records(slow_run, "tool")), 1)
             self.expect_usage(self.slow, (1, 10, 4))
             self.request(f"/threads/{slow_thread}/runs/{slow_run}/wait")
@@ -524,11 +542,68 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 f"PASS {self.profile}: advanced-generation receipt recovery without duplicate work or billing",
                 flush=True,
             )
+            # The OpenAI subclass retains these five shared scenarios and
+            # supplies its own additional graphs and pricing assertions.
+            if self.install_extra == "agent-framework":
+                scenario = "Microsoft fictional pricing and USD hard cap"
+                self.check_microsoft_pricing_and_cap()
         except Exception:
             print(f"FAILED scenario: {scenario}", file=sys.stderr)
             for process in self.processes:
                 print(process.logs(), file=sys.stderr)
             raise
+
+    def check_microsoft_pricing_and_cap(self) -> None:
+        self.expect_cost(self.agent, 0.112)  # Four successful 20/4 turns, including receipt recovery.
+        self.expect_cost(self.slow, 0.018)  # One interrupted 10/4 turn.
+        error_agent = self.extra_graphs["error_agent"]
+        failed_thread = self.new_thread()
+        failed_run = self.new_run(failed_thread, "error-after-first-tool", agent=error_agent)["run_id"]
+        failed = self.completed(failed_thread, failed_run)
+        self.assertEqual(failed["status"], "error", json.dumps(failed))
+        usage = failed["output"]["usage"]
+        self.assertEqual((usage["prompt_tokens"], usage["completion_tokens"]), (10, 4))
+        self.assertEqual(usage["model"], "offline-managed-ms-e2e")
+        self.assertEqual(len(self.records(failed_run, "factory")), 1)
+        self.assertEqual(len(self.records(failed_run, "model")), 2)
+        self.assertEqual(len(self.records(failed_run, "tool")), 1)
+        self.assertEqual(len(self.records(failed_run, "failed")), 1)
+        self.expect_usage(error_agent, (1, 10, 4))
+        self.expect_cost(error_agent, 0.018)
+        self.request(f"/threads/{failed_thread}/runs/{failed_run}/wait")
+        self.expect_usage(error_agent, (1, 10, 4))
+        self.expect_cost(error_agent, 0.018)
+        print(f"PASS {self.profile}: Microsoft success/cancel/error/receipt fictional USD settles once", flush=True)
+
+        budget_agent = self.extra_graphs["budget_agent"]
+        cap_key = f"{self.tenant_a}/{budget_agent}"
+        configured = self.request("/admin-api/finops", key="e2e-admin")["effective"]
+        self.assertEqual(configured["budgets"]["agents"][cap_key]["max_usd_per_day"], 0.02)
+        budget_thread = self.new_thread()
+        first_run = self.new_run(budget_thread, "spend-before-hard-cap", agent=budget_agent)["run_id"]
+        self.final_usage(self.completed(budget_thread, first_run), 20, 4)
+        self.expect_usage(budget_agent, (1, 20, 4))
+        self.expect_cost(budget_agent, 0.028)
+        self.assertEqual(len(self.records(first_run, "factory")), 1)
+        self.assertEqual(len(self.records(first_run, "model")), 2)
+        self.assertEqual(len(self.records(first_run, "tool")), 1)
+        denied_thread = self.new_thread()
+        before = self.counters.read_bytes()
+        denied = self.request(
+            f"/threads/{denied_thread}/runs",
+            {"agent_id": budget_agent, "input": {"messages": [{"role": "user", "content": "must-not-execute"}]}},
+            status=403,
+        )
+        self.assertIn("usd budget exceeded", json.dumps(denied).lower())
+        self.assertEqual(self.request(f"/threads/{denied_thread}/runs"), [])
+        self.assertEqual(self.counters.read_bytes(), before, "a denied create reached the SDK")
+        self.expect_usage(budget_agent, (1, 20, 4))
+        self.expect_cost(budget_agent, 0.028)
+        alerts = self.request(
+            f"/admin-api/usage/alerts?tenant_id={self.tenant_a}&agent_id={budget_agent}", key="e2e-admin"
+        )
+        self.assertTrue(any(row["reason_code"] == "budget_exceeded" for row in alerts))
+        print(f"PASS {self.profile}: settled Microsoft USD spend blocks a later create at its hard cap", flush=True)
 
 
 if __name__ == "__main__":

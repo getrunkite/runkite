@@ -7,6 +7,8 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -18,7 +20,18 @@ EXAMPLE = Path(__file__).resolve().parents[3] / "examples" / "managed_agent_fram
 sys.path.insert(0, str(EXAMPLE))
 
 from agent import ScriptedChatClient  # noqa: E402
-from agent_framework import Agent, ChatResponseUpdate, Content, FunctionTool, UsageDetails  # noqa: E402
+from agent_framework import (  # noqa: E402
+    Agent,
+    BaseChatClient,
+    ChatMiddleware,
+    ChatMiddlewareLayer,
+    ChatResponse,
+    ChatResponseUpdate,
+    Content,
+    FunctionInvocationLayer,
+    FunctionTool,
+    UsageDetails,
+)
 from runkite_runner.completion import CompletionDeliveryError  # noqa: E402
 from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant  # noqa: E402
 
@@ -68,7 +81,7 @@ class FakePlane:
         return httpx.MockTransport(handler)
 
 
-class RuntimeClient(ScriptedChatClient):
+class RuntimeClient(FunctionInvocationLayer[Any], ChatMiddlewareLayer[Any], BaseChatClient[Any]):
     """Real framework function loop around controlled native provider streams."""
 
     def __init__(self, turns):
@@ -76,6 +89,7 @@ class RuntimeClient(ScriptedChatClient):
         self.turns = turns
         self.calls = 0
         self.prompts = []
+        self.options = []
         self.opened = 0
         self.closed = 0
         self.streams_closed = 0
@@ -92,6 +106,7 @@ class RuntimeClient(ScriptedChatClient):
         turn = self.turns[self.calls]
         self.calls += 1
         self.prompts.append(messages)
+        self.options.append(dict(options or {}))
 
         async def tracked():
             try:
@@ -173,8 +188,10 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
             reset_run(run_binding)
         return status, events
 
-    def install_runtime_client(self, client, tools=None):
-        self.adapter.factories["managed_agent_framework"] = lambda _context: Agent(client=client, tools=tools or [])
+    def install_runtime_client(self, client, tools=None, *, default_options=None):
+        self.adapter.factories["managed_agent_framework"] = lambda _context: Agent(
+            client=client, tools=tools or [], default_options=default_options
+        )
 
     def assert_runtime_closed(self, client):
         self.assertEqual(client.closed, client.opened)
@@ -559,6 +576,408 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(CompletionDeliveryError):
             await self._execute("run-load-error", "reply")
         self.assertIsNone(self.stores[-1]._client._client)
+
+    async def test_native_model_metadata_separate_from_usage_survives_final_aggregation(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(model="reported-model", response_id="native-response")
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("answer"), usage_content()])
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-model-metadata", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(
+            self.final_usage(events),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+                "model": "reported-model",
+            },
+        )
+        self.assert_runtime_closed(client)
+
+    async def test_native_reported_model_wins_over_configured_alias(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(model="configured-alias")
+            yield ChatResponseUpdate(
+                role="assistant", model="reported-model", contents=[Content.from_text("answer"), usage_content()]
+            )
+
+        client = RuntimeClient([response])
+        client.model = "client-alias"
+        self.install_runtime_client(client, default_options={"model": "configured-alias"})
+        status, events = await self._execute("run-model-alias", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["model"], "reported-model")
+        self.assertEqual(client.options[0]["model"], "configured-alias")
+
+    async def test_trustworthy_per_call_configuration_fills_absent_native_model(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("answer"), usage_content()])
+
+        for index, options in enumerate((None, {"model": "option-model"})):
+            with self.subTest(options=options):
+                client = RuntimeClient([response])
+                client.model = "client-model"
+                self.install_runtime_client(client, default_options=options)
+                status, events = await self._execute(f"run-model-config-{index}", "reply")
+                self.assertEqual(status, "success")
+                expected = "option-model" if options else "client-model"
+                self.assertEqual(self.final_usage(events)["model"], expected)
+                self.assertEqual(client.options[0]["model"], expected)
+
+    async def test_unknown_native_and_configured_models_remain_unpriced(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("answer"), usage_content()])
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-model-unknown", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["total_tokens"], 14)
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_model_is_published_before_tool_and_retained_during_next_model_cancel(self):
+        cancel, second_started = asyncio.Event(), asyncio.Event()
+        published = []
+
+        async def first(_messages):
+            yield ChatResponseUpdate(model="first-model")
+            yield ChatResponseUpdate(
+                role="assistant",
+                contents=[
+                    Content.from_function_call(call_id="model-tool", name="write", arguments={}),
+                    usage_content(),
+                ],
+            )
+
+        async def second(_messages):
+            second_started.set()
+            await asyncio.Event().wait()
+            yield ChatResponseUpdate()
+
+        def write() -> str:
+            self.assertEqual(published[-1]["model"], "first-model")
+            self.assertEqual(published[-1]["total_tokens"], 14)
+            return "done"
+
+        async def receive(event):
+            if event["method"] == "values":
+                published.append(event["data"].get("usage"))
+
+        client = RuntimeClient([first, second])
+        self.install_runtime_client(client, [FunctionTool(name="write", func=write)])
+        running = asyncio.create_task(self._execute("run-model-cancel", "write", cancel, send_hook=receive))
+        await asyncio.wait_for(second_started.wait(), 2)
+        cancel.set()
+        status, events = await asyncio.wait_for(running, 2)
+        self.assertEqual(status, "interrupted")
+        self.assertEqual(
+            self.final_usage(events),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+                "model": "first-model",
+            },
+        )
+        self.assertEqual(self.plane.puts, 0)
+        self.assert_runtime_closed(client)
+
+    async def test_provider_failure_retains_known_model_without_counting_twice(self):
+        async def broken(_messages):
+            yield ChatResponseUpdate(model="failed-model", contents=[Content.from_text("partial"), usage_content()])
+            raise RuntimeError("synthetic metered failure")
+
+        client = RuntimeClient([broken])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-model-error", "reply")
+        self.assertEqual(status, "error")
+        self.assertEqual(
+            self.final_usage(events),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+                "model": "failed-model",
+            },
+        )
+        self.assert_runtime_closed(client)
+
+    async def test_multi_step_same_mixed_and_unknown_models_preserve_tokens(self):
+        def echo() -> str:
+            return "echoed"
+
+        cases = (
+            ("same-model", "same-model", "same-model"),
+            ("first-model", "second-model", None),
+            (None, "last-model", None),
+            ("first-model", None, None),
+        )
+        for index, (first_model, second_model, expected) in enumerate(cases):
+            with self.subTest(models=(first_model, second_model)):
+
+                async def first(_messages, model=first_model, call_index=index):
+                    yield ChatResponseUpdate(
+                        model=model,
+                        response_id="reused-response-id",
+                        contents=[
+                            Content.from_function_call(call_id=f"mixed-call-{call_index}", name="echo", arguments={}),
+                            usage_content(),
+                        ],
+                    )
+
+                async def second(_messages, model=second_model):
+                    yield ChatResponseUpdate(
+                        model=model,
+                        response_id="reused-response-id",
+                        role="assistant",
+                        contents=[Content.from_text("done"), usage_content(2, 1)],
+                    )
+
+                client = RuntimeClient([first, second])
+                self.install_runtime_client(client, [FunctionTool(name="echo", func=echo)])
+                status, events = await self._execute(f"run-models-{index}", "echo")
+                self.assertEqual(status, "success")
+                self.assertEqual(self.final_usage(events)["total_tokens"], 17)
+                if expected is None:
+                    self.assertNotIn("model", self.final_usage(events))
+                else:
+                    self.assertEqual(self.final_usage(events)["model"], expected)
+                self.assert_runtime_closed(client)
+
+    async def test_append_replace_usage_preserves_one_model_and_native_token_totals(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(
+                model="replace-model", role="assistant", contents=[Content.from_text("answer"), usage_content(2, 1)]
+            )
+            yield ChatResponseUpdate(contents=[usage_content(3, 2)])
+            yield ChatResponseUpdate(contents=[usage_content(10, 4, merge_mode="replace")])
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-model-replace", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(
+            self.final_usage(events),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+                "model": "replace-model",
+            },
+        )
+
+    async def test_conflicting_models_within_one_request_cannot_use_the_latest_model(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(model="first-model", contents=[Content.from_text("answer"), usage_content()])
+            yield ChatResponseUpdate(model="different-model")
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client, default_options={"model": "configured-model"})
+        status, events = await self._execute("run-model-conflict", "reply")
+        self.assertEqual(status, "success")
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_final_native_response_model_is_published_before_tools(self):
+        delivered = []
+
+        async def first(_messages):
+            yield ChatResponseUpdate(
+                contents=[
+                    Content.from_function_call(call_id="final-model-call", name="write", arguments={}),
+                    usage_content(),
+                ]
+            )
+
+        async def second(_messages):
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("done"), usage_content(2, 1)])
+
+        class FinalModelClient(RuntimeClient):
+            async def _inner_get_response(self, **kwargs):
+                result = await super()._inner_get_response(**kwargs)
+
+                def set_model(response: ChatResponse) -> ChatResponse:
+                    response.model = "final-native-model"
+                    return response
+
+                return result.with_result_hook(set_model)
+
+        def write() -> str:
+            self.assertEqual(delivered[-1]["model"], "final-native-model")
+            self.assertEqual(delivered[-1]["total_tokens"], 14)
+            return "done"
+
+        async def receive(event):
+            if event["method"] == "values":
+                delivered.append(event["data"].get("usage"))
+
+        client = FinalModelClient([first, second])
+        self.install_runtime_client(client, [FunctionTool(name="write", func=write)])
+        status, events = await self._execute("run-final-model", "write", send_hook=receive)
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["model"], "final-native-model")
+        self.assertEqual(self.final_usage(events)["total_tokens"], 17)
+
+    async def test_per_call_middleware_configuration_does_not_collapse_mixed_models(self):
+        class SelectModel(ChatMiddleware):
+            def __init__(self):
+                self.calls = 0
+
+            async def process(self, context, call_next):
+                self.calls += 1
+                context.options = {**(context.options or {}), "model": f"configured-{self.calls}"}
+                await call_next()
+
+        async def first(_messages):
+            yield ChatResponseUpdate(
+                contents=[
+                    Content.from_function_call(call_id="option-model-call", name="echo", arguments={}),
+                    usage_content(),
+                ]
+            )
+
+        async def second(_messages):
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("done"), usage_content(2, 1)])
+
+        client = RuntimeClient([first, second])
+        self.adapter.factories["managed_agent_framework"] = lambda _context: Agent(
+            client=client,
+            tools=[FunctionTool(name="echo", func=lambda: "echoed")],
+            default_options={"model": "initial-alias"},
+            middleware=[SelectModel()],
+        )
+        status, events = await self._execute("run-model-options", "echo")
+        self.assertEqual(status, "success")
+        self.assertEqual([options["model"] for options in client.options], ["configured-1", "configured-2"])
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_receipt_replay_preserves_model_and_usage_without_a_second_provider_call(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(model="saved-model", contents=[Content.from_text("answer"), usage_content()])
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        first_status, first = await self._execute("run-model-replay", "reply")
+        self.assertEqual(first_status, "success")
+        self.adapter.factories["managed_agent_framework"] = lambda _context: self.fail("replayed factory")
+        status, replay = await self._execute("run-model-replay", "reply", generation=2)
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(first), self.final_usage(replay))
+        self.assertEqual(self.final_usage(replay)["model"], "saved-model")
+        self.assertEqual((client.calls, self.plane.puts), (1, 1))
+
+    async def test_custom_client_without_provider_middleware_remains_safely_unpriced(self):
+        class NoMiddlewareClient(ScriptedChatClient):
+            model = "configured-name"
+
+            async def _inner_get_response(self, **kwargs):
+                async def response():
+                    yield ChatResponseUpdate(
+                        model="reported-name", contents=[Content.from_text("answer"), usage_content()]
+                    )
+
+                return self._build_response_stream(response())
+
+        self.install_runtime_client(NoMiddlewareClient())
+        status, events = await self._execute("run-custom-client", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["total_tokens"], 14)
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_middleware_outside_function_loop_is_not_a_trusted_provider_boundary(self):
+        class OutsideMiddlewareClient(ChatMiddlewareLayer[Any], FunctionInvocationLayer[Any], BaseChatClient[Any]):
+            model = "configured-model"
+
+            async def _inner_get_response(self, **kwargs):
+                async def response():
+                    yield ChatResponseUpdate(
+                        model="reported-model", contents=[Content.from_text("answer"), usage_content()]
+                    )
+
+                return self._build_response_stream(response())
+
+        self.install_runtime_client(OutsideMiddlewareClient())
+        status, events = await self._execute("run-outer-middleware", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["total_tokens"], 14)
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_raw_provider_model_overrides_injected_wrapper_alias(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(
+                model="configured-alias",
+                raw_representation=SimpleNamespace(
+                    response=SimpleNamespace(model="provider-model"),
+                ),
+            )
+            yield ChatResponseUpdate(
+                model="configured-alias", role="assistant", contents=[Content.from_text("answer"), usage_content()]
+            )
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client, default_options={"model": "configured-alias"})
+        status, events = await self._execute("run-provider-model", "reply")
+        self.assertEqual(status, "success")
+        self.assertEqual(self.final_usage(events)["model"], "provider-model")
+
+    async def test_conflicting_raw_provider_models_cannot_be_overwritten_by_final_wrapper(self):
+        async def response(_messages):
+            for model in ("configured-alias", "different-provider-model"):
+                yield ChatResponseUpdate(model="configured-alias", raw_representation=SimpleNamespace(model=model))
+            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("answer"), usage_content()])
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client, default_options={"model": "configured-alias"})
+        status, events = await self._execute("run-provider-conflict", "reply")
+        self.assertEqual(status, "success")
+        self.assertNotIn("model", self.final_usage(events))
+
+    async def test_native_text_done_confirmation_is_not_appended_twice(self):
+        async def response(_messages):
+            for text in ("ans", "wer"):
+                yield ChatResponseUpdate(
+                    role="assistant",
+                    model="confirmed-model",
+                    message_id="message-1",
+                    contents=[Content.from_text(text)],
+                    raw_representation=SimpleNamespace(content_index=0),
+                )
+            yield ChatResponseUpdate(
+                role="assistant",
+                message_id="message-1",
+                contents=[
+                    Content.from_text("answer", merge_mode="replace"),
+                    usage_content(),
+                ],
+                raw_representation=SimpleNamespace(content_index=0),
+            )
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-text-confirmed", "reply")
+        self.assertEqual(status, "success")
+        chunks = [event["data"][0]["content"] for event in events if event["method"] == "messages"]
+        self.assertEqual(chunks, ["ans", "wer"])
+        self.assertEqual(self.final_usage(events)["model"], "confirmed-model")
+        self.assertEqual(self.plane.puts, 1)
+
+    async def test_native_text_rewrite_remains_unsupported(self):
+        async def response(_messages):
+            yield ChatResponseUpdate(
+                role="assistant", message_id="message-1", contents=[Content.from_text("before"), usage_content()]
+            )
+            yield ChatResponseUpdate(
+                role="assistant", message_id="message-1", contents=[Content.from_text("after", merge_mode="replace")]
+            )
+
+        client = RuntimeClient([response])
+        self.install_runtime_client(client)
+        status, events = await self._execute("run-text-rewrite", "reply")
+        self.assertEqual(status, "error")
+        self.assertIn("replacement", events[-1]["data"]["message"])
+        self.assertEqual(self.plane.puts, 0)
 
 
 if __name__ == "__main__":

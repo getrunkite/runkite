@@ -10,6 +10,7 @@ from typing import Any
 from agent_framework import (
     Agent,
     BaseChatClient,
+    ChatMiddlewareLayer,
     ChatResponseUpdate,
     Content,
     FunctionInvocationLayer,
@@ -36,7 +37,7 @@ def record(context: AgentFrameworkRunContext, kind: str, **details: Any) -> None
         )
 
 
-def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
+def build_agent(context: AgentFrameworkRunContext, *, mode: str = "normal") -> Agent:
     record(context, "factory")
     step = 0
 
@@ -45,7 +46,7 @@ def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
         record(context, "tool", text=text)
         return {"recorded": text}
 
-    class ScriptedClient(FunctionInvocationLayer[Any], BaseChatClient[Any]):
+    class ScriptedClient(FunctionInvocationLayer[Any], ChatMiddlewareLayer[Any], BaseChatClient[Any]):
         async def _inner_get_response(self, *, messages, stream=False, options=None, **kwargs):  # noqa: ANN001
             nonlocal step
             users = [
@@ -63,12 +64,15 @@ def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
             step += 1
             if not stream:
                 raise AssertionError("The managed adapter must use the native streaming path")
+            response_id = f"response-{context.run_id}-{current_step}"
             if current_step == 0:
-                usage = UsageDetails(input_token_count=10, output_token_count=4 if slow else 2)
+                usage = UsageDetails(input_token_count=10, output_token_count=4 if mode in {"slow", "error"} else 2)
 
                 async def tool_call():
                     yield ChatResponseUpdate(
                         role="assistant",
+                        model="offline-managed-ms-e2e",
+                        response_id=response_id,
                         contents=[
                             Content.from_function_call(
                                 call_id=f"effect-{context.run_id}",
@@ -80,12 +84,20 @@ def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
                     )
 
                 return self._build_response_stream(tool_call())
-            if slow:
+            if mode == "error":
+                record(context, "failed")
+                raise ValueError("synthetic Microsoft model failure after observed usage")
+            if mode == "slow":
 
                 async def held_turn():
                     try:
                         record(context, "stalled")
-                        yield ChatResponseUpdate(role="assistant", contents=[Content.from_text("Waiting")])
+                        yield ChatResponseUpdate(
+                            role="assistant",
+                            model="offline-managed-ms-e2e",
+                            response_id=response_id,
+                            contents=[Content.from_text("Waiting")],
+                        )
                         while True:
                             await asyncio.sleep(0.02)
                     finally:
@@ -96,10 +108,15 @@ def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
 
             async def answer():
                 yield ChatResponseUpdate(
-                    role="assistant", contents=[Content.from_text(f"users={len(users)}; tool_results={tool_results}")]
+                    role="assistant",
+                    model="offline-managed-ms-e2e",
+                    response_id=response_id,
+                    contents=[Content.from_text(f"users={len(users)}; tool_results={tool_results}")],
                 )
                 yield ChatResponseUpdate(
                     role="assistant",
+                    model="offline-managed-ms-e2e",
+                    response_id=response_id,
                     contents=[Content.from_usage(UsageDetails(input_token_count=10, output_token_count=2))],
                 )
 
@@ -110,8 +127,16 @@ def build_agent(context: AgentFrameworkRunContext, *, slow: bool) -> Agent:
 
 
 def agent(context: AgentFrameworkRunContext) -> Agent:
-    return build_agent(context, slow=False)
+    return build_agent(context)
 
 
 def slow_agent(context: AgentFrameworkRunContext) -> Agent:
-    return build_agent(context, slow=True)
+    return build_agent(context, mode="slow")
+
+
+def error_agent(context: AgentFrameworkRunContext) -> Agent:
+    return build_agent(context, mode="error")
+
+
+def budget_agent(context: AgentFrameworkRunContext) -> Agent:
+    return build_agent(context)
