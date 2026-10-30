@@ -109,6 +109,28 @@ Examples live in the [Runkite repo](https://github.com/getrunkite/runkite/tree/m
 - **OpenTelemetry:** `runkite.run` span under the control plane `traceparent`, plus thin `runkite.llm` / `runkite.tool` children when OTLP env is set
 - **Production auth:** runner kind tokens (`RUNNER_TOKEN` / `RUNNER_TOKEN_*`) matching control-plane config
 
+### Pydantic AI (unreleased)
+
+The source-built optional `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0`.
+It installs `pydantic_ai_adapter` and the `runkite-runner-pydantic-ai` command;
+the module alternative is `python -m pydantic_ai_adapter`. Install your chosen
+model provider separately. From the repository root:
+
+```bash
+python3.12 -m venv .venv-pydantic-ai
+.venv-pydantic-ai/bin/python -m pip install './python[pydantic-ai]'
+.venv-pydantic-ai/bin/runkite-runner-pydantic-ai \
+  --config examples/managed_pydantic_ai/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026
+```
+
+The profile supports native text agents, validated JSON results, conversation
+history and committed-turn recovery. Published PyPI `0.5.8` does not include it.
+The stock image does not install this SDK, and the default CLI remains LangGraph.
+See the [example](https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai)
+for the factory contract and test commands.
+
 ### Microsoft Agent Framework (unreleased)
 
 The optional profile ships in the same `runkite-runner` wheel and sdist, with a

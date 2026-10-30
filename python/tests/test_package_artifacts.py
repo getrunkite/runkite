@@ -26,6 +26,7 @@ from packaging.utils import canonicalize_name
 ADAPTER_MODULES = {
     "agent_framework_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
     "openai_agents_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
+    "pydantic_ai_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
 }
 BASE_DEPENDENCIES = {
     "grpcio",
@@ -140,7 +141,9 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertEqual(self.metadata["Name"], "runkite-runner")
         self.assertEqual(self.metadata["Version"], self.project["version"])
         self.assertEqual(self.metadata["Requires-Python"], ">=3.11")
-        self.assertEqual(set(self.metadata.get_all("Provides-Extra")), {"agent-framework", "openai-agents", "otel"})
+        self.assertEqual(
+            set(self.metadata.get_all("Provides-Extra")), {"agent-framework", "openai-agents", "pydantic-ai", "otel"}
+        )
         requirements = [Requirement(value) for value in self.metadata.get_all("Requires-Dist")]
         base = {
             canonicalize_name(requirement.name): requirement
@@ -158,14 +161,24 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertFalse(framework.marker.evaluate({"extra": ""}))
         self.assertFalse(framework.marker.evaluate({"extra": "otel"}))
         self.assertFalse(framework.marker.evaluate({"extra": "openai-agents"}))
+        self.assertFalse(framework.marker.evaluate({"extra": "pydantic-ai"}))
         [openai] = [
             requirement for requirement in requirements if canonicalize_name(requirement.name) == "openai-agents"
         ]
         self.assertEqual(str(openai.specifier), "==0.24.0")
         self.assertIsNotNone(openai.marker)
         self.assertTrue(openai.marker.evaluate({"extra": "openai-agents"}))
-        for extra in ("", "otel", "agent-framework"):
+        for extra in ("", "otel", "agent-framework", "pydantic-ai"):
             self.assertFalse(openai.marker.evaluate({"extra": extra}))
+        [pydantic_ai] = [
+            requirement for requirement in requirements if canonicalize_name(requirement.name) == "pydantic-ai-slim"
+        ]
+        self.assertEqual(str(pydantic_ai.specifier), "==2.63.0")
+        self.assertEqual(pydantic_ai.extras, set(), "Provider SDKs belong to the app, not the core runner extra")
+        self.assertIsNotNone(pydantic_ai.marker)
+        self.assertTrue(pydantic_ai.marker.evaluate({"extra": "pydantic-ai"}))
+        for extra in ("", "otel", "agent-framework", "openai-agents"):
+            self.assertFalse(pydantic_ai.marker.evaluate({"extra": extra}))
         [entry_points] = [
             content for name, content in self.members.items() if name.endswith(".dist-info/entry_points.txt")
         ]
@@ -177,6 +190,7 @@ class PackageArtifactTests(unittest.TestCase):
                 "runkite-runner": "runkite_runner.worker:main",
                 "runkite-runner-agent-framework": "agent_framework_adapter.__main__:main",
                 "runkite-runner-openai-agents": "openai_agents_adapter.__main__:main",
+                "runkite-runner-pydantic-ai": "pydantic_ai_adapter.__main__:main",
             },
         )
 

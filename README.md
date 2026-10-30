@@ -114,6 +114,10 @@ extra and `runkite-runner-agent-framework` CLI. This install path is
 A managed [OpenAI Agents SDK profile](examples/managed_openai_agents/README.md)
 is also available from source-built wheels through the optional `openai-agents`
 extra and `runkite-runner-openai-agents` CLI. This profile is unreleased too.
+A managed [Pydantic AI profile](examples/managed_pydantic_ai/README.md) adds
+native text agents and validated structured results through `python-pydantic-ai`.
+Its source-built `pydantic-ai` extra and `runkite-runner-pydantic-ai` CLI are
+also unreleased.
 See [CHANGELOG](CHANGELOG.md),
 [client integration guidance](docs/client-sdk.md), and the
 [support guide](site/support/sdk-integration.html).

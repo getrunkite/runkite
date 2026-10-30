@@ -74,6 +74,16 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   Native reasoning items remain in durable history and are not UI output.
   Native SDK trace export is disabled; generic-worker OTLP run tracing remains.
   See the [example](../examples/managed_openai_agents/README.md).
+- **Managed Pydantic AI (unreleased)** uses `python-pydantic-ai`, native text and
+  validated JSON final results. The optional `pydantic-ai` extra pins
+  `pydantic-ai-slim==2.63.0`; provider packages are application choices. Published
+  PyPI `0.5.8` lacks this profile. The stock image does not install its SDK.
+  Successful native conversations and receipts use opaque CAS state. Per-run
+  usage excludes earlier conversation turns. Partial JSON cannot complete a run.
+  Native deferred approvals, output functions, multimodal input and additional
+  workflow engines are outside the initial scope. Local tools acquire connector
+  policy only through the existing connector helpers. See the
+  [example](../examples/managed_pydantic_ai/README.md).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;

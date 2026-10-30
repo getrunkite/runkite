@@ -93,6 +93,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
     extra_graph_factories: tuple[str, ...] = ("error_agent", "budget_agent")
     extra_runner_args: tuple[str, ...] = ()
     extra_worker_environment: dict[str, str] = {}
+    extra_test_requirements: tuple[str, ...] = ()
 
     def additional_configuration(self) -> dict[str, Any]:
         return {
@@ -227,25 +228,21 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             **{key: os.environ[key] for key in ("UV_CACHE_DIR", "UV_OFFLINE") if key in os.environ},
             "UV_PYTHON_DOWNLOADS": "never",
         }
-        installed = subprocess.run(
-            [
-                "uv",
-                "--no-config",
-                "pip",
-                "install",
-                "--python",
-                str(self.consumer_python),
-                f"runkite-runner[{self.install_extra}] @ {wheel.as_uri()}",
-            ],
-            env=installer_environment,
-            cwd=self.directory,
-            capture_output=True,
-            text=True,
-            timeout=240,
-        )
-        self.assertEqual(
-            installed.returncode, 0, f"Fresh wheel installation failed:\n{installed.stdout}{installed.stderr}"
-        )
+
+        def install(*requirements: str) -> None:
+            installed = subprocess.run(
+                ["uv", "--no-config", "pip", "install", "--python", str(self.consumer_python), *requirements],
+                env=installer_environment,
+                cwd=self.directory,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(
+                installed.returncode, 0, f"Fresh consumer installation failed:\n{installed.stdout}{installed.stderr}"
+            )
+
+        install(f"runkite-runner[{self.install_extra}] @ {wheel.as_uri()}")
         self.assertNotIn("PYTHONPATH", self.worker_environment)
         probe = subprocess.check_output(
             [
@@ -286,6 +283,12 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 command, env=self.worker_environment, cwd=self.directory, text=True, timeout=20
             )
             self.assertIn(self.runner_description, help_text)
+        self.check_core_install()
+        if self.extra_test_requirements:
+            install(*self.extra_test_requirements)
+
+    def check_core_install(self) -> None:
+        """Profile-specific assertions before app-owned test providers install."""
 
     def cleanup(self) -> None:
         for process in reversed(self.processes):

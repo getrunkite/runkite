@@ -9,6 +9,7 @@ export default defineConfig({
   base: '/admin/',
   plugins: [react(), tailwindcss()],
   build: {
+    rolldownOptions: { output: { charset: 'ascii' } },
     // Builds straight into the Go package that embeds it (see
     // internal/adminui/adminui.go) -- no separate copy step, and the
     // embed directive's relative path stays a plain "dist" subdirectory.

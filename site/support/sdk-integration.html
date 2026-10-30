@@ -97,7 +97,7 @@
         </p>
         <p class="note">
           <strong>Unreleased source-built Python profiles:</strong> the checkout also
-          packages managed Microsoft Agent Framework and OpenAI Agents SDK workers
+          packages managed Microsoft Agent Framework, OpenAI Agents SDK and Pydantic AI workers
           with optional dependencies and dedicated commands. Existing published
           PyPI <code>0.5.8</code> does not contain those profiles. See the
           <a href="#managed-python">Python runner installation boundary</a> below.
@@ -291,6 +291,36 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           these Python profiles expose ordinary Agent Protocol streams. The tests
           use offline native models with a real plane on SQLite/in-process and
           Postgres/Redis, not an external model provider or a multi-replica HA soak.
+        </p>
+        <h2 id="managed-pydantic">Managed Pydantic AI (unreleased)</h2>
+        <p>
+          Native <code>pydantic_ai.Agent</code> factories run as
+          <code>python-pydantic-ai</code> through the existing generic worker.
+          Text can stream, while typed final results are validated by the SDK
+          and stored as JSON in <code>output.result</code>. Only completed
+          execution commits success; partial JSON is not a durable result.
+        </p>
+        <p>
+          Build locally with <code>pip install './python[pydantic-ai]'</code> and
+          run <code>runkite-runner-pydantic-ai</code>. The optional extra pins
+          <code>pydantic-ai-slim==2.63.0</code>; install your chosen provider
+          separately. This profile is not in published PyPI <code>0.5.8</code>
+          or the stock image's optional dependencies. The default CLI remains LangGraph.
+        </p>
+        <p>
+          Native conversations retain metadata and successful history through
+          opaque CAS state. Per-run usage excludes earlier conversation turns;
+          a committed receipt replays without repeating the factory, model or tools.
+          Local tool allowlisting is separate from synthetic output-schema calls.
+          Connector policy requires the existing connector path. Native deferred
+          approvals, output functions, multimodal input and additional workflow
+          engines are outside this profile.
+        </p>
+        <p>
+          The app keeps UI authentication and presentation history. Use the
+          ordinary Agent Protocol result stream, then read the durable result.
+          See the <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai">offline example</a>
+          and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/pydantic_ai_adapter">adapter contract and tests</a>.
         </p>
       </main>
     </div>

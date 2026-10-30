@@ -134,6 +134,28 @@ connector grants or HITL. Native SDK trace export is disabled; the generic
 worker's OTLP run span remains available. See the
 [runner boundaries](../python/adapters/openai_agents_adapter/README.md).
 
+### Managed Pydantic AI (unreleased)
+
+Python callers with a native `pydantic_ai.Agent` can use runner kind
+`python-pydantic-ai` for real Threads/Runs, streaming text and validated
+structured results. The source-built runner includes `pydantic_ai_adapter` and
+the `runkite-runner-pydantic-ai` command. The optional `pydantic-ai` extra pins
+`pydantic-ai-slim==2.63.0`; install any provider package your own agent needs.
+This profile is absent from published PyPI `0.5.8`. Follow the
+[source installation example](../examples/managed_pydantic_ai/README.md).
+
+The SDK performs validation and retries. Only its fully completed final result
+can commit a successful turn; streamed JSON fragments are not durable success.
+Native conversation state uses the existing opaque checkpoint API with CAS.
+The runner reports this run's usage rather than rebilling earlier conversation
+turns. A committed receipt replays without calling its factory, model or tools.
+
+The application keeps UI authentication and presentation history. New input is
+text only; local tools need existing connector helpers for connector policy and
+HITL. Native deferred approvals, output functions, multimodal input and external
+workflow engines are outside the first profile. See the
+[adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
+
 ## Use today (recommended)
 
 Runkite’s public HTTP surface is [Agent Protocol](https://github.com/langchain-ai/agent-protocol) plus documented Runkite extensions. The machine-readable contract is:
