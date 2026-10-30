@@ -8,7 +8,7 @@ import type { ReportStatusRequest, RunEventProto, RunnerServiceClient, StreamEve
 import { runnerHeaders } from "./tenantCtx.js";
 import { handleJob, recordCancelSignal, type CancelState } from "./worker.js";
 
-function clientFixture() {
+function clientFixture(options: { supersededGeneration?: string } = {}) {
   const events: RunEventProto[] = [];
   const reports: ReportStatusRequest[] = [];
   const order: string[] = [];
@@ -34,10 +34,12 @@ function clientFixture() {
     reportStatus(request: ReportStatusRequest, _metadata: unknown, callback: (error: null, value: unknown) => void) {
       reports.push(request);
       order.push("completion accepted");
-      callback(null, { ok: true });
+      callback(null, { ok: true, superseded: request.generation === options.supersededGeneration });
     },
-    heartbeat() {
-      throw new Error("This short fixture must finish before its first heartbeat tick");
+    heartbeat(request: { generation: string }, _metadata: unknown, callback: (error: null, value: unknown) => void) {
+      if (options.supersededGeneration === undefined)
+        throw new Error("This short fixture must finish before its first heartbeat tick");
+      callback(null, { ok: true, superseded: request.generation === options.supersededGeneration });
     },
   } as unknown as RunnerServiceClient;
   return { client, events, reports, order, wasCancelled: () => cancelled };
@@ -92,7 +94,8 @@ test("generic executor uses the same run binding, generation and acknowledged co
   assert.equal(pending.size, 0);
 });
 
-test("generic executor observes a cancel received before dispatch registration", async () => {
+test("generic executor observes a cancel received before dispatch registration", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const fixture = clientFixture();
   const pending = new Map<string, CancelState>();
   recordCancelSignal(pending, assignment.run_id);
@@ -111,6 +114,7 @@ test("generic executor observes a cancel received before dispatch registration",
     pending,
   );
   assert.equal(fixture.reports[0].status, "interrupted");
+  t.mock.timers.tick(5 * 60 * 1000);
   assert.equal(pending.size, 0);
 });
 
@@ -134,5 +138,102 @@ test("unconfirmed executor persistence closes the stream and leaves completion r
   assert.deepEqual(fixture.reports, []);
   assert.equal(fixture.events.length, 1);
   assert.equal(JSON.parse(fixture.events[0].eventJson).method, "messages");
+  assert.equal(pending.size, 0);
+});
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function pausedAttempt(
+  fixture: ReturnType<typeof clientFixture>,
+  pending: Map<string, CancelState>,
+  generation: number,
+) {
+  const started = deferred();
+  const finish = deferred();
+  let cancelled!: () => boolean;
+  const executor: RunExecutor = {
+    async execute(_received, emit, isCancelled) {
+      cancelled = isCancelled;
+      started.resolve();
+      await finish.promise;
+      const status = isCancelled() ? "interrupted" : "success";
+      await emit(event("end", { status }));
+      return status;
+    },
+  };
+  const done = handleJob(
+    fixture.client,
+    executor,
+    { hasJob: true, assignmentJson: JSON.stringify({ ...assignment, generation }) },
+    new Metadata(),
+    pending,
+  );
+  await started.promise;
+  return { done, finish: finish.resolve, isCancelled: () => cancelled() };
+}
+
+test("a superseded heartbeat cannot interrupt a replacement executing in the same worker", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const fixture = clientFixture({ supersededGeneration: "7" });
+  const pending = new Map<string, CancelState>();
+  const older = await pausedAttempt(fixture, pending, 7);
+  const current = await pausedAttempt(fixture, pending, 8);
+  try {
+    t.mock.timers.tick(2000);
+    await Promise.resolve();
+    assert.equal(older.isCancelled(), true);
+    assert.equal(current.isCancelled(), false, "no user canceled the current generation");
+  } finally {
+    older.finish();
+    current.finish();
+    await Promise.all([older.done, current.done]);
+  }
+  assert.equal(fixture.reports.find((report) => report.generation === "8")?.status, "success");
+  assert.equal(pending.size, 0);
+});
+
+test("finishing an older attempt does not hide a later user cancel from its replacement", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const fixture = clientFixture({ supersededGeneration: "7" });
+  const pending = new Map<string, CancelState>();
+  const older = await pausedAttempt(fixture, pending, 7);
+  const current = await pausedAttempt(fixture, pending, 8);
+  try {
+    older.finish();
+    await older.done;
+    recordCancelSignal(pending, assignment.run_id);
+    assert.equal(current.isCancelled(), true);
+  } finally {
+    current.finish();
+    await current.done;
+  }
+  assert.equal(fixture.reports.find((report) => report.generation === "8")?.status, "interrupted");
+  t.mock.timers.tick(5 * 60 * 1000);
+  assert.equal(pending.size, 0);
+});
+
+test("WatchCancels fans a user cancel out to every active generation in handleJob", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const fixture = clientFixture({ supersededGeneration: "7" });
+  const pending = new Map<string, CancelState>();
+  const older = await pausedAttempt(fixture, pending, 7);
+  const current = await pausedAttempt(fixture, pending, 8);
+  try {
+    recordCancelSignal(pending, assignment.run_id);
+    assert.equal(older.isCancelled(), true);
+    assert.equal(current.isCancelled(), true);
+  } finally {
+    older.finish();
+    current.finish();
+    await Promise.all([older.done, current.done]);
+  }
+  assert.ok(fixture.reports.every((report) => report.status === "interrupted"));
+  t.mock.timers.tick(5 * 60 * 1000);
   assert.equal(pending.size, 0);
 });

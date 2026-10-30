@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 )
@@ -25,12 +29,13 @@ func newCheckpointTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	env := newTestEnv(t)
 	env.srv.Close()
-	env.srv = httptest.NewServer(withTestCheckpointRunBinding(env.apiServer.Handler()))
+	env.srv = httptest.NewServer(withTestCheckpointRunBinding(env.store, env.apiServer.Handler()))
 	t.Cleanup(env.srv.Close)
 	return env
 }
 
-func withTestCheckpointRunBinding(next http.Handler) http.Handler {
+func withTestCheckpointRunBinding(store state.Store, next http.Handler) http.Handler {
+	var seedMu sync.Mutex
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/internal/checkpoints/") &&
@@ -39,13 +44,22 @@ func withTestCheckpointRunBinding(next http.Handler) http.Handler {
 			threadID, _, _ := strings.Cut(rest, "/")
 			runID := r.Header.Get(auth.HeaderRunID)
 			if runID == "" {
-				runID = "test-run"
+				runID = "checkpoint-test-run-" + threadID
 			}
 			gen := int64(1)
 			if g := r.Header.Get(auth.HeaderGeneration); g != "" {
 				if parsed, err := strconv.ParseInt(g, 10, 64); err == nil {
 					gen = parsed
 				}
+			}
+			// These handler tests bypass the real dispatcher. Seed its durable
+			// attempt as well as the request binding before exercising writes.
+			seedMu.Lock()
+			err := seedCheckpointRun(r.Context(), store, runID, threadID, gen)
+			seedMu.Unlock()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
 			r = r.WithContext(auth.WithRunBinding(r.Context(), &auth.RunBinding{
 				RunID: runID, Generation: gen, TenantID: "default",
@@ -54,6 +68,28 @@ func withTestCheckpointRunBinding(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func seedCheckpointRun(ctx context.Context, store state.Store, runID, threadID string, generation int64) error {
+	if _, err := store.GetRun(ctx, runID); err == nil {
+		return nil
+	} else {
+		var missing *state.ErrNotFound
+		if !errors.As(err, &missing) {
+			return err
+		}
+	}
+	if _, err := store.GetThread(ctx, threadID); err != nil {
+		// Missing-thread tests should exercise the handler's ordinary error.
+		return nil
+	}
+	if err := store.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: threadID, AgentID: "test", Status: models.RunStatusPending, Metadata: map[string]interface{}{}}); err != nil {
+		return err
+	}
+	if ok, err := store.BeginRunAttempt(ctx, runID, generation); err != nil || !ok {
+		return fmt.Errorf("seed checkpoint attempt: accepted=%t: %w", ok, err)
+	}
+	return nil
 }
 
 func TestOpaqueCheckpointProxyCRUD(t *testing.T) {
@@ -180,6 +216,9 @@ func TestOpaqueCheckpointThreadMismatch(t *testing.T) {
 	ctx := tenant.WithContext(context.Background(), "default")
 	thread := &models.Thread{ThreadID: "thr-bound", Status: models.ThreadStatusIdle, Metadata: map[string]interface{}{}}
 	if err := env.store.CreateThread(ctx, thread); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedCheckpointRun(ctx, env.store, "run-1", thread.ThreadID, 1); err != nil {
 		t.Fatal(err)
 	}
 

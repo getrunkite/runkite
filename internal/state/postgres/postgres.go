@@ -18,6 +18,7 @@ import (
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/migrate"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -2013,7 +2014,7 @@ func (s *Store) upOpaqueCheckpointVersion(ctx context.Context, conn *pgxpool.Con
 	return err
 }
 
-func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+func (s *Store) putOpaqueCheckpoint(ctx context.Context, row func(context.Context, string, ...interface{}) sqlcompletion.Row, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
 	if len(data) > models.MaxOpaqueCheckpointBytes {
 		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
 	}
@@ -2029,7 +2030,7 @@ func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	// clobbered by an unconditional overwrite.
 	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {
 		var newVersion int64
-		err := s.pool.QueryRow(ctx, `
+		err := row(ctx, `
 			INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
 			VALUES ($1, $2, $3, $4, $5, 1, $6)
 			RETURNING version
@@ -2050,7 +2051,7 @@ func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	// the caller's tenant (same as the upsert path below).
 	if ifMatch != nil {
 		var newVersion int64
-		err := s.pool.QueryRow(ctx, `
+		err := row(ctx, `
 			UPDATE opaque_checkpoints SET framework = $1, data = $2, created_at = $3, version = version + 1
 			WHERE tenant_id = $4 AND thread_id = $5 AND checkpoint_id = $6 AND version = $7
 			RETURNING version
@@ -2068,7 +2069,7 @@ func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	// version in the DB (not a guessed in-memory +1) so concurrent writers
 	// each observe a distinct ETag via RETURNING.
 	var newVersion int64
-	err := s.pool.QueryRow(ctx, `
+	err := row(ctx, `
 		INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
 		VALUES ($1, $2, $3, $4, $5, 1, $6)
 		ON CONFLICT (tenant_id, thread_id, checkpoint_id) DO UPDATE SET

@@ -13,9 +13,8 @@ Proves:
    pre-arrived for that run_id (claims it from pre_cancelled).
 2. register_run returns a normal unset Event for a run_id with no
    pre-arrived signal.
-3. Claiming a pre-arrived signal removes it from pre_cancelled (no
-   dangling entry left behind for a later, unrelated run reusing the
-   same run_id space).
+3. A pre-arrived signal stays latched until its bounded expiry so a
+   replacement attempt for the same run also observes cancellation.
 
 Usage:
     python/.venv/bin/python python/tests/test_worker_cancel_race.py
@@ -48,8 +47,8 @@ async def test_pre_arrived_cancel_is_observed():
 
     ev = await register_run(pending, pre_cancelled, lock, "early-run")
     check("pre-arrived cancel leaves the Event already set", ev.is_set())
-    check("pre_cancelled entry is claimed, not left dangling", "early-run" not in pre_cancelled)
-    check("the Event is stored in pending_cancels under its run_id", pending.get("early-run") is ev)
+    check("pre_cancelled entry stays latched for replacement attempts", "early-run" in pre_cancelled)
+    check("the attempt Event is stored under its run_id", ev in pending["early-run"])
 
 
 async def test_normal_registration_is_unaffected():

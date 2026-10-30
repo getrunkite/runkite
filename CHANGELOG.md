@@ -4,6 +4,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Fixed
+- Run-bound opaque checkpoint writes and deletes check the durable attempt and terminal status in the same transaction as the mutation. An upload authorized before reclaim or cancellation can no longer replace or remove a newer attempt's saved history. Blob ETag checks remain separate.
+- Python and TypeScript workers isolate supersession cancellation per attempt. An older generation cannot cancel its replacement or remove its cancellation registration when both execute in the same worker. Genuine run cancellation still reaches all attempts and racing registrations.
+
 ## [0.5.8] - 2026-10-29
 
 Managed AI SDK runs, opaque checkpoint fail-closed behavior, and docs/Admin copy

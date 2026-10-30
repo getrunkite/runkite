@@ -22,6 +22,7 @@ import grpc
 
 # Generated protobuf stubs
 from . import runner_pb2, runner_pb2_grpc
+from .cancellation import PendingCancels, record_cancel_signal, register_run, unregister_run
 from .checkpoint import CheckpointerManager, resolve_checkpoint_http_url
 from .completion import CompletionDeliveryError, finish_run
 from .custom_app import load_asgi_app, serve_custom_app
@@ -717,26 +718,13 @@ async def run_worker(
 
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")
 
-    # Track cancel events by run_id. WatchCancels fires into these.
-    #
-    # pre_cancelled closes a real race (same one the TypeScript runner's
-    # recordCancelSignal/registerRun already handles, and generic_worker's
-    # pre_cancelled/register_run mirrors): a cancel signal can arrive over
-    # this SEPARATE WatchCancels stream before _poll_loop below has
-    # registered run_id in pending_cancels (GetJob -> parse -> register
-    # takes real time). Without remembering that early signal, it was
-    # silently dropped -- `ev is None` -> nothing happens -- and the run
-    # proceeds to completion, ignoring a cancel request the client
-    # believes was honored. Orphaned entries (a signal for a run_id this
-    # runner never picks up) expire so this can't leak forever.
-    pending_cancels: dict[str, asyncio.Event] = {}
+    # Each overlapping assignment gets its own Event. A stale heartbeat
+    # stops only that attempt; WatchCancels fans out to all of a run's
+    # attempts. Retain early signals until expiry so replacement registration
+    # cannot consume or miss a genuine run-wide cancel.
+    pending_cancels: PendingCancels = {}
     pre_cancelled: set[str] = set()
     pending_cancels_lock = asyncio.Lock()
-
-    async def _expire_pre_cancel(run_id: str):
-        await asyncio.sleep(60)
-        async with pending_cancels_lock:
-            pre_cancelled.discard(run_id)
 
     async def watch_cancels():
         """Subscribe to cancel signals via gRPC server-streaming RPC."""
@@ -751,13 +739,7 @@ async def run_worker(
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
-                    async with pending_cancels_lock:
-                        ev = pending_cancels.get(run_id)
-                        if ev is not None:
-                            ev.set()
-                        else:
-                            pre_cancelled.add(run_id)
-                            asyncio.create_task(_expire_pre_cancel(run_id))
+                    await record_cancel_signal(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
             except grpc.aio.AioRpcError as e:
                 logger.error(f"WatchCancels error: {e.code()} {e.details()}")
                 await asyncio.sleep(1)
@@ -826,27 +808,6 @@ def _load_custom_app_config(config_path: str) -> dict | None:
     with open(config_path) as f:
         raw = json.load(f)
     return raw.get("custom_app")
-
-
-async def register_run(
-    pending_cancels: dict[str, asyncio.Event],
-    pre_cancelled: set[str],
-    lock: asyncio.Lock,
-    run_id: str,
-) -> asyncio.Event:
-    """Claim (or create) the cancel Event for run_id. If a cancel signal
-    already arrived (pre_cancelled), the Event is returned already set --
-    see watch_cancels' pre_cancelled doc comment in run_worker above for
-    the race this closes."""
-    async with lock:
-        ev = pending_cancels.get(run_id)
-        if ev is None:
-            ev = asyncio.Event()
-            pending_cancels[run_id] = ev
-        if run_id in pre_cancelled:
-            pre_cancelled.discard(run_id)
-            ev.set()
-        return ev
 
 
 def _log_trace_context(run_id: str, tc: dict | None) -> None:
@@ -1007,8 +968,8 @@ async def _run_assigned_job(
             )
         )
 
-    # Register a cancel event for this run, claiming any
-    # pre-arrived cancel signal for it.
+    # Register this attempt without sharing its heartbeat's supersession
+    # event with another assignment for the same run.
     cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
 
     # Started as soon as run_id is known -- BEFORE StreamEvents' first
@@ -1016,10 +977,8 @@ async def _run_assigned_job(
     # (extended by StreamEvents' first-event Renew, then by this loop
     # for everything after) never goes untouched even if execute_run
     # takes a while to produce its first event. See heartbeat.py.
-    # Shares cancel_event with execute_run below -- a superseded
-    # heartbeat sets the SAME event a real cancel signal would, so
-    # this runner stops cooperatively instead of racing a second
-    # runner that's already taken over.
+    # Supersession sets only this attempt's Event. A real WatchCancels
+    # signal sets every overlapping attempt's Event through the registry.
     heartbeat_task = asyncio.create_task(
         heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
     )
@@ -1052,8 +1011,7 @@ async def _run_assigned_job(
             stream_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await stream_task
-        async with pending_cancels_lock:
-            pending_cancels.pop(run_id, None)
+        await unregister_run(pending_cancels, pending_cancels_lock, run_id, cancel_event)
 
 
 async def _poll_loop(

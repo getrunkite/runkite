@@ -66,60 +66,65 @@ export class Semaphore {
 // worst-case leak lifetime for an orphaned entry to a few minutes rather
 // than the runner's entire uptime.
 const ORPHAN_CANCEL_CLEANUP_MS = 5 * 60 * 1000;
-/**
- * Records that a cancel signal arrived for runId. Extracted from
- * watchCancelsLoop's stream handler specifically so this decision is
- * unit-testable without a real gRPC stream.
- *
- * Creates a fresh pre-registered entry if the run hasn't been registered
- * yet, rather than silently dropping the signal -- a real race, confirmed
- * live: WatchCancels is a single always-open stream, independent of the
- * per-run GetJob response, so a cancel signal can reach this runner before
- * pollLoop finishes registering the run it's for (client cancels near-
- * instantly after a run is created, while GetJob's response is still being
- * parsed). Pairs with registerRun below, which must NOT overwrite an
- * entry a cancel already touched.
- *
- * A pre-registered entry that registerRun never claims -- WatchCancels
- * broadcasts every cancel to every runner watching a runner_kind, so a
- * multi-instance deployment (or a cancel for an already-completed/
- * nonexistent run) routinely produces entries THIS process never claims
- * -- would otherwise leak for the runner's entire lifetime. Self-cleans
- * via a bounded timer instead.
- */
-export function recordCancelSignal(pendingCancels, runId) {
-    const entry = pendingCancels.get(runId);
-    if (entry) {
-        entry.cancelled = true;
-        return;
+function cancellationEntry(pendingCancels, runId) {
+    const existing = pendingCancels.get(runId);
+    if (existing) {
+        existing._attempts ??= new Set();
+        return existing;
     }
-    const fresh = { cancelled: true };
+    const fresh = { cancelled: false, _attempts: new Set() };
     pendingCancels.set(runId, fresh);
+    return fresh;
+}
+function expireOrphanCancel(pendingCancels, runId, entry) {
+    if (entry._cleanupTimer)
+        clearTimeout(entry._cleanupTimer);
     const timer = setTimeout(() => {
-        if (pendingCancels.get(runId) === fresh && !fresh._registered) {
+        if (entry._cleanupTimer !== timer)
+            return;
+        entry._cleanupTimer = undefined;
+        if (pendingCancels.get(runId) === entry && entry._attempts.size === 0) {
             pendingCancels.delete(runId);
         }
     }, ORPHAN_CANCEL_CLEANUP_MS);
-    timer.unref(); // don't keep the process alive just for this cleanup timer
+    entry._cleanupTimer = timer;
+    timer.unref();
 }
 /**
- * Registers a newly-dispatched run's cancel-tracking entry, reusing a
- * pre-arrived cancel signal (see recordCancelSignal) instead of
- * overwriting it with a fresh { cancelled: false } -- that overwrite is
- * exactly the race: without reusing the existing entry, a cancel that
- * arrived first would be silently lost the instant the run registers.
- * Marks the entry as claimed so recordCancelSignal's cleanup timer (if
- * any) leaves it alone for the run's real lifetime.
+ * WatchCancels is run-wide, so a real user cancel reaches every active
+ * attempt and any dispatch that has not registered yet. Orphan signals
+ * expire instead of accumulating on every runner watching this kind.
  */
+export function recordCancelSignal(pendingCancels, runId) {
+    const entry = cancellationEntry(pendingCancels, runId);
+    entry.cancelled = true;
+    for (const attempt of entry._attempts)
+        attempt.cancelled = true;
+    if (entry._attempts.size === 0)
+        expireOrphanCancel(pendingCancels, runId, entry);
+}
+/** Each registration belongs to one attempt, including overlapping generations. */
 export function registerRun(pendingCancels, runId) {
-    const existing = pendingCancels.get(runId);
-    if (existing) {
-        existing._registered = true;
-        return existing;
+    const entry = cancellationEntry(pendingCancels, runId);
+    if (entry._cleanupTimer) {
+        clearTimeout(entry._cleanupTimer);
+        entry._cleanupTimer = undefined;
     }
-    const fresh = { cancelled: false };
-    pendingCancels.set(runId, fresh);
-    return fresh;
+    const attempt = { cancelled: entry.cancelled };
+    entry._attempts.add(attempt);
+    return attempt;
+}
+/** Release only this attempt; preserve other attempts and early user cancels. */
+export function unregisterRun(pendingCancels, runId, attempt) {
+    const entry = pendingCancels.get(runId);
+    if (!entry?._attempts?.delete(attempt) || entry._attempts.size !== 0)
+        return;
+    if (entry.cancelled) {
+        expireOrphanCancel(pendingCancels, runId, entry);
+    }
+    else {
+        pendingCancels.delete(runId);
+    }
 }
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -372,10 +377,8 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
     }
     finally {
         heartbeat.stop();
-        // Always clear the cancel registration, even if executeRun itself
-        // threw -- otherwise a failure here would leak an entry in
-        // pendingCancels for every job that hits it.
-        pendingCancels.delete(runId);
+        // A previous generation can finish while its replacement is still active.
+        unregisterRun(pendingCancels, runId, cancelState);
     }
 }
 /**

@@ -310,6 +310,15 @@ The runner accesses checkpoints in one of two modes:
 
 Base URL: the control plane's internal API root.
 
+Run-bound PUT and DELETE validate the durable run generation and terminal status
+in the same transaction as the blob mutation, serialized with attempt advancement
+and completion. Authorization at request start is insufficient for a slow upload.
+An obsolete attempt receives `403 run_generation_mismatch`; a completed, canceled
+or missing run receives `403 run_not_inflight`. Blob ETags still protect against
+concurrent changes within an allowed attempt and return `412` on conflict.
+Existing run-binding headers are unchanged. These checks apply to HTTP proxy
+state; direct framework database writes remain owned by the framework driver.
+
 **Save checkpoint:**
 ```
 PUT /internal/checkpoints/{thread_id}/{checkpoint_id}

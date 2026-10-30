@@ -31,6 +31,7 @@ from typing import Any, Protocol
 import grpc
 
 from . import runner_pb2, runner_pb2_grpc
+from .cancellation import PendingCancels, record_cancel_signal, register_run, unregister_run
 from .completion import CompletionDeliveryError, finish_run
 from .heartbeat import heartbeat_loop
 from .run_status import should_skip_run
@@ -193,20 +194,11 @@ async def run_worker(
     stub = runner_pb2_grpc.RunnerServiceStub(channel)
     logger.info(f"Worker ready. Polling for jobs as runner_kind={runner_kind}")
 
-    # Same cancel race the TypeScript runner already fixed: a WatchCancels
-    # signal can arrive BEFORE this poll loop has registered the run's
-    # Event (GetJob -> parse -> register). Dropping that signal means a
-    # cancel that races job dispatch is silently ignored. pre_cancelled
-    # remembers early signals until register_run claims them; orphans
-    # expire so a cancel for a never-seen run_id can't leak forever.
-    pending_cancels: dict[str, asyncio.Event] = {}
+    # Attempt-local Events isolate a stale heartbeat from its replacement.
+    # WatchCancels fans out and retains early signals for racing registrations.
+    pending_cancels: PendingCancels = {}
     pre_cancelled: set[str] = set()
     pending_cancels_lock = asyncio.Lock()
-
-    async def _expire_pre_cancel(run_id: str):
-        await asyncio.sleep(60)
-        async with pending_cancels_lock:
-            pre_cancelled.discard(run_id)
 
     async def watch_cancels():
         while True:
@@ -217,13 +209,7 @@ async def run_worker(
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
-                    async with pending_cancels_lock:
-                        ev = pending_cancels.get(run_id)
-                        if ev is not None:
-                            ev.set()
-                        else:
-                            pre_cancelled.add(run_id)
-                            asyncio.create_task(_expire_pre_cancel(run_id))
+                    await record_cancel_signal(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
             except grpc.aio.AioRpcError as e:
                 logger.error(f"WatchCancels error: {e.code()} {e.details()}")
                 await asyncio.sleep(1)
@@ -258,25 +244,6 @@ async def run_worker(
             logger.info(f"Draining {len(in_flight_tasks)} in-flight job(s) before shutdown...")
             await asyncio.gather(*in_flight_tasks, return_exceptions=True)
         tracing_shutdown()
-
-
-async def register_run(
-    pending_cancels: dict[str, asyncio.Event],
-    pre_cancelled: set[str],
-    lock: asyncio.Lock,
-    run_id: str,
-) -> asyncio.Event:
-    """Claim (or create) the cancel Event for run_id. If a cancel signal
-    already arrived (pre_cancelled), the Event is returned already set."""
-    async with lock:
-        ev = pending_cancels.get(run_id)
-        if ev is None:
-            ev = asyncio.Event()
-            pending_cancels[run_id] = ev
-        if run_id in pre_cancelled:
-            pre_cancelled.discard(run_id)
-            ev.set()
-        return ev
 
 
 def _log_trace_context(run_id: str, tc: dict | None) -> None:
@@ -374,8 +341,8 @@ async def _handle_job(
 
                 # Started as soon as run_id is known, before StreamEvents' first
                 # message -- see worker.py's mirrored change / heartbeat.py.
-                # Shares cancel_event with adapter.execute below -- a superseded
-                # heartbeat sets the SAME event a real cancel signal would.
+                # A stale heartbeat stops only this attempt. Real cancellation
+                # is broadcast to every overlapping attempt by WatchCancels.
                 heartbeat_task = asyncio.create_task(
                     heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
                 )
@@ -434,8 +401,7 @@ async def _handle_job(
                         stream_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await stream_task
-                    async with pending_cancels_lock:
-                        pending_cancels.pop(run_id, None)
+                    await unregister_run(pending_cancels, pending_cancels_lock, run_id, cancel_event)
 
                 if status:
                     set_run_status(span, status)

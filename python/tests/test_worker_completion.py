@@ -6,7 +6,33 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from runkite_runner import generic_worker, runner_pb2, worker
+from runkite_runner import cancellation, generic_worker, runner_pb2, worker
+from runkite_runner.heartbeat import heartbeat_loop
+
+
+class _CancelClock:
+    """Invoke canceled callbacks too, covering an already-queued timer race."""
+
+    def __init__(self):
+        self.now = 0
+        self.timers = []
+
+    def call_later(self, delay, callback):
+        timer = SimpleNamespace(at=self.now + delay, callback=callback, cancelled=False)
+
+        def cancel():
+            timer.cancelled = True
+
+        timer.cancel = cancel
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds):
+        self.now += seconds
+        for timer in list(self.timers):
+            if timer.at <= self.now:
+                self.timers.remove(timer)
+                timer.callback()
 
 
 class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
@@ -169,6 +195,222 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
             for outcome in ("success", "interrupted"):
                 with self.subTest(fail_at=fail_at, outcome=outcome):
                     await self.exercise_opaque_failure(fail_at, outcome)
+
+    async def exercise_attempt_supersession(self, module, *, cancel_current):
+        pending = {}
+        pre_cancelled = set()
+        lock = asyncio.Lock()
+        started = {generation: asyncio.Event() for generation in (1, 2)}
+        release = {generation: asyncio.Event() for generation in (1, 2)}
+        events = {}
+        reports = {}
+        supersede_old = asyncio.Event()
+        keep_current_alive = asyncio.Event()
+        clock = _CancelClock()
+
+        class Stub:
+            def StreamEvents(self, source, metadata):
+                async def drain():
+                    async for _event in source:
+                        pass
+                    return runner_pb2.StreamEventsResponse(ok=True)
+
+                return drain()
+
+            async def Heartbeat(self, request, metadata):
+                if request.generation == 1:
+                    await supersede_old.wait()
+                    return runner_pb2.HeartbeatResponse(superseded=True)
+                await keep_current_alive.wait()
+                return runner_pb2.HeartbeatResponse(ok=True)
+
+            async def ReportStatus(self, request, metadata):
+                reports[request.generation] = request.status
+                return runner_pb2.ReportStatusResponse(ok=True)
+
+        async def execute(adapter, assignment, send_event, cancel_event=None):
+            generation = assignment["generation"]
+            events[generation] = cancel_event
+            started[generation].set()
+            await release[generation].wait()
+            outcome = "interrupted" if cancel_event.is_set() else "success"
+            await send_event({"method": "end", "data": {"status": outcome}})
+            return outcome
+
+        class Adapter:
+            checkpoint_framework = ""
+
+            async def execute(self, assignment, send_event, cancel_event):
+                return await execute(self, assignment, send_event, cancel_event)
+
+        async def heartbeat(*args, **kwargs):
+            await heartbeat_loop(*args, **kwargs, interval_s=0)
+
+        def response(generation):
+            return SimpleNamespace(
+                assignment_json=json.dumps(
+                    {"run_id": "run", "thread_id": "thread", "graph_id": "graph", "generation": generation}
+                )
+            )
+
+        tasks = []
+        with (
+            patch.object(module, "should_skip_run", AsyncMock(return_value=False)),
+            patch.object(module, "heartbeat_loop", heartbeat),
+            patch.object(worker, "execute_run", execute),
+            patch.object(cancellation, "get_running_loop", return_value=clock),
+        ):
+            try:
+                for generation in (1, 2):
+                    task = asyncio.create_task(
+                        module._handle_job(Stub(), Adapter(), response(generation), [], pending, pre_cancelled, lock)
+                    )
+                    tasks.append(task)
+                    await asyncio.wait_for(started[generation].wait(), 2)
+                self.assertIsNot(events[1], events[2], "Overlapping attempts shared their cancellation Event")
+                supersede_old.set()
+                await asyncio.wait_for(events[1].wait(), 2)
+                self.assertFalse(events[2].is_set(), "A stale heartbeat cancelled the replacement attempt")
+                release[1].set()
+                await asyncio.wait_for(tasks[0], 2)
+                self.assertEqual(pending["run"], {events[2]}, "Old cleanup removed the replacement registration")
+                if cancel_current:
+                    await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                    self.assertTrue(events[2].is_set(), "The replacement missed a genuine run-wide cancel")
+                release[2].set()
+                await asyncio.wait_for(tasks[1], 2)
+                self.assertEqual(reports, {1: "interrupted", 2: "interrupted" if cancel_current else "success"})
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S)
+                self.assertEqual(pending, {})
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def test_langgraph_superseded_attempt_does_not_cancel_or_unregister_its_replacement(self):
+        for cancel_current in (False, True):
+            with self.subTest(cancel_current=cancel_current):
+                await self.exercise_attempt_supersession(worker, cancel_current=cancel_current)
+
+    async def test_generic_superseded_attempt_does_not_cancel_or_unregister_its_replacement(self):
+        for cancel_current in (False, True):
+            with self.subTest(cancel_current=cancel_current):
+                await self.exercise_attempt_supersession(generic_worker, cancel_current=cancel_current)
+
+    async def test_real_cancellation_reaches_all_attempts_and_racing_registrations(self):
+        for module in (worker, generic_worker):
+            clock = _CancelClock()
+            with (
+                self.subTest(worker=module.__name__),
+                patch.object(cancellation, "get_running_loop", return_value=clock),
+            ):
+                pending = {}
+                pre_cancelled = set()
+                lock = asyncio.Lock()
+                first = await module.register_run(pending, pre_cancelled, lock, "run")
+                second = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertTrue(await module.record_cancel_signal(pending, pre_cancelled, lock, "run"))
+                self.assertTrue(first.is_set())
+                self.assertTrue(second.is_set())
+                await module.unregister_run(pending, lock, "run", first)
+                third = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertTrue(third.is_set(), "A replacement consumed or missed a genuine cancellation")
+                self.assertFalse(await module.record_cancel_signal(pending, pre_cancelled, lock, "run"))
+                await module.unregister_run(pending, lock, "run", first)
+                self.assertEqual(pending["run"], {second, third}, "Duplicate cleanup removed another attempt")
+                await module.unregister_run(pending, lock, "run", second)
+                await module.unregister_run(pending, lock, "run", third)
+                self.assertEqual(len(pending["run"]), 0, "Only the bounded canceled tombstone should remain")
+                after_cleanup = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertTrue(after_cleanup.is_set(), "A cancel was lost between cleanup and registration")
+                await module.unregister_run(pending, lock, "run", after_cleanup)
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S)
+                self.assertEqual(pending, {})
+                self.assertEqual(pre_cancelled, set())
+
+    async def test_early_cancellation_survives_registration_of_multiple_attempts(self):
+        for module in (worker, generic_worker):
+            clock = _CancelClock()
+            with (
+                self.subTest(worker=module.__name__),
+                patch.object(cancellation, "get_running_loop", return_value=clock),
+            ):
+                pending = {}
+                pre_cancelled = set()
+                lock = asyncio.Lock()
+                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                first = await module.register_run(pending, pre_cancelled, lock, "run")
+                second = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertIsNot(first, second)
+                self.assertTrue(first.is_set())
+                self.assertTrue(second.is_set())
+                unrelated = await module.register_run(pending, pre_cancelled, lock, "other")
+                self.assertFalse(unrelated.is_set())
+
+    async def test_cancellation_stays_latched_past_orphan_expiry_while_attempts_are_active(self):
+        for module in (worker, generic_worker):
+            clock = _CancelClock()
+            with (
+                self.subTest(worker=module.__name__),
+                patch.object(cancellation, "get_running_loop", return_value=clock),
+            ):
+                pending = {}
+                pre_cancelled = set()
+                lock = asyncio.Lock()
+                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                first = await module.register_run(pending, pre_cancelled, lock, "run")
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S * 2)
+                self.assertTrue(first.is_set())
+                self.assertIn("run", pending, "An old expiry callback removed a registered attempt")
+                # The active bucket's run-wide latch must not depend on the
+                # orphan marker surviving for the whole execution.
+                pre_cancelled.discard("run")
+                second = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertTrue(second.is_set(), "The replacement forgot a genuine run-wide cancellation")
+                await module.unregister_run(pending, lock, "run", first)
+                await module.unregister_run(pending, lock, "run", second)
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S)
+                self.assertEqual(pending, {})
+
+    async def test_repeated_cancel_refreshes_orphan_expiry_without_an_old_timer_clearing_it(self):
+        for module in (worker, generic_worker):
+            clock = _CancelClock()
+            with (
+                self.subTest(worker=module.__name__),
+                patch.object(cancellation, "get_running_loop", return_value=clock),
+            ):
+                pending = {}
+                pre_cancelled = set()
+                lock = asyncio.Lock()
+                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
+                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                clock.advance(1)
+                self.assertIn("run", pending, "The older expiry deleted a refreshed canceled bucket")
+                self.assertIn("run", pre_cancelled, "The older expiry cleared the newer cancel marker")
+                clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
+                self.assertEqual(pending, {})
+                self.assertEqual(pre_cancelled, set())
+
+    async def test_old_orphan_timer_does_not_clear_a_new_bucket_for_the_same_run(self):
+        clock = _CancelClock()
+        with patch.object(cancellation, "get_running_loop", return_value=clock):
+            pending = {}
+            pre_cancelled = set()
+            lock = asyncio.Lock()
+            await cancellation.record_cancel_signal(pending, pre_cancelled, lock, "run")
+            old_bucket = pending.pop("run")
+            pre_cancelled.discard("run")
+            clock.advance(1)
+            await cancellation.record_cancel_signal(pending, pre_cancelled, lock, "run")
+            new_bucket = pending["run"]
+            clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
+            self.assertIsNot(old_bucket, new_bucket)
+            self.assertIs(pending["run"], new_bucket)
+            self.assertIn("run", pre_cancelled)
+            clock.advance(1)
+            self.assertEqual(pending, {})
+            self.assertEqual(pre_cancelled, set())
 
 
 if __name__ == "__main__":

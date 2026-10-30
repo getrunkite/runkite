@@ -17,6 +17,7 @@ import (
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/migrate"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -1851,7 +1852,7 @@ func (s *SQLiteStore) upOpaqueCheckpointVersion(ctx context.Context) error {
 	return addColumnIfMissing(ctx, s.db, "opaque_checkpoints", "version", "INTEGER NOT NULL DEFAULT 1")
 }
 
-func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+func (s *SQLiteStore) putOpaqueCheckpoint(ctx context.Context, row func(context.Context, string, ...interface{}) sqlcompletion.Row, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
 	if len(data) > models.MaxOpaqueCheckpointBytes {
 		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
 	}
@@ -1869,7 +1870,7 @@ func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpo
 	// Create-only (If-None-Match: *): INSERT, conflict if the row exists.
 	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {
 		var newVersion int64
-		err := s.db.QueryRowContext(ctx, `
+		err := row(ctx, `
 			INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
 			VALUES (?, ?, ?, ?, ?, 1, ?)
 			RETURNING version
@@ -1889,7 +1890,7 @@ func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpo
 	// the caller's tenant (same as the upsert path below).
 	if ifMatch != nil {
 		var newVersion int64
-		err := s.db.QueryRowContext(ctx, `
+		err := row(ctx, `
 			UPDATE opaque_checkpoints SET framework = ?, data = ?, created_at = ?, version = version + 1
 			WHERE tenant_id = ? AND thread_id = ? AND checkpoint_id = ? AND version = ?
 			RETURNING version
@@ -1907,7 +1908,7 @@ func (s *SQLiteStore) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpo
 	// version in the DB (not a guessed in-memory +1) so concurrent writers
 	// each observe a distinct ETag via RETURNING.
 	var newVersion int64
-	err := s.db.QueryRowContext(ctx, `
+	err := row(ctx, `
 		INSERT INTO opaque_checkpoints (tenant_id, thread_id, checkpoint_id, framework, data, version, created_at)
 		VALUES (?, ?, ?, ?, ?, 1, ?)
 		ON CONFLICT(tenant_id, thread_id, checkpoint_id) DO UPDATE SET
