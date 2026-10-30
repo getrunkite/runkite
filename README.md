@@ -107,7 +107,11 @@ bridge ship in **v0.5.8** with `runkite-runner` (`--framework ai-sdk`, peer
 [AI SDK guard](examples/governance_ai_sdk/README.md) and
 [Microsoft function middleware](examples/governance_agent_framework/README.md)
 use the unpublished `runkite-governance` helpers (install from the repository).
-A Microsoft managed runner is not implemented. See [CHANGELOG](CHANGELOG.md),
+A [Microsoft managed runner](examples/managed_agent_framework/README.md) is
+available from a source-built Python wheel with the optional `agent-framework`
+extra and `runkite-runner-agent-framework` CLI. This install path is
+**unreleased** and is not in the published PyPI `0.5.8` artifact.
+See [CHANGELOG](CHANGELOG.md),
 [client integration guidance](docs/client-sdk.md), and the
 [support guide](site/support/sdk-integration.html).
 

@@ -1,8 +1,10 @@
-"""Opt-in real plane, wheel-installed runner core and native Agent Framework tests.
+"""Opt-in real plane and fully installed managed Agent Framework runner tests.
 
 Set RUNKITE_TEST_BINARY, RUNKITE_TEST_SEED_BINARY and RUNKITE_TEST_RUNNER_WHEEL.
 Optional RUNKITE_TEST_POSTGRES_DSN + RUNKITE_TEST_REDIS_URL select dedicated
 external test services; otherwise this uses SQLite and the in-process queue.
+The harness installs the wheel's agent-framework extra into a fresh consumer
+venv with uv. UV_CACHE_DIR and UV_OFFLINE are honored for dependency preparation.
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ import threading
 import time
 import unittest
 import uuid
-import zipfile
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -110,12 +111,8 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             )
         )
         shutil.copyfile(ADAPTER / "e2e_agent.py", self.directory / "agent.py")
-        wheel_location = Path(os.environ["RUNKITE_TEST_RUNNER_WHEEL"])
+        wheel_location = Path(os.environ["RUNKITE_TEST_RUNNER_WHEEL"]).resolve()
         wheel = next(wheel_location.glob("runkite_runner-*.whl")) if wheel_location.is_dir() else wheel_location
-        self.core = self.directory / "wheel-core"
-        with zipfile.ZipFile(wheel) as archive:
-            archive.extractall(self.core)
-        self.assertTrue((self.core / "runkite_runner" / "generic_worker.py").is_file())
         http_port, grpc_port = free_port(), free_port()
         while grpc_port == http_port:
             grpc_port = free_port()
@@ -134,6 +131,8 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 "RUNKITE_MS_E2E_COUNTERS": str(self.counters),
             }
         )
+        self.worker_environment = {**self.environment, "RUNNER_TOKEN": "e2e-runner-token"}
+        self.install_runner(wheel)
         plane_environment = dict(self.environment)
         if postgres and redis:
             plane_environment.update(POSTGRES_DSN=postgres, REDIS_URL=redis)
@@ -166,20 +165,91 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             text=True,
             timeout=20,
         )
-        self.worker_environment = {
+        self.start_runner()
+
+    def install_runner(self, wheel: Path) -> None:
+        self.assertTrue(wheel.is_file(), f"Missing built wheel: {wheel}")
+        self.consumer = self.directory / "consumer"
+        subprocess.run(
+            [sys.executable, "-I", "-m", "venv", "--without-pip", str(self.consumer)],
+            env=self.environment,
+            cwd=self.directory,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        scripts = self.consumer / ("Scripts" if os.name == "nt" else "bin")
+        self.consumer_python = scripts / ("python.exe" if os.name == "nt" else "python")
+        self.runner_command = scripts / (
+            "runkite-runner-agent-framework.exe" if os.name == "nt" else "runkite-runner-agent-framework"
+        )
+        installer_environment = {
             **self.environment,
-            "PYTHONPATH": os.pathsep.join((str(self.core), str(ROOT / "python" / "adapters"))),
-            "RUNNER_TOKEN": "e2e-runner-token",
+            **{key: os.environ[key] for key in ("UV_CACHE_DIR", "UV_OFFLINE") if key in os.environ},
+            "UV_PYTHON_DOWNLOADS": "never",
         }
-        imported = subprocess.check_output(
-            [sys.executable, "-c", "import runkite_runner; print(runkite_runner.__file__)"],
+        installed = subprocess.run(
+            [
+                "uv",
+                "--no-config",
+                "pip",
+                "install",
+                "--python",
+                str(self.consumer_python),
+                f"runkite-runner[agent-framework] @ {wheel.as_uri()}",
+            ],
+            env=installer_environment,
+            cwd=self.directory,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        self.assertEqual(
+            installed.returncode, 0, f"Fresh wheel installation failed:\n{installed.stdout}{installed.stderr}"
+        )
+        self.assertNotIn("PYTHONPATH", self.worker_environment)
+        probe = subprocess.check_output(
+            [
+                str(self.consumer_python),
+                "-I",
+                "-c",
+                "import importlib.metadata as m, json, sys; "
+                "import agent_framework, agent_framework_adapter, runkite_runner; "
+                "print(json.dumps({'prefix': sys.prefix, 'path': sys.path, "
+                "'modules': {x.__name__: x.__file__ for x in "
+                "(runkite_runner, agent_framework_adapter, agent_framework)}, "
+                "'sdk': m.version('agent-framework-core'), "
+                "'entrypoint': {e.name: e.value for e in m.distribution('runkite-runner').entry_points}"
+                "}))",
+            ],
             env=self.worker_environment,
             cwd=self.directory,
             text=True,
-            timeout=10,
-        ).strip()
-        self.assertTrue(Path(imported).is_relative_to(self.core), "worker core must come from the built wheel")
-        self.start_runner()
+            timeout=20,
+        )
+        details = json.loads(probe)
+        self.assertEqual(Path(details["prefix"]).resolve(), self.consumer.resolve())
+        for name, source in details["modules"].items():
+            self.assertTrue(
+                Path(source).resolve().is_relative_to(self.consumer.resolve()),
+                f"{name} must resolve inside the fresh consumer, got {source}",
+            )
+        for directory in details["path"]:
+            self.assertFalse(Path(directory).resolve().is_relative_to(ROOT), f"Checkout import path: {directory}")
+        self.assertEqual(details["sdk"], "1.23.0")
+        self.assertEqual(
+            details["entrypoint"]["runkite-runner-agent-framework"], "agent_framework_adapter.__main__:main"
+        )
+        self.assertTrue(self.runner_command.is_file(), "The wheel must install its dedicated console command")
+        for command in (
+            [str(self.runner_command), "--help"],
+            [str(self.consumer_python), "-I", "-m", "agent_framework_adapter", "--help"],
+        ):
+            help_text = subprocess.check_output(
+                command, env=self.worker_environment, cwd=self.directory, text=True, timeout=20
+            )
+            self.assertIn("Runkite managed Microsoft Agent Framework runner", help_text)
 
     def cleanup(self) -> None:
         for process in reversed(self.processes):
@@ -199,9 +269,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
     def start_runner(self, http_address: str | None = None) -> None:
         self.runner = self.launch(
             [
-                sys.executable,
-                "-m",
-                "agent_framework_adapter",
+                str(self.runner_command),
                 "--config",
                 str(self.config),
                 "--grpc-address",

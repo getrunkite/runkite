@@ -273,10 +273,13 @@ jobs:
           uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' grpcio protobuf httpx
           PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
 
-      - name: Managed Microsoft runner with real plane and wheel core (SQLite)
+      - name: Python sdist and wheel artifact contract
+        run: make test-python-package
+
+      - name: Managed Microsoft runner with real plane and installed wheel (SQLite)
         run: make test-managed-agent-framework
 
-      - name: Managed Microsoft runner with real plane and wheel core (Postgres + Redis)
+      - name: Managed Microsoft runner with real plane and installed wheel (Postgres + Redis)
         env:
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379

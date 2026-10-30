@@ -23,9 +23,10 @@ Pin with `==` / `@` when you need a fixed release. From a clone (dev),
 (`PYTHONPATH=python python -m runkite_runner` also works once dependencies
 are installed some other way, e.g. `uv pip install -e python/`); TypeScript's
 `npx tsx src/cli.ts` needs `npm ci` in `typescript/runkite-runner/` first.
-Framework adapters under `python/adapters/` are not on PyPI yet — use
-`PYTHONPATH` as below, after installing each adapter's own dependencies (see
-each adapter's README).
+CrewAI, LlamaIndex, AutoGen and plain LangChain adapters under `python/adapters/`
+remain checkout-only. Use `PYTHONPATH` as below after installing each adapter's
+own dependencies. The Microsoft adapter has an unreleased optional install
+profile in the same Python runner package, described below.
 
 The plane does not proxy model HTTP and does not pick models. Put an LLM gateway in front of the runner if you want per-call model routing.
 
@@ -127,14 +128,31 @@ run/tenant/generation binding and conditional writes. State must commit before
 terminal success. Reclaim can replay an already-committed turn without repeating
 tools. Earlier crashes remain subject to downstream side-effect idempotency.
 
-### Managed Microsoft Agent Framework Python runner
+### Managed Microsoft Agent Framework Python runner (unreleased)
 
-The checkout-only `python-agent-framework` adapter executes a per-run factory
+The `python-agent-framework` adapter executes a per-run factory
 returning a public `agent_framework.Agent`. Load a config declaring
-`runner_kind: python-agent-framework` in both the plane and runner. Use
-`python -m agent_framework_adapter` with the repository's Python and adapters
-directories on `PYTHONPATH`; the published `runkite-runner` command still starts
-LangGraph. Setup and the offline factory are in the
+`runner_kind: python-agent-framework` in both the plane and runner. Source-built
+`runkite-runner` wheels and sdists include the adapter; the `agent-framework`
+extra pins `agent-framework-core==1.23.0`. This packaging is unreleased and is
+absent from the published PyPI `0.5.8` artifact. From the repository root:
+
+```bash
+python3.12 -m venv .venv-agent-framework
+.venv-agent-framework/bin/python -m pip install './python[agent-framework]'
+.venv-agent-framework/bin/runkite-runner-agent-framework \
+  --config examples/managed_agent_framework/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026
+```
+
+The installed module alternative is `python -m agent_framework_adapter`; no
+`PYTHONPATH` is needed. Python 3.11+ remains supported. The ordinary
+`runkite-runner` command still starts LangGraph, and its stock Python image
+installs `[otel]` without the Microsoft SDK. Use your own environment or image
+with this extra and entrypoint. After a release containing this change is
+published, `pip install 'runkite-runner[agent-framework]'` will install the profile
+from PyPI. Setup and the offline factory are in the
 [managed Microsoft example](../examples/managed_agent_framework/README.md).
 
 These executions create ordinary Threads/Runs and use managed dispatch, cancel
@@ -164,10 +182,10 @@ cannot be loaded and withholds completion when a required save fails. A rejected
 message blobs fail before agent execution. This replaces warning-and-continue
 behavior; it does not add full framework HITL resume.
 
-The older Python generic opaque client still uses unconditional PUT. The new
-AI SDK path uses CAS and committed-turn receipts. Do not infer those stronger
-recovery properties for every existing adapter. Neither path guarantees exactly
-once external effects before state commit.
+The older Python generic opaque client still uses unconditional PUT. The managed
+AI SDK and Microsoft paths use CAS and committed-turn receipts. Do not infer
+those stronger recovery properties for every existing adapter. None of these
+paths guarantees exactly once external effects before state commit.
 
 **Opaque multi-turn (proxy):** when an adapter sets `checkpoint_framework` and `RUNKITE_HTTP_URL` (or the worker http address) is set, `generic_worker` loads `GET /internal/checkpoints/{thread}/adapter-state` before execute and `PUT`s that same id after success/interrupted — so clients can send only the new turn. This is **message continuity**, not LangGraph channel-state HITL: LlamaIndex restores native chat history; CrewAI / LangChain typically fold prior turns into the next prompt; AutoGen seeds model context. Not full CrewAI crew-memory restore. `checkpoint_ref` stays LangGraph-only (adapters reject it). Without an HTTP base URL, adapters stay single-shot. Same `/internal/checkpoints` surface as LangGraph proxy mode; adapters must not use `.../latest` on shared threads. See Runner Protocol §6.5 and `docs/limitations.md`.
 

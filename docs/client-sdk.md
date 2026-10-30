@@ -38,7 +38,8 @@ loop in its HTTP handler. Native successful-turn history is stored by the runner
 through the plane; frontend presentation history stays with the app. Initial
 support is text and local JSON-result tools. Native approvals/resume, streaming
 tool outputs, binary/client/provider tools, time travel and whole-run caching
-are unsupported. A Microsoft managed runner is not implemented.
+are unsupported. The separate [Microsoft managed runner](#managed-microsoft-agent-framework-unreleased)
+has its own Python factory and session profile.
 
 This backend ships in tagged `v0.5.8` `runkite-runner` artifacts. Install the
 tested optional `ai@7.0.155` peer with the runner. The app-side bridge needs a
@@ -82,6 +83,31 @@ withholds finish and does not manufacture a transcript or retry model/tools.
 It still refuses to combine generations after reclaim. See the
 [example's reconnect and retention contract](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
 These helpers are an unreleased example update, not another client SDK package.
+
+### Managed Microsoft Agent Framework (unreleased)
+
+For Microsoft agents that should dispatch through Runkite and appear in Admin
+Threads/Runs, use the managed Python adapter (`python-agent-framework`) and the
+[offline managed example](../examples/managed_agent_framework/README.md). The
+adapter is included in source-built `runkite-runner` wheels and sdists, with the
+optional `agent-framework` extra pinned to `agent-framework-core==1.23.0` and
+the dedicated `runkite-runner-agent-framework` entrypoint. The installed module
+is `python -m agent_framework_adapter`; no `PYTHONPATH` is required. This packaging
+is unreleased and is not in the published PyPI `0.5.8` artifact. Install the
+local source package as shown in the example until a release contains it. This
+is a runner profile, separate from the unpublished governance helper's extra.
+
+It uses public Agent streaming and session APIs, stores native session history in
+opaque checkpoints with CAS, and recovers committed turns without repeating
+model or tool work. Use the same `RUNNER_TOKEN` for gRPC and checkpoint HTTP,
+and declare `runner_kind: python-agent-framework` in the plane's config. Supply
+only the new user/system text messages for a turn, ending with a user message;
+native session state owns prior history. Failed or cancelled turns retain the
+previous committed history and report any observed usage. Workflows, .NET,
+non-text inputs and native approval/resume are out of the initial scope.
+Unsupported approval or resume fails explicitly. API cancellation can retain
+only usage already delivered to the plane before cancellation commits. Keep the
+governance middleware when the app owns execution and only needs tool decisions.
 
 ## Use today (recommended)
 
@@ -230,24 +256,6 @@ polls or resumes the model loop. See the [Microsoft example](../examples/governa
 for JSON argument constraints, durable continuation, native streaming tests and
 `make test-governance-agent-framework`. This uses the same decision-only boundary
 as the TypeScript guard, with no managed run, run controls or spend caps.
-
-### Microsoft Agent Framework managed runner
-
-For Microsoft agents that should dispatch through Runkite and appear in Admin
-Threads/Runs, use the managed Python adapter (`python-agent-framework`) and the
-[offline managed example](../examples/managed_agent_framework/README.md). It
-uses public Agent streaming and session APIs, stores native session history in
-opaque checkpoints with CAS, and recovers committed turns without repeating
-model or tool work. Use the same `RUNNER_TOKEN` for gRPC and checkpoint HTTP,
-and declare `runner_kind: python-agent-framework` in the plane's config. Supply
-only the new user/system text messages for a turn, ending with a user message;
-native session state owns prior history. Failed or cancelled turns retain the
-previous committed history and report any observed usage. Workflows, .NET,
-non-text inputs and native approval/resume are out of the initial scope.
-Unsupported approval or resume fails explicitly. API cancellation can retain
-only usage already delivered to the plane before cancellation commits. Keep the
-governance middleware when the app owns execution and
-only needs tool decisions.
 
 ## Related
 

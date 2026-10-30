@@ -5,8 +5,12 @@
 
 This package is the process that **does the work**: it connects to a Runkite
 control plane over gRPC, claims jobs, loads your agent from `langgraph.json`,
-executes LangGraph, and streams events, heartbeats, and terminal status back
+executes its framework, and streams events, heartbeats, and terminal status back
 so clients see live SSE / WebSocket progress in the Admin UI.
+
+The default CLI runs LangGraph. An optional Microsoft Agent Framework profile
+is included in source-built wheels from this checkout. That packaging change
+is **unreleased**; the published PyPI `0.5.8` package does not contain it.
 
 ```text
   Client / SDK ──HTTP/SSE──► Runkite control plane (Go)
@@ -14,7 +18,7 @@ so clients see live SSE / WebSocket progress in the Admin UI.
                                     ▼
                            runkite-runner (this package)
                                     │
-                              your LangGraph agent
+                              your framework agent
 ```
 
 | | |
@@ -105,19 +109,51 @@ Examples live in the [Runkite repo](https://github.com/getrunkite/runkite/tree/m
 - **OpenTelemetry:** `runkite.run` span under the control plane `traceparent`, plus thin `runkite.llm` / `runkite.tool` children when OTLP env is set
 - **Production auth:** runner kind tokens (`RUNNER_TOKEN` / `RUNNER_TOKEN_*`) matching control-plane config
 
+### Microsoft Agent Framework (unreleased)
+
+The optional profile ships in the same `runkite-runner` wheel and sdist, with a
+separate entrypoint. Its `agent-framework` extra installs the tested
+`agent-framework-core==1.23.0`; the ordinary install does not pull in that SDK.
+Until a release containing this change is published, build and install from
+the repository root in a clean environment:
+
+```bash
+python3.12 -m venv .venv-agent-framework
+.venv-agent-framework/bin/python -m pip install './python[agent-framework]'
+.venv-agent-framework/bin/runkite-runner-agent-framework \
+  --config examples/managed_agent_framework/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026
+```
+
+Python 3.11+ remains supported; the example uses Python 3.12. Once a release
+containing this change is available, `pip install 'runkite-runner[agent-framework]'`
+will provide the same profile from PyPI. Do not use that command with the older
+published `0.5.8` artifact.
+
+`python -m agent_framework_adapter` is the installed module alternative.
+`runkite-runner` and `python -m runkite_runner` retain their LangGraph defaults.
+The plane must load the same `runner_kind: python-agent-framework` config.
+Microsoft sessions require the plane's HTTP opaque checkpoint API and the same
+`RUNNER_TOKEN` as gRPC. See the
+[adapter README](https://github.com/getrunkite/runkite/blob/main/python/adapters/agent_framework_adapter/README.md) for native factory,
+input and recovery boundaries. The stock Python runner image installs `[otel]`
+and starts LangGraph; use your own environment or image with the Microsoft extra
+and dedicated entrypoint.
+
 ### Framework adapters from a checkout
 
-The published Python package and its CLI run LangGraph. CrewAI, LlamaIndex,
-AutoGen and plain LangChain adapters live under `python/adapters/` in the source
-tree and share `runkite_runner.generic_worker`. They are not included by
-`pip install runkite-runner` and are not separate PyPI packages. Install the
+CrewAI, LlamaIndex, AutoGen and plain LangChain adapters live under
+`python/adapters/` in the source tree and share `runkite_runner.generic_worker`.
+They are not included by `pip install runkite-runner` and are not separate PyPI
+packages. Install the
 chosen adapter from a clone with its isolated dependencies. See
 [docs/runners.md](https://github.com/getrunkite/runkite/blob/main/docs/runners.md).
 
-The managed Vercel AI SDK runner in the working tree is a TypeScript backend,
-not a Python CLI mode, and requires an updated checkout build until released.
-Microsoft Agent Framework currently has checkout-only function governance
-middleware in `python/runkite_governance`, not a managed runner. That helper
+The managed Vercel AI SDK runner is a TypeScript backend, not a Python CLI mode,
+and ships in the npm `runkite-runner` package from `v0.5.8`.
+Microsoft Agent Framework also has checkout-only function governance
+middleware in `python/runkite_governance`. That separate helper
 keeps the model loop and pending continuation in the app and creates no Runkite
 thread or run. See the
 [SDK integration guide](https://getrunkite.com/support/sdk-integration.html).
@@ -132,7 +168,7 @@ thread or run. See the
 | `--grpc-address` | Control plane gRPC (default from env / localhost) |
 | `--http-address` / `RUNKITE_HTTP_URL` | Control plane HTTP for checkpoint/store/connector proxy helpers |
 | `--concurrency` / `RUNKITE_CONCURRENCY` | Max in-flight jobs (default `1`) |
-| `POSTGRES_DSN` | Direct-mode checkpoints + store pool |
+| `POSTGRES_DSN` | LangGraph direct-mode checkpoints + store pool; Microsoft sessions use HTTP opaque checkpoints |
 | `RUNNER_TOKEN` | Shared secret presented on gRPC / `/internal/*` |
 | `OTEL_EXPORTER_OTLP_*` | Enable tracing export (same contract as the control plane) |
 | `LOG_LEVEL` / `LOG_FORMAT` | Logging (`info`, `debug`, … · `text` / `json`) |

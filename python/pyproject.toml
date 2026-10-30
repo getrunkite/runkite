@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "runkite-runner"
 version = "0.5.8"
-description = "Python runner for Runkite: gRPC Agent Protocol worker for LangGraph (and in-repo adapters)."
+description = "Python runner for Runkite: LangGraph and optional Microsoft Agent Framework over Runner Protocol."
 readme = "README.md"
 license = { text = "BUSL-1.1" }
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+agent-framework = ["agent-framework-core==1.23.0"]
 otel = [
   "opentelemetry-api",
   "opentelemetry-sdk",
@@ -46,6 +47,19 @@ Issues = "https://github.com/getrunkite/runkite/issues"
 
 [project.scripts]
 runkite-runner = "runkite_runner.worker:main"
+runkite-runner-agent-framework = "agent_framework_adapter.__main__:main"
+
+[tool.setuptools]
+# Explicit module selection includes the package initializer without shipping
+# checkout-only test modules or live proof fixtures beside the adapter.
+py-modules = [
+  "agent_framework_adapter.__main__",
+  "agent_framework_adapter.adapter",
+  "agent_framework_adapter.state",
+]
+
+[tool.setuptools.package-dir]
+agent_framework_adapter = "adapters/agent_framework_adapter"
 
 [tool.setuptools.packages.find]
 where = ["."]
