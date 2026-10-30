@@ -132,17 +132,14 @@ func wsWriteCommandResult(ctx context.Context, c *websocket.Conn, id int, failEr
 // streamRunOverWS subscribes+replays a run's events onto the WebSocket
 // connection, same semantics as the SSE stream (replayAndTail).
 func (s *Server) streamRunOverWS(ctx context.Context, c *websocket.Conn, runID string) {
-	eventCh, err := s.broker.Subscribe(ctx, runID)
+	streamCtx, stopStream := context.WithCancel(ctx)
+	defer stopStream()
+	eventCh, err := s.broker.Subscribe(streamCtx, runID)
 	if err != nil {
 		slog.Error("websocket: failed to subscribe to run", "run_id", runID, "error", err)
 		return
 	}
-	replayAndTail(ctx, s.broker, runID, nil, nil, eventCh, func(_ *transport.RunEvent, se *models.StreamingEvent) {
-		if err := wsjson.Write(ctx, c, se); err != nil {
-			// Write failed (client gone) -- nothing more to do; the read
-			// loop will notice on its own and cancel ctx, unblocking Replay/
-			// Subscribe's context-aware waits for any other in-flight runs.
-			return
-		}
+	_ = s.replayAndTail(streamCtx, runID, nil, nil, eventCh, func(_ *transport.RunEvent, se *models.StreamingEvent) error {
+		return wsjson.Write(streamCtx, c, se)
 	})
 }

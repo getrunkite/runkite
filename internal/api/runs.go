@@ -1468,8 +1468,10 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request, run *models.R
 		return
 	}
 
-	// Subscribe BEFORE enqueuing (no race)
-	eventCh, err := s.broker.Subscribe(r.Context(), run.RunID)
+	// Subscribe BEFORE enqueuing (no race).
+	streamCtx, stopStream := context.WithCancel(r.Context())
+	defer stopStream()
+	eventCh, err := s.broker.Subscribe(streamCtx, run.RunID)
 	if err != nil {
 		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to subscribe to events")
@@ -1501,17 +1503,15 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request, run *models.R
 	fmt.Fprintf(w, "event: metadata\ndata: {\"run_id\":%q}\n\n", run.RunID)
 	flusher.Flush()
 
-	// Stream events — send just the payload (event.Data), not the full RunEvent
-	// envelope, to match the LangGraph platform SSE format the SDK expects.
-	// Checkpoint/thread-values persistence happens centrally in StatusCallback,
-	// not here, so it fires regardless of how the client observes the run.
-	for event := range eventCh {
-		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Method, string(event.Data))
-		flusher.Flush()
-		if event.IsTerminal() {
-			break
+	// Preserve payload-only Agent Protocol SSE while sharing durable terminal
+	// confirmation and recovery with reconnect and thread streaming paths.
+	_ = s.replayRunEvents(streamCtx, run.RunID, nil, eventCh, func(event *transport.RunEvent) error {
+		if err := writeRunSSE(w, event); err != nil {
+			return err
 		}
-	}
+		flusher.Flush()
+		return nil
+	})
 }
 
 func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID string) {
@@ -1524,42 +1524,14 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 		return
 	}
 
-	// If already terminal, replay full history (which includes the end event).
-	// Only append a synthetic end if replay had no terminal event (e.g. broker
-	// buffer was already evicted).
-	if isTerminalStatus(run.Status) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
-		hasTerminal := false
-		if past, replayErr := s.broker.Replay(r.Context(), runID, 0); replayErr == nil {
-			for _, ev := range past {
-				fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", ev.EventID, ev.Method, string(ev.Data))
-				if ev.IsTerminal() {
-					hasTerminal = true
-				}
-			}
-		}
-		if !hasTerminal {
-			fmt.Fprintf(w, "event: end\ndata: {\"status\":%q}\n\n", run.Status)
-		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return
-	}
-
 	// Subscribe FIRST so no live events are missed, then replay history.
-	eventCh, err := s.broker.Subscribe(r.Context(), runID)
-	if err != nil {
+	streamCtx, stopStream := context.WithCancel(r.Context())
+	defer stopStream()
+	eventCh, err := s.broker.Subscribe(streamCtx, runID)
+	if err != nil && !isTerminalStatus(run.Status) {
 		writeError(w, http.StatusInternalServerError, "failed to subscribe")
 		return
 	}
-
-	// Replay all past events to find the high-water mark
-	maxReplayedSeq := map[int64]int64{}
-	pastEvents, _ := s.broker.Replay(r.Context(), runID, 0)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1570,30 +1542,13 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 		return
 	}
 
-	// Send replayed (historical) events
-	for _, ev := range pastEvents {
-		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", ev.EventID, ev.Method, string(ev.Data))
-		if ev.Seq > maxReplayedSeq[ev.Generation] {
-			maxReplayedSeq[ev.Generation] = ev.Seq
+	_ = s.replayRunEvents(streamCtx, runID, nil, eventCh, func(event *transport.RunEvent) error {
+		if err := writeRunSSE(w, event); err != nil {
+			return err
 		}
-		if ev.IsTerminal() {
-			flusher.Flush()
-			return
-		}
-	}
-	flusher.Flush()
-
-	// Tail live events, skipping any already sent via replay (dedup on Seq)
-	for event := range eventCh {
-		if event.Seq <= maxReplayedSeq[event.Generation] {
-			continue
-		}
-		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Method, string(event.Data))
 		flusher.Flush()
-		if event.IsTerminal() {
-			break
-		}
-	}
+		return nil
+	})
 }
 
 // streamCacheHitRun sends the minimal SSE sequence a real streamed run

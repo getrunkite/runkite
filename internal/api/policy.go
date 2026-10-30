@@ -164,12 +164,13 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, in policy.PolicyInput, d
 		return
 	}
 	ev := &transport.RunEvent{
-		EventID:   in.RunID + "_tool_auth_" + idSuffix,
-		Seq:       seq,
-		Method:    "tool_auth",
-		Namespace: []string{},
-		Data:      payload,
-		Ts:        time.Now().UnixMilli(),
+		Generation: in.Generation,
+		EventID:    in.RunID + "_tool_auth_" + idSuffix,
+		Seq:        seq,
+		Method:     "tool_auth",
+		Namespace:  []string{},
+		Data:       payload,
+		Ts:         time.Now().UnixMilli(),
 	}
 	if err := s.broker.Publish(ctx, in.RunID, ev); err != nil {
 		slog.Warn("policy: tool_auth publish failed", "error", err, "run_id", in.RunID)

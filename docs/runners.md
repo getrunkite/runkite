@@ -74,6 +74,24 @@ the exhausted delivery leased with `+WPI`; any native redelivery still passes th
 existing generation fence and completion recovery before execution. See
 [Runner Protocol](../runner-protocol/PROTOCOL.md).
 
+### Live streaming during reclaim (unreleased)
+
+Run SSE, thread SSE and WebSocket streams confirm terminal events through the
+existing durable completion fence. A delayed terminal from a superseded attempt
+does not end the stream while its replacement runs. If the broker subscription
+closes early, the stream checks retained replay and durable state for the current
+result. Normal delivery still uses the existing push subscription. Sequence
+cursors apply to the initial attempt; a replacement can restart its sequence
+without having its events hidden by the previous attempt's cursor.
+
+Event IDs preserve the attempt boundary. Raw nonterminal events remain advisory
+because generation checking and broker publication are separate operations.
+Clients cannot undo old text already displayed, so they must detect attempt
+changes and avoid merging output across generations. The managed AI SDK bridge
+keeps that safeguard. Retained history and request cancellation still bound live
+recovery; `/wait` and persisted output remain authoritative. This adds no new
+external-effect idempotency or exactly-once guarantee.
+
 ### Concurrency (both runners)
 
 By default a runner process (Python's `worker.py` and every `generic_worker`-based adapter, or the TypeScript runner) handles exactly one job at a time -- `--concurrency N` / `RUNKITE_CONCURRENCY=N` (default `1`, fully backward compatible) lets it dispatch up to `N` jobs concurrently instead, via a semaphore-bounded dispatcher (one `asyncio.Task` per job in Python; one un-awaited promise per job, tracked by a small hand-rolled `Semaphore` class, in TypeScript -- Node has no `asyncio.Semaphore` equivalent built in). The control plane needs zero changes for this: `GetJob`/`StreamEvents`/`WatchCancels` were already safe for multiple concurrent calls from one runner connection, and the job queue's dequeue is already atomic across concurrent callers. Setting `N` also sizes each runner's direct-mode Postgres connection pool (Python: `psycopg_pool.AsyncConnectionPool`, replacing a single shared connection behind a lock; TypeScript: `pg.Pool`'s own `max`, floored at node-postgres's default of 10 so a low `N` can't shrink it below that) for both the store and the checkpointer, so concurrent jobs' store/checkpoint I/O don't serialize on one connection either.

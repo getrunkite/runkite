@@ -56,7 +56,9 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 
 	// Subscribe FIRST so live events aren't missed, then replay history
 	// (same pattern as streamExistingRun / waitExistingRun).
-	eventCh, err := s.broker.Subscribe(r.Context(), activeRunID)
+	streamCtx, stopStream := context.WithCancel(r.Context())
+	defer stopStream()
+	eventCh, err := s.broker.Subscribe(streamCtx, activeRunID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to subscribe")
 		return
@@ -79,13 +81,16 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 		channelSet[ch] = true
 	}
 
-	sseEmit := func(event *transport.RunEvent, streamEvent *models.StreamingEvent) {
+	sseEmit := func(event *transport.RunEvent, streamEvent *models.StreamingEvent) error {
 		eventJSON, _ := json.Marshal(streamEvent)
-		fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Method, string(eventJSON))
+		if _, err := fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Method, string(eventJSON)); err != nil {
+			return err
+		}
 		flusher.Flush()
+		return nil
 	}
 
-	replayAndTail(r.Context(), s.broker, activeRunID, req.Since, channelSet, eventCh, sseEmit)
+	_ = s.replayAndTail(streamCtx, activeRunID, req.Since, channelSet, eventCh, sseEmit)
 }
 
 // replayAndTail is the transport-agnostic core of "replay history, then tail
@@ -93,15 +98,14 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 // Shared by SSE (handleOpenThreadStream) and WebSocket (handleThreadWebSocket)
 // so the two transports can never drift in replay/dedup/channel-filter
 // semantics -- only how a converted event gets put on the wire differs.
-func replayAndTail(
+func (s *Server) replayAndTail(
 	ctx context.Context,
-	broker transport.EventBroker,
 	runID string,
 	since *int64,
 	channelSet map[string]bool,
 	eventCh <-chan *transport.RunEvent,
-	emit func(event *transport.RunEvent, streamEvent *models.StreamingEvent),
-) {
+	emit func(event *transport.RunEvent, streamEvent *models.StreamingEvent) error,
+) error {
 	seq := int64(0)
 	toStreamEvent := func(event *transport.RunEvent) (*models.StreamingEvent, bool) {
 		method := event.Method
@@ -126,38 +130,12 @@ func replayAndTail(
 		}, true
 	}
 
-	maxReplayedSeq := map[int64]int64{}
-	if past, replayErr := broker.Replay(ctx, runID, 0); replayErr == nil {
-		for _, event := range past {
-			if since != nil && event.Seq <= *since {
-				continue
-			}
-			if event.Seq > maxReplayedSeq[event.Generation] {
-				maxReplayedSeq[event.Generation] = event.Seq
-			}
-			if se, ok := toStreamEvent(event); ok {
-				emit(event, se)
-				if event.IsTerminal() {
-					return
-				}
-			}
-		}
-	}
-
-	for event := range eventCh {
-		if event.Seq <= maxReplayedSeq[event.Generation] {
-			continue
-		}
-		if since != nil && event.Seq <= *since {
-			continue
-		}
+	return s.replayRunEvents(ctx, runID, since, eventCh, func(event *transport.RunEvent) error {
 		if se, ok := toStreamEvent(event); ok {
-			emit(event, se)
-			if event.IsTerminal() {
-				return
-			}
+			return emit(event, se)
 		}
-	}
+		return nil
+	})
 }
 
 // POST /threads/{threadID}/commands -- Send streaming command
