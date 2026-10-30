@@ -287,8 +287,15 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
         </ul>
         <p>
           The application retains its UI authentication and presentation history.
-          The AI SDK <code>useChat</code> bridge above consumes AI SDK-native events;
-          these Python profiles expose ordinary Agent Protocol streams. The tests
+          The unreleased shared application bridge can translate these Python
+          profiles' ordinary Agent Protocol text for the same AI SDK UI transport.
+          Choose the profile on the server and use the
+          <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_ai_sdk#use-the-same-frontend-with-a-python-runner">Next/Nuxt route recipes</a>.
+          It validates the current turn and durable framework/generation before
+          finishing; Pydantic final JSON remains a separate result part.
+          Python profiles do not add native tool UI, reasoning display or approval
+          resume. Attach expects a bridge-created single-user string turn with full
+          retained replay and a persisted assistant identity. The tests
           use offline native models with a real plane on SQLite/in-process and
           Postgres/Redis, not an external model provider or a multi-replica HA soak.
         </p>

@@ -110,6 +110,17 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   authenticated cancel route; aborting a local reader is not run cancellation.
   The existing create default remains cancel. See the
   [managed example](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
+- **Shared Python UI profiles are unreleased example code.** Microsoft, OpenAI
+  Agents, Pydantic AI and Google ADK can use the existing app-side AI SDK UI bridge
+  for text and Pydantic final JSON. Attach expects a bridge-created single-user
+  string turn. Native tool UI, reasoning display and multimodal parts remain
+  unsupported for these profiles. Current-turn input, durable framework and
+  generation must match; a historical assistant is never used as a new answer.
+  Retained lifecycle/start history, one-attempt replay and the example's 1 MiB
+  frame/response limits apply. Results have a 64-level nesting cap and reject
+  integral numbers outside JavaScript's safe integer range. The app keeps
+  authentication and UI-message storage. See the
+  [route recipes](../examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner).
 - **Opaque adapter persistence now fails closed.** An unavailable state read
   prevents execution. Failed state writes withhold completion and leave the
   assignment recoverable. Malformed or unsupported message checkpoints fail

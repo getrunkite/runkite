@@ -294,38 +294,53 @@ jobs:
       - name: Python sdist and wheel artifact contract
         run: make test-python-package
 
+      - name: Shared managed chat UI bridge - prepare and test
+        run: make test-managed-chat-ui
+
       - name: Managed Microsoft runner with real plane and installed wheel (SQLite)
+        env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
         run: make test-managed-agent-framework
 
       - name: Managed Microsoft runner with real plane and installed wheel (Postgres + Redis)
         env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-agent-framework
 
       - name: Managed OpenAI Agents runner with real plane and installed wheel (SQLite)
+        env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
         run: make test-managed-openai-agents
 
       - name: Managed OpenAI Agents runner with real plane and installed wheel (Postgres + Redis)
         env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-openai-agents
 
       - name: Managed Pydantic AI runner with real plane and installed wheel (SQLite)
+        env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
         run: make test-managed-pydantic-ai
 
       - name: Managed Pydantic AI runner with real plane and installed wheel (Postgres + Redis)
         env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-pydantic-ai
 
       - name: Managed Google ADK runner with real plane and installed wheel (SQLite)
+        env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
         run: make test-managed-google-adk
 
       - name: Managed Google ADK runner with real plane and installed wheel (Postgres + Redis)
         env:
+          RUNKITE_TEST_CHAT_BRIDGE: "1"
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-google-adk

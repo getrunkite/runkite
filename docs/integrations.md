@@ -66,6 +66,13 @@ tool outputs and native approval/resume are outside the initial managed adapter.
 Neither an app-owned allow decision nor an operation `run_id` proves execution
 or supplies idempotency. See [client integration guidance](client-sdk.md).
 
+The unreleased shared bridge can also present managed Microsoft, OpenAI Agents,
+Pydantic AI and Google ADK Python output in the same AI SDK UI. Its server-selected
+profiles translate ordinary text events and validate the current durable turn;
+Pydantic JSON remains a separate final result. Reconnect and Stop keep the same
+application ownership checks. See the
+[Next/Nuxt route recipes](../examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner).
+
 ## Microsoft Agent Framework: function middleware
 
 The [Python example](../examples/governance_agent_framework/README.md) attaches

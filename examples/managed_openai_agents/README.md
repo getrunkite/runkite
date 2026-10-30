@@ -41,7 +41,8 @@ native SDK loop inside the runner. Replace its offline model with your provider
 model in your own factory. Native hosted tools, approvals/resume, handoffs,
 agents-as-tools, structured final output and non-text input are unsupported in
 this profile. The application still owns UI authentication and presentation
-history; this example does not implement the AI SDK UI stream protocol.
+history. The unreleased [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+can present bridge-created single-user turns with the `openai-agents` profile.
 
 Only successful turns update native history. Interrupted or failed turns retain
 the previous committed checkpoint and report usage already observed. External

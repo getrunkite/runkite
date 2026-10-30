@@ -46,6 +46,29 @@ tested optional `ai@7.0.155` peer with the runner. The app-side bridge needs a
 server key that can create, read and cancel managed runs; `governance:decide`
 alone is insufficient.
 
+#### Unreleased: one UI bridge for managed Python agents
+
+The existing [application bridge](../examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+also accepts server-selected `agent-framework`, `openai-agents`, `pydantic-ai`
+and `google-adk` profiles. It converts their ordinary Agent Protocol assistant
+text into the same native AI SDK UI transport. The default `ai-sdk` path retains
+native tool UI. Python modes expose text and Pydantic final JSON, with no new
+tool panels, reasoning display or native approval/resume.
+
+The app still owns authentication, presentation history, the chat/turn mapping
+and durable assistant-ID binding. Checked route hooks and Next/Nuxt recipes
+reuse create, detach, attach and Stop. Attach expects a bridge-created turn with
+one new user string message. Completion checks the exact current-turn suffix
+against persisted run input, the framework/generation and streamed text; a
+historical assistant cannot fill an empty typed-only turn. Pydantic's final
+`data-result` part supports ordinary JSON including null, false and zero.
+Result nesting is limited to 64 levels; integral values must fit JavaScript's
+safe integer range. Larger exact identifiers should be strings.
+
+This remains a checkout-only example, rather than a published client package.
+No model loop moves into the app handler. Full retained replay and one-attempt
+identity are required; the existing example payload limits still apply.
+
 #### Unreleased: reconnecting the managed UI stream
 
 The checkout's app-side bridge adds `disconnectPolicy: "detach"` for callers

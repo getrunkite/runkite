@@ -445,6 +445,87 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         threading.Thread(target=relay.serve_forever, daemon=True).start()
         return f"http://127.0.0.1:{relay.server_port}", committed, outcome
 
+    @unittest.skipUnless(
+        os.environ.get("RUNKITE_TEST_CHAT_BRIDGE"), "Set RUNKITE_TEST_CHAT_BRIDGE for native UI transport"
+    )
+    def test_managed_chat_bridge(self) -> None:
+        """A fresh test namespace keeps lifecycle accounting assertions intact."""
+        try:
+            node = shutil.which("node")
+            self.assertIsNotNone(node, "Native UI transport checks require Node 22.13+")
+            helper = ROOT / "examples/managed_ai_sdk/python-bridge.e2e-helper.ts"
+            self.assertTrue(helper.is_file(), "Missing native UI transport helper")
+
+            recovery_thread = self.new_thread()
+            self.runner.stop()
+            proxy, committed, outcome = self.crash_after_commit_proxy(recovery_thread)
+            self.start_runner(proxy)
+            recovered = self.new_run(recovery_thread, "bridge crash after committed tool")["run_id"]
+            self.assertTrue(committed.wait(25), "no checkpoint commit observed before bridge recovery")
+            self.assertNotIn("error", outcome)
+            self.assertEqual(outcome["run_id"], recovered)
+            self.assertEqual(outcome["receipt"]["completed"]["run_id"], recovered)
+            self.assertNotEqual(self.request(f"/threads/{recovery_thread}/runs/{recovered}")["status"], "success")
+            self.start_runner()
+            final = self.completed(recovery_thread, recovered)
+            self.final_usage(final, 20, 4)
+            generation = final["metadata"]["_runkite_completion_generation"]
+            self.assertGreaterEqual(generation, 2)
+            self.assertEqual(final["output"][self.metadata_key]["generation"], generation)
+            configuration = {
+                "baseUrl": self.base,
+                "apiKey": "e2e-a",
+                "profile": self.install_extra,
+                "agentId": self.agent,
+                "slowAgentId": self.slow,
+                "tenantId": self.tenant_a,
+                "recovered": {"threadId": recovery_thread, "runId": recovered, "generation": generation},
+            }
+            if self.install_extra == "pydantic-ai":
+                configuration["typedAgentId"] = self.extra_graphs["typed_output_only"]
+            native = subprocess.run(
+                [node, "--experimental-strip-types", str(helper)],
+                input=json.dumps(configuration),
+                cwd=helper.parent,
+                env=self.environment,
+                text=True,
+                capture_output=True,
+                timeout=120,
+            )
+            self.assertEqual(native.returncode, 0, f"Native UI transport failed:\n{native.stdout}{native.stderr}")
+            summary = json.loads(native.stdout)
+            self.assertEqual(summary["recoveredRunId"], recovered)
+            for run_id in (summary["firstRunId"], summary["secondRunId"], recovered):
+                self.assertEqual(len(self.records(run_id, "factory")), 1, "UI attach constructed another agent")
+                self.assertEqual(len(self.records(run_id, "model")), 2, "UI attach repeated model work")
+                self.assertEqual(len(self.records(run_id, "tool")), 1, "UI attach repeated a tool effect")
+            slow_run = summary["slowRunId"]
+            wait_for("native cancellation after app Stop", lambda: self.records(slow_run, "canceled"))
+            self.assertEqual(len(self.records(slow_run, "factory")), 1)
+            self.assertEqual(len(self.records(slow_run, "model")), 2)
+            self.assertEqual(len(self.records(slow_run, "tool")), 1)
+            self.expect_usage(self.agent, (3, 60, 12))
+            self.expect_usage(self.slow, (1, 10, 4))
+            if self.install_extra == "pydantic-ai":
+                typed_run = summary["typedRunId"]
+                self.assertEqual(len(self.records(typed_run, "factory")), 1)
+                self.assertEqual(len(self.records(typed_run, "model")), 2)
+                self.assertFalse(self.records(typed_run, "tool"))
+                self.expect_usage(self.extra_graphs["typed_output_only"], (1, 20, 4))
+            print(
+                f"PASS {self.profile}: native UI text, history, replay, detach/Stop and generation refusal without repeat work",
+                flush=True,
+            )
+            if self.install_extra == "pydantic-ai":
+                print(
+                    f"PASS {self.profile}: native UI typed-only durable JSON without invented assistant text",
+                    flush=True,
+                )
+        except Exception:
+            for process in self.processes:
+                print(process.logs(), file=sys.stderr)
+            raise
+
     def test_managed_lifecycle(self) -> None:
         scenario = "authenticated dispatch"
         try:
