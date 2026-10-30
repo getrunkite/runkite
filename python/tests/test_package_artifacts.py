@@ -23,7 +23,10 @@ import tomllib
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-MS_MODULES = {"__init__.py", "__main__.py", "adapter.py", "state.py"}
+ADAPTER_MODULES = {
+    "agent_framework_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
+    "openai_agents_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
+}
 BASE_DEPENDENCIES = {
     "grpcio",
     "protobuf",
@@ -53,12 +56,13 @@ class PackageArtifactTests(unittest.TestCase):
         )
         cls.project = tomllib.loads((cls.source / "pyproject.toml").read_text())["project"]
         # Traps also prove exclusion when this check is run from an extracted sdist.
-        adapter = cls.source / "adapters" / "agent_framework_adapter"
-        (adapter / "test_packaging_fixture.py").write_text("raise RuntimeError('checkout fixture')\n")
-        (adapter / "e2e_packaging_fixture.py").write_text("raise RuntimeError('live proof fixture')\n")
-        seed = adapter / "e2e_seed"
-        seed.mkdir(exist_ok=True)
-        (seed / "packaging-fixture.txt").write_text("source-only proof fixture\n")
+        for name in ADAPTER_MODULES:
+            adapter = cls.source / "adapters" / name
+            (adapter / "test_packaging_fixture.py").write_text("raise RuntimeError('checkout fixture')\n")
+            (adapter / "e2e_packaging_fixture.py").write_text("raise RuntimeError('live proof fixture')\n")
+            seed = adapter / "e2e_seed"
+            seed.mkdir(exist_ok=True)
+            (seed / "packaging-fixture.txt").write_text("source-only proof fixture\n")
         cls.env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
         cls.env.pop("PYTHONPATH", None)
         cls.run_build("-m", "build", "--sdist", "--no-isolation", "--outdir", str(cls.root / "sdist"), str(cls.source))
@@ -88,49 +92,55 @@ class PackageArtifactTests(unittest.TestCase):
         if result.returncode:
             raise AssertionError(f"Artifact build failed: {command!r}\n{result.stdout}\n{result.stderr}")
 
-    def test_wheel_preserves_runner_code_and_contains_only_ms_runtime_modules(self) -> None:
+    def test_wheel_preserves_runner_code_and_contains_only_adapter_runtime_modules(self) -> None:
         for source in (self.source / "runkite_runner").rglob("*"):
             if source.is_file() and (source.suffix == ".py" or source.name == "py.typed"):
                 name = source.relative_to(self.source).as_posix()
                 self.assertEqual(self.members.get(name), source.read_bytes(), name)
-        adapter_members = {
-            name.removeprefix("agent_framework_adapter/")
-            for name in self.members
-            if name.startswith("agent_framework_adapter/")
-        }
-        self.assertEqual(adapter_members, MS_MODULES)
+        for package, modules in ADAPTER_MODULES.items():
+            adapter_members = {
+                name.removeprefix(f"{package}/") for name in self.members if name.startswith(f"{package}/")
+            }
+            self.assertEqual(adapter_members, modules, package)
+            for name in modules:
+                self.assertEqual(
+                    self.members[f"{package}/{name}"],
+                    (self.source / "adapters" / package / name).read_bytes(),
+                    f"{package}/{name}",
+                )
         for name in self.members:
             self.assertTrue(
-                name.startswith(("runkite_runner/", "agent_framework_adapter/")) or ".dist-info/" in name, name
+                name.startswith(("runkite_runner/", *(f"{package}/" for package in ADAPTER_MODULES)))
+                or ".dist-info/" in name,
+                name,
             )
 
     def test_sdist_contains_every_runtime_source_without_adapter_tests_or_live_fixtures(self) -> None:
         with tarfile.open(self.sdist) as sdist:
             regular = [member for member in sdist.getmembers() if member.isfile()]
             [prefix] = {member.name.split("/", 1)[0] for member in regular}
-            adapter_members = {
-                member.name.removeprefix(f"{prefix}/adapters/agent_framework_adapter/")
-                for member in regular
-                if member.name.startswith(f"{prefix}/adapters/agent_framework_adapter/")
-            }
-            self.assertEqual(adapter_members, MS_MODULES)
-            for name in MS_MODULES:
-                member = sdist.extractfile(f"{prefix}/adapters/agent_framework_adapter/{name}")
-                self.assertIsNotNone(member)
-                self.assertEqual(
-                    member.read(), (self.source / "adapters" / "agent_framework_adapter" / name).read_bytes()
-                )
+            for package, modules in ADAPTER_MODULES.items():
+                adapter_members = {
+                    member.name.removeprefix(f"{prefix}/adapters/{package}/")
+                    for member in regular
+                    if member.name.startswith(f"{prefix}/adapters/{package}/")
+                }
+                self.assertEqual(adapter_members, modules, package)
+                for name in modules:
+                    member = sdist.extractfile(f"{prefix}/adapters/{package}/{name}")
+                    self.assertIsNotNone(member)
+                    self.assertEqual(member.read(), (self.source / "adapters" / package / name).read_bytes())
             for member in regular:
                 if member.name.startswith(f"{prefix}/runkite_runner/"):
                     data = sdist.extractfile(member)
                     self.assertIsNotNone(data)
                     self.assertEqual(data.read(), self.members[member.name.removeprefix(f"{prefix}/")])
 
-    def test_metadata_keeps_ms_optional_and_preserves_the_langgraph_entrypoint_and_dependencies(self) -> None:
+    def test_metadata_keeps_adapters_optional_and_preserves_the_langgraph_entrypoint_and_dependencies(self) -> None:
         self.assertEqual(self.metadata["Name"], "runkite-runner")
         self.assertEqual(self.metadata["Version"], self.project["version"])
         self.assertEqual(self.metadata["Requires-Python"], ">=3.11")
-        self.assertEqual(set(self.metadata.get_all("Provides-Extra")), {"agent-framework", "otel"})
+        self.assertEqual(set(self.metadata.get_all("Provides-Extra")), {"agent-framework", "openai-agents", "otel"})
         requirements = [Requirement(value) for value in self.metadata.get_all("Requires-Dist")]
         base = {
             canonicalize_name(requirement.name): requirement
@@ -147,6 +157,15 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertTrue(framework.marker.evaluate({"extra": "agent-framework"}))
         self.assertFalse(framework.marker.evaluate({"extra": ""}))
         self.assertFalse(framework.marker.evaluate({"extra": "otel"}))
+        self.assertFalse(framework.marker.evaluate({"extra": "openai-agents"}))
+        [openai] = [
+            requirement for requirement in requirements if canonicalize_name(requirement.name) == "openai-agents"
+        ]
+        self.assertEqual(str(openai.specifier), "==0.24.0")
+        self.assertIsNotNone(openai.marker)
+        self.assertTrue(openai.marker.evaluate({"extra": "openai-agents"}))
+        for extra in ("", "otel", "agent-framework"):
+            self.assertFalse(openai.marker.evaluate({"extra": extra}))
         [entry_points] = [
             content for name, content in self.members.items() if name.endswith(".dist-info/entry_points.txt")
         ]
@@ -157,6 +176,7 @@ class PackageArtifactTests(unittest.TestCase):
             {
                 "runkite-runner": "runkite_runner.worker:main",
                 "runkite-runner-agent-framework": "agent_framework_adapter.__main__:main",
+                "runkite-runner-openai-agents": "openai_agents_adapter.__main__:main",
             },
         )
 

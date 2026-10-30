@@ -111,6 +111,9 @@ A [Microsoft managed runner](examples/managed_agent_framework/README.md) is
 available from a source-built Python wheel with the optional `agent-framework`
 extra and `runkite-runner-agent-framework` CLI. This install path is
 **unreleased** and is not in the published PyPI `0.5.8` artifact.
+A managed [OpenAI Agents SDK profile](examples/managed_openai_agents/README.md)
+is also available from source-built wheels through the optional `openai-agents`
+extra and `runkite-runner-openai-agents` CLI. This profile is unreleased too.
 See [CHANGELOG](CHANGELOG.md),
 [client integration guidance](docs/client-sdk.md), and the
 [support guide](site/support/sdk-integration.html).

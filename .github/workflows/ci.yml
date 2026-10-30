@@ -245,7 +245,7 @@ jobs:
           python tests/sdk_e2e_test.py
           python tests/sdk_cancel_hitl_test.py
 
-      - name: CrewAI/LlamaIndex/AutoGen adapter unit tests
+      - name: Framework adapter unit tests in isolated SDK environments
         # Isolated venvs, deliberately NOT installed into the shared
         # python/requirements.txt environment above -- see
         # python/adapters/*/README.md for why (a stray `pip install
@@ -273,6 +273,10 @@ jobs:
           uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' grpcio protobuf httpx
           PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
 
+          uv venv --python 3.12 python/adapters/openai_agents_adapter/.venv
+          uv pip install --python python/adapters/openai_agents_adapter/.venv/bin/python 'openai-agents==0.24.0' grpcio protobuf httpx
+          PYTHONPATH=python:python/adapters:examples/managed_openai_agents python/adapters/openai_agents_adapter/.venv/bin/python -m unittest discover -s python/adapters/openai_agents_adapter -p 'test_*.py'
+
       - name: Python sdist and wheel artifact contract
         run: make test-python-package
 
@@ -284,6 +288,15 @@ jobs:
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-agent-framework
+
+      - name: Managed OpenAI Agents runner with real plane and installed wheel (SQLite)
+        run: make test-managed-openai-agents
+
+      - name: Managed OpenAI Agents runner with real plane and installed wheel (Postgres + Redis)
+        env:
+          RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          RUNKITE_TEST_REDIS_URL: redis://localhost:6379
+        run: make test-managed-openai-agents
 
       - name: TypeScript runner lint + format check
         working-directory: typescript/runkite-runner

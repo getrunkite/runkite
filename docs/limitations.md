@@ -61,6 +61,19 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain checkout-only.
   Decision-only `runkite_governance.agent_framework` middleware remains a
   different boundary (app-owned loop, no managed run).
+- **Managed OpenAI Agents SDK (unreleased)** uses `python-openai-agents`, public
+  native streaming/history and successful-turn opaque CAS receipts. Its optional
+  `openai-agents` extra pins `openai-agents==0.24.0`; source-built wheels include
+  the dedicated `runkite-runner-openai-agents` entrypoint. Published PyPI `0.5.8`
+  lacks this profile. The stock Python image does not install its optional SDK. The first
+  profile supports one text agent and local function tools. Native approval or
+  resume, handoffs, agents-as-tools, hosted/MCP tools, structured final output,
+  non-text input and unfinished-turn restoration are unsupported. Failed or
+  interrupted turns retain previous committed history. Receipt replay protects
+  work after commit; external effects before commit still need idempotency.
+  Native reasoning items remain in durable history and are not UI output.
+  Native SDK trace export is disabled; generic-worker OTLP run tracing remains.
+  See the [example](../examples/managed_openai_agents/README.md).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;
@@ -107,7 +120,7 @@ Honest gaps, not hidden ones:
 - **Payload shrink is not a token SLA.** Opt-in connector MCP `tools/call` result cap. Token spend may drop only if the runner reports fewer tokens; shrink does not write `usage_events` and Admin Spend does not move on shrink alone.
 - **No Redis means no shrink.** `payload_shrink.enabled` without `REDIS_URL` forwards the original body. A Redis error after a successful downstream call also forwards the original; the tool call is not failed.
 - **Enabled shrink means durable audit does not keep the original MCP body.** The hop's trail is the preview plus ref. Retrieve is for the agent during Redis TTL, not forensics. Grants / pending / HITL / kill stay fully audited. Leave shrink off if the audit path must retain oversized results. See [Connectors](connectors.md#payload-shrink-opt-in).
-- **In-graph `allowed_tools` is LangGraph-runner cooperation, not a sandbox.** When set on a graph, Python/TS LangGraph runners deny non-listed tool names observed in stream chunks before ToolNode runs. `generic_worker` adapters do not emit `tool_call` and do not enforce this allowlist. Tools that never appear as `AIMessage.tool_calls` in the stream are not filtered. No `AuthorizeTool` round-trip yet — see [Trust & governance](trust-governance.md).
+- **In-graph `allowed_tools` requires runner cooperation and is not a sandbox.** Python/TS LangGraph runners deny non-listed names observed in stream chunks before ToolNode runs. The managed OpenAI Agents adapter checks local `FunctionTool` names before their bodies run, including an explicit empty deny-all list. The older generic adapters and managed Microsoft profile do not enforce this allowlist. Tools that never pass a cooperating runner hook are not filtered. There is no general `AuthorizeTool` round-trip; connector policy remains on the proxy path. See [Trust & governance](trust-governance.md).
 - **In-runner custom routes are ASGI-only.** `uvicorn` (the SDK's only custom-routes dependency) doesn't serve WSGI apps -- Flask needs an adapter (e.g. `a2wsgi.WSGIMiddleware`) wrapped around it first. Sidecar mode has no such restriction (any language, any framework).
 - **Real agent schema introspection is Python-only.** See the Agents API reference above -- the Python LangGraph runner reports each static graph's real input/output/state/config JSON Schema at startup via genuine public LangGraph API; the TypeScript runner still reports the `{"type": "object"}` bootstrap stub, since LangGraph.js's compiled graph has no public equivalent of Python's `get_input_jsonschema()`/etc (only private, underscore-prefixed internal fields, not safe to depend on across versions). CrewAI/LlamaIndex/AutoGen/plain LangChain (via `generic_worker.py`) also keep the stub -- none of them have a typed state-graph concept the same way, so there's no equivalently real schema to report in the first place.
 - **`checkpoint_ref` time-travel is LangGraph-only.** A non-empty `checkpoint_ref` on create-run is forwarded on `RunAssignment` and mapped by the Python/TypeScript LangGraph runners to `configurable.checkpoint_id` (LangGraph's native resume-from-past-checkpoint key). Non-LangGraph runners (`generic_worker` adapters) reject it with an error event rather than silently ignoring it. The control plane does not verify that the checkpoint exists for the thread before dispatch -- an unknown id fails at the checkpointer during execution. Empty/whitespace values are treated as absent (resume from the thread's latest checkpoint).

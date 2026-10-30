@@ -141,6 +141,38 @@ input and recovery boundaries. The stock Python runner image installs `[otel]`
 and starts LangGraph; use your own environment or image with the Microsoft extra
 and dedicated entrypoint.
 
+### OpenAI Agents SDK (unreleased)
+
+The same source-built wheel includes `openai_agents_adapter` and the dedicated
+`runkite-runner-openai-agents` command. The optional `openai-agents` extra pins
+`openai-agents==0.24.0`; the base installation does not install that SDK.
+Until a release contains it, install the local package in a clean environment:
+
+```bash
+python3.12 -m venv .venv-openai-agents
+.venv-openai-agents/bin/python -m pip install './python[openai-agents]'
+.venv-openai-agents/bin/runkite-runner-openai-agents \
+  --config examples/managed_openai_agents/langgraph.json \
+  --grpc-address localhost:50051 \
+  --http-address http://localhost:2026
+```
+
+`python -m openai_agents_adapter` is the installed module alternative. No source
+`PYTHONPATH` is required. The published PyPI `0.5.8` artifact does not contain
+this profile. After a release includes it, use
+`pip install 'runkite-runner[openai-agents]'`. Python 3.11+ remains supported;
+the example uses 3.12. The ordinary CLI and stock image keep their LangGraph
+defaults; the image does not install this optional SDK.
+
+Factories return a native `agents.Agent`. Successful-turn history, reasoning
+items and committed receipts persist through the plane's HTTP checkpoint API.
+The first profile supports text and local function tools, with explicit rejection
+of unsupported native approval/resume, handoffs, hosted tools and structured final
+outputs. Native SDK trace export is disabled; Runkite's existing OTLP run tracing
+remains available. See the
+[offline example](https://github.com/getrunkite/runkite/tree/main/examples/managed_openai_agents)
+and [adapter contract](https://github.com/getrunkite/runkite/blob/main/python/adapters/openai_agents_adapter/README.md).
+
 ### Framework adapters from a checkout
 
 CrewAI, LlamaIndex, AutoGen and plain LangChain adapters live under

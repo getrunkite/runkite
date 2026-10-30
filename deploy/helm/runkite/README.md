@@ -129,7 +129,7 @@ ConfigMap, so put credentials in the Secret rather than that map.
 source for each additional environment variable. Supplying both is a render
 error. These are environment settings, not a way to select CLI arguments.
 
-See [deployment](../../../docs/deployment.md#managed-ai-sdk-runner-unreleased-checkout)
+See [deployment](../../../docs/deployment.md#managed-ai-sdk-runner-v058)
 and the [managed AI SDK example](../../../examples/managed_ai_sdk/README.md) for
 worker setup and the app-to-run bridge.
 

@@ -50,7 +50,7 @@ func TestCompletionTransactionRollsBackAllResultWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status != models.RunStatusPending || thread.Status != models.ThreadStatusBusy || thread.Values["answer"] != nil || len(history) != 0 {
+	if run.Status != models.RunStatusRunning || thread.Status != models.ThreadStatusBusy || thread.Values["answer"] != nil || len(history) != 0 {
 		t.Fatalf("partial completion: run=%+v thread=%+v history=%d", run, thread, len(history))
 	}
 	if _, err := s.db.Exec(`DROP TRIGGER fail_completion`); err != nil {
@@ -69,6 +69,40 @@ func TestCompletionTransactionRollsBackAllResultWrites(t *testing.T) {
 	run, _ = s.GetRun(ctx, "run")
 	if len(history) != 1 || thread.Values["old"] != "kept" || thread.Values["answer"] != "winner" || thread.Status != models.ThreadStatusIdle || run.Status != models.RunStatusSuccess {
 		t.Fatalf("completion mismatch: run=%+v thread=%+v history=%d", run, thread, len(history))
+	}
+}
+
+func TestBeginRunAttemptFailureDoesNotPartiallyStartRun(t *testing.T) {
+	s, ctx := seedCompletion(t)
+	before, err := s.GetRun(ctx, "run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`CREATE TRIGGER fail_dispatch BEFORE UPDATE OF status ON runs WHEN NEW.status = 'running' BEGIN SELECT RAISE(ABORT, 'injected dispatch failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if accepted, err := s.BeginRunAttempt(ctx, "run", 1); err == nil || accepted {
+		t.Fatal("failed dispatch must not be accepted", accepted, err)
+	}
+	after, err := s.GetRun(ctx, "run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != models.RunStatusPending || !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("failed dispatch changed status/timestamp: before=%+v after=%+v", before, after)
+	}
+	if _, recorded := after.Metadata[state.AttemptGenerationKey]; recorded {
+		t.Fatal("failed dispatch recorded its generation", after.Metadata)
+	}
+	if _, err := s.db.Exec(`DROP TRIGGER fail_dispatch`); err != nil {
+		t.Fatal(err)
+	}
+	if accepted, err := s.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+		t.Fatal("retry must start the run", accepted, err)
+	}
+	after, err = s.GetRun(ctx, "run")
+	if err != nil || after.Status != models.RunStatusRunning || state.MetadataGeneration(after.Metadata, state.AttemptGenerationKey) != 1 {
+		t.Fatalf("retry did not persist running attempt: run=%+v err=%v", after, err)
 	}
 }
 

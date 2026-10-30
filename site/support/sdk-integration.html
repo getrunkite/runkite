@@ -95,6 +95,13 @@
           <a href="https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md">CHANGELOG</a>
           before selecting a package version.
         </p>
+        <p class="note">
+          <strong>Unreleased source-built Python profiles:</strong> the checkout also
+          packages managed Microsoft Agent Framework and OpenAI Agents SDK workers
+          with optional dependencies and dedicated commands. Existing published
+          PyPI <code>0.5.8</code> does not contain those profiles. See the
+          <a href="#managed-python">Python runner installation boundary</a> below.
+        </p>
 
         <h2>Choose the execution boundary</h2>
         <div class="table-wrap">
@@ -243,6 +250,47 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           checkout integrations, not published adapter packages. See the
           <a href="frameworks.html">framework matrix</a> and
           <a href="limitations.html">limitations</a> before claiming feature parity.
+        </p>
+        <h2 id="managed-python">Managed Python SDK profiles (unreleased)</h2>
+        <p>
+          Microsoft factories return a public <code>agent_framework.Agent</code> for
+          <code>python-agent-framework</code>. OpenAI factories return a public
+          <code>agents.Agent</code> for <code>python-openai-agents</code>. Both run the
+          native loop in a Python worker and create ordinary Runkite Threads/Runs.
+          The plane owns dispatch and durable records through existing protocols;
+          it does not embed an SDK runtime or use a hosted agent-session service.
+        </p>
+        <p>
+          Build from this repository with <code>pip install './python[agent-framework]'</code>
+          or <code>pip install './python[openai-agents]'</code> in a clean environment.
+          Run <code>runkite-runner-agent-framework</code> or
+          <code>runkite-runner-openai-agents</code> with the matching config. The SDKs
+          are pinned to <code>agent-framework-core==1.23.0</code> and
+          <code>openai-agents==0.24.0</code>. Repository <code>PYTHONPATH</code> is not
+          needed after installation. The ordinary Python command and stock image
+          retain their LangGraph defaults; the image does not install these extras.
+        </p>
+        <p>
+          Initial support is successful text turns and ordinary local tools.
+          Conditional opaque state and receipts preserve native history and avoid
+          repeated model/tool work after a confirmed commit. Interrupted and failed
+          turns retain prior committed history. External effects before commit
+          still require idempotency. Native approval/resume is unsupported, and
+          local tools need the actual connector path to receive connector grants
+          and HITL. The OpenAI profile also rejects native handoffs, hosted/MCP
+          tools and structured final outputs. Its native SDK trace exporter is
+          disabled; Runkite OTLP run tracing remains available.
+        </p>
+        <ul>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_agent_framework">Managed Microsoft example and installed-runner tests</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_openai_agents">Managed OpenAI Agents example and installed-runner tests</a></li>
+        </ul>
+        <p>
+          The application retains its UI authentication and presentation history.
+          The AI SDK <code>useChat</code> bridge above consumes AI SDK-native events;
+          these Python profiles expose ordinary Agent Protocol streams. The tests
+          use offline native models with a real plane on SQLite/in-process and
+          Postgres/Redis, not an external model provider or a multi-replica HA soak.
         </p>
       </main>
     </div>

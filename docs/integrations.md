@@ -73,12 +73,39 @@ the unpublished helper's optional `GovernanceFunctionMiddleware` to local
 `FunctionTool` objects. It asks Decide once and stops on deny or pending. The
 app saves the exact proposal and continues its own operation later; it does not
 create a Runkite run or resume a managed Microsoft agent. The tested optional
-core is pinned to `agent-framework-core==1.23.0`. A Microsoft managed runner is
-not implemented.
+core is pinned to `agent-framework-core==1.23.0`. This middleware is separate
+from the [managed Microsoft runner](../examples/managed_agent_framework/README.md),
+which creates real Threads/Runs and persists native session state. Its optional
+`runkite-runner[agent-framework]` install profile remains unreleased; use a
+source-built package until a release contains it.
 
 Upstream: [microsoft/agent-framework](https://github.com/microsoft/agent-framework).
 Use public function middleware APIs; no upstream fork, second approval service
 or embedded framework server is needed.
+
+## OpenAI Agents SDK uses a managed Python runner
+
+The [offline example](../examples/managed_openai_agents/README.md) exports a native
+`agents.Agent` factory for `python-openai-agents`. Runkite dispatches it through
+the generic worker and persists successful-turn native history and receipts
+through the existing opaque HTTP API. The SDK retains its native model loop
+inside the Python process. This integration uses the public
+[SDK streaming](https://developers.openai.com/api/docs/guides/agents/running-agents)
+and [history APIs](https://developers.openai.com/api/docs/guides/agents/results),
+without an upstream fork or OpenAI-hosted Agents API session service.
+
+The optional `openai-agents` extra pins `openai-agents==0.24.0`, and the installed
+entrypoint is `runkite-runner-openai-agents`. This profile is unreleased and not
+present in published PyPI `0.5.8`; use the source-install instructions in the
+example. Text and local function tools are the initial scope. Native approvals,
+resume, handoffs, agents-as-tools, hosted/MCP tools and structured final outputs
+are unsupported. Connector policy applies only to tools using the existing
+connector helpers. Native SDK trace export is disabled; generic-worker OTLP run
+tracing stays on the existing exporter path.
+
+Upstream: [openai/openai-agents-python](https://github.com/openai/openai-agents-python).
+The control plane, policy engine, secrets and durable run records remain in
+Runkite. Local tool side effects before a state commit still need idempotency.
 
 ## Phoenix receives existing OTLP traces
 

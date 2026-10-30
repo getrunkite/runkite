@@ -3,6 +3,7 @@ package conformance
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 			}
 		}
 		before, err := s.GetRun(ctx, "completion-run")
-		if err != nil || before.Status != models.RunStatusPending || len(before.Output) != 0 {
+		if err != nil || before.Status != models.RunStatusRunning || len(before.Output) != 0 {
 			t.Fatalf("rejected completion changed durable result: run=%+v err=%v", before, err)
 		}
 		completion.Generation = 2
@@ -71,6 +72,59 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		}
 		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 3); err != nil || ok {
 			t.Fatal("terminal run redispatched", ok, err)
+		}
+	})
+	t.Run("dispatch_marks_running_and_fences_reclaim", func(t *testing.T) {
+		for _, firstGeneration := range []int64{0, 1} {
+			t.Run(fmt.Sprintf("generation_%d", firstGeneration), func(t *testing.T) {
+				s := factory(t)
+				ctx := tenant.WithContext(context.Background(), "dispatch-tenant")
+				old := time.Now().UTC().Add(-time.Hour)
+				if err := s.CreateThread(ctx, &models.Thread{ThreadID: "dispatch-thread", Status: models.ThreadStatusBusy, CreatedAt: old, UpdatedAt: old}); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.CreateRun(ctx, &models.Run{RunID: "dispatch-run", ThreadID: "dispatch-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{"preserved": "metadata"}, CreatedAt: old, UpdatedAt: old}); err != nil {
+					t.Fatal(err)
+				}
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", firstGeneration); err != nil || !ok {
+					t.Fatal("first dispatch", ok, err)
+				}
+				run, err := s.GetRun(ctx, "dispatch-run")
+				if err != nil || run.Status != models.RunStatusRunning || !run.UpdatedAt.After(old) || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) != firstGeneration || run.Metadata["preserved"] != "metadata" {
+					t.Fatalf("dispatch did not atomically start run: run=%+v err=%v", run, err)
+				}
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 2); err != nil || !ok {
+					t.Fatal("reclaimed dispatch", ok, err)
+				}
+				reclaimed, err := s.GetRun(ctx, "dispatch-run")
+				if err != nil || reclaimed.Status != models.RunStatusRunning || reclaimed.UpdatedAt.Before(run.UpdatedAt) || state.MetadataGeneration(reclaimed.Metadata, state.AttemptGenerationKey) != 2 {
+					t.Fatalf("reclaim did not remain running: run=%+v err=%v", reclaimed, err)
+				}
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 1); err != nil || ok {
+					t.Fatal("stale dispatch accepted", ok, err)
+				}
+				if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "dispatch-run", 3); err == nil {
+					t.Fatal("foreign tenant dispatched run")
+				}
+				afterRejected, err := s.GetRun(ctx, "dispatch-run")
+				if err != nil || afterRejected.Status != models.RunStatusRunning || !afterRejected.UpdatedAt.Equal(reclaimed.UpdatedAt) || state.MetadataGeneration(afterRejected.Metadata, state.AttemptGenerationKey) != 2 {
+					t.Fatalf("rejected dispatch changed active run: run=%+v err=%v", afterRejected, err)
+				}
+				if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "dispatch-run", Generation: 2, Status: models.RunStatusSuccess}); err != nil || !result.Applied {
+					t.Fatal("complete dispatched run", result, err)
+				}
+				terminal, err := s.GetRun(ctx, "dispatch-run")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 3); err != nil || ok {
+					t.Fatal("terminal run redispatched", ok, err)
+				}
+				afterTerminal, err := s.GetRun(ctx, "dispatch-run")
+				if err != nil || afterTerminal.Status != models.RunStatusSuccess || !afterTerminal.UpdatedAt.Equal(terminal.UpdatedAt) || state.MetadataGeneration(afterTerminal.Metadata, state.AttemptGenerationKey) != 2 {
+					t.Fatalf("rejected dispatch reopened terminal run: run=%+v err=%v", afterTerminal, err)
+				}
+			})
 		}
 	})
 	t.Run("legacy_attempt_matches_only_zero", func(t *testing.T) {

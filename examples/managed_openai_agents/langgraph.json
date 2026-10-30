@@ -1,0 +1,6 @@
+{
+  "runner_kind": "python-openai-agents",
+  "graphs": {
+    "managed_openai_agents": "./agent.py:create_agent"
+  }
+}

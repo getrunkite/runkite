@@ -103,7 +103,7 @@ func TestPoisonCompletionDatabaseOutageRetainsLeaseForNextTick(t *testing.T) {
 		t.Fatal("expected retryable database error")
 	}
 	run, err := store.GetRun(ctx, "run")
-	if err != nil || run.Status != models.RunStatusPending {
+	if err != nil || run.Status != models.RunStatusRunning {
 		t.Fatal("failed durable completion changed the outcome", run, err)
 	}
 	if _, completed := run.Metadata[state.CompletionGenerationKey]; completed {
@@ -138,7 +138,7 @@ func TestPoisonCompletionBrokerOutageCannotInventFailedAgentOutcome(t *testing.T
 		t.Fatal("replay outage must be retried, not treated as missing terminal history")
 	}
 	run, err := store.GetRun(ctx, "run")
-	if err != nil || run.Status != models.RunStatusPending {
+	if err != nil || run.Status != models.RunStatusRunning {
 		t.Fatal("broker outage replaced actual success with fallback error", run, err)
 	}
 	fault.failReplay = false
@@ -262,7 +262,7 @@ func TestPoisonCompletionRejectsPillForSupersededQueueGeneration(t *testing.T) {
 		t.Fatal("old pill must reject a different current queue generation", accepted, err)
 	}
 	run, err := store.GetRun(ctx, "run")
-	if err != nil || run.Status != models.RunStatusPending || run.Error != "" || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) != 2 {
+	if err != nil || run.Status != models.RunStatusRunning || run.Error != "" || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) != 2 {
 		t.Fatal("stale pill mutated the newer attempt", run, err)
 	}
 	if _, completed := run.Metadata[state.CompletionGenerationKey]; completed {

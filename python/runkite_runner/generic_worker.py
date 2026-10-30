@@ -329,7 +329,11 @@ async def _handle_job(
 
                 async def send_event(event: dict):
                     await event_queue.put(
-                        runner_pb2.RunEventProto(run_id=run_id, event_json=json.dumps(event), generation=generation)
+                        runner_pb2.RunEventProto(
+                            run_id=run_id,
+                            event_json=json.dumps(event, ensure_ascii=False, separators=(",", ":")),
+                            generation=generation,
+                        )
                     )
 
                 cancel_event = await register_run(
