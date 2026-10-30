@@ -4,6 +4,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+- The managed AI SDK application bridge can detach browser delivery and reattach an owned run through GET without creating another run. The pinned native transport consumes a full replay with `resumeStreamIsReplay: true`. The app retains authentication, UI-message storage and its chat/turn-to-run mapping.
+- Explicit managed-run Stop helper, separate from stream disconnect. Create defaults to cancel; detach requires a saved run ID. Attach defaults to detach. The app persists the first assistant ID before display and supplies it as a reconnect precondition. Reconnection is limited to complete retained history from one attempt; missing start, replay gaps and expiration fail without fabricating a transcript or re-executing tools.
+
 ### Fixed
 - Run-bound opaque checkpoint writes and deletes check the durable attempt and terminal status in the same transaction as the mutation. An upload authorized before reclaim or cancellation can no longer replace or remove a newer attempt's saved history. Blob ETag checks remain separate.
 - Python and TypeScript workers isolate supersession cancellation per attempt. An older generation cannot cancel its replacement or remove its cancellation registration when both execute in the same worker. Genuine run cancellation still reaches all attempts and racing registrations.
