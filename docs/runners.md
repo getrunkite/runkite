@@ -174,6 +174,40 @@ API cancellation retains usage already delivered to the plane by the current
 attempt. Usage still buffered in the runner or provider when cancellation
 commits is unavailable. Cancellation does not undo completed external effects.
 
+### Managed OpenAI Agents SDK Python runner (unreleased)
+
+The optional `python-openai-agents` profile executes per-run factories returning
+public `agents.Agent` objects through the existing generic worker. Its native
+model loop stays in the Python runner. The plane owns Threads/Runs, dispatch,
+cancel and usage through the existing Runner Protocol. No hosted Agents API
+session service is used.
+
+Source-built `runkite-runner` wheels and sdists include the runtime adapter and
+`runkite-runner-openai-agents` CLI. Install `./python[openai-agents]` from a source
+checkout in a clean environment; its optional SDK is pinned to
+`openai-agents==0.24.0`. This profile is unreleased and is absent from the
+published PyPI `0.5.8` artifact. After a release contains it, the public install
+will be `pip install 'runkite-runner[openai-agents]'`. The stock Python image
+continues to use LangGraph and does not install this optional SDK.
+
+Load `runner_kind: python-openai-agents` in the plane's agent config. Send only
+new user/system text for each turn, ending with a user message. Native
+successful-turn history and receipts use run/tenant/generation-bound opaque
+state with conditional writes. The runner
+validates native history before execution and replays a committed run without
+repeating its model or tools. Failures and interruption retain the previous
+committed history; external effects before commit still need idempotency.
+
+The first profile supports one text agent and local function tools. A supplied
+`allowed_tools` list is checked before local function bodies run. Connector
+grants/HITL require the existing connector helpers. Native approval/resume,
+handoffs, agents-as-tools, hosted/MCP tools, structured final outputs, non-text
+input and unfinished-turn restoration are unsupported. Native reasoning remains
+in checkpoints rather than assistant text. Native SDK trace export is disabled;
+generic-worker OTLP run spans use the existing exporter variables. See the
+[offline example](../examples/managed_openai_agents/README.md) and
+[adapter contract](../python/adapters/openai_agents_adapter/README.md).
+
 ### Framework Adapters
 
 Opaque-state hardening (from v0.5.8) stops execution when configured state

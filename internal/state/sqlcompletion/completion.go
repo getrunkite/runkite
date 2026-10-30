@@ -101,7 +101,7 @@ func (d Driver) BeginRunAttempt(ctx context.Context, runID string, generation in
 	if err != nil {
 		return false, err
 	}
-	if err := tx.Exec(ctx, d.query(`UPDATE runs SET metadata = ? WHERE run_id = ? AND tenant_id = ?`), raw, runID, tid); err != nil {
+	if err := tx.Exec(ctx, d.query(`UPDATE runs SET metadata = ?, status = ?, updated_at = ? WHERE run_id = ? AND tenant_id = ?`), raw, string(models.RunStatusRunning), d.now(time.Now().UTC()), runID, tid); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(ctx); err != nil {

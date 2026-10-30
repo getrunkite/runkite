@@ -25,7 +25,9 @@ func (s *Store) BeginRunAttempt(ctx context.Context, id string, generation int64
 			run.Metadata = map[string]interface{}{}
 		}
 		run.Metadata[state.AttemptGenerationKey] = generation
-		_, err = s.col("runs").UpdateOne(ctx, tenantFilter(ctx, bson.M{"run_id": id}), bson.M{"$set": bson.M{"metadata": run.Metadata}})
+		_, err = s.col("runs").UpdateOne(ctx, tenantFilter(ctx, bson.M{"run_id": id}), bson.M{"$set": bson.M{
+			"metadata": run.Metadata, "status": string(models.RunStatusRunning), "updated_at": time.Now().UTC(),
+		}})
 		accepted = err == nil
 		return err
 	})

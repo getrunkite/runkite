@@ -118,7 +118,7 @@ func TestStrayUnversionedTerminalCannotCompleteAnUndispatchedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status != models.RunStatusPending {
+	if run.Status != models.RunStatusRunning {
 		t.Fatalf("stray history completed undispatched run: %+v", run)
 	}
 }

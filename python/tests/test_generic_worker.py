@@ -223,6 +223,40 @@ async def _run_one_iteration(stub, adapter):
         pass
 
 
+async def test_stream_events_preserves_utf8_under_the_grpc_receive_limit():
+    """The real emitted protobuf must fit, even when ASCII escaping would not."""
+    text = "界" * 900_000
+
+    class UnicodeAdapter:
+        async def execute(self, assignment, event_callback, cancel_event):
+            make_event = make_event_factory(assignment["run_id"])
+            await event_callback(make_event("messages", [{"type": "ai", "content": text}, {}]))
+            await event_callback(make_event("end", {"status": "success"}))
+            return "success"
+
+    class CaptureStub(_FakeStub):
+        def __init__(self, assignment):
+            super().__init__(assignment)
+            self.wire_events = []
+
+        def StreamEvents(self, event_generator, metadata=None):
+            async def drain():
+                async for event in event_generator:
+                    self.wire_events.append(event.SerializeToString())
+                return runner_pb2.StreamEventsResponse(ok=True)
+
+            return asyncio.ensure_future(drain())
+
+    stub = CaptureStub({"run_id": "unicode-run", "thread_id": "thread", "graph_id": "graph", "generation": 1})
+    await _run_one_iteration(stub, UnicodeAdapter())
+    check("Unicode job confirms its native event stream and completes", stub.reported_status == "success")
+    wire_event = runner_pb2.RunEventProto.FromString(stub.wire_events[0])
+    decoded = json.loads(wire_event.event_json)
+    check("wire protobuf stays below gRPC's 4 MiB default receive limit", len(stub.wire_events[0]) < 4 << 20)
+    check("UTF-8 message survives the actual StreamEvents serialization", decoded["data"][0]["content"] == text)
+    check("the former ASCII-escaped serialization exceeds 5 MiB", len(json.dumps(decoded).encode()) > 5 << 20)
+
+
 async def test_poll_loop_dispatches_and_reports_success():
     assignment = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1"}
     stub = _FakeStub(assignment)
@@ -593,6 +627,7 @@ async def main():
     test_make_event_factory_serializes_pydantic_like_objects()
     test_checkpoint_ref_unsupported_error_helper()
     await test_poll_loop_dispatches_and_reports_success()
+    await test_stream_events_preserves_utf8_under_the_grpc_receive_limit()
     await test_poll_loop_reports_error_when_adapter_raises()
     await test_poll_loop_rejects_checkpoint_ref_for_adapters()
     await test_poll_loop_runs_jobs_concurrently_at_concurrency_2()

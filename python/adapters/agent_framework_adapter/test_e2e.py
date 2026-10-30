@@ -75,8 +75,28 @@ class Process:
 
 @unittest.skipUnless(os.environ.get("RUNKITE_TEST_BINARY"), "Set RUNKITE_TEST_BINARY for real managed-runner E2E")
 class ManagedAgentFrameworkE2E(unittest.TestCase):
+    adapter_package = "agent_framework_adapter"
+    sdk_module = "agent_framework"
+    sdk_distribution = "agent-framework-core"
+    sdk_version = "1.23.0"
+    install_extra = "agent-framework"
+    runner_command_name = "runkite-runner-agent-framework"
+    runner_description = "Runkite managed Microsoft Agent Framework runner"
+    example_directory = "managed_agent_framework"
+    fixture = ADAPTER / "e2e_agent.py"
+    runner_kind_env = "PYTHON_AGENT_FRAMEWORK"
+    counters_env = "RUNKITE_MS_E2E_COUNTERS"
+    metadata_key = "agent_framework"
+    fixture_label = "ms"
+    extra_graph_factories: tuple[str, ...] = ()
+    extra_runner_args: tuple[str, ...] = ()
+    extra_worker_environment: dict[str, str] = {}
+
+    def additional_configuration(self) -> dict[str, Any]:
+        return {}
+
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="runkite-ms-e2e-")
+        self.temporary = tempfile.TemporaryDirectory(prefix=f"runkite-{self.fixture_label}-e2e-")
         self.directory = Path(self.temporary.name)
         self.processes: list[Process] = []
         self.relays: list[ThreadingHTTPServer] = []
@@ -87,18 +107,23 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         self.profile = "Postgres + Redis" if postgres else "SQLite + in-process"
         self.http = httpx.Client(timeout=20, trust_env=False)
         prefix = uuid.uuid4().hex[:12]
-        self.tenant_a = f"ms-e2e-a-{prefix}"
-        self.tenant_b = f"ms-e2e-b-{prefix}"
-        self.agent = f"ms_e2e_{prefix}"
-        self.slow = f"ms_e2e_slow_{prefix}"
+        self.tenant_a = f"{self.fixture_label}-e2e-a-{prefix}"
+        self.tenant_b = f"{self.fixture_label}-e2e-b-{prefix}"
+        self.agent = f"{self.fixture_label}_e2e_{prefix}"
+        self.slow = f"{self.fixture_label}_e2e_slow_{prefix}"
+        self.extra_graphs = {name: f"{self.fixture_label}_{name}_{prefix}" for name in self.extra_graph_factories}
         self.counters = self.directory / "counters.jsonl"
         self.config = self.directory / "langgraph.json"
-        example = json.loads((ROOT / "examples" / "managed_agent_framework" / "langgraph.json").read_text())
+        example = json.loads((ROOT / "examples" / self.example_directory / "langgraph.json").read_text())
         self.config.write_text(
             json.dumps(
                 {
                     "runner_kind": example["runner_kind"],
-                    "graphs": {self.agent: "./agent.py:agent", self.slow: "./agent.py:slow_agent"},
+                    "graphs": {
+                        self.agent: "./agent.py:agent",
+                        self.slow: "./agent.py:slow_agent",
+                        **{graph: f"./agent.py:{name}" for name, graph in self.extra_graphs.items()},
+                    },
                     "auth": {
                         "type": "api_key",
                         "keys": {
@@ -107,10 +132,11 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                             "e2e-b": {"name": "b", "tenant_id": self.tenant_b, "permissions": ["read", "write"]},
                         },
                     },
+                    **self.additional_configuration(),
                 }
             )
         )
-        shutil.copyfile(ADAPTER / "e2e_agent.py", self.directory / "agent.py")
+        shutil.copyfile(self.fixture, self.directory / "agent.py")
         wheel_location = Path(os.environ["RUNKITE_TEST_RUNNER_WHEEL"]).resolve()
         wheel = next(wheel_location.glob("runkite_runner-*.whl")) if wheel_location.is_dir() else wheel_location
         http_port, grpc_port = free_port(), free_port()
@@ -126,12 +152,16 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "DATABASE_PATH": str(self.directory / "state.db"),
                 "LOG_FORMAT": "json",
-                "RUNNER_TOKEN_PYTHON_AGENT_FRAMEWORK": "e2e-runner-token",
-                "RUNNER_TENANTS_PYTHON_AGENT_FRAMEWORK": f"{self.tenant_a},{self.tenant_b}",
-                "RUNKITE_MS_E2E_COUNTERS": str(self.counters),
+                f"RUNNER_TOKEN_{self.runner_kind_env}": "e2e-runner-token",
+                f"RUNNER_TENANTS_{self.runner_kind_env}": f"{self.tenant_a},{self.tenant_b}",
+                self.counters_env: str(self.counters),
             }
         )
-        self.worker_environment = {**self.environment, "RUNNER_TOKEN": "e2e-runner-token"}
+        self.worker_environment = {
+            **self.environment,
+            **self.extra_worker_environment,
+            "RUNNER_TOKEN": "e2e-runner-token",
+        }
         self.install_runner(wheel)
         plane_environment = dict(self.environment)
         if postgres and redis:
@@ -181,9 +211,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         )
         scripts = self.consumer / ("Scripts" if os.name == "nt" else "bin")
         self.consumer_python = scripts / ("python.exe" if os.name == "nt" else "python")
-        self.runner_command = scripts / (
-            "runkite-runner-agent-framework.exe" if os.name == "nt" else "runkite-runner-agent-framework"
-        )
+        self.runner_command = scripts / (self.runner_command_name + (".exe" if os.name == "nt" else ""))
         installer_environment = {
             **self.environment,
             **{key: os.environ[key] for key in ("UV_CACHE_DIR", "UV_OFFLINE") if key in os.environ},
@@ -197,7 +225,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 "install",
                 "--python",
                 str(self.consumer_python),
-                f"runkite-runner[agent-framework] @ {wheel.as_uri()}",
+                f"runkite-runner[{self.install_extra}] @ {wheel.as_uri()}",
             ],
             env=installer_environment,
             cwd=self.directory,
@@ -215,11 +243,11 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 "-I",
                 "-c",
                 "import importlib.metadata as m, json, sys; "
-                "import agent_framework, agent_framework_adapter, runkite_runner; "
+                f"import {self.sdk_module}, {self.adapter_package}, runkite_runner; "
                 "print(json.dumps({'prefix': sys.prefix, 'path': sys.path, "
                 "'modules': {x.__name__: x.__file__ for x in "
-                "(runkite_runner, agent_framework_adapter, agent_framework)}, "
-                "'sdk': m.version('agent-framework-core'), "
+                f"(runkite_runner, {self.adapter_package}, {self.sdk_module})}}, "
+                f"'sdk': m.version({self.sdk_distribution!r}), "
                 "'entrypoint': {e.name: e.value for e in m.distribution('runkite-runner').entry_points}"
                 "}))",
             ],
@@ -237,19 +265,17 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             )
         for directory in details["path"]:
             self.assertFalse(Path(directory).resolve().is_relative_to(ROOT), f"Checkout import path: {directory}")
-        self.assertEqual(details["sdk"], "1.23.0")
-        self.assertEqual(
-            details["entrypoint"]["runkite-runner-agent-framework"], "agent_framework_adapter.__main__:main"
-        )
+        self.assertEqual(details["sdk"], self.sdk_version)
+        self.assertEqual(details["entrypoint"][self.runner_command_name], f"{self.adapter_package}.__main__:main")
         self.assertTrue(self.runner_command.is_file(), "The wheel must install its dedicated console command")
         for command in (
             [str(self.runner_command), "--help"],
-            [str(self.consumer_python), "-I", "-m", "agent_framework_adapter", "--help"],
+            [str(self.consumer_python), "-I", "-m", self.adapter_package, "--help"],
         ):
             help_text = subprocess.check_output(
                 command, env=self.worker_environment, cwd=self.directory, text=True, timeout=20
             )
-            self.assertIn("Runkite managed Microsoft Agent Framework runner", help_text)
+            self.assertIn(self.runner_description, help_text)
 
     def cleanup(self) -> None:
         for process in reversed(self.processes):
@@ -276,6 +302,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                 self.grpc,
                 "--http-address",
                 http_address or self.base,
+                *self.extra_runner_args,
             ],
             {**self.worker_environment, "RUNKITE_HTTP_URL": http_address or self.base},
         )
@@ -332,9 +359,9 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         usage = run["output"]["usage"]
         self.assertEqual((usage["prompt_tokens"], usage["completion_tokens"]), (prompt, completion))
 
-    def wait_provisional_usage(self, thread: str, run_id: str) -> None:
+    def wait_provisional_usage(self, thread: str, run_id: str, *, key: str = "e2e-a") -> None:
         route = f"{self.base}/threads/{thread}/runs/{run_id}/stream"
-        with self.http.stream("GET", route, headers={"Authorization": "Bearer e2e-a"}, timeout=10) as response:
+        with self.http.stream("GET", route, headers={"Authorization": f"Bearer {key}"}, timeout=10) as response:
             self.assertEqual(response.status_code, 200)
             method = ""
             for line in response.iter_lines():
@@ -484,7 +511,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             self.assertGreaterEqual(final["metadata"]["_runkite_attempt_generation"], 2)
             self.assertGreaterEqual(final["metadata"]["_runkite_completion_generation"], 2)
             self.assertEqual(
-                final["output"]["agent_framework"]["generation"], final["metadata"]["_runkite_completion_generation"]
+                final["output"][self.metadata_key]["generation"], final["metadata"]["_runkite_completion_generation"]
             )
             self.assertEqual(len(self.records(recovered, "factory")), 1, "receipt replay repeated factory work")
             self.assertEqual(len(self.records(recovered, "model")), 2, "receipt replay repeated model work")

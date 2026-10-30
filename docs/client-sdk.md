@@ -109,6 +109,31 @@ Unsupported approval or resume fails explicitly. API cancellation can retain
 only usage already delivered to the plane before cancellation commits. Keep the
 governance middleware when the app owns execution and only needs tool decisions.
 
+### Managed OpenAI Agents SDK (unreleased)
+
+Python apps that already export an `agents.Agent` can dispatch it through runner
+kind `python-openai-agents`. The source-built `runkite-runner` wheel includes
+`openai_agents_adapter` and the dedicated `runkite-runner-openai-agents` CLI.
+The optional `openai-agents` extra pins `openai-agents==0.24.0`. This profile is
+not in the published PyPI `0.5.8` artifact. Follow the
+[offline example](../examples/managed_openai_agents/README.md) for a clean local
+installation until a release contains it.
+
+The runner uses public native streaming and history APIs with Runkite's existing
+dispatch, cancellation, usage and conditional opaque checkpoint writes. Only
+successful turns commit history. Receipts let a reclaimed run replay without
+another factory/model/tool cycle after a successful commit. Supply only this
+turn's new user/system text, ending with a user message; the application keeps
+UI authentication and presentation history. This is an Agent Protocol stream,
+not an AI SDK UI transport.
+
+Initial support is one text agent and local function tools. Native approvals,
+resume, handoffs, agents-as-tools, hosted/MCP tools, structured final outputs and
+non-text input fail explicitly. A local tool does not automatically receive
+connector grants or HITL. Native SDK trace export is disabled; the generic
+worker's OTLP run span remains available. See the
+[runner boundaries](../python/adapters/openai_agents_adapter/README.md).
+
 ## Use today (recommended)
 
 Runkite’s public HTTP surface is [Agent Protocol](https://github.com/langchain-ai/agent-protocol) plus documented Runkite extensions. The machine-readable contract is:

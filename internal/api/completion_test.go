@@ -93,6 +93,10 @@ func TestDurableCompletionFailureRetainsLeaseAndRetryIsIdempotent(t *testing.T) 
 	if r, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || !r.HasJob {
 		t.Fatal(r, err)
 	}
+	started, err := store.GetRun(ctx, "run")
+	if err != nil || started.Status != models.RunStatusRunning || state.MetadataGeneration(started.Metadata, state.AttemptGenerationKey) != 1 {
+		t.Fatalf("GetJob did not persist running attempt: run=%+v err=%v", started, err)
+	}
 	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(1, 1, "values", `{"answer":"kept"}`), completionEvent(1, 2, "end", `{"status":"success"}`)}}
 	if err := rpc.StreamEvents(stream); err != nil {
 		t.Fatal(err)
@@ -104,7 +108,7 @@ func TestDurableCompletionFailureRetainsLeaseAndRetryIsIdempotent(t *testing.T) 
 	inflight, _ := q.LookupInflight(ctx, "run")
 	saved, _ := store.GetRun(ctx, "run")
 	thread, _ := store.GetThread(ctx, "thread")
-	if inflight == nil || saved.Status != models.RunStatusPending || thread.Status != models.ThreadStatusBusy {
+	if inflight == nil || saved.Status != models.RunStatusRunning || thread.Status != models.ThreadStatusBusy {
 		t.Fatal("failed persistence acknowledged", inflight, saved, thread)
 	}
 	fault.fail = false

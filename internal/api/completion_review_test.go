@@ -245,7 +245,7 @@ func TestCancelPersistenceFailureRetainsQueueLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec.Code < 500 || run.Status != models.RunStatusPending || inflight == nil {
+	if rec.Code < 500 || run.Status != models.RunStatusRunning || inflight == nil {
 		t.Fatalf("failed cancellation discarded work: status=%d run=%+v inflight=%+v", rec.Code, run, inflight)
 	}
 }

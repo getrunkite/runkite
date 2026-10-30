@@ -347,6 +347,15 @@ test-agent-framework:
 		python/adapters/agent_framework_adapter/.venv/bin/python \
 		-m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
 
+.PHONY: test-openai-agents
+test-openai-agents:
+	uv venv --clear --python 3.12 python/adapters/openai_agents_adapter/.venv
+	uv pip install --python python/adapters/openai_agents_adapter/.venv/bin/python \
+		'openai-agents==0.24.0' grpcio protobuf httpx
+	PYTHONPATH=python:python/adapters:examples/managed_openai_agents \
+		python/adapters/openai_agents_adapter/.venv/bin/python \
+		-m unittest discover -s python/adapters/openai_agents_adapter -p 'test_*.py'
+
 # Verify source distributions can rebuild the wheel without runtime dependencies.
 .PHONY: test-python-package
 test-python-package:
@@ -372,6 +381,22 @@ test-managed-agent-framework:
 	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
 	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \
 	"$(AGENT_FRAMEWORK_PYTHON)" python/adapters/agent_framework_adapter/test_e2e.py -v
+
+# Reuse the installed-wheel lifecycle checks with the native OpenAI Agents SDK.
+OPENAI_AGENTS_PYTHON ?= python/adapters/openai_agents_adapter/.venv/bin/python
+.PHONY: test-managed-openai-agents
+test-managed-openai-agents:
+	@if [ ! -x "$(OPENAI_AGENTS_PYTHON)" ]; then $(MAKE) test-openai-agents; fi
+	@managed_test_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$managed_test_dir"' EXIT; \
+	go build -o "$$managed_test_dir/runkite" ./cmd && \
+	go build -o "$$managed_test_dir/seed" ./python/adapters/openai_agents_adapter/e2e_seed && \
+	uv build --wheel --out-dir "$$managed_test_dir/wheel" python && \
+	PYTHONDONTWRITEBYTECODE=1 \
+	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" \
+	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
+	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \
+	"$(OPENAI_AGENTS_PYTHON)" python/adapters/openai_agents_adapter/test_e2e.py -v
 
 # TypeScript runner unit tests (pure logic -- namespace encoding, event
 # generation, cancel/interrupt handling -- no live control plane needed).
