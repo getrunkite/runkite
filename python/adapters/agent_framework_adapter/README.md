@@ -23,12 +23,21 @@ background continuation and replacement text updates are also unsupported.
 
 ## Setup
 
+**Unreleased packaging:** this adapter is included in the source-built
+`runkite-runner` wheel and sdist, with an optional `agent-framework` extra pinned
+to `agent-framework-core==1.23.0`. The published PyPI `0.5.8` artifact does not
+contain this adapter, extra or CLI. From the repository root, install the local
+package into a clean environment:
+
 ```bash
-cd python/adapters/agent_framework_adapter
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python \
-  'agent-framework-core==1.23.0' grpcio protobuf httpx
+python3.12 -m venv .venv-agent-framework
+.venv-agent-framework/bin/python -m pip install './python[agent-framework]'
 ```
+
+This builds and installs the runner wheel, including `agent_framework_adapter`.
+No `PYTHONPATH` is needed to run it. Python 3.11+ is supported; this example uses
+3.12. After a release containing this change is published, the equivalent PyPI
+install will be `pip install 'runkite-runner[agent-framework]'`.
 
 ## Run
 
@@ -36,14 +45,18 @@ Register an agent with runner kind `python-agent-framework`, start the plane,
 then:
 
 ```bash
-cd examples/managed_agent_framework
-PYTHONPATH=<repo>/python:<repo>/python/adapters \
-  <repo>/python/adapters/agent_framework_adapter/.venv/bin/python -m agent_framework_adapter \
-  --config langgraph.json \
+.venv-agent-framework/bin/runkite-runner-agent-framework \
+  --config examples/managed_agent_framework/langgraph.json \
   --grpc-address localhost:50051 \
   --http-address http://localhost:2026 \
   --runner-kind python-agent-framework
 ```
+
+The installed module alternative is
+`.venv-agent-framework/bin/python -m agent_framework_adapter` with the same
+arguments. The ordinary `runkite-runner` CLI still starts LangGraph. The stock
+Python runner image does not install the Microsoft extra and keeps its LangGraph
+entrypoint; build your own image or use the environment above for this profile.
 
 `graphs` entries must export a factory `(AgentFrameworkRunContext) -> Agent`.
 The plane must load the same config with `runner_kind: python-agent-framework`.
@@ -71,15 +84,17 @@ unfinished native work into a successful receipt.
 ## Test
 
 ```bash
-PYTHONPATH=python:python/adapters:examples/managed_agent_framework \
-  python/adapters/agent_framework_adapter/.venv/bin/python \
-  -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
+make test-agent-framework
+make test-managed-agent-framework
 ```
 
-`make test-managed-agent-framework` builds a real plane and a wheel of the shared
-runner core, then runs authenticated dispatch, streaming, Admin visibility,
+`make test-agent-framework` prepares an isolated test environment and runs the
+adapter's unit tests. `make test-managed-agent-framework` builds a real plane
+and installs the runner wheel, including this adapter, into a clean environment.
+It runs authenticated dispatch, streaming, Admin visibility,
 restart, tenant isolation, cancellation usage and crash-after-commit recovery.
-The Microsoft adapter itself still loads from this checkout.
+The worker loads both the shared core and Microsoft adapter from that installed
+wheel, with no `PYTHONPATH` injection.
 
 By default the live test uses SQLite and the in-process queue. Set both
 `RUNKITE_TEST_POSTGRES_DSN` and `RUNKITE_TEST_REDIS_URL` to dedicated disposable

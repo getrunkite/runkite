@@ -347,7 +347,16 @@ test-agent-framework:
 		python/adapters/agent_framework_adapter/.venv/bin/python \
 		-m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
 
-# A real plane and native framework worker importing its core from a built wheel.
+# Verify source distributions can rebuild the wheel without runtime dependencies.
+.PHONY: test-python-package
+test-python-package:
+	@package_test_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$package_test_dir"' EXIT; \
+	uv --no-config venv --python 3.12 "$$package_test_dir/venv" && \
+	uv --no-config pip install --python "$$package_test_dir/venv/bin/python" build 'setuptools>=68' wheel pip && \
+	PYTHONDONTWRITEBYTECODE=1 "$$package_test_dir/venv/bin/python" python/tests/test_package_artifacts.py -v
+
+# A real plane and managed framework runner installed with dependencies in a fresh venv.
 # Optional RUNKITE_TEST_POSTGRES_DSN + RUNKITE_TEST_REDIS_URL use dedicated services.
 AGENT_FRAMEWORK_PYTHON ?= python/adapters/agent_framework_adapter/.venv/bin/python
 .PHONY: test-managed-agent-framework
@@ -358,7 +367,7 @@ test-managed-agent-framework:
 	go build -o "$$managed_test_dir/runkite" ./cmd && \
 	go build -o "$$managed_test_dir/seed" ./python/adapters/agent_framework_adapter/e2e_seed && \
 	uv build --wheel --out-dir "$$managed_test_dir/wheel" python && \
-	PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:python/adapters \
+	PYTHONDONTWRITEBYTECODE=1 \
 	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" \
 	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
 	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \

@@ -51,8 +51,14 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   and report observed usage. CAS metadata, framework, graph and native state
   are validated before execution. Receipt recovery avoids repeated work after
   a successful commit; external effects before that commit still need their
-  own idempotency. The adapter remains checkout-only, separate from the
-  published Python LangGraph runner.
+  own idempotency. Source-built `runkite-runner` wheels and sdists now include
+  the adapter and dedicated `runkite-runner-agent-framework` CLI. The optional
+  `agent-framework` extra pins `agent-framework-core==1.23.0`. This install path
+  is unreleased and absent from the published PyPI `0.5.8` artifact; use the
+  [source install](../examples/managed_agent_framework/README.md) until a release
+  contains it. The ordinary Python CLI and stock image keep their LangGraph
+  defaults; the image does not install the Microsoft SDK. The four older
+  CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain checkout-only.
   Decision-only `runkite_governance.agent_framework` middleware remains a
   different boundary (app-owned loop, no managed run).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The

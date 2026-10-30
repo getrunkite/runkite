@@ -9,19 +9,26 @@ which only submits tool decisions while the app keeps the loop.
 
 ## Run
 
-```bash
-cd python/adapters/agent_framework_adapter
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python \
-  'agent-framework-core==1.23.0' grpcio protobuf httpx
+The optional runner packaging is **unreleased**. The published PyPI `0.5.8`
+artifact does not contain this adapter or its CLI. From the repository root,
+build and install the local package in a clean Python 3.11+ environment
+(shown here with 3.12):
 
-cd ../../../examples/managed_agent_framework
-PYTHONPATH=<repo>/python:<repo>/python/adapters \
-  <repo>/python/adapters/agent_framework_adapter/.venv/bin/python -m agent_framework_adapter \
-  --config langgraph.json \
+```bash
+python3.12 -m venv .venv-agent-framework
+.venv-agent-framework/bin/python -m pip install './python[agent-framework]'
+.venv-agent-framework/bin/runkite-runner-agent-framework \
+  --config examples/managed_agent_framework/langgraph.json \
   --grpc-address localhost:50051 \
   --http-address http://localhost:2026
 ```
+
+The extra pins `agent-framework-core==1.23.0`. The installed module alternative
+is `.venv-agent-framework/bin/python -m agent_framework_adapter` with the same
+arguments; neither command needs `PYTHONPATH`. The regular `runkite-runner` CLI
+and stock Python image retain their LangGraph defaults. After a release
+containing this change is published, install the profile with
+`pip install 'runkite-runner[agent-framework]'` instead of the local package.
 
 Create runs against graph id `managed_agent_framework` with `input.messages`
 containing the new user/system text messages for this turn, ending with a user
@@ -46,5 +53,8 @@ downstream idempotency for external effects.
 
 ## Tests
 
-See the adapter README. `make test-agent-framework` from the repo root once the
-adapter venv exists.
+From the repository root, `make test-agent-framework` prepares the isolated
+environment and runs unit tests. `make test-managed-agent-framework` runs a real
+plane with both the shared runner and Microsoft adapter installed from the built
+wheel. See the [adapter README](../../python/adapters/agent_framework_adapter/README.md)
+for the SQLite and optional Postgres/Redis profiles.
