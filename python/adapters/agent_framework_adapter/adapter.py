@@ -14,7 +14,7 @@ import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +41,38 @@ class AgentFrameworkRunContext:
     generation: int
     graph_id: str
     cancel_event: Any
+
+
+def _model_name(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+@dataclass
+class _ModelRequest:
+    configured_model: str | None
+    reported_models: set[str] = field(default_factory=set)
+    provider_models: set[str] = field(default_factory=set)
+    observed_usage: bool = False
+    completed: bool = False
+
+    def observe_model(self, response: Any) -> None:
+        if model := _model_name(getattr(response, "model", None)):
+            self.reported_models.add(model)
+        raw = getattr(response, "raw_representation", None)
+        for item in raw if isinstance(raw, (list, tuple)) else [raw]:
+            for source in (item, getattr(item, "response", None)):
+                if model := _model_name(getattr(source, "model", None)):
+                    self.provider_models.add(model)
+
+    def model(self) -> str | None:
+        if self.provider_models:
+            return next(iter(self.provider_models)) if len(self.provider_models) == 1 else None
+        # Some SDK clients copy the requested alias onto early updates, then
+        # replace it with the provider's actual model at the end of the call.
+        reported = self.reported_models - {self.configured_model}
+        if not reported:
+            return self.configured_model
+        return next(iter(reported)) if len(reported) == 1 else None
 
 
 def _input_key(messages: list[Any]) -> str:
@@ -94,11 +126,31 @@ def _usage_from_details(details: Any) -> dict[str, Any] | None:
     return usage_payload(payload)
 
 
-def _text_from_update(update: Any) -> str:
+def _text_from_update(
+    update: Any,
+    text_parts: dict[tuple[Any, ...], str],
+    request_index: int,
+    text_requests: dict[int, int],
+) -> str:
     parts: list[str] = []
-    for content in getattr(update, "contents", None) or []:
+    raw = getattr(update, "raw_representation", None)
+    provider = getattr(raw, "raw_representation", None)
+    message_id = getattr(update, "message_id", None)
+    response_id = getattr(raw, "response_id", None)
+    content_index = getattr(provider, "content_index", None)
+    for index, content in enumerate(getattr(update, "contents", None) or []):
         text = getattr(content, "text", None)
         if getattr(content, "type", None) == "text" and isinstance(text, str) and text:
+            part_id = getattr(content, "id", None) or (content_index if type(content_index) is int else index)
+            owner = text_requests.pop(id(content), request_index)
+            key = (owner, response_id, message_id, part_id)
+            if getattr(content, "merge_mode", None) == "replace":
+                if text_parts.get(key, "") != text:
+                    raise ValueError("Agent Framework replacement text updates are unsupported")
+                # Normal provider text.done repeats the completed part. It
+                # confirms existing text and must not append it a second time.
+                continue
+            text_parts[key] = text_parts.get(key, "") + text
             parts.append(text)
     return "".join(parts)
 
@@ -211,7 +263,16 @@ class AgentFrameworkAdapter:
             self.factories[graph_id] = export
 
     async def execute(self, assignment: dict, event_callback: EventCallback, cancel_event: asyncio.Event) -> str:
-        from agent_framework import Agent, AgentSession, Content, Message
+        from agent_framework import (
+            Agent,
+            AgentSession,
+            ChatMiddleware,
+            ChatMiddlewareLayer,
+            ChatResponse,
+            Content,
+            FunctionInvocationLayer,
+            Message,
+        )
 
         run_id = assignment["run_id"]
         graph_id = assignment["graph_id"]
@@ -257,6 +318,8 @@ class AgentFrameworkAdapter:
         produced = False
         started = False
         session = None
+        model_requests: list[_ModelRequest] = []
+        text_requests: dict[int, int] = {}
 
         async def close_stream() -> None:
             nonlocal stream
@@ -267,6 +330,19 @@ class AgentFrameworkAdapter:
                 except Exception as exc:
                     logger.warning("Agent Framework stream close failed (%s)", type(exc).__name__)
 
+        def attributed_usage() -> dict[str, Any] | None:
+            current = usage_or_unmetered(usage, produced or started)
+            if current is None:
+                return None
+            current = dict(current)
+            current.pop("model", None)
+            # A running request with no reported usage has not contributed to
+            # these totals yet. Keep earlier known-model spend on cancellation.
+            identities = {request.model() for request in model_requests if request.observed_usage or request.completed}
+            if len(identities) == 1 and None not in identities:
+                current["model"] = next(iter(identities))
+            return current
+
         def partial_values() -> dict[str, Any]:
             return values_with_usage(
                 {
@@ -276,7 +352,7 @@ class AgentFrameworkAdapter:
                         **({"session_id": session.session_id} if session is not None else {}),
                     }
                 },
-                usage_or_unmetered(usage, produced or started),
+                attributed_usage(),
             )
 
         async def publish_observed_usage() -> None:
@@ -287,6 +363,45 @@ class AgentFrameworkAdapter:
                 _bounded_output(values)
                 await event_callback(make_event("values", values))
                 published_usage = dict(current)
+
+        class ModelAttributionMiddleware(ChatMiddleware):
+            async def process(self, context, call_next) -> None:
+                # This public layer runs once per provider invocation, inside
+                # FunctionInvocationLayer. The outer response model is merely
+                # the last model and cannot identify cumulative token totals.
+                options = context.options or {}
+                request = _ModelRequest(
+                    _model_name(options.get("model")) or _model_name(getattr(context.client, "model", None))
+                )
+                model_requests.append(request)
+                request_index = len(model_requests)
+
+                async def observe_update(update):
+                    request.observe_model(update)
+                    # The SDK forwards text Content objects unchanged through
+                    # its function and agent wrappers. Carry their exact call
+                    # ownership even if another middleware prefetches updates.
+                    for content in update.contents:
+                        if content.type == "text":
+                            text_requests[id(content)] = request_index
+                    request.observed_usage = request.observed_usage or any(
+                        content.type == "usage" for content in update.contents
+                    )
+                    return update
+
+                async def observe_response(response):
+                    request.observe_model(response)
+                    request.completed = True
+                    # Native final metadata may arrive after a separate usage
+                    # chunk. Publish that correction before any local tools.
+                    await publish_observed_usage()
+                    return response
+
+                context.stream_transform_hooks.append(observe_update)
+                context.stream_result_hooks.append(observe_response)
+                await call_next()
+                if not context.stream and isinstance(context.result, ChatResponse):
+                    await observe_response(context.result)
 
         try:
             prior, etag = await state_store.load(thread_id, graph_id=graph_id)
@@ -341,12 +456,22 @@ class AgentFrameworkAdapter:
                 raise RunCancelled()
             session_data = prior.get("session") if isinstance(prior, dict) else None
             session = AgentSession.from_dict(session_data) if isinstance(session_data, dict) else agent.create_session()
+            # Structural custom clients need not implement public middleware
+            # boundaries. Preserve their tokens, without guessing a model from
+            # an aggregate response that may contain several provider calls.
+            client_mro = type(agent.client).__mro__
+            per_call_middleware = isinstance(agent.client, ChatMiddlewareLayer) and (
+                not isinstance(agent.client, FunctionInvocationLayer)
+                or client_mro.index(FunctionInvocationLayer) < client_mro.index(ChatMiddlewareLayer)
+            )
+            middleware = [ModelAttributionMiddleware()] if per_call_middleware else []
             native_input = [
                 Message(role=message["role"], contents=[Content.from_text(message["content"])]) for message in incoming
             ]
             text_events: list[str] = []
             assistant_text = ""
             receipt_bytes = 2
+            text_parts: dict[tuple[Any, ...], str] = {}
 
             async def emit_text(delta: str) -> None:
                 nonlocal assistant_text, receipt_bytes, produced
@@ -364,7 +489,7 @@ class AgentFrameworkAdapter:
                 nonlocal stream, usage, produced, started
                 if cancel_event.is_set():
                     raise RunCancelled()
-                stream = agent.run(native_input, stream=True, session=session)
+                stream = agent.run(native_input, stream=True, session=session, middleware=middleware)
                 started = True
                 try:
                     async for update in stream:
@@ -384,7 +509,7 @@ class AgentFrameworkAdapter:
                             )
                         if getattr(update, "merge_mode", None) == "replace":
                             raise ValueError("Agent Framework replacement text updates are unsupported")
-                        delta = _text_from_update(update)
+                        delta = _text_from_update(update, text_parts, len(model_requests), text_requests)
                         if delta:
                             await emit_text(delta)
                     return await stream.get_final_response()
@@ -404,7 +529,7 @@ class AgentFrameworkAdapter:
                 await emit_text(final_text)
             elif assistant_text != final_text:
                 raise ValueError("streamed text differs from the completed native response")
-            usage = usage_or_unmetered(usage, produced or started)
+            usage = attributed_usage()
             history = [*((prior or {}).get("messages") or []), *incoming]
             if assistant_text:
                 history.append(_assistant_message(assistant_text))

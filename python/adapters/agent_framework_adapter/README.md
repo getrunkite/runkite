@@ -70,6 +70,22 @@ Receipt replay skips the factory, model and tools, and reports the replacement
 attempt's generation. It does not make effects before a state commit exactly
 once. Give external writes their own idempotency keys.
 
+Observed usage includes a model only when the contributing requests identify
+one consistent model. The plane applies its configured pricebook to estimate
+USD and uses those recorded estimates in its existing spend limits. Unknown or
+mixed model identities remain unpriced; token totals are still recorded and a
+configured pricebook can raise the existing `usage_unpriced` alert. Attribution
+survives cancellation, provider errors and committed-turn replay. Dollar
+estimates are not provider invoices, and cancellation cannot recover usage that
+the plane has not received.
+
+Attribution uses the SDK's public per-provider chat middleware. Custom clients
+without that boundary keep token accounting and remain unpriced. A single
+model name on a final response cannot identify the models behind cumulative
+usage across tool rounds.
+Existing receipts without a model remain replayable and unpriced; this change
+does not infer historical model identities or reprice stored usage.
+
 State reads fail closed on missing CAS metadata, a different framework or graph,
 or an invalid native session/receipt. Output events have a 3 MiB safety limit
 below the default gRPC receive cap. The text receipt is capped at 8 MiB and
@@ -93,6 +109,12 @@ adapter's unit tests. `make test-managed-agent-framework` builds a real plane
 and installs the runner wheel, including this adapter, into a clean environment.
 It runs authenticated dispatch, streaming, Admin visibility,
 restart, tenant isolation, cancellation usage and crash-after-commit recovery.
+It also checks fictional pricebook estimates, provider-error usage and a later
+run-create rejection after a configured USD cap is reached.
+Unit tests include the actual Microsoft OpenAI provider clients over mocked
+HTTP/SSE. That test environment installs `agent-framework-openai==1.17.0` with
+the pinned core; the runtime extra remains core-only so applications choose
+their own provider package.
 The worker loads both the shared core and Microsoft adapter from that installed
 wheel, with no `PYTHONPATH` injection.
 

@@ -270,7 +270,7 @@ jobs:
           PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py
 
           uv venv --python 3.12 python/adapters/agent_framework_adapter/.venv
-          uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' grpcio protobuf httpx
+          uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' 'agent-framework-openai==1.17.0' grpcio protobuf httpx
           PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
 
           uv venv --python 3.12 python/adapters/openai_agents_adapter/.venv

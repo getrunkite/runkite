@@ -170,6 +170,12 @@ approval/resume are unsupported. Native approval/resume fails explicitly.
 Local tools do not automatically acquire connector policy or HITL. External
 effects before a successful state commit require downstream idempotency.
 
+Usage identifies a model only when all contributing requests have one consistent
+identity. The configured pricebook can then estimate USD for the plane's existing
+spend accounting and limits. Unknown or mixed model totals remain unpriced with
+token accounting intact. Cancellation, errors and receipt replay preserve the
+observed attribution; estimates are not provider invoices.
+
 API cancellation retains usage already delivered to the plane by the current
 attempt. Usage still buffered in the runner or provider when cancellation
 commits is unavailable. Cancellation does not undo completed external effects.
