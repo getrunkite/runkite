@@ -6,11 +6,26 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/transport"
 )
+
+// Keep application command arguments lossless without changing typed command
+// IDs or method parsing. Shared by the HTTP and WebSocket command doors.
+type streamingCommandRequest struct {
+	*models.StreamingCommand
+	Params json.RawMessage `json:"params"`
+}
+
+func (wire *streamingCommandRequest) decodeParams() error {
+	if len(wire.Params) == 0 {
+		return nil
+	}
+	return jsonvalue.Unmarshal(wire.Params, &wire.StreamingCommand.Params)
+}
 
 // POST /threads/{threadID}/stream -- Open SSE event stream
 func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +158,12 @@ func (s *Server) handleThreadCommand(w http.ResponseWriter, r *http.Request) {
 	threadID := r.PathValue("threadID")
 
 	var cmd models.StreamingCommand
-	if err := readJSON(r, &cmd); err != nil {
+	wire := streamingCommandRequest{StreamingCommand: &cmd}
+	if err := readJSON(r, &wire); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid command")
+		return
+	}
+	if err := wire.decodeParams(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid command")
 		return
 	}

@@ -8,6 +8,7 @@ import (
 
 	"time"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
@@ -203,7 +204,7 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 				var values struct {
 					Usage map[string]interface{} `json:"usage"`
 				}
-				if err := json.Unmarshal(event.Data, &values); err == nil && values.Usage != nil {
+				if err := jsonvalue.Unmarshal(event.Data, &values); err == nil && values.Usage != nil {
 					completion.CancelUsage = values.Usage
 					break
 				}
@@ -225,7 +226,7 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 			if event.Method != "values" || event.Generation != completion.Generation {
 				continue
 			}
-			if err := json.Unmarshal(event.Data, &completion.Values); err != nil {
+			if err := jsonvalue.Unmarshal(event.Data, &completion.Values); err != nil {
 				return false, fmt.Errorf("decode final output: %w", err)
 			}
 			break
@@ -263,7 +264,7 @@ func (s *Server) finalizeCommittedRun(ctx context.Context, run *models.Run, appl
 	s.maybeCancelInflightAfterTerminal(ctx, run)
 	if run.Status == models.RunStatusSuccess && len(run.Output) > 0 {
 		var values map[string]interface{}
-		if err := json.Unmarshal(run.Output, &values); err != nil {
+		if err := jsonvalue.Unmarshal(run.Output, &values); err != nil {
 			return err
 		}
 		if err := s.maybeCacheRunResult(ctx, run, values); err != nil {

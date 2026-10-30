@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 )
 
@@ -27,9 +29,19 @@ func parseNamespaceParam(s string) []string {
 // PUT /store/items
 func (s *Server) handlePutItem(w http.ResponseWriter, r *http.Request) {
 	var req models.StorePutRequest
-	if err := readJSON(r, &req); err != nil {
+	wire := struct {
+		*models.StorePutRequest
+		Value json.RawMessage `json:"value"`
+	}{StorePutRequest: &req}
+	if err := readJSON(r, &wire); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if len(wire.Value) > 0 {
+		if err := jsonvalue.Unmarshal(wire.Value, &req.Value); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid store value")
+			return
+		}
 	}
 
 	if req.Key == "" {
@@ -103,9 +115,19 @@ func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 // POST /store/items/search
 func (s *Server) handleSearchItems(w http.ResponseWriter, r *http.Request) {
 	var req models.StoreSearchRequest
-	if err := readJSON(r, &req); err != nil {
+	wire := struct {
+		*models.StoreSearchRequest
+		Filter json.RawMessage `json:"filter"`
+	}{StoreSearchRequest: &req}
+	if err := readJSON(r, &wire); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if len(wire.Filter) > 0 {
+		if err := jsonvalue.Unmarshal(wire.Filter, &req.Filter); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid store filter")
+			return
+		}
 	}
 	req.Limit = clampSearchLimit(req.Limit, 10)
 

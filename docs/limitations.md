@@ -130,6 +130,23 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 Honest gaps, not hidden ones:
 
+- **Application JSON number preservation (unreleased)** covers run results,
+  thread values/history, checkpoint values/tasks/interrupts, store values and
+  cached output.
+  These paths keep JSON numbers without converting them through a Go float.
+  Numeric value is preserved; database formatting can normalize decimal or
+  exponent spelling. PostgreSQL's native numeric range still applies.
+  MySQL validates its actual JSON conversion and rejects application writes that
+  would change a number. Mongo uses exact native int64 or Decimal128 and rejects
+  unsupported precision/range; existing BSON doubles retain only their existing
+  represented value. A rejected completion withholds acknowledgement and remains
+  recoverable, so operators must correct an unsupported producer or use a backend
+  that can represent its values. No schema migration or automatic repair of
+  already-rounded rows is provided. Control metadata and server/policy
+  configuration decoding are unchanged.
+  Browser JSON parsing, including Admin display, still has JavaScript's numeric
+  limits; the shared chat bridge keeps its unsafe-integer rejection. Use a
+  lossless API client or strings for exact large identifiers in browser apps.
 - **Crash reclaim has a generation ceiling (`reclaim.max_retries`, default 3).** At the ceiling, the reaper stops re-enqueuing and retains the current assignment and generation until durable completion and finalization succeed, then acknowledges that exact generation. It first recovers an eligible delivered terminal event; otherwise it attempts an `error` completion. Database, broker, or finalization failures leave the assignment available for the next reaper tick. A same-attempt late report and the fallback error compete through the existing terminal transaction: the first durable terminal wins, so a terminal arriving after the recovery check has no guaranteed precedence. NATS sends `+WPI` while completion is retried; native redelivery still passes the normal attempt fence and recovery before dispatch. Backend support tiers and Kafka's documented coordination limits remain unchanged. Set `"reclaim": {"max_retries": 0}` or `RUNKITE_RECLAIM_MAX_RETRIES=0` for unlimited reclaim. Applies on Redis, NATS, Kafka, and in-process transports.
 - **Crash reclaim staleness (`reclaim.max_age`, default 6s) is tunable but coupled to runner heartbeat cadence (~2s).** An in-flight job with no successful Heartbeat/Renew within `max_age` is reclaimed. Lower values risk false reclaims (duplicate LLM spend); higher values slow recovery after a real crash. Override via `"reclaim": {"max_age": "6s"}` or `RUNKITE_RECLAIM_MAX_AGE`.
 - **Rate limits are per-process unless `backend` is redis (or auto-selected via `REDIS_URL`).** With the memory backend, N replicas each enforce their own copy of the configured ceiling (up to N× the intended limit under load balancing). Set `"backend": "redis"` (or omit `backend` while running with `REDIS_URL`) for a shared cluster-wide ceiling -- see the `rate_limit` section above.

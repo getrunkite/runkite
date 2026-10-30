@@ -63,8 +63,12 @@ func (s *Server) handleThreadWebSocket(w http.ResponseWriter, r *http.Request) {
 	req := r.WithContext(ctx)
 	for {
 		var cmd models.StreamingCommand
-		if err := wsjson.Read(ctx, c, &cmd); err != nil {
+		wire := streamingCommandRequest{StreamingCommand: &cmd}
+		if err := wsjson.Read(ctx, c, &wire); err != nil {
 			return // client disconnected, or ctx cancelled
+		}
+		if err := wire.decodeParams(); err != nil {
+			return
 		}
 		s.dispatchWSCommand(ctx, req, c, threadID, &cmd, &wg)
 	}

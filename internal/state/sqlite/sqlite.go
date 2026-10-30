@@ -13,6 +13,7 @@ import (
 
 	_ "modernc.org/sqlite" // Pure-Go SQLite driver (no CGo)
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
@@ -1227,7 +1228,9 @@ func (s *SQLiteStore) GetThread(ctx context.Context, threadID string) (*models.T
 		return nil, err
 	}
 	json.Unmarshal([]byte(metaStr), &t.Metadata)
-	json.Unmarshal([]byte(valsStr), &t.Values)
+	if err := jsonvalue.Unmarshal([]byte(valsStr), &t.Values); err != nil {
+		return nil, fmt.Errorf("decode thread values: %w", err)
+	}
 	t.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 	return &t, nil
@@ -1380,7 +1383,9 @@ func (s *SQLiteStore) SearchThreads(ctx context.Context, req *models.ThreadSearc
 			return nil, err
 		}
 		json.Unmarshal([]byte(metaStr), &t.Metadata)
-		json.Unmarshal([]byte(valsStr), &t.Values)
+		if err := jsonvalue.Unmarshal([]byte(valsStr), &t.Values); err != nil {
+			return nil, fmt.Errorf("decode thread values: %w", err)
+		}
 		t.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 		t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 		threads = append(threads, &t)
@@ -1567,7 +1572,9 @@ func scanCheckpointRow(row *sql.Row) (*models.ThreadState, error) {
 		}
 		return nil, err
 	}
-	fillCheckpoint(&ts, cpID, tID, cpNS, parentID, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr)
+	if err := fillCheckpoint(&ts, cpID, tID, cpNS, parentID, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr); err != nil {
+		return nil, err
+	}
 	return &ts, nil
 }
 
@@ -1580,21 +1587,29 @@ func scanCheckpointRows(rows *sql.Rows) (*models.ThreadState, error) {
 	if err := rows.Scan(&cpID, &tID, &cpNS, &parentID, &valsStr, &metaStr, &nextStr, &tasksStr, &intStr, &createdStr); err != nil {
 		return nil, err
 	}
-	fillCheckpoint(&ts, cpID, tID, cpNS, parentID, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr)
+	if err := fillCheckpoint(&ts, cpID, tID, cpNS, parentID, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr); err != nil {
+		return nil, err
+	}
 	return &ts, nil
 }
 
-func fillCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID sql.NullString, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr string) {
+func fillCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID sql.NullString, valsStr, metaStr, nextStr, tasksStr, intStr, createdStr string) error {
 	ts.Checkpoint = models.ThreadCheckpoint{
 		CheckpointID: cpID,
 		ThreadID:     tID,
 		CheckpointNS: cpNS,
 	}
-	json.Unmarshal([]byte(valsStr), &ts.Values)
+	if err := jsonvalue.Unmarshal([]byte(valsStr), &ts.Values); err != nil {
+		return fmt.Errorf("decode checkpoint values: %w", err)
+	}
 	json.Unmarshal([]byte(metaStr), &ts.Metadata)
 	json.Unmarshal([]byte(nextStr), &ts.Next)
-	json.Unmarshal([]byte(tasksStr), &ts.Tasks)
-	json.Unmarshal([]byte(intStr), &ts.Interrupts)
+	if err := jsonvalue.Unmarshal([]byte(tasksStr), &ts.Tasks); err != nil {
+		return fmt.Errorf("decode checkpoint tasks: %w", err)
+	}
+	if err := jsonvalue.Unmarshal([]byte(intStr), &ts.Interrupts); err != nil {
+		return fmt.Errorf("decode checkpoint interrupts: %w", err)
+	}
 	ts.CreatedAt = &createdStr
 	if parentID.Valid {
 		ts.ParentCheckpoint = &models.ThreadCheckpoint{
@@ -1603,6 +1618,7 @@ func fillCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID sql
 			CheckpointNS: cpNS,
 		}
 	}
+	return nil
 }
 
 func nilOrNow(t *string) string {
@@ -2379,7 +2395,9 @@ func (s *SQLiteStore) GetItem(ctx context.Context, namespace []string, key strin
 		return nil, err
 	}
 	item.Namespace = stringToNs(nsStr)
-	json.Unmarshal([]byte(valStr), &item.Value)
+	if err := jsonvalue.Unmarshal([]byte(valStr), &item.Value); err != nil {
+		return nil, fmt.Errorf("decode store item value: %w", err)
+	}
 	item.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	item.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 
@@ -2433,13 +2451,20 @@ func (s *SQLiteStore) SearchItems(ctx context.Context, req *models.StoreSearchRe
 		args = append(args, nsPrefixPattern(req.NamespacePrefix))
 	}
 	for k, v := range req.Filter {
-		where = append(where, "json_extract(value, ?) = ?")
-		args = append(args, "$."+k)
 		if sv, ok := v.(string); ok {
-			args = append(args, sv)
+			where = append(where, "json_extract(value, ?) = ?")
+			args = append(args, "$."+k, sv)
 		} else {
-			valJSON, _ := json.Marshal(v)
-			args = append(args, string(valJSON))
+			valJSON, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("encode store filter: %w", err)
+			}
+			if len(valJSON) > 0 && (valJSON[0] == '-' || valJSON[0] >= '0' && valJSON[0] <= '9') {
+				where = append(where, "runkite_json_number_equal(value -> ?, ?) = 1")
+			} else {
+				where = append(where, "json_extract(value, ?) = ?")
+			}
+			args = append(args, "$."+k, string(valJSON))
 		}
 	}
 	query += " WHERE " + strings.Join(where, " AND ")
@@ -2471,7 +2496,9 @@ func (s *SQLiteStore) SearchItems(ctx context.Context, req *models.StoreSearchRe
 			return nil, err
 		}
 		item.Namespace = stringToNs(nsStr)
-		json.Unmarshal([]byte(valStr), &item.Value)
+		if err := jsonvalue.Unmarshal([]byte(valStr), &item.Value); err != nil {
+			return nil, fmt.Errorf("decode store item value: %w", err)
+		}
 		item.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 		item.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 		items = append(items, &item)
@@ -2617,7 +2644,9 @@ func (s *SQLiteStore) GetCachedRunResult(ctx context.Context, cacheKey string) (
 		}
 		return nil, err
 	}
-	json.Unmarshal([]byte(outputStr), &r.Output)
+	if err := jsonvalue.Unmarshal([]byte(outputStr), &r.Output); err != nil {
+		return nil, fmt.Errorf("decode cached run output: %w", err)
+	}
 	r.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
 	r.ExpiresAt, _ = time.Parse(time.RFC3339, expiresAtStr)
 	return &r, nil

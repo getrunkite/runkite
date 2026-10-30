@@ -18,6 +18,11 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	if !caps.Enabled() {
 		return s.CreateRun(ctx, run)
 	}
+	for _, raw := range []json.RawMessage{run.Input, run.Config} {
+		if err := s.validateApplicationJSON(ctx, raw); err != nil {
+			return err
+		}
+	}
 
 	conn, err := s.db.Conn(ctx)
 	if err != nil {

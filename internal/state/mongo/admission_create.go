@@ -20,6 +20,14 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	if !caps.Enabled() {
 		return s.CreateRun(ctx, run)
 	}
+	input, err := applicationJSONToBSON(run.Input)
+	if err != nil {
+		return err
+	}
+	config, err := applicationJSONToBSON(run.Config)
+	if err != nil {
+		return err
+	}
 
 	tid := tenant.FromContext(ctx)
 	return s.withTransaction(ctx, func(sessCtx context.Context) error {
@@ -67,7 +75,7 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 
 		doc := runDoc{
 			TenantID: tid, RunID: run.RunID, ThreadID: run.ThreadID, AgentID: run.AgentID,
-			Status: string(run.Status), Metadata: run.Metadata, Input: jsonToBSON(run.Input), Config: jsonToBSON(run.Config),
+			Status: string(run.Status), Metadata: run.Metadata, Input: input, Config: config,
 			CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt, Depth: run.Depth,
 		}
 		if run.ParentRunID != nil {

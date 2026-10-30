@@ -59,11 +59,16 @@ class TypedAnswer(BaseModel):
     tenant: str
 
 
+class WideAnswer(TypedAnswer):
+    nested: dict[str, list[int]]
+
+
 def build_agent(context: PydanticAIRunContext, *, mode: str = "normal") -> PydanticAIAgentDefinition:
     record(context, "factory", mode=mode)
     step = 0
-    output_only = mode == "typed_output_only"
-    typed = mode in {"typed", "typed_output_only"}
+    wide = mode == "wide_integer"
+    output_only = mode in {"typed_output_only", "wide_integer"}
+    typed = mode in {"typed", "typed_output_only", "wide_integer"}
 
     class ProviderStream(httpx2.AsyncByteStream):
         def __init__(self, current_step: int, body: dict[str, Any]):
@@ -116,10 +121,12 @@ def build_agent(context: PydanticAIRunContext, *, mode: str = "normal") -> Pydan
                 name = next(item for item in names if item != "record_effect")
                 valid = current == (1 if output_only else 2)
                 arguments = {
-                    "count": 7 if valid else "not-an-integer",
+                    "count": (9007199254740993 if wide else 7) if valid else "not-an-integer",
                     "note": "validated",
                     "tenant": context.tenant_id,
                 }
+                if wide:
+                    arguments["nested"] = {"ids": [18446744073709551615, -9223372036854775808]}
                 identity = f"typed-{'valid' if valid else 'invalid'}-{context.run_id}"
             else:
                 name = None
@@ -179,7 +186,9 @@ def build_agent(context: PydanticAIRunContext, *, mode: str = "normal") -> Pydan
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(respond), trust_env=False),
     )
     model = OpenAIChatModel(MODEL, provider=OpenAIProvider(openai_client=client))
-    agent = Agent(model, deps_type=FixtureDeps, output_type=TypedAnswer if typed else str, retries=2)
+    agent = Agent(
+        model, deps_type=FixtureDeps, output_type=WideAnswer if wide else TypedAnswer if typed else str, retries=2
+    )
     if not output_only:
 
         @agent.tool
@@ -211,6 +220,10 @@ def typed_agent(context: PydanticAIRunContext) -> PydanticAIAgentDefinition:
 
 def typed_output_only(context: PydanticAIRunContext) -> PydanticAIAgentDefinition:
     return build_agent(context, mode="typed_output_only")
+
+
+def wide_integer(context: PydanticAIRunContext) -> PydanticAIAgentDefinition:
+    return build_agent(context, mode="wide_integer")
 
 
 def blocked_agent(context: PydanticAIRunContext) -> PydanticAIAgentDefinition:

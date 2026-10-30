@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"reflect"
 	"strings"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/hooks"
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
@@ -106,7 +106,7 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.
 // than re-resolving. A non-alias agent_id still compares directly against
 // run.AgentID as before.
 //
-// Input is compared by decoded JSON structure (unmarshal + reflect.DeepEqual),
+// Input is compared by decoded JSON structure with exact numeric equality,
 // not raw bytes -- byte-for-byte comparison would false-positive on a
 // harmless whitespace/key-order difference between two JSON encoders (e.g.
 // a client re-serializing the same logical payload before retrying).
@@ -141,13 +141,13 @@ func (s *Server) fingerprintMismatch(run *models.Run, req *models.RunCreate, eff
 // not equal.
 func jsonDeepEqual(a, b json.RawMessage) bool {
 	var av, bv interface{}
-	if json.Unmarshal(a, &av) != nil {
+	if jsonvalue.Unmarshal(a, &av) != nil {
 		return false
 	}
-	if json.Unmarshal(b, &bv) != nil {
+	if jsonvalue.Unmarshal(b, &bv) != nil {
 		return false
 	}
-	return reflect.DeepEqual(av, bv)
+	return jsonvalue.Equal(av, bv)
 }
 
 // errRunRetryRace signals that a concurrent request already claimed the
@@ -344,7 +344,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		data := map[string]interface{}{}
 		if len(req.Input) > 0 {
 			var input any
-			if json.Unmarshal(req.Input, &input) == nil {
+			if jsonvalue.Unmarshal(req.Input, &input) == nil {
 				data["input"] = input
 			}
 		}
@@ -832,7 +832,9 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantI
 				continue
 			}
 			var data map[string]interface{}
-			json.Unmarshal(event.Data, &data)
+			if err := jsonvalue.Unmarshal(event.Data, &data); err != nil {
+				continue
+			}
 			s.hooks.Dispatch(hooks.Event{
 				Type: hooks.ToolCall, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
 				Data: data, Timestamp: time.Now().UTC(),
@@ -1592,7 +1594,9 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	if assignment == nil {
 		resp := models.RunWaitResponse{Run: run}
 		var vals map[string]interface{}
-		json.Unmarshal(run.Output, &vals)
+		if err := jsonvalue.Unmarshal(run.Output, &vals); err != nil {
+			return nil, fmt.Errorf("decode cached run output: %w", err)
+		}
 		resp.Values = vals
 		return &resp, nil
 	}
@@ -1645,7 +1649,9 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	}
 	if len(finalRun.Output) > 0 {
 		var vals map[string]interface{}
-		json.Unmarshal(finalRun.Output, &vals)
+		if err := jsonvalue.Unmarshal(finalRun.Output, &vals); err != nil {
+			return nil, fmt.Errorf("decode completed run output: %w", err)
+		}
 		resp.Values = vals
 	}
 	return &resp, nil
@@ -1662,7 +1668,10 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		// Durable output survives the event broker replay retention window.
 		resp := models.RunWaitResponse{Run: run}
 		if len(run.Output) > 0 {
-			_ = json.Unmarshal(run.Output, &resp.Values)
+			if err := jsonvalue.Unmarshal(run.Output, &resp.Values); err != nil {
+				writeError(w, http.StatusInternalServerError, "invalid stored run output")
+				return
+			}
 		}
 
 		writeJSON(w, http.StatusOK, resp)
@@ -1733,7 +1742,10 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 	resp := models.RunWaitResponse{Run: finalRun}
 	if len(finalRun.Output) > 0 {
 		var vals map[string]interface{}
-		json.Unmarshal(finalRun.Output, &vals)
+		if err := jsonvalue.Unmarshal(finalRun.Output, &vals); err != nil {
+			writeError(w, http.StatusInternalServerError, "invalid stored run output")
+			return
+		}
 		resp.Values = vals
 	}
 	writeJSON(w, http.StatusOK, resp)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 )
@@ -94,9 +96,19 @@ func (s *Server) handlePatchThread(w http.ResponseWriter, r *http.Request) {
 	threadID := r.PathValue("threadID")
 
 	var patch models.ThreadPatch
-	if err := readJSON(r, &patch); err != nil {
+	wire := struct {
+		*models.ThreadPatch
+		Values json.RawMessage `json:"values"`
+	}{ThreadPatch: &patch}
+	if err := readJSON(r, &wire); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if len(wire.Values) > 0 {
+		if err := jsonvalue.Unmarshal(wire.Values, &patch.Values); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid thread values")
+			return
+		}
 	}
 
 	updated, err := s.store.UpdateThread(r.Context(), threadID, &patch)
@@ -202,13 +214,20 @@ func (s *Server) handleUpdateThreadState(w http.ResponseWriter, r *http.Request)
 	threadID := r.PathValue("threadID")
 
 	var req struct {
-		Values       map[string]interface{} `json:"values"`
-		AsNode       string                 `json:"as_node,omitempty"`
-		CheckpointID string                 `json:"checkpoint_id,omitempty"`
+		Values       json.RawMessage `json:"values"`
+		AsNode       string          `json:"as_node,omitempty"`
+		CheckpointID string          `json:"checkpoint_id,omitempty"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	var values map[string]interface{}
+	if len(req.Values) > 0 {
+		if err := jsonvalue.Unmarshal(req.Values, &values); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid thread values")
+			return
+		}
 	}
 
 	// Verify thread exists
@@ -223,7 +242,7 @@ func (s *Server) handleUpdateThreadState(w http.ResponseWriter, r *http.Request)
 	for k, v := range thread.Values {
 		merged[k] = v
 	}
-	for k, v := range req.Values {
+	for k, v := range values {
 		merged[k] = v
 	}
 
