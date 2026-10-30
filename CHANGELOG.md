@@ -5,6 +5,7 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 ## Unreleased
 
 ### Added
+- Managed Microsoft Agent Framework Python runner (`python-agent-framework`): factories, text streaming, local tools, durable `AgentSession`, cancellation/usage/tenant isolation, and CAS committed-turn recovery. Offline example under `examples/managed_agent_framework`. Decision-only governance middleware remains separate.
 - The managed AI SDK application bridge can detach browser delivery and reattach an owned run through GET without creating another run. The pinned native transport consumes a full replay with `resumeStreamIsReplay: true`. The app retains authentication, UI-message storage and its chat/turn-to-run mapping.
 - Explicit managed-run Stop helper, separate from stream disconnect. Create defaults to cancel; detach requires a saved run ID. Attach defaults to detach. The app persists the first assistant ID before display and supplies it as a reconnect precondition. Reconnection is limited to complete retained history from one attempt; missing start, replay gaps and expiration fail without fabricating a transcript or re-executing tools.
 

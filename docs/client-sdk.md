@@ -222,7 +222,7 @@ on deny, pending or policy failure. The base client remains dependency-free.
 
 This middleware ships in the unpublished Python `runkite_governance` package
 (extra `agent-framework`, pinned to `agent-framework-core==1.23.0`). It does not
-implement a managed Microsoft runner or create Admin Threads/Runs.
+create Admin Threads/Runs by itself.
 
 An async pending callback persists the action ID and exact frozen arguments.
 The app continues its own operation on a later request; the middleware never
@@ -230,6 +230,17 @@ polls or resumes the model loop. See the [Microsoft example](../examples/governa
 for JSON argument constraints, durable continuation, native streaming tests and
 `make test-governance-agent-framework`. This uses the same decision-only boundary
 as the TypeScript guard, with no managed run, run controls or spend caps.
+
+### Microsoft Agent Framework managed runner
+
+For Microsoft agents that should dispatch through Runkite and appear in Admin
+Threads/Runs, use the managed Python adapter (`python-agent-framework`) and the
+[offline managed example](../examples/managed_agent_framework/README.md). It
+uses public Agent streaming and session APIs, stores native session history in
+opaque checkpoints with CAS, and recovers committed turns without repeating
+model or tool work. Workflows, .NET and native approval/resume are out of the
+initial scope. Keep the governance middleware when the app owns execution and
+only needs tool decisions.
 
 ## Related
 

@@ -332,6 +332,20 @@ test-adapters:
 	else \
 		echo "skip: python/adapters/autogen_adapter/.venv not set up (see python/adapters/autogen_adapter/README.md)"; \
 	fi
+	@if [ -x python/adapters/agent_framework_adapter/.venv/bin/python ]; then \
+		PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python python/adapters/agent_framework_adapter/test_adapter.py; \
+	else \
+		echo "skip: python/adapters/agent_framework_adapter/.venv not set up (see python/adapters/agent_framework_adapter/README.md)"; \
+	fi
+
+.PHONY: test-agent-framework
+test-agent-framework:
+	uv venv --clear --python 3.12 python/adapters/agent_framework_adapter/.venv
+	uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python \
+		'agent-framework-core==1.23.0' grpcio protobuf httpx
+	PYTHONPATH=python:python/adapters:examples/managed_agent_framework \
+		python/adapters/agent_framework_adapter/.venv/bin/python \
+		python/adapters/agent_framework_adapter/test_adapter.py
 
 # TypeScript runner unit tests (pure logic -- namespace encoding, event
 # generation, cancel/interrupt handling -- no live control plane needed).

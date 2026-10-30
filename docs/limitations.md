@@ -40,6 +40,12 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   [the example](../examples/managed_ai_sdk/README.md). Raw SSE is advisory; the
   bridge confirms durable completion and refuses to combine attempts after a
   reclaim. Interrupted turns retain only previously committed history.
+- **Managed Microsoft Agent Framework (unreleased) is a separate Python runner
+  kind** (`python-agent-framework`). It manages real Threads/Runs with public
+  Agent streaming/session APIs, opaque CAS receipts and local tools. Workflows,
+  .NET, native approval/resume and time travel are out of the initial scope.
+  Decision-only `runkite_governance.agent_framework` middleware remains a
+  different boundary (app-owned loop, no managed run).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;

@@ -72,30 +72,69 @@ class OpaqueCheckpointClient:
 
     async def get(self, thread_id: str, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID) -> bytes | None:
         """Return this adapter's opaque blob for thread, or None if missing."""
+        data, _etag = await self.get_versioned(thread_id, checkpoint_id=checkpoint_id)
+        return data
+
+    async def get_versioned(
+        self, thread_id: str, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID
+    ) -> tuple[bytes | None, str | None]:
+        """Return (blob, strong ETag) or (None, None) when missing.
+
+        Managed adapters that commit receipts use the ETag with put_cas so a
+        reclaim cannot clobber a newer attempt's saved history.
+        """
         if not thread_id:
-            return None
+            return None, None
         if checkpoint_id == "latest":
             raise ValueError('checkpoint_id "latest" is reserved; use a concrete id')
         client = await self._http()
         resp = await client.get(self._url(thread_id, checkpoint_id), headers=self._client_headers())
         if resp.status_code == 404:
-            return None
+            return None, None
         resp.raise_for_status()
-        return resp.content
+        etag = resp.headers.get("ETag")
+        if etag is not None and not _strong_numeric_etag(etag):
+            raise RuntimeError(f"checkpoint GET returned a non-numeric ETag for {thread_id}/{checkpoint_id}")
+        return resp.content, etag
 
     async def put(self, thread_id: str, data: bytes, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID) -> None:
         """Unconditional PUT of adapter state (overwrites same checkpoint_id)."""
+        await self.put_cas(thread_id, data, etag=None, checkpoint_id=checkpoint_id, create_only=False)
+
+    async def put_cas(
+        self,
+        thread_id: str,
+        data: bytes,
+        *,
+        etag: str | None,
+        checkpoint_id: str = ADAPTER_CHECKPOINT_ID,
+        create_only: bool = False,
+    ) -> None:
+        """PUT with If-Match / If-None-Match. create_only uses If-None-Match: *."""
         if not thread_id:
             raise ValueError("thread_id required to save opaque checkpoint")
         if checkpoint_id == "latest":
             raise ValueError('checkpoint_id "latest" is reserved')
+        if create_only and etag is not None:
+            raise ValueError("create_only cannot combine with an If-Match etag")
+        if not create_only and etag is not None and not _strong_numeric_etag(etag):
+            raise ValueError("If-Match requires a strong numeric ETag")
         client = await self._http()
         headers = {
             **self._client_headers(),
             "Content-Type": "application/octet-stream",
         }
+        if create_only:
+            headers["If-None-Match"] = "*"
+        elif etag is not None:
+            headers["If-Match"] = etag
         resp = await client.put(self._url(thread_id, checkpoint_id), content=data, headers=headers)
         resp.raise_for_status()
+
+
+def _strong_numeric_etag(etag: str) -> bool:
+    value = etag.strip()
+    return len(value) >= 3 and value[0] == '"' and value[-1] == '"' and value[1:-1].isdigit()
 
 
 def adapter_supports_checkpoints(adapter: Any) -> bool:
