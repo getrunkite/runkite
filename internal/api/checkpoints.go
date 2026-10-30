@@ -127,8 +127,16 @@ func (s *Server) handlePutOpaqueCheckpoint(w http.ResponseWriter, r *http.Reques
 		ifMatch = &z
 	}
 
-	ver, err := s.store.PutOpaqueCheckpoint(r.Context(), threadID, checkpointID, body, framework, ifMatch)
+	binding := auth.RunBindingFromContext(r.Context())
+	ver, err := s.store.PutBoundOpaqueCheckpoint(r.Context(), state.RunCheckpointBinding{
+		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID,
+	}, checkpointID, body, framework, ifMatch)
 	if err != nil {
+		var fence *state.ErrRunCheckpointFence
+		if errors.As(err, &fence) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": fence.Error(), "reason_code": fence.ReasonCode})
+			return
+		}
 		if strings.Contains(err.Error(), "exceeds") {
 			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 			return
@@ -252,7 +260,15 @@ func (s *Server) handleDeleteOpaqueCheckpoint(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := s.store.DeleteOpaqueCheckpoint(r.Context(), threadID, checkpointID); err != nil {
+	binding := auth.RunBindingFromContext(r.Context())
+	if err := s.store.DeleteBoundOpaqueCheckpoint(r.Context(), state.RunCheckpointBinding{
+		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID,
+	}, checkpointID); err != nil {
+		var fence *state.ErrRunCheckpointFence
+		if errors.As(err, &fence) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": fence.Error(), "reason_code": fence.ReasonCode})
+			return
+		}
 		var nf *state.ErrNotFound
 		if errors.As(err, &nf) {
 			writeError(w, http.StatusNotFound, "checkpoint not found")

@@ -227,6 +227,10 @@ func DatabaseSQL(db *sql.DB, dialect string) Driver {
 
 type sqlTx struct{ *sql.Tx }
 
+// WrapSQLTransaction lets a store reuse the completion lock inside an existing
+// database/sql transaction without opening another connection.
+func WrapSQLTransaction(tx *sql.Tx) Tx { return sqlTx{tx} }
+
 func (t sqlTx) Exec(ctx context.Context, q string, a ...interface{}) error {
 	_, err := t.ExecContext(ctx, q, a...)
 	return err

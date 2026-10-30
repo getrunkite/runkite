@@ -52,6 +52,7 @@ import (
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/migrate"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -2444,7 +2445,7 @@ func (s *Store) downOpaqueCheckpointVersion(ctx context.Context, db migrate.DB) 
 	return err
 }
 
-func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+func (s *Store) putOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64, binding *state.RunCheckpointBinding) (int64, error) {
 	if len(data) > models.MaxOpaqueCheckpointBytes {
 		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
 	}
@@ -2459,6 +2460,12 @@ func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op if committed
+	if binding != nil {
+		driver := sqlcompletion.DatabaseSQL(s.db, "mysql")
+		if err := driver.LockRunCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
+			return 0, err
+		}
+	}
 
 	// Create-only (If-None-Match: *): INSERT, conflict if the row exists.
 	if ifMatch != nil && *ifMatch == state.OpaqueCreateOnly {

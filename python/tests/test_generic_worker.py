@@ -28,6 +28,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from runkite_runner import runner_pb2  # noqa: E402
+from runkite_runner.cancellation import record_cancel_signal  # noqa: E402
 from runkite_runner.generic_worker import (  # noqa: E402
     RunCancelled,
     _poll_loop,
@@ -433,8 +434,7 @@ async def test_cancel_isolation_under_concurrency():
 
     # Cancel iso1 only -- via pending_cancels directly, same as
     # watch_cancels would do on a real WatchCancels signal.
-    async with lock:
-        pending_cancels["iso1"].set()
+    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1")
 
     for _ in range(500):
         if len(stub.reported_status) == 2:
@@ -575,7 +575,7 @@ async def test_register_run_observes_pre_arrived_cancel():
     pre.add("early-run")
     ev = await register_run(pending, pre, lock, "early-run")
     check("pre-arrived cancel leaves Event already set", ev.is_set())
-    check("pre_cancelled entry is claimed (not left dangling)", "early-run" not in pre)
+    check("pre_cancelled entry stays latched for replacement attempts", "early-run" in pre)
 
     pending2: dict = {}
     pre2: set = set()

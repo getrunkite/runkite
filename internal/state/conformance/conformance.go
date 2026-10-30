@@ -29,6 +29,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
 	t.Run("checkpoints", func(t *testing.T) { runCheckpointTests(t, factory) })
 	t.Run("opaque_checkpoints", func(t *testing.T) { runOpaqueCheckpointTests(t, factory) })
+	t.Run("bound_checkpoints", func(t *testing.T) { runBoundCheckpointTests(t, factory) })
 	t.Run("webhook_dead_letters", func(t *testing.T) { runWebhookDeadLetterTests(t, factory) })
 	t.Run("run_cache", func(t *testing.T) { runRunCacheTests(t, factory) })
 	t.Run("cron_schedules", func(t *testing.T) { runCronScheduleTests(t, factory) })

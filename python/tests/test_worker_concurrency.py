@@ -29,6 +29,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from runkite_runner import runner_pb2  # noqa: E402
+from runkite_runner.cancellation import record_cancel_signal  # noqa: E402
 from runkite_runner.worker import _poll_loop  # noqa: E402
 
 
@@ -244,8 +245,7 @@ async def test_cancel_isolation_under_concurrency():
     # (and, since cancelled, last) chunk -- simulates the graph
     # naturally progressing to its next step after the cancel signal
     # arrived, same as a real LangGraph run would.
-    async with lock:
-        pending_cancels["iso1"].set()
+    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1")
     controller.release_events["iso1"].set()
 
     ok2 = await _wait_until(
