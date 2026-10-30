@@ -1,0 +1,5 @@
+{
+  "graphs": {
+    "managed_agent_framework": "./agent.py:create_agent"
+  }
+}

@@ -269,6 +269,10 @@ jobs:
           uv pip install --python python/adapters/autogen_adapter/.venv/bin/python autogen-agentchat grpcio protobuf httpx
           PYTHONPATH=python:python/adapters python/adapters/autogen_adapter/.venv/bin/python python/adapters/autogen_adapter/test_adapter.py
 
+          uv venv --python 3.12 python/adapters/agent_framework_adapter/.venv
+          uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' grpcio protobuf httpx
+          PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python python/adapters/agent_framework_adapter/test_adapter.py
+
       - name: TypeScript runner lint + format check
         working-directory: typescript/runkite-runner
         run: |
