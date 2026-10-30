@@ -130,10 +130,19 @@ func TestWebSocket_RunCancel(t *testing.T) {
 	}
 
 	var cancelAck models.StreamingCommandResponse
-	if err := wsjson.Read(ctx, c, &cancelAck); err != nil {
-		t.Fatalf("read cancel ack: %v", err)
+	readCtx, cancelRead := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelRead()
+	for {
+		if err := wsjson.Read(readCtx, c, &cancelAck); err != nil {
+			t.Fatalf("read cancel ack: %v", err)
+		}
+		// Run events and command replies share the connection. Durable
+		// cancellation can become visible before the command reply is written.
+		if cancelAck.Type != "event" {
+			break
+		}
 	}
-	if cancelAck.Type != "success" {
+	if cancelAck.Type != "success" || cancelAck.ID != 2 {
 		t.Fatalf("expected success cancel ack, got %+v", cancelAck)
 	}
 

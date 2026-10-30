@@ -365,11 +365,16 @@ test(
           const restored = calls.find((call) => call.runId === created.run_id);
           assert.deepEqual(restored.roles, ["user", "assistant", "tool", "assistant", "user"]);
           assert.equal(final.output.usage.total_tokens, 24);
-          const summary = await request("/admin-api/usage/summary?agent_id=e2e_agent");
-          assert.equal(summary.length, 1);
-          assert.equal(summary[0].tokens_in, 40);
-          assert.equal(summary[0].tokens_out, 8);
-          assert.equal(summary[0].run_count, 2);
+          // Run status commits before retryable usage finalization. Observe
+          // settlement instead of racing that independent durable write.
+          await waitFor("both turns' settled usage", async () => {
+            const summary = await request("/admin-api/usage/summary?agent_id=e2e_agent");
+            assert.equal(summary.length, 1);
+            assert.equal(summary[0].tokens_in, 40);
+            assert.equal(summary[0].tokens_out, 8);
+            assert.equal(summary[0].run_count, 2);
+            return true;
+          });
           const effects = await readJsonLines(effectsFile);
           assert.equal(effects.length, 2);
         },
@@ -593,10 +598,13 @@ test(
             const effects = (await readJsonLines(effectsFile)).filter((effect) => effect.runId === created.run_id);
             assert.equal(calls.length, 2, "receipt replay must not invoke either model step again");
             assert.equal(effects.length, 1, "receipt replay must not repeat the native tool");
-            assert.deepEqual(usageTotals(await request("/admin-api/usage/summary?agent_id=e2e_agent")), {
-              runs: beforeUsage.runs + 1,
-              input: beforeUsage.input + 20,
-              output: beforeUsage.output + 4,
+            await waitFor("recovered turn's settled usage", async () => {
+              assert.deepEqual(usageTotals(await request("/admin-api/usage/summary?agent_id=e2e_agent")), {
+                runs: beforeUsage.runs + 1,
+                input: beforeUsage.input + 20,
+                output: beforeUsage.output + 4,
+              });
+              return true;
             });
             const thread = await request(`/threads/${recoveryThread}`);
             assert.deepEqual(thread.values, final.output);
