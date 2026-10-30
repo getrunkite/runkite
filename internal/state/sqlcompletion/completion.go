@@ -131,12 +131,16 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		return state.CompletionResult{}, err
 	}
 	var output interface{}
+	var raw []byte
 	if c.Values != nil {
-		raw, err := json.Marshal(c.Values)
+		raw, err = json.Marshal(c.Values)
 		if err != nil {
 			return state.CompletionResult{}, err
 		}
 		output = raw
+	}
+	// Cancellation usage belongs to the run, not to conversation history.
+	if c.Values != nil && !c.CancelCurrentAttempt {
 		var oldRaw []byte
 		if err := tx.Row(ctx, d.query(`SELECT values_json FROM threads WHERE thread_id = ? AND tenant_id = ?`+d.lock()), threadID, tid).Scan(&oldRaw); err != nil {
 			return state.CompletionResult{}, err

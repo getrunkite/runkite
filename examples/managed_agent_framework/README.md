@@ -15,7 +15,7 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python \
   'agent-framework-core==1.23.0' grpcio protobuf httpx
 
-cd ../../examples/managed_agent_framework
+cd ../../../examples/managed_agent_framework
 PYTHONPATH=<repo>/python:<repo>/python/adapters \
   <repo>/python/adapters/agent_framework_adapter/.venv/bin/python -m agent_framework_adapter \
   --config langgraph.json \
@@ -24,9 +24,25 @@ PYTHONPATH=<repo>/python:<repo>/python/adapters \
 ```
 
 Create runs against graph id `managed_agent_framework` with `input.messages`
-containing the new user text. Session history and turn receipts survive runner
+containing the new user/system text messages for this turn, ending with a user
+message. Do not send the full conversation again: the runner loads its native
+session history. Non-text content and caller-supplied assistant/tool history are
+unsupported. Session history and turn receipts survive runner
 restarts via opaque checkpoints. Reclaim of the same `run_id` replays without
 another model or tool cycle.
+
+Load this example's `langgraph.json` in the control plane as well as the runner.
+Its `runner_kind` selects `python-agent-framework` for dispatch. On authenticated
+deployments, set `RUNNER_TOKEN` in the worker and the matching
+`RUNNER_TOKEN_PYTHON_AGENT_FRAMEWORK` and `RUNNER_TENANTS_PYTHON_AGENT_FRAMEWORK`
+on the plane. The worker uses the same credential for gRPC and checkpoint HTTP.
+
+Only successful turns replace durable session history. Cancelled, failed and
+unsupported native approval turns preserve the last committed history. Reported
+usage from an unfinished turn still reaches the run output. Native approval or
+resume requires a different integration; this adapter rejects it explicitly.
+Tools that finish before an uncommitted crash can run again on reclaim, so use
+downstream idempotency for external effects.
 
 ## Tests
 

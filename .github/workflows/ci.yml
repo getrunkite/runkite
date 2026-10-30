@@ -271,7 +271,16 @@ jobs:
 
           uv venv --python 3.12 python/adapters/agent_framework_adapter/.venv
           uv pip install --python python/adapters/agent_framework_adapter/.venv/bin/python 'agent-framework-core==1.23.0' grpcio protobuf httpx
-          PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python python/adapters/agent_framework_adapter/test_adapter.py
+          PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
+
+      - name: Managed Microsoft runner with real plane and wheel core (SQLite)
+        run: make test-managed-agent-framework
+
+      - name: Managed Microsoft runner with real plane and wheel core (Postgres + Redis)
+        env:
+          RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          RUNKITE_TEST_REDIS_URL: redis://localhost:6379
+        run: make test-managed-agent-framework
 
       - name: TypeScript runner lint + format check
         working-directory: typescript/runkite-runner

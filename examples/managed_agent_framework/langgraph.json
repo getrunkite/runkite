@@ -1,4 +1,5 @@
 {
+  "runner_kind": "python-agent-framework",
   "graphs": {
     "managed_agent_framework": "./agent.py:create_agent"
   }

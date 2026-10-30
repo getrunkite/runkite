@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"time"
 
@@ -162,7 +163,53 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 		return false, fmt.Errorf("invalid terminal run status %q", c.Status)
 	}
 	completion := *c
-	if !completion.CancelCurrentAttempt {
+	if completion.CancelCurrentAttempt {
+		completion.Generation = state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
+		completion.CancelUsage = nil
+		// Cancellation must remain available when the broker is unavailable.
+		// Capture only usage already delivered by this attempt. The store drops
+		// it if reclaim advances the attempt before the cancellation commits.
+		replayTimeout := 100 * time.Millisecond
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline)/4 < replayTimeout {
+			replayTimeout = time.Until(deadline) / 4
+		}
+		replayCtx, cancelReplay := context.WithTimeout(ctx, replayTimeout)
+		type replayResult struct {
+			events []*transport.RunEvent
+			err    error
+		}
+		replayed := make(chan replayResult, 1)
+		go func() {
+			events, err := s.broker.Replay(replayCtx, c.RunID, 0)
+			replayed <- replayResult{events: events, err: err}
+		}()
+		var result replayResult
+		select {
+		case result = <-replayed:
+		case <-replayCtx.Done():
+			// Some broker clients use their own socket timeout. Optional
+			// accounting must not hold the durable cancellation behind it.
+			result.err = replayCtx.Err()
+		}
+		cancelReplay()
+		if result.err != nil {
+			slog.Warn("could not capture delivered usage before cancellation", "run_id", c.RunID, "error", result.err)
+		} else {
+			for i := len(result.events) - 1; i >= 0; i-- {
+				event := result.events[i]
+				if event.Method != "values" || event.Generation != completion.Generation {
+					continue
+				}
+				var values struct {
+					Usage map[string]interface{} `json:"usage"`
+				}
+				if err := json.Unmarshal(event.Data, &values); err == nil && values.Usage != nil {
+					completion.CancelUsage = values.Usage
+					break
+				}
+			}
+		}
+	} else {
 		if checked := state.CheckCompletion(run.Metadata, run.Status, &completion); !checked.Applied {
 			if !checked.Accepted {
 				return false, nil

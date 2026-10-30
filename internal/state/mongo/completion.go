@@ -50,7 +50,7 @@ func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 			run.Metadata = map[string]interface{}{}
 		}
 		run.Metadata[state.CompletionGenerationKey] = c.Generation
-		if c.Values != nil {
+		if c.Values != nil && !c.CancelCurrentAttempt {
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			cp := &models.ThreadState{Values: c.Values, Metadata: map[string]interface{}{}, Next: []string{}, Tasks: []interface{}{}, Interrupts: []interface{}{}, CreatedAt: &now, Checkpoint: models.ThreadCheckpoint{ThreadID: run.ThreadID, CheckpointID: "completion:" + c.RunID}}
 			previous, err := s.GetLatestCheckpoint(ctx, run.ThreadID)

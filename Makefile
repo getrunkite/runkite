@@ -333,7 +333,7 @@ test-adapters:
 		echo "skip: python/adapters/autogen_adapter/.venv not set up (see python/adapters/autogen_adapter/README.md)"; \
 	fi
 	@if [ -x python/adapters/agent_framework_adapter/.venv/bin/python ]; then \
-		PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python python/adapters/agent_framework_adapter/test_adapter.py; \
+		PYTHONPATH=python:python/adapters:examples/managed_agent_framework python/adapters/agent_framework_adapter/.venv/bin/python -m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'; \
 	else \
 		echo "skip: python/adapters/agent_framework_adapter/.venv not set up (see python/adapters/agent_framework_adapter/README.md)"; \
 	fi
@@ -345,7 +345,24 @@ test-agent-framework:
 		'agent-framework-core==1.23.0' grpcio protobuf httpx
 	PYTHONPATH=python:python/adapters:examples/managed_agent_framework \
 		python/adapters/agent_framework_adapter/.venv/bin/python \
-		python/adapters/agent_framework_adapter/test_adapter.py
+		-m unittest discover -s python/adapters/agent_framework_adapter -p 'test_*.py'
+
+# A real plane and native framework worker importing its core from a built wheel.
+# Optional RUNKITE_TEST_POSTGRES_DSN + RUNKITE_TEST_REDIS_URL use dedicated services.
+AGENT_FRAMEWORK_PYTHON ?= python/adapters/agent_framework_adapter/.venv/bin/python
+.PHONY: test-managed-agent-framework
+test-managed-agent-framework:
+	@if [ ! -x "$(AGENT_FRAMEWORK_PYTHON)" ]; then $(MAKE) test-agent-framework; fi
+	@managed_test_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$managed_test_dir"' EXIT; \
+	go build -o "$$managed_test_dir/runkite" ./cmd && \
+	go build -o "$$managed_test_dir/seed" ./python/adapters/agent_framework_adapter/e2e_seed && \
+	uv build --wheel --out-dir "$$managed_test_dir/wheel" python && \
+	PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:python/adapters \
+	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" \
+	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
+	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \
+	"$(AGENT_FRAMEWORK_PYTHON)" python/adapters/agent_framework_adapter/test_e2e.py -v
 
 # TypeScript runner unit tests (pure logic -- namespace encoding, event
 # generation, cancel/interrupt handling -- no live control plane needed).
