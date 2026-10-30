@@ -96,7 +96,8 @@ Optional per-graph allowlist in `langgraph.json`:
 
 - **Key absent** for a graph: no runner-side in-graph filter (connector policy still applies on session/MCP paths).
 - **Key present** (including `[]`): Python and TypeScript LangGraph runners refuse tool names not listed when they see them in the stream — before ToolNode side effects. Events: `tool_call` → `tool_auth` (`effect: deny`, `reason_code: tool_not_allowed`) → `error` → `end` status error.
-- This is **not** sandboxing of arbitrary code, not argument-level policy, and not `AuthorizeTool` RPC. Unwrapped / custom tool paths that never surface as stream `tool_calls` are still audit-only if the runner does not emit them (`generic_worker` does not emit `tool_call` today).
+- This is **not** sandboxing of arbitrary code, not argument-level policy, and not `AuthorizeTool` RPC. Unwrapped or custom tool paths outside the supported runner invocation hooks are not filtered.
+- **Managed Microsoft (unreleased):** the same omitted/unrestricted, empty/deny-all and named-list semantics apply at the native local function middleware boundary, before a tool body runs. A configured restriction fails before model execution for custom clients without that supported boundary. A forbidden call emits `tool_auth` (`effect: deny`, `reason_code: tool_not_allowed`) and fails the run while preserving observed usage and previously committed history. This does not turn local tools into connector calls or enable native approval/resume.
 - Durable SQL `audit_events` rows for connector Decide remain separate; in-graph denials are visible on the run event stream.
 
 ## Explicit non-goals (today)

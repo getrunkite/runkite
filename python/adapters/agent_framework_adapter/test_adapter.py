@@ -29,7 +29,9 @@ from agent_framework import (  # noqa: E402
     ChatResponseUpdate,
     Content,
     FunctionInvocationLayer,
+    FunctionMiddleware,
     FunctionTool,
+    MiddlewareFailure,
     UsageDetails,
 )
 from runkite_runner.completion import CompletionDeliveryError  # noqa: E402
@@ -200,6 +202,184 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def final_usage(self, events):
         return [event["data"]["usage"] for event in events if event["method"] == "values"][-1]
+
+    def install_allowlist_tool(self, effects, *, middleware=None):
+        async def first(_messages):
+            yield ChatResponseUpdate(
+                role="assistant",
+                model="restricted-model",
+                contents=[Content.from_function_call(call_id="write-1", name="write", arguments={}), usage_content()],
+            )
+
+        async def second(_messages):
+            yield ChatResponseUpdate(
+                role="assistant", model="restricted-model", contents=[Content.from_text("written"), usage_content(2, 1)]
+            )
+
+        def write() -> str:
+            effects.append(True)
+            return "written"
+
+        client = RuntimeClient([first, second])
+        self.adapter.factories["managed_agent_framework"] = lambda _context: Agent(
+            client=client, tools=[FunctionTool(name="write", func=write)], middleware=middleware
+        )
+        return client
+
+    async def test_allowed_tools_omitted_or_named_allow_executes_once(self):
+        for index, extra in enumerate(({}, {"allowed_tools": None}, {"allowed_tools": ["write"]})):
+            with self.subTest(extra=extra):
+                effects = []
+                client = self.install_allowlist_tool(effects)
+                status, events = await self._execute(f"allowed-{index}", "write", extra=extra)
+                self.assertEqual(status, "success")
+                self.assertEqual(effects, [True])
+                self.assertEqual(client.calls, 2)
+                self.assertEqual(self.final_usage(events)["total_tokens"], 17)
+                self.assertEqual(self.final_usage(events)["model"], "restricted-model")
+                self.assert_runtime_closed(client)
+
+    async def test_allowed_tools_denial_preserves_usage_and_previous_session(self):
+        await self._execute("committed-before-denial", "prior turn")
+        saved, puts = dict(self.plane.blobs), self.plane.puts
+        for index, allowed in enumerate(([], ["read"], ["WRITE"])):
+            with self.subTest(allowed=allowed):
+                effects = []
+                client = self.install_allowlist_tool(effects)
+                status, events = await self._execute(
+                    f"denied-{index}", "write", generation=9, extra={"allowed_tools": allowed}
+                )
+                self.assertEqual(status, "error")
+                self.assertEqual(effects, [])
+                self.assertEqual(client.calls, 1, "A denial must abort the native model loop")
+                self.assertEqual(self.plane.blobs, saved)
+                self.assertEqual(self.plane.puts, puts)
+                self.assertEqual(
+                    self.final_usage(events),
+                    {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14, "model": "restricted-model"},
+                )
+                denials = [event["data"] for event in events if event["method"] == "tool_auth"]
+                self.assertEqual(len(denials), 1)
+                self.assertEqual(denials[0]["effect"], "deny")
+                self.assertEqual(denials[0]["tool"], "write")
+                self.assertEqual(denials[0]["generation"], 9)
+                self.assertEqual(denials[0]["reason_code"], "tool_not_allowed")
+                self.assertNotIn("args", denials[0])
+                self.assertIn("allowed_tools", events[-1]["data"]["message"])
+                self.assert_runtime_closed(client)
+
+    async def test_allowed_tools_snapshot_precedes_first_await(self):
+        for index, (initial, replacement, expected) in enumerate(
+            ((["write"], [], "success"), ([], ["write"], "error"))
+        ):
+            with self.subTest(initial=initial):
+                allowed = list(initial)
+                effects = []
+                client = self.install_allowlist_tool(effects)
+
+                async def mutate(event, allowed=allowed, replacement=replacement):
+                    if event["method"] == "lifecycle":
+                        allowed[:] = replacement
+
+                status, _events = await self._execute(
+                    f"snapshot-{index}", "write", extra={"allowed_tools": allowed}, send_hook=mutate
+                )
+                self.assertEqual(status, expected)
+                self.assertEqual(effects, [True] if expected == "success" else [])
+                self.assert_runtime_closed(client)
+
+    async def test_malformed_allowed_tools_fails_before_state_factory_or_model(self):
+        self.adapter.factories["managed_agent_framework"] = lambda _context: self.fail(
+            "Invalid restriction ran factory"
+        )
+        for invalid in (True, {}, "write", [1], [None]):
+            with self.subTest(invalid=invalid):
+                status, events = await self._execute("invalid-tools", "write", extra={"allowed_tools": invalid})
+                self.assertEqual(status, "error")
+                self.assertIn("allowed_tools", events[-1]["data"]["message"])
+        self.assertEqual(self.stores, [])
+
+    async def test_restricted_custom_client_without_function_hook_fails_before_open(self):
+        class BareClient(BaseChatClient[Any]):
+            async def __aenter__(self):
+                raise AssertionError("An unsupported restricted client must not open")
+
+            async def _inner_get_response(self, **_kwargs):
+                raise AssertionError("An unsupported restricted client must not call the model")
+
+        for allowed in ([], ["write"]):
+            with self.subTest(allowed=allowed):
+                self.adapter.factories["managed_agent_framework"] = lambda _context: Agent(client=BareClient())
+                status, events = await self._execute("missing-hook", "reply", extra={"allowed_tools": allowed})
+                self.assertEqual(status, "error")
+                self.assertIn("FunctionInvocationLayer", events[-1]["data"]["message"])
+        self.assertEqual(self.plane.puts, 0)
+
+    async def test_cancel_during_tool_gate_never_runs_body_or_next_model(self):
+        for index, trigger in enumerate(("values", "tool_auth")):
+            with self.subTest(trigger=trigger):
+                cancel, effects = asyncio.Event(), []
+                client = self.install_allowlist_tool(effects)
+
+                async def stop(event, trigger=trigger, cancel=cancel):
+                    if event["method"] == trigger:
+                        cancel.set()
+                        await asyncio.sleep(0)
+
+                status, events = await asyncio.wait_for(
+                    self._execute(f"gate-cancel-{index}", "write", cancel, extra={"allowed_tools": []}, send_hook=stop),
+                    2,
+                )
+                self.assertEqual(status, "interrupted")
+                self.assertEqual(effects, [])
+                self.assertEqual(client.calls, 1)
+                self.assertEqual(self.final_usage(events)["total_tokens"], 14)
+                self.assertFalse(any(event["method"] == "error" for event in events))
+                self.assertEqual(self.plane.puts, 0)
+                self.assert_runtime_closed(client)
+
+    async def test_tool_gate_delivery_failure_remains_recoverable(self):
+        class WrapFailure(FunctionMiddleware):
+            async def process(self, context, call_next):
+                try:
+                    await call_next()
+                except MiddlewareFailure as exc:
+                    raise RuntimeError("synthetic user middleware wrapper") from exc
+
+        async def fail_delivery(event):
+            if event["method"] == "tool_auth":
+                raise CompletionDeliveryError("synthetic tool authorization delivery failure")
+
+        for index, middleware in enumerate((None, [WrapFailure()])):
+            with self.subTest(wrapped=bool(middleware)):
+                effects = []
+                client = self.install_allowlist_tool(effects, middleware=middleware)
+                with self.assertRaises(CompletionDeliveryError):
+                    await self._execute(
+                        f"gate-delivery-{index}", "write", extra={"allowed_tools": []}, send_hook=fail_delivery
+                    )
+                self.assertEqual(effects, [])
+                if middleware is None:
+                    self.assertEqual(client.calls, 1)
+                self.assertEqual(self.plane.puts, 0)
+                self.assert_runtime_closed(client)
+
+    async def test_swallowed_native_denial_cannot_commit_success_receipt(self):
+        class SwallowFailure(FunctionMiddleware):
+            async def process(self, context, call_next):
+                try:
+                    await call_next()
+                except MiddlewareFailure:
+                    context.result = "blocked"
+
+        effects = []
+        client = self.install_allowlist_tool(effects, middleware=[SwallowFailure()])
+        status, events = await self._execute("swallowed-denial", "write", extra={"allowed_tools": []})
+        self.assertEqual(status, "error")
+        self.assertEqual(effects, [])
+        self.assertEqual(self.plane.puts, 0)
+        self.assertIn("allowed_tools", events[-1]["data"]["message"])
+        self.assert_runtime_closed(client)
 
     async def test_text_turn_streams_and_commits_session(self) -> None:
         status, events = await self._execute("run-a", "hello")

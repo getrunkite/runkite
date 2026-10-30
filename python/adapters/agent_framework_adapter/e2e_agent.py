@@ -65,6 +65,28 @@ def build_agent(context: AgentFrameworkRunContext, *, mode: str = "normal") -> A
             if not stream:
                 raise AssertionError("The managed adapter must use the native streaming path")
             response_id = f"response-{context.run_id}-{current_step}"
+            if (
+                current_step == 0
+                and mode == "restricted"
+                and users[-1]
+                in {
+                    "remember-before-denial",
+                    "read-after-denial",
+                }
+            ):
+
+                async def remembered_turn():
+                    yield ChatResponseUpdate(
+                        role="assistant",
+                        model="offline-managed-ms-e2e",
+                        response_id=response_id,
+                        contents=[
+                            Content.from_text(f"users={len(users)}; no tool requested"),
+                            Content.from_usage(UsageDetails(input_token_count=10, output_token_count=2)),
+                        ],
+                    )
+
+                return self._build_response_stream(remembered_turn())
             if current_step == 0:
                 usage = UsageDetails(input_token_count=10, output_token_count=4 if mode in {"slow", "error"} else 2)
 
@@ -140,3 +162,15 @@ def error_agent(context: AgentFrameworkRunContext) -> Agent:
 
 def budget_agent(context: AgentFrameworkRunContext) -> Agent:
     return build_agent(context)
+
+
+def allowed_agent(context: AgentFrameworkRunContext) -> Agent:
+    return build_agent(context)
+
+
+def blocked_agent(context: AgentFrameworkRunContext) -> Agent:
+    return build_agent(context, mode="restricted")
+
+
+def deny_all_agent(context: AgentFrameworkRunContext) -> Agent:
+    return build_agent(context, mode="restricted")

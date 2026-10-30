@@ -185,8 +185,16 @@ The session supplies previous history. Failed or interrupted turns retain the
 last committed history and report usage already observed. Workflows, .NET,
 non-text input, caller-supplied assistant/tool history, time travel and native
 approval/resume are unsupported. Native approval/resume fails explicitly.
-Local tools do not automatically acquire connector policy or HITL. External
-effects before a successful state commit require downstream idempotency.
+
+The unreleased Microsoft profile enforces the dispatched `allowed_tools` snapshot
+at the native function invocation boundary, before a local tool body runs. An
+omitted graph entry is unrestricted, `[]` denies all local tools, and a nonempty
+list permits only those names. A configured restriction fails before model
+execution if a custom client lacks the supported native invocation boundary.
+Denials emit `tool_auth` with `reason_code: tool_not_allowed`. This cooperative
+check does not sandbox agent code or add connector grants or HITL. Local tools
+need the existing connector helpers for connector policy. External effects before
+a successful state commit require downstream idempotency.
 
 Usage identifies a model only when all contributing requests have one consistent
 identity. The configured pricebook can then estimate USD for the plane's existing

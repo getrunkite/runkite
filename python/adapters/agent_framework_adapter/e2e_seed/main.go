@@ -42,9 +42,14 @@ func seed() error {
 			return fmt.Errorf("empty test tenant")
 		}
 		for graphID := range cfg.Graphs {
+			metadata := map[string]interface{}{"runner_kind": cfg.RunnerKind}
+			if tools, ok := cfg.AllowedTools[graphID]; ok {
+				metadata["allowed_tools"] = tools
+				metadata["allowed_tools_set"] = true
+			}
 			if err := store.UpsertAgent(tenant.WithContext(ctx, id), &models.Agent{
 				AgentID: graphID, Name: graphID,
-				Metadata: map[string]interface{}{"runner_kind": cfg.RunnerKind}, Capabilities: map[string]interface{}{},
+				Metadata: metadata, Capabilities: map[string]interface{}{},
 			}); err != nil {
 				return err
 			}

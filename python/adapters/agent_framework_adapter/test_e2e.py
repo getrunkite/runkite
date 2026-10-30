@@ -90,20 +90,31 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
     counters_env = "RUNKITE_MS_E2E_COUNTERS"
     metadata_key = "agent_framework"
     fixture_label = "ms"
-    extra_graph_factories: tuple[str, ...] = ("error_agent", "budget_agent")
+    extra_graph_factories: tuple[str, ...] = (
+        "error_agent",
+        "budget_agent",
+        "allowed_agent",
+        "blocked_agent",
+        "deny_all_agent",
+    )
     extra_runner_args: tuple[str, ...] = ()
     extra_worker_environment: dict[str, str] = {}
     extra_test_requirements: tuple[str, ...] = ()
 
     def additional_configuration(self) -> dict[str, Any]:
         return {
+            "allowed_tools": {
+                self.extra_graphs["allowed_agent"]: ["record_effect"],
+                self.extra_graphs["blocked_agent"]: ["a_different_tool"],
+                self.extra_graphs["deny_all_agent"]: [],
+            },
             "finops": {
                 # Fictional prices, deliberately unrelated to provider prices.
                 "pricebook": {"offline-managed-ms-e2e": {"input_per_1k": 1, "output_per_1k": 2}},
                 "budgets": {
                     "agents": {f"{self.tenant_a}/{self.extra_graphs['budget_agent']}": {"max_usd_per_day": 0.02}}
                 },
-            }
+            },
         }
 
     def setUp(self) -> None:
@@ -631,11 +642,83 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             if self.install_extra == "agent-framework":
                 scenario = "Microsoft fictional pricing and USD hard cap"
                 self.check_microsoft_pricing_and_cap()
+                scenario = "Microsoft pre-execution tool allowlist and committed history"
+                self.check_microsoft_tool_allowlist()
         except Exception:
             print(f"FAILED scenario: {scenario}", file=sys.stderr)
             for process in self.processes:
                 print(process.logs(), file=sys.stderr)
             raise
+
+    def check_microsoft_tool_allowlist(self) -> None:
+        allowed_graph = self.extra_graphs["allowed_agent"]
+        allowed_thread = self.new_thread()
+        allowed_run = self.new_run(allowed_thread, "explicitly-permitted-tool", agent=allowed_graph)["run_id"]
+        self.final_usage(self.completed(allowed_thread, allowed_run), 20, 4)
+        self.assertEqual(len(self.records(allowed_run, "factory")), 1)
+        self.assertEqual(len(self.records(allowed_run, "model")), 2)
+        self.assertEqual(len(self.records(allowed_run, "tool")), 1)
+        self.expect_usage(allowed_graph, (1, 20, 4))
+        self.expect_cost(allowed_graph, 0.028)
+
+        for name in ("blocked_agent", "deny_all_agent"):
+            graph = self.extra_graphs[name]
+            thread = self.new_thread()
+            baseline = self.new_run(thread, "remember-before-denial", agent=graph)["run_id"]
+            baseline_run = self.completed(thread, baseline)
+            self.final_usage(baseline_run, 10, 2)
+            saved_messages = baseline_run["output"]["messages"]
+            self.assertFalse(self.records(baseline, "tool"))
+
+            rejected_text = f"do-not-execute-{name}"
+            denied = self.new_run(thread, rejected_text, agent=graph)["run_id"]
+            final = self.completed(thread, denied)
+            self.assertEqual(final["status"], "error", json.dumps(final))
+            self.assertEqual(len(self.records(denied, "factory")), 1)
+            self.assertEqual(len(self.records(denied, "model")), 1)
+            self.assertFalse(self.records(denied, "tool"), f"{name} allowed a local function effect")
+            usage = final["output"]["usage"]
+            self.assertEqual((usage["prompt_tokens"], usage["completion_tokens"]), (10, 2))
+            self.assertEqual(usage["model"], "offline-managed-ms-e2e")
+            self.assertEqual(self.request(f"/threads/{thread}")["values"]["messages"], saved_messages)
+
+            replay = self.http.get(
+                f"{self.base}/threads/{thread}/runs/{denied}/stream",
+                headers={"Authorization": "Bearer e2e-a"},
+            )
+            self.assertEqual(replay.status_code, 200)
+            auth_events = []
+            method = ""
+            for line in replay.text.splitlines():
+                if line.startswith("event: "):
+                    method = line[7:]
+                elif method == "tool_auth" and line.startswith("data: "):
+                    auth_events.append(json.loads(line[6:]))
+            self.assertEqual(len(auth_events), 1, replay.text)
+            denial = auth_events[0]
+            self.assertEqual(denial["stage"], "tool.call")
+            self.assertEqual(denial["effect"], "deny")
+            self.assertEqual(denial["tool"], "record_effect")
+            self.assertEqual(denial["reason_code"], "tool_not_allowed")
+            self.assertEqual(denial["generation"], final["metadata"]["_runkite_completion_generation"])
+            self.expect_usage(graph, (2, 20, 4))
+            self.expect_cost(graph, 0.028)
+            self.request(f"/threads/{thread}/runs/{denied}/wait")
+            self.expect_usage(graph, (2, 20, 4))
+            self.expect_cost(graph, 0.028)
+
+            restored = self.new_run(thread, "read-after-denial", agent=graph)["run_id"]
+            self.final_usage(self.completed(thread, restored), 10, 2)
+            self.assertEqual(
+                self.records(restored, "model")[0]["users"], ["remember-before-denial", "read-after-denial"]
+            )
+            self.assertFalse(self.records(restored, "tool"))
+            self.expect_usage(graph, (3, 30, 6))
+            self.expect_cost(graph, 0.042)
+        print(
+            f"PASS {self.profile}: Microsoft allowlists and explicit deny-all prevent effects, preserve history and settle denial usage once",
+            flush=True,
+        )
 
     def check_microsoft_pricing_and_cap(self) -> None:
         self.expect_cost(self.agent, 0.112)  # Four successful 20/4 turns, including receipt recovery.
