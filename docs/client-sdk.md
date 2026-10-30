@@ -156,6 +156,28 @@ HITL. Native deferred approvals, output functions, multimodal input and external
 workflow engines are outside the first profile. See the
 [adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
 
+### Managed Google ADK (unreleased)
+
+Callers with an ordinary native `LlmAgent` can dispatch it through
+`python-google-adk`. The model loop stays in Python while the plane owns
+Threads/Runs, streaming, cancellation, reported usage and durable storage.
+The source-built `google-adk` extra pins `google-adk==2.13.0` and installs
+`google_adk_adapter` plus `runkite-runner-google-adk`. Published PyPI `0.5.8`
+does not include this profile; use the
+[source installation example](../examples/managed_google_adk/README.md).
+
+Send exactly one new user text message per run. The native session supplies
+previous history. A run-local public `BaseSessionService` restores that session
+from opaque CAS state; successful-turn receipts recover without repeated model
+or tool work. The adapter drains the invocation and validates completion instead
+of treating a final-response event as proof of success.
+
+Session-local state is supported. ADK's cross-session `app:` and `user:` state
+is rejected; `temp:` state lasts only for the invocation. Native confirmation,
+workflows, delegation, memory, artifacts, live audio and unfinished-turn resume
+are unsupported. Ordinary tools need existing connector helpers for connector
+policy and HITL. See the [adapter contract](../python/adapters/google_adk_adapter/README.md).
+
 ## Use today (recommended)
 
 Runkite’s public HTTP surface is [Agent Protocol](https://github.com/langchain-ai/agent-protocol) plus documented Runkite extensions. The machine-readable contract is:

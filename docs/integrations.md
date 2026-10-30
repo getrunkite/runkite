@@ -126,6 +126,26 @@ Upstream: [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai).
 The boundary is a runner using public execution, validation and conversation
 APIs. It does not embed an upstream server, UI or a second durability engine.
 
+## Google ADK uses a managed Python runner
+
+The [offline example](../examples/managed_google_adk/README.md) exports a fresh
+ordinary `LlmAgent` for `python-google-adk`. Its public `Runner.run_async` executes
+inside the Python worker. A run-local `BaseSessionService` restores native session
+state/events through Runkite's opaque CAS API and commits successful receipts.
+The plane retains dispatch, admission, cancel, spend and audit through existing
+protocols. No upstream server, session database or hosted Agent Engine is added.
+
+The source-built `google-adk` extra pins `google-adk==2.13.0` and provides
+`runkite-runner-google-adk`. This profile is unreleased and absent from published
+PyPI `0.5.8`. Start with one user text message per run and ordinary local tools.
+Connector policy requires existing connector helpers. Shared `app:`/`user:` state,
+native confirmation/resume, workflows/delegation, memory/artifacts, structured
+output and live audio are outside the first profile.
+
+Upstream: [google/adk-python](https://github.com/google/adk-python).
+Native model/tool callbacks provide the execution boundary; completed invocation
+validation, generation fencing and receipt recovery remain Runkite responsibilities.
+
 ## Phoenix receives existing OTLP traces
 
 [Phoenix](https://github.com/Arize-ai/phoenix) accepts OTLP trace exports. Run its

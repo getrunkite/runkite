@@ -27,6 +27,7 @@ ADAPTER_MODULES = {
     "agent_framework_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
     "openai_agents_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
     "pydantic_ai_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py"},
+    "google_adk_adapter": {"__init__.py", "__main__.py", "adapter.py", "state.py", "sessions.py"},
 }
 BASE_DEPENDENCIES = {
     "grpcio",
@@ -142,7 +143,8 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertEqual(self.metadata["Version"], self.project["version"])
         self.assertEqual(self.metadata["Requires-Python"], ">=3.11")
         self.assertEqual(
-            set(self.metadata.get_all("Provides-Extra")), {"agent-framework", "openai-agents", "pydantic-ai", "otel"}
+            set(self.metadata.get_all("Provides-Extra")),
+            {"agent-framework", "openai-agents", "pydantic-ai", "google-adk", "otel"},
         )
         requirements = [Requirement(value) for value in self.metadata.get_all("Requires-Dist")]
         base = {
@@ -162,13 +164,14 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertFalse(framework.marker.evaluate({"extra": "otel"}))
         self.assertFalse(framework.marker.evaluate({"extra": "openai-agents"}))
         self.assertFalse(framework.marker.evaluate({"extra": "pydantic-ai"}))
+        self.assertFalse(framework.marker.evaluate({"extra": "google-adk"}))
         [openai] = [
             requirement for requirement in requirements if canonicalize_name(requirement.name) == "openai-agents"
         ]
         self.assertEqual(str(openai.specifier), "==0.24.0")
         self.assertIsNotNone(openai.marker)
         self.assertTrue(openai.marker.evaluate({"extra": "openai-agents"}))
-        for extra in ("", "otel", "agent-framework", "pydantic-ai"):
+        for extra in ("", "otel", "agent-framework", "pydantic-ai", "google-adk"):
             self.assertFalse(openai.marker.evaluate({"extra": extra}))
         [pydantic_ai] = [
             requirement for requirement in requirements if canonicalize_name(requirement.name) == "pydantic-ai-slim"
@@ -177,8 +180,17 @@ class PackageArtifactTests(unittest.TestCase):
         self.assertEqual(pydantic_ai.extras, set(), "Provider SDKs belong to the app, not the core runner extra")
         self.assertIsNotNone(pydantic_ai.marker)
         self.assertTrue(pydantic_ai.marker.evaluate({"extra": "pydantic-ai"}))
-        for extra in ("", "otel", "agent-framework", "openai-agents"):
+        for extra in ("", "otel", "agent-framework", "openai-agents", "google-adk"):
             self.assertFalse(pydantic_ai.marker.evaluate({"extra": extra}))
+        [google_adk] = [
+            requirement for requirement in requirements if canonicalize_name(requirement.name) == "google-adk"
+        ]
+        self.assertEqual(str(google_adk.specifier), "==2.13.0")
+        self.assertEqual(google_adk.extras, set())
+        self.assertIsNotNone(google_adk.marker)
+        self.assertTrue(google_adk.marker.evaluate({"extra": "google-adk"}))
+        for extra in ("", "otel", "agent-framework", "openai-agents", "pydantic-ai"):
+            self.assertFalse(google_adk.marker.evaluate({"extra": extra}))
         [entry_points] = [
             content for name, content in self.members.items() if name.endswith(".dist-info/entry_points.txt")
         ]
@@ -191,6 +203,7 @@ class PackageArtifactTests(unittest.TestCase):
                 "runkite-runner-agent-framework": "agent_framework_adapter.__main__:main",
                 "runkite-runner-openai-agents": "openai_agents_adapter.__main__:main",
                 "runkite-runner-pydantic-ai": "pydantic_ai_adapter.__main__:main",
+                "runkite-runner-google-adk": "google_adk_adapter.__main__:main",
             },
         )
 

@@ -242,6 +242,37 @@ approval/resume, output functions, multimodal input and additional workflow
 engines are unsupported. See the
 [adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
 
+### Managed Google ADK Python runner (unreleased)
+
+`python-google-adk` runs fresh ordinary `LlmAgent` factories through the generic
+worker. It uses public ADK `Runner.run_async`, model/tool plugins and a run-local
+`BaseSessionService`. Runkite's opaque CAS API remains the durable store; there
+is no second session database or hosted Agent Engine deployment.
+
+The source-built `google-adk` extra pins `google-adk==2.13.0`, includes
+`google_adk_adapter` and provides `runkite-runner-google-adk`. Published PyPI
+`0.5.8` lacks this profile, and the stock image does not install its optional SDK.
+The default Python command remains LangGraph. See the
+[offline example](../examples/managed_google_adk/README.md).
+
+Input is exactly one new user text message. The session retains native event and
+local tool history plus session-local state across successful turns. Temporary
+state stays invocation-local. Cross-session `app:`/`user:` state is rejected.
+The app retains UI authentication and presentation history.
+
+The runner deduplicates native partial/aggregate text, observes model usage before
+tool effects and commits only a settled successful invocation. Receipts replay
+under the replacement generation without another factory/model/tool cycle.
+Errors and interruption retain the previous committed session and report usage
+already observed. External effects before commit still need idempotency.
+
+The first slice excludes workflows, delegation, native confirmation/resume,
+long-running tools, memory/artifact services, structured output and live audio.
+Local allowlisting is cooperative; connector grants and HITL require the existing
+connector helpers. Content capture on ADK-owned telemetry is disabled for managed
+invocations using public run configuration. See the
+[adapter boundaries](../python/adapters/google_adk_adapter/README.md).
+
 ### Framework Adapters
 
 Opaque-state hardening (from v0.5.8) stops execution when configured state

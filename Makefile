@@ -365,6 +365,15 @@ test-pydantic-ai:
 		python/adapters/pydantic_ai_adapter/.venv/bin/python \
 		-m unittest discover -s python/adapters/pydantic_ai_adapter -p 'test_*.py'
 
+.PHONY: test-google-adk
+test-google-adk:
+	uv venv --clear --python 3.12 python/adapters/google_adk_adapter/.venv
+	uv pip install --python python/adapters/google_adk_adapter/.venv/bin/python \
+		'google-adk==2.13.0' grpcio protobuf httpx
+	PYTHONPATH=python:python/adapters:examples/managed_google_adk \
+		python/adapters/google_adk_adapter/.venv/bin/python \
+		-m unittest discover -s python/adapters/google_adk_adapter -p 'test_*.py'
+
 # Verify source distributions can rebuild the wheel without runtime dependencies.
 .PHONY: test-python-package
 test-python-package:
@@ -421,6 +430,21 @@ test-managed-pydantic-ai:
 	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
 	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \
 	"$(PYDANTIC_AI_PYTHON)" python/adapters/pydantic_ai_adapter/test_e2e.py -v
+
+GOOGLE_ADK_PYTHON ?= python/adapters/google_adk_adapter/.venv/bin/python
+.PHONY: test-managed-google-adk
+test-managed-google-adk:
+	@if [ ! -x "$(GOOGLE_ADK_PYTHON)" ]; then $(MAKE) test-google-adk; fi
+	@managed_test_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$managed_test_dir"' EXIT; \
+	go build -o "$$managed_test_dir/runkite" ./cmd && \
+	go build -o "$$managed_test_dir/seed" ./python/adapters/google_adk_adapter/e2e_seed && \
+	uv build --wheel --out-dir "$$managed_test_dir/wheel" python && \
+	PYTHONDONTWRITEBYTECODE=1 \
+	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" \
+	RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" \
+	RUNKITE_TEST_RUNNER_WHEEL="$$managed_test_dir/wheel" \
+	"$(GOOGLE_ADK_PYTHON)" python/adapters/google_adk_adapter/test_e2e.py -v
 
 # TypeScript runner unit tests (pure logic -- namespace encoding, event
 # generation, cancel/interrupt handling -- no live control plane needed).

@@ -97,7 +97,7 @@
         </p>
         <p class="note">
           <strong>Unreleased source-built Python profiles:</strong> the checkout also
-          packages managed Microsoft Agent Framework, OpenAI Agents SDK and Pydantic AI workers
+          packages managed Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK workers
           with optional dependencies and dedicated commands. Existing published
           PyPI <code>0.5.8</code> does not contain those profiles. See the
           <a href="#managed-python">Python runner installation boundary</a> below.
@@ -321,6 +321,42 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           ordinary Agent Protocol result stream, then read the durable result.
           See the <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai">offline example</a>
           and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/pydantic_ai_adapter">adapter contract and tests</a>.
+        </p>
+        <h2 id="managed-google-adk">Managed Google ADK (unreleased)</h2>
+        <p>
+          A fresh ordinary <code>LlmAgent</code> runs as <code>python-google-adk</code>
+          through the Python worker. The public ADK runner keeps the model loop;
+          Runkite owns Threads/Runs, dispatch, cancel, received usage and durable records.
+          No hosted Agent Engine or additional session database is required.
+        </p>
+        <p>
+          Build locally with <code>pip install './python[google-adk]'</code>, then run
+          <code>runkite-runner-google-adk</code> with the same config loaded in the plane.
+          The optional extra pins <code>google-adk==2.13.0</code>. This profile is
+          absent from published PyPI <code>0.5.8</code>; the default CLI and stock
+          image keep their LangGraph defaults and the image does not install this SDK.
+        </p>
+        <p>
+          Send exactly one new user text message per run. Native events, tool results
+          and session-local state persist through opaque CAS writes and successful
+          receipts. Partial text is reconciled with the final aggregate, and a final
+          response marker alone does not prove success. Reclaim after commit replays
+          without another model/tool cycle. The app owns UI authentication and
+          presentation history and consumes ordinary Agent Protocol events.
+        </p>
+        <p>
+          Shared <code>app:</code>/<code>user:</code> state is rejected rather than
+          silently made thread-local. Temporary state lasts for the invocation.
+          Workflows, delegation, native confirmation/resume, long-running tools,
+          memory/artifacts, structured output and live audio are outside the first
+          slice. Local tools need the existing connector path for connector grants,
+          secret injection and HITL. Native confirmation blocks the local body,
+          although its model proposal can already have consumed tokens.
+        </p>
+        <p>
+          See the <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_google_adk">offline example</a>
+          and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/google_adk_adapter">adapter contract and tests</a>
+          for session scope, token accounting, telemetry privacy and installed-package checks.
         </p>
       </main>
     </div>
