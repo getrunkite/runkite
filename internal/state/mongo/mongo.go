@@ -10,17 +10,12 @@
 //     KEY/UNIQUE INDEX pairs do (e.g. agents on (tenant_id, agent_id),
 //     threads on thread_id alone -- matching Postgres's schema exactly,
 //     including which tables scope uniqueness by tenant and which don't).
-//   - JSON fields (metadata, input, config, etc.) are unmarshaled into
-//     bson.M/interface{} before storing, so they're native BSON
-//     documents (queryable, not opaque blobs) -- mirroring what JSONB
-//     does in Postgres. On the way back out, normalizeBSON recursively
-//     converts BSON's decode-time types (bson.M, bson.A, int32/int64)
-//     into encoding/json's types (map[string]interface{},
-//     []interface{}, float64) -- without it, code elsewhere in this
-//     project doing `v.(map[string]interface{})` or comparing a decoded
-//     number against a float64 literal would silently break against
-//     this one backend only (confirmed live: two conformance tests
-//     failed exactly this way before normalizeBSON existed).
+//   - JSON fields stay native, queryable BSON documents. Application values
+//     use exact int64/Decimal128 conversion and return json.Number; values
+//     outside that native range fail before writes. Control metadata keeps
+//     the older normalizeBSON behavior so its established Go scalar types
+//     remain unchanged. Existing stored doubles retain their represented
+//     value; precision lost by a previous binary cannot be recovered.
 //   - Namespace arrays (key-value store) reuse the exact same \x1F
 //     delimited string encoding Postgres/SQLite use (nsToString/
 //     stringToNs/nsPrefixPattern), so prefix search is a regex anchored
@@ -344,8 +339,8 @@ func normalizeBSON(v interface{}) interface{} {
 }
 
 // bsonToJSON reverses jsonToBSON for fields read back out as
-// json.RawMessage (Run.Input/Config/Output, CronSchedule.Input/Config,
-// WebhookDeadLetter.Payload).
+// json.RawMessage for CronSchedule.Input/Config and WebhookDeadLetter.Payload.
+// Managed runs use the separate exact application codec.
 func bsonToJSON(v interface{}) json.RawMessage {
 	if v == nil {
 		return nil
@@ -358,7 +353,7 @@ func bsonToJSON(v interface{}) json.RawMessage {
 }
 
 // bsonToMap reverses jsonToBSON for fields read back out as
-// map[string]interface{} (Metadata, Values, Capabilities, schemas).
+// map[string]interface{} for control Metadata, Capabilities and schemas.
 func bsonToMap(v interface{}) map[string]interface{} {
 	if v == nil {
 		return nil
@@ -896,10 +891,14 @@ type threadDoc struct {
 	Version   int         `bson:"version"`
 }
 
-func toThread(doc threadDoc) *models.Thread {
+func toThread(doc threadDoc) (*models.Thread, error) {
+	values, err := applicationMap(doc.Values)
+	if err != nil {
+		return nil, err
+	}
 	return &models.Thread{
 		TenantID: doc.TenantID, ThreadID: doc.ThreadID, Status: models.ThreadStatus(doc.Status),
-		Metadata: bsonToMap(doc.Metadata), Values: bsonToMap(doc.Values),
+		Metadata: bsonToMap(doc.Metadata), Values: values,
 		CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt,
 		// A document that predates the version field (and somehow
 		// missed Init's backfill -- e.g. a thread inserted between an
@@ -908,13 +907,17 @@ func toThread(doc threadDoc) *models.Thread {
 		// means 1." Normalizing it here too is cheap defense in depth
 		// on top of the backfill, not a replacement for it.
 		Version: max(doc.Version, 1),
-	}
+	}, nil
 }
 
 func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
-	_, err := s.col("threads").InsertOne(ctx, threadDoc{
+	values, err := applicationToBSON(thread.Values)
+	if err != nil {
+		return err
+	}
+	_, err = s.col("threads").InsertOne(ctx, threadDoc{
 		TenantID: tenant.FromContext(ctx), ThreadID: thread.ThreadID, Status: string(thread.Status),
-		Metadata: thread.Metadata, Values: thread.Values, CreatedAt: thread.CreatedAt, UpdatedAt: thread.UpdatedAt,
+		Metadata: thread.Metadata, Values: values, CreatedAt: thread.CreatedAt, UpdatedAt: thread.UpdatedAt,
 		Version: 1,
 	})
 	if mongo.IsDuplicateKeyError(err) {
@@ -939,7 +942,7 @@ func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread,
 	if err != nil {
 		return nil, err
 	}
-	return toThread(doc), nil
+	return toThread(doc)
 }
 
 func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models.ThreadPatch) (*models.Thread, error) {
@@ -964,6 +967,10 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 		}
 	}
 	existing.UpdatedAt = time.Now().UTC()
+	values, err := applicationToBSON(existing.Values)
+	if err != nil {
+		return nil, err
+	}
 
 	// Optimistic concurrency: the version match lives in the
 	// FILTER (Mongo's equivalent of a SQL WHERE clause), checked
@@ -985,7 +992,7 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 	var updated threadDoc
 	err = s.col("threads").FindOneAndUpdate(ctx, filter,
 		bson.M{
-			"$set": bson.M{"metadata": existing.Metadata, "values": existing.Values, "updated_at": existing.UpdatedAt},
+			"$set": bson.M{"metadata": existing.Metadata, "values": values, "updated_at": existing.UpdatedAt},
 			"$inc": bson.M{"version": 1},
 		},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
@@ -1072,7 +1079,11 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 		if err := cur.Decode(&doc); err != nil {
 			return nil, err
 		}
-		threads = append(threads, toThread(doc))
+		thread, err := toThread(doc)
+		if err != nil {
+			return nil, err
+		}
+		threads = append(threads, thread)
 	}
 	return threads, cur.Err()
 }
@@ -1170,12 +1181,24 @@ type checkpointDoc struct {
 	CreatedAt    time.Time   `bson:"created_at"`
 }
 
-func toThreadState(doc checkpointDoc) *models.ThreadState {
+func toThreadState(doc checkpointDoc) (*models.ThreadState, error) {
+	values, err := applicationMap(doc.Values)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := applicationSlice(doc.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	interrupts, err := applicationSlice(doc.Interrupts)
+	if err != nil {
+		return nil, err
+	}
 	ts := &models.ThreadState{
-		Values:     bsonToMap(doc.Values),
+		Values:     values,
 		Metadata:   bsonToMap(doc.Metadata),
-		Tasks:      bsonToSlice(doc.Tasks),
-		Interrupts: bsonToSlice(doc.Interrupts),
+		Tasks:      tasks,
+		Interrupts: interrupts,
 		Checkpoint: models.ThreadCheckpoint{CheckpointID: doc.CheckpointID, ThreadID: doc.ThreadID, CheckpointNS: doc.CheckpointNS},
 	}
 	if next := bsonToSlice(doc.NextNodes); next != nil {
@@ -1193,10 +1216,22 @@ func toThreadState(doc checkpointDoc) *models.ThreadState {
 	if doc.ParentID != nil {
 		ts.ParentCheckpoint = &models.ThreadCheckpoint{CheckpointID: *doc.ParentID, ThreadID: doc.ThreadID, CheckpointNS: doc.CheckpointNS}
 	}
-	return ts
+	return ts, nil
 }
 
 func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
+	values, err := applicationToBSON(ts.Values)
+	if err != nil {
+		return err
+	}
+	tasks, err := applicationToBSON(ts.Tasks)
+	if err != nil {
+		return err
+	}
+	interrupts, err := applicationToBSON(ts.Interrupts)
+	if err != nil {
+		return err
+	}
 	var parentID *string
 	if ts.ParentCheckpoint != nil {
 		parentID = &ts.ParentCheckpoint.CheckpointID
@@ -1211,10 +1246,10 @@ func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.
 	for i, n := range ts.Next {
 		next[i] = n
 	}
-	_, err := s.col("thread_checkpoints").InsertOne(ctx, checkpointDoc{
+	_, err = s.col("thread_checkpoints").InsertOne(ctx, checkpointDoc{
 		TenantID: tenant.FromContext(ctx), CheckpointID: ts.Checkpoint.CheckpointID, ThreadID: threadID,
-		CheckpointNS: ts.Checkpoint.CheckpointNS, ParentID: parentID, Values: ts.Values, Metadata: ts.Metadata,
-		NextNodes: next, Tasks: ts.Tasks, Interrupts: ts.Interrupts, CreatedAt: createdAt,
+		CheckpointNS: ts.Checkpoint.CheckpointNS, ParentID: parentID, Values: values, Metadata: ts.Metadata,
+		NextNodes: next, Tasks: tasks, Interrupts: interrupts, CreatedAt: createdAt,
 	})
 	return err
 }
@@ -1229,7 +1264,7 @@ func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*mode
 	if err != nil {
 		return nil, err
 	}
-	return toThreadState(doc), nil
+	return toThreadState(doc)
 }
 
 func (s *Store) ListCheckpoints(ctx context.Context, threadID string, limit int, before string) ([]*models.ThreadState, error) {
@@ -1256,7 +1291,11 @@ func (s *Store) ListCheckpoints(ctx context.Context, threadID string, limit int,
 		if err := cur.Decode(&doc); err != nil {
 			return nil, err
 		}
-		out = append(out, toThreadState(doc))
+		threadState, err := toThreadState(doc)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, threadState)
 	}
 	return out, cur.Err()
 }
@@ -1629,11 +1668,23 @@ type runDoc struct {
 	Depth       int    `bson:"depth"`
 }
 
-func toRun(doc runDoc) *models.Run {
+func toRun(doc runDoc) (*models.Run, error) {
+	input, err := applicationJSON(doc.Input)
+	if err != nil {
+		return nil, err
+	}
+	config, err := applicationJSON(doc.Config)
+	if err != nil {
+		return nil, err
+	}
+	output, err := applicationJSON(doc.Output)
+	if err != nil {
+		return nil, err
+	}
 	r := &models.Run{
 		TenantID: doc.TenantID, RunID: doc.RunID, ThreadID: doc.ThreadID, AgentID: doc.AgentID,
 		AssistantID: doc.AgentID, Status: models.RunStatus(doc.Status), Metadata: bsonToMap(doc.Metadata),
-		Input: bsonToJSON(doc.Input), Config: bsonToJSON(doc.Config), Output: bsonToJSON(doc.Output),
+		Input: input, Config: config, Output: output,
 		Error: doc.ErrorMsg, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt, Depth: doc.Depth,
 	}
 	if doc.ParentRunID != "" {
@@ -1642,13 +1693,21 @@ func toRun(doc runDoc) *models.Run {
 	if doc.RootRunID != "" {
 		r.RootRunID = &doc.RootRunID
 	}
-	return r
+	return r, nil
 }
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
+	input, err := applicationJSONToBSON(run.Input)
+	if err != nil {
+		return err
+	}
+	config, err := applicationJSONToBSON(run.Config)
+	if err != nil {
+		return err
+	}
 	doc := runDoc{
 		TenantID: tenant.FromContext(ctx), RunID: run.RunID, ThreadID: run.ThreadID, AgentID: run.AgentID,
-		Status: string(run.Status), Metadata: run.Metadata, Input: jsonToBSON(run.Input), Config: jsonToBSON(run.Config),
+		Status: string(run.Status), Metadata: run.Metadata, Input: input, Config: config,
 		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt, Depth: run.Depth,
 	}
 	if run.ParentRunID != nil {
@@ -1657,7 +1716,7 @@ func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
 	if run.RootRunID != nil {
 		doc.RootRunID = *run.RootRunID
 	}
-	_, err := s.col("runs").InsertOne(ctx, doc)
+	_, err = s.col("runs").InsertOne(ctx, doc)
 	if mongo.IsDuplicateKeyError(err) {
 		// run_id is the unique key; wrap into state.ErrConflict, same
 		// idiom CreateThread already uses -- otherwise a cross-tenant
@@ -1680,13 +1739,17 @@ func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	return toRun(doc), nil
+	return toRun(doc)
 }
 
 func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error {
-	_, err := s.col("runs").UpdateOne(ctx, tenantFilter(ctx, bson.M{"run_id": runID}),
+	value, err := applicationJSONToBSON(output)
+	if err != nil {
+		return err
+	}
+	_, err = s.col("runs").UpdateOne(ctx, tenantFilter(ctx, bson.M{"run_id": runID}),
 		bson.M{"$set": bson.M{
-			"status": string(status), "output": jsonToBSON(output), "error_msg": errMsg, "updated_at": time.Now().UTC(),
+			"status": string(status), "output": value, "error_msg": errMsg, "updated_at": time.Now().UTC(),
 		}})
 	return err
 }
@@ -1712,7 +1775,11 @@ func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Tim
 		if err := cur.Decode(&doc); err != nil {
 			return nil, err
 		}
-		runs = append(runs, toRun(doc))
+		run, err := toRun(doc)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
 	}
 	return runs, cur.Err()
 }
@@ -1792,7 +1859,11 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		if err := cur.Decode(&doc); err != nil {
 			return nil, err
 		}
-		runs = append(runs, toRun(doc))
+		run, err := toRun(doc)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
 	}
 	return runs, cur.Err()
 }
@@ -1957,14 +2028,18 @@ func notExpiredFilter(now time.Time) bson.M {
 }
 
 func (s *Store) PutItem(ctx context.Context, item *models.StoreItem) error {
+	value, err := applicationToBSON(item.Value)
+	if err != nil {
+		return err
+	}
 	tid := tenant.FromContext(ctx)
 	ns := nsToString(item.Namespace)
 	now := time.Now().UTC()
 	expiresAt := storeItemExpiresAt(now, item.TTLMinutes)
-	_, err := s.col("store_items").UpdateOne(ctx,
+	_, err = s.col("store_items").UpdateOne(ctx,
 		bson.M{"tenant_id": tid, "namespace": ns, "key": item.Key},
 		bson.M{
-			"$set":         bson.M{"value": item.Value, "updated_at": now, "ttl_minutes": item.TTLMinutes, "expires_at": expiresAt},
+			"$set":         bson.M{"value": value, "updated_at": now, "ttl_minutes": item.TTLMinutes, "expires_at": expiresAt},
 			"$setOnInsert": bson.M{"tenant_id": tid, "namespace": ns, "key": item.Key, "created_at": now},
 		},
 		options.UpdateOne().SetUpsert(true),
@@ -1998,7 +2073,11 @@ func (s *Store) GetItem(ctx context.Context, namespace []string, key string, ref
 			return nil, err
 		}
 	}
-	return &models.StoreItem{Namespace: stringToNs(doc.Namespace), Key: doc.Key, Value: bsonToMap(doc.Value), CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt}, nil
+	value, err := applicationMap(doc.Value)
+	if err != nil {
+		return nil, err
+	}
+	return &models.StoreItem{Namespace: stringToNs(doc.Namespace), Key: doc.Key, Value: value, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt}, nil
 }
 
 func (s *Store) DeleteItem(ctx context.Context, namespace []string, key string) error {
@@ -2026,7 +2105,11 @@ func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest)
 		filter["namespace"] = bson.M{"$regex": nsPrefixRegex(req.NamespacePrefix)}
 	}
 	for k, v := range req.Filter {
-		filter["value."+k] = metadataMatchValue(v)
+		value, err := applicationEqualityFilter(v)
+		if err != nil {
+			return nil, err
+		}
+		filter["value."+k] = value
 	}
 
 	cur, err := s.col("store_items").Find(ctx, filter,
@@ -2045,7 +2128,11 @@ func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest)
 		if err := cur.Decode(&doc); err != nil {
 			return nil, err
 		}
-		items = append(items, &models.StoreItem{Namespace: stringToNs(doc.Namespace), Key: doc.Key, Value: bsonToMap(doc.Value), CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt})
+		value, err := applicationMap(doc.Value)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, &models.StoreItem{Namespace: stringToNs(doc.Namespace), Key: doc.Key, Value: value, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt})
 		if req.RefreshTTLOrDefault() && doc.TTLMinutes != nil {
 			toRefresh = append(toRefresh, doc)
 		}
@@ -2218,15 +2305,23 @@ func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*model
 	if err != nil {
 		return nil, err
 	}
-	return &models.CachedRunResult{CacheKey: doc.CacheKey, AgentID: doc.AgentID, Output: bsonToMap(doc.Output), CreatedAt: doc.CreatedAt, ExpiresAt: doc.ExpiresAt}, nil
+	output, err := applicationMap(doc.Output)
+	if err != nil {
+		return nil, err
+	}
+	return &models.CachedRunResult{CacheKey: doc.CacheKey, AgentID: doc.AgentID, Output: output, CreatedAt: doc.CreatedAt, ExpiresAt: doc.ExpiresAt}, nil
 }
 
 func (s *Store) SaveCachedRunResult(ctx context.Context, result *models.CachedRunResult) error {
+	output, err := applicationToBSON(result.Output)
+	if err != nil {
+		return err
+	}
 	tid := tenant.FromContext(ctx)
-	_, err := s.col("run_cache").UpdateOne(ctx,
+	_, err = s.col("run_cache").UpdateOne(ctx,
 		bson.M{"tenant_id": tid, "cache_key": result.CacheKey},
 		bson.M{"$set": bson.M{
-			"agent_id": result.AgentID, "output": result.Output, "created_at": result.CreatedAt, "expires_at": result.ExpiresAt,
+			"agent_id": result.AgentID, "output": output, "created_at": result.CreatedAt, "expires_at": result.ExpiresAt,
 		}, "$setOnInsert": bson.M{"tenant_id": tid, "cache_key": result.CacheKey}},
 		options.UpdateOne().SetUpsert(true),
 	)

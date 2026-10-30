@@ -48,6 +48,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
@@ -1054,9 +1055,15 @@ func scanAgentVersion(row rowScanner) (*models.AgentVersion, error) {
 
 func (s *Store) CreateThread(ctx context.Context, thread *models.Thread) error {
 	meta, _ := json.Marshal(thread.Metadata)
-	vals, _ := json.Marshal(thread.Values)
+	vals, err := json.Marshal(thread.Values)
+	if err != nil {
+		return err
+	}
+	if err := s.validateApplicationJSON(ctx, vals); err != nil {
+		return err
+	}
 
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO threads (tenant_id, thread_id, status, metadata, values_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), thread.ThreadID, thread.Status, meta, vals, thread.CreatedAt, thread.UpdatedAt)
@@ -1116,7 +1123,13 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 
 	existing.UpdatedAt = time.Now().UTC()
 	meta, _ := json.Marshal(existing.Metadata)
-	vals, _ := json.Marshal(existing.Values)
+	vals, err := json.Marshal(existing.Values)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateApplicationJSON(ctx, vals); err != nil {
+		return nil, err
+	}
 
 	// See postgres.go's identical UpdateThread for why version = version + 1
 	// (not existing.Version+1 as a bound value) and why the IfMatchVersion
@@ -1360,7 +1373,11 @@ func scanThread(row rowScanner) (*models.Thread, error) {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &t.Metadata)
-	json.Unmarshal(valsBytes, &t.Values)
+	if len(valsBytes) > 0 {
+		if err := jsonvalue.Unmarshal(valsBytes, &t.Values); err != nil {
+			return nil, fmt.Errorf("decode thread values: %w", err)
+		}
+	}
 	return &t, nil
 }
 
@@ -1405,6 +1422,11 @@ func nullStringToPtr(s sql.NullString) *string {
 // --------------------------------------------------------------------------
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
+	for _, raw := range []json.RawMessage{run.Input, run.Config} {
+		if err := s.validateApplicationJSON(ctx, raw); err != nil {
+			return err
+		}
+	}
 	meta, _ := json.Marshal(run.Metadata)
 	// error_msg is written explicitly as '' rather than left to a
 	// schema-level DEFAULT: unlike Postgres, plain MySQL TEXT columns
@@ -1454,6 +1476,9 @@ func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
 }
 
 func (s *Store) UpdateRunStatus(ctx context.Context, runID string, status models.RunStatus, output []byte, errMsg string) error {
+	if err := s.validateApplicationJSON(ctx, output); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	query := `UPDATE runs SET status = ?, output = ?, error_msg = ?, updated_at = ? WHERE run_id = ?`
 	args := []interface{}{string(status), nullableJSON(output), errMsg, now, runID}
@@ -1713,11 +1738,25 @@ func scanRun(row rowScanner) (*models.Run, error) {
 // --------------------------------------------------------------------------
 
 func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
-	vals, _ := json.Marshal(ts.Values)
+	vals, err := json.Marshal(ts.Values)
+	if err != nil {
+		return err
+	}
 	meta, _ := json.Marshal(ts.Metadata)
 	next, _ := json.Marshal(ts.Next)
-	tasks, _ := json.Marshal(ts.Tasks)
-	interrupts, _ := json.Marshal(ts.Interrupts)
+	tasks, err := json.Marshal(ts.Tasks)
+	if err != nil {
+		return err
+	}
+	interrupts, err := json.Marshal(ts.Interrupts)
+	if err != nil {
+		return err
+	}
+	for _, raw := range [][]byte{vals, tasks, interrupts} {
+		if err := s.validateApplicationJSON(ctx, raw); err != nil {
+			return err
+		}
+	}
 
 	var parentID *string
 	if ts.ParentCheckpoint != nil {
@@ -1731,7 +1770,7 @@ func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
@@ -1815,7 +1854,9 @@ func scanCheckpoint(row rowScanner) (*models.ThreadState, error) {
 	}
 	ts.Checkpoint = models.ThreadCheckpoint{CheckpointID: cpID, ThreadID: tID, CheckpointNS: cpNS}
 	if valsBytes != nil {
-		json.Unmarshal(valsBytes, &ts.Values)
+		if err := jsonvalue.Unmarshal(valsBytes, &ts.Values); err != nil {
+			return nil, fmt.Errorf("decode checkpoint values: %w", err)
+		}
 	}
 	if metaBytes != nil {
 		json.Unmarshal(metaBytes, &ts.Metadata)
@@ -1824,10 +1865,14 @@ func scanCheckpoint(row rowScanner) (*models.ThreadState, error) {
 		json.Unmarshal(nextBytes, &ts.Next)
 	}
 	if tasksBytes != nil {
-		json.Unmarshal(tasksBytes, &ts.Tasks)
+		if err := jsonvalue.Unmarshal(tasksBytes, &ts.Tasks); err != nil {
+			return nil, fmt.Errorf("decode checkpoint tasks: %w", err)
+		}
 	}
 	if intBytes != nil {
-		json.Unmarshal(intBytes, &ts.Interrupts)
+		if err := jsonvalue.Unmarshal(intBytes, &ts.Interrupts); err != nil {
+			return nil, fmt.Errorf("decode checkpoint interrupts: %w", err)
+		}
 	}
 	cat := createdAt.Format(time.RFC3339)
 	ts.CreatedAt = &cat
@@ -1886,7 +1931,13 @@ func storeItemExpiresAt(now time.Time, ttlMinutes *float64) *time.Time {
 }
 
 func (s *Store) PutItem(ctx context.Context, item *models.StoreItem) error {
-	val, _ := json.Marshal(item.Value)
+	val, err := json.Marshal(item.Value)
+	if err != nil {
+		return err
+	}
+	if err := s.validateApplicationJSON(ctx, val); err != nil {
+		return err
+	}
 	ns := nsToString(item.Namespace)
 	now := time.Now().UTC()
 	expiresAt := storeItemExpiresAt(now, item.TTLMinutes)
@@ -1897,7 +1948,7 @@ func (s *Store) PutItem(ctx context.Context, item *models.StoreItem) error {
 	// UPDATE ... = VALUES(...) always overwrites both columns
 	// unconditionally, so a nil *float64/*time.Time here becomes a
 	// real SQL NULL on update, not a no-op.
-	_, err := s.db.ExecContext(ctx, "INSERT INTO store_items (tenant_id, namespace, `key`, value, created_at, updated_at, ttl_minutes, expires_at)"+
+	_, err = s.db.ExecContext(ctx, "INSERT INTO store_items (tenant_id, namespace, `key`, value, created_at, updated_at, ttl_minutes, expires_at)"+
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"+
 		" ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at), ttl_minutes = VALUES(ttl_minutes), expires_at = VALUES(expires_at)",
 		tenant.FromContext(ctx), ns, item.Key, val, now, now, item.TTLMinutes, expiresAt)
@@ -1927,7 +1978,9 @@ func (s *Store) GetItem(ctx context.Context, namespace []string, key string, ref
 		return nil, err
 	}
 	item.Namespace = stringToNs(nsStr)
-	json.Unmarshal(valBytes, &item.Value)
+	if err := jsonvalue.Unmarshal(valBytes, &item.Value); err != nil {
+		return nil, fmt.Errorf("decode store item value: %w", err)
+	}
 
 	if refreshTTL && ttlMinutes != nil {
 		// Use the row's own tenant_id, not tenant.FromContext(ctx) --
@@ -2026,7 +2079,9 @@ func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest)
 			return nil, err
 		}
 		item.Namespace = stringToNs(nsStr)
-		json.Unmarshal(valBytes, &item.Value)
+		if err := jsonvalue.Unmarshal(valBytes, &item.Value); err != nil {
+			return nil, fmt.Errorf("decode store item value: %w", err)
+		}
 		items = append(items, &item)
 		if req.RefreshTTLOrDefault() && ttlMinutes != nil {
 			toRefresh = append(toRefresh, refreshRow{tenantID, nsStr, item.Key, *ttlMinutes})
@@ -2195,13 +2250,21 @@ func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*model
 		}
 		return nil, err
 	}
-	json.Unmarshal(outputBytes, &r.Output)
+	if err := jsonvalue.Unmarshal(outputBytes, &r.Output); err != nil {
+		return nil, fmt.Errorf("decode cached output: %w", err)
+	}
 	return &r, nil
 }
 
 func (s *Store) SaveCachedRunResult(ctx context.Context, result *models.CachedRunResult) error {
-	output, _ := json.Marshal(result.Output)
-	_, err := s.db.ExecContext(ctx, `
+	output, err := json.Marshal(result.Output)
+	if err != nil {
+		return err
+	}
+	if err := s.validateApplicationJSON(ctx, output); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO run_cache (tenant_id, cache_key, agent_id, output, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE output = VALUES(output), created_at = VALUES(created_at), expires_at = VALUES(expires_at)

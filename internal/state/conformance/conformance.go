@@ -26,6 +26,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("threads", func(t *testing.T) { runThreadTests(t, factory) })
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })
 	t.Run("completion", func(t *testing.T) { runCompletionTests(t, factory) })
+	t.Run("json_numbers", func(t *testing.T) { runJSONNumberTests(t, factory, jsonNumbers) })
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
 	t.Run("checkpoints", func(t *testing.T) { runCheckpointTests(t, factory) })
 	t.Run("opaque_checkpoints", func(t *testing.T) { runOpaqueCheckpointTests(t, factory) })
@@ -1742,9 +1743,7 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 		s.PutItem(ctx, &models.StoreItem{Namespace: []string{"ns"}, Key: "k", Value: map[string]interface{}{"v": 2}})
 
 		got, _ := s.GetItem(ctx, []string{"ns"}, "k", true)
-		if got.Value["v"] != float64(2) {
-			t.Errorf("Value.v = %v, want 2", got.Value["v"])
-		}
+		assertJSONValue(t, got.Value["v"], 2)
 	})
 
 	t.Run("SS-012_delete", func(t *testing.T) {
@@ -1868,9 +1867,7 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 		if err != nil {
 			t.Fatalf("GetItem before expiry: %v", err)
 		}
-		if got.Value["v"] != float64(1) {
-			t.Errorf("Value.v = %v, want 1", got.Value["v"])
-		}
+		assertJSONValue(t, got.Value["v"], 1)
 	})
 
 	t.Run("SS-018_ttl_item_expires_and_reads_as_absent", func(t *testing.T) {
@@ -1900,9 +1897,7 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 		if err != nil {
 			t.Fatalf("item with no TTL should never expire: %v", err)
 		}
-		if got.Value["v"] != float64(1) {
-			t.Errorf("Value.v = %v, want 1", got.Value["v"])
-		}
+		assertJSONValue(t, got.Value["v"], 1)
 	})
 
 	t.Run("SS-020_ttl_refresh_on_read_extends_expiry", func(t *testing.T) {
@@ -1996,9 +1991,7 @@ func runStoreItemTests(t *testing.T, factory StoreFactory) {
 		if err != nil {
 			t.Fatalf("item whose TTL was cleared by a nil-ttl put must still be present: %v", err)
 		}
-		if got.Value["v"] != float64(2) {
-			t.Errorf("Value.v = %v, want 2", got.Value["v"])
-		}
+		assertJSONValue(t, got.Value["v"], 2)
 	})
 
 	t.Run("SS-024_prune_expired_store_items_deletes_rows", func(t *testing.T) {
@@ -2867,9 +2860,7 @@ func runRunCacheTests(t *testing.T, factory StoreFactory) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Output["v"] != float64(2) {
-			t.Errorf("expected overwritten value 2, got %v", got.Output["v"])
-		}
+		assertJSONValue(t, got.Output["v"], 2)
 	})
 }
 

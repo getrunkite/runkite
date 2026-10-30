@@ -2,6 +2,30 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
+## Application JSON numbers (unreleased)
+
+Managed output, thread values/history, store values and cached output preserve
+JSON numeric value across completion and reads. For example, an integer result
+`9007199254740993` remains that number on the wire. Equivalent decimal/exponent
+spellings may normalize in database JSON formats. Retry identity compares numbers
+exactly while keeping `1`, `1.0` and `1e0` equivalent; cache keys retain their
+existing raw input/config hashing.
+
+Go callers of application-value maps now receive `json.Number` rather than
+`float64` and must make explicit numeric conversions. Policy rules, server
+configuration and control metadata retain their existing decoding. Application
+run input/config snapshots follow the same backend numeric limits. HTTP fields
+remain ordinary JSON numbers; a JavaScript client's default `JSON.parse` can
+still round them.
+Use a lossless parser or string identifiers for browser precision requirements.
+The shared UI bridge's safe-integer guard remains in place. Previously rounded
+stored data cannot be reconstructed by this change.
+
+Database-native limits still apply. MySQL validates the server's JSON conversion
+and rejects values it would change; Mongo requires exact int64/Decimal128.
+See [backend boundaries](limitations.md) before using those compatible profiles
+for wide integers or high-precision decimal results.
+
 ## OpenAPI Specifications
 
 Machine-readable API specs live in [`spec/`](../spec/README.md):

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -24,8 +25,9 @@ type Tx interface {
 	Rollback(context.Context) error
 }
 type Driver struct {
-	Begin   func(context.Context) (Tx, error)
-	Dialect string
+	Begin          func(context.Context) (Tx, error)
+	Dialect        string
+	ValidateValues func(context.Context, Tx, []byte) error
 }
 
 func (d Driver) query(q string) string {
@@ -137,6 +139,11 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		if err != nil {
 			return state.CompletionResult{}, err
 		}
+		if d.ValidateValues != nil {
+			if err := d.ValidateValues(ctx, tx, raw); err != nil {
+				return state.CompletionResult{}, err
+			}
+		}
 		output = raw
 	}
 	// Cancellation usage belongs to the run, not to conversation history.
@@ -147,7 +154,7 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		}
 		merged := map[string]interface{}{}
 		if len(oldRaw) > 0 {
-			if err := json.Unmarshal(oldRaw, &merged); err != nil {
+			if err := jsonvalue.Unmarshal(oldRaw, &merged); err != nil {
 				return state.CompletionResult{}, err
 			}
 		}
@@ -160,6 +167,11 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		threadRaw, err := json.Marshal(merged)
 		if err != nil {
 			return state.CompletionResult{}, err
+		}
+		if d.ValidateValues != nil {
+			if err := d.ValidateValues(ctx, tx, threadRaw); err != nil {
+				return state.CompletionResult{}, err
+			}
 		}
 		if err := tx.Exec(ctx, d.query(`UPDATE threads SET values_json = ?, version = version + 1, updated_at = ? WHERE thread_id = ? AND tenant_id = ?`), threadRaw, d.now(now), threadID, tid); err != nil {
 			return state.CompletionResult{}, err

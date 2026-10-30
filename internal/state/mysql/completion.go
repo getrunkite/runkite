@@ -11,5 +11,7 @@ func (s *Store) BeginRunAttempt(ctx context.Context, id string, generation int64
 	return sqlcompletion.DatabaseSQL(s.db, "mysql").BeginRunAttempt(ctx, id, generation)
 }
 func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
-	return sqlcompletion.DatabaseSQL(s.db, "mysql").CompleteRun(ctx, c)
+	driver := sqlcompletion.DatabaseSQL(s.db, "mysql")
+	driver.ValidateValues = validateCompletionApplicationJSON
+	return driver.CompleteRun(ctx, c)
 }

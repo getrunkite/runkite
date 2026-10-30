@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/state"
@@ -1393,7 +1394,9 @@ func (s *Store) GetThread(ctx context.Context, threadID string) (*models.Thread,
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &t.Metadata)
-	json.Unmarshal(valsBytes, &t.Values)
+	if err := jsonvalue.Unmarshal(valsBytes, &t.Values); err != nil {
+		return nil, fmt.Errorf("decode thread values: %w", err)
+	}
 	return &t, nil
 }
 
@@ -1555,7 +1558,9 @@ func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchReque
 			return nil, err
 		}
 		json.Unmarshal(metaBytes, &t.Metadata)
-		json.Unmarshal(valsBytes, &t.Values)
+		if err := jsonvalue.Unmarshal(valsBytes, &t.Values); err != nil {
+			return nil, fmt.Errorf("decode thread values: %w", err)
+		}
 		threads = append(threads, &t)
 	}
 	return threads, nil
@@ -1696,7 +1701,9 @@ func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*mode
 		}
 		return nil, err
 	}
-	fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt)
+	if err := fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt); err != nil {
+		return nil, err
+	}
 	return &ts, nil
 }
 
@@ -1740,20 +1747,24 @@ func (s *Store) ListCheckpoints(ctx context.Context, threadID string, limit int,
 		if err := rows.Scan(&cpID, &tID, &cpNS, &parentID, &valsBytes, &metaBytes, &nextBytes, &tasksBytes, &intBytes, &createdAt); err != nil {
 			return nil, err
 		}
-		fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt)
+		if err := fillPgCheckpoint(&ts, cpID, tID, cpNS, parentID, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes, createdAt); err != nil {
+			return nil, err
+		}
 		states = append(states, &ts)
 	}
 	return states, nil
 }
 
-func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *string, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte, createdAt time.Time) {
+func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *string, valsBytes, metaBytes, nextBytes, tasksBytes, intBytes []byte, createdAt time.Time) error {
 	ts.Checkpoint = models.ThreadCheckpoint{
 		CheckpointID: cpID,
 		ThreadID:     tID,
 		CheckpointNS: cpNS,
 	}
 	if valsBytes != nil {
-		json.Unmarshal(valsBytes, &ts.Values)
+		if err := jsonvalue.Unmarshal(valsBytes, &ts.Values); err != nil {
+			return fmt.Errorf("decode checkpoint values: %w", err)
+		}
 	}
 	if metaBytes != nil {
 		json.Unmarshal(metaBytes, &ts.Metadata)
@@ -1762,10 +1773,14 @@ func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *
 		json.Unmarshal(nextBytes, &ts.Next)
 	}
 	if tasksBytes != nil {
-		json.Unmarshal(tasksBytes, &ts.Tasks)
+		if err := jsonvalue.Unmarshal(tasksBytes, &ts.Tasks); err != nil {
+			return fmt.Errorf("decode checkpoint tasks: %w", err)
+		}
 	}
 	if intBytes != nil {
-		json.Unmarshal(intBytes, &ts.Interrupts)
+		if err := jsonvalue.Unmarshal(intBytes, &ts.Interrupts); err != nil {
+			return fmt.Errorf("decode checkpoint interrupts: %w", err)
+		}
 	}
 	cat := createdAt.Format(time.RFC3339)
 	ts.CreatedAt = &cat
@@ -1776,6 +1791,7 @@ func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *
 			CheckpointNS: cpNS,
 		}
 	}
+	return nil
 }
 
 // --------------------------------------------------------------------------
@@ -2508,7 +2524,9 @@ func (s *Store) GetItem(ctx context.Context, namespace []string, key string, ref
 		return nil, err
 	}
 	item.Namespace = stringToNs(nsStr)
-	json.Unmarshal(valBytes, &item.Value)
+	if err := jsonvalue.Unmarshal(valBytes, &item.Value); err != nil {
+		return nil, fmt.Errorf("decode store item value: %w", err)
+	}
 
 	if refreshTTL && ttlMinutes != nil {
 		// Use the row's own tenant_id, not tenant.FromContext(ctx) --
@@ -2603,7 +2621,9 @@ func (s *Store) SearchItems(ctx context.Context, req *models.StoreSearchRequest)
 			return nil, err
 		}
 		item.Namespace = stringToNs(nsStr)
-		json.Unmarshal(valBytes, &item.Value)
+		if err := jsonvalue.Unmarshal(valBytes, &item.Value); err != nil {
+			return nil, fmt.Errorf("decode store item value: %w", err)
+		}
 		items = append(items, &item)
 		if req.RefreshTTLOrDefault() && ttlMinutes != nil {
 			toRefresh = append(toRefresh, refreshRow{tenantID, nsStr, item.Key, *ttlMinutes})
@@ -3419,7 +3439,9 @@ func (s *Store) GetCachedRunResult(ctx context.Context, cacheKey string) (*model
 		}
 		return nil, err
 	}
-	json.Unmarshal(outputBytes, &r.Output)
+	if err := jsonvalue.Unmarshal(outputBytes, &r.Output); err != nil {
+		return nil, fmt.Errorf("decode cached run output: %w", err)
+	}
 	return &r, nil
 }
 

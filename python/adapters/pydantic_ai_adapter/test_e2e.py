@@ -39,6 +39,7 @@ class ManagedPydanticAIE2E(_base.ManagedAgentFrameworkE2E):
     extra_graph_factories = (
         "typed_agent",
         "typed_output_only",
+        "wide_integer",
         "error_agent",
         "blocked_agent",
         "deny_all_agent",
@@ -70,6 +71,7 @@ class ManagedPydanticAIE2E(_base.ManagedAgentFrameworkE2E):
                 self.agent: ["record_effect"],
                 self.extra_graphs["typed_agent"]: ["record_effect"],
                 self.extra_graphs["typed_output_only"]: [],
+                self.extra_graphs["wide_integer"]: [],
                 self.extra_graphs["blocked_agent"]: ["a_different_tool"],
                 self.extra_graphs["deny_all_agent"]: [],
             },
@@ -237,6 +239,53 @@ class ManagedPydanticAIE2E(_base.ManagedAgentFrameworkE2E):
             self.expect_cost(budget_graph, 0.028)
             print(
                 f"PASS {self.profile}: accounted Pydantic USD blocks a later create at the configured hard cap",
+                flush=True,
+            )
+
+            scenario = "wide native integers survive committed receipt recovery and durable API reads"
+            wide_graph = self.extra_graphs["wide_integer"]
+            wide_thread = self.new_thread()
+            self.runner.stop()
+            proxy, committed, outcome = self.crash_after_commit_proxy(wide_thread)
+            self.start_runner(proxy)
+            wide_run = self.new_run(wide_thread, "wide-integer-first-turn", agent=wide_graph)["run_id"]
+            self.assertTrue(committed.wait(25), "wide integer state never committed before the worker crash")
+            self.assertNotIn("error", outcome)
+            expected = {
+                "count": 9007199254740993,
+                "note": "validated",
+                "tenant": self.tenant_a,
+                "nested": {"ids": [18446744073709551615, -9223372036854775808]},
+            }
+            self.assertEqual(outcome["receipt"]["completed"]["run_id"], wide_run)
+            self.assertEqual(outcome["receipt"]["completed"]["output"]["result"], expected)
+            self.assertNotEqual(self.request(f"/threads/{wide_thread}/runs/{wide_run}")["status"], "success")
+            self.start_runner()
+            wide = self.completed(wide_thread, wide_run)
+            self.final_usage(wide, 20, 4)
+            self.assertGreaterEqual(wide["metadata"]["_runkite_completion_generation"], 2)
+            for output in (
+                wide["output"],
+                self.request(f"/threads/{wide_thread}/runs/{wide_run}/wait")["values"],
+                self.request(f"/admin-api/runs/{wide_run}", key="e2e-admin")["output"],
+                self.request(f"/threads/{wide_thread}")["values"],
+                self.request(f"/threads/{wide_thread}/state")["values"],
+                self.request(f"/threads/{wide_thread}/history")[0]["values"],
+            ):
+                self.assertEqual(output["result"], expected)
+                self.assertIs(type(output["result"]["count"]), int)
+                self.assertTrue(all(type(value) is int for value in output["result"]["nested"]["ids"]))
+                self.assertTrue(all(message["role"] != "assistant" for message in output["messages"]))
+            self.assertEqual(len(self.records(wide_run, "factory")), 1)
+            self.assertEqual(len(self.records(wide_run, "model")), 2)
+            self.assertFalse(self.records(wide_run, "tool"))
+            self.expect_usage(wide_graph, (1, 20, 4))
+            self.expect_cost(wide_graph, 0.028)
+            self.request(f"/threads/{wide_thread}/runs/{wide_run}/wait")
+            self.expect_usage(wide_graph, (1, 20, 4))
+            self.expect_cost(wide_graph, 0.028)
+            print(
+                f"PASS {self.profile}: native wide integer output survives receipt recovery and API state without rebilling",
                 flush=True,
             )
         except Exception:
