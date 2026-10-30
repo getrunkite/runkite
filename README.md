@@ -122,6 +122,9 @@ The source-built [Google ADK profile](examples/managed_google_adk/README.md)
 adds `python-google-adk` through the optional `google-adk` extra and
 `runkite-runner-google-adk` command. It is also unreleased and starts with
 one text agent, ordinary local tools and session-local history.
+The unreleased [shared UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+lets those four Python profiles use the same AI SDK frontend for text and
+Pydantic final JSON, with Next/Nuxt route recipes and app-owned authentication.
 See [CHANGELOG](CHANGELOG.md),
 [client integration guidance](docs/client-sdk.md), and the
 [support guide](site/support/sdk-integration.html).

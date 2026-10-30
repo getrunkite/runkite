@@ -452,11 +452,24 @@ test-ts:
 	cd typescript/runkite-runner && npm install --silent && npx tsx --test src/*.test.ts
 	$(MAKE) test-governance-ts
 
-# Managed AI SDK runner with native SDK tests and a real local control plane.
-.PHONY: test-managed-ai-sdk
-test-managed-ai-sdk:
+# Prepare the app-side bridge once before installed Python or TypeScript runners.
+.PHONY: test-managed-chat-ui
+test-managed-chat-ui:
 	cd typescript/runkite-runner && npm ci && npm run build
 	cd examples/managed_ai_sdk && npm ci && npm run check && npm test
+
+# Native UI transport through each installed Python profile. Set the paired
+# external test URLs to repeat the same cases with Postgres and Redis.
+.PHONY: test-managed-chat-bridge
+test-managed-chat-bridge: test-managed-chat-ui
+	RUNKITE_TEST_CHAT_BRIDGE=1 $(MAKE) test-managed-agent-framework
+	RUNKITE_TEST_CHAT_BRIDGE=1 $(MAKE) test-managed-openai-agents
+	RUNKITE_TEST_CHAT_BRIDGE=1 $(MAKE) test-managed-pydantic-ai
+	RUNKITE_TEST_CHAT_BRIDGE=1 $(MAKE) test-managed-google-adk
+
+# Managed AI SDK runner with native SDK tests and a real local control plane.
+.PHONY: test-managed-ai-sdk
+test-managed-ai-sdk: test-managed-chat-ui
 	@managed_test_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$managed_test_dir"' EXIT; \
 	go build -o "$$managed_test_dir/runkite" ./cmd && \

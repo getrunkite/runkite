@@ -1,17 +1,23 @@
-# Managed AI SDK runs and an application UI bridge
+# Managed SDK runs and a shared application UI bridge
 
 This example runs Vercel AI SDK in a Runkite runner. The app starts an ordinary
 Runkite run and consumes its stream; it does not call the model in its Next/Nuxt
 request handler. Runkite owns the thread, run record, dispatch, cancellation and
 usage accounting. The SDK still owns the agent loop inside the runner.
 
+The checkout's shared bridge also accepts the four managed Python profiles:
+Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK. It
+translates their ordinary Agent Protocol text events for the same AI SDK UI
+transport. Choose the profile in trusted server configuration.
+
 `agent.ts` uses the pinned public AI SDK and an offline scripted model. It needs
 no provider credentials. `langgraph.json` retains the existing configuration
 filename and `graphs` mapping so the control plane can register it without a new
 configuration subsystem. Its runner kind is `typescript-ai-sdk`.
 
-**Unreleased bridge update:** this checkout adds detach, reattach and explicit
-Stop helpers to the app-side example. They are separate from the managed runner
+**Unreleased bridge update:** this checkout adds shared Python text/result
+profiles, detach, reattach and explicit Stop helpers to the app-side example.
+They are separate from the managed runner
 that shipped in v0.5.8, and do not change the plane's run API or SDK model loop.
 
 ## Run the agent
@@ -127,6 +133,133 @@ application. Supply your existing session lookup, durable chat mapping and
 frontend message storage. UI history in `useChat` is presentation state. The
 bridge sends only the latest text user message; prior browser history cannot
 replace the runner's durable model history.
+
+## Use the same frontend with a Python runner
+
+The unreleased `profile` option selects a checked server-side mapping:
+
+- `ai-sdk` is the default and preserves native AI SDK UI events and tool parts.
+- `agent-framework` uses the managed Microsoft Python runner.
+- `openai-agents` uses the managed OpenAI Agents SDK Python runner.
+- `pydantic-ai` uses the managed Pydantic AI Python runner.
+- `google-adk` uses the managed Google ADK Python runner.
+
+Register the chosen agent and start its existing runner using that profile's
+example. The bridge creates ordinary managed runs on the application's Runkite
+thread; it does not execute the model in your application handler. The Python
+modes support assistant text
+and Pydantic's final JSON result. Native tool panels, reasoning display,
+multimodal parts and native approval/resume are outside this bridge slice.
+
+`routes.ts` supplies Web Request/Response handlers with mandatory application
+hooks. Your app must authenticate and check ownership on create, attach and
+Stop, create the thread mapping, persist each turn/run ID before creation, and
+bind the assistant ID transactionally. The helper does not supply a user database
+or choose an operation from browser-provided Runkite identifiers.
+
+For example, create a server module in your app using your existing storage:
+
+```ts
+import { createManagedChatRoutes } from "./routes.ts";
+
+export const chatRoutes = createManagedChatRoutes({
+  baseUrl: process.env.RUNKITE_HTTP_URL!,
+  apiKey: process.env.RUNKITE_API_KEY!,
+  resolveTurn: async (request, operation) => {
+    // Application hook: authenticate, check ownership and resolve the exact turn.
+    // For create, allocate and persist its run ID before returning.
+    // Read request data only through a bounded clone so the bridge keeps its body.
+    const turn = await requireOwnedTurn(request, operation);
+    // Your hook may return an auth error, or 204 when attach has no active turn.
+    if (turn instanceof Response) return turn;
+    return {
+      threadId: turn.runkiteThreadId,
+      runId: turn.runkiteRunId,
+      agentId: "managed_pydantic_ai",
+      profile: "pydantic-ai",
+      expectedMessageId: turn.assistantMessageId,
+      onMessageStart: (messageId, signal) =>
+        saveAssistantMessageId(turn.id, turn.runkiteRunId, messageId, signal),
+    };
+  },
+});
+```
+
+`requireOwnedTurn` and `saveAssistantMessageId` are application hooks to
+implement using your existing sessions and database. The latter must bind an
+unset-or-equal ID and reject an attempt to replace it. `routes.ts` always uses
+detach and requires a persisted run ID and an assistant-ID binding callback.
+Use direct bridge helpers when you need the existing cancel-on-disconnect mode.
+The profile and agent must agree with your registered configuration; the
+browser cannot select either through its request body.
+
+### Next App Router routes
+
+In an existing Next app, export these handlers from its route files:
+
+```ts
+// app/api/chats/[chatId]/chat/route.ts
+import { chatRoutes } from "@/server/managed-chat";
+export const runtime = "nodejs";
+export const POST = chatRoutes.create;
+```
+
+```ts
+// app/api/chats/[chatId]/stream/route.ts
+import { chatRoutes } from "@/server/managed-chat";
+export const runtime = "nodejs";
+export const GET = chatRoutes.attach;
+```
+
+```ts
+// app/api/chats/[chatId]/stop/route.ts
+import { chatRoutes } from "@/server/managed-chat";
+export const runtime = "nodejs";
+export const POST = chatRoutes.stop;
+```
+
+Next's [Route Handlers](https://nextjs.org/docs/app/getting-started/route-handlers)
+accept these standard Request/Response functions. Keep the helper in server
+code and use a Node runtime; its Runkite credential never belongs in a client
+component or public environment variable.
+
+### Nuxt / Nitro routes
+
+Use the public H3 `fromWebHandler` adapter in an existing Nuxt app's Node server:
+
+```ts
+// server/api/chats/[chatId]/chat.post.ts
+import { fromWebHandler } from "h3";
+import { chatRoutes } from "~~/server/managed-chat";
+export default fromWebHandler(chatRoutes.create);
+```
+
+Use the same wrapper around `chatRoutes.attach` in `stream.get.ts` and
+`chatRoutes.stop` in `stop.post.ts`. H3 documents the adapter for both its
+[v1 handler API](https://v1.h3.dev/guide/event-handler) and
+[current handler API](https://h3.dev/guide/basics/handler).
+These are route recipes for your existing app, rather than a second Nuxt app
+or an embedded frontend in the control plane.
+
+For Pydantic structured output, render the final `data-result` message part as
+ordinary JSON. Check its part type rather than the value's truthiness: `null`,
+`false` and `0` are valid results. The bridge does not invent assistant text for
+a typed-only response. A result part becomes visible only after durable
+completion and current-turn validation.
+Result data is finite JSON with a maximum nesting depth of 64. Integral numbers
+must fit JavaScript's safe range, -9007199254740991 to 9007199254740991; larger
+integral values fail explicitly. Use strings for exact identifiers outside that
+range. This bridge does not promise arbitrary-precision numeric transport.
+
+Python mode requires the runner's retained `running` lifecycle prefix, contiguous
+event identities and a matching durable framework/generation. Reconnect uses
+the same full-replay and persisted-message-ID rules below. It attaches to turns
+created through this bridge: one new user string message. Broader Agent Protocol
+inputs such as system batches or text-part arrays are not accepted for attachment.
+The bridge never
+fills a missing transcript from a historical assistant or restarts model work.
+Its existing example bounds apply, including the 1 MiB response/frame limit;
+large retained conversations can fail explicitly rather than being truncated.
 
 ## Reattach to an existing run
 
@@ -307,6 +440,19 @@ rendering, durable finish gating, new-turn input, fragmented UTF-8/CRLF SSE,
 replay deduplication, attempt fencing, detach/reattach, explicit Stop, failure and
 cancellation. They need no
 running plane, provider SDK, model key or network after dependency installation.
+The Python-profile tests also cover current-turn matching, typed-only null/false/
+zero results, framework and generation mismatch, omitted replay prefixes,
+identity persistence, abort timing, private tool data and bounded JSON/text.
+
+`make test-managed-chat-ui` prepares these dependencies and runs the UI checks.
+`make test-managed-chat-bridge` additionally runs each of the four installed
+Python workers against a real plane, including native UI text/history, completed
+replay, detach/Stop, recovered-generation receipts and Pydantic typed-only JSON.
+Set both backend URLs below to use Postgres/Redis. To enable the UI cases on one
+existing profile target, use `RUNKITE_TEST_CHAT_BRIDGE=1 make test-managed-google-adk`
+(or the corresponding Microsoft/OpenAI/Pydantic target) after UI preparation.
+CI enables these checks for all four Python profiles on both backend pairs.
+The models are offline fixtures; these tests do not build a full Next/Nuxt app.
 
 From the repository root, `make test-managed-ai-sdk` builds the runner and a real
 Go plane, runs the native SDK and UI checks, then proves dispatch, Admin visibility,

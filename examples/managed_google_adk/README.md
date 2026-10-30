@@ -47,8 +47,9 @@ replays without another factory/model/tool cycle. Failed or cancelled turns reta
 the previous committed session and report usage already observed. Effects before
 state commit still need downstream idempotency. Local tools need existing
 connector helpers for connector grants, secret injection and HITL. The app retains
-UI authentication and presentation history; this example does not implement AI
-SDK UI streams.
+UI authentication and presentation history. The unreleased
+[shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+uses profile `google-adk` to present bridge-created single-user turns.
 
 ## Tests
 

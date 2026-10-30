@@ -38,6 +38,11 @@ unsupported. Session history and turn receipts survive runner
 restarts via opaque checkpoints. Reclaim of the same `run_id` replays without
 another model or tool cycle.
 
+The unreleased [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+uses profile `agent-framework` for bridge-created single-user string turns.
+The application keeps UI authentication, presentation history and its stored
+chat/turn mapping.
+
 Load this example's `langgraph.json` in the control plane as well as the runner.
 Its `runner_kind` selects `python-agent-framework` for dispatch. On authenticated
 deployments, set `RUNNER_TOKEN` in the worker and the matching

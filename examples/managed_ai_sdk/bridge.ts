@@ -8,6 +8,8 @@ import {
 } from "ai";
 
 export type ManagedChatDisconnectPolicy = "cancel" | "detach";
+export type ManagedChatProfile =
+  "ai-sdk" | "agent-framework" | "openai-agents" | "pydantic-ai" | "google-adk";
 
 export interface ManagedRunOptions {
   baseUrl: string;
@@ -21,6 +23,8 @@ export interface ManagedRunOptions {
 }
 
 export interface ManagedChatAttachOptions extends ManagedRunOptions {
+  /** Select from server-owned agent configuration, never browser input. */
+  profile?: ManagedChatProfile;
   /** Attach defaults to detach, so a read does not cancel an existing run. */
   disconnectPolicy?: ManagedChatDisconnectPolicy;
   onCancelError?: () => void;
@@ -58,6 +62,128 @@ type Frame = { event: string; id: string; data: string };
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_EVENTS = 20_000;
+
+const PROFILES: Record<ManagedChatProfile, string> = {
+  "ai-sdk": "ai_sdk",
+  "agent-framework": "agent_framework",
+  "openai-agents": "openai_agents",
+  "pydantic-ai": "pydantic_ai",
+  "google-adk": "google_adk",
+};
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validText(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  for (const character of value) {
+    const code = character.codePointAt(0)!;
+    if (code >= 0xd800 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+
+function pythonDelta(value: unknown, runId: string): string {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !record(value[0]) ||
+    !record(value[1]) ||
+    Object.keys(value[1]).length ||
+    Object.keys(value[0]).some(
+      (key) => !["id", "type", "content"].includes(key),
+    ) ||
+    value[0].id !== `${runId}:assistant` ||
+    value[0].type !== "ai" ||
+    !validText(value[0].content)
+  )
+    throw new Error("Unsupported managed Python message chunk");
+  return value[0].content;
+}
+
+function validateProfile(
+  value: unknown,
+  profile: ManagedChatProfile,
+  generation: number,
+): asserts value is Record<string, unknown> {
+  const metadata = record(value) ? value[PROFILES[profile]] : undefined;
+  if (
+    !record(metadata) ||
+    metadata.framework !== profile ||
+    metadata.generation !== generation
+  )
+    throw new Error(
+      "The managed result does not match the selected profile and attempt",
+    );
+}
+
+function currentTurnText(
+  value: unknown,
+  input: unknown,
+  expectedInput?: string,
+): string {
+  if (
+    !record(value) ||
+    !Array.isArray(value.messages) ||
+    !record(input) ||
+    Object.keys(input).some((key) => key !== "messages") ||
+    !Array.isArray(input.messages) ||
+    input.messages.length !== 1
+  )
+    throw new Error("Unsupported durable managed turn");
+  const incoming = input.messages[0];
+  if (
+    !record(incoming) ||
+    incoming.role !== "user" ||
+    !validText(incoming.content) ||
+    !incoming.content.trim() ||
+    (expectedInput !== undefined && incoming.content !== expectedInput)
+  )
+    throw new Error("Unexpected durable user input");
+  const messages = value.messages;
+  const final = messages.at(-1);
+  const assistant = record(final) && final.role === "assistant";
+  const user = messages.at(assistant ? -2 : -1);
+  if (
+    !record(user) ||
+    user.role !== "user" ||
+    user.content !== incoming.content ||
+    (assistant && !validText(final.content))
+  )
+    throw new Error("The managed result has no matching current turn");
+  return assistant ? (final.content as string) : "";
+}
+
+function canonicalJSON(value: unknown, depth = 0): string {
+  if (depth > 64)
+    throw new Error("Structured result exceeds the example's depth limit");
+  if (value === null || typeof value === "boolean")
+    return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (
+      !Number.isFinite(value) ||
+      (Number.isInteger(value) && !Number.isSafeInteger(value))
+    )
+      throw new Error(
+        "Structured result numbers must be finite and integers must be safe",
+      );
+    return JSON.stringify(value);
+  }
+  if (validText(value)) return JSON.stringify(value);
+  if (Array.isArray(value))
+    return `[${value.map((item) => canonicalJSON(item, depth + 1)).join(",")}]`;
+  if (record(value))
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => {
+        if (!validText(key))
+          throw new Error("Structured result has invalid Unicode");
+        return `${JSON.stringify(key)}:${canonicalJSON(value[key], depth + 1)}`;
+      })
+      .join(",")}}`;
+  throw new Error("Structured result must be finite JSON");
+}
 
 function identifier(value: string): string {
   if (
@@ -189,6 +315,7 @@ function managedConnection(
   options: ManagedRunOptions &
     Pick<
       ManagedChatAttachOptions,
+      | "profile"
       | "disconnectPolicy"
       | "onCancelError"
       | "expectedMessageId"
@@ -223,6 +350,9 @@ function managedConnection(
   const disconnectPolicy = options.disconnectPolicy ?? defaultPolicy;
   if (disconnectPolicy !== "cancel" && disconnectPolicy !== "detach")
     throw new Error("Invalid managed chat disconnect policy");
+  const profile = options.profile ?? "ai-sdk";
+  if (typeof profile !== "string" || !Object.hasOwn(PROFILES, profile))
+    throw new Error("Invalid server-side managed chat profile");
   const expectedMessageId = options.expectedMessageId;
   if (expectedMessageId !== undefined) {
     const prefix = `${runId}:g`;
@@ -247,6 +377,7 @@ function managedConnection(
     fetcher,
     headers,
     disconnectPolicy,
+    profile,
     onCancelError: options.onCancelError,
     expectedMessageId,
     onMessageStart: options.onMessageStart,
@@ -397,6 +528,7 @@ async function managedChatResponse(
     fetcher,
     headers,
     disconnectPolicy,
+    profile,
     onCancelError,
     expectedMessageId,
     onMessageStart,
@@ -448,7 +580,10 @@ async function managedChatResponse(
           run_id: runId,
           agent_id: newTurn.agentId,
           input: { messages: [{ role: "user", content: newTurn.text }] },
-          stream_mode: ["custom:ai_sdk", "values"],
+          stream_mode:
+            profile === "ai-sdk"
+              ? ["custom:ai_sdk", "values"]
+              : ["messages", "values"],
           multitask_strategy: "reject",
         }),
       });
@@ -509,6 +644,26 @@ async function managedChatResponse(
     const sequence = new Map<number, number>();
     let generation: number | undefined;
     let started = false;
+    let textStarted = false;
+    let text = "";
+    let textBytes = 0;
+    let finalValues: Record<string, unknown> | undefined;
+    const textId = "managed-text";
+    async function startMessage(messageId: string) {
+      if (expectedMessageId && messageId !== expectedMessageId)
+        throw new AttemptChangedError();
+      if (onMessageStart) {
+        const persistenceSignal = AbortSignal.any([
+          signal,
+          AbortSignal.timeout(timeoutMs),
+        ]);
+        await abortable(
+          () => onMessageStart(messageId, persistenceSignal),
+          persistenceSignal,
+        );
+        checkAbort(signal);
+      }
+    }
     let finish: Extract<UIMessageChunk, { type: "finish" }> | undefined;
     let nativeError: Extract<UIMessageChunk, { type: "error" }> | undefined;
     let nativeAbort: Extract<UIMessageChunk, { type: "abort" }> | undefined;
@@ -527,6 +682,8 @@ async function managedChatResponse(
         const runnerId = frame.id.startsWith(prefix)
           ? /^(\d+)(?::g(\d+))?$/.exec(frame.id.slice(prefix.length))
           : null;
+        if (profile !== "ai-sdk" && frame.id.startsWith(prefix) && !runnerId)
+          throw new Error("Invalid runner event identity");
         if (runnerId) {
           const seq = Number(runnerId[1]);
           const attempt = Number(runnerId[2] ?? "1");
@@ -548,9 +705,54 @@ async function managedChatResponse(
             (previous !== undefined && seq !== previous + 1)
           )
             throw new ReplayUnavailableError();
+          if (
+            profile !== "ai-sdk" &&
+            (runnerId[1] !== String(seq) ||
+              (runnerId[2] !== undefined && runnerId[2] !== String(attempt)))
+          )
+            throw new Error("Invalid runner event identity");
           sequence.set(attempt, seq);
+          if (
+            profile !== "ai-sdk" &&
+            !started &&
+            !["end", "error"].includes(frame.event)
+          ) {
+            if (
+              seq !== 1 ||
+              frame.event !== "lifecycle" ||
+              JSON.parse(frame.data)?.event !== "running"
+            )
+              throw new ReplayUnavailableError();
+            generation = attempt;
+            const messageId = `${runId}:g${generation}:assistant`;
+            await startMessage(messageId);
+            checkAbort(signal);
+            started = true;
+            yield { type: "start", messageId };
+          }
         }
-        if (frame.event === "custom:ai_sdk") {
+        if (profile !== "ai-sdk" && frame.event === "messages") {
+          if (!runnerId || !started) throw new ReplayUnavailableError();
+          const delta = pythonDelta(JSON.parse(frame.data), runId);
+          textBytes += Buffer.byteLength(delta);
+          if (textBytes > MAX_FRAME_BYTES)
+            throw new Error("Managed text exceeds the example's size limit");
+          text += delta;
+          if (delta) {
+            if (!textStarted) {
+              textStarted = true;
+              yield { type: "text-start", id: textId };
+            }
+            yield { type: "text-delta", id: textId, delta };
+          }
+        } else if (profile !== "ai-sdk" && frame.event === "values") {
+          if (!runnerId || !started) throw new ReplayUnavailableError();
+          const value = JSON.parse(frame.data);
+          validateProfile(value, profile, generation!);
+          finalValues = value;
+        } else if (frame.event === "custom:ai_sdk") {
+          if (profile !== "ai-sdk")
+            throw new Error("Unexpected native UI stream for Python profile");
           if (!frame.id || !runnerId)
             throw new Error("AI SDK events require a Runkite event ID");
           const attempt = Number(runnerId[2] ?? "1");
@@ -578,19 +780,8 @@ async function managedChatResponse(
             throw new Error("Unexpected managed assistant message identity");
           }
           if (chunk.type === "start") {
-            if (expectedMessageId && chunk.messageId !== expectedMessageId)
-              throw new AttemptChangedError();
-            if (onMessageStart) {
-              const persistenceSignal = AbortSignal.any([
-                signal,
-                AbortSignal.timeout(timeoutMs),
-              ]);
-              await abortable(
-                () => onMessageStart(chunk.messageId!, persistenceSignal),
-                persistenceSignal,
-              );
-              checkAbort(signal);
-            }
+            await startMessage(chunk.messageId!);
+            checkAbort(signal);
           }
           if (chunk.type === "finish") finish = chunk;
           else if (chunk.type === "error") nativeError = chunk;
@@ -628,6 +819,12 @@ async function managedChatResponse(
             throw new Error("The managed run is not durably complete");
           }
           settled = true;
+          if (
+            profile !== "ai-sdk" &&
+            generation !== undefined &&
+            result.run.metadata?._runkite_completion_generation !== generation
+          )
+            throw new AttemptChangedError();
           if (result.run.status === "interrupted") {
             yield nativeAbort ?? {
               type: "abort",
@@ -640,6 +837,45 @@ async function managedChatResponse(
               type: "error",
               errorText: "Managed run failed",
             };
+            return;
+          }
+          if (profile !== "ai-sdk") {
+            if (!started || generation === undefined || !finalValues)
+              throw new ReplayUnavailableError();
+            validateProfile(result.values, profile, generation);
+            const currentText = currentTurnText(
+              result.values,
+              result.run.input,
+              newTurn?.text,
+            );
+            if (
+              currentText !== text ||
+              currentTurnText(finalValues, result.run.input, newTurn?.text) !==
+                text
+            )
+              throw new Error(
+                "The UI text does not match the durable current turn",
+              );
+            const hasResult = Object.hasOwn(result.values, "result");
+            if (
+              Object.hasOwn(finalValues, "result") !== hasResult ||
+              (hasResult &&
+                canonicalJSON(result.values.result) !==
+                  canonicalJSON(finalValues.result))
+            )
+              throw new Error("The UI result does not match durable output");
+            if (hasResult && profile !== "pydantic-ai")
+              throw new Error(
+                "This profile does not support structured results",
+              );
+            if (textStarted) yield { type: "text-end", id: textId };
+            if (hasResult)
+              yield {
+                type: "data-result",
+                id: `${runId}:g${generation}:assistant:result`,
+                data: result.values.result,
+              };
+            yield { type: "finish", finishReason: "stop" };
             return;
           }
           if (!started || !finish) throw new ReplayUnavailableError();
