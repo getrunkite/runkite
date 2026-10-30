@@ -250,6 +250,19 @@ export function RunDetail() {
         </Card>
       </div>
 
+      {run.data.output !== undefined && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Output</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs">
+              {JSON.stringify(run.data.output, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+
       {manifest && <RunManifestCard manifest={manifest} cacheHit={run.data.metadata?.cache_hit === true} />}
 
       {showA2A && (

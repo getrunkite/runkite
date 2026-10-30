@@ -214,6 +214,34 @@ generic-worker OTLP run spans use the existing exporter variables. See the
 [offline example](../examples/managed_openai_agents/README.md) and
 [adapter contract](../python/adapters/openai_agents_adapter/README.md).
 
+### Managed Pydantic AI Python runner (unreleased)
+
+`python-pydantic-ai` executes native per-run agent factories through the generic
+worker. The model loop stays in Python; Runkite owns dispatch, Threads/Runs,
+cancel and reported usage. Text can stream while typed final results are
+validated by the SDK and stored as JSON. The runner waits for native execution
+and validation to finish before committing success.
+
+The source-built `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0` and includes
+the `pydantic_ai_adapter` module and `runkite-runner-pydantic-ai` command.
+Applications install their chosen providers separately. The ordinary CLI and
+stock image keep their LangGraph defaults. This profile is unreleased and absent
+from published PyPI `0.5.8`; follow the
+[offline example](../examples/managed_pydantic_ai/README.md).
+
+Native conversations retain message/tool history and cumulative SDK usage.
+Runkite receives only new usage for the current run. Successful turns commit
+through opaque CAS writes; a committed receipt recovers a reclaimed run without
+another factory/model/tool cycle. Errors or interruption keep the previous
+committed conversation. Effects before commit still need downstream idempotency.
+
+The initial scope is text input, ordinary local tools and validated JSON output.
+Local tool allowlisting is distinct from synthetic SDK output-schema tools.
+Connector policy and HITL require the existing connector helpers. Native deferred
+approval/resume, output functions, multimodal input and additional workflow
+engines are unsupported. See the
+[adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
+
 ### Framework Adapters
 
 Opaque-state hardening (from v0.5.8) stops execution when configured state

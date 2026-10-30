@@ -277,6 +277,10 @@ jobs:
           uv pip install --python python/adapters/openai_agents_adapter/.venv/bin/python 'openai-agents==0.24.0' grpcio protobuf httpx
           PYTHONPATH=python:python/adapters:examples/managed_openai_agents python/adapters/openai_agents_adapter/.venv/bin/python -m unittest discover -s python/adapters/openai_agents_adapter -p 'test_*.py'
 
+          uv venv --python 3.12 python/adapters/pydantic_ai_adapter/.venv
+          uv pip install --python python/adapters/pydantic_ai_adapter/.venv/bin/python 'pydantic-ai-slim[openai]==2.63.0' grpcio protobuf httpx
+          PYTHONPATH=python:python/adapters:examples/managed_pydantic_ai python/adapters/pydantic_ai_adapter/.venv/bin/python -m unittest discover -s python/adapters/pydantic_ai_adapter -p 'test_*.py'
+
       - name: Python sdist and wheel artifact contract
         run: make test-python-package
 
@@ -297,6 +301,15 @@ jobs:
           RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
           RUNKITE_TEST_REDIS_URL: redis://localhost:6379
         run: make test-managed-openai-agents
+
+      - name: Managed Pydantic AI runner with real plane and installed wheel (SQLite)
+        run: make test-managed-pydantic-ai
+
+      - name: Managed Pydantic AI runner with real plane and installed wheel (Postgres + Redis)
+        env:
+          RUNKITE_TEST_POSTGRES_DSN: postgres://runkite:runkite@localhost:5432/runkite_test?sslmode=disable
+          RUNKITE_TEST_REDIS_URL: redis://localhost:6379
+        run: make test-managed-pydantic-ai
 
       - name: TypeScript runner lint + format check
         working-directory: typescript/runkite-runner

@@ -1,0 +1,7 @@
+{
+  "runner_kind": "python-pydantic-ai",
+  "graphs": {
+    "managed_pydantic_ai": "./agent.py:create_agent",
+    "managed_pydantic_ai_typed": "./agent.py:create_typed_agent"
+  }
+}

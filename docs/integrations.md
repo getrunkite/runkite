@@ -107,6 +107,25 @@ Upstream: [openai/openai-agents-python](https://github.com/openai/openai-agents-
 The control plane, policy engine, secrets and durable run records remain in
 Runkite. Local tool side effects before a state commit still need idempotency.
 
+## Pydantic AI uses a managed Python runner
+
+The [offline example](../examples/managed_pydantic_ai/README.md) uses the public
+SDK inside `python-pydantic-ai`. Runkite dispatches the native agent and stores
+validated final JSON alongside ordinary managed run data. The SDK owns its
+validation and model loop. Runkite reuses its generic worker and opaque CAS
+checkpoint surface, with successful-turn receipts for reclaim.
+
+The optional `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0` and provides
+`runkite-runner-pydantic-ai`. This source-built profile is unreleased and not in
+published PyPI `0.5.8`; application providers are installed separately.
+Native conversation serialization preserves SDK metadata while per-run billing
+excludes previously committed turns. Deferred approvals, output functions,
+multimodal input and external workflow engines are not part of this profile.
+
+Upstream: [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai).
+The boundary is a runner using public execution, validation and conversation
+APIs. It does not embed an upstream server, UI or a second durability engine.
+
 ## Phoenix receives existing OTLP traces
 
 [Phoenix](https://github.com/Arize-ai/phoenix) accepts OTLP trace exports. Run its
