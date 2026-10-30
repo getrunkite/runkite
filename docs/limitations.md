@@ -84,6 +84,16 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   workflow engines are outside the initial scope. Local tools acquire connector
   policy only through the existing connector helpers. See the
   [example](../examples/managed_pydantic_ai/README.md).
+- **Managed Google ADK (unreleased)** uses `python-google-adk` with one ordinary
+  text `LlmAgent`, local function tools and session-local state. The source extra
+  pins `google-adk==2.13.0`; published PyPI `0.5.8` lacks the profile and the stock
+  image does not install its SDK. A run-local public session service uses existing
+  opaque CAS state and successful receipts. Cross-session `app:`/`user:` state
+  is rejected rather than made thread-local; `temp:` state is not durable.
+  Native workflows/delegation, confirmation/resume, memory, artifacts, structured
+  output, long-running tools and live audio are unsupported. A final-response
+  event alone cannot mark a run successful. See the
+  [example](../examples/managed_google_adk/README.md).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;

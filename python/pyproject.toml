@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "runkite-runner"
 version = "0.5.8"
-description = "Python runner for Runkite: LangGraph and optional Microsoft Agent Framework, OpenAI Agents and Pydantic AI over Runner Protocol."
+description = "Python runner for Runkite: LangGraph and optional Microsoft Agent Framework, OpenAI Agents, Pydantic AI and Google ADK over Runner Protocol."
 readme = "README.md"
 license = { text = "BUSL-1.1" }
 requires-python = ">=3.11"
@@ -34,6 +34,7 @@ dependencies = [
 agent-framework = ["agent-framework-core==1.23.0"]
 openai-agents = ["openai-agents==0.24.0"]
 pydantic-ai = ["pydantic-ai-slim==2.63.0"]
+google-adk = ["google-adk==2.13.0"]
 otel = [
   "opentelemetry-api",
   "opentelemetry-sdk",
@@ -52,6 +53,7 @@ runkite-runner = "runkite_runner.worker:main"
 runkite-runner-agent-framework = "agent_framework_adapter.__main__:main"
 runkite-runner-openai-agents = "openai_agents_adapter.__main__:main"
 runkite-runner-pydantic-ai = "pydantic_ai_adapter.__main__:main"
+runkite-runner-google-adk = "google_adk_adapter.__main__:main"
 
 [tool.setuptools]
 # Explicit module selection includes the package initializer without shipping
@@ -66,12 +68,17 @@ py-modules = [
   "pydantic_ai_adapter.__main__",
   "pydantic_ai_adapter.adapter",
   "pydantic_ai_adapter.state",
+  "google_adk_adapter.__main__",
+  "google_adk_adapter.adapter",
+  "google_adk_adapter.state",
+  "google_adk_adapter.sessions",
 ]
 
 [tool.setuptools.package-dir]
 agent_framework_adapter = "adapters/agent_framework_adapter"
 openai_agents_adapter = "adapters/openai_agents_adapter"
 pydantic_ai_adapter = "adapters/pydantic_ai_adapter"
+google_adk_adapter = "adapters/google_adk_adapter"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "managed_google_adk": "./agent.py:agent"
+  },
+  "runner_kind": "python-google-adk"
+}

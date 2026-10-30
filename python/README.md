@@ -109,6 +109,28 @@ Examples live in the [Runkite repo](https://github.com/getrunkite/runkite/tree/m
 - **OpenTelemetry:** `runkite.run` span under the control plane `traceparent`, plus thin `runkite.llm` / `runkite.tool` children when OTLP env is set
 - **Production auth:** runner kind tokens (`RUNNER_TOKEN` / `RUNNER_TOKEN_*`) matching control-plane config
 
+### Google ADK (unreleased)
+
+The source-built optional `google-adk` extra pins `google-adk==2.13.0` and
+installs `google_adk_adapter` plus the `runkite-runner-google-adk` command:
+
+```bash
+python3.12 -m venv .venv-google-adk
+.venv-google-adk/bin/python -m pip install './python[google-adk]'
+.venv-google-adk/bin/runkite-runner-google-adk \
+  --config examples/managed_google_adk/langgraph.json \
+  --grpc-address 127.0.0.1:50051 \
+  --http-address http://127.0.0.1:2026
+```
+
+The installed module alternative is `python -m google_adk_adapter`. It runs one
+native text `LlmAgent`, ordinary local tools and session-local state, with
+successful-turn CAS receipts. Cross-session state, workflows and native
+confirmation/resume are outside this profile. Published PyPI `0.5.8` lacks it;
+the default CLI remains LangGraph and the stock image does not install this SDK.
+See the [example](https://github.com/getrunkite/runkite/tree/main/examples/managed_google_adk)
+for authentication, input and tests.
+
 ### Pydantic AI (unreleased)
 
 The source-built optional `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0`.

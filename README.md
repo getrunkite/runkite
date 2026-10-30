@@ -118,6 +118,10 @@ A managed [Pydantic AI profile](examples/managed_pydantic_ai/README.md) adds
 native text agents and validated structured results through `python-pydantic-ai`.
 Its source-built `pydantic-ai` extra and `runkite-runner-pydantic-ai` CLI are
 also unreleased.
+The source-built [Google ADK profile](examples/managed_google_adk/README.md)
+adds `python-google-adk` through the optional `google-adk` extra and
+`runkite-runner-google-adk` command. It is also unreleased and starts with
+one text agent, ordinary local tools and session-local history.
 See [CHANGELOG](CHANGELOG.md),
 [client integration guidance](docs/client-sdk.md), and the
 [support guide](site/support/sdk-integration.html).
