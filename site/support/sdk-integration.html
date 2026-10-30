@@ -206,6 +206,19 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           replies. Automatic reconnect, regeneration and browser tool approvals are not
           part of this initial bridge.
         </p>
+        <p class="note">
+          <strong>Unreleased checkout bridge update:</strong> the app can explicitly
+          detach delivery, reattach its owned run through an authenticated GET, and
+          request run cancellation through a separate app POST. Create still cancels
+          on disconnect by default;
+          detach requires the app's persisted run ID. Reattach uses complete retained
+          replay from the same attempt without dispatching the model or tools again.
+          Persist the first assistant ID with <code>onMessageStart</code> before display
+          and pass it back as <code>expectedMessageId</code>, so a replacement attempt
+          cannot silently become a second assistant after reconnect. Missing history
+          fails explicitly. This is manual reattachment, not an automatic retry loop;
+          see the <a href="https://github.com/getrunkite/runkite/blob/main/examples/managed_ai_sdk/README.md#reattach-to-an-existing-run">example's reconnect and Stop contract</a>.
+        </p>
 
         <h2>Durability and limits</h2>
         <ul>

@@ -7,18 +7,51 @@ import {
   type UIMessageChunk,
 } from "ai";
 
-export interface ManagedChatOptions {
+export type ManagedChatDisconnectPolicy = "cancel" | "detach";
+
+export interface ManagedRunOptions {
   baseUrl: string;
   apiKey: string;
-  /** Resolve this from authenticated application storage, never the browser body. */
+  /** Resolve both IDs from authenticated application storage. */
   threadId: string;
-  agentId: string;
-  /** Allocate and persist this server-side if your app needs request retry idempotency. */
-  runId?: string;
+  runId: string;
   fetch?: typeof globalThis.fetch;
   /** HTTP setup and durable-completion timeout. Does not limit a running stream. */
   timeoutMs?: number;
+}
+
+export interface ManagedChatAttachOptions extends ManagedRunOptions {
+  /** Attach defaults to detach, so a read does not cancel an existing run. */
+  disconnectPolicy?: ManagedChatDisconnectPolicy;
   onCancelError?: () => void;
+  /** Persisted assistant identity when resuming an already displayed response. */
+  expectedMessageId?: string;
+  /** Bind unset-or-equal identity on this stored turn before displaying start. */
+  onMessageStart?: (
+    messageId: string,
+    signal: AbortSignal,
+  ) => void | Promise<void>;
+}
+
+export interface ManagedChatOptions extends Omit<
+  ManagedChatAttachOptions,
+  "runId"
+> {
+  agentId: string;
+  /** Required for detach: persist the ID before creating the run. */
+  runId?: string;
+}
+
+class ReplayUnavailableError extends Error {
+  constructor() {
+    super("Managed chat replay is unavailable; reload saved messages");
+  }
+}
+
+class AttemptChangedError extends Error {
+  constructor() {
+    super("The managed run changed attempts; reload its durable result");
+  }
 }
 
 type Frame = { event: string; id: string; data: string };
@@ -30,6 +63,8 @@ function identifier(value: string): string {
   if (
     typeof value !== "string" ||
     !value ||
+    value === "." ||
+    value === ".." ||
     value !== value.trim() ||
     Buffer.byteLength(value) > 256
   ) {
@@ -43,17 +78,42 @@ function checkAbort(signal: AbortSignal): void {
     throw signal.reason ?? new DOMException("Aborted", "AbortError");
 }
 
+async function abortable<T>(
+  operation: () => T | Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  checkAbort(signal);
+  let abort!: () => void;
+  const interrupted = new Promise<never>((_, reject) => {
+    abort = () =>
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(operation), interrupted]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 async function readBody(
   body: ReadableStream<Uint8Array> | null,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!body) throw new Error("Missing HTTP response body");
   const reader = body.getReader();
   const parts: Uint8Array[] = [];
   let size = 0;
+  const abort = () => {
+    void reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener("abort", abort, { once: true });
   try {
     for (;;) {
+      if (signal) checkAbort(signal);
       const next = await reader.read();
+      if (signal) checkAbort(signal);
       if (next.done) break;
       size += next.value.length;
       if (size > limit)
@@ -64,6 +124,7 @@ async function readBody(
       Buffer.concat(parts),
     );
   } finally {
+    signal?.removeEventListener("abort", abort);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
@@ -124,17 +185,19 @@ async function* frames(
   }
 }
 
-/**
- * Use from an authenticated Next/Nuxt server route. The plane owns conversation
- * history. Only a new text user message enters this initial example.
- */
-export async function createManagedChatResponse(
-  request: Request,
-  options: ManagedChatOptions,
-): Promise<Response> {
+function managedConnection(
+  options: ManagedRunOptions &
+    Pick<
+      ManagedChatAttachOptions,
+      | "disconnectPolicy"
+      | "onCancelError"
+      | "expectedMessageId"
+      | "onMessageStart"
+    >,
+  defaultPolicy: ManagedChatDisconnectPolicy,
+) {
   const threadId = identifier(options.threadId);
-  const agentId = identifier(options.agentId);
-  const runId = identifier(options.runId ?? randomUUID());
+  const runId = identifier(options.runId);
   const base = new URL(options.baseUrl);
   if (
     !/^https?:$/.test(base.protocol) ||
@@ -157,8 +220,132 @@ export async function createManagedChatResponse(
   };
   const root = `${base.href.replace(/\/$/, "")}/threads/${encodeURIComponent(threadId)}`;
   const runUrl = `${root}/runs/${encodeURIComponent(runId)}`;
+  const disconnectPolicy = options.disconnectPolicy ?? defaultPolicy;
+  if (disconnectPolicy !== "cancel" && disconnectPolicy !== "detach")
+    throw new Error("Invalid managed chat disconnect policy");
+  const expectedMessageId = options.expectedMessageId;
+  if (expectedMessageId !== undefined) {
+    const prefix = `${runId}:g`;
+    const generation =
+      typeof expectedMessageId === "string" &&
+      expectedMessageId.startsWith(prefix)
+        ? /^([1-9]\d*):assistant$/.exec(
+            expectedMessageId.slice(prefix.length),
+          )?.[1]
+        : undefined;
+    if (!generation || !Number.isSafeInteger(Number(generation)))
+      throw new Error(
+        "Expected assistant identity must belong to the server-owned run",
+      );
+  }
+  return {
+    threadId,
+    runId,
+    runUrl,
+    root,
+    timeoutMs,
+    fetcher,
+    headers,
+    disconnectPolicy,
+    onCancelError: options.onCancelError,
+    expectedMessageId,
+    onMessageStart: options.onMessageStart,
+  };
+}
+
+type Connection = ReturnType<typeof managedConnection>;
+
+async function existingRun(connection: Connection, signal?: AbortSignal) {
+  const bounded = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(connection.timeoutMs)])
+    : AbortSignal.timeout(connection.timeoutMs);
+  const response = await connection.fetcher(connection.runUrl, {
+    method: "GET",
+    headers: connection.headers,
+    redirect: "error",
+    signal: bounded,
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`Managed run lookup failed (${response.status})`);
+  }
+  const run = JSON.parse(
+    await readBody(response.body, MAX_FRAME_BYTES, bounded),
+  );
+  if (run.run_id !== connection.runId || run.thread_id !== connection.threadId)
+    throw new Error("Unexpected managed run identity");
+  if (
+    ![
+      "pending",
+      "running",
+      "success",
+      "error",
+      "timeout",
+      "interrupted",
+    ].includes(run.status)
+  )
+    throw new Error("Invalid managed run status");
+  return run as { run_id: string; thread_id: string; status: string };
+}
+
+async function requestCancellation(
+  connection: Connection,
+  timeoutMs: number,
+): Promise<void> {
+  const response = await connection.fetcher(`${connection.runUrl}/cancel`, {
+    method: "POST",
+    headers: connection.headers,
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  await response.body?.cancel();
+  if (!response.ok) throw new Error("Runkite cancellation was not confirmed");
+}
+
+/** Call from an authenticated app POST route after checking chat/run ownership.
+ * Completion may already have won; this requests cancellation, not an undo.
+ */
+export async function cancelManagedChatRun(
+  options: ManagedRunOptions,
+): Promise<void> {
+  const connection = managedConnection(options, "detach");
+  const run = await existingRun(connection);
+  if (["success", "error", "timeout", "interrupted"].includes(run.status))
+    return;
+  await requestCancellation(connection, connection.timeoutMs);
+}
+
+/** Read-only attachment by default. Never creates or dispatches another run. */
+export async function attachManagedChatResponse(
+  request: Request,
+  options: ManagedChatAttachOptions,
+): Promise<Response> {
+  if (request.method !== "GET")
+    throw new Error("Managed chat attach requires GET");
   checkAbort(request.signal);
-  const input = JSON.parse(await readBody(request.body, MAX_REQUEST_BYTES));
+  return managedChatResponse(request, managedConnection(options, "detach"));
+}
+
+/** New user turn. Opt into detach only after persisting its server-owned run ID. */
+export async function createManagedChatResponse(
+  request: Request,
+  options: ManagedChatOptions,
+): Promise<Response> {
+  if (request.method !== "POST")
+    throw new Error("Managed chat creation requires POST");
+  if (options.disconnectPolicy === "detach" && !options.runId)
+    throw new Error(
+      "Detached managed chats require a persisted server-owned run ID",
+    );
+  const connection = managedConnection(
+    { ...options, runId: options.runId ?? randomUUID() },
+    "cancel",
+  );
+  const agentId = identifier(options.agentId);
+  checkAbort(request.signal);
+  const input = JSON.parse(
+    await readBody(request.body, MAX_REQUEST_BYTES, request.signal),
+  );
   if (
     !input ||
     typeof input !== "object" ||
@@ -193,6 +380,28 @@ export async function createManagedChatResponse(
   }
   checkAbort(request.signal);
 
+  return managedChatResponse(request, connection, { agentId, text });
+}
+
+async function managedChatResponse(
+  request: Request,
+  connection: Connection,
+  newTurn?: { agentId: string; text: string },
+): Promise<Response> {
+  const {
+    threadId,
+    runId,
+    runUrl,
+    root,
+    timeoutMs,
+    fetcher,
+    headers,
+    disconnectPolicy,
+    onCancelError,
+    expectedMessageId,
+    onMessageStart,
+  } = connection;
+  const cancelOnDisconnect = disconnectPolicy === "cancel";
   let created = false;
   let creationStarted = false;
   let creationResponseReceived = false;
@@ -203,27 +412,23 @@ export async function createManagedChatResponse(
   const cancelRun = (): Promise<void> => {
     if (!created || settled) return Promise.resolve();
     cancellation ??= (async () => {
-      const response = await fetcher(`${runUrl}/cancel`, {
-        method: "POST",
-        headers,
-        redirect: "error",
-        signal: AbortSignal.timeout(5_000),
-      });
-      await response.body?.cancel();
-      if (!response.ok)
-        throw new Error("Runkite cancellation was not confirmed");
+      await requestCancellation(connection, 5_000);
     })().catch((error) => {
-      if (options.onCancelError) options.onCancelError();
-      else
-        console.warn(
-          "Runkite cancellation was not confirmed; inspect the managed run",
-        );
+      try {
+        if (onCancelError) onCancelError();
+        else
+          console.warn(
+            "Runkite cancellation was not confirmed; inspect the managed run",
+          );
+      } catch {
+        // A recovery callback cannot replace the cancellation failure.
+      }
       throw error;
     });
     return cancellation;
   };
   const abort = () => {
-    void cancelRun().catch(() => {});
+    if (cancelOnDisconnect) void cancelRun().catch(() => {});
   };
   request.signal.addEventListener("abort", abort, { once: true });
   const cleanup = () => request.signal.removeEventListener("abort", abort);
@@ -231,35 +436,41 @@ export async function createManagedChatResponse(
   try {
     // Keep creation bounded but independent of browser disconnect. Once the
     // creation response arrives, a cancelled request explicitly cancels its run.
-    creationStarted = true;
-    const createdResponse = await fetcher(`${root}/runs`, {
-      method: "POST",
-      headers,
-      redirect: "error",
-      signal: AbortSignal.timeout(timeoutMs),
-      body: JSON.stringify({
-        run_id: runId,
-        agent_id: agentId,
-        input: { messages: [{ role: "user", content: text }] },
-        stream_mode: ["custom:ai_sdk", "values"],
-        multitask_strategy: "reject",
-      }),
-    });
-    creationResponseReceived = true;
-    if (!createdResponse.ok) {
-      await createdResponse.body?.cancel();
-      throw new Error(
-        `Runkite run creation failed (${createdResponse.status})`,
+    if (newTurn) {
+      const creationSignal = AbortSignal.timeout(timeoutMs);
+      creationStarted = true;
+      const createdResponse = await fetcher(`${root}/runs`, {
+        method: "POST",
+        headers,
+        redirect: "error",
+        signal: creationSignal,
+        body: JSON.stringify({
+          run_id: runId,
+          agent_id: newTurn.agentId,
+          input: { messages: [{ role: "user", content: newTurn.text }] },
+          stream_mode: ["custom:ai_sdk", "values"],
+          multitask_strategy: "reject",
+        }),
+      });
+      creationResponseReceived = true;
+      if (!createdResponse.ok) {
+        await createdResponse.body?.cancel();
+        throw new Error(
+          `Runkite run creation failed (${createdResponse.status})`,
+        );
+      }
+      created = true;
+      const run = JSON.parse(
+        await readBody(createdResponse.body, MAX_FRAME_BYTES, creationSignal),
       );
+      if (run.run_id !== runId || run.thread_id !== threadId)
+        throw new Error("Unexpected managed run identity");
+    } else {
+      await existingRun(connection, signal);
+      created = true;
     }
-    created = true;
-    const run = JSON.parse(
-      await readBody(createdResponse.body, MAX_FRAME_BYTES),
-    );
-    if (run.run_id !== runId || run.thread_id !== threadId)
-      throw new Error("Unexpected managed run identity");
     if (signal.aborted) {
-      await cancelRun();
+      if (cancelOnDisconnect) await cancelRun();
       checkAbort(signal);
     }
     const connecting = new AbortController();
@@ -289,13 +500,15 @@ export async function createManagedChatResponse(
     // the application-allocated ID best-effort and preserve the original error.
     if (creationStarted && !creationResponseReceived) created = true;
     cleanup();
-    await cancelRun().catch(() => {});
+    if (cancelOnDisconnect) await cancelRun().catch(() => {});
     throw error;
   }
 
   async function* chunks(): AsyncGenerator<UIMessageChunk> {
     const seen = new Set<string>();
+    const sequence = new Map<number, number>();
     let generation: number | undefined;
+    let started = false;
     let finish: Extract<UIMessageChunk, { type: "finish" }> | undefined;
     let nativeError: Extract<UIMessageChunk, { type: "error" }> | undefined;
     let nativeAbort: Extract<UIMessageChunk, { type: "abort" }> | undefined;
@@ -310,28 +523,74 @@ export async function createManagedChatResponse(
             throw new Error("Runkite stream exceeds the example's event limit");
           seen.add(frame.id);
         }
+        const prefix = `${runId}_evt_`;
+        const runnerId = frame.id.startsWith(prefix)
+          ? /^(\d+)(?::g(\d+))?$/.exec(frame.id.slice(prefix.length))
+          : null;
+        if (runnerId) {
+          const seq = Number(runnerId[1]);
+          const attempt = Number(runnerId[2] ?? "1");
+          if (
+            !Number.isSafeInteger(seq) ||
+            seq < 1 ||
+            !Number.isSafeInteger(attempt) ||
+            attempt < 1
+          )
+            throw new Error("Invalid runner event identity");
+          if (generation !== undefined && attempt < generation) continue;
+          if (generation !== undefined && attempt !== generation)
+            throw new AttemptChangedError();
+          const previous = sequence.get(attempt);
+          // Count every runner event, including mirrored messages and lifecycle.
+          // A trimmed prefix or a missing middle frame cannot be a full replay.
+          if (
+            (previous === undefined && seq > 2) ||
+            (previous !== undefined && seq !== previous + 1)
+          )
+            throw new ReplayUnavailableError();
+          sequence.set(attempt, seq);
+        }
         if (frame.event === "custom:ai_sdk") {
-          if (!frame.id)
+          if (!frame.id || !runnerId)
             throw new Error("AI SDK events require a Runkite event ID");
-          const attempt = Number(frame.id.match(/:g(\d+)$/)?.[1] ?? "1");
+          const attempt = Number(runnerId[2] ?? "1");
           if (!Number.isSafeInteger(attempt) || attempt < 1)
             throw new Error("Invalid runner attempt");
           if (generation !== undefined && attempt < generation) continue;
           if (generation !== undefined && attempt !== generation) {
-            throw new Error(
-              "The managed run changed attempts; reload its durable result",
-            );
+            throw new AttemptChangedError();
           }
           generation = attempt;
           const parsed = await validate(JSON.parse(frame.data));
           if (!parsed.success)
             throw new Error("Invalid AI SDK UI stream event");
           const chunk = parsed.value;
+          if (chunk.type === "start") {
+            if (started) throw new ReplayUnavailableError();
+            started = true;
+          } else if (!started) {
+            throw new ReplayUnavailableError();
+          }
           if (
             chunk.type === "start" &&
             chunk.messageId !== `${runId}:g${generation}:assistant`
           ) {
             throw new Error("Unexpected managed assistant message identity");
+          }
+          if (chunk.type === "start") {
+            if (expectedMessageId && chunk.messageId !== expectedMessageId)
+              throw new AttemptChangedError();
+            if (onMessageStart) {
+              const persistenceSignal = AbortSignal.any([
+                signal,
+                AbortSignal.timeout(timeoutMs),
+              ]);
+              await abortable(
+                () => onMessageStart(chunk.messageId!, persistenceSignal),
+                persistenceSignal,
+              );
+              checkAbort(signal);
+            }
           }
           if (chunk.type === "finish") finish = chunk;
           else if (chunk.type === "error") nativeError = chunk;
@@ -340,17 +599,21 @@ export async function createManagedChatResponse(
         } else if (frame.event === "end" || frame.event === "error") {
           // Raw SSE is advisory during reclaim. Confirm the durable result before
           // letting useChat report a successful completion.
+          const completionSignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(timeoutMs),
+          ]);
           const durable = await fetcher(`${runUrl}/wait`, {
             headers,
             redirect: "error",
-            signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+            signal: completionSignal,
           });
           if (!durable.ok) {
             await durable.body?.cancel();
             throw new Error("Managed run completion could not be confirmed");
           }
           const result = JSON.parse(
-            await readBody(durable.body, MAX_FRAME_BYTES),
+            await readBody(durable.body, MAX_FRAME_BYTES, completionSignal),
           );
           if (
             result.run?.run_id !== runId ||
@@ -379,8 +642,8 @@ export async function createManagedChatResponse(
             };
             return;
           }
+          if (!started || !finish) throw new ReplayUnavailableError();
           if (
-            !finish ||
             nativeAbort ||
             nativeError ||
             generation === undefined ||
@@ -413,8 +676,8 @@ export async function createManagedChatResponse(
           closed = true;
           output.close();
         } else output.enqueue(next.value);
-      } catch {
-        await cancelRun().catch(() => {});
+      } catch (error) {
+        if (cancelOnDisconnect) await cancelRun().catch(() => {});
         if (closed) return;
         if (signal.aborted)
           output.enqueue({
@@ -424,7 +687,11 @@ export async function createManagedChatResponse(
         else
           output.enqueue({
             type: "error",
-            errorText: "Managed chat delivery failed; inspect the Runkite run",
+            errorText:
+              error instanceof ReplayUnavailableError ||
+              error instanceof AttemptChangedError
+                ? error.message
+                : "Managed chat delivery failed; inspect the Runkite run",
           });
         output.close();
         closed = true;
@@ -435,8 +702,11 @@ export async function createManagedChatResponse(
       closed = true;
       controller.abort();
       cleanup();
-      await cancelRun();
-      await iterator.return(undefined);
+      try {
+        if (cancelOnDisconnect) await cancelRun();
+      } finally {
+        await iterator.return(undefined);
+      }
     },
   });
   return createUIMessageStreamResponse({

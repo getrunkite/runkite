@@ -72,7 +72,7 @@ async function waitFor<T>(description: string, operation: () => Promise<T | fals
 }
 
 const modelFactorySource = `
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { tool, jsonSchema } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 
@@ -95,7 +95,22 @@ function textParts(text) {
     { type: 'finish', finishReason: { unified: 'stop', raw: 'stop' }, usage },
   ];
 }
-export function agent(context: { runId: string; signal: AbortSignal }) {
+function heldStream(parts, signal) {
+  let cancelled = false;
+  return { stream: new ReadableStream({
+    async start(controller) {
+      for (const part of parts.slice(0, 3)) controller.enqueue(part);
+      while (!existsSync(process.env.E2E_RELEASE_FILE) && !cancelled && !signal.aborted) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      if (cancelled) return;
+      if (!signal.aborted) for (const part of parts.slice(3)) controller.enqueue(part);
+      controller.close();
+    },
+    cancel() { cancelled = true; },
+  }) };
+}
+function buildAgent(context: { runId: string; signal: AbortSignal }, hold = false) {
   let step = 0;
   return {
     model: new MockLanguageModelV4({ modelId: 'e2e-offline-model', doStream: async (options) => {
@@ -110,7 +125,8 @@ export function agent(context: { runId: string; signal: AbortSignal }) {
         { type: 'finish', finishReason: { unified: 'tool-calls', raw: 'tool-calls' }, usage },
       ]);
       const users = roles.filter(role => role === 'user').length;
-      return stream(textParts(users > 1 ? 'The answer (history has ' + users + ' user messages)' : 'The answer'));
+      const parts = textParts(users > 1 ? 'The answer (history has ' + users + ' user messages)' : 'The answer');
+      return hold ? heldStream(parts, context.signal) : stream(parts);
     } }),
     maxRetries: 0,
     tools: { createNote: tool({
@@ -121,6 +137,15 @@ export function agent(context: { runId: string; signal: AbortSignal }) {
       },
     }) },
   };
+}
+export function agent(context: { runId: string; signal: AbortSignal }) {
+  return buildAgent(context);
+}
+export function reconnect(context: { runId: string; signal: AbortSignal }) {
+  context.signal.addEventListener('abort', () => {
+    appendFileSync(process.env.E2E_CANCEL_FILE, context.runId + '\\n');
+  }, { once: true });
+  return buildAgent(context, true);
 }
 export function slow(context: { runId: string; signal: AbortSignal }) {
   context.signal.addEventListener('abort', () => {
@@ -163,13 +188,19 @@ test(
     const callsFile = path.join(directory, "calls.jsonl");
     const effectsFile = path.join(directory, "effects.jsonl");
     const cancelFile = path.join(directory, "cancelled.txt");
+    const releaseFile = path.join(directory, "release-model");
     await writeFile(path.join(directory, "agent.ts"), modelFactorySource);
     const config = path.join(directory, "runkite.json");
     await writeFile(
       config,
       JSON.stringify({
         runner_kind: "typescript-ai-sdk",
-        graphs: { e2e_agent: "./agent.ts:agent", e2e_slow: "./agent.ts:slow", e2e_denied: "./agent.ts:agent" },
+        graphs: {
+          e2e_agent: "./agent.ts:agent",
+          e2e_slow: "./agent.ts:slow",
+          e2e_denied: "./agent.ts:agent",
+          e2e_reconnect: "./agent.ts:reconnect",
+        },
         allowed_tools: { e2e_denied: [] },
       }),
     );
@@ -189,6 +220,7 @@ test(
       E2E_CALLS_FILE: callsFile,
       E2E_EFFECTS_FILE: effectsFile,
       E2E_CANCEL_FILE: cancelFile,
+      E2E_RELEASE_FILE: releaseFile,
     };
     plane = launch(
       path.resolve(binary!),
@@ -381,6 +413,91 @@ test(
           new URL("../../../examples/managed_ai_sdk/bridge.e2e-helper.ts", import.meta.url).href
         );
         await helper.verifyManagedBridge({ baseUrl, threadId: await createThread(), agentId: "e2e_agent" });
+      });
+
+      await runCase(
+        "detached managed chat attaches to its running and completed run without another execution",
+        async () => {
+          const helper = await import(
+            new URL("../../../examples/managed_ai_sdk/bridge.e2e-helper.ts", import.meta.url).href
+          );
+          const reconnectThread = await createThread();
+          const threadIds = (rows: Array<{ thread_id: string }>) => rows.map((row) => row.thread_id).sort();
+          const beforeThreads = threadIds(await request("/admin-api/threads"));
+          const usageTotals = (rows: Array<{ run_count: number; tokens_in: number; tokens_out: number }>) =>
+            rows.reduce(
+              (total, row) => ({
+                runs: total.runs + row.run_count,
+                input: total.input + row.tokens_in,
+                output: total.output + row.tokens_out,
+              }),
+              { runs: 0, input: 0, output: 0 },
+            );
+          const beforeUsage = usageTotals(await request("/admin-api/usage/summary?agent_id=e2e_reconnect"));
+          const runId = await helper.verifyManagedReconnectBridge({
+            baseUrl,
+            threadId: reconnectThread,
+            agentId: "e2e_reconnect",
+            assertDetached: async (activeRunId: string) => {
+              const run = await request(`/threads/${reconnectThread}/runs/${activeRunId}`);
+              assert.ok(["pending", "running"].includes(run.status), "detaching must not settle the running model");
+              const calls = (await readJsonLines(callsFile)).filter((call) => call.runId === activeRunId);
+              const effects = (await readJsonLines(effectsFile)).filter((effect) => effect.runId === activeRunId);
+              assert.equal(calls.length, 2, "the one agent execution has reached its second model step");
+              assert.equal(effects.length, 1, "the native tool executes once before disconnect");
+              try {
+                assert.equal((await readFile(cancelFile, "utf8")).includes(activeRunId), false);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+              }
+            },
+            release: async () => {
+              await writeFile(releaseFile, "complete this one model execution");
+            },
+          });
+          const final = await completedRun(reconnectThread, runId);
+          assert.equal(final.status, "success");
+          const runs = await request(`/threads/${reconnectThread}/runs`);
+          assert.equal(runs.length, 1, "reattaching must not create another managed run");
+          assert.equal(runs[0].run_id, runId);
+          assert.deepEqual(threadIds(await request("/admin-api/threads")), beforeThreads);
+          assert.equal((await readJsonLines(callsFile)).filter((call) => call.runId === runId).length, 2);
+          assert.equal((await readJsonLines(effectsFile)).filter((effect) => effect.runId === runId).length, 1);
+          await waitFor("one usage settlement after every attach", async () => {
+            assert.deepEqual(usageTotals(await request("/admin-api/usage/summary?agent_id=e2e_reconnect")), {
+              runs: beforeUsage.runs + 1,
+              input: beforeUsage.input + 20,
+              output: beforeUsage.output + 4,
+            });
+            return true;
+          });
+        },
+      );
+
+      await runCase("an explicitly stopped detached chat cancels its existing managed run", async () => {
+        const helper = await import(
+          new URL("../../../examples/managed_ai_sdk/bridge.e2e-helper.ts", import.meta.url).href
+        );
+        const detachedThread = await createThread();
+        const runId = await helper.verifyManagedExplicitCancelBridge({
+          baseUrl,
+          threadId: detachedThread,
+          agentId: "e2e_slow",
+        });
+        await waitFor("explicit stop reaches the detached model", async () => {
+          try {
+            return (await readFile(cancelFile, "utf8")).includes(runId) || false;
+          } catch {
+            return false;
+          }
+        });
+        const final = await completedRun(detachedThread, runId);
+        assert.equal(final.status, "interrupted");
+        const runs = await request(`/threads/${detachedThread}/runs`);
+        assert.equal(runs.length, 1);
+        assert.equal(runs[0].run_id, runId);
+        assert.equal((await readJsonLines(callsFile)).filter((call) => call.runId === runId).length, 1);
+        assert.equal((await readJsonLines(effectsFile)).filter((effect) => effect.runId === runId).length, 0);
       });
 
       await runCase(

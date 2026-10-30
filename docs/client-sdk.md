@@ -45,6 +45,44 @@ tested optional `ai@7.0.155` peer with the runner. The app-side bridge needs a
 server key that can create, read and cancel managed runs; `governance:decide`
 alone is insufficient.
 
+#### Unreleased: reconnecting the managed UI stream
+
+The checkout's app-side bridge adds `disconnectPolicy: "detach"` for callers
+whose run should continue after its browser leaves. Create requires an explicit
+server-owned run ID in detach mode; persist that chat/turn-to-run mapping before
+the request. The default create policy remains `"cancel"` for existing callers.
+
+An authenticated application GET route calls `attachManagedChatResponse` with
+the owned thread/run IDs. It joins the existing run and defaults to detach;
+it does not create another run or resubmit input. Configure the pinned native
+`DefaultChatTransport` with `resumeStreamIsReplay: true` and a reconnect GET
+route, then use `chat.resumeStream()` after restoring the app's UI messages.
+Full replay resets the streaming assistant instead of appending its partial
+text/tool results twice. The app still owns authentication, message storage and
+mapping checks on create, attach and Stop.
+
+Persist the first assistant ID with the awaited `onMessageStart` callback before
+displaying its start. The app transaction must accept an unset or matching ID
+for that owned turn/run and reject a different stored ID. Pass it back as
+`expectedMessageId` on create retries and attach. That precondition protects
+against a new generation silently becoming another assistant after reconnect.
+Without it, a caller must be a fresh observer with no unknown partial assistant
+to merge. The callback is repeated during replay and must be idempotent; failure
+ends delivery, while detach keeps the managed run alive. Use its supplied
+`AbortSignal` and the store's normal deadline. The helper bounds its wait, but
+cannot roll back a database commit already in progress after timeout.
+
+Use `cancelManagedChatRun` from a separate authenticated application POST route
+for explicit Stop. A local `chat.stop()` only disconnects a detach stream.
+Cancellation is cooperative, may race success and cannot undo external writes.
+
+This initial reconnect supports one attempt with retained complete native event
+history. Missing start, replay gaps and expiration fail explicitly; the bridge
+withholds finish and does not manufacture a transcript or retry model/tools.
+It still refuses to combine generations after reclaim. See the
+[example's reconnect and retention contract](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
+These helpers are an unreleased example update, not another client SDK package.
+
 ## Use today (recommended)
 
 Runkite’s public HTTP surface is [Agent Protocol](https://github.com/langchain-ai/agent-protocol) plus documented Runkite extensions. The machine-readable contract is:

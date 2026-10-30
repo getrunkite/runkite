@@ -40,6 +40,22 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   [the example](../examples/managed_ai_sdk/README.md). Raw SSE is advisory; the
   bridge confirms durable completion and refuses to combine attempts after a
   reclaim. Interrupted turns retain only previously committed history.
+- **Managed UI reconnect is an unreleased, same-attempt example update.** The
+  app may detach browser delivery and attach its stored thread/run again without
+  another model invocation. It must retain that mapping and its own UI messages;
+  this is not a durable UI-message service. Native full replay requires a start
+  and contiguous runner events. Missing/expired history fails explicitly, and
+  replay does not combine attempts across reclaim. Before display, persist the
+  first assistant ID through `onMessageStart`; on retries/reattach supply that
+  ID as `expectedMessageId` to refuse a replacement attempt across connections.
+  An observer without that precondition must not merge unknown partial UI state.
+  The persistence callback must accept a repeated same ID and reject a different
+  existing ID. Redis completed streams have
+  a 24-hour retention window; in-process replay is lost on control-plane restart.
+  Detach can leave model/tool execution running. Explicit Stop needs the app's
+  authenticated cancel route; aborting a local reader is not run cancellation.
+  The existing create default remains cancel. See the
+  [managed example](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
 - **Opaque adapter persistence now fails closed.** An unavailable state read
   prevents execution. Failed state writes withhold completion and leave the
   assignment recoverable. Malformed or unsupported message checkpoints fail
