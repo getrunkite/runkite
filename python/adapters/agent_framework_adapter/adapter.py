@@ -271,7 +271,9 @@ class AgentFrameworkAdapter:
             ChatResponse,
             Content,
             FunctionInvocationLayer,
+            FunctionMiddleware,
             Message,
+            MiddlewareFailure,
         )
 
         run_id = assignment["run_id"]
@@ -301,6 +303,12 @@ class AgentFrameworkAdapter:
             )
             return "error"
         try:
+            allowed = assignment.get("allowed_tools")
+            if allowed is not None and (
+                not isinstance(allowed, list) or any(not isinstance(name, str) for name in allowed)
+            ):
+                raise ValueError("allowed_tools must be a list of tool names")
+            allowed_tools = frozenset(allowed) if allowed is not None else None
             incoming = _user_messages(assignment.get("input") or {})
             input_key = _input_key(incoming)
         except ValueError as exc:
@@ -320,6 +328,7 @@ class AgentFrameworkAdapter:
         session = None
         model_requests: list[_ModelRequest] = []
         text_requests: dict[int, int] = {}
+        tool_gate_error: Exception | None = None
 
         async def close_stream() -> None:
             nonlocal stream
@@ -403,6 +412,46 @@ class AgentFrameworkAdapter:
                 if not context.stream and isinstance(context.result, ChatResponse):
                     await observe_response(context.result)
 
+        class AllowedToolsMiddleware(FunctionMiddleware):
+            async def process(self, context, call_next) -> None:
+                nonlocal tool_gate_error
+                try:
+                    if tool_gate_error is not None:
+                        raise tool_gate_error
+                    if cancel_event.is_set():
+                        raise RunCancelled()
+                    await publish_observed_usage()
+                    if cancel_event.is_set():
+                        raise RunCancelled()
+                    name = context.function.name
+                    if name not in allowed_tools:
+                        await event_callback(
+                            make_event(
+                                "tool_auth",
+                                {
+                                    "stage": "tool.call",
+                                    "effect": "deny",
+                                    "tool": name,
+                                    "reason": "tool is not permitted by allowed_tools",
+                                    "reason_code": "tool_not_allowed",
+                                    "generation": generation,
+                                },
+                            )
+                        )
+                        if cancel_event.is_set():
+                            raise RunCancelled()
+                        raise ValueError(f"Tool {name!r} is not permitted by allowed_tools")
+                    if cancel_event.is_set():
+                        raise RunCancelled()
+                except Exception as exc:
+                    # The native function loop absorbs ordinary tool failures.
+                    # Keep the original cancellation/delivery error for the
+                    # adapter, and use its fatal signal to stop the tool batch.
+                    if tool_gate_error is None:
+                        tool_gate_error = exc
+                    raise MiddlewareFailure("Runkite tool authorization failed") from exc
+                await call_next()
+
         try:
             prior, etag = await state_store.load(thread_id, graph_id=graph_id)
             if cancel_event.is_set():
@@ -449,6 +498,8 @@ class AgentFrameworkAdapter:
             agent = await run_cancellable(build_agent(), cancel_event)
             if not isinstance(agent, Agent):
                 raise ValueError("Agent Framework factory must return an agent_framework.Agent")
+            if allowed_tools is not None and not isinstance(agent.client, FunctionInvocationLayer):
+                raise ValueError("allowed_tools requires a native FunctionInvocationLayer client")
             if cancel_event.is_set():
                 raise RunCancelled()
             await run_cancellable(agent.open(), cancel_event)
@@ -465,6 +516,8 @@ class AgentFrameworkAdapter:
                 or client_mro.index(FunctionInvocationLayer) < client_mro.index(ChatMiddlewareLayer)
             )
             middleware = [ModelAttributionMiddleware()] if per_call_middleware else []
+            if allowed_tools is not None:
+                middleware.append(AllowedToolsMiddleware())
             native_input = [
                 Message(role=message["role"], contents=[Content.from_text(message["content"])]) for message in incoming
             ]
@@ -516,7 +569,16 @@ class AgentFrameworkAdapter:
                 finally:
                     await close_stream()
 
-            final = await run_cancellable(run_turn(), cancel_event)
+            try:
+                final = await run_cancellable(run_turn(), cancel_event)
+            except Exception:
+                if tool_gate_error is not None:
+                    raise tool_gate_error from None
+                raise
+            # A user middleware must not turn a denied call into a successful
+            # receipt by catching the native fatal signal.
+            if tool_gate_error is not None:
+                raise tool_gate_error
             # Native final usage already aggregates streamed usage. Replace,
             # never add it a second time; retain observed usage if it is absent.
             usage = _usage_from_details(getattr(final, "usage_details", None)) or usage

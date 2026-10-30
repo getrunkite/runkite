@@ -13,6 +13,7 @@ reclaim safeguards.
 - Agent factories, text streaming, ordinary local tools
 - Durable `AgentSession` across runner restarts
 - Cancellation, usage metering, tenant isolation via the generic worker
+- Native local-tool `allowed_tools` checks before execution (unreleased)
 - CAS receipt recovery for the same `run_id`
 - Offline example under [`examples/managed_agent_framework`](../../../examples/managed_agent_framework)
 
@@ -20,6 +21,25 @@ Not in this first delivery: workflows, .NET, native approval/resume, non-text
 input or caller-supplied assistant/tool history. Native approval requests and
 resume commands fail explicitly rather than becoming successful runs. Native
 background continuation and replacement text updates are also unsupported.
+
+## Local tool restrictions (unreleased)
+
+The runner enforces the control plane's dispatched per-graph `allowed_tools`
+snapshot through native function middleware. Omit the graph entry to leave local
+tools unrestricted; set it to `[]` to deny all; supply names to permit only those
+local functions. Forbidden calls emit `tool_auth` with `effect: deny` and
+`reason_code: tool_not_allowed`, fail the run, and do not execute the tool body.
+Observed model usage is retained and the previous committed session is unchanged.
+Permitted sibling calls may already be running when another call is denied;
+cancellation cannot undo their external effects.
+
+A configured restriction requires the supported native function invocation
+boundary. Custom clients without it fail before model execution instead of
+silently ignoring the restriction. Unrestricted custom clients retain their
+existing behavior. This is a cooperative function-call check, not a sandbox for
+agent-authored code, connector grants or human approval. Connector policy still
+requires the existing connector helpers; native approval/resume remains
+unsupported.
 
 ## Setup
 
@@ -109,6 +129,8 @@ adapter's unit tests. `make test-managed-agent-framework` builds a real plane
 and installs the runner wheel, including this adapter, into a clean environment.
 It runs authenticated dispatch, streaming, Admin visibility,
 restart, tenant isolation, cancellation usage and crash-after-commit recovery.
+It also checks allowed tools, an explicit empty deny-all list and a forbidden
+name without local tool side effects.
 It also checks fictional pricebook estimates, provider-error usage and a later
 run-create rejection after a configured USD cap is reached.
 Unit tests include the actual Microsoft OpenAI provider clients over mocked

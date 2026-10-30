@@ -269,7 +269,9 @@ class MicrosoftProviderWireTests(unittest.IsolatedAsyncioTestCase):
 
         self.adapter.factories["wire-agent"] = factory
 
-    async def execute(self, *, cancel: asyncio.Event | None = None) -> tuple[str, list[dict]]:
+    async def execute(
+        self, *, cancel: asyncio.Event | None = None, extra: dict | None = None
+    ) -> tuple[str, list[dict]]:
         events = []
 
         async def send(event):
@@ -288,6 +290,7 @@ class MicrosoftProviderWireTests(unittest.IsolatedAsyncioTestCase):
                     "tenant_id": "wire-tenant",
                     "generation": 1,
                     "input": {"messages": [{"role": "user", "content": "question"}]},
+                    **(extra or {}),
                 },
                 send,
                 cancel if cancel is not None else asyncio.Event(),
@@ -326,6 +329,66 @@ class MicrosoftProviderWireTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_completion_native_model_prices_each_tool_step_before_its_body(self) -> None:
         await self.assert_known_native_model("chat")
+
+    async def assert_native_tool_allowlist(self, kind: str) -> None:
+        wire = _responses_stream if kind == "responses" else _chat_stream
+        self.install_provider(
+            kind, [wire(model="native-model", call_id="call-one"), wire(model="native-model", text="native answer")]
+        )
+        status, events = await self.execute(extra={"allowed_tools": ["lookup"]})
+        self.assertEqual(status, "success")
+        self.assertEqual(
+            self.tool_usage,
+            [{"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14, "model": "native-model"}],
+        )
+        self.assertEqual(
+            self.final_usage(events),
+            {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28, "model": "native-model"},
+        )
+        self.assertEqual(len(self.provider_requests), 2)
+        self.assertEqual(self.plane.puts, 1)
+        saved = json.loads(next(iter(self.plane.blobs.values())))
+        self.assertEqual(saved["completed"]["output"]["usage"], self.final_usage(events))
+        self.assertFalse(any(event["method"] == "tool_auth" for event in events))
+
+    async def test_responses_configured_allowlist_runs_permitted_native_function(self) -> None:
+        await self.assert_native_tool_allowlist("responses")
+
+    async def test_chat_completion_configured_allowlist_runs_permitted_native_function(self) -> None:
+        await self.assert_native_tool_allowlist("chat")
+
+    async def assert_native_tool_denied(self, kind: str) -> None:
+        wire = _responses_stream if kind == "responses" else _chat_stream
+        for allowed in ([], ["other"]):
+            with self.subTest(allowed=allowed):
+                self.provider_requests.clear()
+                self.tool_usage.clear()
+                self.latest_usage = None
+                self.install_provider(kind, [wire(model="native-model", call_id="call-one")])
+                with self.assertLogs(level="ERROR"):
+                    status, events = await self.execute(extra={"allowed_tools": allowed})
+                self.assertEqual(status, "error")
+                self.assertFalse(self.tool_usage, "A rejected native function must never execute")
+                self.assertEqual(len(self.provider_requests), 1, "A denial must stop further provider calls")
+                self.assertEqual(
+                    self.final_usage(events),
+                    {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14, "model": "native-model"},
+                )
+                denials = [event["data"] for event in events if event["method"] == "tool_auth"]
+                self.assertEqual(len(denials), 1)
+                self.assertEqual(denials[0]["effect"], "deny")
+                self.assertEqual(denials[0]["reason_code"], "tool_not_allowed")
+                self.assertEqual(denials[0]["tool"], "lookup")
+                self.assertEqual(denials[0]["generation"], 1)
+                self.assertNotIn("args", denials[0])
+                self.assertEqual(self.plane.puts, 0)
+                self.assertFalse(self.plane.blobs)
+
+    async def test_responses_configured_allowlist_rejects_native_function_before_body(self) -> None:
+        await self.assert_native_tool_denied("responses")
+
+    async def test_chat_completion_configured_allowlist_rejects_native_function_before_body(self) -> None:
+        await self.assert_native_tool_denied("chat")
 
     async def test_responses_preamble_confirmation_and_next_request_reused_ids_do_not_duplicate_text(self) -> None:
         self.install_provider(
