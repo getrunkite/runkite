@@ -43,7 +43,16 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 - **Managed Microsoft Agent Framework (unreleased) is a separate Python runner
   kind** (`python-agent-framework`). It manages real Threads/Runs with public
   Agent streaming/session APIs, opaque CAS receipts and local tools. Workflows,
-  .NET, native approval/resume and time travel are out of the initial scope.
+  .NET, non-text inputs, caller-supplied assistant/tool history, native
+  approval/resume and time travel are out of the initial scope. Unsupported
+  native approval, background continuation, replacement text updates or resume
+  fails explicitly. Only successful turns commit
+  history; interrupted and failed turns retain the previous committed session
+  and report observed usage. CAS metadata, framework, graph and native state
+  are validated before execution. Receipt recovery avoids repeated work after
+  a successful commit; external effects before that commit still need their
+  own idempotency. The adapter remains checkout-only, separate from the
+  published Python LangGraph runner.
   Decision-only `runkite_governance.agent_framework` middleware remains a
   different boundary (app-owned loop, no managed run).
 - **Managed UI reconnect is an unreleased, same-attempt example update.** The

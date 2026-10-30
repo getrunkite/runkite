@@ -127,6 +127,35 @@ run/tenant/generation binding and conditional writes. State must commit before
 terminal success. Reclaim can replay an already-committed turn without repeating
 tools. Earlier crashes remain subject to downstream side-effect idempotency.
 
+### Managed Microsoft Agent Framework Python runner
+
+The checkout-only `python-agent-framework` adapter executes a per-run factory
+returning a public `agent_framework.Agent`. Load a config declaring
+`runner_kind: python-agent-framework` in both the plane and runner. Use
+`python -m agent_framework_adapter` with the repository's Python and adapters
+directories on `PYTHONPATH`; the published `runkite-runner` command still starts
+LangGraph. Setup and the offline factory are in the
+[managed Microsoft example](../examples/managed_agent_framework/README.md).
+
+These executions create ordinary Threads/Runs and use managed dispatch, cancel
+and usage. `RUNNER_TOKEN` authenticates both gRPC and run-bound checkpoint HTTP.
+Native session history and successful-turn receipts use conditional opaque
+writes. The runner validates framework, graph, session and CAS metadata before
+model or tool execution. Reclaim replays an already committed turn using the
+current generation without repeating the factory, model or tools.
+
+Input is this turn's new user/system text messages, ending with a user message.
+The session supplies previous history. Failed or interrupted turns retain the
+last committed history and report usage already observed. Workflows, .NET,
+non-text input, caller-supplied assistant/tool history, time travel and native
+approval/resume are unsupported. Native approval/resume fails explicitly.
+Local tools do not automatically acquire connector policy or HITL. External
+effects before a successful state commit require downstream idempotency.
+
+API cancellation retains usage already delivered to the plane by the current
+attempt. Usage still buffered in the runner or provider when cancellation
+commits is unavailable. Cancellation does not undo completed external effects.
+
 ### Framework Adapters
 
 Opaque-state hardening (from v0.5.8) stops execution when configured state

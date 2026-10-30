@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .tenant_ctx import tenant_headers
+from .tenant_ctx import runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 HEADER_FRAMEWORK = "X-Runkite-Checkpoint-Framework"
@@ -40,6 +40,8 @@ class OpaqueCheckpointClient:
     ):
         self._base = http_base_url.rstrip("/")
         self._framework = framework
+        self._runner_kind = runner_kind
+        self._runner_token = runner_token
         self._headers: dict[str, str] = {
             HEADER_FRAMEWORK: framework,
         }
@@ -65,37 +67,50 @@ class OpaqueCheckpointClient:
             self._client = None
 
     def _client_headers(self) -> dict[str, str]:
-        return {**self._headers, **tenant_headers()}
+        return {
+            **self._headers,
+            **runner_headers(self._runner_token, self._runner_kind or None),
+        }
 
     def _url(self, thread_id: str, checkpoint_id: str = ADAPTER_CHECKPOINT_ID) -> str:
         return f"{self._base}/internal/checkpoints/{quote(thread_id, safe='')}/{quote(checkpoint_id, safe='')}"
 
     async def get(self, thread_id: str, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID) -> bytes | None:
-        """Return this adapter's opaque blob for thread, or None if missing."""
-        data, _etag = await self.get_versioned(thread_id, checkpoint_id=checkpoint_id)
-        return data
+        """Legacy raw-byte GET; does not require CAS or framework response headers."""
+        response = await self._get_response(thread_id, checkpoint_id)
+        return None if response is None else response.content
+
+    async def _get_response(self, thread_id: str, checkpoint_id: str) -> httpx.Response | None:
+        if not thread_id:
+            return None
+        if checkpoint_id == "latest":
+            raise ValueError('checkpoint_id "latest" is reserved; use a concrete id')
+        client = await self._http()
+        response = await client.get(self._url(thread_id, checkpoint_id), headers=self._client_headers())
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response
 
     async def get_versioned(
         self, thread_id: str, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID
     ) -> tuple[bytes | None, str | None]:
         """Return (blob, strong ETag) or (None, None) when missing.
 
-        Managed adapters that commit receipts use the ETag with put_cas so a
-        reclaim cannot clobber a newer attempt's saved history.
+        Managed adapters require both the expected HTTP framework and a valid
+        version before executing any work. Legacy callers can keep using get.
         """
         if not thread_id:
+            raise ValueError("thread_id required to load a versioned checkpoint")
+        response = await self._get_response(thread_id, checkpoint_id)
+        if response is None:
             return None, None
-        if checkpoint_id == "latest":
-            raise ValueError('checkpoint_id "latest" is reserved; use a concrete id')
-        client = await self._http()
-        resp = await client.get(self._url(thread_id, checkpoint_id), headers=self._client_headers())
-        if resp.status_code == 404:
-            return None, None
-        resp.raise_for_status()
-        etag = resp.headers.get("ETag")
-        if etag is not None and not _strong_numeric_etag(etag):
-            raise RuntimeError(f"checkpoint GET returned a non-numeric ETag for {thread_id}/{checkpoint_id}")
-        return resp.content, etag
+        if response.headers.get(HEADER_FRAMEWORK) != self._framework:
+            raise RuntimeError("checkpoint GET returned a different or missing framework")
+        etag = response.headers.get("ETag")
+        if not _strong_numeric_etag(etag):
+            raise RuntimeError("checkpoint GET requires a strong positive numeric ETag")
+        return response.content, etag
 
     async def put(self, thread_id: str, data: bytes, *, checkpoint_id: str = ADAPTER_CHECKPOINT_ID) -> None:
         """Unconditional PUT of adapter state (overwrites same checkpoint_id)."""
@@ -118,7 +133,7 @@ class OpaqueCheckpointClient:
         if create_only and etag is not None:
             raise ValueError("create_only cannot combine with an If-Match etag")
         if not create_only and etag is not None and not _strong_numeric_etag(etag):
-            raise ValueError("If-Match requires a strong numeric ETag")
+            raise ValueError("If-Match requires a strong positive numeric ETag")
         client = await self._http()
         headers = {
             **self._client_headers(),
@@ -132,9 +147,18 @@ class OpaqueCheckpointClient:
         resp.raise_for_status()
 
 
-def _strong_numeric_etag(etag: str) -> bool:
-    value = etag.strip()
-    return len(value) >= 3 and value[0] == '"' and value[-1] == '"' and value[1:-1].isdigit()
+def _strong_numeric_etag(etag: str | None) -> bool:
+    """Only canonical positive int64 versions emitted by the Go plane are valid."""
+    if not isinstance(etag, str) or len(etag) < 3 or etag[0] != '"' or etag[-1] != '"':
+        return False
+    value = etag[1:-1]
+    return (
+        1 <= len(value) <= 19
+        and value[0] != "0"
+        and value.isascii()
+        and value.isdigit()
+        and int(value) <= (1 << 63) - 1
+    )
 
 
 def adapter_supports_checkpoints(adapter: Any) -> bool:

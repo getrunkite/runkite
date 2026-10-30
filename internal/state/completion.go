@@ -19,8 +19,10 @@ type RunCompletion struct {
 	// RunnerKind is the authenticated bridge identity; ReplayOnly permits only
 	// acknowledgement of an already committed result after the lease is gone.
 	// CancelCurrentAttempt is for trusted control-plane cancellation only.
-	// It is resolved under the store transaction lock and never carries values.
+	// It is resolved under the store transaction lock. Only CancelUsage from
+	// the captured Generation may survive; arbitrary values are discarded.
 	CancelCurrentAttempt bool
+	CancelUsage          map[string]interface{}
 	RunnerKind           string
 	ReplayOnly           bool
 	RunID                string
@@ -96,5 +98,8 @@ func ResolveCompletion(metadata map[string]interface{}, c *RunCompletion) *RunCo
 	copy := *c
 	copy.Generation = MetadataGeneration(metadata, AttemptGenerationKey)
 	copy.Values = nil
+	if c.Generation == copy.Generation && c.CancelUsage != nil {
+		copy.Values = map[string]interface{}{"usage": c.CancelUsage}
+	}
 	return &copy
 }

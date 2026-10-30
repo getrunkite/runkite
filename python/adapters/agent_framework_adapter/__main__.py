@@ -38,7 +38,7 @@ def main() -> None:
     adapter.configure(
         http_address=args.http_address,
         runner_kind=args.runner_kind,
-        runner_token=os.environ.get("RUNKITE_RUNNER_TOKEN"),
+        runner_token=os.environ.get("RUNNER_TOKEN"),
     )
     asyncio.run(
         run_worker(

@@ -238,8 +238,15 @@ Threads/Runs, use the managed Python adapter (`python-agent-framework`) and the
 [offline managed example](../examples/managed_agent_framework/README.md). It
 uses public Agent streaming and session APIs, stores native session history in
 opaque checkpoints with CAS, and recovers committed turns without repeating
-model or tool work. Workflows, .NET and native approval/resume are out of the
-initial scope. Keep the governance middleware when the app owns execution and
+model or tool work. Use the same `RUNNER_TOKEN` for gRPC and checkpoint HTTP,
+and declare `runner_kind: python-agent-framework` in the plane's config. Supply
+only the new user/system text messages for a turn, ending with a user message;
+native session state owns prior history. Failed or cancelled turns retain the
+previous committed history and report any observed usage. Workflows, .NET,
+non-text inputs and native approval/resume are out of the initial scope.
+Unsupported approval or resume fails explicitly. API cancellation can retain
+only usage already delivered to the plane before cancellation commits. Keep the
+governance middleware when the app owns execution and
 only needs tool decisions.
 
 ## Related

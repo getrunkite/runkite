@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
-		result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true, Values: map[string]interface{}{"answer": "stale"}})
+		result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true, Values: map[string]interface{}{"answer": "stale"}, CancelUsage: map[string]interface{}{"prompt_tokens": 99}})
 		if err != nil || !result.Applied {
 			t.Fatal(result, err)
 		}
@@ -100,8 +101,46 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run.Status != models.RunStatusInterrupted || state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey) != 2 || thread.Values["answer"] != nil || thread.Status != models.ThreadStatusInterrupted {
+		if run.Status != models.RunStatusInterrupted || state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey) != 2 || thread.Values["answer"] != nil || thread.Status != models.ThreadStatusInterrupted || len(run.Output) != 0 {
 			t.Fatalf("bad current-attempt cancellation: run=%+v thread=%+v", run, thread)
+		}
+	})
+	t.Run("trusted_cancel_retains_only_current_usage_once", func(t *testing.T) {
+		s, ctx := seed(t)
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+			t.Fatal(ok, err)
+		}
+		completion := &state.RunCompletion{
+			RunID: "completion-run", Generation: 2, Status: models.RunStatusInterrupted,
+			CancelCurrentAttempt: true, Values: map[string]interface{}{"answer": "unfinished"},
+			CancelUsage: map[string]interface{}{"prompt_tokens": 10, "completion_tokens": 4},
+		}
+		if result, err := s.CompleteRun(ctx, completion); err != nil || !result.Applied {
+			t.Fatal(result, err)
+		}
+		completion.CancelUsage = map[string]interface{}{"prompt_tokens": 999}
+		if result, err := s.CompleteRun(ctx, completion); err != nil || !result.Accepted || result.Applied {
+			t.Fatal("duplicate cancellation changed usage", result, err)
+		}
+		run, err := s.GetRun(ctx, "completion-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var output map[string]interface{}
+		if err := json.Unmarshal(run.Output, &output); err != nil {
+			t.Fatal(err)
+		}
+		usage, ok := output["usage"].(map[string]interface{})
+		if !ok || usage["prompt_tokens"] != float64(10) || usage["completion_tokens"] != float64(4) || len(output) != 1 {
+			t.Fatalf("cancellation output=%s", run.Output)
+		}
+		thread, err := s.GetThread(ctx, "completion-thread")
+		if err != nil || thread.Values["previous"] != "kept" || thread.Values["answer"] != nil || thread.Values["usage"] != nil {
+			t.Fatalf("cancellation replaced history: thread=%+v err=%v", thread, err)
+		}
+		history, err := s.ListCheckpoints(ctx, "completion-thread", 10, "")
+		if err != nil || len(history) != 0 {
+			t.Fatalf("cancellation created a conversation checkpoint: count=%d err=%v", len(history), err)
 		}
 	})
 }
