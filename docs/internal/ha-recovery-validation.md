@@ -85,6 +85,135 @@ IDs at generations 0 and 1, adding a `:gN` suffix only above generation 1. The
 replay assertion follows that format and checks the durable attempt separately;
 requiring a suffix on the first attempt would reject valid retained events.
 
+## Keep retry identity and leases intact on failures
+
+The follow-up changes based on `7a198e9` address failures beside the measured
+process-loss path. They reuse the existing queue lease, durable completion and
+finalization contracts. They add no service or schema and leave the public
+Runner Protocol unchanged.
+
+### Poison records carry literal identities
+
+[`Queue.ReclaimStale`](../../internal/transport/redis/redis.go) previously joined
+the run ID, rejected generation and assignment JSON with `:` in a Lua response.
+Caller-selected run IDs can themselves contain colons on Redis. Splitting that
+response could truncate the ID, mistake part of it for the generation and direct
+trusted terminal processing at a different run, including one in another tenant.
+UUID-shaped test IDs hid that ambiguity. Matching the parsed ID to a live lease
+was insufficient when that different run and generation also existed.
+
+The script now returns three separate RESP fields. `parseDeadEntry` validates
+their types and requires the original assignment's run ID to match the returned
+ID. A malformed response returns an error instead of silently skipping a poison
+assignment. The live lease stays recoverable. This is an ephemeral script result,
+not a Redis key or stored-record format, so it needs no Redis data migration.
+The fix preserves supported literal IDs instead of adding a Redis-only ban on
+colons. NATS retains its separately documented identity restriction.
+All plane replicas must be upgraded before relying on the protection. Existing
+run outcomes and dead-letter records are not repaired automatically; affected
+custom IDs and possible prefix-ID collisions need explicit historical review.
+
+### Enqueue before removing the recoverable source
+
+The same reclaim script now performs the ready-list `LPUSH` before advancing the
+generation and removing the old lease. Redis runs Lua without interleaving other
+commands, but a script error does not roll back earlier writes. Removing the
+lease first could therefore lose the only recoverable payload if the ready-list
+write failed, for example because the destination key had the wrong type.
+
+The successful handoff still changes the generation and source tracking in one
+script. A failed ready write leaves the old payload and fence available for a
+later attempt. This changes command ordering rather than adding another queue or
+transaction mechanism. Operators must investigate an incorrectly typed queue
+key and reconcile its contents before repair; deleting work is not recovery.
+
+### Cancellation retains finalization work
+
+[`Server.cancelRunSingle`](../../internal/api/runs.go) already commits a durable
+interruption before removing its queue lease. The remaining failure was after
+that commit: [`CompleteRun`](../../internal/api/completion.go) can accept the
+terminal result and still return an error from usage, hold, broker or hook
+finalization. Removing the lease in that case stranded the bookkeeping until
+another caller happened to retry.
+
+The cancellation path now returns that error while retaining the lease and
+tries to notify the runner. The stored interruption remains authoritative. An
+ordinary reclaim can revisit the terminal run, retry idempotent finalization and
+acknowledge it only after that succeeds. A runner notification can still fail
+with the transport; this does not prove an external operation stopped or undo
+one that already ran. No new finalization queue is introduced.
+
+### Timeout uses the same atomic terminal transaction
+
+[`Server.TimeoutOverdueRuns`](../../internal/api/timeout.go) previously marked a
+run timed out, then released its thread in a separate store call. If that second
+write failed, later sweeps skipped the already terminal run and its thread could
+stay busy. The separate path also bypassed the completion generation and the
+shared usage/hold finalization contract.
+
+The sweep now calls `completeRunResult` in
+[`completion.go`](../../internal/api/completion.go). The existing store completion
+transaction commits timeout and thread release together. The trusted
+`CancelCurrentAttempt` option now covers timeout as well as cancellation;
+[`ResolveCompletion`](../../internal/state/completion.go) resolves the live
+durable attempt under the transaction lock. A concurrent replacement cannot be
+given output captured from an older observed generation. Runners still supply
+their own exact generation and cannot opt into this trusted control-plane behavior.
+
+Only delivered usage from the captured attempt can become timeout output. If
+reclaim changed that attempt, its captured usage is dropped. Partial messages
+and arbitrary values never replace committed conversation history. With no other
+active run on the thread, its busy state becomes `idle` while retaining its prior
+values. The run records `timeout` and may contain the matching attempt's usage.
+This is observed token accounting, not an assertion that external work or spend
+stopped immediately.
+
+The same idempotent finalization handles usage, holds, broker closure and the
+existing timeout error hook. A failure after commit retains the lease and tries
+to signal the runner, allowing ordinary reclaim to retry finalization. The sweep
+returns per-run errors rather than hiding incomplete bookkeeping. Its count and
+transition metrics include only newly applied timeouts; retrying a committed
+result does not increment them again. The public `CompleteRun` signature stays
+unchanged; its private helper exposes the existing transaction's `Applied` flag
+to the sweep rather than adding another terminal-state mechanism.
+
+### Register tool-hook observation before dispatch
+
+[`watchRunEventsForToolCallHook`](../../internal/api/runs.go) previously started
+its entire subscription in a goroutine. A fast runner could publish an explicit
+`tool_call` event before that goroutine registered with the broker, so the hook
+observer missed an event that normal run delivery had already accepted. The
+Linux race run exposed this ordering bug; delaying the runner would only hide it.
+
+Run creation now attempts the broker subscription synchronously before returning
+an assignment for enqueue. Once registration succeeds, only event consumption
+and sink dispatch run asynchronously. Subscription failure is logged and run
+creation continues. A cancellable two-hour context bounds an orphaned watcher;
+normal stream completion cancels it sooner and releases the underlying broker
+subscription. This reuses the existing broker instead of adding replay or another
+hook queue. Only explicit runner `tool_call` events are observed. Hook sinks
+retain their existing bounded queue, retry and drop behavior; this change does
+not make tool-hook delivery durable, exactly once or an enforcement boundary.
+
+The regressions are kept at the affected boundaries:
+
+- [Redis queue tests](../../internal/transport/redis/redis_test.go) preserve
+  literal poison IDs and the old lease on a failed ready write.
+- [Redis/API identity test](../../internal/api/redis_poison_identity_test.go)
+  exercises trusted poison completion with real Redis and SQLite, requiring an
+  unrelated prefix run in another tenant to remain active.
+- [Cancellation finalization tests](../../internal/api/cancel_finalization_test.go)
+  fail usage and hold release after the interruption commits, then require
+  ordinary reclaim to finish bookkeeping without redispatching agent work.
+- [Timeout recovery tests](../../internal/api/timeout_recovery_test.go) cover the
+  atomic release, concurrent sweep winner, attempt race and finalization failure.
+  The [shared store conformance case](../../internal/state/conformance/completion.go)
+  checks matching/stale captured usage, duplicate completion and preserved history.
+- [Hook subscription test](../../internal/api/hooks_subscription_test.go) makes
+  enqueue fail unless the subscription is already registered, emits tool and
+  terminal events immediately, and checks subscription cancellation. The
+  assertion tests ordering directly rather than waiting for a scheduling race.
+
 ## Isolate the failure exercise
 
 The harness requires three distinct local HTTP replica URLs and an explicit
@@ -109,7 +238,7 @@ keep output in the ignored soak output directory or another disposable location.
 
 ## Measured rehearsal and evidence boundary
 
-The 2026-10-31 rehearsal built the Go and Python images from their Dockerfiles
+The earlier 2026-10-31 rehearsal built the Go and Python images from their Dockerfiles
 and used three planes, nginx, two Python workers, Postgres and Redis. A disposable
 overlay enabled client API-key auth and the runner kind's `default` tenant
 allowlist, without the insecure-serve bypass. The checked-in local demo still
@@ -141,3 +270,41 @@ cloud, Kubernetes, multi-day, Postgres-failure or Redis-failure soak. It does no
 test real model providers, universal SDK HA, managed UI reconnect across planes,
 or exactly-once external writes. Earlier single-plane SDK integration evidence
 retains its original scope.
+
+## Follow-up failure probes
+
+The follow-up based on `7a198e9` rebuilt the Go image with the five fixes above
+and repeated the four bounded checks against three planes, two Python workers,
+Postgres and Redis. Cache retries, cross-replica cancellation, worker-plus-plane
+crash/reclaim and retained raw SSE replay all passed. The previous 120-second,
+294-cycle steady-load measurement was not rerun for this patch and remains the
+earlier rehearsal's result.
+
+Two separate task-local probes used a scripted Runner Protocol client, with no
+model or tool execution:
+
+- Redis was paused after dispatch and partial event delivery, retaining its
+  memory. Stream acknowledgement failed during the outage. After unpause, the
+  same run reclaimed at a newer generation, rejected stale completion and
+  completed with one synthetic 20/4 usage entry and preserved prior history.
+- Postgres was paused after its runner events had been acknowledged. Completion
+  acknowledgement failed and the queue lease remained. Heartbeats continued
+  through Redis; after unpause, the same-generation completion retry succeeded
+  with one result, one synthetic 20/4 usage entry and preserved prior history.
+
+Both probes observed `/readyz` return 503 while `/livez` returned 200. They
+restored the same containers and retained state. These six bounded checks all
+passed on the final image; the delivery evidence retains the separate raw case
+reports and scoped commands. The Linux `-race` suite for `./internal/...` and
+`./cmd` passed, and the focused hook-registration regression passed 20
+consecutive runs. That hook result is a unit ordering proof, not a live-provider
+or delivery guarantee.
+
+The scripted probes do not establish that every framework succeeds through an
+arbitrary backend outage. For example, a Postgres outage during a LangGraph
+proxy checkpoint write can fail that execution; the Postgres probe isolates
+completion after acknowledged events. Pausing Redis preserves memory and does
+not test Redis data loss, snapshot recovery or a replacement Redis instance.
+Neither case proves a cloud failover, a 30-minute or multi-day soak, managed UI
+reconnect across replicas, live-provider accounting or exactly-once external
+effects. Reports from earlier source images retain their separate scope.

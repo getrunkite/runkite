@@ -766,7 +766,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// terminal outcome). Skipped entirely when nothing is listening for
 	// hooks, so this costs nothing in the common (hooks-disabled) case.
 	if s.hooks.HasSinks() {
-		go s.watchRunEventsForToolCallHook(runID, threadID, req.AgentID, tenant.FromContext(ctx))
+		s.watchRunEventsForToolCallHook(runID, threadID, req.AgentID, tenant.FromContext(ctx))
 	}
 
 	return run, assignment, nil
@@ -821,45 +821,45 @@ func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID
 	return run, nil
 }
 
-// watchRunEventsForToolCallHook tails a run's event stream purely to fire
-// on_tool_call hooks, reusing the same Subscribe+Replay-free tailing the
-// broker already provides everywhere else (SSE/WS streaming). The control
-// plane doesn't parse LangGraph/LangChain message shapes to detect tool
-// calls itself -- staying framework-agnostic -- it just watches for a
-// RunEvent whose method is literally "tool_call", which a framework-aware
-// runner can choose to emit alongside its normal values/updates events.
+// watchRunEventsForToolCallHook subscribes before createRunCtx returns so an
+// immediately dispatched runner cannot publish before registration. Only the
+// consumer runs asynchronously. The watcher recognizes explicit "tool_call"
+// events without parsing framework-specific values or updates.
 func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantID string) {
-	ch, err := s.broker.Subscribe(context.Background(), runID)
-	if err != nil {
-		return
-	}
 	// Ceiling so an orphaned run (never reaches StatusCallback / cancel,
 	// so broker.Close never fires) cannot leave this goroutine blocked
-	// forever. Normal runs close the channel via broker.Close well before
-	// this — the timer is a leak guard, not a soft timeout on tool hooks.
-	timer := time.NewTimer(2 * time.Hour)
-	defer timer.Stop()
-	for {
-		select {
-		case event, ok := <-ch:
-			if !ok {
+	// forever. Cancel also releases the broker's underlying Redis tailer.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	ch, err := s.broker.Subscribe(ctx, runID)
+	if err != nil {
+		cancel()
+		slog.Warn("tool-call hook subscription failed", "run_id", runID, "error", err)
+		return
+	}
+	go func() {
+		defer cancel()
+		for {
+			select {
+			case event, ok := <-ch:
+				if !ok {
+					return
+				}
+				if event.Method != "tool_call" {
+					continue
+				}
+				var data map[string]interface{}
+				if err := jsonvalue.Unmarshal(event.Data, &data); err != nil {
+					continue
+				}
+				s.hooks.Dispatch(hooks.Event{
+					Type: hooks.ToolCall, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
+					Data: data, Timestamp: time.Now().UTC(),
+				})
+			case <-ctx.Done():
 				return
 			}
-			if event.Method != "tool_call" {
-				continue
-			}
-			var data map[string]interface{}
-			if err := jsonvalue.Unmarshal(event.Data, &data); err != nil {
-				continue
-			}
-			s.hooks.Dispatch(hooks.Event{
-				Type: hooks.ToolCall, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
-				Data: data, Timestamp: time.Now().UTC(),
-			})
-		case <-timer.C:
-			return
 		}
-	}
+	}()
 }
 
 // tryServeCachedRun checks for a cached result for this exact (agent,
@@ -1865,10 +1865,16 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 	// Commit cancellation before removing its recoverable lease. The transaction
 	// targets the current attempt, while refusing to overwrite a terminal winner.
 	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
-	if !accepted {
-		if completionErr != nil {
-			return nil, completionErr
+	if completionErr != nil {
+		if accepted {
+			// The interruption committed, but usage/hold/hook finalization can
+			// still fail. Stop the runner while retaining its lease so ordinary
+			// reclaim retries that bookkeeping without another caller request.
+			tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID) })
 		}
+		return nil, completionErr
+	}
+	if !accepted {
 		current, err := s.store.GetRun(ctx, runID)
 		if err != nil {
 			return nil, err
@@ -1883,10 +1889,6 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 	if !tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID) }) {
 		return nil, fmt.Errorf("failed to publish runner cancellation")
 	}
-	if completionErr != nil {
-		return nil, completionErr
-	}
-
 	// Give runner time to emit its own terminal event, then close broker.
 	closeBroker := func() {
 		time.Sleep(5 * time.Second)

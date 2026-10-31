@@ -2,6 +2,7 @@ package redistransport_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -165,5 +166,97 @@ func TestRedisBroker_CloseAlsoExpiresStream(t *testing.T) {
 	}
 	if ttl <= 0 {
 		t.Fatalf("stream key must have a positive TTL after Close, got %v", ttl)
+	}
+}
+
+func TestRedisPoisonPillPreservesColonRunIDs(t *testing.T) {
+	rdb := getRedisClient(t)
+	defer rdb.Close()
+	ctx := context.Background()
+	for _, id := range []string{"invoice:pending", "invoice:2", "invoice:2:retry", "tenant:作業"} {
+		t.Run(id, func(t *testing.T) {
+			if err := redistransport.FlushAll(ctx, rdb); err != nil {
+				t.Fatal(err)
+			}
+			q := redistransport.NewQueue(rdb)
+			job := &transport.RunAssignment{
+				RunID: id, ThreadID: "thread", RunnerKind: "kind", GraphID: "agent", TenantID: "acme", Generation: 2,
+			}
+			if err := q.Enqueue(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+			if assignment, err := q.Dequeue(ctx, job.RunnerKind, time.Second); err != nil || assignment == nil {
+				t.Fatalf("dequeue: assignment=%+v err=%v", assignment, err)
+			}
+			for attempt := 0; attempt < 2; attempt++ {
+				n, dead, err := q.ReclaimStale(ctx, -time.Second, 2)
+				if err != nil || n != 0 || len(dead) != 1 {
+					t.Fatalf("ceiling retry %d: n=%d pills=%+v err=%v", attempt, n, dead, err)
+				}
+				pill := dead[0]
+				if pill.RunID != job.RunID || pill.Generation != 3 || pill.AgentID != job.GraphID || pill.TenantID != job.TenantID {
+					t.Fatalf("poison identity changed: pill=%+v assignment=%+v", pill, job)
+				}
+				if live, err := q.LookupInflight(ctx, job.RunID); err != nil || live == nil || live.Generation != 2 {
+					t.Fatalf("retained lease: assignment=%+v err=%v", live, err)
+				}
+			}
+			if accepted, err := q.Ack(ctx, job.RunID, 2); err != nil || !accepted {
+				t.Fatalf("exact generation Ack: accepted=%t err=%v", accepted, err)
+			}
+			if n, dead, err := q.ReclaimStale(ctx, -time.Second, 2); err != nil || n != 0 || len(dead) != 0 {
+				t.Fatalf("completed pill returned: n=%d pills=%+v err=%v", n, dead, err)
+			}
+		})
+	}
+}
+
+func TestRedisReclaimRetainsAssignmentWhenReadyQueueWriteFails(t *testing.T) {
+	rdb := getRedisClient(t)
+	defer rdb.Close()
+	ctx := context.Background()
+	if err := redistransport.FlushAll(ctx, rdb); err != nil {
+		t.Fatal(err)
+	}
+	q := redistransport.NewQueue(rdb)
+	job := &transport.RunAssignment{
+		RunID: "reclaim-write-failure", ThreadID: "thread", RunnerKind: "kind", Generation: 1,
+		Input: json.RawMessage(`{"large":9007199254740993,"items":[]}`),
+	}
+	if err := q.Enqueue(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if assignment, err := q.Dequeue(ctx, job.RunnerKind, time.Second); err != nil || assignment == nil {
+		t.Fatalf("dequeue: assignment=%+v err=%v", assignment, err)
+	}
+	before, err := rdb.HGet(ctx, "rk:inflight:data", job.RunID).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Redis scripts do not roll back earlier writes when LPUSH fails.
+	if err := rdb.Set(ctx, "rk:queue:kind", "wrong-type", 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := q.ReclaimStale(ctx, -time.Second, 3); err == nil {
+		t.Fatal("reclaim accepted an unwritable ready queue")
+	}
+	if after, err := rdb.HGet(ctx, "rk:inflight:data", job.RunID).Result(); err != nil || after != before {
+		t.Fatalf("recoverable assignment was changed or removed: payload=%q err=%v", after, err)
+	}
+	if current, err := q.Renew(ctx, job.RunID, 1); err != nil || !current {
+		t.Fatalf("failed reclaim advanced or removed the original fence: current=%t err=%v", current, err)
+	}
+	if err := rdb.Del(ctx, "rk:queue:kind").Err(); err != nil {
+		t.Fatal(err)
+	}
+	if n, dead, err := q.ReclaimStale(ctx, -time.Second, 3); err != nil || n != 1 || len(dead) != 0 {
+		t.Fatalf("reclaim after repair: n=%d pills=%+v err=%v", n, dead, err)
+	}
+	assignment, err := q.Dequeue(ctx, job.RunnerKind, time.Second)
+	if err != nil || assignment == nil || assignment.Generation != 2 || string(assignment.Input) != string(job.Input) {
+		t.Fatalf("repaired dispatch changed payload or generation: assignment=%+v err=%v", assignment, err)
+	}
+	if accepted, err := q.Ack(ctx, job.RunID, 2); err != nil || !accepted {
+		t.Fatalf("repaired generation Ack: accepted=%t err=%v", accepted, err)
 	}
 }
