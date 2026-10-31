@@ -9,6 +9,8 @@ from runkite_governance import GovernanceClient, GovernanceError
 
 
 class Response:
+    status = 200
+
     def __enter__(self):
         return self
 
@@ -21,10 +23,22 @@ class Response:
 
 
 class DeadlineTests(unittest.TestCase):
+    def test_non_success_cannot_become_allow_even_with_json_body(self):
+        class Redirect(Response):
+            status = 302
+
+            def read1(self, _size):
+                raise AssertionError("A redirected response must not be accepted as a decision")
+
+        with patch("urllib.request.OpenerDirector.open", return_value=Redirect()):
+            with self.assertRaises(GovernanceError) as caught:
+                GovernanceClient("http://plane").decide(agent_id="a", connector="c", tool="t")
+        self.assertEqual(caught.exception.status, 302)
+
     def test_transport_capacity_wait_is_bounded(self):
         workers = threading.BoundedSemaphore(1)
         workers.acquire()
-        with patch("runkite_governance._HTTP_WORKERS", workers), patch("urllib.request.urlopen") as opener:
+        with patch("runkite_governance._HTTP_WORKERS", workers), patch("urllib.request.OpenerDirector.open") as opener:
             with self.assertRaises(GovernanceError) as caught:
                 GovernanceClient("http://plane", timeout_ms=30).action("a")
             self.assertEqual(caught.exception.status, 408)
@@ -38,7 +52,7 @@ class DeadlineTests(unittest.TestCase):
             return Response()
 
         started = time.monotonic()
-        with patch("urllib.request.urlopen", blocked):
+        with patch("urllib.request.OpenerDirector.open", blocked):
             with self.assertRaises(GovernanceError) as caught:
                 GovernanceClient("http://plane", timeout_ms=30).decide(agent_id="a", connector="c", tool="t")
         self.assertEqual(caught.exception.status, 408)
@@ -50,7 +64,7 @@ class DeadlineTests(unittest.TestCase):
         timer.start()
         started = time.monotonic()
         try:
-            with patch("urllib.request.urlopen", return_value=Response()):
+            with patch("urllib.request.OpenerDirector.open", return_value=Response()):
                 with self.assertRaises(GovernanceError) as caught:
                     GovernanceClient("http://plane", timeout_ms=1000).action("a", cancelled=cancelled)
             self.assertEqual(caught.exception.status, 499)
@@ -59,7 +73,7 @@ class DeadlineTests(unittest.TestCase):
             timer.cancel()
 
     def test_body_cannot_exceed_deadline(self):
-        with patch("urllib.request.urlopen", return_value=Response()):
+        with patch("urllib.request.OpenerDirector.open", return_value=Response()):
             with self.assertRaises(GovernanceError) as caught:
                 GovernanceClient("http://plane", timeout_ms=30).action("a")
         self.assertEqual(caught.exception.status, 408)

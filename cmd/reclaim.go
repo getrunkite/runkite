@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/getrunkite/runkite/internal/config"
@@ -171,10 +172,9 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 	// "dequeue to completion" once the clock is reset throughout,
 	// rather than frozen at dequeue time. Tune via reclaim.max_age or
 	// RUNKITE_RECLAIM_MAX_AGE; default 6s (see initReclaimMaxAge).
-	holder, _ := os.Hostname()
-	if holder == "" {
-		holder = "runkite"
-	}
+	// A hostname is shared by separate control-plane processes on the same
+	// machine. Each loop needs its own stable token or both can renew one lease.
+	holder := newReclaimLeaderHolder()
 	slog.Info("reclaim loop started", "max_retries", maxRetries, "max_age", maxAge)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -235,4 +235,8 @@ func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredi
 			}
 		}
 	}
+}
+
+func newReclaimLeaderHolder() string {
+	return uuid.NewString()
 }

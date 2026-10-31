@@ -104,7 +104,13 @@ func New(controlURL, apiKey, indexName string, dimensions int, cloud, region str
 		// the control plane's /vectors/* handlers forever. 30s covers
 		// large ANN searches without pretending the request can wait
 		// forever -- same bound and reasoning as Qdrant's/Weaviate's.
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+			// Redirects cannot delegate API keys or vector payloads to a new URL.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 

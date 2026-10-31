@@ -1,9 +1,6 @@
 import { getCSRFToken } from "./client";
-
-export interface SseEvent {
-  event: string;
-  data: string;
-}
+import { readSseBody, type SseEvent } from "./read-sse";
+export type { SseEvent } from "./read-sse";
 
 /**
  * Manually parsed SSE reader instead of the browser's native EventSource.
@@ -18,6 +15,7 @@ export function streamSSE(path: string, onEvent: (event: SseEvent) => void, onDo
 
   fetch(`/admin-api${path}`, {
     credentials: "include",
+    redirect: "error",
     signal: controller.signal,
   })
     .then(async (resp) => {
@@ -50,6 +48,7 @@ export function streamSSEPost(
   fetch(`/admin-api${path}`, {
     method: "POST",
     credentials: "include",
+    redirect: "error",
     headers,
     body: JSON.stringify(body ?? {}),
     signal: controller.signal,
@@ -79,31 +78,4 @@ export function streamSSEPost(
     });
 
   return () => controller.abort();
-}
-
-async function readSseBody(body: ReadableStream<Uint8Array>, onEvent: (event: SseEvent) => void): Promise<void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let frameEnd: number;
-    while ((frameEnd = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, frameEnd);
-      buffer = buffer.slice(frameEnd + 2);
-      parseFrame(frame, onEvent);
-    }
-  }
-}
-
-function parseFrame(frame: string, onEvent: (event: SseEvent) => void): void {
-  let eventName = "message";
-  const dataLines: string[] = [];
-  for (const line of frame.split("\n")) {
-    if (line.startsWith("event:")) eventName = line.slice("event:".length).trim();
-    else if (line.startsWith("data:")) dataLines.push(line.slice("data:".length).trim());
-  }
-  if (dataLines.length > 0) onEvent({ event: eventName, data: dataLines.join("\n") });
 }

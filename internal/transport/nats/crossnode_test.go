@@ -63,7 +63,7 @@ func TestNATSQueue_AckFromDifferentConnectionThanDequeue(t *testing.T) {
 
 	// Confirm it's genuinely gone -- Nack from either connection on an
 	// already-Ack'd job must be a no-op, not a resurrection.
-	if err := queueA.Nack(ctx, got.RunID); err != nil {
+	if err := queueA.Nack(ctx, got.RunID, got.Generation); err != nil {
 		t.Fatalf("Nack after cross-connection Ack: %v", err)
 	}
 	extra, _ := queueA.Dequeue(ctx, "test-runner", 300*time.Millisecond)

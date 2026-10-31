@@ -235,8 +235,10 @@ type JobQueue interface {
 	Renew(ctx context.Context, runID string, generation int64) (current bool, err error)
 
 	// Nack signals that the job was not processed successfully.
-	// The job should be made available for re-delivery.
-	Nack(ctx context.Context, runID string) error
+	// The job is made available for re-delivery only if generation still
+	// identifies its current dispatch. A delayed failed GetJob must not
+	// remove or requeue a replacement attempt. Zero matches only zero.
+	Nack(ctx context.Context, runID string, generation int64) error
 
 	// Cancel removes or poisons a job so it is not delivered to any runner.
 	// If already dequeued, the runner must do a pre-execution status check.

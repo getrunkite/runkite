@@ -6,6 +6,8 @@ import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
 import { reconcileRun } from "../api/reconcile-run";
+import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
+import { eventPreview } from "../lib/eventPreview";
 import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
@@ -57,7 +59,7 @@ function readRunManifest(metadata: Record<string, unknown> | undefined): RunMani
 
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
-  const run = useApi<AdminRun>(`/runs/${runId}`, [runId]);
+  const run = useApi<AdminRun>(runId ? adminRunPath(runId) : "", [runId]);
   const childrenPath = runId ? adminListPath("/runs", undefined, { parent_run_id: runId }) : "";
   const children = useApi<AdminRun[]>(childrenPath, [runId]);
   const [events, setEvents] = useState<LogEntry[]>([]);
@@ -72,7 +74,7 @@ export function RunDetail() {
     if (!runId) return;
     setCancelling(true);
     try {
-      await api.post(`/runs/${runId}/cancel`);
+      await api.post(`${adminRunPath(runId)}/cancel`);
       toast.success("Cancel requested", { description: runId });
       setConfirmOpen(false);
       run.reload();
@@ -99,12 +101,12 @@ export function RunDetail() {
       }, () => TERMINAL_STATUSES.has(statusRef.current ?? ""));
     };
     const abort = streamSSE(
-      `/runs/${runId}/stream`,
+      `${adminRunPath(runId)}/stream`,
       (event) => {
         if (!active) return;
         if (event.event === "end" || event.event === "error") reconcile();
         setEvents((prev) => {
-          const next = [...prev, { ...event, receivedAt: Date.now() }];
+          const next = [...prev, { ...event, data: eventPreview(event.data), receivedAt: Date.now() }];
           return next.length > MAX_RUN_EVENTS ? next.slice(-MAX_RUN_EVENTS) : next;
         });
       },
@@ -207,7 +209,7 @@ export function RunDetail() {
             </DetailRow>
             <DetailRow label="Thread">
               {run.data.thread_id ? (
-                <Link to={`/admin/threads/${run.data.thread_id}`} className="font-mono text-xs text-primary hover:underline">
+                <Link to={`/admin${adminThreadPath(run.data.thread_id)}`} className="font-mono text-xs text-primary hover:underline">
                   {run.data.thread_id}
                 </Link>
               ) : (
@@ -217,7 +219,7 @@ export function RunDetail() {
             {run.data.parent_run_id && (
               <DetailRow label="Parent run">
                 <Link
-                  to={`/admin/runs/${run.data.parent_run_id}`}
+                  to={`/admin${adminRunPath(run.data.parent_run_id)}`}
                   className="font-mono text-xs text-primary hover:underline"
                 >
                   {run.data.parent_run_id}
@@ -274,7 +276,7 @@ export function RunDetail() {
             {run.data.parent_run_id ? (
               <p>
                 This run was delegated from{" "}
-                <Link to={`/admin/runs/${run.data.parent_run_id}`} className="font-mono text-xs text-primary hover:underline">
+                <Link to={`/admin${adminRunPath(run.data.parent_run_id)}`} className="font-mono text-xs text-primary hover:underline">
                   {run.data.parent_run_id}
                 </Link>
                 {run.data.agent_id ? (
@@ -310,7 +312,7 @@ export function RunDetail() {
                       <tr key={c.run_id} className="border-t border-border/60">
                         <td className="px-3 py-2">
                           <Link
-                            to={`/admin/runs/${c.run_id}`}
+                            to={`/admin${adminRunPath(c.run_id)}`}
                             className="font-mono text-xs text-primary hover:underline"
                           >
                             {c.run_id}

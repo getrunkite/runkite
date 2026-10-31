@@ -1,5 +1,5 @@
-// Package jsonvalue preserves numbers in application JSON without changing
-// decoding of control-plane metadata, policy configuration or typed counters.
+// Package jsonvalue preserves numbers in scoped application and policy JSON
+// without changing unrelated control metadata or typed counters.
 package jsonvalue
 
 import (

@@ -4,6 +4,7 @@ import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
+import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
 import type { AdminRun, AdminThread } from "../api/types";
 import { DocsLink, EmptyState, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage, TableSkeleton } from "../components/common";
 import { Badge } from "../components/ui/badge";
@@ -24,8 +25,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 export function ThreadDetail() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
-  const thread = useApi<AdminThread>(`/threads/${threadId}`, [threadId]);
-  const runs = useApi<AdminRun[]>(`/threads/${threadId}/runs`, [threadId]);
+  const thread = useApi<AdminThread>(threadId ? adminThreadPath(threadId) : "", [threadId]);
+  const runs = useApi<AdminRun[]>(threadId ? `${adminThreadPath(threadId)}/runs` : "", [threadId]);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -33,7 +34,7 @@ export function ThreadDetail() {
     if (!threadId) return;
     setDeleting(true);
     try {
-      await api.del(`/threads/${threadId}`);
+      await api.del(adminThreadPath(threadId));
       toast.success("Thread deleted", { description: threadId });
       navigate("/admin/threads");
     } catch (err) {
@@ -152,7 +153,7 @@ export function ThreadDetail() {
                 {runs.data?.map((run) => (
                   <TableRow key={run.run_id}>
                     <TableCell className="font-mono text-xs">
-                      <Link to={`/admin/runs/${run.run_id}`} className="font-medium text-primary hover:underline">
+                      <Link to={`/admin${adminRunPath(run.run_id)}`} className="font-medium text-primary hover:underline">
                         {run.run_id}
                       </Link>
                     </TableCell>

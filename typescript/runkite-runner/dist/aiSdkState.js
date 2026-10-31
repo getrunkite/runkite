@@ -83,6 +83,7 @@ export class AiSdkState {
     async load(threadId, signal) {
         try {
             const init = {
+                redirect: "error",
                 headers: this.headers(),
                 dispatcher: httpDispatcher(),
                 signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
@@ -135,6 +136,7 @@ export class AiSdkState {
             if (Buffer.byteLength(body) > MAX_BYTES)
                 throw new Error("AI SDK state exceeds the opaque checkpoint limit");
             const init = {
+                redirect: "error",
                 method: "PUT",
                 body,
                 headers: {

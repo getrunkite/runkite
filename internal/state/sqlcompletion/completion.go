@@ -185,7 +185,7 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		if parentID.Valid {
 			parent = parentID.String
 		}
-		if err := tx.Exec(ctx, d.query(`INSERT INTO thread_checkpoints (tenant_id,checkpoint_id,thread_id,checkpoint_ns,parent_id,values_json,metadata,next_nodes,tasks,interrupts,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`), tid, "completion:"+c.RunID, threadID, "", parent, raw, []byte(`{}`), []byte(`[]`), []byte(`[]`), []byte(`[]`), d.now(now)); err != nil {
+		if err := tx.Exec(ctx, d.query(`INSERT INTO thread_checkpoints (tenant_id,checkpoint_id,thread_id,checkpoint_ns,parent_id,values_json,metadata,next_nodes,tasks,interrupts,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`), tid, "completion:"+c.RunID, threadID, "", parent, threadRaw, []byte(`{}`), []byte(`[]`), []byte(`[]`), []byte(`[]`), d.now(now)); err != nil {
 			return state.CompletionResult{}, err
 		}
 	}

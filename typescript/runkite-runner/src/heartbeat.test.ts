@@ -112,7 +112,7 @@ test("startHeartbeatLoop defaults generation to 0 when not given", async () => {
 
   assert.ok(
     generations.every((g) => g === "0"),
-    `unspecified generation should default to 0 (unfenced), got ${JSON.stringify(generations)}`,
+    `unspecified generation should default to legacy generation 0, got ${JSON.stringify(generations)}`,
   );
 });
 
@@ -164,4 +164,76 @@ test("startHeartbeatLoop superseded without onSuperseded does not throw", async 
   const handle = startHeartbeatLoop(client, "run-no-callback", new Metadata(), { generation: 1, intervalMs: 50 });
   await sleep(150);
   handle.stop(); // must not throw even though onSuperseded was never provided
+});
+
+test("a hung renewal is cancelled and later heartbeats continue", { timeout: 1000 }, async () => {
+  let calls = 0;
+  let cancellations = 0;
+  let completed!: () => void;
+  const renewed = new Promise<void>((resolve) => {
+    completed = resolve;
+  });
+  const client = {
+    heartbeat(
+      _req: HeartbeatRequest,
+      _metadata: Metadata,
+      callback: (err: Error | null, resp: HeartbeatResponse) => void,
+    ) {
+      calls++;
+      if (calls > 1) {
+        callback(null, { ok: true, superseded: false });
+        completed();
+      }
+      return {
+        cancel() {
+          cancellations++;
+        },
+      };
+    },
+  } as unknown as RunnerServiceClient;
+  const handle = startHeartbeatLoop(client, "hung", new Metadata(), { intervalMs: 5, rpcTimeoutMs: 15 });
+  try {
+    await renewed;
+    assert.ok(calls >= 2);
+    assert.equal(cancellations, 1, "Cancel the timed-out RPC before starting another one");
+  } finally {
+    handle.stop();
+  }
+});
+
+test("stop cancels the active call and ignores its late superseded callback", { timeout: 1000 }, async () => {
+  let calls = 0;
+  let cancellations = 0;
+  let superseded = 0;
+  let callback!: (err: Error | null, resp: HeartbeatResponse) => void;
+  let entered!: () => void;
+  const active = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const client = {
+    heartbeat(_req: HeartbeatRequest, _metadata: Metadata, cb: typeof callback) {
+      calls++;
+      callback = cb;
+      entered();
+      return {
+        cancel() {
+          cancellations++;
+        },
+      };
+    },
+  } as unknown as RunnerServiceClient;
+  const handle = startHeartbeatLoop(client, "stopped", new Metadata(), {
+    intervalMs: 5,
+    rpcTimeoutMs: 200,
+    onSuperseded: () => {
+      superseded++;
+    },
+  });
+  await active;
+  handle.stop();
+  callback(null, { ok: true, superseded: true });
+  await sleep(20);
+  assert.equal(cancellations, 1);
+  assert.equal(calls, 1);
+  assert.equal(superseded, 0, "An already-stopped generation cannot send a new cancellation");
 });

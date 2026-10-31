@@ -44,20 +44,24 @@ func TestBindArgs_RedactsSecretsKeepsDigest(t *testing.T) {
 	if nested["ok"] != true {
 		t.Fatalf("kept nested ok: %#v", meta)
 	}
-	if meta["amount"] != float64(50) {
+	if meta["amount"] != json.Number("50") {
 		t.Fatalf("amount=%v", meta["amount"])
 	}
 }
 
-func TestBindArgs_JSONStringObject(t *testing.T) {
+func TestBindArgs_JSONStringRetainsItsType(t *testing.T) {
 	raw, err := json.Marshal(`{"amount":9}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	parsed, _, _ := BindArgs(raw)
-	m, ok := parsed.(map[string]any)
-	if !ok || m["amount"] != float64(9) {
-		t.Fatalf("string-encoded arguments: %#v", parsed)
+	if parsed != `{"amount":9}` {
+		t.Fatalf("string arguments changed type: %#v", parsed)
+	}
+	_, objectDigest, _ := BindArgs([]byte(`{"amount":9}`))
+	_, stringDigest, _ := BindArgs(raw)
+	if objectDigest == stringDigest {
+		t.Fatal("string and object share authorization")
 	}
 }
 

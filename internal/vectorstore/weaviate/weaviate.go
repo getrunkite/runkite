@@ -105,7 +105,13 @@ func New(baseURL, class string, dimensions int) (*Store, error) {
 		// the control plane's /vectors/* handlers forever. 30s covers
 		// large ANN searches without pretending the request can wait
 		// forever -- same bound and reasoning as Qdrant's.
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+			// The configured endpoint owns vector data and any URL credentials.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 
@@ -150,6 +156,9 @@ func (s *Store) Init(ctx context.Context) error {
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		return nil
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("weaviate: check schema returned %d", resp.StatusCode)
 	}
 
 	// tokenization: "field" on tenant_id/namespace/item_id is

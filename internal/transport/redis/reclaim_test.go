@@ -113,7 +113,7 @@ func TestRedisNack_ReenqueuesImmediately(t *testing.T) {
 		t.Fatal("expected job")
 	}
 
-	if err := q.Nack(ctx, got.RunID); err != nil {
+	if err := q.Nack(ctx, got.RunID, got.Generation); err != nil {
 		t.Fatal(err)
 	}
 

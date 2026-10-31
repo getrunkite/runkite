@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 // MCPRequest is the single interpretation used for enforcement and forwarding.
@@ -24,6 +26,9 @@ type MCPRequest struct {
 func ParseMCPRequest(body []byte) (*MCPRequest, error) {
 	if int64(len(body)) > MaxMCPRequestBytes {
 		return nil, ErrBodyTooLarge
+	}
+	if _, err := jsonvalue.DecodeUnique(body); err != nil {
+		return nil, fmt.Errorf("invalid or ambiguous JSON-RPC request: %w", err)
 	}
 	envelope, err := strictRPCObject(body, []string{"jsonrpc", "id", "method", "params"})
 	if err != nil {
@@ -49,6 +54,9 @@ func ParseMCPRequest(body []byte) (*MCPRequest, error) {
 				}
 			}
 			req.Arguments = params["arguments"]
+			if len(req.Arguments) > 0 && bytes.TrimSpace(req.Arguments)[0] != '{' {
+				return nil, fmt.Errorf("tools/call arguments must be an object")
+			}
 		}
 		envelope["params"], err = json.Marshal(params)
 		if err != nil {

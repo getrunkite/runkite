@@ -2,6 +2,10 @@
 
 Runkite is a Go control plane implementing the Agent Protocol spec, with Python and TypeScript Runner Protocol SDKs. Contributions are welcome -- especially new state/vector-store backends, new runner languages, and new framework adapters, all of which the architecture was explicitly designed to support without touching the control plane's core.
 
+Read [runtime invariants and regression boundaries](docs/internal/runtime-hardening.md)
+before changing dispatch, completion, policy, credential delivery or Admin
+feedback. A successful happy path does not establish recovery or isolation.
+
 ## Before you start
 
 - **License**: Runkite is licensed under [BUSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-07-27). By submitting a contribution, you agree it's licensed under the same terms as the rest of the project.

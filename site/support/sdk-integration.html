@@ -140,6 +140,21 @@
           Admin approval updates the pending row and does not execute or resume your app.
         </p>
         <p>
+          The unreleased argument parser preserves the submitted JSON type. This door
+          still accepts any JSON argument value, but a string containing JSON remains
+          a string rather than being parsed again. Submit an object when your policy
+          predicates inspect its fields; ambiguous duplicate keys or invalid Unicode
+          receive HTTP <code>400</code>.
+        </p>
+        <p>
+          <strong>Unreleased approval upgrade:</strong> pending or approved actions
+          created before the v2 argument binding now poll as <code>rejected</code>
+          with <code>approval_binding_legacy</code>, and Admin refuses to approve them.
+          Do not execute the saved operation from that result. Resubmit for a new
+          decision and fresh approval when required. There is no migration or automatic
+          replay; see <a href="grants.html#approval-upgrade">approval upgrades</a>.
+        </p>
+        <p>
           The repository's TypeScript <code>createGovernedExecute</code> decides once and
           never polls or retries. It supports ordinary single-result JSON tools inside
           <code>generateText</code> and <code>streamText</code>; async-iterable tool outputs
@@ -229,10 +244,13 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
 
         <h2>Durability and limits</h2>
         <ul>
+          <li>The unreleased bridge applies <code>timeoutMs</code> (30 seconds by default) to browser request-body intake as well as HTTP setup and durable-completion reads. A stalled intake is canceled before any run is created. This is not a duration limit on the running chat stream.</li>
+          <li>New thread/run IDs equal to <code>.</code> or <code>..</code> are rejected with HTTP <code>400</code> before persistence. Other custom string IDs remain supported; encode them as individual URL components. The bridge already refuses dot-only IDs.</li>
           <li>Native successful-turn history uses the existing run-bound opaque checkpoint API, with framework/agent validation, exact generation and tenant binding, strong ETags and CAS.</li>
           <li>State must commit before success. A committed current-run receipt replays after reclaim without repeating its model or tools. A crash before commit can still repeat external writes; downstream idempotency is required.</li>
           <li>Initial scope is text and local JSON-result tools. No native approval/resume, client/provider tools, async-iterable tool outputs, binary attachments, time travel, partial-turn restore or whole-run caching.</li>
           <li>Run lifecycle does not automatically govern every native tool body. Connector policy still requires the real connector path. Cancellation cannot undo an already completed effect.</li>
+          <li>Unreleased connector helpers use one total operation deadline and refuse redirects. Pass the TypeScript run signal, or cancel the Python coroutine, to stop delivery. Only the plane's explicit pre-dispatch <code>connector_session_invalid</code> response permits automatic renewal. Upgrade the plane first; an upstream <code>401</code> becomes <code>502 connector_upstream_unauthorized</code> and is not retried. See <a href="connectors.html">connector recovery rules</a>.</li>
           <li>Successful turns report provider tokens. The plane can settle cancellation before trailing usage arrives, so complete canceled-run spend is not guaranteed.</li>
           <li>State is capped at 16 MiB, a turn's UI receipt at 8 MiB and final output at 3 MiB. The example bridge has its own documented request/frame limits.</li>
         </ul>
@@ -280,6 +298,14 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           and HITL. The OpenAI profile also rejects native handoffs, hosted/MCP
           tools and structured final outputs. Its native SDK trace exporter is
           disabled; Runkite OTLP run tracing remains available.
+        </p>
+        <p>
+          The managed Python profiles enforce dispatched <code>allowed_tools</code>
+          before local execution: omitted is unrestricted, <code>[]</code> denies all,
+          and a list permits those names. Microsoft uses native function middleware
+          and rejects a configured restriction before model execution if a custom
+          client lacks that invocation boundary. This cooperative check is not a
+          sandbox or a replacement for connector policy.
         </p>
         <ul>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_agent_framework">Managed Microsoft example and installed-runner tests</a></li>

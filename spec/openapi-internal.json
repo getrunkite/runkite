@@ -49,7 +49,8 @@
             "type": "string"
           },
           "thread_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "input": {
             "type": "object"
@@ -58,7 +59,8 @@
             "type": "object"
           },
           "parent_run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "on_behalf_of": {
             "type": "object",
@@ -181,7 +183,8 @@
             "type": "string"
           },
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "payload": {
             "type": "object"
@@ -203,7 +206,8 @@
         "type": "object",
         "properties": {
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "status": {
             "type": "string"
@@ -248,8 +252,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -460,7 +463,7 @@
           "Runner"
         ],
         "summary": "Proxy MCP Request",
-        "description": "Proxy one JSON-RPC request to a connector's downstream MCP server, enforcing tool allow/deny lists.",
+        "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.",
         "operationId": "proxy_mcp_request",
         "parameters": [
           {

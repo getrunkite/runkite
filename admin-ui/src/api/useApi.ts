@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
+import { pollRequest } from "./poll-request";
 
 interface ApiState<T> {
   data: T | null;
@@ -14,13 +15,14 @@ interface ApiState<T> {
  * loading/error/data shape every page needs -- avoids repeating the same
  * three useState calls and try/catch on every page.
  *
- * pollMs (optional): when set, re-fetches on that interval AFTER the
- * first successful load, without resetting `loading`/clearing `data`
+ * pollMs (optional): wait this interval after each completed request
+ * before refreshing, without resetting `loading`/clearing `data`
  * on each tick -- a background refresh should update numbers in place,
  * not flash the whole page back to a loading state every few seconds.
  * A poll's own error is surfaced the same way a normal fetch's would be,
  * but doesn't clear previously-good `data` -- a transient blip
- * shouldn't blank out a dashboard that was just showing real numbers. */
+ * shouldn't blank out a dashboard that was just showing real numbers.
+ * Navigation aborts the request and ignores any late result. */
 export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): ApiState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,38 +38,19 @@ export function useApi<T>(path: string, deps: unknown[] = [], pollMs?: number): 
       setNextCursor(null);
       return;
     }
-    let cancelled = false;
-    let isFirstLoad = true;
-
-    function fetchOnce() {
-      if (isFirstLoad) {
-        setLoading(true);
+    setLoading(true);
+    setError(null);
+    return pollRequest(
+      (signal) => api.getWithMeta<T>(path, signal),
+      (result) => {
+        setData(result.data);
+        setNextCursor(result.nextCursor);
         setError(null);
-      }
-      api
-        .getWithMeta<T>(path)
-        .then((result) => {
-          if (!cancelled) {
-            setData(result.data);
-            setNextCursor(result.nextCursor);
-            setError(null);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof ApiError ? err.message : "Request failed.");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-          isFirstLoad = false;
-        });
-    }
-
-    fetchOnce();
-    const interval = pollMs ? setInterval(fetchOnce, pollMs) : undefined;
-    return () => {
-      cancelled = true;
-      if (interval) clearInterval(interval);
-    };
+      },
+      (err) => setError(err instanceof ApiError ? err.message : "Request failed."),
+      () => setLoading(false),
+      pollMs,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, reloadKey, pollMs, ...deps]);
 

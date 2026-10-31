@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -74,9 +75,9 @@ type WebhookProvider struct {
 	// codebase, e.g. hooks.Dispatcher's own nil-receiver methods).
 	//
 	// A bounded, TTL-evicting LRU rather than a plain map: cacheKeyFor
-	// hashes credential material together with request method+path
-	// (see its own doc comment for why), which means the cache grows
-	// one entry per unique (caller, method, URL path) combination --
+	// hashes the complete forwarded request context, including all headers
+	// and request method/path (see its own doc comment for why). The cache
+	// can grow one entry per distinct context --
 	// for a REST API whose paths embed resource IDs (e.g.
 	// /threads/{threadID}/runs/{runID}), that is effectively one entry
 	// per distinct thread/run a caller has ever touched, not one entry
@@ -94,14 +95,14 @@ type WebhookProvider struct {
 // NewWebhookProvider creates a webhook auth provider.
 func NewWebhookProvider(cfg WebhookConfig) *WebhookProvider {
 	timeout := time.Duration(cfg.TimeoutMs) * time.Millisecond
-	if timeout == 0 {
+	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	ttl := time.Duration(cfg.CacheTTLSeconds) * time.Second
 
 	p := &WebhookProvider{
 		url:    cfg.URL,
-		client: &http.Client{Timeout: timeout},
+		client: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}
 	if ttl > 0 {
 		maxEntries := cfg.CacheMaxEntries
@@ -126,7 +127,9 @@ func (p *WebhookProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 	result, err := p.callWebhook(r)
 	// Cache the result (both success and failure) -- unchanged behavior
 	// from before this fix, just via the bounded cache now.
-	p.cache.Add(cacheKey, cacheEntry{result: result, err: err})
+	if r.Context().Err() == nil {
+		p.cache.Add(cacheKey, cacheEntry{result: result, err: err})
+	}
 	return result, err
 }
 
@@ -140,7 +143,7 @@ func (p *WebhookProvider) CacheLen() int {
 	return p.cache.Len()
 }
 
-func (p *WebhookProvider) callWebhook(r *http.Request) (*AuthResult, error) {
+func webhookPayload(r *http.Request) []byte {
 	// Send request headers as JSON
 	headers := make(map[string]string, len(r.Header))
 	for k := range r.Header {
@@ -153,14 +156,30 @@ func (p *WebhookProvider) callWebhook(r *http.Request) (*AuthResult, error) {
 		"path":    r.URL.Path,
 	})
 
-	resp, err := p.client.Post(p.url, "application/json", bytes.NewReader(body))
+	return body
+}
+
+func (p *WebhookProvider) callWebhook(r *http.Request) (*AuthResult, error) {
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, p.url, bytes.NewReader(webhookPayload(r)))
+	if err != nil {
+		return nil, &ErrUnauthorized{Message: "invalid auth webhook URL"}
+	}
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(request)
 	if err != nil {
 		return nil, &ErrUnauthorized{Message: fmt.Sprintf("auth webhook unreachable: %v", err)}
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &ErrUnauthorized{Message: fmt.Sprintf("auth webhook returned HTTP %d", resp.StatusCode)}
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(body) > 1<<20 {
+		return nil, &ErrUnauthorized{Message: "auth webhook response unavailable or too large"}
+	}
 
 	var wResp webhookResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wResp); err != nil {
+	if err := json.Unmarshal(body, &wResp); err != nil {
 		return nil, &ErrUnauthorized{Message: "auth webhook returned invalid response"}
 	}
 
@@ -198,21 +217,13 @@ func (p *WebhookProvider) callWebhook(r *http.Request) (*AuthResult, error) {
 	return result, nil
 }
 
-// cacheKeyFor hashes the credential material AND the request method/path.
-// Authorization alone is not enough: API-key clients often send
-// X-API-Key with an empty Authorization, which previously collapsed
-// every such caller onto one cache entry (identity/permission mixup).
-// Method+path are included because the webhook request body forwards
-// them and sidecars may set allow=false based on route -- caching
-// identity-only would let a prior allow bypass a later path deny.
+// cacheKeyFor hashes the exact headers/method/path payload sent to the sidecar.
+// Cookie and custom identity headers can distinguish callers even when bearer
+// and API-key headers are absent. Route context can also change an allow result.
+// The cache must never reuse a decision for a different forwarded context.
 func (p *WebhookProvider) cacheKeyFor(r *http.Request) string {
-	h := sha256.New()
-	h.Write([]byte(r.Header.Get("Authorization")))
-	h.Write([]byte{0})
-	h.Write([]byte(r.Header.Get("X-API-Key")))
-	h.Write([]byte{0})
-	h.Write([]byte(r.Method))
-	h.Write([]byte{0})
-	h.Write([]byte(r.URL.Path))
-	return hex.EncodeToString(h.Sum(nil))
+	// The provider sees every forwarded header, including Cookie and custom
+	// identity headers. Cache exactly that request, not only bearer/API keys.
+	sum := sha256.Sum256(webhookPayload(r))
+	return hex.EncodeToString(sum[:])
 }

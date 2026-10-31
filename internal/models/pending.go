@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"time"
+
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 // Pending action statuses for connector HITL.
@@ -61,7 +63,7 @@ func UnmarshalPendingArgs(b []byte) map[string]any {
 		return nil
 	}
 	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil || len(m) == 0 {
+	if err := jsonvalue.Unmarshal(b, &m); err != nil || len(m) == 0 {
 		return nil
 	}
 	return m

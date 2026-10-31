@@ -22,6 +22,10 @@ func (s *Server) handleCreateThread(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if invalidResourceID(req.ThreadID) {
+		writeError(w, http.StatusBadRequest, errInvalidResourceID.Error())
+		return
+	}
 
 	if req.ThreadID == "" {
 		req.ThreadID = uuid.New().String()

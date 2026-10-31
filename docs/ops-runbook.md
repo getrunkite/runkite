@@ -2,6 +2,51 @@
 
 Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
 
+## Hardening upgrade (unreleased)
+
+**MySQL operators:** state schema version 17 changes identity/security columns to
+`utf8mb4_0900_bin` (NO PAD). Take a verified backup and stop all writers, including
+old control-plane replicas, before running `runkite db upgrade`. Allow time for
+ALTER operations; startup also runs migrations, so avoid rolling this upgrade.
+The server must support that MySQL 8 collation. Display/search fields retain
+their existing rules. Postgres, SQLite and Mongo schemas are unaffected.
+
+Preflight rejects aliased foreign-key IDs, mismatched child/parent tenants and
+incompatible custom constraints before DDL. Investigate and repair explicitly;
+do not disable foreign-key checks. DDL autocommits. If an ALTER fails, keep
+writers stopped, fix its cause and rerun upgrade. The migration resumes without
+stamping version 17 until constraints are restored. Confirm upgrade success
+before reopening traffic. Version 17 downgrade refuses unsafe identity merging;
+rollback requires the verified backup. Data overwritten under the old insensitive
+collation cannot be reconstructed by this migration. See the
+[MySQL engineering rationale](internal/runtime-hardening.md#mysql-identity-comparison-must-preserve-tenant-boundaries).
+
+Upgrade the plane before runners and use canonical API endpoint URLs without
+redirects. New helpers renew capabilities only after the plane explicitly returns
+`connector_session_invalid`. A new helper against an old unmarked 401 fails safely.
+
+Drain older control-plane replicas before relying on v2 approval binding. Old
+argument digests were produced by a lossy parser and are intentionally not reused.
+Resubmit pending operations with their exact original arguments and obtain fresh
+review. Old pending/approved rows remain audit records; Admin rejects new approval
+of them, and app action polling returns `rejected` with `approval_binding_legacy`.
+Do not replay an uncertain external write merely because its old approval is no
+longer usable. There is no approval migration or repair of historical precision.
+
+Expect HTTP 502 `connector_upstream_unauthorized` when the upstream returns 401.
+The tool may have executed; automatic capability renewal is inappropriate. HTTP
+503 `admin_session_revoke_failed` means logout is unconfirmed. Restore session
+storage and retry; clearing local UI state is not server revocation.
+
+Completion checkpoints now contain merged thread state. Run outputs remain per-run
+results, and old checkpoint rows are not rewritten. New exact `.` and `..` resource
+IDs are rejected with 400. Custom Go queue/session implementations must adopt the
+new generation-bearing `Nack` and error-returning `SessionStore.Delete` signatures.
+The public Runner Protocol wire format is unchanged.
+
+See [the engineering record](internal/runtime-hardening.md) for the rationale,
+validation boundaries and retained product limitations.
+
 ## 1. Supported install
 
 **What “Supported” means:** multi-replica control plane + at least one runner, durable Postgres, Redis for shared queue/broker/cancel, runner tokens + client `auth`. Compose soak (`make smoke-multi` / `make soak-multi`) is the correctness proof. Helm/kind packages the same shape; cluster installs stay **Compatible** until a named cloud soak exists.

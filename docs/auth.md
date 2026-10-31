@@ -21,6 +21,18 @@ For the managed AI SDK chat bridge, keep the Runkite credential on the applicati
 
 **Runner auth** is separate: in local mode runners are trusted implicitly. In production, set `RUNNER_TOKEN_<kind>` env vars — one token or a **comma-separated allowlist** of equally valid tokens per runner type, validated on every gRPC call and `/internal/*` HTTP request. Runners still present a single `RUNNER_TOKEN`. The allowlist supports dual-token rotation and independently revocable fleets for the same kind (not unique-per-pod secrets under a Deployment). Set `RUNNER_TENANTS_<kind>` (comma-separated tenant ids, same kind encoding as tokens) to restrict which tenants that kind may use on unbound `/internal/*` routes. When client-facing auth and `RUNNER_TOKEN_*` are both configured, **`serve` fail-closes unless every tokenized kind has a `RUNNER_TENANTS_*` list** (use `default` for single-tenant). A missing tenant header is treated as `default` for the allow check. Tenant lists are per-kind, not per fleet token. Allowlist changes require a control-plane restart (tokens load at process start).
 
+**Unreleased hardening:** logout is confirmed only after session storage deletes
+the record. Failure returns 503 `admin_session_revoke_failed`; the browser retains
+its session/CSRF state and shows that logout could not be confirmed. Retry after
+storage recovers. Custom Go session stores now return an error from `Delete`.
+
+Webhook auth caches the exact forwarded request context, including Cookie and
+custom headers, rather than only bearer/API keys. It requires a complete response
+of at most 1 MiB with a successful HTTP status, honors caller cancellation and
+refuses redirects. Cancelled requests do not populate shared cached denials.
+Configure the final sidecar URL directly. These changes do not alter the existing
+`strict_permissions` default or introduce a user registry.
+
 **Run-binding** applies to proxy-mode store/vector calls, opaque checkpoints and connector `session`/`mcp`: runners must send `X-Runkite-Run-Id` + `X-Runkite-Generation` for an in-flight assignment. With runner tokens enabled, the authenticated kind must own that assignment. The control plane derives tenant, agent and thread from the assignment rather than trusting `X-Runkite-Tenant-Id`; checkpoint URLs must also match the bound thread. Connector MCP requires a short-lived `session_token` from GetSession (`X-Runkite-Connector-Session`). See [Connectors](connectors.md) and [Trust & governance](trust-governance.md).
 
 The managed AI SDK runner in this working tree uses `RUNNER_TOKEN_TYPESCRIPT_AI_SDK` and `RUNNER_TENANTS_TYPESCRIPT_AI_SDK` on the plane, and presents one matching `RUNNER_TOKEN` from its worker. This uses the existing kind-token model. It does not reuse the application server's client API key. Build the updated runner from the checkout until its package/image is released.

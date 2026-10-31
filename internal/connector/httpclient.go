@@ -9,4 +9,7 @@ import (
 // http.DefaultClient has no timeout and can hang a connector request (and
 // the caller waiting on it) forever if the IdP or downstream MCP server
 // stalls.
-var httpClient = &http.Client{Timeout: 30 * time.Second}
+var httpClient = &http.Client{
+	Timeout:       30 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}

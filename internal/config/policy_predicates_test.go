@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,7 +44,7 @@ func TestLoadLangGraphJSON_PolicyPredicates(t *testing.T) {
 	if p.When == nil || p.When.Path != "amount" || p.When.Op != "gt" {
 		t.Fatalf("when = %+v", p.When)
 	}
-	if p.When.Value != float64(100) {
+	if p.When.Value != json.Number("100") {
 		t.Fatalf("value = %#v", p.When.Value)
 	}
 }

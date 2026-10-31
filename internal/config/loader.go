@@ -14,6 +14,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 // LangGraphConfig represents a parsed langgraph.json file.
@@ -207,6 +208,29 @@ type PolicyPredicateWhen struct {
 	Path  string `json:"path"`
 	Op    string `json:"op"`
 	Value any    `json:"value,omitempty"`
+}
+
+// UnmarshalJSON keeps only predicate values lossless. Typed configuration and
+// unrelated control metadata retain their established decoding behavior.
+func (p *PolicyPredicateWhen) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Path  string          `json:"path"`
+		Op    string          `json:"op"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var value any
+	if len(raw.Value) != 0 {
+		var err error
+		value, err = jsonvalue.DecodeUnique(raw.Value)
+		if err != nil {
+			return err
+		}
+	}
+	*p = PolicyPredicateWhen{Path: raw.Path, Op: raw.Op, Value: value}
+	return nil
 }
 
 // PolicyGrantEntry is one static connector grant.

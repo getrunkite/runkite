@@ -34,6 +34,13 @@ class GovernanceError(Exception):
         self.status = status
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A decision must come from the configured plane. Do not forward its
+        # bearer credential or accept authorization from a redirected endpoint.
+        return None
+
+
 class GovernanceClient:
     def __init__(
         self,
@@ -47,6 +54,7 @@ class GovernanceClient:
         self._api_key = api_key
         self._interval_ms = interval_ms
         self._timeout_ms = timeout_ms
+        self._opener = urllib.request.build_opener(_NoRedirect())
 
     def decide(
         self,
@@ -174,7 +182,9 @@ class GovernanceClient:
 
         def transport() -> None:
             try:
-                with urllib.request.urlopen(req, timeout=_remaining(deadline, cancelled)) as resp:
+                with self._opener.open(req, timeout=_remaining(deadline, cancelled)) as resp:
+                    if not 200 <= resp.status < 300:
+                        raise GovernanceError(f"governance request failed: HTTP {resp.status}", resp.status)
                     raw = read_body(resp)
                 results.put((True, json.loads(raw) if raw else None))
             except urllib.error.HTTPError as exc:

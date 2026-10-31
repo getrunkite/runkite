@@ -99,7 +99,7 @@
         "properties": {
           "thread_id": {
             "type": "string",
-            "format": "uuid"
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "created_at": {
             "type": "string",
@@ -132,10 +132,11 @@
         "properties": {
           "run_id": {
             "type": "string",
-            "format": "uuid"
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "thread_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "agent_id": {
             "type": "string"
@@ -362,7 +363,8 @@
             "type": "string"
           },
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "payload": {
             "type": "object"
@@ -418,7 +420,8 @@
             "type": "integer"
           },
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "generation": {
             "type": "integer"
@@ -496,7 +499,8 @@
             "type": "string"
           },
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "generation": {
             "type": "integer",
@@ -1004,7 +1008,7 @@
           "Admin"
         ],
         "summary": "Destroy Admin Session",
-        "description": "Logout. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
+        "description": "Logout only after confirmed backend revocation. Failure returns 503 admin_session_revoke_failed without falsely clearing the cookie. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
         "operationId": "admin_destroy_session",
         "parameters": [
           {
@@ -1018,7 +1022,17 @@
         ],
         "responses": {
           "204": {
-            "description": "Logged out"
+            "description": "Logged out after confirmed revocation"
+          },
+          "503": {
+            "description": "Revocation unconfirmed; retry after session storage recovers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "403": {
             "description": "Invalid or missing CSRF token",
@@ -1690,8 +1704,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1732,8 +1745,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1769,8 +1781,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1855,8 +1866,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2017,8 +2027,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2061,8 +2070,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2095,8 +2103,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2934,7 +2941,7 @@
           "Admin"
         ],
         "summary": "Approve Pending Action",
-        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next tools/call with that digest).",
+        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching call, subject to current explicit deny). Legacy binding rows return 409 and require fresh submission/review.",
         "operationId": "admin_approve_pending_action",
         "parameters": [
           {

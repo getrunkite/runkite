@@ -102,6 +102,13 @@ Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`
 
 **Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the multi-compose topology without extra caveats. MySQL and SQLite share SQL governance tables with Postgres (audit / grants / pending / kill / break-glass / mandatory HITL); Mongo does not. NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
 
+MySQL identity/security columns use an explicit binary NO PAD collation from
+state migration 17 (unreleased). A database default that equates case or accents
+cannot enforce exact tenant boundaries. Existing installations need a stopped-writer
+maintenance upgrade and a verified backup; see the
+[operator procedure](ops-runbook.md#hardening-upgrade-unreleased) and
+[design record](internal/runtime-hardening.md#mysql-identity-comparison-must-preserve-tenant-boundaries).
+
 MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `state.Store` is implementable against a document store, and a template for community backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db downgrade`/`db reset` via `MYSQL_DSN` (Mongo via `MONGO_URI` the same way); DynamoDB remains a documented possible future driver, not built at all.
 
 ### NATS transport (JetStream) — Compatible

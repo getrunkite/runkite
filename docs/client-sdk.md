@@ -4,6 +4,13 @@ How to call Runkite from application code today, and when (if ever) we ship a fi
 
 This page is the durable decision record so the plan survives chat sessions.
 
+For the unreleased hardening update, use canonical API URLs without redirects.
+Connector helpers expose bounded operations and TypeScript caller cancellation;
+the managed chat bridge also bounds stalled request-body intake before dispatch.
+New literal `.` and `..` run/thread IDs are rejected, while other custom IDs remain
+supported through encoded path components. Legacy pending actions require fresh
+submission and approval. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+
 ## Choose who owns execution
 
 Use **managed execution** when the caller needs Runkite Threads/Runs, runner

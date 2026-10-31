@@ -72,7 +72,13 @@ func New(baseURL, collection string, dimensions int) (*Store, error) {
 		// Bound every call: a hung/unreachable Qdrant must not hang the
 		// control plane's /vectors/* handlers forever. 30s covers large
 		// ANN searches without pretending the request can wait forever.
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+			// The configured endpoint owns vector data and any URL credentials.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 

@@ -622,6 +622,9 @@ func (s *SQLiteStore) SetPendingActionApproved(ctx context.Context, id, decidedB
 
 // ConsumeApprovedAction atomically marks an approved action consumed.
 func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
+	if argsDigest == "" {
+		return "", nil
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -633,10 +636,10 @@ func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, tenantID, agent
 		SELECT id FROM pending_actions
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
 		  AND status = ?
-		  AND (args_digest = ? OR args_digest = '')
+		  AND args_digest = ?
 		  AND tenant_id = ? AND agent_id = ? AND expires_at IS NULL
-		ORDER BY (args_digest = ?) DESC, created_at ASC LIMIT 1`,
-		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, tenantID, agentID, argsDigest).Scan(&id)
+		ORDER BY created_at ASC LIMIT 1`,
+		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, tenantID, agentID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil

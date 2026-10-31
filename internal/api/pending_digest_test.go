@@ -168,7 +168,7 @@ func runApprovedDigestMismatch(t *testing.T, store state.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row500.ArgsDigest == "" || row500.Args["amount"] != float64(500) {
+	if row500.ArgsDigest == "" || row500.Args["amount"] != json.Number("500") {
 		t.Fatalf("$500 pending args: %+v", row500)
 	}
 

@@ -12,8 +12,9 @@ exactly while keeping `1`, `1.0` and `1e0` equivalent; cache keys retain their
 existing raw input/config hashing.
 
 Go callers of application-value maps now receive `json.Number` rather than
-`float64` and must make explicit numeric conversions. Policy rules, server
-configuration and control metadata retain their existing decoding. Application
+`float64` and must make explicit numeric conversions. Predicate values now also
+retain exact numbers; unrelated server configuration and control metadata keep
+their existing decoding. Application
 run input/config snapshots follow the same backend numeric limits. HTTP fields
 remain ordinary JSON numbers; a JavaScript client's default `JSON.parse` can
 still round them.
@@ -25,6 +26,25 @@ Database-native limits still apply. MySQL validates the server's JSON conversion
 and rejects values it would change; Mongo requires exact int64/Decimal128.
 See [backend boundaries](limitations.md) before using those compatible profiles
 for wide integers or high-precision decimal results.
+
+## Authorization and recovery changes (unreleased)
+
+MCP rejects ambiguous JSON, including duplicate nested members and invalid Unicode,
+and requires object arguments when present. Governance keeps the submitted JSON
+type, with omitted/null arguments still treated as `{}`. Exact, versioned argument
+digests prevent approval/cache collisions. A prior approval cannot bypass a current
+explicit deny. Legacy pending/approved app action polling reports `rejected` with
+`approval_binding_legacy`; Admin refuses fresh approval of legacy rows.
+
+Connector capability rejection returns HTTP 401 `connector_session_invalid`
+before dispatch. Upstream 401 becomes HTTP 502 `connector_upstream_unauthorized`;
+it is not an automatic retry signal. Logout revocation failure returns HTTP 503
+`admin_session_revoke_failed` and does not falsely expire the cookie.
+
+Completion `/state` and history snapshots include merged thread values, while
+run output remains per-run. New literal `.` and `..` run/thread IDs return 400.
+See [rollout requirements](ops-runbook.md#hardening-upgrade-unreleased) and the
+[design record](internal/runtime-hardening.md).
 
 ## OpenAPI Specifications
 

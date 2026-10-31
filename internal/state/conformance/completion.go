@@ -67,11 +67,58 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		if run.Status != models.RunStatusSuccess || thread.Status != models.ThreadStatusIdle || thread.Values["answer"] != "current" || thread.Values["previous"] != "kept" || len(history) != 1 {
 			t.Fatalf("result not atomic/idempotent: run=%+v thread=%+v checkpoints=%d", run, thread, len(history))
 		}
+		if history[0].Values["previous"] != "kept" || history[0].Values["answer"] != "current" {
+			t.Fatalf("completion checkpoint is a partial patch instead of a state snapshot: %#v", history[0].Values)
+		}
 		if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "completion-run", 3); err == nil {
 			t.Fatal("foreign tenant advanced attempt")
 		}
 		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 3); err != nil || ok {
 			t.Fatal("terminal run redispatched", ok, err)
+		}
+	})
+	t.Run("partial_completion_snapshots_accumulated_thread_values", func(t *testing.T) {
+		s, ctx := seed(t)
+		for i, values := range []map[string]interface{}{{"first": "one"}, {"second": "two"}} {
+			runID := "completion-run"
+			if i > 0 {
+				runID += "-next"
+				if err := s.SetThreadStatus(ctx, "completion-thread", models.ThreadStatusBusy); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "completion-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if ok, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !ok {
+				t.Fatal(ok, err)
+			}
+			if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess, Values: values}); err != nil || !result.Applied {
+				t.Fatal(result, err)
+			}
+		}
+		thread, err := s.GetThread(ctx, "completion-thread")
+		if err != nil {
+			t.Fatal(err)
+		}
+		latest, err := s.GetLatestCheckpoint(ctx, "completion-thread")
+		if err != nil || latest.Values["previous"] != "kept" || latest.Values["first"] != "one" || latest.Values["second"] != "two" {
+			t.Fatalf("latest state lost previous keys: state=%+v err=%v", latest, err)
+		}
+		if len(latest.Values) != len(thread.Values) {
+			t.Fatalf("checkpoint differs from durable thread: checkpoint=%#v thread=%#v", latest.Values, thread.Values)
+		}
+		history, err := s.ListCheckpoints(ctx, "completion-thread", 10, "")
+		if err != nil || len(history) != 2 || history[1].Values["previous"] != "kept" || history[1].Values["first"] != "one" || history[1].Values["second"] != nil {
+			t.Fatalf("history is not immutable state snapshots: states=%+v err=%v", history, err)
+		}
+		run, err := s.GetRun(ctx, "completion-run-next")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var output map[string]interface{}
+		if err := json.Unmarshal(run.Output, &output); err != nil || len(output) != 1 || output["second"] != "two" {
+			t.Fatalf("run output must remain per-run result: output=%s err=%v", run.Output, err)
 		}
 	})
 	t.Run("dispatch_marks_running_and_fences_reclaim", func(t *testing.T) {

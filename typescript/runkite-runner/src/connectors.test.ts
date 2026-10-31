@@ -82,7 +82,7 @@ test("proxyConnectorMcp re-mints once on 401 when auto-minting", async () => {
     }
     mcpHits += 1;
     if (mcpHits === 1) {
-      return new Response("expired", { status: 401 });
+      return new Response(JSON.stringify({ reason_code: "connector_session_invalid" }), { status: 401 });
     }
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), { status: 200 });
   }) as typeof fetch;
@@ -109,7 +109,7 @@ test("proxyConnectorMcp does not retry 401 when caller supplied sessionToken", a
   let calls = 0;
   globalThis.fetch = (async () => {
     calls += 1;
-    return new Response("expired", { status: 401 });
+    return new Response(JSON.stringify({ reason_code: "connector_session_invalid" }), { status: 401 });
   }) as typeof fetch;
   try {
     await assert.rejects(
@@ -123,6 +123,171 @@ test("proxyConnectorMcp does not retry 401 when caller supplied sessionToken", a
       /HTTP 401/,
     );
     assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("unmarked 401 cannot replay an operation that may have reached upstream", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async (url) => {
+    calls++;
+    return String(url).endsWith("/session")
+      ? new Response(JSON.stringify({ session_token: "token" }))
+      : new Response("upstream unauthorized after operation", { status: 401 });
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => proxyConnectorMcp({ run_id: "r", generation: 1 }, "sf", { method: "tools/call" }),
+      /HTTP 401/,
+    );
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("MCP operation uses one total deadline across mint and capability renewal", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async (url, init) => {
+    calls++;
+    await new Promise<void>((resolve, reject) => {
+      const signal = init?.signal;
+      const timer = setTimeout(resolve, 25);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        },
+        { once: true },
+      );
+    });
+    return String(url).endsWith("/session")
+      ? new Response(JSON.stringify({ session_token: "token" }))
+      : new Response(JSON.stringify({ reason_code: "connector_session_invalid" }), { status: 401 });
+  }) as typeof fetch;
+  try {
+    await assert.rejects(() => proxyConnectorMcp({ run_id: "r" }, "sf", { method: "tools/call" }, { timeoutMs: 60 }), {
+      name: "TimeoutError",
+    });
+    assert.ok(calls < 4, "The retry cannot obtain a fresh operation budget");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("caller cancellation aborts an in-flight MCP call without reminting", async () => {
+  const original = globalThis.fetch;
+  const controller = new AbortController();
+  let calls = 0;
+  globalThis.fetch = (async (_url, init) => {
+    calls++;
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
+  }) as typeof fetch;
+  try {
+    const reason = new Error("caller stopped");
+    const pending = proxyConnectorMcp(
+      { run_id: "r" },
+      "sf",
+      { method: "tools/call" },
+      {
+        sessionToken: "token",
+        signal: controller.signal,
+        timeoutMs: 1000,
+      },
+    );
+    controller.abort(reason);
+    await assert.rejects(pending, (error) => error === reason);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("response body consumption stays inside the session operation deadline", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const response = new Response("{}");
+    response.json = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return {};
+    };
+    return response;
+  }) as typeof fetch;
+  try {
+    await assert.rejects(() => getConnectorSession({ run_id: "r" }, "sf", { timeoutMs: 20 }), { name: "TimeoutError" });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("pre-aborted calls and invalid deadlines never make a request", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response("{}");
+  }) as typeof fetch;
+  try {
+    const controller = new AbortController();
+    controller.abort(new Error("already stopped"));
+    await assert.rejects(
+      () => getConnectorSession({ run_id: "r" }, "sf", { signal: controller.signal }),
+      /already stopped/,
+    );
+    for (const timeoutMs of [0, -1, NaN, Infinity, 1.2, 2 ** 32])
+      await assert.rejects(() => getConnectorSession({ run_id: "r" }, "sf", { timeoutMs }), /timeoutMs/);
+    for (const name of ["", ".", ".."])
+      await assert.rejects(() => getConnectorSession({ run_id: "r" }, name), /connector name/);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("run binding and MCP body are captured before session mint awaits", async () => {
+  const original = globalThis.fetch;
+  const config = { run_id: "original", generation: 3 };
+  const request = { method: "tools/list" };
+  let seen: RequestInit | undefined;
+  globalThis.fetch = (async (url, init) => {
+    if (String(url).endsWith("/session")) {
+      config.run_id = "replacement";
+      config.generation = 4;
+      request.method = "tools/call";
+      return new Response(JSON.stringify({ session_token: "token" }));
+    }
+    seen = init;
+    return new Response(JSON.stringify({ result: {} }));
+  }) as typeof fetch;
+  try {
+    await proxyConnectorMcp(config, "sf", request);
+    assert.ok(seen);
+    const headers = new Headers(seen.headers);
+    assert.equal(headers.get(HEADER_RUN_ID), "original");
+    assert.equal(headers.get(HEADER_GENERATION), "3");
+    assert.equal(JSON.parse(String(seen.body)).method, "tools/list");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("session minting has a finite default deadline", async () => {
+  const original = globalThis.fetch;
+  let signal: AbortSignal | null | undefined;
+  globalThis.fetch = (async (_url, init) => {
+    signal = init?.signal;
+    return new Response("{}");
+  }) as typeof fetch;
+  try {
+    await getConnectorSession({ run_id: "r" }, "sf");
+    assert.ok(signal instanceof AbortSignal);
+    assert.equal(signal.aborted, false);
   } finally {
     globalThis.fetch = original;
   }

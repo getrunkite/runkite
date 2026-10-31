@@ -139,7 +139,7 @@ export interface RunnerServiceClient extends Client {
     req: HeartbeatRequest,
     metadata: import("@grpc/grpc-js").Metadata,
     callback: (err: Error | null, resp: HeartbeatResponse) => void,
-  ): void;
+  ): import("@grpc/grpc-js").ClientUnaryCall | void;
 }
 
 /**

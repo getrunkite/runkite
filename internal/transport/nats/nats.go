@@ -360,7 +360,7 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 	return &job, nil
 }
 
-func (q *Queue) Nack(ctx context.Context, runID string) error {
+func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
 	kve, err := q.inflight.Get(ctx, runID)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
@@ -371,6 +371,9 @@ func (q *Queue) Nack(ctx context.Context, runID string) error {
 	var entry inflightEntry
 	if err := json.Unmarshal(kve.Value(), &entry); err != nil {
 		return err
+	}
+	if entry.Generation != generation {
+		return nil
 	}
 	// -NAK triggers immediate redelivery (no backoff/delay applied),
 	// unlike letting AckWait expire -- the message reappears for the

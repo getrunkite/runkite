@@ -99,7 +99,13 @@ func (h *AdminSessionHandlers) Status(w http.ResponseWriter, r *http.Request) {
 // authenticated the session cookie + CSRF before this runs.
 func (h *AdminSessionHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 	if h != nil && h.Store != nil {
-		h.Store.Delete(SessionIDFromRequest(r))
+		if err := h.Store.Delete(SessionIDFromRequest(r)); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"message":     "logout could not be confirmed; try again",
+				"reason_code": "admin_session_revoke_failed",
+			})
+			return
+		}
 	}
 	ClearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)

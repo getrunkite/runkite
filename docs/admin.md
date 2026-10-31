@@ -86,6 +86,15 @@ Building the UI from source (only needed if you're changing `admin-ui/` itself -
 cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui/dist/
 ```
 
+The unreleased hardening update confirms logout through the server, serializes
+polls and aborts obsolete reads on navigation. Event readers preserve valid SSE
+line endings and whitespace. Debug event panes show bounded previews with an
+explicit truncation notice; durable output/API data is separate. IDs in Admin
+paths are encoded, while new literal `.` and `..` run/thread IDs are rejected.
+Manual dead-letter replay uses indexed ID lookup on built-in stores, including
+records older than the latest 1,000. Replay refuses redirects, succeeds only on
+2xx and remains unsigned. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+
 ## Managed runs and in-process decisions
 
 Threads, Runs and Try agent show executions Runkite creates and dispatches to a

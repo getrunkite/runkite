@@ -34,7 +34,7 @@
  * executeRun's existing cooperative-cancellation check takes over
  * without this module needing its own separate stopping mechanism.
  */
-import type { Metadata } from "@grpc/grpc-js";
+import type { ClientUnaryCall, Metadata } from "@grpc/grpc-js";
 import { logger } from "./logger.js";
 import type { RunnerServiceClient } from "./proto.js";
 
@@ -44,6 +44,7 @@ import type { RunnerServiceClient } from "./proto.js";
 // of that cutoff, while a crashed one (zero heartbeats, not just a slow
 // one) reliably does.
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 2000;
+export const DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS = 1000;
 
 /** Handle returned by startHeartbeatLoop -- call stop() once the job
  * finishes to end the loop, mirroring the Python runner's
@@ -63,6 +64,8 @@ export interface HeartbeatLoopOptions {
    * decoupled from worker.ts's CancelState shape. */
   onSuperseded?: () => void;
   intervalMs?: number;
+  /** Bounds each renewal RPC so one hung request cannot stop future heartbeats. */
+  rpcTimeoutMs?: number;
 }
 
 /**
@@ -79,23 +82,60 @@ export function startHeartbeatLoop(
   metadata: Metadata,
   options: HeartbeatLoopOptions = {},
 ): HeartbeatHandle {
-  const { generation = 0, onSuperseded, intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS } = options;
+  const {
+    generation = 0,
+    onSuperseded,
+    intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
+    rpcTimeoutMs = DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS,
+  } = options;
+  if (!Number.isFinite(rpcTimeoutMs) || rpcTimeoutMs <= 0 || rpcTimeoutMs > 2_147_483_647)
+    throw new RangeError("heartbeat rpcTimeoutMs must be positive and at most 2147483647");
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelPending: (() => void) | undefined;
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
     try {
       const superseded = await new Promise<boolean>((resolve) => {
-        client.heartbeat({ runId, generation: String(generation) }, metadata, (err, resp) => {
-          if (err) {
-            logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
-            resolve(false);
-          } else {
-            resolve(resp.superseded);
+        let settled = false;
+        let call: ClientUnaryCall | void;
+        const finish = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(deadline);
+          cancelPending = undefined;
+          resolve(value);
+        };
+        const cancel = () => {
+          finish(false);
+          try {
+            call?.cancel();
+          } catch {
+            /* cancellation cannot restart a stopped loop */
           }
-        });
+        };
+        const deadline = setTimeout(() => {
+          if (!stopped) logger.warn(`Heartbeat RPC timed out for run ${runId}`);
+          cancel();
+        }, rpcTimeoutMs);
+        cancelPending = cancel;
+        try {
+          call = client.heartbeat({ runId, generation: String(generation) }, metadata, (err, resp) => {
+            if (settled || stopped) return;
+            if (err) {
+              logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
+              finish(false);
+            } else {
+              finish(resp.superseded);
+            }
+          });
+        } catch (err) {
+          logger.warn(`Unexpected heartbeat error for run ${runId}:`, err);
+          finish(false);
+        }
       });
+      if (stopped) return;
       if (superseded) {
         logger.warn(
           `Run ${runId} superseded (generation ${generation} is stale) -- signaling cancellation and stopping heartbeat`,
@@ -122,6 +162,7 @@ export function startHeartbeatLoop(
     stop(): void {
       stopped = true;
       if (timer) clearTimeout(timer);
+      cancelPending?.();
     },
   };
 }

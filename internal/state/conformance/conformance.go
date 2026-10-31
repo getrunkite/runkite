@@ -2638,6 +2638,7 @@ func runOpaqueCheckpointTests(t *testing.T, factory StoreFactory) {
 // --------------------------------------------------------------------------
 
 func runWebhookDeadLetterTests(t *testing.T, factory StoreFactory) {
+	t.Run("indexed_lookup_beyond_recent_page", func(t *testing.T) { runWebhookLookupTests(t, factory) })
 	t.Run("save_and_list_ordered_newest_first", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()

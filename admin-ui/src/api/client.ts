@@ -61,12 +61,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
     ...init,
     headers,
     credentials: "include",
+    redirect: "error",
   });
   if (!resp.ok) {
     let message = `${resp.status} ${resp.statusText}`;
     try {
       const body = await resp.json();
-      if (body?.message) message = body.message;
+      if (body && typeof body === "object" && "message" in body && typeof body.message === "string")
+        message = body.message;
     } catch {
       // response body wasn't JSON -- keep the status line as the message
     }
@@ -83,9 +85,9 @@ async function requestData<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => requestData<T>(path),
+  get: <T>(path: string, signal?: AbortSignal) => requestData<T>(path, { signal }),
   /** Like get, but also returns X-Next-Cursor for Admin keyset paging. */
-  getWithMeta: <T>(path: string) => request<T>(path),
+  getWithMeta: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   post: <T>(path: string, body?: unknown) =>
     requestData<T>(path, {
       method: "POST",
@@ -110,7 +112,7 @@ export interface SessionStatus {
 
 /** Probe / create session state without storing the API key in JS. */
 export async function fetchSessionStatus(): Promise<SessionStatus> {
-  const resp = await fetch(`${BASE}/session`, { credentials: "include" });
+  const resp = await fetch(`${BASE}/session`, { credentials: "include", redirect: "error" });
   if (!resp.ok) {
     throw new ApiError(resp.status, `Unexpected response: ${resp.status}`);
   }
@@ -122,6 +124,7 @@ export async function createSession(credential: string): Promise<SessionStatus> 
   const resp = await fetch(`${BASE}/session`, {
     method: "POST",
     credentials: "include",
+    redirect: "error",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credential }),
   });
@@ -129,7 +132,8 @@ export async function createSession(credential: string): Promise<SessionStatus> 
     let message = `${resp.status} ${resp.statusText}`;
     try {
       const body = await resp.json();
-      if (body?.message) message = body.message;
+      if (body && typeof body === "object" && "message" in body && typeof body.message === "string")
+        message = body.message;
     } catch {
       // keep status line
     }
@@ -144,10 +148,14 @@ export async function createSession(credential: string): Promise<SessionStatus> 
 export async function destroySession(): Promise<void> {
   const headers = new Headers();
   if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
-  await fetch(`${BASE}/session`, {
+  const response = await fetch(`${BASE}/session`, {
     method: "DELETE",
     credentials: "include",
+    redirect: "error",
     headers,
   });
+  if (!response.ok) {
+    throw new ApiError(response.status, "Sign out was not confirmed. Your session may still be active.");
+  }
   csrfToken = null;
 }

@@ -224,6 +224,28 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           <code>get_connector_session</code> / <code>getConnectorSession</code> returns the
           session object to the trusted runner, which then calls the service itself.
         </p>
+        <p>
+          <strong>Unreleased helper hardening:</strong> one deadline covers session
+          minting, any safe renewal, the MCP request and its response body. Defaults are
+          30 seconds for a session operation and 60 seconds for MCP. Pass a TypeScript
+          managed factory's <code>signal</code> to cancel in-flight delivery; Python
+          callers can cancel the coroutine normally. Redirects are refused. A timeout
+          or cancellation does not prove that an external tool did not execute.
+        </p>
+        <p>
+          The plane's JSON MCP and OAuth token clients also refuse redirects;
+          negotiated MCP already did. Configure the final MCP and token endpoint URLs
+          so a redirect cannot move credentials or a tool-call body to another host.
+        </p>
+        <p>
+          Upgrade the plane before the helpers. Automatic renewal is allowed once only
+          for the plane's pre-dispatch <code>401 connector_session_invalid</code>, and
+          only when the helper minted the token. A bare <code>401</code> is not a retry
+          instruction. An upstream <code>401</code> becomes
+          <code>502 connector_upstream_unauthorized</code>; that call may already have
+          executed, so neither the plane nor the helper automatically repeats it.
+          Use downstream idempotency when your application decides how to recover.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Connectors: configured connectors and their health</div>
           <img src="../assets/ui-connectors.png" alt="Runkite Admin Connectors" width="960" height="600" />
@@ -250,6 +272,13 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           Upstream negotiation/operation share a 30-second deadline and reconnect retries
           are disabled. See the source <a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">transport guide</a>.
         </p>
+        <p>
+          The unreleased argument parser also rejects duplicate keys inside arguments
+          and invalid Unicode, including unpaired surrogate escapes, with HTTP
+          <code>400</code> before policy evaluation or upstream execution. MCP
+          <code>tools/call</code> arguments, when present, must be a JSON object;
+          a string containing encoded JSON is not a substitute.
+        </p>
         <h2>What "run-bound" actually means (and why you'll see a 401 if you skip it)</h2>
         <p>
           A connector session is only ever minted for a run that's actually in progress
@@ -265,8 +294,8 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
 
         <h2>Step 4: decide who's allowed to use this connector at all</h2>
         <p>
-          Configuring a connector doesn't automatically let every agent use it, by
-          default, a connector call is <strong>denied</strong> until you explicitly grant
+          With a <code>policy</code> section configured, including <code>"policy": {}</code>,
+          a connector call is <strong>denied</strong> until you explicitly grant
           it. You can grant in config (fixed at deploy time) or in Admin (changeable live,
           no redeploy):
         </p>
@@ -293,6 +322,14 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           Under the threshold the tool still runs; over it, Admin → Pending, and the amount is
           on Admin → Audit (hover <strong>Args</strong>). Full example:
           <a href="grants.html#argument-predicates">Grants &amp; HITL</a>.
+        </p>
+        <p>
+          Unreleased predicate evaluation compares numeric values exactly rather than
+          rounding them through a floating-point value. Equivalent spellings such as
+          <code>1</code> and <code>1.0</code> match; neighboring large integers remain
+          distinct. A current explicit deny cannot be bypassed by consuming an older
+          approval. Before upgrading, read the
+          <a href="grants.html#approval-upgrade">approval resubmission requirement</a>.
         </p>
         <pre class="mono-block"># langgraph.json, after the grant above
 "predicates": [

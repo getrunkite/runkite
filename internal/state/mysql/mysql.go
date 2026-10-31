@@ -370,6 +370,14 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 17, Name: "exact_identity_collation",
+			Up: func(ctx context.Context) error {
+				return s.upIdentityCollation(ctx, db)
+			},
+			Down: func(context.Context) error {
+				return fmt.Errorf("mysql: exact identity collation cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+			},
+		},
 	}
 }
 

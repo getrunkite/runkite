@@ -41,6 +41,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -663,17 +664,26 @@ const redeliverTimeout = 10 * time.Second
 func (s *Server) handleRedeliverWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// ListWebhookDeadLetters has no Get-by-ID; scan a generous page.
-	dls, err := s.store.ListWebhookDeadLetters(r.Context(), 1000)
-	if err != nil {
-		handleStoreError(w, err)
-		return
-	}
 	var target *models.WebhookDeadLetter
-	for _, dl := range dls {
-		if dl.ID == id {
-			target = dl
-			break
+	if lookup, ok := s.store.(state.WebhookDeadLetterLookup); ok {
+		var err error
+		target, err = lookup.GetWebhookDeadLetter(r.Context(), id)
+		if err != nil {
+			handleStoreError(w, err)
+			return
+		}
+	} else {
+		// Custom stores can retain the older bounded-list contract.
+		dls, err := s.store.ListWebhookDeadLetters(r.Context(), 1000)
+		if err != nil {
+			handleStoreError(w, err)
+			return
+		}
+		for _, dl := range dls {
+			if dl.ID == id {
+				target = dl
+				break
+			}
 		}
 	}
 	if target == nil {
@@ -681,7 +691,7 @@ func (s *Server) handleRedeliverWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	client := &http.Client{Timeout: redeliverTimeout}
+	client := &http.Client{Timeout: redeliverTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.URL, bytes.NewReader(target.Payload))
 	if err != nil {
 		writeJSON(w, http.StatusOK, redeliverWebhookResponse{Delivered: false, Error: err.Error()})
@@ -696,7 +706,7 @@ func (s *Server) handleRedeliverWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		writeJSON(w, http.StatusOK, redeliverWebhookResponse{
 			Delivered:  false,
 			StatusCode: resp.StatusCode,

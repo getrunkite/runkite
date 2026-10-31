@@ -125,14 +125,14 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	// Client already gone while we were blocked in Dequeue — put the job
 	// back so a live runner can take it (zombie GetJob recovery).
 	if ctx.Err() != nil {
-		_ = s.queue.Nack(context.Background(), job.RunID)
+		_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
 		return nil, ctx.Err()
 	}
 
 	if s.attemptCallback != nil {
 		accepted, err := s.attemptCallback(ctx, job.RunID, job.Generation)
 		if err != nil {
-			_ = s.queue.Nack(context.Background(), job.RunID)
+			_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
 			return nil, status.Error(codes.Unavailable, "failed to persist dispatch attempt")
 		}
 		if !accepted {
@@ -146,7 +146,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 
 	data, err := json.Marshal(job)
 	if err != nil {
-		_ = s.queue.Nack(context.Background(), job.RunID)
+		_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
 		return nil, err
 	}
 

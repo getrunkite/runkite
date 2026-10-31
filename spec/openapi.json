@@ -353,7 +353,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread."
             },
@@ -429,8 +428,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -497,7 +495,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread."
             },
@@ -553,7 +550,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread."
             },
@@ -607,7 +603,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread."
             },
@@ -654,7 +649,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread."
             },
@@ -775,7 +769,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Run Id",
               "description": "The ID of the run."
             },
@@ -829,7 +822,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Run Id",
               "description": "The ID of the run."
             },
@@ -878,7 +870,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Run Id",
               "description": "The ID of the run."
             },
@@ -934,7 +925,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Run Id",
               "description": "The ID of the run."
             },
@@ -987,7 +977,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Run Id",
               "description": "The ID of the run."
             },
@@ -1259,7 +1248,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread whose events should be streamed."
             },
@@ -1327,7 +1315,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread that should receive the command."
             },
@@ -1621,7 +1608,6 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
               "title": "Thread Id",
               "description": "The ID of the thread to open over WebSocket."
             },
@@ -1669,8 +1655,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1741,8 +1726,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1788,8 +1772,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1862,8 +1845,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1936,8 +1918,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -1947,8 +1928,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -1989,8 +1969,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2000,8 +1979,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2037,8 +2015,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2048,8 +2025,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2092,8 +2068,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2103,8 +2078,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2148,8 +2122,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2159,8 +2132,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -2230,8 +2202,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2272,8 +2243,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Thread Id",
-              "format": "uuid"
+              "title": "Thread Id"
             },
             "name": "thread_id",
             "in": "path"
@@ -2965,8 +2935,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Run Id",
-              "format": "uuid"
+              "title": "Run Id"
             },
             "name": "run_id",
             "in": "path"
@@ -3410,7 +3379,7 @@
           "Governance"
         ],
         "summary": "Poll a governance action",
-        "description": "Returns the operator decision for one embedded pending row. Does not consume the approval and does not execute the tool. Requires governance:decide. Another tenant's id is 404. A row still pending after 24h is rejected with reason_code pending_expired.",
+        "description": "Returns the operator decision for one embedded pending row. Does not consume the approval and does not execute the tool. Requires governance:decide. Another tenant's id is 404. A row still pending after 24h is rejected with reason_code pending_expired. Legacy pending/approved rows return rejected with reason_code approval_binding_legacy; resubmit the operation for fresh review.",
         "operationId": "governance_get_action",
         "parameters": [
           {
@@ -3828,9 +3797,8 @@
         "properties": {
           "thread_id": {
             "type": "string",
-            "format": "uuid",
             "title": "Thread Id",
-            "description": "The ID of the thread to run. If not provided, creates a stateless run. 'thread_id' is ignored unless Threads stage is implemented."
+            "description": "The ID of the thread to run. If not provided, creates a stateless run. 'thread_id' is ignored unless Threads stage is implemented. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "agent_id": {
             "type": "string",
@@ -3935,7 +3903,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Client-supplied run ID for idempotent creation."
+            "description": "Client-supplied run ID for idempotent creation. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "assistant_id": {
             "type": "string",
@@ -4029,9 +3997,8 @@
             "properties": {
               "run_id": {
                 "type": "string",
-                "format": "uuid",
                 "title": "Run Id",
-                "description": "The ID of the run."
+                "description": "The ID of the run. Custom string identifier; new run/thread IDs must not be '.' or '..'."
               },
               "created_at": {
                 "type": "string",
@@ -4050,13 +4017,11 @@
               },
               "parent_run_id": {
                 "type": "string",
-                "format": "uuid",
-                "description": "Parent run in an A2A delegation chain."
+                "description": "Parent run in an A2A delegation chain. Custom string identifier; new run/thread IDs must not be '.' or '..'."
               },
               "root_run_id": {
                 "type": "string",
-                "format": "uuid",
-                "description": "Root of the delegation tree."
+                "description": "Root of the delegation tree. Custom string identifier; new run/thread IDs must not be '.' or '..'."
               },
               "depth": {
                 "type": "integer",
@@ -4100,9 +4065,8 @@
           },
           "thread_id": {
             "type": "string",
-            "format": "uuid",
             "title": "Thread Id",
-            "description": "The ID of the thread to filter on."
+            "description": "The ID of the thread to filter on. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "agent_id": {
             "type": "string",
@@ -4170,9 +4134,8 @@
         "properties": {
           "thread_id": {
             "type": "string",
-            "format": "uuid",
             "title": "Thread Id",
-            "description": "The ID of the thread."
+            "description": "The ID of the thread. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "created_at": {
             "type": "string",
@@ -4274,9 +4237,8 @@
         "properties": {
           "thread_id": {
             "type": "string",
-            "format": "uuid",
             "title": "Thread Id",
-            "description": "The ID of the thread. If not provided, a random UUID will be generated."
+            "description": "The ID of the thread. If not provided, a random UUID will be generated. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "metadata": {
             "type": "object",
@@ -5025,7 +4987,8 @@
         ],
         "properties": {
           "root_run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "run_count": {
             "type": "integer"
@@ -5070,7 +5033,8 @@
         ],
         "properties": {
           "run_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "agent_id": {
             "type": "string"
@@ -5095,24 +5059,25 @@
           "agent_id": {
             "type": "string",
             "maxLength": 256,
-            "description": "Caller-supplied. Not looked up in the agents table. Matched against grants as a string."
+            "description": "Caller-supplied, at most 256 UTF-8 bytes. Not looked up in the agents table. Matched against grants as a string."
           },
           "connector": {
             "type": "string",
             "maxLength": 256,
-            "description": "Grant key. May be a logical name with no MCP server behind it."
+            "description": "Grant key, at most 256 UTF-8 bytes. May be a logical name with no MCP server behind it."
           },
           "tool": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "Tool name, at most 256 UTF-8 bytes."
           },
           "args": {
-            "description": "Tool arguments. Omitted or null is treated as {}."
+            "description": "Tool arguments retain exact JSON numbers and submitted JSON type. Duplicate members and invalid Unicode are rejected. Omitted or null is treated as {}."
           },
           "run_id": {
             "type": "string",
             "maxLength": 256,
-            "description": "Opaque id stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny."
+            "description": "Opaque id of at most 256 UTF-8 bytes, stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny. Custom string identifier; new run/thread IDs must not be '.' or '..'."
           },
           "tenant_id": {
             "type": "string",

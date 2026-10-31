@@ -193,7 +193,7 @@ func TestMongoApplicationJSONNumbers(t *testing.T) {
 		t.Fatalf("thread merge changed values: %+v %v", thread, err)
 	}
 	checkpoint, err := store.GetLatestCheckpoint(ctx, "thread")
-	if err != nil || !jsonvalue.Equal(checkpoint.Values, values) {
+	if err != nil || !jsonvalue.Equal(checkpoint.Values, thread.Values) {
 		t.Fatalf("completion checkpoint changed values: %+v %v", checkpoint, err)
 	}
 	checkpoint.Checkpoint.CheckpointID = "explicit"

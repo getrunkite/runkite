@@ -175,6 +175,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
             throw new Error(`checkpoint update refused: GET returned no ETag for ${threadId}/${key}`);
         }
         const init = {
+            redirect: "error",
             method: "PUT",
             headers: putHeaders,
             body,
@@ -235,7 +236,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         const headers = this.clientHeaders();
         if (checkpointId) {
             const key = blobKey(ns, checkpointId);
-            const init = { headers, dispatcher: this.dispatcher };
+            const init = { redirect: "error", headers, dispatcher: this.dispatcher };
             const resp = await fetch(this.url(threadId, key), init);
             if (resp.status === 404)
                 return undefined;
@@ -244,7 +245,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
             const raw = new Uint8Array(await resp.arrayBuffer());
             return this.tupleFromBlob(config, key, await this.decode(raw));
         }
-        const latestInit = { headers, dispatcher: this.dispatcher };
+        const latestInit = { redirect: "error", headers, dispatcher: this.dispatcher };
         const resp = await fetch(`${this.latestUrl(threadId)}?ns=${encodeURIComponent(ns)}`, latestInit);
         if (resp.status === 404)
             return undefined;
@@ -259,7 +260,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         return this.tupleFromBlob(config, key, await this.decode(raw));
     }
     async getLatestViaList(config, threadId, ns, headers) {
-        const init = { headers, dispatcher: this.dispatcher };
+        const init = { redirect: "error", headers, dispatcher: this.dispatcher };
         const resp = await fetch(`${this.url(threadId)}?limit=${LIST_FETCH_LIMIT}`, init);
         if (!resp.ok)
             throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
@@ -269,7 +270,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
             const [itemNs] = parseBlobKey(key);
             if (itemNs !== ns)
                 continue;
-            const getInit = { headers, dispatcher: this.dispatcher };
+            const getInit = { redirect: "error", headers, dispatcher: this.dispatcher };
             const get = await fetch(this.url(threadId, key), getInit);
             if (get.status === 404)
                 continue;
@@ -291,7 +292,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         const lim = options?.limit ?? 10;
         const beforeId = options?.before ? getCheckpointId(options.before) : "";
         const fetchLimit = Math.max(lim * 4, LIST_FETCH_LIMIT);
-        const init = { headers, dispatcher: this.dispatcher };
+        const init = { redirect: "error", headers, dispatcher: this.dispatcher };
         const resp = await fetch(`${this.url(threadId)}?limit=${fetchLimit}`, init);
         if (!resp.ok)
             throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
@@ -308,7 +309,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
                     skipping = false;
                 continue;
             }
-            const getInit = { headers, dispatcher: this.dispatcher };
+            const getInit = { redirect: "error", headers, dispatcher: this.dispatcher };
             const get = await fetch(this.url(threadId, key), getInit);
             if (get.status === 404)
                 continue;
@@ -336,7 +337,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
                 let existingWrites = [];
                 let etag = null;
                 let createOnly = false;
-                const getInit = { headers, dispatcher: this.dispatcher };
+                const getInit = { redirect: "error", headers, dispatcher: this.dispatcher };
                 const prev = await fetch(this.url(threadId, key), getInit);
                 if (prev.status === 200) {
                     etag = prev.headers.get("ETag");
@@ -419,7 +420,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
                 let etag = null;
                 let createOnly = false;
                 let blob;
-                const getInit = { headers, dispatcher: this.dispatcher };
+                const getInit = { redirect: "error", headers, dispatcher: this.dispatcher };
                 const resp = await fetch(this.url(threadId, key), getInit);
                 if (resp.status === 404) {
                     // Normal Pregel order: putWrites for the *next* checkpoint_id
@@ -482,7 +483,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         const storageId = storageThreadId(threadId);
         const headers = this.clientHeaders();
         for (;;) {
-            const init = { headers, dispatcher: this.dispatcher };
+            const init = { redirect: "error", headers, dispatcher: this.dispatcher };
             const resp = await fetch(`${this.url(storageId)}?limit=${LIST_FETCH_LIMIT}`, init);
             if (!resp.ok)
                 throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
@@ -490,7 +491,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
             if (!items || items.length === 0)
                 return;
             for (const item of items) {
-                const delInit = { method: "DELETE", headers, dispatcher: this.dispatcher };
+                const delInit = { redirect: "error", method: "DELETE", headers, dispatcher: this.dispatcher };
                 const del = await fetch(this.url(storageId, item.checkpoint_id), delInit);
                 if (!del.ok && del.status !== 404) {
                     throw new Error(`DELETE checkpoint failed: ${del.status} ${await del.text()}`);

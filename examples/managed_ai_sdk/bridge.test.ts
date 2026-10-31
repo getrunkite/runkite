@@ -1057,6 +1057,23 @@ test("attach bounds a stalled run lookup request and preserves the existing run"
   assert.equal(f.calls.length, 1);
 });
 
+test("creation bounds a stalled browser request body before any run is created", async () => {
+  let canceled = false;
+  const f = fixture();
+  f.options.timeoutMs = 5;
+  const request = new Request("https://app.example/chat", {
+    method: "POST",
+    body: new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(encoder.encode('{"messages":[')); },
+      cancel() { canceled = true; },
+    }),
+    duplex: "half",
+  } as RequestInit);
+  await assert.rejects(within(createManagedChatResponse(request, f.options)), { name: "TimeoutError" });
+  assert.equal(canceled, true);
+  assert.equal(f.calls.length, 0);
+});
+
 test("attach bounds a stalled lookup body and cancels its reader without mutating the run", async () => {
   let canceled = false;
   const f = fixture({

@@ -48,7 +48,7 @@ type WebhookSink struct {
 func NewWebhookSink(cfg WebhookConfig, deadLetter DeadLetterStore) *WebhookSink {
 	return &WebhookSink{
 		cfg:        cfg,
-		client:     &http.Client{Timeout: 10 * time.Second},
+		client:     &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		deadLetter: deadLetter,
 	}
 }
@@ -122,7 +122,7 @@ func (w *WebhookSink) deliver(ctx context.Context, payload []byte) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook endpoint returned status %d", resp.StatusCode)
 	}
 	return nil

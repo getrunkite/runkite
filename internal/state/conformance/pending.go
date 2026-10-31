@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -70,6 +71,20 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 	if canonical == "" {
 		t.Fatal("no canonical pending action")
 	}
+	preview := makeRow("-precise-preview", "scope-preview", "agent-preview", true)
+	preview.RunID += "-numeric"
+	preview.Args = map[string]any{"id": json.Number("9007199254740993"), "nested": []any{json.Number("18446744073709551615")}}
+	if err := s.CreatePendingAction(ctx, preview); err != nil {
+		t.Fatal(err)
+	}
+	read, err := s.GetPendingAction(ctx, preview.ID)
+	if err != nil || read == nil || read.Args["id"] != json.Number("9007199254740993") {
+		t.Fatalf("pending GET rounded argument: row=%#v err=%v", read, err)
+	}
+	previews, err := s.SearchPendingActions(ctx, &models.PendingActionSearchRequest{RunID: preview.RunID})
+	if err != nil || len(previews) != 1 || previews[0].Args["id"] != json.Number("9007199254740993") {
+		t.Fatalf("pending list rounded argument: rows=%#v err=%v", previews, err)
+	}
 	for _, row := range []*models.PendingAction{makeRow("-tenant", "scope-b", "agent-a", true), makeRow("-agent", "scope-a", "agent-b", true), makeRow("-connector", "scope-a", "agent-a", false)} {
 		original := row.ID
 		if err := s.CreatePendingAction(ctx, row); err != nil {
@@ -103,8 +118,28 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 	if id, err := s.ConsumeApprovedAction(ctx, "scope-b", "agent-a", runID, 0, "files", "upload", "same-digest"); err != nil || id != "" {
 		t.Fatalf("cross-tenant approval consumed: %q %v", id, err)
 	}
+	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", ""); err != nil || id != "" {
+		t.Fatalf("empty presented digest consumed a bound approval: %q %v", id, err)
+	}
 	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "same-digest"); err != nil || id != connectorID {
 		t.Fatalf("connector consume: %q %v", id, err)
+	}
+	legacy := makeRow("-unbound-legacy", "scope-a", "agent-a", false)
+	legacy.RunID += "-legacy"
+	legacy.ArgsDigest = ""
+	if err := s.CreatePendingAction(ctx, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPendingActionApproved(ctx, legacy.ID, "synthetic-ops"); err != nil {
+		t.Fatal(err)
+	}
+	for _, presented := range []string{"", "fresh-digest"} {
+		if id, err := s.ConsumeApprovedAction(ctx, legacy.TenantID, legacy.AgentID, legacy.RunID, legacy.Generation, legacy.Connector, legacy.Tool, presented); err != nil || id != "" {
+			t.Fatalf("unbound legacy row authorized digest %q: id=%q err=%v", presented, id, err)
+		}
+	}
+	if row, err := s.GetPendingAction(ctx, legacy.ID); err != nil || row.Status != models.PendingStatusApproved {
+		t.Fatalf("rejected legacy approval was consumed: row=%+v err=%v", row, err)
 	}
 	past := time.Now().UTC().Add(-time.Hour)
 	expired := makeRow("-expired", "scope-a", "agent-a", true)

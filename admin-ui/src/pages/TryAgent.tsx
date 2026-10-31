@@ -1,3 +1,5 @@
+import { adminRunPath } from "../lib/adminPaths";
+import { eventPreview } from "../lib/eventPreview";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { FlaskConical } from "lucide-react";
@@ -78,7 +80,7 @@ export function TryAgent() {
   }, [agents]);
 
   const appendRaw = (event: string, data: unknown) => {
-    const preview = typeof data === "string" ? data : JSON.stringify(data).slice(0, 240);
+    const preview = eventPreview(typeof data === "string" ? data : JSON.stringify(data) ?? String(data), 240);
     setRaw((prev) => [
       ...prev.slice(-200),
       { ts: new Date().toISOString().slice(11, 19), event, preview },
@@ -296,7 +298,7 @@ export function TryAgent() {
           {" · "}
           run{" "}
           {runId ? (
-            <Link className="font-mono text-primary hover:underline" to={`/admin/runs/${runId}`}>
+            <Link className="font-mono text-primary hover:underline" to={`/admin${adminRunPath(runId)}`}>
               {runId.slice(0, 8)}…
             </Link>
           ) : (
