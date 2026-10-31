@@ -1,0 +1,23 @@
+# Disposable local recovery overlay. Compose must support !reset/!override.
+# Use with docker-compose.multi.yml and docker-compose.soak.yml, and an
+# explicit runkite-ha-* project. Fixed loopback ports survive stop/start.
+name: runkite-ha-recovery
+
+services:
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  runkite-1:
+    ports:
+      - "127.0.0.1:23261:2026"
+  runkite-2:
+    ports:
+      - "127.0.0.1:23262:2026"
+  runkite-3:
+    ports:
+      - "127.0.0.1:23263:2026"
+  lb:
+    ports: !override
+      - "127.0.0.1:23266:2026"
+      - "127.0.0.1:25251:50051"

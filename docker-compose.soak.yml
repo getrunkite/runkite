@@ -11,6 +11,7 @@ services:
     environment:
       LANGGRAPH_CONFIG: /app/examples/soak_multi/langgraph.json
       RUNKITE_PPROF: "1"
+      SOAK_SINK_PORT: ${SOAK_SINK_PORT:-9099}
       # Required alongside RUNKITE_PPROF=1 -- anonymous pprof is refused.
       RUNKITE_PPROF_TOKEN: "soak-pprof-local-only"
       RUNKITE_ALLOW_INSECURE_SERVE: "1"

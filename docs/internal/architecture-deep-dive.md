@@ -15,6 +15,10 @@ For current unreleased authority, recovery, connector and Admin corrections, rea
 [atomic results and exact identities](atomic-results-and-identities.md). They record the source invariants,
 operator upgrade steps and test boundaries without rewriting historical chapters.
 
+The [local HA validation record](ha-recovery-validation.md) separates steady load
+from explicit process-loss and cross-replica recovery evidence. Its short local
+rehearsal does not replace the 30-minute soak bar or establish a cloud deployment.
+
 Managed execution and app-owned tool governance are separate entry paths. Neither one governs a native tool that bypasses its policy hook or the connector proxy. The new managed AI SDK integration checks do not establish a new live multi-replica HA soak or exactly-once external side effects before a checkpoint commit.
 
 **Author: Opus 4.6 (Anthropic), updated by Claude Sonnet 5 (Anthropic) for the v0.3.0 pass**

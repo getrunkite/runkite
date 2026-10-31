@@ -179,7 +179,9 @@ services:
       RUNKITE_GRPC_URL: lb:50051
       RUNKITE_HTTP_URL: http://lb:2026
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
-      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      # Bundled cron IDs contain colons; HTTP proxy mode preserves tenant
+      # isolation and supports those threads. Postgres remains on the plane.
+      POSTGRES_DSN: ""
     depends_on:
       - lb
 
@@ -191,7 +193,9 @@ services:
       RUNKITE_GRPC_URL: lb:50051
       RUNKITE_HTTP_URL: http://lb:2026
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN before running this compose file -- see .env.example}
-      POSTGRES_DSN: postgres://runkite:runkite@postgres:5432/runkite?sslmode=disable
+      # Bundled cron IDs contain colons; HTTP proxy mode preserves tenant
+      # isolation and supports those threads. Postgres remains on the plane.
+      POSTGRES_DSN: ""
     depends_on:
       - lb
 

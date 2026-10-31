@@ -3,7 +3,8 @@
     "echo_agent": "../echo_agent/graph.py:graph",
     "slow_agent": "../slow_agent/graph.py:graph",
     "llm_sim_agent": "../llm_sim_agent/graph.py:graph",
-    "store_agent": "../store_agent/graph.py:graph"
+    "store_agent": "../store_agent/graph.py:graph",
+    "metered_agent": "./metered.py:graph"
   },
   "dependencies": [
     "../echo_agent",
@@ -12,7 +13,8 @@
     "../store_agent"
   ],
   "llm_cache": {
-    "echo_agent": {"ttl_seconds": 3600}
+    "echo_agent": {"ttl_seconds": 3600},
+    "metered_agent": {"ttl_seconds": 3600}
   },
   "connectors": {
     "soak_demo": {
@@ -24,14 +26,14 @@
   },
   "webhooks": [
     {
-      "url": "http://host.docker.internal:9099/hook",
+      "url": "http://host.docker.internal:${SOAK_SINK_PORT:-9099}/hook",
       "secret": "soak-webhook-secret",
       "events": ["run_start", "run_complete", "error", "interrupt"]
     }
   ],
   "preflight_hooks": [
     {
-      "url": "http://host.docker.internal:9099/preflight",
+      "url": "http://host.docker.internal:${SOAK_SINK_PORT:-9099}/preflight",
       "secret": "soak-webhook-secret",
       "timeout_ms": 1000
     }
