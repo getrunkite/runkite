@@ -281,23 +281,43 @@ func waitForHealth(url string, timeout time.Duration) error {
 }
 
 func waitForAgents(want []string, timeout time.Duration) error {
+	// Name+limit avoids the default 10-row /agents/search page being crowded
+	// out by leftover managed-runner agent ids in the shared Postgres DB
+	// (same failure mode as test/e2e/matrix waitForAgent).
 	deadline := time.Now().Add(timeout)
 	var lastSeen []string
 	for time.Now().Before(deadline) {
-		resp, err := http.Post(baseURL+"/agents/search", "application/json", strings.NewReader(`{}`))
-		if err == nil {
+		seen := make(map[string]bool)
+		lastSeen = nil
+		ok := true
+		for _, agentID := range want {
+			body := fmt.Sprintf(`{"name":%q,"limit":100}`, agentID)
+			resp, err := http.Post(baseURL+"/agents/search", "application/json", strings.NewReader(body))
+			if err != nil {
+				ok = false
+				break
+			}
 			var agents []map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&agents)
+			_ = json.NewDecoder(resp.Body).Decode(&agents)
 			resp.Body.Close()
-			lastSeen = nil
+			found := false
 			for _, a := range agents {
-				if id, ok := a["agent_id"].(string); ok {
-					lastSeen = append(lastSeen, id)
+				if id, okID := a["agent_id"].(string); okID {
+					if !seen[id] {
+						seen[id] = true
+						lastSeen = append(lastSeen, id)
+					}
+					if id == agentID {
+						found = true
+					}
 				}
 			}
-			if containsAll(lastSeen, want) {
-				return nil
+			if !found {
+				ok = false
 			}
+		}
+		if ok {
+			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}

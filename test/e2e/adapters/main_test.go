@@ -201,13 +201,15 @@ func waitForHealth(url string, timeout time.Duration) error {
 }
 
 func waitForAgent(agentID string, timeout time.Duration) error {
+	// Same shared-Postgres page crowding as test/e2e waitForAgents / matrix.
+	body := fmt.Sprintf(`{"name":%q,"limit":100}`, agentID)
 	deadline := time.Now().Add(timeout)
 	var lastSeen []string
 	for time.Now().Before(deadline) {
-		resp, err := http.Post(baseURL+"/agents/search", "application/json", strings.NewReader(`{}`))
+		resp, err := http.Post(baseURL+"/agents/search", "application/json", strings.NewReader(body))
 		if err == nil {
 			var agents []map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&agents)
+			_ = json.NewDecoder(resp.Body).Decode(&agents)
 			resp.Body.Close()
 			lastSeen = nil
 			for _, a := range agents {
