@@ -24,10 +24,32 @@ metadata, local wheel/tarball checks and optional Microsoft middleware do not
 change that. Do not describe those helpers as published without a separate,
 verified maintainer publication.
 
+## Apache-2.0 transition
+
+Current source uses Apache-2.0. Published v0.6.0 artifacts retain their shipped
+BUSL-1.1 license. Use a new version and tag for Apache-licensed artifacts; do not
+replace old release files, move old tags or relabel existing registry versions.
+Until that release is published, the README and site must distinguish current
+source from the v0.6.0 downloads. See the
+[transition record](internal/apache-2.0-transition.md) for scope and rationale.
+
+Before publishing that release:
+
+- Inspect the built Go release archives for the current `LICENSE` and `NOTICE`.
+- Inspect npm tarballs, Python wheels and source distributions for Apache-2.0
+  metadata and the applicable `LICENSE` and `NOTICE` files. Keep third-party
+  license and attribution notices intact.
+- Verify the final control-plane and runner images carry the license and notice
+  files and identify Apache-2.0 in their OCI license metadata.
+- Call out the license transition in the release notes, then align the site,
+  README and package documentation with the artifacts actually published.
+- Keep governance helper packaging checks separate from publication. This
+  transition does not add those helpers to the release workflow.
+
 ## Documentation and embedded UI release checks
 
-- Keep `CHANGELOG.md` v0.6.0 separate from the latest tag. Move an item only
-  when the corresponding source and artifact are included in the release.
+- Keep `CHANGELOG.md` Unreleased items separate from published releases. Move
+  an item only when its source and artifact are included in the new release.
 - Check the README, `docs/client-sdk.md`, `docs/runners.md`, integration examples
   and `site/support/sdk-integration.html` for matching framework/package status.
 - Keep managed execution and app-owned Decide distinct in product, support and

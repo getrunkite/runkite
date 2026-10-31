@@ -26,6 +26,7 @@ RUN BUILD_TIME="${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" && \
 # reached EOL 2026-04-01 and produced a false-clean scan).
 # Digest is the multi-arch index for alpine:3.24 (3.24.1 as of 2026-06-16).
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 # `apk add` only installs the packages it's given -- it does not touch
 # already-present ones. The base image's own baked-in packages (libssl3,
 # libcrypto3, ...) age between when Docker Hub last rebuilt this tag and
@@ -39,6 +40,9 @@ RUN apk upgrade --no-cache && \
     adduser -u 65532 -S -G runkite -H -D runkite
 
 COPY --from=builder /app/runkite /usr/local/bin/runkite
+COPY --from=builder /app/LICENSE /app/NOTICE /usr/local/share/licenses/runkite/
+COPY --from=builder /app/internal/adminui/dist/licenses/ /usr/local/share/licenses/runkite/fonts/
+COPY --from=builder /app/spec/third-party/ /usr/local/share/licenses/runkite/spec/
 COPY --from=builder --chown=runkite:runkite /app/examples /app/examples
 # The plane does not install example deps. A lockfile left next to
 # langgraph.json fails the image scan. The TypeScript runner image uses

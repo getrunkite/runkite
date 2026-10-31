@@ -9,10 +9,13 @@ Run agents through Runkite, or keep the loop in your app and govern individual
 tool calls. Your framework still owns the model loop.
 
 [![CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getrunkite/runkite/actions/workflows/ci.yml?query=branch%3Amain)
-[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/runkite-runner)](https://pypi.org/project/runkite-runner/)
 [![npm](https://img.shields.io/npm/v/runkite-runner)](https://www.npmjs.com/package/runkite-runner)
 [![GHCR](https://img.shields.io/badge/GHCR-getrunkite%2Frunkite-blue)](https://github.com/getrunkite/runkite/pkgs/container/runkite)
+
+Current source is Apache-2.0. Published v0.6.0 downloads retain BUSL-1.1.
+See [license scope](#license).
 
 **[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Try the sandbox](https://getrunkite.com/support/try.html)**
 
@@ -233,12 +236,19 @@ operational changes and their limits.
 
 ## License
 
-[Business Source License 1.1](LICENSE). Licensor: **Sharan Harsoor**.
+[Apache License, Version 2.0](LICENSE). Copyright 2026 Sharan Harsoor.
+See [NOTICE](NOTICE) for attribution.
 
-Use, modify and self-host under the license's Additional Use Grant, including
-internal production use. Offering Runkite as a hosted or managed service to third
-parties requires a commercial license. Apache 2.0 conversion follows the Change
-Date terms in [LICENSE](LICENSE).
+This source tree permits commercial use, modification, redistribution and
+hosting under Apache-2.0. Third-party components retain their own licenses;
+the license does not grant general trademark rights. Runkite remains a
+self-hosted product.
+
+The change applies to source from the relicensing commit onward and future
+releases. Already-published v0.6.0 and earlier artifacts retain their shipped
+[BUSL-1.1 terms](https://github.com/getrunkite/runkite/blob/v0.6.0/LICENSE).
+For the scope and release checks, see the
+[license transition record](docs/internal/apache-2.0-transition.md).
 
 ## Contributing
 

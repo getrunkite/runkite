@@ -27,7 +27,13 @@ ships in the published PyPI `0.6.0` wheel via the `agent-framework` extra.
 | **Companion (TS)** | [`runkite-runner` on npm](https://www.npmjs.com/package/runkite-runner) |
 | **Control plane** | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `ghcr.io/getrunkite/runkite` |
 | **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Quick start](https://github.com/getrunkite/runkite/blob/main/docs/quickstart.md) · [Site](https://getrunkite.com/) |
-| **License** | [BUSL-1.1](https://github.com/getrunkite/runkite/blob/main/LICENSE) |
+| **License** | [Apache-2.0](https://github.com/getrunkite/runkite/blob/main/LICENSE) |
+
+This source revision is licensed under Apache-2.0. Previously published releases,
+including v0.6.0, retain the license shipped with their artifacts. The license
+change applies to this checkout and future releases; it does not republish an
+existing npm or PyPI version. See `LICENSE` and `NOTICE`. Third-party dependencies
+retain their own licenses.
 
 ---
 

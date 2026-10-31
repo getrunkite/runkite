@@ -2068,6 +2068,19 @@ def _normalize_resource_ids(value) -> None:
 
 
 def _write_spec(spec: dict, path: Path) -> int:
+    spec["info"]["license"] = {
+        "name": "Apache License, Version 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+    }
+    if path.name == "openapi.json":
+        # The standalone public download must carry the upstream MIT notice,
+        # even when no repository or release archive accompanies it.
+        spec["x-third-party-notices"] = [{
+            "name": "Agent Protocol API definitions",
+            "source": "https://github.com/langchain-ai/agent-protocol",
+            "license": "MIT",
+            "notice": (SPEC_DIR / "third-party" / "agent-protocol-MIT.txt").read_text(),
+        }]
     _normalize_resource_ids(spec)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(spec, indent=2, ensure_ascii=False) + "\n"

@@ -52,4 +52,5 @@ Framework `options` are passed through separately and are not policy arguments. 
 
 Use a server-side API key with `governance:decide`; ordinary `read`, `write` and agent-run permissions do not grant that permission. Keep that key out of browser code. The tenant comes from the authenticated key. This path creates no Runkite thread or run, does not apply run kill switches, break-glass or spend caps, and does not execute the tool. Polling an approved action does not consume it. The application must enforce idempotency itself.
 
-License: BUSL-1.1, with the repository's additional use grant. See `LICENSE`.
+License: Apache-2.0. See `LICENSE` and `NOTICE`. Third-party dependencies retain
+their own licenses.

@@ -7,8 +7,8 @@ name = "runkite-governance"
 version = "0.6.0"
 description = "Small decide and pending-action helper for app-owned agent loops."
 readme = "README.md"
-license = "BUSL-1.1"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = []
 

@@ -53,4 +53,5 @@ the app must not mutate invocation arguments after authorization. Importing the
 base client does not import the optional framework. This extra is not a runner
 adapter and creates no run.
 
-License: BUSL-1.1, with the repository's additional use grant. See `LICENSE`.
+License: Apache-2.0. See `LICENSE` and `NOTICE`. Third-party dependencies retain
+their own licenses.

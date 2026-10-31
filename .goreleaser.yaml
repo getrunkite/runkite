@@ -37,7 +37,14 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     files:
       - LICENSE
+      - NOTICE
       - README.md
+      - src: admin-ui/public/licenses/*
+        dst: licenses
+        strip_parent: true
+      - src: spec/third-party/*
+        dst: licenses
+        strip_parent: true
 
 checksum:
   name_template: checksums.txt

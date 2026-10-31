@@ -14,7 +14,13 @@ optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 | **CLI** | `runkite-runner` |
 | **Control plane** | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `ghcr.io/getrunkite/runkite` |
 | **Docs** | [Runners](https://github.com/getrunkite/runkite/blob/main/docs/runners.md) · [Site](https://getrunkite.com/) |
-| **License** | [BUSL-1.1](./LICENSE) |
+| **License** | [Apache-2.0](./LICENSE) |
+
+This source revision is licensed under Apache-2.0. Previously published releases,
+including v0.6.0, retain the license shipped with their artifacts. The license
+change applies to this checkout and future releases; it does not republish an
+existing npm or PyPI version. See `LICENSE` and `NOTICE`. Third-party dependencies
+retain their own licenses.
 
 ## Quick start
 

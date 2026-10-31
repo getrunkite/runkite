@@ -44,6 +44,10 @@ The v0.6.0 [local HA validation record](internal/ha-recovery-validation.md)
 separates steady load from bounded cache, cancel, reclaim and retained-stream
 recovery checks, with fixture setup and measured rehearsal limits.
 
+The [Apache-2.0 transition record](internal/apache-2.0-transition.md) explains
+current-source licensing, the unchanged terms of published v0.6.0 artifacts,
+third-party notices and the packaging checks required for the next release.
+
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters and unpublished
 governance helpers are labeled separately from tagged runner packages.

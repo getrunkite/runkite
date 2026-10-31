@@ -384,7 +384,7 @@ test-python-package:
 	@package_test_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$package_test_dir"' EXIT; \
 	uv --no-config venv --python 3.12 "$$package_test_dir/venv" && \
-	uv --no-config pip install --python "$$package_test_dir/venv/bin/python" build 'setuptools>=68' wheel pip && \
+	uv --no-config pip install --python "$$package_test_dir/venv/bin/python" build 'setuptools>=77' wheel pip && \
 	PYTHONDONTWRITEBYTECODE=1 "$$package_test_dir/venv/bin/python" python/tests/test_package_artifacts.py -v
 
 # A real plane and managed framework runner installed with dependencies in a fresh venv.

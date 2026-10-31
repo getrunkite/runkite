@@ -7,6 +7,7 @@
 # nothing needs to write an npm cache at runtime.
 
 FROM node:22-slim
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 
 RUN groupadd --gid 65532 runkite && \
@@ -16,6 +17,7 @@ COPY typescript/runkite-runner/package.json typescript/runkite-runner/package-lo
 RUN cd typescript/runkite-runner && npm ci
 
 COPY typescript/runkite-runner/ ./typescript/runkite-runner/
+COPY typescript/runkite-runner/LICENSE typescript/runkite-runner/NOTICE /usr/local/share/licenses/runkite-runner/
 COPY examples/ ./examples/
 # Agent graphs resolve npm deps from their own directory (see
 # examples/echo_agent_ts/package.json), not from the runner's node_modules.

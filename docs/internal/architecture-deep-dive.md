@@ -3684,35 +3684,43 @@ The UNIQUE constraint is the election mechanism. Only one INSERT can succeed for
 
 
 
-# 56. Deep Dive — Why We Chose BUSL-1.1 Licensing
+# 56. Deep Dive: License scope and the Apache-2.0 transition
 
+## Current source and published artifacts
 
+This checkout uses [Apache License 2.0](../../LICENSE). It permits commercial use,
+modification, redistribution and hosted services under its terms. Runkite itself
+remains a self-hosted product; licensing permission is separate from the product's
+deployment and support commitments.
 
-## What BUSL-1.1 means
+The already-published v0.6.0 artifacts retain their
+[shipped BUSL-1.1 license](https://github.com/getrunkite/runkite/blob/v0.6.0/LICENSE).
+Changing the current tree does not rewrite tags, old package metadata, binaries
+or images. The next release must identify the Apache-2.0 transition explicitly.
 
-Business Source License 1.1. The key terms:
+## Why the earlier release used BUSL-1.1
 
-- You CAN self-host Runkite in your own production infrastructure
-- You CAN modify the code for internal use
-- You CAN build products ON TOP of Runkite (your agents, your SaaS that uses Runkite internally)
-- You CANNOT offer Runkite itself as a hosted service to third parties (you cannot sell "Runkite Cloud" as a product)
-- After the change date (typically 3-4 years from release), the code converts to Apache 2.0 (fully permissive)
+The original choice allowed self-hosting and internal production use while
+requiring a separate commercial license to offer Runkite itself as a hosted or
+managed service to third parties. The intended protection was against a provider
+selling the control plane as a service without supporting its development.
+That rationale describes the historical release, not an Apache-2.0 restriction.
 
+## Why use Apache-2.0 now?
 
+The new choice prioritizes permission to adopt, contribute, integrate and
+commercially redistribute Runkite under a familiar open-source license. It also
+removes the hosted-service restriction from the newly licensed source. This is a
+tradeoff: other organizations can compete using that source, and adoption is not
+guaranteed by the license change.
 
-## Why not Apache 2.0 from day one?
+Apache-2.0 grants non-exclusive rights; it does not itself transfer copyright,
+company ownership or general trademark rights to another organization. Joining a
+foundation would require a separate application and agreement. Third-party code
+keeps its own license and notices.
 
-The fear: a large cloud provider takes the code, hosts it as a managed service, and captures all the market value without contributing back. BUSL prevents that while still allowing the entire self-hosted use case.
-
-## What users CAN do (the non-restrictive part)
-
-- Run Runkite in production for your company
-- Build and sell AI agent products that use Runkite as infrastructure
-- Modify the source code and keep modifications private
-- Deploy multiple instances across your organization
-- Use it for internal tools, customer-facing products, everything
-
-The only restriction: you cannot become a competing control-plane-as-a-service vendor using this codebase.
+See [the transition note](apache-2.0-transition.md) for source and artifact scope,
+packaging checks and release guidance.
 
 ---
 

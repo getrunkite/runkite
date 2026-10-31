@@ -94,6 +94,20 @@ class PackageArtifactTests(unittest.TestCase):
         if result.returncode:
             raise AssertionError(f"Artifact build failed: {command!r}\n{result.stdout}\n{result.stderr}")
 
+    def test_artifacts_preserve_apache_license_and_notice(self) -> None:
+        self.assertEqual(self.metadata["License-Expression"], "Apache-2.0")
+        self.assertEqual(set(self.metadata.get_all("License-File", [])), {"LICENSE", "NOTICE"})
+        self.assertNotIn("License :: Other/Proprietary License", self.metadata.get_all("Classifier", []))
+        with tarfile.open(self.sdist) as sdist:
+            [prefix] = {member.name.split("/", 1)[0] for member in sdist.getmembers() if member.isfile()}
+            for name in ("LICENSE", "NOTICE"):
+                expected = (self.source / name).read_bytes()
+                [content] = [data for path, data in self.members.items() if path.endswith(f".dist-info/licenses/{name}")]
+                self.assertEqual(content, expected, name)
+                member = sdist.extractfile(f"{prefix}/{name}")
+                self.assertIsNotNone(member)
+                self.assertEqual(member.read(), expected, name)
+
     def test_wheel_preserves_runner_code_and_contains_only_adapter_runtime_modules(self) -> None:
         for source in (self.source / "runkite_runner").rglob("*"):
             if source.is_file() and (source.suffix == ".py" or source.name == "py.typed"):

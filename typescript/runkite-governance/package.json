@@ -17,13 +17,14 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "devDependencies": {
     "typescript": "7.0.2"

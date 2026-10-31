@@ -9,7 +9,7 @@ feedback. A successful happy path does not establish recovery or isolation.
 
 ## Before you start
 
-- **License**: Runkite is licensed under [BUSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-07-27). By submitting a contribution, you agree it's licensed under the same terms as the rest of the project.
+- **License**: This source tree is licensed under [Apache-2.0](LICENSE). Unless explicitly stated otherwise, contributions intentionally submitted for inclusion are offered under Apache-2.0, as described in section 5 of the license. You retain your copyright. Submit only work you have the right to contribute and preserve third-party copyright, license and attribution notices. See the [license transition record](docs/internal/apache-2.0-transition.md) for the boundary with previously published BUSL releases.
 - **Small, focused PRs** are much easier to review than large ones. If you're planning a big change (a new backend, a new runner language), consider opening an issue first to discuss the approach.
 - **Read the [README](README.md) and [`docs/`](docs/README.md) first.** Deep design rationale, dual-mode notes, and known limitations live in `docs/` (especially [`architecture.md`](docs/architecture.md), [`runners.md`](docs/runners.md), [`limitations.md`](docs/limitations.md)) -- most "why does it work this way?" questions are already answered there.
 

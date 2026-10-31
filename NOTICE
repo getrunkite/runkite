@@ -1,0 +1,14 @@
+Runkite
+Copyright 2026 Sharan Harsoor
+
+Runkite's first-party code is licensed under the Apache License, Version 2.0.
+Third-party components retain their respective copyrights and license terms.
+
+The embedded Admin UI includes Inter and JetBrains Mono fonts under OFL-1.1.
+Their copyright notices and full license texts are in admin-ui/public/licenses/
+in source, licenses/ in release archives, and /admin/licenses/ in the served UI.
+
+The public API specification includes material derived from LangChain's Agent
+Protocol under MIT. See spec/third-party/agent-protocol-MIT.txt in source,
+licenses/agent-protocol-MIT.txt in release archives, and the
+x-third-party-notices field in spec/openapi.json.
