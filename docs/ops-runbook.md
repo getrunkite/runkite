@@ -118,6 +118,38 @@ schema migration and do not repair historical malformed links. The separate
 MySQL version 17 maintenance instructions above still apply when upgrading from
 an older schema. See [the follow-up design record](internal/atomic-results-and-identities.md).
 
+## Retained recovery work (unreleased)
+
+Redis reclaim now keeps caller-selected run IDs separate from poison metadata
+and retains the original lease and generation if a ready-list write fails. The
+structured result exists only between the Lua call and Go parser; no Redis key
+format or stored-record migration is needed. If logs report an incorrectly typed
+queue key, inspect and reconcile that key's contents before repair. Do not delete
+an in-flight lease merely to clear a reclaim error.
+
+Finish upgrading all control-plane replicas before relying on literal poison-ID
+handling. Old colon parsing could select a different prefix ID and generation,
+including another tenant's run. If custom colon IDs were used, review affected
+historical runs and dead-letter records explicitly. This patch does not rewrite
+prior outcomes or reconstruct lost history.
+
+A cancel request can fail after its interruption committed if usage, hold,
+broker or hook finalization is unavailable. Read the durable run before treating
+the request as ineffective. The plane keeps its lease so normal reclaim can
+retry finalization after the backend recovers, and attempts a runner notification.
+This does not undo an external side effect or guarantee immediate cooperative
+stop. See [the recovery design record](internal/ha-recovery-validation.md#keep-retry-identity-and-leases-intact-on-failures).
+
+The opt-in `run_timeout` sweep now commits timeout and thread release atomically
+through the existing completion transaction. It retains prior conversation state,
+records only available matching-attempt usage and releases a busy thread as
+`idle` when no other run is active.
+Finalization failures keep their lease for recovery; a timeout error in logs can
+therefore coexist with an already stored `timeout` result. Restore the affected
+backend and verify the durable result, usage hold and thread state. Do not start
+another external operation merely to clear a bookkeeping error. Historical busy
+threads or old timeout outcomes are not rewritten automatically.
+
 ## 1. Supported install
 
 **What “Supported” means:** multi-replica control plane + at least one runner, durable Postgres, Redis for shared queue/broker/cancel, runner tokens + client `auth`. Compose soak (`make smoke-multi` / `make soak-multi`) is the correctness proof. Helm/kind packages the same shape; cluster installs stay **Compatible** until a named cloud soak exists.
@@ -143,8 +175,10 @@ Run the recovery harness only against an explicitly named disposable local
 project. It interrupts runner and plane processes and checks cache completion,
 cross-replica cancel, reclaim and retained raw SSE. Read the case report before
 claiming recovery passed. The [validation record](internal/ha-recovery-validation.md)
-labels the short local rehearsal and its limits; it does not establish a cloud
-deployment or a Postgres/Redis outage result.
+labels the earlier short load rehearsal separately from later scripted
+retained-backend outage probes. The probes pause and restore the same containers;
+they do not establish a cloud deployment, lost Redis state recovery or universal
+SDK outage behavior.
 
 Zero-deps laptop demo (SQLite + in-memory, **not** Supported):
 

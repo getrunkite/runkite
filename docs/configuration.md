@@ -108,9 +108,18 @@ The managed AI SDK adapter does not support whole-run `llm_cache`: its loader re
 
 Dispatch itself runs on a small bounded worker pool (20 workers, a queue depth of 500), not one goroutine per sink per event -- a burst of run completions, each fanning out to every configured sink, each of which can itself hold a delivery attempt open for up to ~30s while retrying an unreachable endpoint, would otherwise grow goroutines/sockets without limit. Still fully non-blocking for the caller either way: if the pool and its queue are both saturated, the event is dropped (logged, and counted in `runkite_webhook_queue_dropped_total`) rather than delaying run execution or growing the queue without bound. One real, documented trade-off from sharing a pool across every sink: a genuinely slow or hung endpoint can occupy enough workers to delay (not silently lose -- the retry/dead-letter path is unaffected once a job is actually picked up) a different, healthy sink's delivery. A well-sized pool makes this rare, not impossible.
 
+In the unreleased run-creation path, the plane attempts the tool-call broker
+subscription synchronously before enqueue. A successful registration therefore
+precedes the runner's first event; event consumption and sink dispatch remain
+asynchronous. Subscription failure is logged and run creation continues. The
+watcher cancels its broker context when it finishes, with a two-hour ceiling for
+an orphaned run. This fixes observer startup ordering, not durable or exactly-once
+tool-hook delivery. It does not change the requirement for an explicit runner
+`tool_call` event or turn that hook into a policy gate.
+
 Event hooks are also usable directly from Go code by embedding runkite as a library: any type implementing `hooks.Sink` can be registered on the `*hooks.Dispatcher` via `apiServer.SetHookDispatcher`, independent of the webhook config above.
 
-`preflight_hooks` are **synchronous** gates that can **allow or deny** a run **before** any thread auto-create, thread claim, or run row (Promptfoo-style guardrails). They are separate from `webhooks` on purpose: observational webhooks must never delay or block run creation; preflight hooks exist specifically to block. Same first-file / control-plane-wide convention as `webhooks`.
+`preflight_hooks` are **synchronous** gates that can **allow or deny** a run **before** any thread auto-create, thread claim, or run row (Promptfoo-style guardrails). They are separate from `webhooks`: observational sink delivery does not decide whether a run may start, while preflight hooks can refuse it. Tool-hook observer registration still happens before enqueue as described above. Same first-file / control-plane-wide convention as `webhooks`.
 
 Each entry POSTs a `before_run` event JSON (`type`, `run_id`, `thread_id`, `agent_id`, `tenant_id`, `data.input`, `timestamp`) to `url`, with the same optional `X-Runkite-Signature` HMAC as webhooks. The gate must respond `2xx` with `{"allow": true}` or `{"allow": false, "reason": "..."}`. Deny, non-2xx, timeout, or malformed JSON → **fail closed** (`403` to the client; no thread auto-created for a new `thread_id`, no run persisted, no `run_start` webhook). `timeout_ms` defaults to `2000`. Multiple entries all must allow (first deny wins). Library embedders can `RegisterGate` any `hooks.Gate` implementation on the same Dispatcher.
 

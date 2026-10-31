@@ -2,19 +2,22 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // TimeoutOverdueRuns finds pending/running runs whose created_at is older
 // than maxDuration and forces each to status "timeout". Multi-instance
-// safe: TryMarkRunTimeout ensures exactly one replica wins per run_id,
-// and only that winner cancels the queue lease, signals the runner,
-// releases the thread, closes the broker, and finishes bookkeeping.
+// safe: the shared completion transaction selects one transition winner and
+// atomically releases the thread. Queue removal follows successful finalization.
+// The count includes newly committed timeouts, even if their finalization fails;
+// an error reports incomplete bookkeeping that ordinary reclaim can retry.
 //
 // Distinct from crash reclaim (heartbeat lease): reclaim covers a dead
 // runner; this covers a live one that never finishes (stuck tool loop,
@@ -33,44 +36,40 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 
 	const errMsg = "run exceeded max_duration"
 	n := 0
+	var failures []error
 	for _, run := range runs {
-		ok, markErr := s.store.TryMarkRunTimeout(sysCtx, run.RunID, errMsg)
-		if markErr != nil {
-			slog.Error("run timeout: TryMarkRunTimeout failed", "run_id", run.RunID, "error", markErr)
-			continue
+		result, completionErr := s.completeRunResult(ctx, &state.RunCompletion{
+			RunID: run.RunID, Status: models.RunStatusTimeout, Error: errMsg, CancelCurrentAttempt: true,
+		})
+		if result.Applied {
+			n++
 		}
-		if !ok {
-			continue
-		}
-		n++
-
-		// Subsequent ops are scoped to the run's own tenant (same pattern
-		// as StatusCallback): system context won the status race across
-		// tenants; writes below must not silently land in "default".
 		runCtx := tenant.WithContext(ctx, run.TenantID)
-		tryStatusTransition("queue_cancel", run.ThreadID, run.RunID, func() error {
+		if completionErr != nil {
+			if result.Accepted {
+				// Stop the live runner while retaining its recoverable lease. A
+				// reclaimed GetJob finalizes the committed timeout before Ack.
+				tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
+					return s.cancel.PublishCancel(runCtx, run.RunID)
+				})
+			}
+			slog.Error("run timeout: durable completion failed", "run_id", run.RunID, "error", completionErr)
+			failures = append(failures, fmt.Errorf("timeout run %s: %w", run.RunID, completionErr))
+			continue
+		}
+		if !result.Accepted {
+			continue
+		}
+		if !tryStatusTransition("queue_cancel", run.ThreadID, run.RunID, func() error {
 			return s.queue.Cancel(runCtx, run.RunID)
-		})
-		tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
+		}) {
+			failures = append(failures, fmt.Errorf("timeout run %s: failed to cancel run queue lease", run.RunID))
+		}
+		if !tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
 			return s.cancel.PublishCancel(runCtx, run.RunID)
-		})
-
-		// Metrics normally land in StatusCallback, but a hung/pending run
-		// may never ReportStatus -- record the terminal outcome here so
-		// ActiveRuns doesn't leak for the cases this sweep exists to catch.
-		metrics.ActiveRuns.Dec()
-		metrics.RunsTotal.WithLabelValues(run.AgentID, string(models.RunStatusTimeout)).Inc()
-		metrics.RunDuration.WithLabelValues(run.AgentID).Observe(time.Since(run.CreatedAt).Seconds())
-
-		tryStatusTransition("release_thread", run.ThreadID, run.RunID, func() error {
-			_, err := s.store.ReleaseThreadIfNoOtherActive(runCtx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
-			return err
-		})
-
-		_ = s.broker.Close(run.RunID)
-		// Bookkeeping after the timeout is already recorded. finishRun logs
-		// a webhook claim failure; this sweep does not retry it.
-		_ = s.finishRun(run.RunID, run.ThreadID, run.AgentID, run.TenantID, models.RunStatusTimeout, errMsg)
+		}) {
+			failures = append(failures, fmt.Errorf("timeout run %s: failed to publish runner cancellation", run.RunID))
+		}
 
 		// Stop anything this run delegated to -- same cascade as an
 		// explicit client cancel, so a timed-out parent doesn't leave
@@ -79,5 +78,5 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 
 		slog.Info("run timed out", "run_id", run.RunID, "thread_id", run.ThreadID, "agent_id", run.AgentID, "max_duration", maxDuration)
 	}
-	return n, nil
+	return n, errors.Join(failures...)
 }

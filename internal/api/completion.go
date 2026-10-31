@@ -127,9 +127,16 @@ func (s *Server) CompleteReclaimedRun(ctx context.Context, pill transport.Poison
 // CompleteRun is retryable after either an RPC failure or a lost response. The
 // state store commits the result before the bridge removes its queue lease.
 func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool, error) {
+	result, err := s.completeRunResult(ctx, c)
+	return result.Accepted, err
+}
+
+// completeRunResult retains the transaction's Applied flag so trusted sweeps
+// count and report only their own transition while still retrying finalization.
+func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
 	run, err := s.store.GetRun(tenant.SystemContext(ctx), c.RunID)
 	if err != nil {
-		return false, err
+		return state.CompletionResult{}, err
 	}
 	if c.RunnerKind != "" {
 		var kind string
@@ -139,7 +146,7 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 		if kind == "" {
 			agent, lookupErr := s.store.GetAgent(tenant.WithContext(ctx, run.TenantID), run.AgentID)
 			if lookupErr != nil {
-				return false, lookupErr
+				return state.CompletionResult{}, lookupErr
 			}
 			kind, _ = agent.Metadata["runner_kind"].(string)
 			if kind == "" {
@@ -147,7 +154,7 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 			}
 		}
 		if kind != c.RunnerKind {
-			return false, fmt.Errorf("run belongs to another runner kind")
+			return state.CompletionResult{}, fmt.Errorf("run belongs to another runner kind")
 		}
 	}
 	ctx = tenant.WithContext(ctx, run.TenantID)
@@ -156,12 +163,12 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 	if c.ReplayOnly {
 		_, done := run.Metadata[state.CompletionGenerationKey]
 		if !done || state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey) != c.Generation || run.Status != c.Status {
-			return false, nil
+			return state.CompletionResult{}, nil
 		}
-		return true, s.finalizeCommittedRun(ctx, run, false)
+		return state.CompletionResult{Accepted: true}, s.finalizeCommittedRun(ctx, run, false)
 	}
 	if !state.TerminalRunStatus(c.Status) {
-		return false, fmt.Errorf("invalid terminal run status %q", c.Status)
+		return state.CompletionResult{}, fmt.Errorf("invalid terminal run status %q", c.Status)
 	}
 	completion := *c
 	if completion.CancelCurrentAttempt {
@@ -213,13 +220,13 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 	} else {
 		if checked := state.CheckCompletion(run.Metadata, run.Status, &completion); !checked.Applied {
 			if !checked.Accepted {
-				return false, nil
+				return checked, nil
 			}
-			return true, s.finalizeCommittedRun(ctx, run, false)
+			return checked, s.finalizeCommittedRun(ctx, run, false)
 		}
 		events, err := s.broker.Replay(ctx, c.RunID, 0)
 		if err != nil {
-			return false, fmt.Errorf("replay final output: %w", err)
+			return state.CompletionResult{}, fmt.Errorf("replay final output: %w", err)
 		}
 		for i := len(events) - 1; i >= 0; i-- {
 			event := events[i]
@@ -227,23 +234,23 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 				continue
 			}
 			if err := jsonvalue.Unmarshal(event.Data, &completion.Values); err != nil {
-				return false, fmt.Errorf("decode final output: %w", err)
+				return state.CompletionResult{}, fmt.Errorf("decode final output: %w", err)
 			}
 			break
 		}
 	}
 	result, err := s.store.CompleteRun(ctx, &completion)
 	if err != nil {
-		return false, err
+		return state.CompletionResult{}, err
 	}
 	if !result.Accepted {
-		return false, nil
+		return result, nil
 	}
 	committed, err := s.store.GetRun(ctx, c.RunID)
 	if err != nil {
-		return false, err
+		return result, err
 	}
-	return true, s.finalizeCommittedRun(ctx, committed, result.Applied)
+	return result, s.finalizeCommittedRun(ctx, committed, result.Applied)
 }
 
 // Finalization operations have durable idempotency keys. They run again after

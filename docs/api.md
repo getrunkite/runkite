@@ -290,7 +290,23 @@ Disabled by default -- a hung agent (alive but stuck, e.g. an infinite tool-call
 }
 ```
 
-A background loop runs immediately on startup and then every `interval_seconds` (default 15) and forces any `pending`/`running` run whose `created_at` is older than `max_duration` to status `timeout`. That winner cancels the queue lease, publishes a cancel signal to the runner, releases the thread to `idle` when no other active run owns it, closes the event broker, and fires the same `on_error` hook path as a failed run. Multi-instance safe: N replicas racing the same overdue `run_id` produce exactly one winner (`TryMarkRunTimeout`).
+A background loop runs immediately on startup and then every `interval_seconds`
+(default 15) and forces any `pending`/`running` run whose `created_at` is older
+than `max_duration` to status `timeout`. The unreleased path uses the existing
+completion transaction to commit that status, its current attempt generation
+and thread release together. The thread becomes `idle` when no other active run
+owns it; its previous conversation values remain. Matching delivered usage can
+be recorded on the run, while unfinished conversation output is discarded.
+
+Finalization releases usage holds, closes the event broker and uses the same
+`on_error` hook path as a failed run. Queue removal follows successful
+finalization, and the runner receives a cancellation signal. If finalization
+fails after commit, the stored timeout remains authoritative and its queue lease
+is retained for ordinary reclaim to retry; runner notification is attempted.
+Errors are returned to the sweep loop and logged. Multiple replicas share one
+durable transition winner, so only newly applied timeouts increment its count
+and transition metrics. See the
+[recovery design record](internal/ha-recovery-validation.md#timeout-uses-the-same-atomic-terminal-transaction).
 
 Distinct from crash reclaim (heartbeat lease): reclaim covers a **dead** runner; this covers a **live** one that never finishes. `max_duration` is required for the section to take effect -- absent/empty/invalid disables the sweep entirely. Applies across every tenant (deployment-wide policy).
 

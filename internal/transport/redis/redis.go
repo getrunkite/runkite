@@ -624,15 +624,19 @@ for _, run_id in ipairs(stale_ids) do
                 -- Preserve the SAME live lease and generation so failed SQL
                 -- completion can retry. Only Ack(next_gen-1), after durable
                 -- completion/finalization, removes this poison assignment.
-                table.insert(dead, run_id .. ':' .. tostring(next_gen) .. ':' .. job_json)
+                -- RESP fields keep caller-chosen run IDs literal. Joining
+                -- these with ':' could truncate an ID or target another run.
+                table.insert(dead, {run_id, next_gen, job_json})
             else
-                local new_gen = redis.call('HINCRBY', gen_key, run_id, 1)
                 -- Append the top-level generation without re-encoding user
                 -- input or changing empty-array shapes in the job payload.
-                local new_job_json = job_json:gsub('}$', ',"generation":' .. new_gen .. '}')
+                local new_job_json = job_json:gsub('}$', ',"generation":' .. next_gen .. '}')
+                -- Redis does not roll back earlier script writes on error.
+                -- Retain the old assignment and fence until LPUSH succeeds.
+                redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
+                redis.call('HINCRBY', gen_key, run_id, 1)
                 redis.call('ZREM', zset_key, run_id)
                 redis.call('HDEL', data_key, run_id)
-                redis.call('LPUSH', 'rk:queue:' .. job.runner_kind, new_job_json)
                 reclaimed = reclaimed + 1
             end
         end
@@ -680,10 +684,9 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 	var dead []transport.PoisonPill
 	if deadRaw, ok := arr[1].([]interface{}); ok {
 		for _, item := range deadRaw {
-			s, _ := item.(string)
-			pill, perr := parseDeadEntry(s)
+			pill, perr := parseDeadEntry(item)
 			if perr != nil {
-				continue
+				return int(n), nil, perr
 			}
 			dead = append(dead, pill)
 		}
@@ -691,40 +694,24 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 	return int(n), dead, nil
 }
 
-func parseDeadEntry(s string) (transport.PoisonPill, error) {
-	// run_id:generation:job_json — run_id is UUID (no colon); generation is int.
-	first := -1
-	second := -1
-	for i := 0; i < len(s); i++ {
-		if s[i] == ':' {
-			if first < 0 {
-				first = i
-			} else {
-				second = i
-				break
-			}
-		}
-	}
-	if first < 0 || second < 0 {
+func parseDeadEntry(value interface{}) (transport.PoisonPill, error) {
+	// The tuple is a script response, not a persisted format or Redis key.
+	// Keep the ID separate from its generation and original assignment JSON.
+	fields, ok := value.([]interface{})
+	if !ok || len(fields) != 3 {
 		return transport.PoisonPill{}, fmt.Errorf("bad dead entry")
 	}
-	runID := s[:first]
-	genStr := s[first+1 : second]
-	jobJSON := s[second+1:]
-	var gen int64
-	for _, c := range genStr {
-		if c < '0' || c > '9' {
-			return transport.PoisonPill{}, fmt.Errorf("bad generation")
-		}
-		gen = gen*10 + int64(c-'0')
+	runID, idOK := fields[0].(string)
+	gen, genOK := fields[1].(int64)
+	jobJSON, payloadOK := fields[2].(string)
+	if !idOK || runID == "" || !genOK || gen <= 0 || !payloadOK {
+		return transport.PoisonPill{}, fmt.Errorf("bad dead entry fields")
 	}
-	pill := transport.PoisonPill{RunID: runID, Generation: gen}
 	var job transport.RunAssignment
-	if json.Unmarshal([]byte(jobJSON), &job) == nil {
-		pill.AgentID = job.GraphID
-		pill.TenantID = job.TenantID
+	if err := json.Unmarshal([]byte(jobJSON), &job); err != nil || job.RunID != runID {
+		return transport.PoisonPill{}, fmt.Errorf("bad dead entry assignment")
 	}
-	return pill, nil
+	return transport.PoisonPill{RunID: runID, Generation: gen, AgentID: job.GraphID, TenantID: job.TenantID}, nil
 }
 
 func (q *Queue) Len(ctx context.Context) (int64, error) {

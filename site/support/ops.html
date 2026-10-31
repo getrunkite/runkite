@@ -159,7 +159,25 @@
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">engineering validation record</a>
           before repeating the checks or making a recovery claim.
         </p>
+        <p>
+          Later checks with a rebuilt plane image passed those four cases and two
+          separate scripted Runner Protocol probes for Redis and Postgres pauses.
+          They restored the same containers with retained state, confirmed failed
+          acknowledgement during the outage and checked final output, history and
+          synthetic usage after recovery. These are protocol checks, not proof that
+          every SDK succeeds through an arbitrary outage or that lost Redis state
+          can be reconstructed. The earlier 120-second load result was not rerun
+          for that follow-up patch.
+        </p>
         <h2 id="identity-upgrade">Unreleased identity and atomic-result upgrade</h2>
+        <p>
+          Redis poison recovery now preserves literal run IDs, including colons,
+          and keeps the old lease if its ready-list write fails. Upgrade all plane
+          replicas before relying on this protection. No Redis key or stored-record
+          migration is needed. If custom colon IDs were used, explicitly review
+          historical runs and possible prefix-ID collisions; earlier outcomes are
+          not repaired automatically.
+        </p>
         <p>
           Upgrade the plane before runner helpers using encoded run/tenant identity
           headers. Exact identities are not trimmed, tenant allowlists compare exactly,
@@ -268,6 +286,20 @@
           idempotency key before deciding whether to try again.
         </p>
         <h2>Stopping a run that's gone wrong</h2>
+        <p>
+          Unreleased recovery hardening retains a run's lease when cancellation
+          committed but usage, hold, broker or hook finalization failed. A cancel
+          response can therefore be an error while the durable run is already
+          interrupted. Restore the affected backend and inspect the run before
+          retrying the operation. Normal reclaim can retry finalization; the plane
+          also attempts to notify the runner. This does not undo external effects.
+          The opt-in run timeout uses the same atomic completion path, releases the
+          thread as idle when no other run is active and retains previous conversation
+          state. Available delivered usage is kept only for the matching attempt.
+          Historical stuck threads are not rewritten automatically.
+          See the
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md#keep-retry-identity-and-leases-intact-on-failures">recovery design record</a>.
+        </p>
         <p>
           For one specific run: cancel it from <a href="admin-guide.html#5-threads--runs">Admin
           → Runs</a> or via the Agent Protocol API. The runner sees its assignment marked

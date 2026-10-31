@@ -244,4 +244,56 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 			t.Fatalf("cancellation created a conversation checkpoint: count=%d err=%v", len(history), err)
 		}
 	})
+	t.Run("trusted_timeout_targets_current_attempt_with_usage_only", func(t *testing.T) {
+		for _, captured := range []int64{1, 2} {
+			t.Run(fmt.Sprintf("captured_generation_%d", captured), func(t *testing.T) {
+				s, ctx := seed(t)
+				if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+					t.Fatal(ok, err)
+				}
+				completion := &state.RunCompletion{
+					RunID: "completion-run", Generation: captured, Status: models.RunStatusTimeout,
+					Error: "run exceeded max_duration", CancelCurrentAttempt: true,
+					Values:      map[string]interface{}{"answer": "unfinished"},
+					CancelUsage: map[string]interface{}{"prompt_tokens": 10, "completion_tokens": 4},
+				}
+				if result, err := s.CompleteRun(ctx, completion); err != nil || !result.Applied {
+					t.Fatal(result, err)
+				}
+				completion.CancelUsage = map[string]interface{}{"prompt_tokens": 999}
+				if result, err := s.CompleteRun(ctx, completion); err != nil || !result.Accepted || result.Applied {
+					t.Fatal("duplicate timeout changed output", result, err)
+				}
+				run, err := s.GetRun(ctx, "completion-run")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if run.Status != models.RunStatusTimeout || run.Error != "run exceeded max_duration" || state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey) != 2 {
+					t.Fatalf("timeout targeted the wrong attempt: run=%+v", run)
+				}
+				if captured == 1 {
+					if len(run.Output) != 0 {
+						t.Fatalf("timeout borrowed stale usage: output=%s", run.Output)
+					}
+				} else {
+					var output map[string]interface{}
+					if err := json.Unmarshal(run.Output, &output); err != nil {
+						t.Fatal(err)
+					}
+					usage, ok := output["usage"].(map[string]interface{})
+					if !ok || len(output) != 1 || usage["prompt_tokens"] != float64(10) || usage["completion_tokens"] != float64(4) {
+						t.Fatalf("timeout did not retain only current usage once: output=%s", run.Output)
+					}
+				}
+				thread, err := s.GetThread(ctx, "completion-thread")
+				if err != nil || thread.Status != models.ThreadStatusIdle || thread.Values["previous"] != "kept" || thread.Values["answer"] != nil || thread.Values["usage"] != nil {
+					t.Fatalf("timeout changed conversation history: thread=%+v err=%v", thread, err)
+				}
+				history, err := s.ListCheckpoints(ctx, "completion-thread", 10, "")
+				if err != nil || len(history) != 0 {
+					t.Fatalf("timeout created a conversation checkpoint: count=%d err=%v", len(history), err)
+				}
+			})
+		}
+	})
 }

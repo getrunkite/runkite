@@ -18,7 +18,7 @@ const (
 type RunCompletion struct {
 	// RunnerKind is the authenticated bridge identity; ReplayOnly permits only
 	// acknowledgement of an already committed result after the lease is gone.
-	// CancelCurrentAttempt is for trusted control-plane cancellation only.
+	// CancelCurrentAttempt is for trusted control-plane cancellation/timeout only.
 	// It is resolved under the store transaction lock. Only CancelUsage from
 	// the captured Generation may survive; arbitrary values are discarded.
 	CancelCurrentAttempt bool
@@ -89,10 +89,10 @@ func CheckCompletion(metadata map[string]interface{}, status models.RunStatus, c
 	return CompletionResult{Accepted: true, Applied: true}
 }
 
-// ResolveCompletion binds trusted cancellation to the current durable attempt.
+// ResolveCompletion binds trusted cancellation/timeout to the current attempt.
 // External completions must always present their own dispatch generation.
 func ResolveCompletion(metadata map[string]interface{}, c *RunCompletion) *RunCompletion {
-	if !c.CancelCurrentAttempt || c.Status != models.RunStatusInterrupted {
+	if !c.CancelCurrentAttempt || (c.Status != models.RunStatusInterrupted && c.Status != models.RunStatusTimeout) {
 		return c
 	}
 	copy := *c
