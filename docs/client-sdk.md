@@ -4,19 +4,19 @@ How to call Runkite from application code today, and when (if ever) we ship a fi
 
 This page is the durable decision record so the plan survives chat sessions.
 
-For the unreleased hardening update, use canonical API URLs without redirects.
+For the v0.6.0 hardening update, use canonical API URLs without redirects.
 Connector helpers expose bounded operations and TypeScript caller cancellation;
 the managed chat bridge also bounds stalled request-body intake before dispatch.
 New literal `.` and `..` run/thread IDs are rejected. New run IDs also reject
 controls and leading/trailing whitespace; Unicode and ordinary custom path
 characters remain supported through encoded components. Legacy pending actions require fresh
-submission and approval. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+submission and approval. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 
 Runner-side status checks now include the assignment tenant. Upgrade the plane
 before runner helpers that use the new base64url identity headers. LangGraph
 direct Postgres now requires named LangGraph tenants to use HTTP proxy state;
 default cron threads need proxy mode too. Prior native history must be resolved
-explicitly, and managed opaque SDK profiles are unaffected; see [the follow-up upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
+explicitly, and managed opaque SDK profiles are unaffected; see [the follow-up upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 
 ## Choose who owns execution
 
@@ -52,7 +52,7 @@ loop in its HTTP handler. Native successful-turn history is stored by the runner
 through the plane; frontend presentation history stays with the app. Initial
 support is text and local JSON-result tools. Native approvals/resume, streaming
 tool outputs, binary/client/provider tools, time travel and whole-run caching
-are unsupported. The separate [Microsoft managed runner](#managed-microsoft-agent-framework-unreleased)
+are unsupported. The separate [Microsoft managed runner](#managed-microsoft-agent-framework)
 has its own Python factory and session profile.
 
 This backend ships in tagged `v0.5.8` `runkite-runner` artifacts. Install the
@@ -60,7 +60,7 @@ tested optional `ai@7.0.155` peer with the runner. The app-side bridge needs a
 server key that can create, read and cancel managed runs; `governance:decide`
 alone is insufficient.
 
-#### Unreleased: one UI bridge for managed Python agents
+#### v0.6.0: one UI bridge for managed Python agents
 
 The existing [application bridge](../examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 also accepts server-selected `agent-framework`, `openai-agents`, `pydantic-ai`
@@ -83,7 +83,7 @@ This remains a checkout-only example, rather than a published client package.
 No model loop moves into the app handler. Full retained replay and one-attempt
 identity are required; the existing example payload limits still apply.
 
-#### Unreleased: reconnecting the managed UI stream
+#### v0.6.0: reconnecting the managed UI stream
 
 The checkout's app-side bridge adds `disconnectPolicy: "detach"` for callers
 whose run should continue after its browser leaves. Create requires an explicit
@@ -119,9 +119,9 @@ history. Missing start, replay gaps and expiration fail explicitly; the bridge
 withholds finish and does not manufacture a transcript or retry model/tools.
 It still refuses to combine generations after reclaim. See the
 [example's reconnect and retention contract](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
-These helpers are an unreleased example update, not another client SDK package.
+These helpers are a v0.6.0 example update, not another client SDK package.
 
-### Managed Microsoft Agent Framework (unreleased)
+### Managed Microsoft Agent Framework (v0.6.0)
 
 For Microsoft agents that should dispatch through Runkite and appear in Admin
 Threads/Runs, use the managed Python adapter (`python-agent-framework`) and the
@@ -130,9 +130,10 @@ adapter is included in source-built `runkite-runner` wheels and sdists, with the
 optional `agent-framework` extra pinned to `agent-framework-core==1.23.0` and
 the dedicated `runkite-runner-agent-framework` entrypoint. The installed module
 is `python -m agent_framework_adapter`; no `PYTHONPATH` is required. This packaging
-is unreleased and is not in the published PyPI `0.5.8` artifact. Install the
-local source package as shown in the example until a release contains it. This
-is a runner profile, separate from the unpublished governance helper's extra.
+is included in the published PyPI `0.6.0` artifact. Install with
+`pip install 'runkite-runner[agent-framework]'` or the local source package shown
+in the example. This is a runner profile, separate from the unpublished
+governance helper's extra.
 
 It uses public Agent streaming and session APIs, stores native session history in
 opaque checkpoints with CAS, and recovers committed turns without repeating
@@ -146,15 +147,14 @@ Unsupported approval or resume fails explicitly. API cancellation can retain
 only usage already delivered to the plane before cancellation commits. Keep the
 governance middleware when the app owns execution and only needs tool decisions.
 
-### Managed OpenAI Agents SDK (unreleased)
+### Managed OpenAI Agents SDK (v0.6.0)
 
 Python apps that already export an `agents.Agent` can dispatch it through runner
 kind `python-openai-agents`. The source-built `runkite-runner` wheel includes
 `openai_agents_adapter` and the dedicated `runkite-runner-openai-agents` CLI.
 The optional `openai-agents` extra pins `openai-agents==0.24.0`. This profile is
-not in the published PyPI `0.5.8` artifact. Follow the
-[offline example](../examples/managed_openai_agents/README.md) for a clean local
-installation until a release contains it.
+included in published PyPI `0.6.0`. Follow the
+[offline example](../examples/managed_openai_agents/README.md).
 
 The runner uses public native streaming and history APIs with Runkite's existing
 dispatch, cancellation, usage and conditional opaque checkpoint writes. Only
@@ -171,14 +171,14 @@ connector grants or HITL. Native SDK trace export is disabled; the generic
 worker's OTLP run span remains available. See the
 [runner boundaries](../python/adapters/openai_agents_adapter/README.md).
 
-### Managed Pydantic AI (unreleased)
+### Managed Pydantic AI (v0.6.0)
 
 Python callers with a native `pydantic_ai.Agent` can use runner kind
 `python-pydantic-ai` for real Threads/Runs, streaming text and validated
 structured results. The source-built runner includes `pydantic_ai_adapter` and
 the `runkite-runner-pydantic-ai` command. The optional `pydantic-ai` extra pins
 `pydantic-ai-slim==2.63.0`; install any provider package your own agent needs.
-This profile is absent from published PyPI `0.5.8`. Follow the
+This profile is included in published PyPI `0.6.0`. Follow the
 [source installation example](../examples/managed_pydantic_ai/README.md).
 
 The SDK performs validation and retries. Only its fully completed final result
@@ -193,14 +193,14 @@ HITL. Native deferred approvals, output functions, multimodal input and external
 workflow engines are outside the first profile. See the
 [adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
 
-### Managed Google ADK (unreleased)
+### Managed Google ADK (v0.6.0)
 
 Callers with an ordinary native `LlmAgent` can dispatch it through
 `python-google-adk`. The model loop stays in Python while the plane owns
 Threads/Runs, streaming, cancellation, reported usage and durable storage.
 The source-built `google-adk` extra pins `google-adk==2.13.0` and installs
-`google_adk_adapter` plus `runkite-runner-google-adk`. Published PyPI `0.5.8`
-does not include this profile; use the
+`google_adk_adapter` plus `runkite-runner-google-adk`. Published PyPI `0.6.0`
+includes this profile; see the
 [source installation example](../examples/managed_google_adk/README.md).
 
 Send exactly one new user text message per run. The native session supplies

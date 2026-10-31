@@ -6,7 +6,7 @@ inside the Python worker. The example requires no provider key.
 
 ## Run
 
-This profile is **unreleased** and absent from published PyPI `0.5.8`. From
+This profile is **v0.6.0** and included in published PyPI `0.6.0`. From
 repository root:
 
 ```bash
@@ -47,7 +47,7 @@ replays without another factory/model/tool cycle. Failed or cancelled turns reta
 the previous committed session and report usage already observed. Effects before
 state commit still need downstream idempotency. Local tools need existing
 connector helpers for connector grants, secret injection and HITL. The app retains
-UI authentication and presentation history. The unreleased
+UI authentication and presentation history. The v0.6.0
 [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 uses profile `google-adk` to present bridge-created single-user turns.
 

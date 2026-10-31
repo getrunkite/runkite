@@ -1,6 +1,6 @@
 # Atomic results and exact runtime identities
 
-This design record covers the unreleased follow-up to `4c56ca0`. It complements
+This design record covers the v0.6.0 follow-up to `4c56ca0`. It complements
 [Runtime hardening](runtime-hardening.md): the earlier pass fixed normal runner
 completion and argument authority, while this pass follows the same invariants
 through cache hits, thread replacement and runner identity transport. A source

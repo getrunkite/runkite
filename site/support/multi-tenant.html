@@ -93,7 +93,7 @@
         </div>
 
         <p class="note">
-          Unreleased child-write hardening locks exact parent ownership inside the
+          v0.6.0 child-write hardening locks exact parent ownership inside the
           insertion transaction. A delayed run or checkpoint cannot attach to an ID
           deleted and recreated by another tenant. Mongo parent and tenant-scoped
           child deletion also commit together. This needs no schema migration and
@@ -103,7 +103,7 @@
         </p>
         <h2>How to implement</h2>
         <ol class="steps">
-          <li>Pick stable, exact tenant IDs (<code>acme</code>, <code>default</code>). Runners preserve identities without trimming. Unreleased direct Postgres LangGraph refuses every named tenant before factory/state access; use HTTP proxy mode and explicitly resolve prior native history. Fresh memory retains its delimiter guard. Managed opaque SDK profiles are unaffected.</li>
+          <li>Pick stable, exact tenant IDs (<code>acme</code>, <code>default</code>). Runners preserve identities without trimming. v0.6.0 direct Postgres LangGraph refuses every named tenant before factory/state access; use HTTP proxy mode and explicitly resolve prior native history. Fresh memory retains its delimiter guard. Managed opaque SDK profiles are unaffected.</li>
           <li>Map each client key to a tenant; issue JWTs with the claim for SSO.</li>
           <li>Bootstrap graphs from config land in <code>default</code>: create per-tenant agents via API under that tenant’s credential.</li>
           <li>When client auth + runner tokens are on, set <code>RUNNER_TENANTS_&lt;kind&gt;</code> allow-lists.</li>

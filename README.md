@@ -110,19 +110,19 @@ use the unpublished `runkite-governance` helpers (install from the repository).
 A [Microsoft managed runner](examples/managed_agent_framework/README.md) is
 available from a source-built Python wheel with the optional `agent-framework`
 extra and `runkite-runner-agent-framework` CLI. This install path is
-**unreleased** and is not in the published PyPI `0.5.8` artifact.
+**v0.6.0** and is included in the published PyPI `0.6.0` artifact.
 A managed [OpenAI Agents SDK profile](examples/managed_openai_agents/README.md)
 is also available from source-built wheels through the optional `openai-agents`
-extra and `runkite-runner-openai-agents` CLI. This profile is unreleased too.
+extra and `runkite-runner-openai-agents` CLI. This profile is v0.6.0 too.
 A managed [Pydantic AI profile](examples/managed_pydantic_ai/README.md) adds
 native text agents and validated structured results through `python-pydantic-ai`.
 Its source-built `pydantic-ai` extra and `runkite-runner-pydantic-ai` CLI are
-also unreleased.
+also available in v0.6.0.
 The source-built [Google ADK profile](examples/managed_google_adk/README.md)
 adds `python-google-adk` through the optional `google-adk` extra and
-`runkite-runner-google-adk` command. It is also unreleased and starts with
+`runkite-runner-google-adk` command. It is also v0.6.0 and starts with
 one text agent, ordinary local tools and session-local history.
-The unreleased [shared UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+The v0.6.0 [shared UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 lets those four Python profiles use the same AI SDK frontend for text and
 Pydantic final JSON, with Next/Nuxt route recipes and app-owned authentication.
 See [CHANGELOG](CHANGELOG.md),
@@ -216,7 +216,7 @@ Full target list, kind/Helm smoke tests, and the nightly matrix: [CONTRIBUTING.m
 Current source hardening and its rollout requirements are documented in the
 [engineering record](docs/internal/runtime-hardening.md),
 [atomic results and identity follow-up](docs/internal/atomic-results-and-identities.md) and
-[operator runbook](docs/ops-runbook.md#hardening-upgrade-unreleased). These are
+[operator runbook](docs/ops-runbook.md#hardening-upgrade). These are
 source changes until a tagged artifact includes them.
 
 ## License

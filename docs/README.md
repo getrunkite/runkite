@@ -34,13 +34,13 @@ Public HTML walkthroughs live in [site/support](../site/support/), including the
 correction map; the [embedded governance design record](internal/embedded-governance-next-release.md)
 is historical and points to the implemented API.
 
-The unreleased [runtime hardening design record](internal/runtime-hardening.md)
+The v0.6.0 [runtime hardening design record](internal/runtime-hardening.md)
 explains the failure cases, invariants, tests and upgrade requirements for current
 authorization, recovery, connectors and Admin changes. The follow-up
 [atomic results and exact runtime identities](internal/atomic-results-and-identities.md)
 record covers transactional cache results, child ownership and SDK identity boundaries.
 
-The unreleased [local HA validation record](internal/ha-recovery-validation.md)
+The v0.6.0 [local HA validation record](internal/ha-recovery-validation.md)
 separates steady load from bounded cache, cancel, reclaim and retained-stream
 recovery checks, with fixture setup and measured rehearsal limits.
 

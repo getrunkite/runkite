@@ -127,7 +127,7 @@
           External tool writes still need downstream idempotency.
         </p>
         <p>
-          <strong>Unreleased recovery hardening:</strong> queue release/requeue paths
+          <strong>v0.6.0 recovery hardening:</strong> queue release/requeue paths
           require the rejected attempt's generation, so a stale rejection cannot
           release a replacement. Reclaim leadership uses a fresh process identity,
           avoiding ownership collisions after a restart. Runner heartbeat RPCs have a
@@ -138,7 +138,7 @@
           or establish a new multi-replica HA soak. See the
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">runtime hardening engineering note</a>.
         </p>
-        <h2 id="local-recovery">Unreleased local recovery checks</h2>
+        <h2 id="local-recovery">v0.6.0 local recovery checks</h2>
         <p>
           The bundled multi-plane runners now use HTTP proxy checkpoints while the
           plane keeps Postgres persistence. This supports default cron thread IDs
@@ -169,7 +169,7 @@
           can be reconstructed. The earlier 120-second load result was not rerun
           for that follow-up patch.
         </p>
-        <h2 id="identity-upgrade">Unreleased identity and atomic-result upgrade</h2>
+        <h2 id="identity-upgrade">v0.6.0 identity and atomic-result upgrade</h2>
         <p>
           Redis poison recovery now preserves literal run IDs, including colons,
           and keeps the old lease if its ready-list write fails. Upgrade all plane
@@ -242,7 +242,7 @@
         </p>
         <h2 id="hardening-upgrade">Before upgrading this hardening change</h2>
         <p>
-          The changes described here are unreleased. Upgrade the plane before connector
+          The changes described here ship in v0.6.0. Upgrade the plane before connector
           helpers, then resubmit pending or approved operations created under the old
           argument-digest format for a new decision and fresh approval. Legacy
           empty-digest approvals are not compatible either. Admin refuses those old
@@ -254,7 +254,7 @@
         </p>
         <h3 id="mysql-identity-upgrade">Compatible MySQL: identity migration v17</h3>
         <p>
-          The unreleased MySQL schema v17 gives identity and security columns the exact
+          The v0.6.0 MySQL schema v17 gives identity and security columns the exact
           <code>utf8mb4_0900_bin</code> NO PAD collation. The old default could treat
           tenant names that differ by case, accents or Unicode spelling as the same
           identity. This migration keeps ordinary display/search text separate from
@@ -287,7 +287,7 @@
         </p>
         <h2>Stopping a run that's gone wrong</h2>
         <p>
-          Unreleased recovery hardening retains a run's lease when cancellation
+          v0.6.0 recovery hardening retains a run's lease when cancellation
           committed but usage, hold, broker or hook finalization failed. A cancel
           response can therefore be an error while the durable run is already
           interrupted. Restore the affected backend and inspect the run before

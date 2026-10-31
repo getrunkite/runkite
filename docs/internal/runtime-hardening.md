@@ -2,7 +2,7 @@
 
 This is the current design record for the hardening pass based on `ad0b68c`.
 It describes source changes, their reasons and the regression boundaries.
-The changes are unreleased until a tagged artifact contains them. Source presence
+The changes are v0.6.0 until a tagged artifact contains them. Source presence
 and package version metadata do not establish published availability.
 
 Runkite already had separate runners, run-bound connectors, durable completion,

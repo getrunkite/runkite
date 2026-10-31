@@ -6,8 +6,8 @@ its streamed answer and reported usage. No provider key is required.
 
 ## Run
 
-The optional install profile is **unreleased** and absent from the published
-PyPI `0.5.8` artifact. From the repository root:
+The optional install profile ships in published PyPI **0.6.0**.
+From the repository root, or via `pip install 'runkite-runner[openai-agents]'`:
 
 ```bash
 python3.12 -m venv .venv-openai-agents
@@ -41,7 +41,7 @@ native SDK loop inside the runner. Replace its offline model with your provider
 model in your own factory. Native hosted tools, approvals/resume, handoffs,
 agents-as-tools, structured final output and non-text input are unsupported in
 this profile. The application still owns UI authentication and presentation
-history. The unreleased [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+history. The v0.6.0 [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 can present bridge-created single-user turns with the `openai-agents` profile.
 
 Only successful turns update native history. Interrupted or failed turns retain
@@ -50,9 +50,9 @@ effects before a state commit still need downstream idempotency. Local tools do
 not automatically gain connector grants or HITL. Native SDK trace export is
 disabled; existing Runkite OTLP run tracing remains available.
 
-After a release includes this change, install with
-`pip install 'runkite-runner[openai-agents]'`. The stock Python runner image
-continues to use its LangGraph defaults and does not install this extra.
+Install with `pip install 'runkite-runner[openai-agents]'`.
+The stock Python runner image continues to use its LangGraph defaults and does
+not install this extra.
 
 ## Tests
 

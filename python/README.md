@@ -9,8 +9,7 @@ executes its framework, and streams events, heartbeats, and terminal status back
 so clients see live SSE / WebSocket progress in the Admin UI.
 
 The default CLI runs LangGraph. An optional Microsoft Agent Framework profile
-is included in source-built wheels from this checkout. That packaging change
-is **unreleased**; the published PyPI `0.5.8` package does not contain it.
+ships in the published PyPI `0.6.0` wheel via the `agent-framework` extra.
 
 ```text
   Client / SDK ──HTTP/SSE──► Runkite control plane (Go)
@@ -109,7 +108,7 @@ Examples live in the [Runkite repo](https://github.com/getrunkite/runkite/tree/m
 - **OpenTelemetry:** `runkite.run` span under the control plane `traceparent`, plus thin `runkite.llm` / `runkite.tool` children when OTLP env is set
 - **Production auth:** runner kind tokens (`RUNNER_TOKEN` / `RUNNER_TOKEN_*`) matching control-plane config
 
-### Google ADK (unreleased)
+### Google ADK (v0.6.0)
 
 The source-built optional `google-adk` extra pins `google-adk==2.13.0` and
 installs `google_adk_adapter` plus the `runkite-runner-google-adk` command:
@@ -126,12 +125,12 @@ python3.12 -m venv .venv-google-adk
 The installed module alternative is `python -m google_adk_adapter`. It runs one
 native text `LlmAgent`, ordinary local tools and session-local state, with
 successful-turn CAS receipts. Cross-session state, workflows and native
-confirmation/resume are outside this profile. Published PyPI `0.5.8` lacks it;
+confirmation/resume are outside this profile. Published PyPI `0.6.0` includes it;
 the default CLI remains LangGraph and the stock image does not install this SDK.
 See the [example](https://github.com/getrunkite/runkite/tree/main/examples/managed_google_adk)
 for authentication, input and tests.
 
-### Pydantic AI (unreleased)
+### Pydantic AI (v0.6.0)
 
 The source-built optional `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0`.
 It installs `pydantic_ai_adapter` and the `runkite-runner-pydantic-ai` command;
@@ -148,17 +147,17 @@ python3.12 -m venv .venv-pydantic-ai
 ```
 
 The profile supports native text agents, validated JSON results, conversation
-history and committed-turn recovery. Published PyPI `0.5.8` does not include it.
+history and committed-turn recovery. Published PyPI `0.6.0` includes it.
 The stock image does not install this SDK, and the default CLI remains LangGraph.
 See the [example](https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai)
 for the factory contract and test commands.
 
-### Microsoft Agent Framework (unreleased)
+### Microsoft Agent Framework (v0.6.0)
 
 The optional profile ships in the same `runkite-runner` wheel and sdist, with a
 separate entrypoint. Its `agent-framework` extra installs the tested
 `agent-framework-core==1.23.0`; the ordinary install does not pull in that SDK.
-Until a release containing this change is published, build and install from
+Install from PyPI with `pip install 'runkite-runner[agent-framework]'`, or from
 the repository root in a clean environment:
 
 ```bash
@@ -170,10 +169,8 @@ python3.12 -m venv .venv-agent-framework
   --http-address http://127.0.0.1:2026
 ```
 
-Python 3.11+ remains supported; the example uses Python 3.12. Once a release
-containing this change is available, `pip install 'runkite-runner[agent-framework]'`
-will provide the same profile from PyPI. Do not use that command with the older
-published `0.5.8` artifact.
+Python 3.11+ remains supported; the example uses Python 3.12.
+`pip install 'runkite-runner[agent-framework]'` provides the same profile from PyPI `0.6.0`.
 
 `python -m agent_framework_adapter` is the installed module alternative.
 `runkite-runner` and `python -m runkite_runner` retain their LangGraph defaults.
@@ -185,12 +182,13 @@ input and recovery boundaries. The stock Python runner image installs `[otel]`
 and starts LangGraph; use your own environment or image with the Microsoft extra
 and dedicated entrypoint.
 
-### OpenAI Agents SDK (unreleased)
+### OpenAI Agents SDK (v0.6.0)
 
 The same source-built wheel includes `openai_agents_adapter` and the dedicated
 `runkite-runner-openai-agents` command. The optional `openai-agents` extra pins
 `openai-agents==0.24.0`; the base installation does not install that SDK.
-Until a release contains it, install the local package in a clean environment:
+Install from PyPI with `pip install 'runkite-runner[openai-agents]'`, or from
+a local package in a clean environment:
 
 ```bash
 python3.12 -m venv .venv-openai-agents
@@ -202,8 +200,7 @@ python3.12 -m venv .venv-openai-agents
 ```
 
 `python -m openai_agents_adapter` is the installed module alternative. No source
-`PYTHONPATH` is required. The published PyPI `0.5.8` artifact does not contain
-this profile. After a release includes it, use
+`PYTHONPATH` is required. Published PyPI `0.6.0` includes this profile via
 `pip install 'runkite-runner[openai-agents]'`. Python 3.11+ remains supported;
 the example uses 3.12. The ordinary CLI and stock image keep their LangGraph
 defaults; the image does not install this optional SDK.

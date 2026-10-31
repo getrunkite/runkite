@@ -2,7 +2,7 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
-## Application JSON numbers (unreleased)
+## Application JSON numbers (v0.6.0)
 
 Managed output, thread values/history, store values and cached output preserve
 JSON numeric value across completion and reads. For example, an integer result
@@ -27,7 +27,7 @@ and rejects values it would change; Mongo requires exact int64/Decimal128.
 See [backend boundaries](limitations.md) before using those compatible profiles
 for wide integers or high-precision decimal results.
 
-## Authorization and recovery changes (unreleased)
+## Authorization and recovery changes (v0.6.0)
 
 MCP rejects ambiguous JSON, including duplicate nested members and invalid Unicode,
 and requires object arguments when present. Governance keeps the submitted JSON
@@ -62,7 +62,7 @@ keys, including Unicode. Run creation returns 400 before mutation on this
 backend; see [backend limitations](limitations.md). A supported
 custom URL component is not necessarily a valid NATS partition key.
 
-See [rollout requirements](ops-runbook.md#hardening-upgrade-unreleased) and the
+See [rollout requirements](ops-runbook.md#hardening-upgrade) and the
 [design record](internal/runtime-hardening.md).
 
 ## OpenAPI Specifications
@@ -292,7 +292,7 @@ Disabled by default -- a hung agent (alive but stuck, e.g. an infinite tool-call
 
 A background loop runs immediately on startup and then every `interval_seconds`
 (default 15) and forces any `pending`/`running` run whose `created_at` is older
-than `max_duration` to status `timeout`. The unreleased path uses the existing
+than `max_duration` to status `timeout`. The v0.6.0 path uses the existing
 completion transaction to commit that status, its current attempt generation
 and thread release together. The thread becomes `idle` when no other active run
 owns it; its previous conversation values remain. Matching delivered usage can

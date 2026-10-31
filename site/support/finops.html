@@ -106,7 +106,7 @@
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>.
         </p>
         <p class="note">
-          <strong>Unreleased cache accounting fix:</strong> a whole-run cache hit retains
+          <strong>v0.6.0 cache accounting fix:</strong> a whole-run cache hit retains
           the original output metadata for callers but adds no second usage-ledger row
           or usage hold. It still creates a logical run for daily run quotas. Cache reads
           do not extend source TTL. Built-in stores commit cached run output, merged

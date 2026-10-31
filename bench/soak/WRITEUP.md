@@ -26,7 +26,7 @@ Artifacts land under `bench/soak/out/<timestamp>/` (gitignored), including
 auto-generated `REPORT.md`. Longer local runs (`SOAK_DURATION=21600`, etc.)
 are optional; they are **not** required for this writeup's pass bar.
 
-## Checkpoint and sink setup (unreleased)
+## Checkpoint and sink setup
 
 The bundled multi-plane runners now use HTTP proxy checkpoints and store access:
 their `POSTGRES_DSN` is empty and `RUNKITE_HTTP_URL` points at the plane. The planes
@@ -40,7 +40,7 @@ URLs; default `9099` is unchanged. The Python and JavaScript loaders also accept
 optional `SOAK_API_KEY` for authenticated test overlays. The checked-in stack
 keeps its documented local open-client mode unless an overlay configures auth.
 
-## Bounded recovery checks (unreleased)
+## Bounded recovery checks
 
 `run.sh` exercises steady create/wait traffic. Its completion message is not an
 automatic grade of every pass criterion below. The separate

@@ -82,11 +82,11 @@
         <p class="lede">The plane stores <a href="./decisions/why-opaque-checkpoints.html">opaque blobs</a>. Frameworks own the bytes; Runkite owns durability and tenancy keys.</p>
         <h2>Modes</h2>
         <ul>
-          <li><strong>Direct Postgres</strong>: LangGraph AsyncPostgresSaver against your DSN. Unreleased access is limited to the default tenant with thread IDs without <code>:</code>; named tenants require HTTP proxy mode.</li>
+          <li><strong>Direct Postgres</strong>: LangGraph AsyncPostgresSaver against your DSN. v0.6.0 access is limited to the default tenant with thread IDs without <code>:</code>; named tenants require HTTP proxy mode.</li>
           <li><strong>HTTP proxy</strong>: opaque blobs via <code>/internal/checkpoints</code> (any CP backend). Used by LangGraph when DSN is unset, and by CrewAI / LlamaIndex / AutoGen / LangChain adapters for multi-turn continuity.</li>
           <li><strong>Memory</strong>: fallback when neither DSN nor HTTP URL is set. Demo only.</li>
         </ul>
-        <h2 id="native-identity">Unreleased native identity guard</h2>
+        <h2 id="native-identity">v0.6.0 native identity guard</h2>
         <p>
           <strong>Direct Postgres LangGraph now refuses every named tenant before
           factory, state access or execution.</strong> A new delimiter-safe named key

@@ -101,7 +101,7 @@
         </ol>
 
         <p class="note">
-          <strong>Unreleased delivery hardening:</strong> asynchronous lifecycle sinks,
+          <strong>v0.6.0 delivery hardening:</strong> asynchronous lifecycle sinks,
           manual dead-letter redelivery, preflight hooks and policy callbacks no longer
           follow HTTP redirects. Configure
           each receiver's final URL; a <code>3xx</code> response is a callback failure,
@@ -135,7 +135,7 @@
           to disappear.
         </p>
         <p>
-          The unreleased built-in stores look up a dead letter directly by its ID, so
+          The v0.6.0 built-in stores look up a dead letter directly by its ID, so
           an older record outside the newest 1,000 entries can still be redelivered.
           A manual delivery succeeds only for a <code>2xx</code> receiver response;
           redirects and other statuses are reported as undelivered. Custom stores that

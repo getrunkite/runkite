@@ -54,7 +54,7 @@ Store/vector proxy clients already attach the same headers via `tenant_headers()
 
 With a `policy` section in `langgraph.json`, including `"policy": {}`, session mint and MCP `tools/call` require a matching grant for `(tenant_id, agent_id, connector)` derived from the in-flight run. See [Trust & governance](trust-governance.md). Optional `policy.predicates` additionally deny or hold a `tools/call` based on argument values before the upstream call. These checks cover connector MCP calls, not every local tool. MCP connectors stay **proxy-only**: the control plane never returns the raw downstream MCP URL or credentials when MCP is configured, so their tool grants and argument predicates remain on the execution path.
 
-### Deadlines, cancellation and retry safety (unreleased)
+### Deadlines, cancellation and retry safety (v0.6.0)
 
 Session helpers default to one 30-second operation deadline; MCP helpers default
 to 60 seconds. The budget includes mint, request, response body and optional
@@ -74,7 +74,7 @@ Runkite-owned clients refuse redirects. Configure the final plane, OAuth, MCP an
 Vault URLs directly. MCP arguments must be an object when present; duplicate
 members and invalid Unicode are rejected before dispatch. Literal application key
 case is retained. Approval digests and numeric predicates are exact; old approvals
-require fresh submission and review. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+require fresh submission and review. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 
 ### Tool allow/deny enforcement (MCP connectors)
 

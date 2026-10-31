@@ -225,7 +225,7 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           session object to the trusted runner, which then calls the service itself.
         </p>
         <p>
-          <strong>Unreleased helper hardening:</strong> one deadline covers session
+          <strong>v0.6.0 helper hardening:</strong> one deadline covers session
           minting, any safe renewal, the MCP request and its response body. Defaults are
           30 seconds for a session operation and 60 seconds for MCP. Pass a TypeScript
           managed factory's <code>signal</code> to cancel in-flight delivery; Python
@@ -273,7 +273,7 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           are disabled. See the source <a href="https://github.com/getrunkite/runkite/blob/main/docs/connectors.md">transport guide</a>.
         </p>
         <p>
-          The unreleased argument parser also rejects duplicate keys inside arguments
+          The v0.6.0 argument parser also rejects duplicate keys inside arguments
           and invalid Unicode, including unpaired surrogate escapes, with HTTP
           <code>400</code> before policy evaluation or upstream execution. MCP
           <code>tools/call</code> arguments, when present, must be a JSON object;
@@ -324,7 +324,7 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           <a href="grants.html#argument-predicates">Grants &amp; HITL</a>.
         </p>
         <p>
-          Unreleased predicate evaluation compares numeric values exactly rather than
+          v0.6.0 predicate evaluation compares numeric values exactly rather than
           rounding them through a floating-point value. Equivalent spellings such as
           <code>1</code> and <code>1.0</code> match; neighboring large integers remain
           distinct. A current explicit deny cannot be bypassed by consuming an older

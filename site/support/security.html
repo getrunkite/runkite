@@ -97,7 +97,7 @@
           <a href="admin-login.html">Admin login</a> for the exact config shape.
         </p>
         <p>
-          The unreleased auth webhook hardening keys cached results by the method,
+          The v0.6.0 auth webhook hardening keys cached results by the method,
           path and all forwarded header data, including cookies and custom identity
           headers. It honors request cancellation, refuses redirects and requires a
           successful HTTP status with one complete JSON response capped at 1 MiB.
@@ -140,7 +140,7 @@
         </p>
 
         <p>
-          <strong>Unreleased NATS partition guard:</strong> a run ID is a literal
+          <strong>v0.6.0 NATS partition guard:</strong> a run ID is a literal
           partition, not a subject filter. Queue, stream and cancel paths reject
           wildcards and unsupported JetStream keys, and consumers verify the exact
           received subject. Valid subject/key layouts are unchanged. See the
@@ -155,7 +155,7 @@
           <a href="ops.html#identity-upgrade">operator reconciliation guidance</a>.
           Trusted no-token local mode remains unchanged.
         </p>
-        <h2 id="exact-runtime-identities">Unreleased exact runtime identities</h2>
+        <h2 id="exact-runtime-identities">v0.6.0 exact runtime identities</h2>
         <p>
           The runner and plane preserve nonempty tenant/run identities exactly. Unicode
           or legacy header-unsafe identities use unpadded base64url UTF-8 in
@@ -171,7 +171,7 @@
           Every resource (agent, thread, run) carries a flat <code>tenant_id</code>: this is
           isolation by a tag on each row, not a full organization/team/workspace hierarchy
           with its own nested permissions. Plane-managed state and opaque checkpoints
-          carry tenant binding. Unreleased direct Postgres LangGraph is limited to guarded
+          carry tenant binding. v0.6.0 direct Postgres LangGraph is limited to guarded
           default-tenant thread IDs; named tenants require HTTP proxy checkpoints
           because legacy prefixed rows have no trusted ownership attestation. If you're using runner tokens
           (multiple runner fleets sharing one control plane), you must also configure
@@ -192,7 +192,7 @@
           affected histories. Previously mixed native data is not repaired automatically.
         </p>
         <p class="note">
-          <strong>Unreleased MySQL identity fix:</strong> schema v17 replaces the
+          <strong>v0.6.0 MySQL identity fix:</strong> schema v17 replaces the
           default case/accent-insensitive behavior on identity and security columns
           with <code>utf8mb4_0900_bin</code> NO PAD. Case, accent, Unicode-spelling and
           trailing-space differences no longer identify the same tenant or security

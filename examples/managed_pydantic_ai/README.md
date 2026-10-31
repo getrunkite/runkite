@@ -6,7 +6,7 @@ streaming, cancellation, reported usage and committed-turn recovery.
 
 ## Run
 
-This profile is **unreleased** and absent from the published PyPI `0.5.8`
+This profile ships in published PyPI **0.6.0**
 artifact. From repository root:
 
 ```bash
@@ -49,7 +49,7 @@ same run without another factory/model/tool cycle. Usage reported for a new turn
 excludes earlier conversation turns. Cancelled or failed turns retain the last
 committed conversation and report usage already observed.
 
-The app still owns UI authentication and presentation history. The unreleased
+The app still owns UI authentication and presentation history. The v0.6.0
 [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 uses profile `pydantic-ai` for bridge-created turns, including a separate final
 JSON result part. Local tools need existing
