@@ -1,148 +1,146 @@
 # Runkite
 
-**A self-hosted control plane for AI agents. One Go binary handles auth, dispatch, connectors, human approval, spend and audit while your agent keeps its framework and model loop.**
+### Keep your agent framework. Share the control plane.
 
-For managed execution, the plane dispatches agents to separate framework runners.
-Apps that keep execution in their own backend can ask the same plane for an
-individual tool decision. These paths have different visibility and controls;
-see [Choose an integration path](#choose-an-integration-path).
+A self-hosted control plane for AI agents. Dispatch, connector access, human
+approval, spend and audit in one Go binary, with an embedded Admin UI.
+
+Run agents through Runkite, or keep the loop in your app and govern individual
+tool calls. Your framework still owns the model loop.
 
 [![CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getrunkite/runkite/actions/workflows/ci.yml?query=branch%3Amain)
-[![Matrix](https://img.shields.io/badge/matrix-nightly-6F42C1)](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![PyPI](https://img.shields.io/pypi/v/runkite-runner)](https://pypi.org/project/runkite-runner/)
 [![npm](https://img.shields.io/npm/v/runkite-runner)](https://www.npmjs.com/package/runkite-runner)
 [![GHCR](https://img.shields.io/badge/GHCR-getrunkite%2Frunkite-blue)](https://github.com/getrunkite/runkite/pkgs/container/runkite)
-[![Site](https://img.shields.io/badge/site-getrunkite.com-0c1210)](https://getrunkite.com/)
 
-**Website:** [getrunkite.com](https://getrunkite.com/) · **Live Admin:** [getrunkite.com/admin](https://getrunkite.com/admin/) · **Releases:** [GitHub Releases](https://github.com/getrunkite/runkite/releases) · **Python runner:** [PyPI](https://pypi.org/project/runkite-runner/) · **TypeScript runner:** [npm](https://www.npmjs.com/package/runkite-runner)
-
-**Try it live, no signup:** [getrunkite.com](https://getrunkite.com/). Open Admin with the shared key on that page. Fake agents. Your graphs stay on your infra.
+**[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Try the sandbox](https://getrunkite.com/support/try.html)**
 
 <p align="center">
-  <img src="docs/assets/admin-walkthrough.gif" alt="Runkite Admin UI walkthrough" width="920" />
+  <img src="docs/assets/runkite-overview.svg" alt="Two ways to use one Runkite plane: managed agents create Threads and Runs through runners; app-owned loops request individual tool decisions without creating managed runs." width="1120" />
 </p>
 
-<p align="center">
-  <b>Admin UI</b> — ops + SQL governance (grants, HITL, kill, audit), embedded in the binary<br/>
-  <code>http://localhost:2026/admin/</code> after <code>runkite serve</code> or <code>runkite dev</code>
-</p>
-
----
-
-### Contents
-
-[Why Runkite](#why-runkite) · [What it is not](#what-runkite-is-not) · [Quick start](#quick-start) · [Architecture](#architecture) · [Documentation](#documentation) · [Development](#development) · [License](#license) · [Contributing](#contributing)
-
----
+[Website](https://getrunkite.com/) · [Releases](https://github.com/getrunkite/runkite/releases) · [Examples](examples/) · [Architecture](#architecture) · [Development](#development) · [License](#license)
 
 ## Why Runkite
 
-The problem Runkite exists for: one agent, one `.env`, one deploy is easy. A second agent that needs the same GitHub token, a third that needs a human to approve a write before it happens, and someone asking "who called Salesforce last Tuesday" is where most teams end up rebuilding the same operational plumbing — credentials, admission control, crash recovery, kill switches, spend caps, audit — separately, per agent, per framework. Runkite is that plumbing, built once, on a plane your agent code talks to instead of reimplementing.
+Each new agent brings the same operational questions: who can run it, which
+connector it may call, which action needs approval, what it spent, and what
+happened when a worker stopped. Runkite gives those operations a shared home
+across frameworks.
 
-| Capability | What it means in practice |
+| Need | What Runkite provides |
 |---|---|
-| **Agent Protocol, in Go** | HTTP / SSE / WebSocket, auth, streaming, job dispatch, persistence, connectors — one static binary, no runtime dependencies for the control plane itself |
-| **Bring your framework** | Existing LangGraph, LangGraph.js, CrewAI, LlamaIndex, AutoGen and LangChain runners use one gRPC Runner Protocol. The optional AI SDK managed runner ships in `runkite-runner` with `--framework ai-sdk`. Framework support and package availability are listed in [Runners](docs/runners.md). |
-| **Governance lives on the plane, not just in the agent** | Fail-closed connector grants, optional argument predicates on MCP `tools/call`, durable policy audit, connector human-in-the-loop approval, kill/pause switches, and time-boxed break-glass bypass — all with their own Admin UI pages, all provable with `make smoke-governance`. Details: [Trust & governance](docs/trust-governance.md) · [Admin UI](docs/admin.md) |
-| **Agent-to-agent delegation** | One agent calls another mid-run (`call_agent` / `callAgent`), with depth limits and parent/root bookkeeping enforced by the plane, not left to each agent to get right — [docs/a2a.md](docs/a2a.md) |
-| **Ops without a second deploy** | Admin is a static React app embedded with Go's `embed.FS`. The control plane needs no separate frontend server or Node.js runtime. Framework runners retain their own Python or Node.js runtime. |
-| **Spend governance, not a billing platform** | Managed-run admission checks tenant and agent daily caps against recorded usage and configured reservations. Estimated USD, concurrent spending and cancellation accounting have explicit [limits](docs/limitations.md). |
-| **Honest about backend maturity** | **Supported:** Postgres + Redis HA — this is the profile to run in production today. Also wired and tested, at varying maturity: SQLite, MySQL, MongoDB, NATS, Kafka, and several vector stores. See the real [tier breakdown](docs/architecture.md#backend-support-tiers) rather than a marketing claim that everything is equally production-ready |
+| **Run agents** | Authenticated dispatch, durable Threads/Runs, streaming, cooperative cancel and generation-fenced recovery through separate runners. |
+| **Connect tools** | Run-bound connector sessions, secret resolution at session time, and credential injection on outgoing calls. |
+| **Approve actions** | Connector grants, argument predicates and human approval before gated operations proceed. Tools must use the gate to acquire its policy. |
+| **Track spend** | Reported usage, estimated USD, daily admission caps and optional reservations on SQL backends. See [accounting limits](docs/limitations.md). |
+| **Operate together** | Embedded Admin, audit, agent delegation, Prometheus metrics and OTLP traces exported to your existing backend. |
+| **Self-host** | One Go control-plane binary. Local SQLite/in-process mode for a first run; Postgres + Redis is the Supported HA profile. Framework runners keep their own Python or Node.js runtime. |
 
-## What Runkite is not
-
-Being clear about scope matters as much as being clear about capability:
-
-- **Not another agent framework.** Runkite doesn't tell your agent how to think, plan, or call tools — LangGraph, CrewAI, and the rest still do that. Runkite governs what happens around the agent: dispatch, credentials, approval, spend, audit.
-- **Not a managed LLM gateway.** Your agent still calls its model provider directly (or through whatever gateway you already use). Runkite doesn't sit in that request path by default.
-- **Not a billing company.** FinOps here means budget caps and an honestly-labeled cost *estimate* enforced on the plane — not invoicing, payment processing, or a Stripe integration.
-- **Self-hosted only.** You operate the control plane and its state and transport backends on your own infrastructure.
-
-## Quick start
-
-The fastest way to see it, with nothing installed: [getrunkite.com](https://getrunkite.com/) (live Admin, shared key on the page). To run the same path on your own infra:
-
-| Piece | Get it |
-|---|---|
-| Control plane | [GitHub Releases](https://github.com/getrunkite/runkite/releases) · `docker pull ghcr.io/getrunkite/runkite:latest` · or `make build` |
-| Python runner | `pip install runkite-runner` |
-| TypeScript runner | `npm install -g runkite-runner` |
-| Helm chart | [`deploy/helm/runkite`](deploy/helm/runkite) |
-
-```bash
-git clone https://github.com/getrunkite/runkite && cd runkite && make build
-
-# terminal 1 — zero dependencies (SQLite + in-process transport)
-./runkite dev --config examples/echo_agent/langgraph.json
-
-# terminal 2
-pip install runkite-runner
-runkite-runner --config examples/echo_agent/langgraph.json \
-  --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026
-```
-
-Admin: http://localhost:2026/admin/ · Health: http://localhost:2026/health
-
-The full walkthrough — streaming with the client SDK, running against Postgres + Redis instead of the zero-dependency profile, and turning on auth — is in [docs/quickstart.md](docs/quickstart.md) and [docs/client-sdk.md](docs/client-sdk.md). More runnable examples live under [`examples/`](examples/) (`echo_agent`, `pending_agent`, `approval_agent`, `a2a_agent`, `policy_webhook`, `sim`, and more).
+See [trust and governance](docs/trust-governance.md), [connectors](docs/connectors.md)
+and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
+the enforcement and deployment contracts.
 
 ## Choose an integration path
 
-**Runkite owns execution:** an Agent Protocol client creates a thread and run.
-The plane dispatches a runner, records its output and streams results to the app.
-These executions appear in Admin Threads and Runs and use managed-run admission,
-cancel and usage accounting. Your UI and user authentication can stay in the app.
-Model calls execute in the runner, not inside the Go binary.
+| | Runkite owns execution | Your app owns execution |
+|---|---|---|
+| **Good fit** | Agents you want Runkite to dispatch and operate. | An existing Next, Nuxt or other backend that keeps its SDK loop. |
+| **Entry point** | Agent Protocol over HTTP, SSE or WebSocket; Runner Protocol over gRPC. | `POST /governance/decide`, with approval status available for pending actions. |
+| **Where the SDK runs** | In a separate Runkite runner. | In your application process. |
+| **What Admin sees** | Managed Threads and Runs, outputs and reported usage. | Submitted policy decisions and pending actions on SQL backends. No managed Thread or Run is created. |
+| **Controls** | Managed-run admission, cooperative cancel, usage accounting and recovery; connector policy where used. | Allow, deny or pending for the submitted tool call. Run kill switches, break-glass and spend caps do not apply. |
 
-**Your app owns execution:** a tool calls `POST /governance/decide`, then the app
-executes only after allow or continues its own saved operation after approval.
-This creates no Runkite thread or run. Run kill switches, break-glass and spend
-caps do not apply. `run_id` is an app operation correlation value, not execution
-idempotency or proof that the tool ran.
+For managed chat, your app creates a Runkite run and consumes its stream. The
+[shared AI SDK UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+keeps UI authentication, saved chat ownership, reconnect and explicit Stop in
+your application.
 
-The [AI SDK managed example](examples/managed_ai_sdk/README.md) and `useChat`
-bridge ship in **v0.5.8** with `runkite-runner` (`--framework ai-sdk`, peer
-`ai@7.0.155`). The app-owned
-[AI SDK guard](examples/governance_ai_sdk/README.md) and
-[Microsoft function middleware](examples/governance_agent_framework/README.md)
-use the unpublished `runkite-governance` helpers (install from the repository).
-A [Microsoft managed runner](examples/managed_agent_framework/README.md) is
-available from a source-built Python wheel with the optional `agent-framework`
-extra and `runkite-runner-agent-framework` CLI. This install path is
-**v0.6.0** and is included in the published PyPI `0.6.0` artifact.
-A managed [OpenAI Agents SDK profile](examples/managed_openai_agents/README.md)
-is also available from source-built wheels through the optional `openai-agents`
-extra and `runkite-runner-openai-agents` CLI. This profile is v0.6.0 too.
-A managed [Pydantic AI profile](examples/managed_pydantic_ai/README.md) adds
-native text agents and validated structured results through `python-pydantic-ai`.
-Its source-built `pydantic-ai` extra and `runkite-runner-pydantic-ai` CLI are
-also available in v0.6.0.
-The source-built [Google ADK profile](examples/managed_google_adk/README.md)
-adds `python-google-adk` through the optional `google-adk` extra and
-`runkite-runner-google-adk` command. It is also v0.6.0 and starts with
-one text agent, ordinary local tools and session-local history.
-The v0.6.0 [shared UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
-lets those four Python profiles use the same AI SDK frontend for text and
-Pydantic final JSON, with Next/Nuxt route recipes and app-owned authentication.
-See [CHANGELOG](CHANGELOG.md),
-[client integration guidance](docs/client-sdk.md), and the
-[support guide](site/support/sdk-integration.html).
+For app-owned execution, [AI SDK tool helpers](examples/governance_ai_sdk/README.md)
+and [Microsoft function middleware](examples/governance_agent_framework/README.md)
+use the in-repository `runkite-governance` helpers. These helpers are not published
+npm or PyPI packages. The app executes after allow and owns pending continuation.
+A decision is not proof of execution, and its `run_id` is an operation correlation
+value rather than execution idempotency.
+
+### Bring your framework
+
+The v0.6.0 runner packages include these profiles. Each supports its documented
+subset of the framework's native features.
+
+| Managed framework | Install or select | Runnable example |
+|---|---|---|
+| **LangGraph** | `pip install runkite-runner` | [Python echo agent](examples/echo_agent/) |
+| **LangGraph.js** | `npm install -g runkite-runner` | [TypeScript echo agent](examples/echo_agent_ts/) |
+| **Vercel AI SDK** | TypeScript runner with `--framework ai-sdk`; requires the `ai` peer | [Managed agent + UI bridge](examples/managed_ai_sdk/) |
+| **Microsoft Agent Framework** | `pip install 'runkite-runner[agent-framework]'` | [Managed Microsoft agent](examples/managed_agent_framework/) |
+| **OpenAI Agents SDK** | `pip install 'runkite-runner[openai-agents]'` | [Managed OpenAI agent](examples/managed_openai_agents/) |
+| **Pydantic AI** | `pip install 'runkite-runner[pydantic-ai]'` | [Text and structured results](examples/managed_pydantic_ai/) |
+| **Google ADK** | `pip install 'runkite-runner[google-adk]'` | [Managed ADK agent](examples/managed_google_adk/) |
+
+CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain **checkout-only**.
+Install their framework dependencies and follow [Runners](docs/runners.md).
+The stock Python image keeps its LangGraph default and does not install the four
+optional SDK extras. See the [profile contracts](docs/limitations.md) before
+moving agents that use native workflows, approvals, handoffs or multimodal input.
+
+## Quick start
+
+Try the [public sandbox](https://getrunkite.com/support/try.html) with its shared
+demo key, or run the local LangGraph example below. The sandbox uses fake agents;
+you operate your own production plane.
+
+From a checkout, with Go and Python installed:
+
+~~~bash
+git clone https://github.com/getrunkite/runkite
+cd runkite
+make build
+
+# Terminal 1: local control plane, SQLite + in-process transport
+./runkite dev --config examples/echo_agent/langgraph.json
+
+# Terminal 2: Python runner
+pip install runkite-runner
+runkite-runner --config examples/echo_agent/langgraph.json \
+  --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026
+~~~
+
+Open Admin at **http://localhost:2026/admin/**.
+
+[Full quickstart](docs/quickstart.md) · [Client requests and streaming](docs/client-sdk.md) · [Binary releases](https://github.com/getrunkite/runkite/releases) · [Docker and Helm](docs/deployment.md)
+
+For a supported production deployment, use **Postgres + Redis**, client auth,
+runner tokens and TLS. [Deployment](docs/deployment.md) and the
+[operator runbook](docs/ops-runbook.md) describe setup and upgrades.
+
+### See the real Admin
+
+<p align="center">
+  <a href="https://getrunkite.com/admin/">
+    <img src="docs/assets/admin-walkthrough.gif" alt="Real Runkite Admin walkthrough showing agents, runs, connectors, approvals and audit." width="920" loading="lazy" />
+  </a>
+</p>
+
+The Admin UI ships inside the control-plane binary. It needs no separate frontend
+server. [Open the sandbox](https://getrunkite.com/support/try.html) or read the
+[Admin guide](docs/admin.md).
 
 ## Architecture
 
-<p align="center">
-  <img src="docs/assets/ecosystem.png" alt="How Runkite fits together: clients to control plane to runners, with pluggable state, transport, and vector backends" width="920" />
-</p>
+Clients speak **Agent Protocol** to the plane. Workers pull assignments over
+**Runner Protocol**, run their framework and report events and completion. Model
+calls stay in those workers, using your provider or gateway.
 
-<p align="center"><b>Three processes, two protocols</b> — clients speak Agent Protocol to the plane; runners speak Runner Protocol to the plane; the plane owns state, transport, and (optionally) vectors underneath both</p>
-
-The two sequence diagrams below show the same architecture from two different angles: a single run traveling through the high-availability profile, and one agent delegating work to another. Skip this section entirely if you just want to try it — [docs/architecture.md](docs/architecture.md) covers the same ground with the full protocol table and backend tier details.
+The plane owns operational state and coordination. Postgres + Redis is the
+Supported HA pair; optional backends have explicit
+[support tiers](docs/architecture.md#backend-support-tiers).
 
 <details>
-<summary><b>One run on the HA profile</b></summary>
+<summary><b>Follow one run through the HA profile</b></summary>
 
-```mermaid
+~~~mermaid
 sequenceDiagram
   autonumber
   participant C as Client / SDK
@@ -150,81 +148,99 @@ sequenceDiagram
   participant CP as CP replica
   participant PG as Postgres
   participant RD as Redis
-  participant R as LangGraph runner
+  participant R as Framework runner
 
-  Note over C,CP: Agent Protocol (HTTP / SSE / WebSocket)
-  C->>LB: POST create thread + run
-  LB->>CP: route to a replica
-  CP->>PG: persist thread + run
-  CP->>RD: enqueue job
-
-  Note over CP,R: Runner Protocol (gRPC) — Runkite-defined
-  R->>CP: GetJob
-  CP->>RD: dequeue
-  CP-->>R: RunAssignment (graph_id, input, config…)
-  Note over R: Runner loads the graph and runs the agent / LLM turn
-  R->>CP: StreamEvents
-  CP->>RD: publish events (multi-replica fan-out)
-
-  Note over C,CP: Agent Protocol again
-  CP-->>C: SSE / WebSocket live output
-```
+  C->>LB: Create thread + run
+  LB->>CP: Agent Protocol (HTTP)
+  CP->>PG: Persist thread + run
+  CP->>RD: Enqueue assignment
+  R->>CP: GetJob (gRPC)
+  CP->>RD: Claim assignment
+  CP-->>R: RunAssignment + generation
+  Note over R: Framework owns the model loop
+  R->>CP: StreamEvents + ReportStatus
+  CP->>PG: Commit output + checkpoint
+  CP-->>C: SSE / WebSocket output
+~~~
 
 </details>
 
 <details>
 <summary><b>Agent-to-agent delegation</b></summary>
 
-```mermaid
+~~~mermaid
 sequenceDiagram
   participant Coord as Coordinator agent
   participant CP as Control plane
   participant Work as Worker agent
 
-  Note over Coord,CP: Parent run already executing on a runner
-  Coord->>CP: call_agent / callAgent (internal A2A)
-  CP->>CP: depth check · parent/root bookkeeping
-  CP->>Work: enqueue child run (Runner Protocol)
-  Work-->>CP: result
-  CP-->>Coord: child output (wait=True)
-```
+  Note over Coord,CP: Parent run executes on a runner
+  Coord->>CP: call_agent / callAgent
+  CP->>CP: Check depth + parent/root bookkeeping
+  CP->>Work: Dispatch child run
+  Work-->>CP: Report child result
+  CP-->>Coord: Return child output
+~~~
 
 </details>
+
+[Architecture details](docs/architecture.md) · [Runner Protocol](runner-protocol/PROTOCOL.md) · [Agent delegation](docs/a2a.md) · [MCP server](docs/mcp-server.md) · [Integrations](docs/integrations.md)
+
+## What Runkite is not
+
+Runkite operates the infrastructure around an agent. Your framework keeps planning,
+model calls and tool execution. Native tools that bypass connectors or decision
+helpers do not automatically acquire Runkite policy. Managed cancellation is
+cooperative and cannot undo completed side effects.
+
+Model requests can go directly to your provider or existing gateway. Cost figures
+are estimates based on reported usage and your pricebook, with the
+[documented limits](docs/limitations.md). Self-hosting is the product; the public
+demo is a sandbox.
 
 ## Documentation
 
 | Topic | Links |
 |---|---|
-| Getting started | [Quick start](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) |
-| Core | [Admin UI](docs/admin.md) · [Runners](docs/runners.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) |
-| Worker contract (gRPC + opaque checkpoints) | [Runner Protocol](runner-protocol/README.md) · [PROTOCOL.md](runner-protocol/PROTOCOL.md) · [public mirror](https://github.com/getrunkite/runner-protocol) |
-| Features | [Connectors](docs/connectors.md) (MCP proxy, optional payload shrink) · [A2A](docs/a2a.md) · [MCP](docs/mcp-server.md) · [Integrations](docs/integrations.md) · [Registry](docs/registry.md) · [Vectors](docs/vector-store.md) |
-| Operations | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Trust & governance](docs/trust-governance.md) · [Fixture replay](docs/sim.md) · [Limitations](docs/limitations.md) · [All docs](docs/README.md) |
+| **Start building** | [Quickstart](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) |
+| **Operate agents** | [Admin](docs/admin.md) · [Runners](docs/runners.md) · [Connectors](docs/connectors.md) · [Trust and governance](docs/trust-governance.md) |
+| **Deploy and upgrade** | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Limitations](docs/limitations.md) |
+| **Understand the design** | [Architecture](docs/architecture.md) · [Engineering notes](docs/internal/architecture-deep-dive.md) · [Runner Protocol](runner-protocol/README.md) |
 
-The [documentation site](https://getrunkite.com/support/) covers the same material with a guided, page-by-page walkthrough — including a full [Admin UI guide](https://getrunkite.com/support/admin-guide.html) and an occasional [blog post](https://getrunkite.com/support/blog/) — if you'd rather read in that format than jump between Markdown files.
+The [documentation site](https://getrunkite.com/support/) provides guided product
+and integration walkthroughs. Additional reference: [API](docs/api.md),
+[registry](docs/registry.md), [vectors](docs/vector-store.md) and
+[fixture replay](docs/sim.md).
 
 ## Development
 
-```bash
+~~~bash
 make test                 # SQLite + in-memory
-make smoke-governance     # governance announce bar (Postgres)
-make test-e2e             # black-box binary + runner
-```
+make smoke-governance     # Governance checks on Postgres
+make test-e2e             # Binary + runner end to end
+~~~
 
-Full target list, kind/Helm smoke tests, and the nightly matrix: [CONTRIBUTING.md](CONTRIBUTING.md) · [docs/deployment.md](docs/deployment.md).
+[Contributing](CONTRIBUTING.md) includes the full development workflow.
+[CI](https://github.com/getrunkite/runkite/actions/workflows/ci.yml) and the
+[nightly framework matrix](https://github.com/getrunkite/runkite/actions/workflows/matrix.yml)
+exercise separate validation scopes.
 
-Current source hardening and its rollout requirements are documented in the
-[engineering record](docs/internal/runtime-hardening.md),
-[atomic results and identity follow-up](docs/internal/atomic-results-and-identities.md) and
-[operator runbook](docs/ops-runbook.md#hardening-upgrade). These are
-source changes until a tagged artifact includes them.
+The [runtime hardening record](docs/internal/runtime-hardening.md),
+[identity and atomic-result rationale](docs/internal/atomic-results-and-identities.md),
+[HA recovery evidence](docs/internal/ha-recovery-validation.md) and
+[upgrade guidance](docs/ops-runbook.md#hardening-upgrade) explain the v0.6.0
+operational changes and their limits.
 
 ## License
 
 [Business Source License 1.1](LICENSE). Licensor: **Sharan Harsoor**.
 
-Use, modify, and self-host freely, including in production. You may not offer Runkite as a hosted or managed service to third parties without a commercial license. Each release converts to Apache 2.0 four years after it ships — see `LICENSE` for the exact terms.
+Use, modify and self-host under the license's Additional Use Grant, including
+internal production use. Offering Runkite as a hosted or managed service to third
+parties requires a commercial license. Apache 2.0 conversion follows the Change
+Date terms in [LICENSE](LICENSE).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get set up and what a good PR looks like. Found a security issue? Report it privately per [SECURITY.md](SECURITY.md) — not as a public issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get started. Report security issues
+privately following [SECURITY.md](SECURITY.md).

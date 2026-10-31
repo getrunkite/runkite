@@ -5,7 +5,7 @@ Visuals live in `assets/`.
 
 **Live:** https://getrunkite.com/
 
-**Brand system:** [`brand.css`](./brand.css) is the shared NOC canvas (Fraunces + IBM Plex Sans + JetBrains Mono, amber). The product landing ([`landing.css`](./landing.css)) adds an amber bloom and a moving hop diagram on the fold. Support and design notes stay hard-edged.
+**Brand system:** [`brand.css`](./brand.css) is the shared NOC canvas (Fraunces + IBM Plex Sans + JetBrains Mono, amber). The product landing ([`landing.css`](./landing.css)) uses a product-first hero, two execution paths and a self-hosted topology. Support and design notes retain the shared brand.
 
 **Routes (uniform multi-page nav):**
 
@@ -47,3 +47,28 @@ cd site && python3 -m http.server 8765
 ```
 
 Then open http://127.0.0.1:8765/
+
+## Presentation assets and behavior
+
+The homepage uses the real `ui-runs.png` Admin capture, explicitly labeled as
+demo data. `landing.js` optionally swaps it for the existing walkthrough GIF
+when a visitor presses Play, and restores the still on Pause. Nothing animates
+automatically. With JavaScript disabled, all copy, navigation and the static
+product image remain available; the inactive Play control stays hidden.
+
+`assets/runkite-social.svg` is the editable social-preview source. Its
+1200 by 630 JPEG render is used by Open Graph and Twitter card metadata. Keep the
+JPEG in sync after editing the SVG. `assets/runkite-mark.svg` is the local favicon.
+The root README uses `docs/assets/runkite-overview.svg` for the two integration
+paths. These diagrams explain product boundaries; they are not live activity or
+screenshots. Existing screenshots and engineering evidence remain unchanged.
+
+Keep runtime ownership explicit when editing the page: managed executions create
+Threads and Runs; app-owned tool decisions do not. Connector policy requires the
+connector gate, and the bridge and governance helpers remain repository code.
+The license is BUSL-1.1; use self-hosted/source-available language rather than an
+Open Source claim. Published framework rows link to their integration contracts.
+
+For a presentation change, check the homepage at 320, 390, 768 and 1440 pixel
+widths, keyboard focus and Play/Pause behavior. Verify local links, SVG/JPEG
+dimensions and all images before allowing the existing Pages workflow to publish.

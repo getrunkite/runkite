@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="570" viewBox="0 0 1200 570" role="img" aria-labelledby="title desc">
+  <title id="title">One Runkite plane, two integration paths</title>
+  <desc id="desc">For managed execution, an app creates Threads and Runs over Agent Protocol. A separate framework runner pulls jobs over gRPC and owns the model loop. For app-owned execution, the local SDK requests allow, deny or pending for an individual tool call. That path creates no managed Thread or Run and has no run kill switch or spend cap. The self-hosted plane is one Go binary with embedded Admin; its Supported HA profile uses Postgres and Redis.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto-start-reverse">
+      <path d="M1 1 6 4 1 7" fill="none" stroke="#f5a524" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto-start-reverse">
+      <path d="M1 1 6 4 1 7" fill="none" stroke="#a1a1aa" stroke-width="1.5"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="1198" height="568" rx="12" fill="#0a0a0b" stroke="#343438"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="40" y="43" fill="#fafafa" font-size="23" font-weight="700">One plane. Two integration paths.</text>
+    <text x="40" y="70" fill="#b4b4bd" font-size="15">Your framework owns the model loop. Runkite owns the operations you route through it.</text>
+
+    <text x="40" y="108" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="12" letter-spacing="1.1">01 / MANAGED EXECUTION</text>
+    <rect x="40" y="130" width="284" height="132" rx="5" fill="#151517" stroke="#424247"/>
+    <text x="60" y="162" fill="#fafafa" font-size="19" font-weight="700">Your application</text>
+    <text x="60" y="190" fill="#d4d4d8" font-size="17">Create a Thread and Run.</text>
+    <text x="60" y="215" fill="#d4d4d8" font-size="17">Stream results to your UI.</text>
+    <text x="60" y="241" fill="#a1a1aa" font-size="14">App auth + saved chat ownership</text>
+
+    <path d="M336 199 H423" fill="none" stroke="#f5a524" stroke-width="1.8" marker-end="url(#arrow)"/>
+    <text x="379" y="160" text-anchor="middle" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="13">Agent</text>
+    <text x="379" y="176" text-anchor="middle" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="13">Protocol</text>
+    <text x="379" y="224" text-anchor="middle" fill="#a1a1aa" font-size="13">HTTP / SSE / WS</text>
+
+    <rect x="438" y="130" width="324" height="345" rx="5" fill="#151517" stroke="#f5a524" stroke-width="1.4"/>
+    <rect x="438" y="130" width="324" height="78" rx="5" fill="#241c11"/>
+    <path d="M438 208 H762" stroke="#5b4522"/>
+    <text x="460" y="164" fill="#ffc857" font-size="25" font-weight="700">Runkite</text>
+    <text x="460" y="190" fill="#d4d4d8" font-size="13">One Go binary + embedded Admin</text>
+    <text x="460" y="240" fill="#fafafa" font-size="18" font-weight="700">Managed runs</text>
+    <text x="460" y="266" fill="#d4d4d8" font-size="17">Threads · runs · dispatch</text>
+    <text x="460" y="291" fill="#d4d4d8" font-size="17">Cancel · reported usage</text>
+    <path d="M460 312 H740" stroke="#3a3a3f"/>
+    <text x="460" y="342" fill="#fafafa" font-size="18" font-weight="700">Tool decisions</text>
+    <text x="460" y="368" fill="#d4d4d8" font-size="17">Grants · approval · audit</text>
+    <text x="460" y="393" fill="#d4d4d8" font-size="17">Allow · deny · pending</text>
+    <path d="M460 414 H740" stroke="#3a3a3f"/>
+    <text x="460" y="443" fill="#ffc857" font-size="14" font-weight="700">Postgres + Redis</text>
+    <text x="740" y="443" text-anchor="end" fill="#b4b4bd" font-size="12">Supported HA</text>
+
+    <path d="M779 199 H866" fill="none" stroke="#f5a524" stroke-width="1.8" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text x="822" y="160" text-anchor="middle" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="13">Runner</text>
+    <text x="822" y="176" text-anchor="middle" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="13">Protocol</text>
+    <text x="822" y="224" text-anchor="middle" fill="#a1a1aa" font-size="13">gRPC</text>
+
+    <rect x="880" y="130" width="280" height="132" rx="5" fill="#151517" stroke="#424247"/>
+    <text x="900" y="162" fill="#fafafa" font-size="19" font-weight="700">Framework runner</text>
+    <text x="900" y="190" fill="#d4d4d8" font-size="17">Pull jobs. Run your agent.</text>
+    <text x="900" y="215" fill="#d4d4d8" font-size="17">Report events and completion.</text>
+    <text x="900" y="241" fill="#a1a1aa" font-size="14">Model calls stay in the runner</text>
+
+    <text x="40" y="315" fill="#d4d4d8" font-family="Menlo, Consolas, monospace" font-size="12" letter-spacing="1.1">02 / APP-OWNED EXECUTION</text>
+    <rect x="40" y="337" width="284" height="138" rx="5" fill="#151517" stroke="#424247"/>
+    <text x="60" y="369" fill="#fafafa" font-size="19" font-weight="700">Your existing backend</text>
+    <text x="60" y="397" fill="#d4d4d8" font-size="17">SDK + model loop stay here.</text>
+    <text x="60" y="422" fill="#d4d4d8" font-size="17">Ask before one tool call.</text>
+    <text x="60" y="448" fill="#a1a1aa" font-size="14">The app executes and continues.</text>
+
+    <path d="M336 393 H423" fill="none" stroke="#a1a1aa" stroke-width="1.8" marker-start="url(#arrow-muted)" marker-end="url(#arrow-muted)"/>
+    <text x="379" y="357" text-anchor="middle" fill="#d4d4d8" font-family="Menlo, Consolas, monospace" font-size="13">Decision</text>
+    <text x="379" y="373" text-anchor="middle" fill="#d4d4d8" font-family="Menlo, Consolas, monospace" font-size="13">API</text>
+    <text x="379" y="419" text-anchor="middle" fill="#a1a1aa" font-size="13">HTTP</text>
+
+    <path d="M880 337 V475" stroke="#f5a524" stroke-width="2"/>
+    <text x="900" y="361" fill="#fafafa" font-size="17" font-weight="700">Two visibility contracts</text>
+    <text x="900" y="391" fill="#d4d4d8" font-size="17">Managed: Threads + Runs</text>
+    <text x="900" y="416" fill="#d4d4d8" font-size="17">App-owned: decisions</text>
+    <text x="900" y="446" fill="#a1a1aa" font-size="14">Decision calls create no managed run.</text>
+    <text x="900" y="464" fill="#a1a1aa" font-size="14">Run kill switches and caps do not apply.</text>
+
+    <path d="M40 505 H1160" stroke="#343438"/>
+    <text x="40" y="535" fill="#b4b4bd" font-size="13">Self-hosted infrastructure. Separate runners. Existing model providers and observability backends.</text>
+    <text x="1160" y="535" text-anchor="end" fill="#f5a524" font-family="Menlo, Consolas, monospace" font-size="12">getrunkite.com</text>
+  </g>
+</svg>

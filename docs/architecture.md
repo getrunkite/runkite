@@ -1,6 +1,6 @@
 # Architecture
 
-> Deep dive. Diagrams also on the [root README](../README.md#architecture) (ecosystem image, HA run sequence, A2A). Visuals here: [ecosystem.png](assets/ecosystem.png) · Mermaid below.
+> Deep dive. The [root README](../README.md) introduces both integration paths with an overview diagram; its [architecture section](../README.md#architecture) follows a managed HA run and agent delegation. The older [ecosystem image](assets/ecosystem.png) covers managed execution. Mermaid diagrams follow below.
 
 ### One run on the HA profile
 
