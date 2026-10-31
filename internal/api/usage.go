@@ -205,12 +205,6 @@ func (s *Server) shouldEmitApproachAlert(tenantID, agentID, scope, kind string, 
 	return !loaded
 }
 
-// ingestTerminalUsage writes a usage_events row from run Output when
-// present. Best-effort; no-ops on Mongo or empty/zero usage.
-func (s *Server) ingestTerminalUsage(ctx context.Context, run *models.Run) error {
-	return s.persistTerminalUsage(ctx, run, true)
-}
-
 func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, alerts bool) error {
 	if s == nil || run == nil || len(run.Output) == 0 {
 		return nil

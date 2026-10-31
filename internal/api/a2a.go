@@ -159,7 +159,7 @@ type RunUsage struct {
 	// real model turn happened) but could not extract any token/cost data
 	// from it at all -- distinct from zero usage meaning "no LLM call
 	// happened". Surfaces as a usage_unmetered audit alert (see
-	// ingestTerminalUsage) instead of silently looking free. The runner
+	// persistTerminalUsage) instead of silently looking free. The runner
 	// side (python/runkite_runner/usage.py's usage_payload /
 	// usage_or_unmetered) is where this gets set; it exists specifically
 	// for a provider/framework integration whose usage-reporting shape

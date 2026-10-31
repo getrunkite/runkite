@@ -54,11 +54,11 @@ func applicationNumberToBSON(value interface{}) (interface{}, error) {
 			coefficient = coefficient[:index]
 		}
 		if len(strings.TrimPrefix(coefficient, "-")) > 34 {
-			return nil, fmt.Errorf("Mongo application number exceeds exact int64/Decimal128 range")
+			return nil, fmt.Errorf("mongo application number exceeds exact int64/Decimal128 range")
 		}
 		decimal, err := bson.ParseDecimal128(canonical.String())
 		if err != nil {
-			return nil, fmt.Errorf("Mongo application number exceeds exact int64/Decimal128 range")
+			return nil, fmt.Errorf("mongo application number exceeds exact int64/Decimal128 range")
 		}
 		return decimal, nil
 	case map[string]interface{}:
@@ -153,17 +153,17 @@ func normalizeApplicationBSON(value interface{}) (interface{}, error) {
 	case bson.Decimal128:
 		raw := value.String()
 		if !json.Valid([]byte(raw)) {
-			return nil, fmt.Errorf("Mongo application number is not finite JSON")
+			return nil, fmt.Errorf("mongo application number is not finite JSON")
 		}
 		return json.Number(raw), nil
 	case float64:
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return nil, fmt.Errorf("Mongo application number is not finite JSON")
+			return nil, fmt.Errorf("mongo application number is not finite JSON")
 		}
 		return json.Number(strconv.FormatFloat(value, 'g', -1, 64)), nil
 	case float32:
 		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return nil, fmt.Errorf("Mongo application number is not finite JSON")
+			return nil, fmt.Errorf("mongo application number is not finite JSON")
 		}
 		return json.Number(strconv.FormatFloat(float64(value), 'g', -1, 32)), nil
 	default:

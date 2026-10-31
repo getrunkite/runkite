@@ -68,7 +68,7 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
 	locked := sqlcompletion.WrapSQLTransaction(tx)
 	driver := s.completionDriver()
 	status, err := driver.LockThread(ctx, locked, run.ThreadID)
