@@ -357,7 +357,9 @@ async def execute_run(
         checkpointer_manager = getattr(adapter, "_checkpointer_manager", None)
         checkpoint_mode = getattr(checkpointer_manager, "mode", None)
         if checkpoint_mode in {"direct-postgres", "memory"}:
-            validate_native_checkpoint_identity(assignment.get("tenant_id"), assignment["thread_id"], mode=checkpoint_mode)
+            validate_native_checkpoint_identity(
+                assignment.get("tenant_id"), assignment["thread_id"], mode=checkpoint_mode
+            )
         # Emitted BEFORE building the graph, not after: for a factory
         # graph (see factory_graph.py) this construction runs fresh, on
         # the request path, every single run -- it can genuinely take

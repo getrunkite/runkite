@@ -37,7 +37,9 @@ class CheckpointIdentityTests(unittest.IsolatedAsyncioTestCase):
                 adapter._checkpointer_manager = SimpleNamespace(mode="direct-postgres", recover_if_wedged=AsyncMock())
                 events = []
                 with patch.object(adapter, "get_graph", wraps=adapter.get_graph) as lookup:
-                    status = await execute_run(adapter, assignment(new_tenant, new_thread), AsyncMock(side_effect=events.append))
+                    status = await execute_run(
+                        adapter, assignment(new_tenant, new_thread), AsyncMock(side_effect=events.append)
+                    )
                     self.assertEqual(status, "error", f"legacy owner data escaped: {events!r}")
                     lookup.assert_not_called()
                 self.assertIn("ownership", events[0]["data"]["message"])
@@ -65,7 +67,9 @@ class CheckpointIdentityTests(unittest.IsolatedAsyncioTestCase):
                     patch.object(graph, "aget_state", new_callable=AsyncMock) as read,
                     patch.object(graph, "astream", new_callable=MagicMock) as stream,
                 ):
-                    status = await execute_run(adapter, assignment(caller_tenant, caller_thread), AsyncMock(side_effect=events.append))
+                    status = await execute_run(
+                        adapter, assignment(caller_tenant, caller_thread), AsyncMock(side_effect=events.append)
+                    )
                     self.assertEqual(status, "error")
                     read.assert_not_called()
                     stream.assert_not_called()
