@@ -105,6 +105,7 @@ export async function callAgent(
   const headers = { "Content-Type": "application/json", ...runnerHeaders() };
 
   const fetchOpts: FetchInit = {
+    redirect: "error",
     method: "POST",
     headers,
     body: JSON.stringify(body),

@@ -429,6 +429,7 @@ export function createGovernanceClient(
       if (options.apiKey) headers.Authorization = `Bearer ${options.apiKey}`;
       const res = await fetchImpl(`${base}${path}`, {
         method,
+        redirect: "error",
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: deadline.signal,

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 // ReasonPolicyPredicate is the default reason_code when a predicate
@@ -152,20 +154,24 @@ func evalPredicate(p *Predicate, in PolicyInput) (matched, present bool) {
 	case "neq":
 		return !valuesEqual(got, p.Value), true
 	case "gt", "gte", "lt", "lte":
-		a, aOK := asFloat(got)
-		b, bOK := asFloat(p.Value)
+		a, aOK := asNumber(got)
+		b, bOK := asNumber(p.Value)
 		if !aOK || !bOK {
+			return false, true
+		}
+		order, ok := jsonvalue.CompareNumbers(a, b)
+		if !ok {
 			return false, true
 		}
 		switch p.Op {
 		case "gt":
-			return a > b, true
+			return order > 0, true
 		case "gte":
-			return a >= b, true
+			return order >= 0, true
 		case "lt":
-			return a < b, true
+			return order < 0, true
 		case "lte":
-			return a <= b, true
+			return order <= 0, true
 		}
 	case "in":
 		sl, slOK := asSlice(p.Value)
@@ -235,33 +241,28 @@ func lookupPath(root any, path string) (any, bool) {
 }
 
 func valuesEqual(a, b any) bool {
-	if af, aOK := asFloat(a); aOK {
-		if bf, bOK := asFloat(b); bOK {
-			return af == bf
+	if af, aOK := asNumber(a); aOK {
+		if bf, bOK := asNumber(b); bOK {
+			return jsonvalue.EqualNumbers(af, bf)
 		}
 		return false
 	}
-	if _, bOK := asFloat(b); bOK {
+	if _, bOK := asNumber(b); bOK {
 		return false
 	}
-	return reflect.DeepEqual(a, b)
+	return jsonvalue.Equal(a, b)
 }
 
-func asFloat(v any) (float64, bool) {
+func asNumber(v any) (json.Number, bool) {
 	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
 	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
+		_, valid := jsonvalue.CompareNumbers(n, n)
+		return n, valid
+	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		b, err := json.Marshal(n)
+		return json.Number(b), err == nil
 	default:
-		return 0, false
+		return "", false
 	}
 }
 

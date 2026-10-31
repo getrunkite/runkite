@@ -100,6 +100,21 @@
           <li>Fix the receiver or auth, then replay/retry per ops runbook.</li>
         </ol>
 
+        <p class="note">
+          <strong>Unreleased delivery hardening:</strong> asynchronous lifecycle sinks,
+          manual dead-letter redelivery, preflight hooks and policy callbacks no longer
+          follow HTTP redirects. Configure
+          each receiver's final URL; a <code>3xx</code> response is a callback failure,
+          not permission to forward its payload to another endpoint.
+          Asynchronous sinks retain their existing retry/dead-letter behavior. This
+          does not make receivers exactly once; keep them idempotent.
+        </p>
+        <p>
+          Authentication webhooks are a separate request-time identity check, not a
+          lifecycle sink. Their cache, cancellation and bounded-response rules are
+          described in the <a href="credentials.html#webhook-auth">credentials guide</a>.
+        </p>
+
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin → Webhooks: dead letters / delivery</div>
@@ -108,10 +123,24 @@
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Success</strong>: your endpoint gets signed/authenticated POSTs as runs progress.</li>
+          <li><strong>Success</strong>: your endpoint receives POSTs as runs progress. Signature verification requires configuring the normal delivery secret.</li>
           <li><strong>Failure</strong>: dead-letters accumulate instead of silent drop.</li>
           <li><strong>Limits</strong>: treat receivers as idempotent; at-least-once delivery is the honest model.</li>
         </ul>
+        <p>
+          Admin dead-letter redelivery does not retain the original signing secret,
+          so that manual replay is unsigned and a signature-enforcing receiver can
+          reject it. A successful replay leaves the historical dead-letter row in
+          place; inspect the action's delivery result instead of expecting the row
+          to disappear.
+        </p>
+        <p>
+          The unreleased built-in stores look up a dead letter directly by its ID, so
+          an older record outside the newest 1,000 entries can still be redelivered.
+          A manual delivery succeeds only for a <code>2xx</code> receiver response;
+          redirects and other statuses are reported as undelivered. Custom stores that
+          retain the older list-only interface keep its bounded lookup behavior.
+        </p>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>
           · <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>

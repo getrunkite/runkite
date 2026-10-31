@@ -3316,18 +3316,20 @@ func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy stri
 
 // ConsumeApprovedAction atomically marks an approved action consumed for
 // the matching run/generation/connector/tool and argument digest.
-// Rows with an empty args_digest (pre-migration) still match once so an
-// in-flight approve is not stranded. Exact digest wins over a legacy row.
+// Unbound legacy approvals cannot authorize a newly interpreted operation.
 func (s *Store) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
+	if argsDigest == "" {
+		return "", nil
+	}
 	var id string
 	err := s.pool.QueryRow(ctx, `
 		WITH picked AS (
 			SELECT id FROM pending_actions
 			WHERE run_id = $3 AND generation = $4 AND connector = $5 AND tool = $6
 			  AND status = $7
-			  AND (args_digest = $8 OR args_digest = '')
+			  AND args_digest = $8
 		  AND tenant_id = $9 AND agent_id = $10 AND expires_at IS NULL
-			ORDER BY (args_digest = $8) DESC, created_at ASC
+			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE
 		)

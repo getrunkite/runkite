@@ -603,6 +603,9 @@ func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy stri
 
 // ConsumeApprovedAction atomically marks an approved action consumed.
 func (s *Store) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
+	if argsDigest == "" {
+		return "", nil
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -614,10 +617,10 @@ func (s *Store) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, ru
 		SELECT id FROM pending_actions
 		WHERE BINARY run_id = BINARY ? AND generation = ? AND BINARY connector = BINARY ? AND BINARY tool = BINARY ?
 		  AND status = ?
-		  AND (BINARY args_digest = BINARY ? OR args_digest = '')
+		  AND BINARY args_digest = BINARY ?
 		  AND BINARY tenant_id = BINARY ? AND BINARY agent_id = BINARY ? AND expires_at IS NULL
-		ORDER BY (BINARY args_digest = BINARY ?) DESC, created_at ASC LIMIT 1 FOR UPDATE`,
-		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, tenantID, agentID, argsDigest).Scan(&id)
+		ORDER BY created_at ASC LIMIT 1 FOR UPDATE`,
+		runID, generation, connector, tool, models.PendingStatusApproved, argsDigest, tenantID, agentID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil

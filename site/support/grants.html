@@ -132,6 +132,15 @@
           Empty <code>agent_id</code> = whole tenant; empty <code>tool</code> = every tool on that connector.
           Predicates never <code>allow</code>. There is no Admin CRUD for them this release.
         </p>
+        <p>
+          <strong>Unreleased argument hardening:</strong> equality and ordering use
+          exact numeric values. Different large integer IDs and decimal thresholds
+          cannot collapse through floating-point rounding; equivalent JSON spellings
+          such as <code>1</code> and <code>1e0</code> compare equal. Duplicate argument
+          keys and invalid Unicode are rejected with HTTP <code>400</code>, before a
+          decision or connector call. The capped Args display is for review, not the
+          source used for predicate evaluation or approval identity.
+        </p>
         <pre class="mono-block"># From the try path, approval_agent pauses until resume
 curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
   -H 'Content-Type: application/json' \
@@ -144,6 +153,19 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
           resume a framework. Connector retry consumption is one-shot under the original
           active run/generation, while an app polling
           an embedded approval must enforce its own execution idempotency.
+        </p>
+        <p class="note" id="approval-upgrade">
+          <strong>Unreleased upgrade requirement:</strong> approval argument digests
+          now use a v2-namespaced SHA-256 over exact, normalized numeric values and
+          sorted object keys. Pending or approved pre-v2 actions, including legacy
+          rows with an empty digest, require resubmission and fresh review. Admin
+          refuses to approve them. App-owned action polls return <code>rejected</code>
+          with <code>approval_binding_legacy</code>, so the app must not execute its
+          saved operation from that old approval. Connector retries cannot consume it
+          either. These rows are not migrated or automatically replayed. Current
+          connector policy still evaluates an explicit deny before consuming any
+          approval; approval is not a permanent policy exception. Existing audit rows
+          remain historical records.
         </p>
         <h2>In the product</h2>
         <figure class="shot">

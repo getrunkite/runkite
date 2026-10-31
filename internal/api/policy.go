@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/auth"
@@ -14,6 +15,14 @@ import (
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 )
+
+// Action identifiers are opaque to clients. The prefix records which argument
+// binding issued the row without rewriting historical approval audit records.
+const pendingActionIDPrefix = "pending-v2-"
+
+func currentPendingBinding(a *models.PendingAction) bool {
+	return a != nil && a.ArgsDigest != "" && strings.HasPrefix(a.ID, pendingActionIDPrefix)
+}
 
 // policyInputFromRequest builds a PolicyInput from run-binding (preferred)
 // or falls back to client-auth context (pre-warm at createRun).
@@ -224,7 +233,7 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 		return "", err
 	}
 	a := &models.PendingAction{
-		ID:         "pending-" + suffix,
+		ID:         pendingActionIDPrefix + suffix,
 		RunID:      in.RunID,
 		Generation: in.Generation,
 		TenantID:   in.TenantID,

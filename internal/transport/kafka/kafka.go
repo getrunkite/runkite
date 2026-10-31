@@ -625,9 +625,9 @@ func bumpGeneration(payload []byte, newGen int64) ([]byte, error) {
 	return json.Marshal(&job)
 }
 
-func (q *Queue) Nack(ctx context.Context, runID string) error {
-	entry, ok := q.getState(runID)
-	if !ok || entry.Canceled {
+func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+	entry, ok := q.fenced(runID, generation)
+	if !ok {
 		return nil // not in-flight -- nothing to do, same as Redis's/NATS's Nack
 	}
 	payload, err := bumpGeneration(entry.Job, entry.Generation+1)

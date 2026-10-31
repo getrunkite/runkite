@@ -18,6 +18,27 @@ func TestTryAcquireReclaimLeader_NilRedisAlwaysWins(t *testing.T) {
 	}
 }
 
+func TestReclaimLeaderSeparateProcessesCannotRenewEachOthersLease(t *testing.T) {
+	rdb := redisClientOrSkip(t)
+	ctx := context.Background()
+	if err := rdb.Del(ctx, reclaimLeaderKey).Err(); err != nil {
+		t.Fatal(err)
+	}
+	first, second := newReclaimLeaderHolder(), newReclaimLeaderHolder()
+	if first == second || first == "" || second == "" {
+		t.Fatal("independent reclaim loops need distinct owner tokens")
+	}
+	if won, err := tryAcquireReclaimLeader(ctx, rdb, first, reclaimLeaderTTL); err != nil || !won {
+		t.Fatalf("first owner acquire: won=%t err=%v", won, err)
+	}
+	if won, err := tryAcquireReclaimLeader(ctx, rdb, second, reclaimLeaderTTL); err != nil || won {
+		t.Fatalf("independent owner renewed another loop's lease: won=%t err=%v", won, err)
+	}
+	if won, err := tryAcquireReclaimLeader(ctx, rdb, first, reclaimLeaderTTL); err != nil || !won {
+		t.Fatalf("original owner could not renew: won=%t err=%v", won, err)
+	}
+}
+
 func TestInitReclaimMaxAge_Default(t *testing.T) {
 	dir := t.TempDir()
 	path := writeLangGraphJSON(t, dir, `{"graphs": {"echo": "graph.py:graph"}}`)

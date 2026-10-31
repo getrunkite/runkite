@@ -946,51 +946,58 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		s.servePayloadRetrieve(w, r, rpc.ID, args)
 		return
 	}
-	// One-shot capability (Admin-approved pending) is checked before Decide
-	// so a cached or re-pending webhook cannot block the approved retry.
+	// Approval bypasses another pending result, never a current explicit deny.
 	if method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
-		in.Args, in.ArgsDigest, in.ArgsMeta = policy.BindArgs(args)
-		if !s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest) {
-			if dec, deny := s.checkConnectorPolicy(r.Context(), in); deny {
-				actionID := ""
-				if dec.Effect == policy.EffectPending {
-					id, err := s.persistPendingAction(r.Context(), in, name, tool, dec, nil)
-					if err != nil {
-						slog.Warn("policy: persist pending action failed", "error", err, "connector", name, "tool", tool)
-						dec.Effect = policy.EffectDeny
-						if dec.Reason == "" {
-							dec.Reason = "pending approval unavailable"
-						}
-						if dec.ReasonCode == "" {
-							dec.ReasonCode = policy.ReasonPolicyPending
-						}
-					} else {
-						actionID = id
-						if dec.ReasonCode == "" {
-							dec.ReasonCode = policy.ReasonPolicyPending
-						}
-					}
-				}
-				s.emitToolAuthEvent(r.Context(), in, dec, actionID)
-				msg := dec.Reason
-				if msg == "" {
-					if dec.Effect == policy.EffectPending {
-						msg = "awaiting policy approval"
-					} else {
-						msg = "denied by policy"
-					}
-				}
-				denied, err := connector.DeniedRPCResult(rpc.ID, msg, mcpPolicyDenyData(dec, actionID))
+		var err error
+		in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict(args)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid or ambiguous tool arguments")
+			return
+		}
+		dec, deny := s.checkConnectorPolicy(r.Context(), in)
+		approved := false
+		if !deny || dec.Effect == policy.EffectPending {
+			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest)
+		}
+		if deny && !approved {
+			actionID := ""
+			if dec.Effect == policy.EffectPending {
+				id, err := s.persistPendingAction(r.Context(), in, name, tool, dec, nil)
 				if err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
-					return
+					slog.Warn("policy: persist pending action failed", "error", err, "connector", name, "tool", tool)
+					dec.Effect = policy.EffectDeny
+					if dec.Reason == "" {
+						dec.Reason = "pending approval unavailable"
+					}
+					if dec.ReasonCode == "" {
+						dec.ReasonCode = policy.ReasonPolicyPending
+					}
+				} else {
+					actionID = id
+					if dec.ReasonCode == "" {
+						dec.ReasonCode = policy.ReasonPolicyPending
+					}
 				}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(denied.StatusCode)
-				_, _ = w.Write(denied.Body)
+			}
+			s.emitToolAuthEvent(r.Context(), in, dec, actionID)
+			msg := dec.Reason
+			if msg == "" {
+				if dec.Effect == policy.EffectPending {
+					msg = "awaiting policy approval"
+				} else {
+					msg = "denied by policy"
+				}
+			}
+			denied, err := connector.DeniedRPCResult(rpc.ID, msg, mcpPolicyDenyData(dec, actionID))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to build policy deny response")
 				return
 			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(denied.StatusCode)
+			_, _ = w.Write(denied.Body)
+			return
 		}
 	}
 
@@ -1028,6 +1035,15 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	if method == "tools/call" {
 		result.Body = s.maybeShrinkMCP(r.Context(), result.StatusCode, result.Body)
 	}
+	// An upstream 401 is not proof that a tool had no effects. Reserve 401
+	// session-refresh retries for failures rejected by this plane pre-dispatch.
+	if result.StatusCode == http.StatusUnauthorized {
+		writeJSON(w, http.StatusBadGateway, map[string]string{
+			"message":     "upstream connector authentication failed; the operation may have executed",
+			"reason_code": "connector_upstream_unauthorized",
+		})
+		return
+	}
 	result.Body = s.maybeInjectRetrieveTool(method, result.Body)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1044,12 +1060,12 @@ func (s *Server) requireConnectorSession(w http.ResponseWriter, r *http.Request,
 	}
 	token := strings.TrimSpace(r.Header.Get(connector.HeaderConnectorSession))
 	if token == "" {
-		writeError(w, http.StatusUnauthorized, "missing "+connector.HeaderConnectorSession)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "missing " + connector.HeaderConnectorSession, "reason_code": "connector_session_invalid"})
 		return errConnectorSession
 	}
 	sess := s.connectorSessions.Get(token)
 	if sess == nil {
-		writeError(w, http.StatusUnauthorized, "invalid or expired connector session token")
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "invalid or expired connector session token", "reason_code": "connector_session_invalid"})
 		return errConnectorSession
 	}
 	binding := auth.RunBindingFromContext(r.Context())
@@ -1178,6 +1194,10 @@ const maxJSONBodyBytes = 1 << 20 // 1 MiB
 // {"limit":1000000} would scan and marshal the world.
 const maxSearchLimit = 100
 
+var errInvalidResourceID = errors.New("run_id and thread_id must not be '.' or '..'")
+
+func invalidResourceID(id string) bool { return id == "." || id == ".." }
+
 func clampSearchLimit(limit, defaultLimit int) int {
 	if limit <= 0 {
 		return defaultLimit
@@ -1239,6 +1259,8 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	var breadthExceeded *ErrA2ABreadthExceeded
 	var admissionExceeded *state.ErrAdmissionLimitExceeded
 	switch {
+	case errors.Is(err, errInvalidResourceID):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errSimulationRequiresAdmin):
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"message":     err.Error(),

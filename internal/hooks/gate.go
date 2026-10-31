@@ -148,7 +148,8 @@ func NewWebhookGate(cfg WebhookGateConfig) *WebhookGate {
 	return &WebhookGate{
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout:       timeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
 }
@@ -181,7 +182,10 @@ func (g *WebhookGate) Decide(ctx context.Context, event Event) Decision {
 		return Decision{Allow: false, Reason: fmt.Sprintf("preflight request failed: %v", err)}
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(body) > 1<<20 {
+		return Decision{Allow: false, Reason: "preflight response unavailable or too large"}
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		reason := string(bytes.TrimSpace(body))

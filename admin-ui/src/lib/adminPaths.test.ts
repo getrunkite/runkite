@@ -6,6 +6,8 @@ import {
   adminAgentVersionsPath,
   adminRegistryPath,
   adminRegistryVersionsPath,
+  adminRunPath,
+  adminThreadPath,
   adminTenantQuery,
 } from "./adminPaths.ts";
 
@@ -50,4 +52,17 @@ test("adminTenantQuery is empty for missing or blank tenant, otherwise a leading
   assert.equal(adminTenantQuery(""), "");
   assert.equal(adminTenantQuery("  "), "");
   assert.equal(adminTenantQuery("default"), "?tenant_id=default");
+});
+
+test("run/thread operations keep caller-supplied identifiers inside one URL segment", () => {
+  const id = "../other?tenant_id=foreign#fragment%";
+  for (const path of [adminRunPath(id), adminThreadPath(id)]) {
+    const url = new URL(`/admin-api${path}/cancel`, "https://plane.example");
+    assert.equal(url.search, "");
+    assert.equal(url.hash, "");
+    const parts = url.pathname.split("/");
+    assert.equal(parts.length, 5);
+    assert.equal(decodeURIComponent(parts[3]), id);
+    assert.equal(parts[4], "cancel");
+  }
 });

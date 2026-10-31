@@ -1,3 +1,4 @@
+import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Workflow } from "lucide-react";
@@ -19,7 +20,7 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
     header: "Run ID",
     cell: ({ row }) => (
       <Link
-        to={`/admin/runs/${row.original.run_id}`}
+        to={`/admin${adminRunPath(row.original.run_id)}`}
         onClick={(e) => e.stopPropagation()}
         className="font-mono text-xs font-medium text-primary hover:underline"
       >
@@ -34,7 +35,7 @@ const columns: ColumnDef<AdminRun, unknown>[] = [
     cell: ({ row }) =>
       row.original.thread_id ? (
         <Link
-          to={`/admin/threads/${row.original.thread_id}`}
+          to={`/admin${adminThreadPath(row.original.thread_id)}`}
           onClick={(e) => e.stopPropagation()}
           className="font-mono text-xs text-primary hover:underline"
         >
@@ -153,7 +154,7 @@ export function Runs() {
             columns={columns}
             data={data ?? []}
             getRowId={(r) => r.run_id}
-            onRowClick={(r) => navigate(`/admin/runs/${r.run_id}`)}
+            onRowClick={(r) => navigate(`/admin${adminRunPath(r.run_id)}`)}
             loading={loading}
             initialSorting={[{ id: "updated_at", desc: true }]}
           />

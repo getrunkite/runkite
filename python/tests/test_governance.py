@@ -277,7 +277,31 @@ def test_http_error():
         stop(server)
 
 
+def test_redirect_does_not_change_decision_authority():
+    destination, target = serve(lambda handler: reply(handler, 200, {"effect": "allow"}))
+
+    def redirect(handler):
+        handler.send_response(302)
+        handler.send_header("Location", target + "/fake-allow")
+        handler.end_headers()
+
+    origin, base = serve(redirect)
+    try:
+        client = GovernanceClient(base, api_key="redirect-test-key")
+        try:
+            client.decide(**CALL)
+            check("redirect cannot return authorization", False)
+        except GovernanceError as exc:
+            check("redirect fails as HTTP error", exc.status == 302)
+        check("configured plane receives one request", len(origin.hits) == 1)
+        check("redirect target never receives bearer key", len(destination.hits) == 0)
+    finally:
+        stop(origin)
+        stop(destination)
+
+
 if __name__ == "__main__":
+    test_redirect_does_not_change_decision_authority()
     test_decide_allow()
     test_resolve_approved()
     test_rejected_and_consumed()

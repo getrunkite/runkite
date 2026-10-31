@@ -38,7 +38,8 @@ func NewWebhook(cfg WebhookConfig) *Webhook {
 	return &Webhook{
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout:       timeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
 }
@@ -101,7 +102,10 @@ func (w *Webhook) Decide(ctx context.Context, in PolicyInput, failClosed bool) P
 		return webhookFail(failClosed, fmt.Sprintf("policy webhook request failed: %v", err), ReasonPolicyWebhookFailed)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(body) > 1<<20 {
+		return webhookFail(failClosed, "policy webhook response unavailable or too large", ReasonPolicyWebhookFailed)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		reason := string(bytes.TrimSpace(body))
@@ -126,6 +130,9 @@ func (w *Webhook) Decide(ctx context.Context, in PolicyInput, failClosed bool) P
 	}
 	if effect == "" {
 		return webhookFail(failClosed, "policy webhook response missing allow/effect", ReasonPolicyWebhookFailed)
+	}
+	if effect != EffectAllow && effect != EffectDeny && effect != EffectPending {
+		return webhookFail(failClosed, "policy webhook response has invalid effect", ReasonPolicyWebhookFailed)
 	}
 
 	code := parsed.ReasonCode

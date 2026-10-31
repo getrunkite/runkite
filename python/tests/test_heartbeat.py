@@ -153,7 +153,7 @@ async def test_heartbeat_loop_defaults_generation_to_zero():
     with contextlib.suppress(asyncio.CancelledError):
         await task
 
-    check("unspecified generation defaults to 0 (unfenced)", all(g == 0 for g in stub.generations))
+    check("unspecified generation defaults to legacy generation 0", all(g == 0 for g in stub.generations))
 
 
 async def test_heartbeat_loop_stops_and_sets_cancel_event_on_superseded():
@@ -196,6 +196,54 @@ async def test_heartbeat_loop_superseded_without_cancel_event_does_not_raise():
     check("task raised nothing", task.exception() is None)
 
 
+async def test_hung_heartbeat_is_cancelled_and_loop_recovers():
+    canceled = asyncio.Event()
+    renewed = asyncio.Event()
+
+    class HungFirstStub:
+        calls = 0
+
+        async def Heartbeat(self, request, metadata=None):
+            self.calls += 1
+            if self.calls == 1:
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    canceled.set()
+            renewed.set()
+            return _FakeHeartbeatResponse()
+
+    stub = HungFirstStub()
+    task = asyncio.create_task(heartbeat_loop(stub, "hung", [], interval_s=0.01, rpc_timeout_s=0.02))
+    try:
+        await asyncio.wait_for(renewed.wait(), 1)
+        check("timed-out heartbeat RPC cancelled", canceled.is_set())
+        check("loop sends later renewal after RPC timeout", stub.calls >= 2)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def test_owner_cancel_cancels_active_heartbeat_rpc():
+    entered, canceled = asyncio.Event(), asyncio.Event()
+
+    class HungStub:
+        async def Heartbeat(self, request, metadata=None):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                canceled.set()
+
+    task = asyncio.create_task(heartbeat_loop(HungStub(), "stopped", [], interval_s=0.01))
+    await asyncio.wait_for(entered.wait(), 1)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    check("owner cancellation closes active RPC", canceled.is_set())
+
+
 async def main():
     await test_heartbeat_loop_calls_repeatedly_with_run_id()
     await test_heartbeat_loop_stops_cleanly_on_cancel()
@@ -205,6 +253,8 @@ async def main():
     await test_heartbeat_loop_stops_and_sets_cancel_event_on_superseded()
     await test_heartbeat_loop_does_not_touch_cancel_event_when_not_superseded()
     await test_heartbeat_loop_superseded_without_cancel_event_does_not_raise()
+    await test_hung_heartbeat_is_cancelled_and_loop_recovers()
+    await test_owner_cancel_cancels_active_heartbeat_rpc()
     print("\nAll checks passed.")
 
 

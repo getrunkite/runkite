@@ -81,7 +81,7 @@ func (s *Server) handleGovernanceDecide(w http.ResponseWriter, r *http.Request) 
 	}
 	if tooLongGovernanceID(req.AgentID) || tooLongGovernanceID(req.Connector) ||
 		tooLongGovernanceID(req.Tool) || tooLongGovernanceID(req.RunID) {
-		writeError(w, http.StatusBadRequest, "agent_id, connector, tool, and run_id must be at most 256 characters")
+		writeError(w, http.StatusBadRequest, "agent_id, connector, tool, and run_id must be at most 256 UTF-8 bytes")
 		return
 	}
 
@@ -101,7 +101,11 @@ func (s *Server) handleGovernanceDecide(w http.ResponseWriter, r *http.Request) 
 	if ar := auth.FromContext(r.Context()); ar != nil {
 		principal = ar.Identity
 	}
-	parsed, digest, meta := policy.BindArgs(req.Args)
+	parsed, digest, meta, err := policy.BindArgsStrict(req.Args)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid or ambiguous tool arguments")
+		return
+	}
 	in := policy.PolicyInput{
 		Stage:      policy.StageToolCall,
 		TenantID:   tenantID,
@@ -189,6 +193,10 @@ func (s *Server) handleGovernanceGetAction(w http.ResponseWriter, r *http.Reques
 	}
 	if a.TenantID != tenant.FromContext(r.Context()) {
 		writeError(w, http.StatusNotFound, "pending action not found")
+		return
+	}
+	if !currentPendingBinding(a) && (a.Status == models.PendingStatusPending || a.Status == models.PendingStatusApproved) {
+		writeJSON(w, http.StatusOK, governanceActionResponse{ActionID: a.ID, Status: "rejected", Reason: "resubmit the operation for fresh approval", ReasonCode: "approval_binding_legacy"})
 		return
 	}
 	writeJSON(w, http.StatusOK, governanceActionResponse{

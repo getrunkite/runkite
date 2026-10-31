@@ -7,7 +7,7 @@
     <title>Engineering notes · Runkite Docs</title>
     <meta
       name="description"
-      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS, managed AI SDK receipts."
+      content="Engineering notes: generation fencing, admission, reclaim, spend holds, Postgres RLS, managed receipts and runtime hardening."
     />
     <link
       rel="icon"
@@ -111,10 +111,14 @@
           <li>
             <a href="../design/managed-ai-sdk.html">7 · Managed AI SDK receipts</a>: Commit native history before success; recover a committed turn without repeating model or tool work.
           </li>
+          <li>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">8 · Runtime hardening (unreleased, Markdown)</a>: Exact policy arguments, fresh approval review, generation-fenced queue release, confirmed session revocation and bounded SDK/Admin delivery. Includes the design choices, source paths, upgrade requirements and regression evidence for contributors.
+          </li>
         </ul>
 
         <p class="note">
-          Each note opens in the engineering-notes layout. This index stays in Docs
+          The earlier notes open in the engineering-notes layout; the runtime
+          hardening note opens the repository's contributor Markdown. This index stays in Docs
           so the handbook sidebar remains. Related:
           <a href="./decisions/">decision write-ups</a>
           ·

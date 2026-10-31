@@ -138,15 +138,17 @@ func (s *redisAdminSessionStore) Get(id string) *AdminSession {
 	}
 }
 
-func (s *redisAdminSessionStore) Delete(id string) {
+func (s *redisAdminSessionStore) Delete(id string) error {
 	if id == "" {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), adminSessionRedisTimeout)
 	defer cancel()
 	if err := s.rdb.Del(ctx, s.key(id)).Err(); err != nil {
 		slog.Warn("admin session redis delete failed", "err", err)
+		return err
 	}
+	return nil
 }
 
 func decodeRedisSession(id, raw string) *AdminSession {

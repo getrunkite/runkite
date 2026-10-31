@@ -135,6 +135,14 @@
           "not available on this backend" message on Mongo).
         </p>
 
+        <p class="note">
+          <strong>Unreleased hardening:</strong> Sign out is confirmed only after the
+          server revokes the session. If Redis revocation fails, the API returns
+          <code>503 admin_session_revoke_failed</code>, the cookie is retained, and
+          Admin shows that sign out was not confirmed. Retry after the service recovers;
+          do not assume the session ended. Admin login and API calls reject redirects.
+        </p>
+
         <h2 id="1-overview">1. Overview</h2>
         <p>
           <strong>What it's for:</strong> the landing page after login. A single glance at how
@@ -301,6 +309,20 @@
           <div class="cap">Admin → Runs: filter by status/agent/thread</div>
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs list" width="960" height="600" />
         </figure>
+        <p>
+          <strong>Unreleased debugging bounds:</strong> refresh requests run one at a
+          time, and navigation aborts the old request. Run and thread IDs are encoded as
+          opaque URL segments. New create requests using only <code>.</code> or
+          <code>..</code> receive HTTP <code>400</code> before persistence, because URL
+          parsers normalize those components; other custom string IDs remain supported.
+          The event pane retains the latest 500 events with a
+          bounded preview of each large payload; Try Agent also limits its raw previews.
+          Truncation is labeled and does not change saved output or the retained event.
+          Use the run stream API when you need the complete event. Malformed or oversized
+          SSE blocks close the debugging reader instead of growing browser memory without
+          a bound. Saved values still use ordinary browser JSON numbers: use a lossless
+          API client for exact large integers or high-precision decimals.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Run detail: live/replayed event stream</div>
           <img src="../assets/ui-run-detail.png" alt="Runkite Admin Run detail page" width="960" height="600" />
@@ -459,6 +481,16 @@
           <li><strong>Deny</strong>: the pending call is rejected. The caller decides how to continue without performing that write.</li>
         </ol>
         <p class="note">Approving does not create a standing grant. Connector retry consumption is one-shot. Embedded <code>/governance/decide</code> rows belong to an app-owned operation that may have no managed run; the app polls and continues the exact saved arguments with its own idempotency. Embedded rows expire after 24 hours and cannot be approved after expiry. See <a href="sdk-integration.html">SDK integrations</a>.</p>
+        <p>
+          <strong>Unreleased approval safety:</strong> a current explicit policy deny
+          wins over a previous connector approval. New argument hashes preserve exact
+          numeric values and use a versioned format. Pending or approved actions created
+          before that format, including legacy rows with no digest, cannot be approved
+          in Admin or consumed by a connector retry. App-owned polls report
+          <code>rejected</code> with <code>approval_binding_legacy</code>. Resubmit the
+          operation and review a new row; there is no automatic migration or execution
+          replay. See <a href="grants.html#approval-upgrade">approval upgrades</a>.
+        </p>
         <figure class="shot">
           <div class="cap">Admin → Pending: approve or deny a held tool decision</div>
           <img src="../assets/ui-pending.png" alt="Runkite Admin Pending Actions" width="960" height="600" />

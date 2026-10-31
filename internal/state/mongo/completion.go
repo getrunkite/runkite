@@ -53,8 +53,19 @@ func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		}
 		run.Metadata[state.CompletionGenerationKey] = c.Generation
 		if c.Values != nil && !c.CancelCurrentAttempt {
+			thread, err := s.GetThread(ctx, run.ThreadID)
+			if err != nil {
+				return err
+			}
+			merged := make(map[string]interface{}, len(thread.Values)+len(c.Values))
+			for key, value := range thread.Values {
+				merged[key] = value
+			}
+			for key, value := range c.Values {
+				merged[key] = value
+			}
 			now := time.Now().UTC().Format(time.RFC3339Nano)
-			cp := &models.ThreadState{Values: c.Values, Metadata: map[string]interface{}{}, Next: []string{}, Tasks: []interface{}{}, Interrupts: []interface{}{}, CreatedAt: &now, Checkpoint: models.ThreadCheckpoint{ThreadID: run.ThreadID, CheckpointID: "completion:" + c.RunID}}
+			cp := &models.ThreadState{Values: merged, Metadata: map[string]interface{}{}, Next: []string{}, Tasks: []interface{}{}, Interrupts: []interface{}{}, CreatedAt: &now, Checkpoint: models.ThreadCheckpoint{ThreadID: run.ThreadID, CheckpointID: "completion:" + c.RunID}}
 			previous, err := s.GetLatestCheckpoint(ctx, run.ThreadID)
 			if err == nil {
 				cp.ParentCheckpoint = &previous.Checkpoint

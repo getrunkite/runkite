@@ -66,9 +66,10 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	store := newGovernanceSQLite(t)
 	ctx := tenant.SystemContext(context.Background())
 	past := time.Now().UTC().Add(-time.Hour)
+	_, digest, _ := policy.BindArgs(nil)
 	for _, row := range []*models.PendingAction{
-		{ID: "overdue", TenantID: "default", AgentID: "agent", RunID: "embedded", Connector: "files", Tool: "upload", ExpiresAt: &past},
-		{ID: "connector", TenantID: "default", AgentID: "agent", RunID: "connector", Connector: "files", Tool: "upload"},
+		{ID: "pending-v2-overdue", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "embedded", Connector: "files", Tool: "upload", ExpiresAt: &past},
+		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Connector: "files", Tool: "upload"},
 	} {
 		if err := store.CreatePendingAction(ctx, row); err != nil {
 			t.Fatal(err)
@@ -79,7 +80,7 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	for _, tc := range []struct {
 		id   string
 		want int
-	}{{"overdue", http.StatusConflict}, {"connector", http.StatusOK}} {
+	}{{"pending-v2-overdue", http.StatusConflict}, {"pending-v2-connector", http.StatusOK}} {
 		req := httptest.NewRequest(http.MethodPost, "/admin-api/pending-actions/"+tc.id+"/approve", nil)
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, req)

@@ -30,7 +30,7 @@ const (
 type SessionStore interface {
 	Create(result *AuthResult) (*AdminSession, error)
 	Get(id string) *AdminSession
-	Delete(id string)
+	Delete(id string) error
 	TTL() time.Duration
 }
 
@@ -124,13 +124,14 @@ func (s *AdminSessionStore) Get(id string) *AdminSession {
 }
 
 // Delete removes a session (logout). Idempotent.
-func (s *AdminSessionStore) Delete(id string) {
+func (s *AdminSessionStore) Delete(id string) error {
 	if id == "" {
-		return
+		return nil
 	}
 	s.mu.Lock()
 	delete(s.sessions, id)
 	s.mu.Unlock()
+	return nil
 }
 
 // SessionIDFromRequest reads the admin session cookie.

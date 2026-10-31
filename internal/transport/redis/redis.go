@@ -478,29 +478,40 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 	return &job, nil
 }
 
-func (q *Queue) Nack(ctx context.Context, runID string) error {
-	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
-	if err == redis.Nil {
-		return nil // not in-flight (already Ack'd/reclaimed/never existed) -- nothing to do
-	}
-	if err != nil {
-		return err
-	}
+// nackScript checks the dispatch and returns its original bytes to the ready
+// queue atomically. Removing the lease before a separate Enqueue lost jobs on
+// failure and could delete a replacement dispatched between those operations.
+const nackScript = `
+local data_key = KEYS[1]
+local zset_key = KEYS[2]
+local gen_key = KEYS[3]
+local canceled_key = KEYS[4]
+local run_id = ARGV[1]
+local generation = tonumber(ARGV[2])
+local data = redis.call('HGET', data_key, run_id)
+if not data then return 0 end
+` + checkGenerationScript + `
+local ok, job = pcall(cjson.decode, data)
+if not ok or type(job) ~= 'table' or type(job.runner_kind) ~= 'string' then
+    return redis.error_reply('invalid in-flight assignment')
+end
+local canceled_at = redis.call('ZSCORE', canceled_key, run_id)
+if not canceled_at or tonumber(canceled_at) < tonumber(ARGV[3]) then
+    -- Write first: if LPUSH fails (for example a wrong-type queue key), the
+    -- in-flight assignment is still retained for retry rather than lost.
+    redis.call('LPUSH', ARGV[4] .. job.runner_kind, data)
+end
+redis.call('HDEL', data_key, run_id)
+redis.call('ZREM', zset_key, run_id)
+redis.call('HDEL', gen_key, run_id)
+return 1
+`
 
-	if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HDel(ctx, inflightDataKey, runID)
-		pipe.ZRem(ctx, inflightZSetKey, runID)
-		pipe.HDel(ctx, inflightGenKey, runID)
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	var job transport.RunAssignment
-	if err := json.Unmarshal([]byte(data), &job); err != nil {
-		return err
-	}
-	return q.Enqueue(ctx, &job)
+func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+	return q.rdb.Eval(ctx, nackScript,
+		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
+		runID, generation, nowMillis()-canceledMemberTTL.Milliseconds(), queueKey(""),
+	).Err()
 }
 
 func (q *Queue) Cancel(ctx context.Context, runID string) error {

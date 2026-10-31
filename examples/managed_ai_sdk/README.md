@@ -426,6 +426,10 @@ the final output event at 3 MiB. An oversized conversation fails explicitly.
 The example bounds browser input to 64 KiB, individual SSE frames and JSON
 completion bodies to 1 MiB, and stream event IDs to 20,000. Adapt explicit limits
 to your product rather than silently accepting an unbounded request or event.
+`timeoutMs` (30 seconds by default) also bounds intake of the browser request
+body. A body that stalls before completion is canceled before run creation.
+The deadline does not limit an already-running chat stream or undo a run that
+the plane has already accepted.
 
 ```sh
 cd examples/managed_ai_sdk

@@ -125,6 +125,6 @@ async def call_agent(
 
     async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
         resp = await client.post(f"{base_url}/internal/a2a/runs", json=body, headers=headers)
-        if resp.status_code >= 400:
+        if not resp.is_success:
             raise A2AError(f"call_agent({agent_id!r}) failed: {resp.status_code} {resp.text}")
         return resp.json()

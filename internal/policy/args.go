@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 const (
@@ -20,48 +22,71 @@ const (
 // cache, and a size-capped redacted map for audit/webhook display.
 //
 // Missing or empty arguments digest as the JSON object {}. The digest is
-// sha256 of encoding/json's marshal (map keys sorted) — stable for identical
-// objects in this process, not RFC 8785. Secret-looking keys are stripped
+// a versioned sha256 of sorted-key JSON with exact normalized numbers. This is
+// not RFC 8785. Secret-looking keys are stripped
 // from the display map only; they still feed the digest.
 func BindArgs(raw json.RawMessage) (parsed any, digest string, meta map[string]any) {
-	parsed = parseCallArguments(raw)
-	digest = digestArgs(parsed)
-	meta = redactArgs(parsed)
+	parsed, digest, meta, _ = BindArgsStrict(raw)
 	return parsed, digest, meta
 }
 
-func parseCallArguments(raw json.RawMessage) any {
+// BindArgsStrict rejects ambiguous arguments instead of authorizing a different
+// interpretation from the downstream service. HTTP callers must handle its error.
+func BindArgsStrict(raw json.RawMessage) (parsed any, digest string, meta map[string]any, err error) {
+	parsed, err = parseCallArguments(raw)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return parsed, digestArgs(parsed), redactArgs(parsed), nil
+}
+
+func parseCallArguments(raw json.RawMessage) (any, error) {
 	trim := strings.TrimSpace(string(raw))
 	if trim == "" || trim == "null" {
-		return map[string]any{}
+		return map[string]any{}, nil
 	}
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return map[string]any{}
+	v, err := jsonvalue.DecodeUnique(raw)
+	if err != nil {
+		return nil, err
 	}
-	if s, ok := v.(string); ok {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			return map[string]any{}
-		}
-		var inner any
-		if json.Unmarshal([]byte(s), &inner) == nil {
-			return inner
-		}
-	}
-	return v
+	return v, nil
 }
 
 func digestArgs(v any) string {
 	if v == nil {
 		v = map[string]any{}
 	}
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(canonicalDigestValue(v))
 	if err != nil {
 		b = []byte("{}")
 	}
-	sum := sha256.Sum256(b)
+	// Old digests rounded arguments through float64. Do not let an old
+	// approval authorize a different operation after upgrading the parser.
+	sum := sha256.Sum256(append([]byte("runkite-policy-args-v2\x00"), b...))
 	return hex.EncodeToString(sum[:])
+}
+
+func canonicalDigestValue(v any) any {
+	switch value := v.(type) {
+	case json.Number:
+		n, err := jsonvalue.CanonicalNumber(value)
+		if err == nil {
+			return n
+		}
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = canonicalDigestValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(value))
+		for i, item := range value {
+			out[i] = canonicalDigestValue(item)
+		}
+		return out
+	}
+	return v
 }
 
 func redactArgs(v any) map[string]any {

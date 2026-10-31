@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { adminRunPath } from "../lib/adminPaths";
 import { Link } from "react-router";
 import { Loader2, Send, Webhook as WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -24,7 +25,7 @@ export function Webhooks() {
   const handleRedeliver = async (id: string) => {
     setRedelivering(id);
     try {
-      const result = await api.post<RedeliverResult>(`/webhooks/dead-letters/${id}/redeliver`);
+      const result = await api.post<RedeliverResult>(`/webhooks/dead-letters/${encodeURIComponent(id)}/redeliver`);
       if (result.delivered) {
         toast.success("Webhook redelivered", { description: `Receiver responded with ${result.status_code}.` });
       } else {
@@ -56,7 +57,7 @@ export function Webhooks() {
       header: "Run",
       cell: ({ getValue }) => (
         <Link
-          to={`/admin/runs/${getValue() as string}`}
+          to={`/admin${adminRunPath(getValue() as string)}`}
           className="font-mono text-xs text-primary hover:underline"
         >
           {getValue() as string}

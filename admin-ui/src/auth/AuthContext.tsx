@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import {
   clearLegacyCredentials,
+  ApiError,
   createSession,
   destroySession,
   fetchSessionStatus,
@@ -29,36 +31,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authRequired, setAuthRequired] = useState(true);
 
   useEffect(() => {
+    let active = true;
     clearLegacyCredentials();
     fetchSessionStatus().then(
       (s) => {
+        if (!active) return;
         setAuthRequired(s.auth_required);
-        if (s.csrf_token) setCSRFToken(s.csrf_token);
+        setCSRFToken(s.csrf_token ?? null);
         setStatus(s.authenticated ? "authenticated" : "unauthenticated");
       },
       () => {
+        if (!active) return;
+        setCSRFToken(null);
         setAuthRequired(true);
         setStatus("unauthenticated");
       },
     );
+    return () => { active = false; };
   }, []);
 
   async function login(token: string) {
     const s = await createSession(token);
-    if (s.csrf_token) setCSRFToken(s.csrf_token);
+    setCSRFToken(s.csrf_token ?? null);
     setAuthRequired(true);
     setStatus("authenticated");
   }
 
   function logout() {
-    void destroySession().finally(() => {
-      setCSRFToken(null);
-      if (!authRequired) {
-        setStatus("authenticated");
-        return;
-      }
-      setStatus("unauthenticated");
-    });
+    void destroySession().then(
+      () => setStatus(authRequired ? "unauthenticated" : "authenticated"),
+      (err) => toast.error("Sign out was not confirmed", {
+        description: err instanceof ApiError ? err.message : "Your session may still be active. Try again.",
+      }),
+    );
   }
 
   return (

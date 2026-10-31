@@ -18,6 +18,7 @@ export async function shouldSkipRun(httpAddress, runId, opts) {
         // Match Python's httpx timeout=5.0 -- undici's default headers/body
         // timeouts are ~300s, which would defeat fail-open on a stalled CP.
         const init = {
+            redirect: "error",
             headers,
             dispatcher: httpDispatcher(),
             signal: AbortSignal.timeout(5_000),

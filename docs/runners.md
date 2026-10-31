@@ -2,6 +2,14 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
+The unreleased heartbeat update bounds each RPC to one second by default. A
+hung request cannot block later renewals. Stopping a TypeScript loop cancels its
+active call and suppresses late superseded callbacks. The normal heartbeat cadence
+and reclaim age remain independent; partitions can still cause reclaim. Connector
+helpers now use one operation deadline and explicit safe-renewal reasons, and
+credential-bearing HTTP clients refuse redirects. See
+[Connectors](connectors.md#deadlines-cancellation-and-retry-safety-unreleased).
+
 ## Install (published packages)
 
 ```bash

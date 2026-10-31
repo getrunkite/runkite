@@ -1,3 +1,4 @@
+import { adminThreadPath } from "../lib/adminPaths";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { MessagesSquare } from "lucide-react";
@@ -16,7 +17,7 @@ const columns: ColumnDef<AdminThread, unknown>[] = [
     header: "Thread ID",
     cell: ({ row }) => (
       <Link
-        to={`/admin/threads/${row.original.thread_id}`}
+        to={`/admin${adminThreadPath(row.original.thread_id)}`}
         onClick={(e) => e.stopPropagation()}
         className="font-mono text-xs font-medium text-primary hover:underline"
       >
@@ -83,7 +84,7 @@ export function Threads() {
             columns={columns}
             data={data ?? []}
             getRowId={(t) => t.thread_id}
-            onRowClick={(t) => navigate(`/admin/threads/${t.thread_id}`)}
+            onRowClick={(t) => navigate(`/admin${adminThreadPath(t.thread_id)}`)}
             loading={loading}
             initialSorting={[{ id: "updated_at", desc: true }]}
           />

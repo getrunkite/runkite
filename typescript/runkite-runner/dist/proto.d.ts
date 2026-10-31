@@ -83,7 +83,7 @@ export interface RunnerServiceClient extends Client {
     streamEvents(metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: StreamEventsResponse) => void): import("@grpc/grpc-js").ClientWritableStream<RunEventProto>;
     reportStatus(req: ReportStatusRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: ReportStatusResponse) => void): import("@grpc/grpc-js").ClientUnaryCall | void;
     watchCancels(req: WatchCancelsRequest, metadata: import("@grpc/grpc-js").Metadata): import("@grpc/grpc-js").ClientReadableStream<CancelSignal>;
-    heartbeat(req: HeartbeatRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): void;
+    heartbeat(req: HeartbeatRequest, metadata: import("@grpc/grpc-js").Metadata, callback: (err: Error | null, resp: HeartbeatResponse) => void): import("@grpc/grpc-js").ClientUnaryCall | void;
 }
 /**
  * Creates a RunnerService client against grpcAddress. TLS is opt-in via

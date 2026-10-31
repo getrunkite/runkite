@@ -151,14 +151,15 @@ func runJSONNumberTests(t *testing.T, factory StoreFactory, raw string) {
 			t.Fatalf("history: count=%d err=%v", len(history), err)
 		}
 		for _, checkpoint := range history {
-			var resultKey string
-			for key := range checkpoint.Values {
-				resultKey = key
+			expected := map[string]interface{}{"previous": values, "result_1": values}
+			switch checkpoint.Checkpoint.CheckpointID {
+			case "completion:numbers-run-1":
+			case "completion:numbers-run-2":
+				expected["result_2"] = values
+			default:
+				t.Fatalf("unexpected completion checkpoint: %#v", checkpoint.Checkpoint)
 			}
-			if resultKey != "result_1" && resultKey != "result_2" {
-				t.Fatalf("unexpected completion checkpoint: %#v", checkpoint.Values)
-			}
-			assertJSONValue(t, checkpoint.Values, map[string]interface{}{resultKey: values})
+			assertJSONValue(t, checkpoint.Values, expected)
 		}
 	})
 	t.Run("checkpoint_values_tasks_and_interrupts", func(t *testing.T) {

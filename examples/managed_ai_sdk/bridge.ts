@@ -18,7 +18,7 @@ export interface ManagedRunOptions {
   threadId: string;
   runId: string;
   fetch?: typeof globalThis.fetch;
-  /** HTTP setup and durable-completion timeout. Does not limit a running stream. */
+  /** Request intake, HTTP setup and durable-completion timeout. Does not limit a running stream. */
   timeoutMs?: number;
 }
 
@@ -474,8 +474,12 @@ export async function createManagedChatResponse(
   );
   const agentId = identifier(options.agentId);
   checkAbort(request.signal);
+  const intakeSignal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(connection.timeoutMs),
+  ]);
   const input = JSON.parse(
-    await readBody(request.body, MAX_REQUEST_BYTES, request.signal),
+    await readBody(request.body, MAX_REQUEST_BYTES, intakeSignal),
   );
   if (
     !input ||

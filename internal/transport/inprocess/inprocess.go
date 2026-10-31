@@ -46,6 +46,8 @@ func (q *Queue) getChannel(runnerKind string) chan *transport.RunAssignment {
 
 // Enqueue adds a job to the queue for the job's runner_kind.
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
+	// Keep the queue's dispatch generation independent of caller-owned copies.
+	assignment := *job
 	q.mu.Lock()
 	if q.canceled[job.RunID] {
 		q.mu.Unlock()
@@ -55,7 +57,7 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 
 	ch := q.getChannel(job.RunnerKind)
 	select {
-	case ch <- job:
+	case ch <- &assignment:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -80,7 +82,8 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			}
 			q.inflight[job.RunID] = &inflightEntry{job: job, dequeuedAt: time.Now()}
 			q.mu.Unlock()
-			return job, nil
+			assignment := *job
+			return &assignment, nil
 		case <-timer.C:
 			return nil, nil
 		case <-ctx.Done():
@@ -89,7 +92,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 	}
 }
 
-// generationMatches requires the exact dispatch generation for Ack and Renew.
+// generationMatches requires the exact dispatch generation for Ack, Renew and Nack.
 // Zero is a legacy generation, never a wildcard for a newer attempt.
 func generationMatches(entry *inflightEntry, generation int64) bool {
 	return entry.job.Generation == generation
@@ -139,10 +142,10 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 }
 
 // Nack re-enqueues a previously dequeued job so another runner can take it.
-func (q *Queue) Nack(ctx context.Context, runID string) error {
+func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
 	q.mu.Lock()
 	entry, ok := q.inflight[runID]
-	if !ok {
+	if !ok || !generationMatches(entry, generation) {
 		q.mu.Unlock()
 		return nil
 	}
@@ -208,8 +211,9 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 				// a failed completion sees the same pill on its next tick.
 				continue
 			}
-			entry.job.Generation = newGen
-			stale = append(stale, entry.job)
+			assignment := *entry.job
+			assignment.Generation = newGen
+			stale = append(stale, &assignment)
 			delete(q.inflight, runID)
 		}
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -14,7 +14,10 @@ import (
 
 // Shared Vault HTTP client — one Timeout for all secret_ref vault: lookups
 // (avoids per-call Client allocation and keeps dial/timeout behavior consistent).
-var vaultHTTPClient = &http.Client{Timeout: 10 * time.Second}
+var vaultHTTPClient = &http.Client{
+	Timeout:       10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
 
 // ResolveSecretRef fetches a secret for connector auth at GetSession time.
 // Supported schemes:
@@ -59,6 +62,17 @@ func ResolveSecretRef(ctx context.Context, ref string) (string, error) {
 // cleanVaultPath rejects ".." escapes then re-checks the allowlist prefix on
 // the cleaned path (HasPrefix alone on the raw string is not enough).
 func cleanVaultPath(raw, prefix string) (string, error) {
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", fmt.Errorf("secret_ref vault: invalid path escape")
+	}
+	// Validate the path the server will route, rather than its escaped spelling.
+	// Residual escapes would require another decoding pass; URL delimiters must
+	// never become query/fragment syntax or alternate path separators downstream.
+	if strings.ContainsAny(decoded, "%\\?#") {
+		return "", fmt.Errorf("secret_ref vault: ambiguous path encoding or delimiter")
+	}
+	raw = decoded
 	if strings.Contains(raw, "..") {
 		return "", fmt.Errorf("secret_ref vault: path must not contain '..'")
 	}
@@ -98,7 +112,13 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/v1/"+vaultPath, nil)
+	endpoint, err := url.Parse(addr)
+	if err != nil {
+		return "", fmt.Errorf("secret_ref vault: invalid VAULT_ADDR")
+	}
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/v1/" + vaultPath
+	endpoint.RawPath = ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +132,7 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 		return "", fmt.Errorf("secret_ref vault: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readLimitedBody(resp.Body, 1<<20)
 	if err != nil {
 		return "", err
 	}

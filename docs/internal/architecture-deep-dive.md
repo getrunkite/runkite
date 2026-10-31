@@ -8,7 +8,11 @@
 - **Released in v0.5.7:** Go and Admin UI build dependency security updates, with no additional runner behavior change. Postgres and Redis remain the supported HA pair. Runkite remains self-host only.
 - **On main, untagged and unpublished:** app-owned TypeScript `createGovernedExecute` and Python Microsoft Agent Framework function middleware use the existing decision API. `internal/api/governance_decide.go` does not create Threads or Runs, dispatch a job, or apply managed-run kill switches, break-glass or spend caps. An allow is a decision, not evidence that a tool ran.
 - **Managed AI SDK (v0.5.8+):** `typescript/runkite-runner/src/aiSdkAdapter.ts` uses public `ToolLoopAgent` APIs; `examples/managed_ai_sdk/bridge.ts` bridges the app to managed runs. These executions create Runkite Threads and Runs because the app dispatches its model loop to a runner. Native history and committed-turn receipts use run-bound opaque checkpoints with CAS. See [the managed example](../../examples/managed_ai_sdk/README.md) for limits, including no native approval/resume, streaming tool outputs, time travel or whole-run caching.
-- **Prepared opaque checkpoint hardening, unreleased:** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
+- **Released in v0.5.8: opaque checkpoint hardening.** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
+
+For current unreleased authority, recovery, connector and Admin corrections, read
+[Runtime hardening](runtime-hardening.md). It records the source invariants,
+operator upgrade steps and test boundaries without rewriting historical chapters.
 
 Managed execution and app-owned tool governance are separate entry paths. Neither one governs a native tool that bypasses its policy hook or the connector proxy. The new managed AI SDK integration checks do not establish a new live multi-replica HA soak or exactly-once external side effects before a checkpoint commit.
 

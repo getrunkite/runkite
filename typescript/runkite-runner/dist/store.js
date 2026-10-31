@@ -195,6 +195,7 @@ export class RunkiteStore extends BaseStore {
         if (isGetOp(op)) {
             const url = `${this.baseUrl}/internal/store/items?namespace=${encodeURIComponent(op.namespace.join(","))}&key=${encodeURIComponent(op.key)}`;
             const opts = {
+                redirect: "error",
                 headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
                 dispatcher: this.dispatcher,
             };
@@ -208,6 +209,7 @@ export class RunkiteStore extends BaseStore {
         if (isPutOp(op)) {
             if (op.value === null) {
                 const opts = {
+                    redirect: "error",
                     method: "DELETE",
                     headers: {
                         ...this.headers,
@@ -233,6 +235,7 @@ export class RunkiteStore extends BaseStore {
                 if (ttlMinutes != null)
                     body.ttl_minutes = ttlMinutes;
                 const opts = {
+                    redirect: "error",
                     method: "PUT",
                     headers: {
                         ...this.headers,
@@ -250,6 +253,7 @@ export class RunkiteStore extends BaseStore {
         }
         if (isSearchOp(op)) {
             const opts = {
+                redirect: "error",
                 method: "POST",
                 headers: {
                     ...this.headers,
@@ -274,6 +278,7 @@ export class RunkiteStore extends BaseStore {
             const prefix = op.matchConditions?.find((c) => c.matchType === "prefix")?.path;
             const suffix = op.matchConditions?.find((c) => c.matchType === "suffix")?.path;
             const opts = {
+                redirect: "error",
                 method: "POST",
                 headers: {
                     ...this.headers,

@@ -148,6 +148,7 @@ export class RunkiteVectorStore extends VectorStore {
     embedding: number[],
   ): Promise<void> {
     const opts: FetchInit = {
+      redirect: "error",
       method: "PUT",
       headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
       body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
@@ -159,6 +160,7 @@ export class RunkiteVectorStore extends VectorStore {
 
   private async deleteOne(id: string): Promise<void> {
     const opts: FetchInit = {
+      redirect: "error",
       method: "DELETE",
       headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
       body: JSON.stringify({ namespace: this.namespace, id }),
@@ -174,6 +176,7 @@ export class RunkiteVectorStore extends VectorStore {
     filter?: Record<string, unknown>,
   ): Promise<Array<{ item: VectorItemJson; score: number }>> {
     const opts: FetchInit = {
+      redirect: "error",
       method: "POST",
       headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
       body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),

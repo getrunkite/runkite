@@ -85,7 +85,9 @@ func TestRedisAdminSession_CreateGetDeleteShared(t *testing.T) {
 		t.Fatalf("expected refreshed TTL near 1h, got %v", ttl)
 	}
 
-	b.Delete(sess.ID)
+	if err := b.Delete(sess.ID); err != nil {
+		t.Fatal(err)
+	}
 	if a.Get(sess.ID) != nil {
 		t.Fatal("expected nil after Delete on other store")
 	}
@@ -111,8 +113,9 @@ func TestRedisAdminSession_FailClosedOnDeadRedis(t *testing.T) {
 	if store.Get("any") != nil {
 		t.Fatal("Get should fail closed (nil) on Redis error")
 	}
-	// Delete is idempotent / best-effort; must not panic
-	store.Delete("any")
+	if err := store.Delete("any"); err == nil {
+		t.Fatal("Delete must report failed revocation")
+	}
 }
 
 func TestAdminSessionStore_TTL(t *testing.T) {

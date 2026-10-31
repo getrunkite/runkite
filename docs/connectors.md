@@ -54,6 +54,28 @@ Store/vector proxy clients already attach the same headers via `tenant_headers()
 
 With a `policy` section in `langgraph.json`, including `"policy": {}`, session mint and MCP `tools/call` require a matching grant for `(tenant_id, agent_id, connector)` derived from the in-flight run. See [Trust & governance](trust-governance.md). Optional `policy.predicates` additionally deny or hold a `tools/call` based on argument values before the upstream call. These checks cover connector MCP calls, not every local tool. MCP connectors stay **proxy-only**: the control plane never returns the raw downstream MCP URL or credentials when MCP is configured, so their tool grants and argument predicates remain on the execution path.
 
+### Deadlines, cancellation and retry safety (unreleased)
+
+Session helpers default to one 30-second operation deadline; MCP helpers default
+to 60 seconds. The budget includes mint, request, response body and optional
+renewal. Python `timeout` is in seconds; TypeScript `timeoutMs` is in milliseconds.
+Pass the managed AI SDK factory's `context.signal` through the TypeScript helper's
+`signal` option. Python task cancellation closes the in-flight client. Increase an
+explicit deadline for a legitimately slow operation; zero/nonfinite values do not
+create an unbounded call.
+
+Only HTTP 401 `connector_session_invalid` permits one automatic capability
+renewal. An arbitrary 401, timeout or transport failure is not proof that the
+upstream tool had no effects. The plane maps upstream 401 to HTTP 502
+`connector_upstream_unauthorized`, and helpers do not replay it. Upgrade the plane
+before helpers for automatic renewal against the new reason code.
+
+Runkite-owned clients refuse redirects. Configure the final plane, OAuth, MCP and
+Vault URLs directly. MCP arguments must be an object when present; duplicate
+members and invalid Unicode are rejected before dispatch. Literal application key
+case is retained. Approval digests and numeric predicates are exact; old approvals
+require fresh submission and review. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+
 ### Tool allow/deny enforcement (MCP connectors)
 
 The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just an advisory hint. `GetSession`'s `mcp.url` points at this control plane's own MCP proxy (`POST /internal/connectors/{name}/mcp`), not the connector's raw downstream MCP server -- so a `tools/call` request passes through here first, where a denied tool is rejected with a JSON-RPC error and **never reaches the downstream server at all**. `tools/list` responses are filtered against the same allow/deny list using the downstream server's own real tool list -- correct even for a deny-only filter (no allow list), which can't be represented in a static preview without knowing the full tool universe the downstream server exposes. An empty/missing tool name is always rejected too, independent of the filter shape (never a legitimate request regardless of what's allowed or denied). In the default JSON transport, other JSON-RPC methods (`initialize`, `resources/*`, etc.) are forwarded transparently. The opt-in negotiated transport supports the methods listed below. The connector's existing circuit breaker (guarding token fetches) also guards the proxied MCP call.

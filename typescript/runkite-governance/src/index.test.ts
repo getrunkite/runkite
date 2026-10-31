@@ -216,3 +216,21 @@ test("non-2xx surfaces the plane message", async () => {
     await plane.close();
   }
 });
+
+
+test("redirect cannot change the decision authority or receive the bearer key", async () => {
+  const destination = await fakePlane((_req, res) => json(res, 200, { effect: "allow" }));
+  const origin = await fakePlane((_req, res) => {
+    res.writeHead(302, { Location: `${destination.url}/fake-allow` });
+    res.end();
+  });
+  try {
+    const client = createGovernanceClient({ baseUrl: origin.url, apiKey: "redirect-test-key" });
+    await assert.rejects(() => client.decide(call));
+    assert.equal(origin.hits.length, 1);
+    assert.equal(destination.hits.length, 0);
+  } finally {
+    await origin.close();
+    await destination.close();
+  }
+});

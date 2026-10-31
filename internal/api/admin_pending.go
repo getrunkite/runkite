@@ -115,6 +115,10 @@ func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, "pending action is not awaiting approval (status="+a.Status+")")
 		return
 	}
+	if !currentPendingBinding(a) {
+		writeError(w, http.StatusConflict, "legacy argument binding; resubmit the operation for fresh approval")
+		return
+	}
 	dec := s.policy.Decide(ctx, policy.PolicyInput{
 		Stage:      policy.StageToolCall,
 		TenantID:   a.TenantID,
@@ -127,7 +131,7 @@ func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.
 		ArgsDigest: a.ArgsDigest,
 		ArgsMeta:   a.Args,
 	})
-	if dec.Effect == policy.EffectDeny {
+	if dec.Effect != policy.EffectAllow && dec.Effect != policy.EffectPending {
 		writeError(w, http.StatusConflict, "policy still denies this tool call; approve refused")
 		return
 	}

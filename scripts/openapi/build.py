@@ -8,8 +8,8 @@ Outputs:
   spec/openapi-internal.json — /internal/* Runner/A2A surface
 """
 
-import json
 import copy
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -276,19 +276,19 @@ def _new_schemas() -> dict:
                 "agent_id": {
                     "type": "string",
                     "maxLength": 256,
-                    "description": "Caller-supplied. Not looked up in the agents table. Matched against grants as a string.",
+                    "description": "Caller-supplied, at most 256 UTF-8 bytes. Not looked up in the agents table. Matched against grants as a string.",
                 },
                 "connector": {
                     "type": "string",
                     "maxLength": 256,
-                    "description": "Grant key. May be a logical name with no MCP server behind it.",
+                    "description": "Grant key, at most 256 UTF-8 bytes. May be a logical name with no MCP server behind it.",
                 },
-                "tool": {"type": "string", "maxLength": 256},
-                "args": {"description": "Tool arguments. Omitted or null is treated as {}."},
+                "tool": {"type": "string", "maxLength": 256, "description": "Tool name, at most 256 UTF-8 bytes."},
+                "args": {"description": "Tool arguments retain exact JSON numbers and submitted JSON type. Duplicate members and invalid Unicode are rejected. Omitted or null is treated as {}."},
                 "run_id": {
                     "type": "string",
                     "maxLength": 256,
-                    "description": "Opaque id stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny.",
+                    "description": "Opaque id of at most 256 UTF-8 bytes, stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny.",
                 },
                 "tenant_id": {
                     "type": "string",
@@ -860,7 +860,9 @@ def _build_public_spec() -> dict:
                 "Returns the operator decision for one embedded pending row. "
                 "Does not consume the approval and does not execute the tool. "
                 "Requires governance:decide. Another tenant's id is 404. "
-                "A row still pending after 24h is rejected with reason_code pending_expired."
+                "A row still pending after 24h is rejected with reason_code pending_expired. "
+                "Legacy pending/approved rows return rejected with reason_code "
+                "approval_binding_legacy; resubmit the operation for fresh review."
             ),
             "operationId": "governance_get_action",
             "parameters": [_path_param("action_id", "The pending action id.", fmt="")],
@@ -1021,7 +1023,7 @@ def _build_public_spec() -> dict:
             "get": {
                 "tags": ["Platform"],
                 "summary": summary,
-                "description": f"Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
+                "description": "Go runtime profiling endpoint. Only registered when RUNKITE_PPROF=1.",
                 "operationId": op_id,
                 "security": [],
                 "responses": {"200": {"description": "Profile data"}},
@@ -1521,7 +1523,7 @@ def _build_admin_spec() -> dict:
                 "delete": {
                     "tags": ["Admin"],
                     "summary": "Destroy Admin Session",
-                    "description": "Logout. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
+                    "description": "Logout only after confirmed backend revocation. Failure returns 503 admin_session_revoke_failed without falsely clearing the cookie. Requires the session cookie and X-CSRF-Token (unlike Bearer machine clients).",
                     "operationId": "admin_destroy_session",
                     "parameters": [
                         {
@@ -1532,7 +1534,8 @@ def _build_admin_spec() -> dict:
                         }
                     ],
                     "responses": {
-                        "204": {"description": "Logged out"},
+                        "204": {"description": "Logged out after confirmed revocation"},
+                        "503": {"description": "Revocation unconfirmed; retry after session storage recovers", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                         "403": {"description": "Invalid or missing CSRF token", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                     },
                 },
@@ -1629,7 +1632,7 @@ def _build_admin_spec() -> dict:
                 "get": {"tags": ["Admin"], "summary": "Get Pending Action", "operationId": "admin_get_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {**_json_response("200", "Success", _ref("PendingAction")), "404": _ERR_404, "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}},
             },
             "/admin-api/pending-actions/{id}/approve": {
-                "post": {"tags": ["Admin"], "summary": "Approve Pending Action", "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next tools/call with that digest).", "operationId": "admin_approve_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
+                "post": {"tags": ["Admin"], "summary": "Approve Pending Action", "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching call, subject to current explicit deny). Legacy binding rows return 409 and require fresh submission/review.", "operationId": "admin_approve_pending_action", "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {
                     "200": {"description": "Approved", "content": {"application/json": {"schema": _ref("PendingAction")}}},
                     "409": {"description": "Not pending, or policy still denies", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                     "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
@@ -1879,7 +1882,7 @@ def _build_internal_spec() -> dict:
             "/internal/connectors": {"get": {"tags": ["Runner"], "summary": "List Connectors", "operationId": "list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/internal/connectors/{name}": {"get": {"tags": ["Runner"], "summary": "Get Connector", "operationId": "get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorDetail")), "404": _ERR_404}}},
             "/internal/connectors/{name}/session": {"post": {"tags": ["Runner"], "summary": "Get Connector Session", "operationId": "get_connector_session", "parameters": [n_param], "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"user_context": {"type": "object"}}}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
-            "/internal/connectors/{name}/mcp": {"post": {"tags": ["Runner"], "summary": "Proxy MCP Request", "description": "Proxy one JSON-RPC request to a connector's downstream MCP server, enforcing tool allow/deny lists.", "operationId": "proxy_mcp_request", "parameters": [n_param], "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
+            "/internal/connectors/{name}/mcp": {"post": {"tags": ["Runner"], "summary": "Proxy MCP Request", "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.", "operationId": "proxy_mcp_request", "parameters": [n_param], "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/internal/cron": {"get": {"tags": ["Runner"], "summary": "List Cron Schedules", "operationId": "list_cron_schedules", "responses": {**_json_response("200", "Success", _array_of(_ref("CronSchedule")))}}},
             "/internal/store/items": {
                 "put": {"tags": ["Store"], "summary": "Put Store Item (internal)", "operationId": "internal_put_item", "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {"204": {"description": "Success"}}},
@@ -2028,7 +2031,40 @@ def _count_ops(spec: dict) -> int:
     return count
 
 
+def _strip_id_formats(value) -> None:
+    if isinstance(value, dict):
+        if value.get("format") == "uuid":
+            value.pop("format")
+        for nested in value.values():
+            _strip_id_formats(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _strip_id_formats(nested)
+
+
+def _normalize_resource_ids(value) -> None:
+    """Run/thread identifiers are custom strings, not restricted to UUIDs."""
+    identifiers = {"thread_id", "run_id", "parent_run_id", "root_run_id"}
+    if isinstance(value, dict):
+        properties = value.get("properties", {})
+        for name, schema in properties.items():
+            if name in identifiers and isinstance(schema, dict):
+                _strip_id_formats(schema)
+                sentence = "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+                current = schema.get("description", "").replace(chr(0x2014), ";")
+                if sentence not in current:
+                    schema["description"] = (current + " " + sentence).strip()
+        if value.get("in") == "path" and value.get("name") in identifiers:
+            value.get("schema", {}).pop("format", None)
+        for nested in value.values():
+            _normalize_resource_ids(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _normalize_resource_ids(nested)
+
+
 def _write_spec(spec: dict, path: Path) -> int:
+    _normalize_resource_ids(spec)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
     path.write_text(text)

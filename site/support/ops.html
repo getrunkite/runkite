@@ -126,6 +126,63 @@
           current-generation terminal; without one, a later attempt may execute again.
           External tool writes still need downstream idempotency.
         </p>
+        <p>
+          <strong>Unreleased recovery hardening:</strong> queue release/requeue paths
+          require the rejected attempt's generation, so a stale rejection cannot
+          release a replacement. Reclaim leadership uses a fresh process identity,
+          avoiding ownership collisions after a restart. Runner heartbeat RPCs have a
+          one-second default deadline, so one hung request cannot stop later renewal
+          attempts. Successful completion checkpoints use the merged thread values,
+          retaining unrelated values from previous turns; the run output remains that
+          run's own result. These changes do not make external effects exactly once
+          or establish a new multi-replica HA soak. See the
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">runtime hardening engineering note</a>.
+        </p>
+        <h2 id="hardening-upgrade">Before upgrading this hardening change</h2>
+        <p>
+          The changes described here are unreleased. Upgrade the plane before connector
+          helpers, then resubmit pending or approved operations created under the old
+          argument-digest format for a new decision and fresh approval. Legacy
+          empty-digest approvals are not compatible either. Admin refuses those old
+          approvals, and app-owned polling reports <code>rejected</code> with
+          <code>approval_binding_legacy</code>. No approval migration or automatic tool
+          replay is performed. A current connector policy deny still wins. See
+          <a href="grants.html#approval-upgrade">Grants &amp; HITL</a> and the
+          <a href="connectors.html">connector timeout and retry rules</a>.
+        </p>
+        <h3 id="mysql-identity-upgrade">Compatible MySQL: identity migration v17</h3>
+        <p>
+          The unreleased MySQL schema v17 gives identity and security columns the exact
+          <code>utf8mb4_0900_bin</code> NO PAD collation. The old default could treat
+          tenant names that differ by case, accents or Unicode spelling as the same
+          identity. This migration keeps ordinary display/search text separate from
+          identity comparisons; MySQL remains a Compatible backend. It requires
+          MySQL 8 with the named NO PAD collation rather than falling back to a weaker
+          comparison.
+        </p>
+        <ol class="steps">
+          <li>Take and verify a backup. Stop all writers, including every old control-plane replica, before upgrading.</li>
+          <li>Plan a maintenance window for the table <code>ALTER</code> operations and run <code>runkite db upgrade</code> with the new binary.</li>
+          <li>If the required collation is unavailable, or preflight finds aliased foreign-key IDs or cross-tenant child ownership, stop and explicitly repair that condition before retrying. Do not bypass the check or drop constraints manually.</li>
+          <li>The upgrade is idempotent after an interruption. Restart writers only on the upgraded version after it succeeds; downgrade is refused to avoid merging identities again.</li>
+        </ol>
+        <p>
+          Before removing constraints, preflight checks legacy collation-equivalent
+          foreign-key aliases and verifies that child rows belong to the owning
+          thread's tenant. The migration prevents future identity confusion; it cannot
+          reconstruct identities or data already overwritten under the old collation.
+          See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">engineering note</a>
+          before operating on an existing database.
+        </p>
+        <h3>When an outcome is not confirmed</h3>
+        <p>
+          If Admin reports that sign out was not confirmed, the server may still hold
+          the session. A failed Redis revocation returns <code>503</code> without
+          clearing the cookie; restore the service and retry. Never treat a timeout,
+          redirect rejection or <code>connector_upstream_unauthorized</code> as proof
+          that a tool had no effect. Inspect the downstream operation and use its
+          idempotency key before deciding whether to try again.
+        </p>
         <h2>Stopping a run that's gone wrong</h2>
         <p>
           For one specific run: cancel it from <a href="admin-guide.html#5-threads--runs">Admin

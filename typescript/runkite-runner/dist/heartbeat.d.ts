@@ -37,6 +37,7 @@
 import type { Metadata } from "@grpc/grpc-js";
 import type { RunnerServiceClient } from "./proto.js";
 export declare const DEFAULT_HEARTBEAT_INTERVAL_MS = 2000;
+export declare const DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS = 1000;
 /** Handle returned by startHeartbeatLoop -- call stop() once the job
  * finishes to end the loop, mirroring the Python runner's
  * asyncio.Task.cancel() + await pattern. */
@@ -54,6 +55,8 @@ export interface HeartbeatLoopOptions {
      * decoupled from worker.ts's CancelState shape. */
     onSuperseded?: () => void;
     intervalMs?: number;
+    /** Bounds each renewal RPC so one hung request cannot stop future heartbeats. */
+    rpcTimeoutMs?: number;
 }
 /**
  * Starts calling Heartbeat(runId, generation) every intervalMs until

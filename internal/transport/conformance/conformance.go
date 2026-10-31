@@ -319,7 +319,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		// Renew must NOT have removed the job from in-flight tracking
 		// like Ack would -- proven here via Nack, which only re-enqueues
 		// a job that's still tracked as in-flight.
-		if err := q.Nack(ctx, got.RunID); err != nil {
+		if err := q.Nack(ctx, got.RunID, got.Generation); err != nil {
 			t.Fatalf("Nack failed: %v", err)
 		}
 		again, err := q.Dequeue(ctx, "test-runner", time.Second)
@@ -416,6 +416,47 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		// completion at generation 2 -- must be accepted.
 		if accepted, err := q.Ack(ctx, "run-fence-1", 2); err != nil || !accepted {
 			t.Fatalf("current generation-2 Ack: expected accepted=true, got accepted=%v err=%v", accepted, err)
+		}
+	})
+
+	t.Run("stale_generation_nack_cannot_return_replacement_to_ready_queue", func(t *testing.T) {
+		q := factory()
+		ctx := context.Background()
+		job := makeAssignment("run-nack-fence", "test-runner", "echo")
+		job.Generation = 1
+		if err := q.Enqueue(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		original, err := q.Dequeue(ctx, "test-runner", 5*time.Second)
+		if err != nil || original == nil {
+			t.Fatalf("original dequeue: job=%v err=%v", original, err)
+		}
+		originalGeneration := original.Generation
+		r, ok := q.(staleReclaimer)
+		if !ok {
+			t.Skip("backend doesn't implement ReclaimStale")
+		}
+		if n, _, err := r.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {
+			t.Fatalf("reclaim: n=%d err=%v", n, err)
+		}
+		replacement, err := q.Dequeue(ctx, "test-runner", 5*time.Second)
+		if err != nil || replacement == nil || replacement.Generation <= originalGeneration {
+			t.Fatalf("replacement dequeue: job=%v err=%v", replacement, err)
+		}
+		for _, stale := range []int64{0, originalGeneration, replacement.Generation + 1} {
+			if err := q.Nack(ctx, job.RunID, stale); err != nil {
+				t.Fatalf("stale nack: %v", err)
+			}
+			if current, err := q.Renew(ctx, job.RunID, replacement.Generation); err != nil || !current {
+				t.Fatalf("stale generation %d removed live generation %d: current=%t err=%v", stale, replacement.Generation, current, err)
+			}
+		}
+		if err := q.Nack(ctx, job.RunID, replacement.Generation); err != nil {
+			t.Fatal(err)
+		}
+		returned, err := q.Dequeue(ctx, "test-runner", 5*time.Second)
+		if err != nil || returned == nil || returned.RunID != job.RunID {
+			t.Fatalf("current nack did not return job: job=%v err=%v", returned, err)
 		}
 	})
 

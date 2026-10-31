@@ -123,8 +123,10 @@ async def test_no_user_in_config_omits_on_behalf_of():
 
 
 async def test_error_response_raises_a2a_error():
+    status = 400
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, text='{"message":"a2a delegation depth 11 exceeds max_depth 10"}')
+        return httpx.Response(status, text='{"message":"a2a delegation depth 11 exceeds max_depth 10"}')
 
     transport = httpx.MockTransport(handler)
     import runkite_runner.a2a as a2a_module
@@ -134,11 +136,12 @@ async def test_error_response_raises_a2a_error():
 
     try:
         config = {"configurable": {"run_id": "parent-run"}}
-        try:
-            await call_agent(config, "worker_agent", {}, wait=False)
-            check("400 response raises A2AError", False)
-        except A2AError as e:
-            check("400 response raises A2AError", "depth" in str(e))
+        for status in (302, 400):
+            try:
+                await call_agent(config, "worker_agent", {}, wait=False)
+                check(f"{status} response raises A2AError", False)
+            except A2AError as e:
+                check(f"{status} response raises A2AError", "depth" in str(e))
     finally:
         a2a_module.httpx.AsyncClient = original_client
 

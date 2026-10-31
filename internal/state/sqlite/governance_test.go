@@ -48,7 +48,7 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 
 	a := &models.PendingAction{
 		ID: "p1", RunID: "r1", Generation: 2, TenantID: "acme", AgentID: "sales",
-		Connector: "sf", Tool: "delete_repo", Status: models.PendingStatusPending,
+		Connector: "sf", Tool: "delete_repo", Status: models.PendingStatusPending, ArgsDigest: "delete-digest",
 	}
 	if err := s.CreatePendingAction(ctx, a); err != nil {
 		t.Fatalf("CreatePendingAction: %v", err)
@@ -56,11 +56,11 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 	if err := s.SetPendingActionStatus(ctx, "p1", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "")
+	id, err := s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "delete-digest")
 	if err != nil || id != "p1" {
 		t.Fatalf("ConsumeApprovedAction: id=%q err=%v", id, err)
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "")
+	id, err = s.ConsumeApprovedAction(ctx, "acme", "sales", "r1", 2, "sf", "delete_repo", "delete-digest")
 	if err != nil || id != "" {
 		t.Fatalf("second consume want empty, got %q err=%v", id, err)
 	}
@@ -172,13 +172,15 @@ func TestPendingAction_ArgsDigestBound(t *testing.T) {
 	if err := s.SetPendingActionStatus(ctx, "p-legacy", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-legacy", 1, "bank", "transfer", "digest-500")
-	if err != nil || id != "p-legacy" {
-		t.Fatalf("legacy empty digest should consume once, id=%q err=%v", id, err)
+	for _, presented := range []string{"", "digest-500"} {
+		id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-legacy", 1, "bank", "transfer", presented)
+		if err != nil || id != "" {
+			t.Fatalf("unbound legacy approval authorized digest %q: id=%q err=%v", presented, id, err)
+		}
 	}
-	id, err = s.ConsumeApprovedAction(ctx, "acme", "payroll", "r-legacy", 1, "bank", "transfer", "digest-500")
-	if err != nil || id != "" {
-		t.Fatalf("legacy second consume want empty, got %q err=%v", id, err)
+	still, err = s.GetPendingAction(ctx, "p-legacy")
+	if err != nil || still.Status != models.PendingStatusApproved {
+		t.Fatalf("rejected legacy approval was consumed: row=%+v err=%v", still, err)
 	}
 }
 

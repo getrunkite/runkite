@@ -204,6 +204,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     }
 
     const init: FetchInit = {
+      redirect: "error",
       method: "PUT",
       headers: putHeaders,
       body,
@@ -271,7 +272,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
 
     if (checkpointId) {
       const key = blobKey(ns, checkpointId);
-      const init: FetchInit = { headers, dispatcher: this.dispatcher };
+      const init: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
       const resp = await fetch(this.url(threadId, key), init);
       if (resp.status === 404) return undefined;
       if (!resp.ok) throw new Error(`GET checkpoint failed: ${resp.status} ${await resp.text()}`);
@@ -279,7 +280,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
       return this.tupleFromBlob(config, key, await this.decode(raw));
     }
 
-    const latestInit: FetchInit = { headers, dispatcher: this.dispatcher };
+    const latestInit: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
     const resp = await fetch(`${this.latestUrl(threadId)}?ns=${encodeURIComponent(ns)}`, latestInit);
     if (resp.status === 404) return undefined;
     if (!resp.ok) throw new Error(`GET latest checkpoint failed: ${resp.status} ${await resp.text()}`);
@@ -298,7 +299,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     ns: string,
     headers: Record<string, string>,
   ): Promise<CheckpointTuple | undefined> {
-    const init: FetchInit = { headers, dispatcher: this.dispatcher };
+    const init: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
     const resp = await fetch(`${this.url(threadId)}?limit=${LIST_FETCH_LIMIT}`, init);
     if (!resp.ok) throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
     const items = (await resp.json()) as { checkpoint_id: string }[] | null;
@@ -306,7 +307,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
       const key = item.checkpoint_id;
       const [itemNs] = parseBlobKey(key);
       if (itemNs !== ns) continue;
-      const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+      const getInit: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
       const get = await fetch(this.url(threadId, key), getInit);
       if (get.status === 404) continue;
       if (!get.ok) throw new Error(`GET checkpoint failed: ${get.status} ${await get.text()}`);
@@ -330,7 +331,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     const beforeId = options?.before ? getCheckpointId(options.before) : "";
     const fetchLimit = Math.max(lim * 4, LIST_FETCH_LIMIT);
 
-    const init: FetchInit = { headers, dispatcher: this.dispatcher };
+    const init: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
     const resp = await fetch(`${this.url(threadId)}?limit=${fetchLimit}`, init);
     if (!resp.ok) throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
     const items = (await resp.json()) as { checkpoint_id: string }[] | null;
@@ -345,7 +346,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
         if (itemId === beforeId) skipping = false;
         continue;
       }
-      const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+      const getInit: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
       const get = await fetch(this.url(threadId, key), getInit);
       if (get.status === 404) continue;
       if (!get.ok) throw new Error(`GET checkpoint failed: ${get.status} ${await get.text()}`);
@@ -377,7 +378,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           let existingWrites: unknown[] = [];
           let etag: string | null = null;
           let createOnly = false;
-          const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+          const getInit: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
           const prev = await fetch(this.url(threadId, key), getInit);
           if (prev.status === 200) {
             etag = prev.headers.get("ETag");
@@ -457,7 +458,7 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
           let etag: string | null = null;
           let createOnly = false;
           let blob: Record<string, unknown>;
-          const getInit: FetchInit = { headers, dispatcher: this.dispatcher };
+          const getInit: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
           const resp = await fetch(this.url(threadId, key), getInit);
           if (resp.status === 404) {
             // Normal Pregel order: putWrites for the *next* checkpoint_id
@@ -518,13 +519,13 @@ export class ProxyCheckpointSaver extends BaseCheckpointSaver {
     const storageId = storageThreadId(threadId);
     const headers = this.clientHeaders();
     for (;;) {
-      const init: FetchInit = { headers, dispatcher: this.dispatcher };
+      const init: FetchInit = { redirect: "error", headers, dispatcher: this.dispatcher };
       const resp = await fetch(`${this.url(storageId)}?limit=${LIST_FETCH_LIMIT}`, init);
       if (!resp.ok) throw new Error(`LIST checkpoints failed: ${resp.status} ${await resp.text()}`);
       const items = (await resp.json()) as { checkpoint_id: string }[] | null;
       if (!items || items.length === 0) return;
       for (const item of items) {
-        const delInit: FetchInit = { method: "DELETE", headers, dispatcher: this.dispatcher };
+        const delInit: FetchInit = { redirect: "error", method: "DELETE", headers, dispatcher: this.dispatcher };
         const del = await fetch(this.url(storageId, item.checkpoint_id), delInit);
         if (!del.ok && del.status !== 404) {
           throw new Error(`DELETE checkpoint failed: ${del.status} ${await del.text()}`);

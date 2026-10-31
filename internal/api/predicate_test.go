@@ -183,7 +183,7 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 	if got.ArgsDigest == "" {
 		t.Fatalf("pending row missing args_digest: %+v", got)
 	}
-	if got.Args["amount"] != float64(250) {
+	if got.Args["amount"] != json.Number("250") {
 		t.Fatalf("pending args=%#v", got.Args)
 	}
 

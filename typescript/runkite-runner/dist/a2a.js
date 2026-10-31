@@ -82,6 +82,7 @@ export async function callAgent(config, agentId, input, opts = {}) {
     const baseUrl = (opts.controlPlaneUrl ?? process.env.RUNKITE_HTTP_URL ?? "http://localhost:2026").replace(/\/+$/, "");
     const headers = { "Content-Type": "application/json", ...runnerHeaders() };
     const fetchOpts = {
+        redirect: "error",
         method: "POST",
         headers,
         body: JSON.stringify(body),

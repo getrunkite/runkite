@@ -150,7 +150,7 @@ export function SignOutButton() {
             Sign out
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="right">Clear the stored credential and return to the login screen</TooltipContent>
+        <TooltipContent side="right">End the server session and return to the login screen</TooltipContent>
       </Tooltip>
     </div>
   );

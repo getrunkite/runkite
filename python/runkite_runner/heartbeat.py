@@ -49,6 +49,7 @@ logger = logging.getLogger("runkite.runner")
 # of that cutoff, while a crashed one (zero heartbeats, not just a slow
 # one) reliably does.
 DEFAULT_HEARTBEAT_INTERVAL_S = 2.0
+DEFAULT_HEARTBEAT_RPC_TIMEOUT_S = 1.0
 
 
 async def heartbeat_loop(
@@ -58,6 +59,7 @@ async def heartbeat_loop(
     generation: int = 0,
     cancel_event: asyncio.Event | None = None,
     interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S,
+    rpc_timeout_s: float = DEFAULT_HEARTBEAT_RPC_TIMEOUT_S,
 ) -> None:
     """Calls Heartbeat(run_id, generation) every interval_s until
     cancelled.
@@ -83,8 +85,11 @@ async def heartbeat_loop(
     while True:
         await asyncio.sleep(interval_s)
         try:
-            resp = await stub.Heartbeat(
-                runner_pb2.HeartbeatRequest(run_id=run_id, generation=generation), metadata=auth_metadata
+            resp = await asyncio.wait_for(
+                stub.Heartbeat(
+                    runner_pb2.HeartbeatRequest(run_id=run_id, generation=generation), metadata=auth_metadata
+                ),
+                timeout=rpc_timeout_s,
             )
             if resp.superseded:
                 logger.warning(
@@ -94,6 +99,8 @@ async def heartbeat_loop(
                 if cancel_event is not None:
                     cancel_event.set()
                 return
+        except TimeoutError:
+            logger.warning("Heartbeat RPC timed out for run %s", run_id)
         except grpc.aio.AioRpcError as e:
             logger.warning(f"Heartbeat RPC failed for run {run_id}: {e.code()} {e.details()}")
         except Exception:

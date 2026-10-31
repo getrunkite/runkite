@@ -1,24 +1,17 @@
-"""Connector session + MCP proxy helpers for agent node code.
+"""Run-bound connector session and MCP proxy helpers.
 
-`POST /internal/connectors/{name}/session` and `.../mcp` are run-bound:
-the control plane requires `X-Runkite-Run-Id` + `X-Runkite-Generation`
-matching an in-flight assignment (see docs/trust-governance.md). Store
-and vector clients inherit those headers via `tenant_headers()`; connector
-calls from graph code do not, unless they go through these helpers.
-
-MCP connectors also mint a short-lived `session_token` on GetSession;
-`proxy_connector_mcp` sends it as `X-Runkite-Connector-Session` (auto-mints
-when the caller does not pass one).
-
-Same shape as `call_agent`: pass the node's own RunnableConfig (or its
-`configurable` sub-dict). `build_run_config` sets `configurable.run_id`
-and `configurable.generation` for every job.
+One total operation deadline covers session minting, capability renewal and
+response bodies. Caller task cancellation closes the active HTTP client.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import math
 import os
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -37,7 +30,6 @@ def _configurable(config: dict | None) -> dict:
         return {}
     if "configurable" in config and isinstance(config["configurable"], dict):
         return config["configurable"]
-    # Caller passed the configurable sub-dict itself (common in nodes).
     return config
 
 
@@ -60,6 +52,29 @@ def _base_url(control_plane_url: str | None) -> str:
     return (control_plane_url or os.environ.get("RUNKITE_HTTP_URL") or "http://localhost:2026").rstrip("/")
 
 
+def _connector_name(name: str) -> str:
+    if not isinstance(name, str) or not name or name in {".", ".."}:
+        raise ValueError("connector name must be a nonempty path segment")
+    return quote(name, safe="")
+
+
+def _validate_timeout(timeout: float) -> None:
+    valid = not isinstance(timeout, bool) and isinstance(timeout, (int, float))
+    try:
+        valid = valid and math.isfinite(timeout) and timeout > 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError("connector timeout must be a positive finite number")
+
+
+async def _session(client: httpx.AsyncClient, url: str, headers: dict[str, str], body: bytes) -> dict[str, Any]:
+    resp = await client.post(url, content=body, headers={**headers, "Content-Type": "application/json"})
+    if not resp.is_success:
+        raise ConnectorError(f"get_connector_session: HTTP {resp.status_code}: {resp.text}")
+    return resp.json()
+
+
 async def get_connector_session(
     config: dict,
     name: str,
@@ -68,21 +83,18 @@ async def get_connector_session(
     control_plane_url: str | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Mint a pre-authenticated connector session for this run.
-
-    For MCP connectors the response includes `session_token` (pass to
-    `proxy_connector_mcp` or let that helper mint again).
-    """
+    """Mint a session, bounded by one total deadline (default 30 seconds)."""
+    _validate_timeout(timeout)
     headers = _run_bound_headers(config)
-    body: dict[str, Any] = {}
-    if user_context is not None:
-        body["user_context"] = user_context
-    url = f"{_base_url(control_plane_url)}/internal/connectors/{name}/session"
-    async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
-        resp = await client.post(url, json=body, headers=headers)
-    if resp.status_code >= 400:
-        raise ConnectorError(f"get_connector_session {name}: HTTP {resp.status_code}: {resp.text}")
-    return resp.json()
+    url = f"{_base_url(control_plane_url)}/internal/connectors/{_connector_name(name)}/session"
+    body = json.dumps(
+        {} if user_context is None else {"user_context": user_context},
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    async with asyncio.timeout(timeout), httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
+        return await _session(client, url, headers, body)
 
 
 async def proxy_connector_mcp(
@@ -94,38 +106,41 @@ async def proxy_connector_mcp(
     control_plane_url: str | None = None,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
-    """Proxy one JSON-RPC request through the connector MCP gate.
+    """Proxy one JSON-RPC request within one total deadline (default 60 seconds).
 
-    The control plane enforces tools.allow/deny before forwarding.
-    Requires a short-lived session_token (from get_connector_session);
-    when omitted, mints one first. On 401, re-mints once and retries.
+    Only the plane's explicit pre-dispatch session rejection permits one automatic
+    remint/retry. Caller-supplied session tokens and arbitrary 401s never retry.
     """
-    token = session_token
-    if not token:
-        sess = await get_connector_session(
-            config, name, control_plane_url=control_plane_url, timeout=min(timeout, 30.0)
-        )
-        token = sess.get("session_token") or None
-        if not token:
-            raise ConnectorError(f"proxy_connector_mcp {name}: session response missing session_token")
+    _validate_timeout(timeout)
+    headers = _run_bound_headers(config)
+    url = f"{_base_url(control_plane_url)}/internal/connectors/{_connector_name(name)}"
+    body = json.dumps(request, allow_nan=False, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    async with asyncio.timeout(timeout), httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
 
-    async def _once(tok: str) -> httpx.Response:
-        headers = _run_bound_headers(config)
-        headers[HEADER_CONNECTOR_SESSION] = tok
-        url = f"{_base_url(control_plane_url)}/internal/connectors/{name}/mcp"
-        async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
-            return await client.post(url, json=request, headers=headers)
+        async def mint() -> str:
+            value = await _session(client, f"{url}/session", headers, b"{}")
+            token = value.get("session_token")
+            if not isinstance(token, str) or not token:
+                raise ConnectorError(f"proxy_connector_mcp {name}: session response missing session_token")
+            return token
 
-    resp = await _once(token)
-    if resp.status_code == 401 and session_token is None:
-        # Absolute TTL expired mid-run — mint once and retry.
-        sess = await get_connector_session(
-            config, name, control_plane_url=control_plane_url, timeout=min(timeout, 30.0)
-        )
-        token = sess.get("session_token") or ""
-        if not token:
-            raise ConnectorError(f"proxy_connector_mcp {name}: re-mint missing session_token")
-        resp = await _once(token)
-    if resp.status_code >= 400:
-        raise ConnectorError(f"proxy_connector_mcp {name}: HTTP {resp.status_code}: {resp.text}")
-    return resp.json()
+        async def once(token: str) -> httpx.Response:
+            return await client.post(
+                f"{url}/mcp",
+                content=body,
+                headers={**headers, HEADER_CONNECTOR_SESSION: token, "Content-Type": "application/json"},
+            )
+
+        resp = await once(session_token or await mint())
+        if resp.status_code == 401 and session_token is None:
+            # Upstream 401 can follow a real side effect. Retry only a capability
+            # rejection that the control plane identifies as pre-dispatch.
+            try:
+                error = resp.json()
+            except ValueError:
+                error = None
+            if isinstance(error, dict) and error.get("reason_code") == "connector_session_invalid":
+                resp = await once(await mint())
+        if not resp.is_success:
+            raise ConnectorError(f"proxy_connector_mcp {name}: HTTP {resp.status_code}: {resp.text}")
+        return resp.json()

@@ -226,6 +226,9 @@ func (s *Server) handleCreateRunError(w http.ResponseWriter, err error, respond 
 // CreateRun error left the thread stuck busy forever (no future run on
 // that thread could claim it).
 func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
+	if invalidResourceID(threadID) || invalidResourceID(req.RunID) {
+		return nil, nil, errInvalidResourceID
+	}
 	// Empty / whitespace-only checkpoint_ref is treated as absent (resume
 	// from the thread's latest checkpoint). A non-empty value is forwarded
 	// on RunAssignment so LangGraph runners can time-travel via

@@ -107,6 +107,7 @@ export class RunkiteVectorStore extends VectorStore {
     // internal/auth/auth.go and store.ts's identical convention.
     async upsert(id, content, metadata, embedding) {
         const opts = {
+            redirect: "error",
             method: "PUT",
             headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, id, content, metadata, embedding }),
@@ -118,6 +119,7 @@ export class RunkiteVectorStore extends VectorStore {
     }
     async deleteOne(id) {
         const opts = {
+            redirect: "error",
             method: "DELETE",
             headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, id }),
@@ -129,6 +131,7 @@ export class RunkiteVectorStore extends VectorStore {
     }
     async search(embedding, topK, filter) {
         const opts = {
+            redirect: "error",
             method: "POST",
             headers: { ...this.headers, ...runnerHeaders(this.headers["X-Runner-Token"], this.headers["X-Runner-Kind"]) },
             body: JSON.stringify({ namespace: this.namespace, embedding, top_k: topK, filter: filter ?? {} }),

@@ -6,7 +6,7 @@
     <title>Engineering notes · Runkite</title>
     <meta
       name="description"
-      content="Engineering notes: generation fencing, subscribe-before-enqueue, createRunCtx, poison-pill reclaim, spend holds, Postgres RLS, managed AI SDK receipts."
+      content="Engineering notes: generation fencing, admission, reclaim, spend holds, Postgres RLS, managed receipts and runtime hardening."
     />
     <meta name="theme-color" content="#0a0a0b" />
     <link
@@ -72,6 +72,10 @@
         <li>
           <a href="./managed-ai-sdk.html">7 · Managed AI SDK receipts</a>
           <p>Commit native history before success; recover a committed turn without repeating tools.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">8 · Runtime hardening (unreleased, Markdown)</a>
+          <p>Exact policy arguments, approval upgrades, fenced queue release, confirmed logout and bounded SDK/Admin delivery, with design rationale and regression evidence for contributors.</p>
         </li>
       </ul>
 

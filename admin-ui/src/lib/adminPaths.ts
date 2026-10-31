@@ -29,3 +29,11 @@ export function adminRegistryPath(name: string, tenantId?: string): string {
 export function adminRegistryVersionsPath(name: string, tenantId?: string): string {
   return `/registry/${encodeURIComponent(name)}/versions${adminTenantQuery(tenantId)}`;
 }
+
+export function adminRunPath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}`;
+}
+
+export function adminThreadPath(threadId: string): string {
+  return `/threads/${encodeURIComponent(threadId)}`;
+}

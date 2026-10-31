@@ -34,6 +34,10 @@ Public HTML walkthroughs live in [site/support](../site/support/), including the
 correction map; the [embedded governance design record](internal/embedded-governance-next-release.md)
 is historical and points to the implemented API.
 
+The unreleased [runtime hardening design record](internal/runtime-hardening.md)
+explains the failure cases, invariants, tests and upgrade requirements for current
+authorization, recovery, connectors and Admin changes.
+
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters and unpublished
 governance helpers are labeled separately from tagged runner packages.

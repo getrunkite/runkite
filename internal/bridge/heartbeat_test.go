@@ -80,7 +80,7 @@ func TestStreamEvents_FirstEventRenewsNotAcks(t *testing.T) {
 	// Nack succeeding in re-enqueueing it. A full Ack on first event
 	// (the pre-fix behavior) would make this a silent no-op and the job
 	// would never reappear on Dequeue.
-	if err := queue.Nack(ctx, runID); err != nil {
+	if err := queue.Nack(ctx, runID, assignment.Generation); err != nil {
 		t.Fatalf("Nack failed: %v", err)
 	}
 	again, err := queue.Dequeue(ctx, "k", 100*time.Millisecond)
@@ -117,7 +117,7 @@ func TestHeartbeat_RenewsInFlightLease(t *testing.T) {
 		t.Fatalf("expected Heartbeat ok=true, got %v", hbResp)
 	}
 
-	if err := queue.Nack(ctx, runID); err != nil {
+	if err := queue.Nack(ctx, runID, assignment.Generation); err != nil {
 		t.Fatalf("Nack failed: %v", err)
 	}
 	again, err := queue.Dequeue(ctx, "k", 100*time.Millisecond)
@@ -370,7 +370,7 @@ func TestReportStatus_StillFullyAcksOnCompletion(t *testing.T) {
 		t.Fatalf("ReportStatus failed: %v", err)
 	}
 
-	if err := queue.Nack(ctx, runID); err != nil {
+	if err := queue.Nack(ctx, runID, assignment.Generation); err != nil {
 		t.Fatalf("Nack failed: %v", err)
 	}
 	again, err := queue.Dequeue(ctx, "k", 100*time.Millisecond)
