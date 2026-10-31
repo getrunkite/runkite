@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -17,9 +18,27 @@ import (
 // multi-document transaction, then COUNT + INSERT in that same txn so
 // concurrent creators for the same scope cannot all observe a stale zero.
 func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
-	if !caps.Enabled() {
-		return s.CreateRun(ctx, run)
+	return s.createRun(ctx, run, caps, false, nil)
+}
+
+func (s *Store) CreateCachedRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
+	pending, completion, err := state.PrepareCachedRun(run)
+	if err != nil {
+		return err
 	}
+	return s.createRun(ctx, pending, caps, true, func(ctx context.Context) error {
+		result, err := s.completeRunInTransaction(ctx, completion)
+		if err != nil {
+			return err
+		}
+		if !result.Applied {
+			return fmt.Errorf("cache completion was not applied")
+		}
+		return nil
+	})
+}
+
+func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(context.Context) error) error {
 	input, err := applicationJSONToBSON(run.Input)
 	if err != nil {
 		return err
@@ -33,15 +52,19 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	return s.withTransaction(ctx, func(sessCtx context.Context) error {
 		// Touch lock docs first (upsert $inc) so concurrent transactions
 		// on the same scope conflict and retry with a fresh snapshot.
-		if caps.TenantConcurrent > 0 || caps.TenantDaily > 0 {
+		if caps.Enabled() && (caps.TenantConcurrent > 0 || caps.TenantDaily > 0) {
 			if err := touchAdmissionLock(sessCtx, s, "t:"+tid); err != nil {
 				return err
 			}
 		}
-		if caps.AgentConcurrent > 0 || caps.AgentDaily > 0 {
+		if caps.Enabled() && (caps.AgentConcurrent > 0 || caps.AgentDaily > 0) {
 			if err := touchAdmissionLock(sessCtx, s, "a:"+tid+":"+run.AgentID); err != nil {
 				return err
 			}
+		}
+
+		if err := s.lockThread(sessCtx, run.ThreadID, claim); err != nil {
+			return err
 		}
 
 		countActive := func(agentID string) (int, error) {
@@ -88,7 +111,13 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 		if mongo.IsDuplicateKeyError(err) {
 			return &state.ErrConflict{Resource: "run", ID: run.RunID}
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		if afterInsert != nil {
+			return afterInsert(sessCtx)
+		}
+		return nil
 	})
 }
 

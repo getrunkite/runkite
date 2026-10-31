@@ -68,6 +68,9 @@ type Store interface {
 	ReleaseThreadIfNoOtherActive(ctx context.Context, threadID, excludeRunID string, status models.ThreadStatus) (bool, error)
 
 	// --- Checkpoints (Agent Protocol thread history / time-travel view) ---
+	// Child writes must verify the current parent belongs to the context tenant
+	// in the same transaction as the mutation. A prior API lookup cannot fence
+	// parent deletion and cross-tenant reuse of a custom thread ID.
 	SaveCheckpoint(ctx context.Context, threadID string, state *models.ThreadState) error
 	GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error)
 	ListCheckpoints(ctx context.Context, threadID string, limit int, before string) ([]*models.ThreadState, error)
@@ -102,6 +105,8 @@ type Store interface {
 	PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64, error)
 
 	// --- Runs ---
+	// CreateRun and CreateRunAdmitted atomically bind the run to a parent owned
+	// by the context tenant. Missing or foreign parents return ErrNotFound.
 	CreateRun(ctx context.Context, run *models.Run) error
 	// CreateRunAdmitted inserts a run only if caps allow. When caps is
 	// nil or disabled, identical to CreateRun. Otherwise serializes

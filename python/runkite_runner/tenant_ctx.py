@@ -12,13 +12,14 @@ X-Runkite-Run-Id + X-Runkite-Generation so the control plane can derive
 tenant/agent from the in-flight assignment instead of trusting the
 tenant header alone.
 
-Also owns the LangGraph checkpointer thread-id encoding: non-default
-tenants prefix configurable.thread_id so AsyncPostgresSaver rows do not
-collide when two tenants reuse the same client-chosen thread id.
+Also owns the historical LangGraph checkpointer thread-id encoding. Native
+savers reject ambiguous tenant/thread combinations before accessing this key.
+Proxy checkpoints resolve the bare thread through the plane instead.
 """
 
 from __future__ import annotations
 
+import base64
 import os
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -39,7 +40,9 @@ _runner: ContextVar[tuple[str, str | None]] = ContextVar("runkite_runner", defau
 # Header runners send on /internal/* so proxy-mode handlers scope the
 # same way as client auth (see internal/auth.HeaderTenantID).
 HEADER_TENANT_ID = "X-Runkite-Tenant-Id"
+HEADER_TENANT_ID_B64 = "X-Runkite-Tenant-Id-B64"
 HEADER_RUN_ID = "X-Runkite-Run-Id"
+HEADER_RUN_ID_B64 = "X-Runkite-Run-Id-B64"
 HEADER_GENERATION = "X-Runkite-Generation"
 
 
@@ -49,7 +52,7 @@ def current_tenant() -> str:
 
 
 def bind_tenant(tenant_id: str | None) -> Token[str]:
-    tid = (tenant_id or "").strip() or _DEFAULT
+    tid = tenant_id or _DEFAULT
     return _active.set(tid)
 
 
@@ -58,7 +61,7 @@ def reset_tenant(token: Token[str]) -> None:
 
 
 def bind_run(run_id: str | None, generation: int | None) -> Token[_RunBinding | None]:
-    rid = (run_id or "").strip()
+    rid = run_id or ""
     if not rid:
         return _run.set(None)
     gen = int(generation or 0)
@@ -71,12 +74,29 @@ def reset_run(token: Token[_RunBinding | None]) -> None:
 
 def tenant_headers() -> dict[str, str]:
     """Extra headers for proxy-mode HTTP calls to the control plane."""
-    headers = {HEADER_TENANT_ID: current_tenant()}
+    headers = tenant_id_headers(current_tenant())
     binding = _run.get()
     if binding is not None:
-        headers[HEADER_RUN_ID] = binding.run_id
+        headers.update(run_id_headers(binding.run_id))
         headers[HEADER_GENERATION] = str(binding.generation)
     return headers
+
+
+def run_id_headers(run_id: str) -> dict[str, str]:
+    """Retain exact run identity through HTTP's ASCII/whitespace boundary."""
+    return _identity_headers(run_id, HEADER_RUN_ID, HEADER_RUN_ID_B64)
+
+
+def tenant_id_headers(tenant_id: str) -> dict[str, str]:
+    """A nonempty tenant is opaque; only absence selects the default tenant."""
+    return _identity_headers(tenant_id or _DEFAULT, HEADER_TENANT_ID, HEADER_TENANT_ID_B64)
+
+
+def _identity_headers(value: str, raw_header: str, encoded_header: str) -> dict[str, str]:
+    if value == value.strip() and all(32 <= ord(char) < 127 for char in value):
+        return {raw_header: value}
+    encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+    return {encoded_header: encoded}
 
 
 def bind_runner(kind: str, token: str | None = None) -> Token[tuple[str, str | None]]:
@@ -110,13 +130,42 @@ def checkpoint_thread_id(tenant_id: str | None, thread_id: str) -> str:
 
     Empty / "default" tenants keep the bare thread_id so pre-tenancy and
     single-tenant direct-mode checkpoint rows stay reachable. Any other
-    tenant gets "{tenant_id}:{thread_id}" so two tenants cannot share a
-    checkpoint row when they reuse the same client-chosen thread id.
+    tenant gets "{tenant_id}:{thread_id}". Native execution must first validate
+    this delimiter format; proxy mode uses the bare plane thread instead.
     """
-    tid = (tenant_id or "").strip() or _DEFAULT
+    tid = tenant_id or _DEFAULT
     if tid == _DEFAULT:
         return thread_id
     return f"{tid}:{thread_id}"
+
+
+def validate_native_checkpoint_identity(tenant_id: str | None, thread_id: str, *, mode: str) -> None:
+    """Refuse identities that alias another tenant in native saver keys.
+
+    Persistent named-tenant keys may contain another legacy owner's state.
+    Fresh memory savers can use the disjoint delimiter domain instead. Proxy
+    checkpoints use exact plane ownership and do not need this restriction.
+    """
+    tenant = tenant_id or _DEFAULT
+    if mode not in {"direct-postgres", "memory"}:
+        raise ValueError("native checkpoint identity validation requires a native saver mode")
+    if mode == "direct-postgres" and tenant != _DEFAULT:
+        raise ValueError(
+            "ambiguous native LangGraph checkpoint ownership for named tenants in direct-postgres mode; "
+            "use proxy checkpoint mode after explicitly resolving legacy native history. "
+            "An existing tenant-prefix key cannot prove its original owner; no state is imported automatically"
+        )
+    if (
+        tenant != tenant.strip()
+        or any(ord(char) < 32 or ord(char) == 127 for char in tenant)
+        or (tenant == _DEFAULT and ":" in thread_id)
+        or (tenant != _DEFAULT and ":" in tenant)
+    ):
+        raise ValueError(
+            "ambiguous native LangGraph checkpoint identity; native savers require delimiter-free tenant IDs "
+            "and default-tenant thread IDs without ':'. Use proxy checkpoint mode after explicitly resolving "
+            "any existing native history; no state is imported automatically"
+        )
 
 
 def storage_thread_id(config_thread_id: str) -> str:

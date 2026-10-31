@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import quote
 
 from runkite_runner.run_status import should_skip_run
 
@@ -56,6 +58,25 @@ class TestShouldSkipRun(unittest.TestCase):
             self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme")))
         kwargs = client.get.await_args.kwargs
         self.assertEqual(kwargs["headers"].get("X-Runkite-Tenant-Id"), "acme")
+
+    def test_custom_run_id_is_one_path_component(self):
+        with _patch_get(200, {"status": "running"}) as factory:
+            run_id = "run/child?status=success#fragment%tail"
+            self.assertFalse(_run(should_skip_run("http://cp:2026/", run_id)))
+            client = factory.return_value
+            self.assertEqual(
+                client.get.await_args.args[0],
+                f"http://cp:2026/internal/runs/{quote(run_id, safe='')}/status",
+            )
+
+    def test_unicode_tenant_claim_uses_the_encoded_header(self):
+        with _patch_get(200, {"status": "running"}) as factory:
+            tenant = "tenant-ré-雪"
+            self.assertFalse(_run(should_skip_run("http://cp:2026", "run", tenant_id=tenant)))
+            headers = factory.return_value.get.await_args.kwargs["headers"]
+            self.assertNotIn("X-Runkite-Tenant-Id", headers)
+            encoded = headers["X-Runkite-Tenant-Id-B64"]
+            self.assertEqual(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode(), tenant)
 
 
 if __name__ == "__main__":

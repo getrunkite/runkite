@@ -148,7 +148,8 @@ func (rt *RunnerTokens) Validate(runnerKind, token string) bool {
 // AllowsTenant reports whether runnerKind may claim tenantID on /internal/*
 // (via X-Runkite-Tenant-Id). Always true in local mode, when no allow-list
 // is configured for that kind, or when the allow-list is empty. A missing
-// / blank tenantID is treated as tenant.DefaultTenant for the check.
+// tenantID is treated as tenant.DefaultTenant for the check. Nonempty identities
+// are compared exactly; whitespace is never trimmed from an assignment.
 func (rt *RunnerTokens) AllowsTenant(runnerKind, tenantID string) bool {
 	if rt == nil || !rt.Enabled() {
 		return true
@@ -157,7 +158,7 @@ func (rt *RunnerTokens) AllowsTenant(runnerKind, tenantID string) bool {
 	if !ok || len(allow) == 0 {
 		return true
 	}
-	tid := strings.TrimSpace(tenantID)
+	tid := tenantID
 	if tid == "" {
 		tid = tenant.DefaultTenant
 	}

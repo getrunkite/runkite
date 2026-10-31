@@ -62,7 +62,8 @@ const (
 	// MiddlewareOpts.Inflight and requiresRunBinding. When
 	// RUNNER_TENANTS_<KIND> is set, the effective tenant (header claim
 	// or assignment) must be on that kind's allow-list.
-	HeaderTenantID = "X-Runkite-Tenant-Id"
+	HeaderTenantID       = "X-Runkite-Tenant-Id"
+	HeaderTenantIDBase64 = "X-Runkite-Tenant-Id-B64"
 	// HeaderSimulation marks a create-run as fixture replay. The server
 	// sets run metadata.simulation = true only when this is set and the
 	// caller is allowed (see AllowsSimulation). Clients cannot set the
@@ -147,7 +148,11 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			// Without this, /internal/store|* always landed in "default".
 			// When RUNNER_TENANTS_<KIND> is set, the claimed tenant (missing
 			// header → "default") must be on that kind's allow-list.
-			claimed := strings.TrimSpace(r.Header.Get(HeaderTenantID))
+			claimed, validTenant := exactIdentityHeader(r, HeaderTenantID, HeaderTenantIDBase64)
+			if !validTenant {
+				writeDenied(w, http.StatusForbidden, ReasonRunnerTenantDenied, "invalid tenant identity header")
+				return
+			}
 			if runnerTokens.Enabled() && !runnerTokens.AllowsTenant(kind, claimed) {
 				writeDenied(w, http.StatusForbidden, ReasonRunnerTenantDenied,
 					"tenant not allowed for this runner kind")

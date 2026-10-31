@@ -138,6 +138,69 @@
           or establish a new multi-replica HA soak. See the
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">runtime hardening engineering note</a>.
         </p>
+        <h2 id="identity-upgrade">Unreleased identity and atomic-result upgrade</h2>
+        <p>
+          Upgrade the plane before runner helpers using encoded run/tenant identity
+          headers. Exact identities are not trimmed, tenant allowlists compare exactly,
+          and new run IDs with controls or outer whitespace receive HTTP 400. Printable
+          ASCII keeps the existing headers; Unicode and exact legacy values use
+          unpadded base64url UTF-8 companion headers. Existing records are not renamed.
+        </p>
+        <p>
+          <strong>Direct Postgres LangGraph now refuses every named tenant before
+          factory/state access.</strong> A delimiter-safe new named key can still select
+          older default-tenant history, so named LangGraph tenants must use exact scoped
+          HTTP proxy checkpoints and explicitly resolve prior native state. Default direct
+          thread IDs without <code>:</code> keep their existing history. Fresh shared
+          memory allows named tenants under its delimiter guard: no colon in default
+          thread IDs or named tenant IDs, and no outer whitespace/ASCII controls in
+          tenant IDs.
+          <strong>Default cron threads are <code>cron:&lt;name&gt;</code> and need proxy mode
+          too.</strong> Unset runner <code>POSTGRES_DSN</code> and set
+          <code>RUNKITE_HTTP_URL</code>. Proxy supports all tenants but imports no native
+          history. There is no automatic ownership marker, import, renamed namespace or
+          silent memory fallback. Managed AI SDK, Microsoft, OpenAI Agents, Pydantic AI
+          and Google ADK already use opaque HTTP state and are unaffected.
+        </p>
+        <p>
+          Cache hits now commit admission, output, merged state and checkpoint together.
+          They retain the original output but do not bill its tokens again or refresh
+          source TTL. New logical runs still count for daily run quotas. Custom Go stores
+          without optional <code>state.CachedRunCreator</code> use normal dispatch.
+          Exact parent ownership is fenced through child writes, and Mongo parent/child
+          deletion commits together. These follow-up changes need no schema migration;
+          the separate MySQL v17 procedure below still applies to older installations.
+          See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md">engineering rationale</a>.
+        </p>
+        <p>
+          <strong>Compatible NATS:</strong> run IDs must be nonempty ASCII letters/digits,
+          <code>-</code>, <code>_</code>, <code>/</code>, <code>=</code> or single internal
+          dots, with no leading/trailing dot or empty dot segment. Wildcards,
+          whitespace, colons and Unicode fail closed for NATS queue/event/cancel
+          operations. Run creation returns HTTP 400 before thread/run/cache mutation.
+          Valid keys are unchanged. Unsupported legacy queued work is
+          retained with delayed negative acknowledgement and an explicit error.
+          Inspect the stored run and possible external effects before repair or
+          resubmission; rejection is not completion. This does not restrict the
+          Supported Postgres/Redis profile.
+        </p>
+        <p>
+          NATS runner kinds also need distinct durable names: dots become underscores,
+          so <code>a.b</code> and <code>a_b</code> conflict. A different existing filter
+          now fails instead of retargeting another fleet. Inspect pending work before
+          consistently renaming the kind in config, credentials and runner flags;
+          consumer/history migration is not automatic. Do not delete or retarget the
+          durable just to silence the error. Independently, the bridge rejects an
+          actual assignment for another authenticated kind before advancing its attempt
+          or exposing input, and returns it with its exact generation.
+        </p>
+        <p>
+          Local in-process Nack/reclaim now retains the original lease and generation
+          if its ready buffer is full or the caller is already cancelled. A later retry
+          can recover after capacity returns; partial reclaim counts only completed
+          handoffs. This closes a local lost-work path and does not make memory durable
+          across process exit or establish multi-replica HA.
+        </p>
         <h2 id="hardening-upgrade">Before upgrading this hardening change</h2>
         <p>
           The changes described here are unreleased. Upgrade the plane before connector

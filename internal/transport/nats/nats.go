@@ -171,7 +171,9 @@ func (q *Queue) consumerFor(ctx context.Context, runnerKind string) (jetstream.C
 	if c, ok := q.consumers[runnerKind]; ok {
 		return c, nil
 	}
-	c, err := q.js.CreateOrUpdateConsumer(ctx, jobsStreamName, jetstream.ConsumerConfig{
+	// Identical same-kind replicas reuse the durable. A colliding legacy name
+	// or changed filter must fail rather than retarget another kind's consumer.
+	c, err := q.js.CreateConsumer(ctx, jobsStreamName, jetstream.ConsumerConfig{
 		Durable:       consumerName(runnerKind),
 		FilterSubject: jobSubject(runnerKind),
 		AckPolicy:     jetstream.AckExplicitPolicy,
@@ -191,6 +193,9 @@ func (q *Queue) isCanceled(ctx context.Context, runID string) bool {
 }
 
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
+	if err := validateRunID(job.RunID); err != nil {
+		return err
+	}
 	if q.isCanceled(ctx, job.RunID) {
 		return nil
 	}
@@ -249,6 +254,15 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			continue
 		}
 
+		if err := validateRunID(job.RunID); err != nil {
+			// Retain legacy work for operator repair. A dispatch rejection
+			// is not durable run completion and must never delete the job.
+			if nakErr := msg.NakWithDelay(time.Second); nakErr != nil {
+				return nil, fmt.Errorf("natstransport: retain unsupported legacy assignment: %w", nakErr)
+			}
+			return nil, err
+		}
+
 		if q.isCanceled(ctx, job.RunID) {
 			_ = msg.Term()
 			continue
@@ -291,6 +305,9 @@ func (q *Queue) fenced(ctx context.Context, runID string, generation int64) (ent
 }
 
 func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+	if err := validateRunID(runID); err != nil {
+		return false, err
+	}
 	entry, revision, ok := q.fenced(ctx, runID, generation)
 	if !ok {
 		return false, nil
@@ -309,6 +326,9 @@ func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, 
 }
 
 func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
+	if err := validateRunID(runID); err != nil {
+		return false, err
+	}
 	entry, revision, ok := q.fenced(ctx, runID, generation)
 	if !ok {
 		return false, nil
@@ -336,6 +356,9 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 
 // LookupInflight returns the currently tracked assignment for runID.
 func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	if err := validateRunID(runID); err != nil {
+		return nil, err
+	}
 	kve, err := q.inflight.Get(ctx, runID)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
@@ -361,6 +384,9 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 }
 
 func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+	if err := validateRunID(runID); err != nil {
+		return err
+	}
 	kve, err := q.inflight.Get(ctx, runID)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
@@ -387,6 +413,9 @@ func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error 
 }
 
 func (q *Queue) Cancel(ctx context.Context, runID string) error {
+	if err := validateRunID(runID); err != nil {
+		return err
+	}
 	if kve, err := q.inflight.Get(ctx, runID); err == nil {
 		var entry inflightEntry
 		if json.Unmarshal(kve.Value(), &entry) == nil {
@@ -559,6 +588,9 @@ func NewBroker(ctx context.Context, nc *nats.Conn) (*Broker, error) {
 }
 
 func (b *Broker) Publish(ctx context.Context, runID string, event *transport.RunEvent) error {
+	if err := validateRunID(runID); err != nil {
+		return err
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -578,6 +610,9 @@ func (b *Broker) Publish(ctx context.Context, runID string, event *transport.Run
 // AckNone-policy read cursor by design, matching Redis Streams' own
 // XREAD being a pure read with no ack concept either.
 func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
+	if err := validateRunID(runID); err != nil {
+		return nil, err
+	}
 	ch := make(chan *transport.RunEvent, 4096)
 
 	info, err := b.stream.Info(ctx)
@@ -597,6 +632,9 @@ func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport
 
 	subCtx, cancel := context.WithCancel(ctx)
 	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
+		if msg.Subject() != eventSubject(runID) {
+			return
+		}
 		var event transport.RunEvent
 		if err := json.Unmarshal(msg.Data(), &event); err != nil {
 			return
@@ -638,6 +676,9 @@ func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport
 // machinery -- explicitly deleted once this call is done rather than
 // relying on InactiveThreshold to eventually clean it up.
 func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*transport.RunEvent, error) {
+	if err := validateRunID(runID); err != nil {
+		return nil, err
+	}
 	consumer, err := b.js.CreateConsumer(ctx, eventsStreamName, jetstream.ConsumerConfig{
 		FilterSubject: eventSubject(runID),
 		DeliverPolicy: jetstream.DeliverAllPolicy,
@@ -662,6 +703,9 @@ func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*t
 		n := 0
 		for msg := range batch.Messages() {
 			n++
+			if msg.Subject() != eventSubject(runID) {
+				continue
+			}
 			var event transport.RunEvent
 			if err := json.Unmarshal(msg.Data(), &event); err != nil {
 				continue
@@ -696,7 +740,7 @@ func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*t
 // a caller waiting forever in practice -- but a future caller relying
 // solely on this channel's own closure to detect "already done" would
 // be wrong to assume Close's behavior matches Redis's.
-func (b *Broker) Close(runID string) error { return nil }
+func (b *Broker) Close(runID string) error { return validateRunID(runID) }
 
 // --------------------------------------------------------------------------
 // CancelBroker
@@ -719,6 +763,9 @@ func NewCancelBus(nc *nats.Conn) *CancelBus {
 func cancelSubject(runID string) string { return "rk.cancel." + runID }
 
 func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
+	if err := validateRunID(runID); err != nil {
+		return err
+	}
 	return c.nc.Publish(cancelSubject(runID), []byte("cancel"))
 }
 
@@ -735,6 +782,9 @@ func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
 // so a normally-completing run's subscription -- and, there, its
 // underlying Redis connection plus two goroutines -- leaked forever).
 func (c *CancelBus) SubscribeCancel(ctx context.Context, runID string) (<-chan struct{}, error) {
+	if err := validateRunID(runID); err != nil {
+		return nil, err
+	}
 	ch := make(chan struct{}, 1)
 
 	sub, err := c.nc.SubscribeSync(cancelSubject(runID))
@@ -747,12 +797,16 @@ func (c *CancelBus) SubscribeCancel(ctx context.Context, runID string) (<-chan s
 		// NextMsgWithContext returns as soon as EITHER a message
 		// arrives OR ctx is done, whichever first -- no separate
 		// select/inner-goroutine needed to race the two.
-		if _, err := sub.NextMsgWithContext(ctx); err != nil {
+		message, err := sub.NextMsgWithContext(ctx)
+		if err != nil {
 			// ctx cancelled (the run completed normally) or the
 			// subscription otherwise ended without a real cancel
 			// message -- release without closing ch, same "real
 			// cancel" vs "stopped waiting" distinction
 			// redistransport's own SubscribeCancel preserves.
+			return
+		}
+		if message.Subject != cancelSubject(runID) {
 			return
 		}
 		select {

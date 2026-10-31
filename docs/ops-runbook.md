@@ -47,6 +47,77 @@ The public Runner Protocol wire format is unchanged.
 See [the engineering record](internal/runtime-hardening.md) for the rationale,
 validation boundaries and retained product limitations.
 
+## Follow-up identity and completion upgrade (unreleased)
+
+New cache hits do not bill the original result's usage again. Historical usage
+ledger rows are retained; audit earlier cache-hit accounting before correcting
+estimated spend. No vendor invoice or historical refund is changed automatically.
+
+Upgrade the plane before runners that use `X-Runkite-Run-Id-B64` or
+`X-Runkite-Tenant-Id-B64` for exact Unicode/legacy identities. Safe printable ASCII
+uses the existing headers. Do not strip identities in a proxy. Tenant allowlists
+match exact identities; configuration-list whitespace is not part of a tenant ID.
+New run IDs with controls or outer whitespace return 400. Existing stored IDs are
+not renamed, and encoded bindings preserve their exact value.
+
+**Review direct Postgres LangGraph before rollout: every named tenant must use
+HTTP proxy checkpoints.** The runner refuses non-default tenants before factory,
+state access or execution. A delimiter-safe new named identity can still alias
+an old default-tenant native row, and there is no ownership attestation to prove
+that row belongs to it. Default direct thread IDs without `:` keep their existing
+history; default colon thread IDs remain refused.
+
+Fresh shared memory retains the delimiter guard: default thread IDs containing
+`:`, named tenant IDs containing `:`, and tenant IDs with outer whitespace or
+ASCII controls fail before factory/state access. **Default cron threads are
+`cron:<name>` and need HTTP proxy mode too.** Unset runner `POSTGRES_DSN` and set
+`RUNKITE_HTTP_URL`. Proxy supports all tenants, but switching modes imports no
+history. Inspect and explicitly resolve prior native history before continuing;
+a blank proxy transcript is not a successful migration. No owner marker,
+automatic import or silent blank/memory fallback is provided. Managed AI SDK,
+Microsoft, OpenAI Agents, Pydantic AI and Google ADK already use opaque HTTP
+state and are unaffected by this direct LangGraph restriction.
+
+Cached results now use atomic admission/completion on built-in stores. A failed
+write returns an error instead of exposing partial success. Cache replay does not
+bill original tokens again, create a usage hold or refresh source TTL; newly
+created runs still count toward daily run quotas. Custom Go stores without the
+optional `state.CachedRunCreator` use ordinary dispatch on a cache lookup.
+
+**Compatible NATS operators:** run IDs must use nonempty ASCII letters/digits,
+`-`, `_`, `/`, `=` or single internal dots, without leading/trailing dots or
+empty dot segments. Wildcards, whitespace, colons and Unicode are rejected by
+queue, stream and cancel operations. Run creation rejects unsupported IDs with
+400 before thread/run/cache mutation. Valid keys/subjects are unchanged; there is
+no namespace migration. Legacy unsupported metadata may remain readable, but its
+stream/cancel operations fail closed. An unsupported queued assignment is retained
+with a delayed negative acknowledgement and explicit error. Inspect the stored
+run and any external effects before repairing or resubmitting it; do not assume
+it completed or delete work merely to silence the error. These transport limits
+do not apply to the Supported Postgres/Redis pair.
+
+NATS runner kinds must also have distinct derived durable names. A dot becomes
+an underscore, so `a.b` and `a_b` both request `jobs-a_b`. The plane now refuses a
+conflicting consumer filter rather than retargeting an existing fleet. Inspect
+its configuration and pending work, then rename the conflicting kind consistently
+in agent config, token/tenant environment and runner flags. Do not delete or
+retarget the durable without reconciling queued work. Existing names and identical
+same-kind replica configuration are unchanged; consumer/history migration is not
+automatic. The bridge independently rejects an actual dequeued assignment for a
+different authenticated kind before attempt advancement and returns its lease.
+
+In local in-process mode, a full ready buffer or cancelled return/reclaim call
+now reports an error while retaining the lease and original generation. Once
+capacity is available, normal retry/reclaim can recover it; partial reclaim counts
+include only successful ready handoffs. This is not process-restart durability
+or an HA upgrade. Use the Supported Postgres/Redis profile for that deployment.
+
+Parent ownership is checked inside child-write transactions, and Mongo thread
+removal cascades atomically within the deleted tenant. These changes need no
+schema migration and do not repair historical malformed links. The separate
+MySQL version 17 maintenance instructions above still apply when upgrading from
+an older schema. See [the follow-up design record](internal/atomic-results-and-identities.md).
+
 ## 1. Supported install
 
 **What “Supported” means:** multi-replica control plane + at least one runner, durable Postgres, Redis for shared queue/broker/cancel, runner tokens + client `auth`. Compose soak (`make smoke-multi` / `make soak-multi`) is the correctness proof. Helm/kind packages the same shape; cluster installs stay **Compatible** until a named cloud soak exists.

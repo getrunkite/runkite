@@ -1788,7 +1788,7 @@ def _build_internal_spec() -> dict:
 
     return {
         "openapi": "3.1.0",
-        "info": {"title": "Runkite Internal (Runner) API", "version": "0.1.0", "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers."},
+        "info": {"title": "Runkite Internal (Runner) API", "version": "0.1.0", "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require X-Runkite-Generation and exactly one run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Upgrade the plane before runners that use encoded identities."},
         "tags": [
             {"name": "Runner", "description": "Endpoints consumed by runner processes."},
             {"name": "Store", "description": "Proxy-mode store access for runners."},
@@ -2053,7 +2053,11 @@ def _normalize_resource_ids(value) -> None:
                 sentence = "Custom string identifier; new run/thread IDs must not be '.' or '..'."
                 current = schema.get("description", "").replace(chr(0x2014), ";")
                 if sentence not in current:
-                    schema["description"] = (current + " " + sentence).strip()
+                    current = (current + " " + sentence).strip()
+                extra = "New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
+                if name == "run_id" and extra not in current:
+                    current = (current + " " + extra).strip()
+                schema["description"] = current
         if value.get("in") == "path" and value.get("name") in identifiers:
             value.get("schema", {}).pop("format", None)
         for nested in value.values():

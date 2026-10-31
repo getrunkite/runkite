@@ -13,15 +13,34 @@ import (
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // CreateRunAdmitted locks admission scopes, COUNTs, then INSERTs in one
 // transaction so concurrent creates serialize per tenant/agent.
 func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
-	if !caps.Enabled() {
-		return s.CreateRun(ctx, run)
+	return s.createRun(ctx, run, caps, false, nil)
+}
+
+func (s *Store) CreateCachedRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
+	pending, completion, err := state.PrepareCachedRun(run)
+	if err != nil {
+		return err
 	}
+	return s.createRun(ctx, pending, caps, true, func(tx sqlcompletion.Tx) error {
+		result, err := s.completionDriver().CompleteRunInTx(ctx, tx, completion)
+		if err != nil {
+			return err
+		}
+		if !result.Applied {
+			return fmt.Errorf("cache completion was not applied")
+		}
+		return nil
+	})
+}
+
+func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -30,13 +49,28 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	tid := tenant.FromContext(ctx)
-	if caps.TenantConcurrent > 0 || caps.TenantDaily > 0 {
+	if caps.Enabled() && (caps.TenantConcurrent > 0 || caps.TenantDaily > 0) {
 		if err := pgXactLock(ctx, tx, "rk:admit:t:"+tid); err != nil {
 			return err
 		}
 	}
-	if caps.AgentConcurrent > 0 || caps.AgentDaily > 0 {
+	if caps.Enabled() && (caps.AgentConcurrent > 0 || caps.AgentDaily > 0) {
 		if err := pgXactLock(ctx, tx, "rk:admit:a:"+tid+":"+run.AgentID); err != nil {
+			return err
+		}
+	}
+
+	driver := s.completionDriver()
+	locked := completionTx{tx}
+	status, err := driver.LockThread(ctx, locked, run.ThreadID)
+	if err != nil {
+		return err
+	}
+	if claim && status == models.ThreadStatusBusy {
+		return &state.ErrConflict{Resource: "thread", ID: run.ThreadID, Reason: "is busy"}
+	}
+	if claim {
+		if err := locked.Exec(ctx, `UPDATE threads SET status = 'busy' WHERE thread_id = $1 AND tenant_id = $2`, run.ThreadID, tid); err != nil {
 			return err
 		}
 	}
@@ -80,6 +114,11 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 			return &state.ErrConflict{Resource: "run", ID: run.RunID}
 		}
 		return err
+	}
+	if afterInsert != nil {
+		if err := afterInsert(locked); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

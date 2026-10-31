@@ -300,8 +300,9 @@ type RunCreate struct {
 	// safely retry with the SAME RunID -- the retry returns the run that's already there
 	// instead of creating a duplicate. Empty (the common case) means
 	// "generate a fresh server-side ID," unchanged from before this
-	// field existed. Custom strings are accepted except '.' and '..',
-	// which browsers normalize as URL path segments.
+	// field existed. New IDs reject '.'/'..', controls and outer whitespace.
+	// Unicode and URL syntax remain supported through escaped paths and
+	// encoded runner identity headers.
 	RunID        string          `json:"run_id,omitempty"`
 	ThreadID     string          `json:"thread_id,omitempty"`
 	AgentID      string          `json:"agent_id,omitempty"`

@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .tenant_ctx import HEADER_GENERATION, HEADER_RUN_ID, runner_headers
+from .tenant_ctx import HEADER_GENERATION, HEADER_RUN_ID, HEADER_RUN_ID_B64, run_id_headers, runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 HEADER_CONNECTOR_SESSION = "X-Runkite-Connector-Session"
@@ -43,7 +43,9 @@ def _run_bound_headers(config: dict | None) -> dict[str, str]:
             "(build_run_config sets run_id and generation)"
         )
     headers = runner_headers()
-    headers[HEADER_RUN_ID] = str(run_id)
+    headers.pop(HEADER_RUN_ID, None)
+    headers.pop(HEADER_RUN_ID_B64, None)
+    headers.update(run_id_headers(str(run_id)))
     headers[HEADER_GENERATION] = str(int(cfg.get("generation") or 0))
     return headers
 

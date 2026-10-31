@@ -1,4 +1,4 @@
-/** Real Go plane and packaged Node runner. Offline model, SQLite, in-process queue. */
+/** Real Go plane and packaged Node runner. Offline model, SQLite or Postgres/Redis. */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const binary = process.env.RUNKITE_TEST_BINARY;
+const seedBinary = process.env.RUNKITE_TEST_SEED_BINARY;
 const testPostgresDsn = process.env.RUNKITE_TEST_POSTGRES_DSN;
 const testRedisUrl = process.env.RUNKITE_TEST_REDIS_URL;
 const profile = testPostgresDsn && testRedisUrl ? "Postgres + Redis" : "SQLite + in-process";
@@ -202,6 +203,13 @@ test(
           e2e_reconnect: "./agent.ts:reconnect",
         },
         allowed_tools: { e2e_denied: [] },
+        auth: {
+          type: "api_key",
+          keys: {
+            "local-e2e-key": { permissions: ["admin"] },
+            "acme-e2e-key": { tenant_id: "acme雪", permissions: ["read", "write"] },
+          },
+        },
       }),
     );
     const [httpPort, grpcPort] = await Promise.all([freePort(), freePort()]);
@@ -215,7 +223,7 @@ test(
       LOG_FORMAT: "json",
       RUNKITE_ALLOW_INSECURE_SERVE: "1",
       RUNNER_TOKEN_TYPESCRIPT_AI_SDK: "e2e-runner-token",
-      RUNNER_TENANTS_TYPESCRIPT_AI_SDK: "default",
+      RUNNER_TENANTS_TYPESCRIPT_AI_SDK: "default,acme雪",
       RUNKITE_HTTP_URL: baseUrl,
       E2E_CALLS_FILE: callsFile,
       E2E_EFFECTS_FILE: effectsFile,
@@ -258,10 +266,10 @@ test(
         }
       });
     };
-    const request = async (route: string, body?: unknown) => {
+    const request = async (route: string, body?: unknown, apiKey = "local-e2e-key") => {
       const response = await fetch(baseUrl + route, {
         method: body === undefined ? "GET" : "POST",
-        headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
@@ -298,9 +306,13 @@ test(
         input: { messages: [{ role: "user", content }] },
         stream_mode: ["messages", "values", "custom"],
       });
-    const completedRun = async (threadId: string, runId: string) =>
+    const completedRun = async (threadId: string, runId: string, apiKey = "local-e2e-key") =>
       waitFor("durable run completion", async () => {
-        const run = await request(`/threads/${threadId}/runs/${runId}`);
+        const run = await request(
+          `/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(runId)}`,
+          undefined,
+          apiKey,
+        );
         return ["success", "error", "interrupted"].includes(run.status) ? run : false;
       });
     const readJsonLines = async (file: string) => {
@@ -320,6 +332,14 @@ test(
         const response = await fetch(`${baseUrl}/readyz`, { signal: AbortSignal.timeout(500) });
         return response.ok || false;
       });
+      if (seedBinary) {
+        const seed = launch(path.resolve(seedBinary), [config, "acme雪"], directory, {
+          ...environment,
+          ...(testPostgresDsn ? { POSTGRES_DSN: testPostgresDsn } : {}),
+        });
+        const [code] = await once(seed.child, "exit");
+        assert.equal(code, 0, seed.log());
+      }
       await startRunner();
       const threadId = await createThread();
       let firstRunId = "";
@@ -341,6 +361,7 @@ test(
         const adminRun = await request(`/admin-api/runs/${firstRunId}`);
         assert.equal(adminRun.status, "success");
         const stream = await fetch(`${baseUrl}/threads/${threadId}/runs/${firstRunId}/stream`, {
+          headers: { Authorization: "Bearer local-e2e-key" },
           signal: AbortSignal.timeout(5000),
         });
         assert.equal(stream.ok, true);
@@ -614,6 +635,31 @@ test(
           }
         },
       );
+      if (seedBinary) {
+        await runCase("non-default tenant and Unicode run ID retain exact status and checkpoint binding", async () => {
+          const key = "acme-e2e-key";
+          const thread = await request("/threads", {}, key);
+          const runId = `tenant/雪?#%${thread.thread_id}`;
+          await request(
+            `/threads/${thread.thread_id}/runs`,
+            {
+              run_id: runId,
+              agent_id: "e2e_agent",
+              input: { messages: [{ role: "user", content: "Create a tenant note" }] },
+            },
+            key,
+          );
+          const final = await completedRun(thread.thread_id, runId, key);
+          assert.equal(final.status, "success");
+          assert.equal(final.run_id, runId);
+          assert.equal((await readJsonLines(effectsFile)).filter((row) => row.runId === runId).length, 1);
+          const denied = await fetch(`${baseUrl}/threads/${thread.thread_id}/runs/${encodeURIComponent(runId)}`, {
+            headers: { Authorization: "Bearer local-e2e-key" },
+            signal: AbortSignal.timeout(5_000),
+          });
+          assert.equal(denied.status, 404);
+        });
+      }
     } catch (error) {
       t.diagnostic(logs());
       throw error;

@@ -18,7 +18,11 @@ func (d Driver) LockRunCheckpoint(ctx context.Context, tx Tx, binding state.RunC
 	if err != nil {
 		return err
 	}
-	return state.CheckRunCheckpointBinding(&models.Run{ThreadID: threadID, Status: status, Metadata: metadata}, binding)
+	if err := state.CheckRunCheckpointBinding(&models.Run{ThreadID: threadID, Status: status, Metadata: metadata}, binding); err != nil {
+		return err
+	}
+	_, err = d.LockThread(ctx, tx, threadID)
+	return err
 }
 
 func (d Driver) WithRunCheckpoint(ctx context.Context, binding state.RunCheckpointBinding, mutate func(Tx) error) error {

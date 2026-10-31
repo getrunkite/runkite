@@ -3903,7 +3903,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Client-supplied run ID for idempotent creation. Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Client-supplied run ID for idempotent creation. Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "assistant_id": {
             "type": "string",
@@ -3998,7 +3998,7 @@
               "run_id": {
                 "type": "string",
                 "title": "Run Id",
-                "description": "The ID of the run. Custom string identifier; new run/thread IDs must not be '.' or '..'."
+                "description": "The ID of the run. Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
               },
               "created_at": {
                 "type": "string",
@@ -5034,7 +5034,7 @@
         "properties": {
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "agent_id": {
             "type": "string"
@@ -5077,7 +5077,7 @@
           "run_id": {
             "type": "string",
             "maxLength": 256,
-            "description": "Opaque id of at most 256 UTF-8 bytes, stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny. Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Opaque id of at most 256 UTF-8 bytes, stored on the audit row and used to dedupe a pending action. Does not create a thread or a run. Required when the decision is pending. May be empty for allow or deny. Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "tenant_id": {
             "type": "string",

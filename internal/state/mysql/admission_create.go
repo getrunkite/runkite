@@ -9,15 +9,34 @@ import (
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // CreateRunAdmitted holds GET_LOCK scopes on one connection, then COUNT +
 // INSERT on that same connection so concurrent creates serialize.
 func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
-	if !caps.Enabled() {
-		return s.CreateRun(ctx, run)
+	return s.createRun(ctx, run, caps, false, nil)
+}
+
+func (s *Store) CreateCachedRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
+	pending, completion, err := state.PrepareCachedRun(run)
+	if err != nil {
+		return err
 	}
+	return s.createRun(ctx, pending, caps, true, func(tx sqlcompletion.Tx) error {
+		result, err := s.completionDriver().CompleteRunInTx(ctx, tx, completion)
+		if err != nil {
+			return err
+		}
+		if !result.Applied {
+			return fmt.Errorf("cache completion was not applied")
+		}
+		return nil
+	})
+}
+
+func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
 	for _, raw := range []json.RawMessage{run.Input, run.Config} {
 		if err := s.validateApplicationJSON(ctx, raw); err != nil {
 			return err
@@ -32,10 +51,10 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 
 	tid := tenant.FromContext(ctx)
 	var locks []string
-	if caps.TenantConcurrent > 0 || caps.TenantDaily > 0 {
+	if caps.Enabled() && (caps.TenantConcurrent > 0 || caps.TenantDaily > 0) {
 		locks = append(locks, "rk:admit:t:"+tid)
 	}
-	if caps.AgentConcurrent > 0 || caps.AgentDaily > 0 {
+	if caps.Enabled() && (caps.AgentConcurrent > 0 || caps.AgentDaily > 0) {
 		locks = append(locks, "rk:admit:a:"+tid+":"+run.AgentID)
 	}
 	for _, name := range locks {
@@ -43,6 +62,26 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 			return err
 		}
 		defer mysqlReleaseLock(conn, name)
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	locked := sqlcompletion.WrapSQLTransaction(tx)
+	driver := s.completionDriver()
+	status, err := driver.LockThread(ctx, locked, run.ThreadID)
+	if err != nil {
+		return err
+	}
+	if claim && status == models.ThreadStatusBusy {
+		return &state.ErrConflict{Resource: "thread", ID: run.ThreadID, Reason: "is busy"}
+	}
+	if claim {
+		if err := locked.Exec(ctx, `UPDATE threads SET status = 'busy' WHERE thread_id = ? AND tenant_id = ?`, run.ThreadID, tid); err != nil {
+			return err
+		}
 	}
 
 	countActive := func(agentID string) (int, error) {
@@ -53,7 +92,7 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 			args = append(args, agentID)
 		}
 		var n int
-		err := conn.QueryRowContext(ctx, q, args...).Scan(&n)
+		err := tx.QueryRowContext(ctx, q, args...).Scan(&n)
 		return n, err
 	}
 	countSince := func(since time.Time, agentID string) (int, error) {
@@ -64,7 +103,7 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 			args = append(args, agentID)
 		}
 		var n int
-		err := conn.QueryRowContext(ctx, q, args...).Scan(&n)
+		err := tx.QueryRowContext(ctx, q, args...).Scan(&n)
 		return n, err
 	}
 	if err := state.EvaluateRunAdmission(caps, run.AgentID, countActive, countSince); err != nil {
@@ -72,7 +111,7 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	}
 
 	meta, _ := json.Marshal(run.Metadata)
-	_, err = conn.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tid, run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
@@ -81,7 +120,15 @@ func (s *Store) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *st
 	if isDuplicateKeyError(err) {
 		return &state.ErrConflict{Resource: "run", ID: run.RunID}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if afterInsert != nil {
+		if err := afterInsert(locked); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func mysqlGetLock(ctx context.Context, conn *sql.Conn, name string) error {

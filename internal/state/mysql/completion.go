@@ -15,3 +15,9 @@ func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 	driver.ValidateValues = validateCompletionApplicationJSON
 	return driver.CompleteRun(ctx, c)
 }
+
+func (s *Store) completionDriver() sqlcompletion.Driver {
+	driver := sqlcompletion.DatabaseSQL(s.db, "mysql")
+	driver.ValidateValues = validateCompletionApplicationJSON
+	return driver
+}

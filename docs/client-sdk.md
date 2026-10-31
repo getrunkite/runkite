@@ -7,9 +7,16 @@ This page is the durable decision record so the plan survives chat sessions.
 For the unreleased hardening update, use canonical API URLs without redirects.
 Connector helpers expose bounded operations and TypeScript caller cancellation;
 the managed chat bridge also bounds stalled request-body intake before dispatch.
-New literal `.` and `..` run/thread IDs are rejected, while other custom IDs remain
-supported through encoded path components. Legacy pending actions require fresh
+New literal `.` and `..` run/thread IDs are rejected. New run IDs also reject
+controls and leading/trailing whitespace; Unicode and ordinary custom path
+characters remain supported through encoded components. Legacy pending actions require fresh
 submission and approval. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+
+Runner-side status checks now include the assignment tenant. Upgrade the plane
+before runner helpers that use the new base64url identity headers. LangGraph
+direct Postgres now requires named LangGraph tenants to use HTTP proxy state;
+default cron threads need proxy mode too. Prior native history must be resolved
+explicitly, and managed opaque SDK profiles are unaffected; see [the follow-up upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
 
 ## Choose who owns execution
 

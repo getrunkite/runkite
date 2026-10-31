@@ -214,7 +214,8 @@ make test-e2e             # black-box binary + runner
 Full target list, kind/Helm smoke tests, and the nightly matrix: [CONTRIBUTING.md](CONTRIBUTING.md) · [docs/deployment.md](docs/deployment.md).
 
 Current source hardening and its rollout requirements are documented in the
-[engineering record](docs/internal/runtime-hardening.md) and
+[engineering record](docs/internal/runtime-hardening.md),
+[atomic results and identity follow-up](docs/internal/atomic-results-and-identities.md) and
 [operator runbook](docs/ops-runbook.md#hardening-upgrade-unreleased). These are
 source changes until a tagged artifact includes them.
 

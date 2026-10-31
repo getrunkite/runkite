@@ -32,7 +32,7 @@ from .logging_config import setup_logging
 from .run_status import should_skip_run
 from .schema_introspect import report_agent_schemas
 from .store import RunkiteStore
-from .tenant_ctx import checkpoint_thread_id
+from .tenant_ctx import checkpoint_thread_id, validate_native_checkpoint_identity
 from .tls_utils import grpc_channel_credentials
 from .tracing import init as init_tracing
 from .tracing import make_run_callbacks, run_span, set_run_status
@@ -354,6 +354,10 @@ async def execute_run(
     skip_prefix = 0
 
     try:
+        checkpointer_manager = getattr(adapter, "_checkpointer_manager", None)
+        checkpoint_mode = getattr(checkpointer_manager, "mode", None)
+        if checkpoint_mode in {"direct-postgres", "memory"}:
+            validate_native_checkpoint_identity(assignment.get("tenant_id"), assignment["thread_id"], mode=checkpoint_mode)
         # Emitted BEFORE building the graph, not after: for a factory
         # graph (see factory_graph.py) this construction runs fresh, on
         # the request path, every single run -- it can genuinely take

@@ -120,6 +120,10 @@ func (s *Store) col(name string) *mongo.Collection { return s.db.Collection(name
 // no gaps) -- the exact guarantee this package's docs used to describe
 // as "deliberately deferred" pending a replica set.
 func (s *Store) withTransaction(ctx context.Context, fn func(sessCtx context.Context) error) error {
+	// Helpers invoked by completion or admission keep the caller's transaction.
+	if session := mongo.SessionFromContext(ctx); session != nil && session.TransactionRunning() {
+		return fn(ctx)
+	}
 	sess, err := s.client.StartSession()
 	if err != nil {
 		return fmt.Errorf("mongo: start session: %w", err)
@@ -1015,30 +1019,25 @@ func (s *Store) UpdateThread(ctx context.Context, threadID string, patch *models
 }
 
 func (s *Store) DeleteThread(ctx context.Context, threadID string) error {
-	// Emulate Postgres's ON DELETE CASCADE. Parent delete MUST be
-	// tenant-filtered and happen BEFORE wiping children: the previous
-	// children-first order deleted runs/checkpoints by thread_id alone,
-	// so a wrong-tenant DeleteThread wiped another tenant's child rows
-	// and then failed on the thread row (ErrNotFound) -- silent
-	// cross-tenant data loss the conformance suite missed when it only
-	// asserted the thread document survived.
-	res, err := s.col("threads").DeleteOne(ctx, tenantFilter(ctx, bson.M{"thread_id": threadID}))
-	if err != nil {
-		return err
-	}
-	if res.DeletedCount == 0 {
-		return &state.ErrNotFound{Resource: "thread", ID: threadID}
-	}
-	if _, err := s.col("runs").DeleteMany(ctx, bson.M{"thread_id": threadID}); err != nil {
-		return err
-	}
-	if _, err := s.col("thread_checkpoints").DeleteMany(ctx, bson.M{"thread_id": threadID}); err != nil {
-		return err
-	}
-	if _, err := s.col("opaque_checkpoints").DeleteMany(ctx, bson.M{"thread_id": threadID}); err != nil {
-		return err
-	}
-	return nil
+	// Parent deletion and tenant-scoped cascades commit together. Reusing an ID
+	// after parent removal must not expose the replacement's children to a late
+	// cascade from the deleted thread.
+	return s.withTransaction(ctx, func(ctx context.Context) error {
+		var deleted threadDoc
+		err := s.col("threads").FindOneAndDelete(ctx, tenantFilter(ctx, bson.M{"thread_id": threadID})).Decode(&deleted)
+		if err == mongo.ErrNoDocuments {
+			return &state.ErrNotFound{Resource: "thread", ID: threadID}
+		}
+		if err != nil {
+			return err
+		}
+		for _, collection := range []string{"runs", "thread_checkpoints", "opaque_checkpoints"} {
+			if _, err := s.col(collection).DeleteMany(ctx, bson.M{"thread_id": threadID, "tenant_id": deleted.TenantID}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) SearchThreads(ctx context.Context, req *models.ThreadSearchRequest) ([]*models.Thread, error) {
@@ -1220,6 +1219,10 @@ func toThreadState(doc checkpointDoc) (*models.ThreadState, error) {
 }
 
 func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
+	return s.withThread(ctx, threadID, func(ctx context.Context) error { return s.saveCheckpoint(ctx, threadID, ts) })
+}
+
+func (s *Store) saveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
 	values, err := applicationToBSON(ts.Values)
 	if err != nil {
 		return err
@@ -1390,6 +1393,16 @@ type opaqueCheckpointDoc struct {
 }
 
 func (s *Store) PutOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
+	var version int64
+	err := s.withThread(ctx, threadID, func(ctx context.Context) error {
+		var err error
+		version, err = s.putOpaqueCheckpoint(ctx, threadID, checkpointID, data, framework, ifMatch)
+		return err
+	})
+	return version, err
+}
+
+func (s *Store) putOpaqueCheckpoint(ctx context.Context, threadID, checkpointID string, data []byte, framework string, ifMatch *int64) (int64, error) {
 	if len(data) > models.MaxOpaqueCheckpointBytes {
 		return 0, fmt.Errorf("opaque checkpoint exceeds max size (%d > %d bytes)", len(data), models.MaxOpaqueCheckpointBytes)
 	}
@@ -1697,37 +1710,7 @@ func toRun(doc runDoc) (*models.Run, error) {
 }
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
-	input, err := applicationJSONToBSON(run.Input)
-	if err != nil {
-		return err
-	}
-	config, err := applicationJSONToBSON(run.Config)
-	if err != nil {
-		return err
-	}
-	doc := runDoc{
-		TenantID: tenant.FromContext(ctx), RunID: run.RunID, ThreadID: run.ThreadID, AgentID: run.AgentID,
-		Status: string(run.Status), Metadata: run.Metadata, Input: input, Config: config,
-		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt, Depth: run.Depth,
-	}
-	if run.ParentRunID != nil {
-		doc.ParentRunID = *run.ParentRunID
-	}
-	if run.RootRunID != nil {
-		doc.RootRunID = *run.RootRunID
-	}
-	_, err = s.col("runs").InsertOne(ctx, doc)
-	if mongo.IsDuplicateKeyError(err) {
-		// run_id is the unique key; wrap into state.ErrConflict, same
-		// idiom CreateThread already uses -- otherwise a cross-tenant
-		// run_id collision (GetRun is tenant-scoped, so createRunCtx's
-		// own retry-race fallback can't find the OTHER tenant's row to
-		// dispatch through) falls all the way back to the API layer as
-		// a raw, unwrapped driver error, surfacing as a generic 500
-		// instead of a clean 409.
-		return &state.ErrConflict{Resource: "run", ID: run.RunID}
-	}
-	return err
+	return s.CreateRunAdmitted(ctx, run, nil)
 }
 
 func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {

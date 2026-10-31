@@ -25,6 +25,7 @@ import type { RunkiteStore } from "./store.js";
 import { classifyGraphExport, FactoryGraph, type FactoryGraphBuild, type RunFactoryContext } from "./factoryGraph.js";
 import { logger } from "./logger.js";
 import { executeRun, type RunAssignment, type RunEvent, type RunStatus } from "./executeRun.js";
+import { validateNativeCheckpointIdentity } from "./tenantCtx.js";
 
 /** Minimal surface of a compiled LangGraph.js graph this runner needs.
  * Matches Pregel's actual instance shape (see node_modules/@langchain/
@@ -148,6 +149,12 @@ export class LangGraphAdapter {
       manager.attach(graph);
       logger.info(`Attached ${manager.mode} checkpointer to graph: ${graphId}`);
     }
+  }
+
+  /** Native saver keys use a legacy delimiter format; proxy state is scoped by the plane. */
+  validateCheckpointIdentity(tenantId: string | undefined, threadId: string): void {
+    const mode = this.checkpointerManager?.mode;
+    if (mode === "direct-postgres" || mode === "memory") validateNativeCheckpointIdentity(tenantId, threadId, mode);
   }
 
   /** Attaches the runner's Store Dual Mode client (see store.ts) to

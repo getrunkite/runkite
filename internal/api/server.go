@@ -585,7 +585,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // claim write is skipped entirely when no sinks are registered
 // (HasSinks) -- zero cost when webhooks are unconfigured. A claim-store
 // error is retryable, so completion does not acknowledge missing bookkeeping.
-func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string) error {
+func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string, cacheHit ...bool) error {
 	// Cancel/timeout may finish without StatusCallback ever releasing the
 	// create-time hold. DELETE is idempotent with the status-path release.
 	if isTerminalStatus(status) {
@@ -635,9 +635,13 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 	case models.RunStatusInterrupted:
 		hookType = hooks.Interrupt
 	}
+	data := map[string]interface{}{"status": string(status), "error": errorMsg}
+	if len(cacheHit) > 0 && cacheHit[0] {
+		data["cache_hit"] = true
+	}
 	s.hooks.Dispatch(hooks.Event{
 		Type: hookType, RunID: runID, ThreadID: threadID, AgentID: agentID, TenantID: tenantID,
-		Data:      map[string]interface{}{"status": string(status), "error": errorMsg},
+		Data:      data,
 		Timestamp: time.Now().UTC(),
 	})
 	markFinished()
@@ -684,8 +688,8 @@ func (s *Server) maybeCacheRunResult(ctx context.Context, run *models.Run, vals 
 	return err
 }
 
-// saveRunCheckpoint persists a checkpoint with the given values for a thread.
-// Called from StatusCallback on every terminal run.
+// saveRunCheckpoint persists a checkpoint for an explicit thread-state edit.
+// Runner and cached results use the transactional completion store instead.
 func (s *Server) saveRunCheckpoint(ctx context.Context, threadID string, values map[string]interface{}) {
 	// Get the latest checkpoint to use as parent
 	var parentCP *models.ThreadCheckpoint
@@ -1195,6 +1199,7 @@ const maxJSONBodyBytes = 1 << 20 // 1 MiB
 const maxSearchLimit = 100
 
 var errInvalidResourceID = errors.New("run_id and thread_id must not be '.' or '..'")
+var errInvalidRunID = errors.New("invalid run_id")
 
 func invalidResourceID(id string) bool { return id == "." || id == ".." }
 
@@ -1259,7 +1264,7 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	var breadthExceeded *ErrA2ABreadthExceeded
 	var admissionExceeded *state.ErrAdmissionLimitExceeded
 	switch {
-	case errors.Is(err, errInvalidResourceID):
+	case errors.Is(err, errInvalidResourceID), errors.Is(err, errInvalidRunID):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errSimulationRequiresAdmin):
 		writeJSON(w, http.StatusForbidden, map[string]string{

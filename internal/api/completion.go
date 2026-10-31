@@ -274,7 +274,7 @@ func (s *Server) finalizeCommittedRun(ctx context.Context, run *models.Run, appl
 	if err := s.broker.Close(run.RunID); err != nil {
 		return err
 	}
-	return s.finishRun(run.RunID, run.ThreadID, run.AgentID, run.TenantID, run.Status, run.Error)
+	return s.finishRun(run.RunID, run.ThreadID, run.AgentID, run.TenantID, run.Status, run.Error, run.Metadata["cache_hit"] == true)
 }
 
 // completeObservedRun shares the durable completion contract with wait callers
