@@ -40,7 +40,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   [the example](../examples/managed_ai_sdk/README.md). Raw SSE is advisory; the
   bridge confirms durable completion and refuses to combine attempts after a
   reclaim. Interrupted turns retain only previously committed history.
-- **Managed Microsoft Agent Framework (v0.6.0) is a separate Python runner
+- **Managed Microsoft Agent Framework (v0.6.1) is a separate Python runner
   kind** (`python-agent-framework`). It manages real Threads/Runs with public
   Agent streaming/session APIs, opaque CAS receipts and local tools. Workflows,
   .NET, non-text inputs, caller-supplied assistant/tool history, native
@@ -54,17 +54,17 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   own idempotency. Source-built `runkite-runner` wheels and sdists now include
   the adapter and dedicated `runkite-runner-agent-framework` CLI. The optional
   `agent-framework` extra pins `agent-framework-core==1.23.0`. This install path
-  is included in the published PyPI `0.6.0` artifact; see the
+  is included in the published PyPI `0.6.1` artifact; see the
   [source install](../examples/managed_agent_framework/README.md).
   The ordinary Python CLI and stock image keep their LangGraph
   defaults; the image does not install the Microsoft SDK. The four older
   CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain checkout-only.
   Decision-only `runkite_governance.agent_framework` middleware remains a
   different boundary (app-owned loop, no managed run).
-- **Managed OpenAI Agents SDK (v0.6.0)** uses `python-openai-agents`, public
+- **Managed OpenAI Agents SDK (v0.6.1)** uses `python-openai-agents`, public
   native streaming/history and successful-turn opaque CAS receipts. Its optional
   `openai-agents` extra pins `openai-agents==0.24.0`; source-built wheels include
-  the dedicated `runkite-runner-openai-agents` entrypoint. Published PyPI `0.6.0`
+  the dedicated `runkite-runner-openai-agents` entrypoint. Published PyPI `0.6.1`
   includes this profile. The stock Python image does not install its optional SDK. The first
   profile supports one text agent and local function tools. Native approval or
   resume, handoffs, agents-as-tools, hosted/MCP tools, structured final output,
@@ -74,19 +74,19 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   Native reasoning items remain in durable history and are not UI output.
   Native SDK trace export is disabled; generic-worker OTLP run tracing remains.
   See the [example](../examples/managed_openai_agents/README.md).
-- **Managed Pydantic AI (v0.6.0)** uses `python-pydantic-ai`, native text and
+- **Managed Pydantic AI (v0.6.1)** uses `python-pydantic-ai`, native text and
   validated JSON final results. The optional `pydantic-ai` extra pins
   `pydantic-ai-slim==2.63.0`; provider packages are application choices. Published
-  PyPI `0.6.0` includes this profile. The stock image does not install its SDK.
+  PyPI `0.6.1` includes this profile. The stock image does not install its SDK.
   Successful native conversations and receipts use opaque CAS state. Per-run
   usage excludes earlier conversation turns. Partial JSON cannot complete a run.
   Native deferred approvals, output functions, multimodal input and additional
   workflow engines are outside the initial scope. Local tools acquire connector
   policy only through the existing connector helpers. See the
   [example](../examples/managed_pydantic_ai/README.md).
-- **Managed Google ADK (v0.6.0)** uses `python-google-adk` with one ordinary
+- **Managed Google ADK (v0.6.1)** uses `python-google-adk` with one ordinary
   text `LlmAgent`, local function tools and session-local state. The source extra
-  pins `google-adk==2.13.0`; published PyPI `0.6.0` includes the profile and the stock
+  pins `google-adk==2.13.0`; published PyPI `0.6.1` includes the profile and the stock
   image does not install its SDK. A run-local public session service uses existing
   opaque CAS state and successful receipts. Cross-session `app:`/`user:` state
   is rejected rather than made thread-local; `temp:` state is not durable.
@@ -94,7 +94,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   output, long-running tools and live audio are unsupported. A final-response
   event alone cannot mark a run successful. See the
   [example](../examples/managed_google_adk/README.md).
-- **Managed UI reconnect is a same-attempt example update (v0.6.0).** The
+- **Managed UI reconnect is a same-attempt example update (v0.6.1).** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;
   this is not a durable UI-message service. Native full replay requires a start
@@ -110,7 +110,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   authenticated cancel route; aborting a local reader is not run cancellation.
   The existing create default remains cancel. See the
   [managed example](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
-- **Shared Python UI profiles are v0.6.0 example code.** Microsoft, OpenAI
+- **Shared Python UI profiles are v0.6.1 example code.** Microsoft, OpenAI
   Agents, Pydantic AI and Google ADK can use the existing app-side AI SDK UI bridge
   for text and Pydantic final JSON. Attach expects a bridge-created single-user
   string turn. Native tool UI, reasoning display and multimodal parts remain

@@ -6,7 +6,7 @@ its streamed answer and reported usage. No provider key is required.
 
 ## Run
 
-The optional install profile ships in published PyPI **0.6.0**.
+The optional install profile ships in published PyPI **0.6.1**.
 From the repository root, or via `pip install 'runkite-runner[openai-agents]'`:
 
 ```bash

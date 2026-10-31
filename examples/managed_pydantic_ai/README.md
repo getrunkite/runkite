@@ -6,7 +6,7 @@ streaming, cancellation, reported usage and committed-turn recovery.
 
 ## Run
 
-This profile ships in published PyPI **0.6.0**
+This profile ships in published PyPI **0.6.1**
 artifact. From repository root:
 
 ```bash

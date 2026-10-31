@@ -67,11 +67,11 @@ Keep runtime ownership explicit when editing the page: managed executions create
 Threads and Runs; app-owned tool decisions do not. Connector policy requires the
 connector gate, and the bridge and governance helpers remain repository code.
 Current source uses Apache-2.0 and may be described as open source. Keep the
-product self-host only. The homepage still links to the published v0.6.0 release,
+product self-host only. The homepage links to the published v0.6.1 release,
 whose binaries, images and packages retain their shipped BUSL-1.1 terms. Preserve
 that distinction until an Apache-licensed release is published; changing the
 source license does not update old registry artifacts or tags. The footer links
-to both the current source license and the v0.6.0 license. Published framework
+to the Apache-2.0 source license and notes that published v0.6.0 remains BUSL. Published framework
 rows link to their integration contracts.
 
 For a presentation change, check the homepage at 320, 390, 768 and 1440 pixel

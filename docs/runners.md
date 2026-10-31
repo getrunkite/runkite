@@ -200,14 +200,14 @@ run/tenant/generation binding and conditional writes. State must commit before
 terminal success. Reclaim can replay an already-committed turn without repeating
 tools. Earlier crashes remain subject to downstream side-effect idempotency.
 
-### Managed Microsoft Agent Framework Python runner (v0.6.0)
+### Managed Microsoft Agent Framework Python runner (v0.6.1)
 
 The `python-agent-framework` adapter executes a per-run factory
 returning a public `agent_framework.Agent`. Load a config declaring
 `runner_kind: python-agent-framework` in both the plane and runner. Source-built
 `runkite-runner` wheels and sdists include the adapter; the `agent-framework`
 extra pins `agent-framework-core==1.23.0`. This packaging ships in published
-PyPI `0.6.0`. From the repository root, or with
+PyPI `0.6.1`. From the repository root, or with
 `pip install 'runkite-runner[agent-framework]'`:
 
 ```bash
@@ -259,7 +259,7 @@ API cancellation retains usage already delivered to the plane by the current
 attempt. Usage still buffered in the runner or provider when cancellation
 commits is unavailable. Cancellation does not undo completed external effects.
 
-### Managed OpenAI Agents SDK Python runner (v0.6.0)
+### Managed OpenAI Agents SDK Python runner (v0.6.1)
 
 The optional `python-openai-agents` profile executes per-run factories returning
 public `agents.Agent` objects through the existing generic worker. Its native
@@ -270,7 +270,7 @@ session service is used.
 Source-built `runkite-runner` wheels and sdists include the runtime adapter and
 `runkite-runner-openai-agents` CLI. Install `./python[openai-agents]` from a source
 checkout in a clean environment; its optional SDK is pinned to
-`openai-agents==0.24.0`. This profile ships in published PyPI `0.6.0` via
+`openai-agents==0.24.0`. This profile ships in published PyPI `0.6.1` via
 `pip install 'runkite-runner[openai-agents]'`. The stock Python image
 continues to use LangGraph and does not install this optional SDK.
 
@@ -292,7 +292,7 @@ generic-worker OTLP run spans use the existing exporter variables. See the
 [offline example](../examples/managed_openai_agents/README.md) and
 [adapter contract](../python/adapters/openai_agents_adapter/README.md).
 
-### Managed Pydantic AI Python runner (v0.6.0)
+### Managed Pydantic AI Python runner (v0.6.1)
 
 `python-pydantic-ai` executes native per-run agent factories through the generic
 worker. The model loop stays in Python; Runkite owns dispatch, Threads/Runs,
@@ -304,7 +304,7 @@ The source-built `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0` and include
 the `pydantic_ai_adapter` module and `runkite-runner-pydantic-ai` command.
 Applications install their chosen providers separately. The ordinary CLI and
 stock image keep their LangGraph defaults. This profile ships in published
-PyPI `0.6.0`; follow the
+PyPI `0.6.1`; follow the
 [offline example](../examples/managed_pydantic_ai/README.md).
 
 Native conversations retain message/tool history and cumulative SDK usage.
@@ -320,7 +320,7 @@ approval/resume, output functions, multimodal input and additional workflow
 engines are unsupported. See the
 [adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
 
-### Managed Google ADK Python runner (v0.6.0)
+### Managed Google ADK Python runner (v0.6.1)
 
 `python-google-adk` runs fresh ordinary `LlmAgent` factories through the generic
 worker. It uses public ADK `Runner.run_async`, model/tool plugins and a run-local

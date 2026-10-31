@@ -29,10 +29,9 @@ shipped license terms, including the change-license provisions in those
 licenses. This change does not rewrite those artifacts or issue an additional
 license grant for those historical versions.
 
-Current-source documentation can say Apache-2.0 while linking to v0.6.0 for
-downloads only if it explains that boundary. The existing changelog entries
-remain historical. The first Apache-licensed package cut is v0.6.1.
-Older published versions keep their shipped terms. Never replace an existing package or image version to make its license
+Current downloads should prefer v0.6.1+ (Apache-2.0). Documentation that
+still mentions v0.6.0 must keep the BUSL boundary for that tag. Historical
+changelog entries remain unchanged. Never replace an existing package or image version to make its license
 match the current branch.
 
 ## Rights review before merge

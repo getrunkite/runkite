@@ -6,7 +6,7 @@ inside the Python worker. The example requires no provider key.
 
 ## Run
 
-This profile is **v0.6.0** and included in published PyPI `0.6.0`. From
+This profile is **v0.6.1** and included in published PyPI `0.6.1`. From
 repository root:
 
 ```bash

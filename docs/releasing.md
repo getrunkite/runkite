@@ -60,7 +60,7 @@ When cutting an Apache-licensed release:
   embedded assets change. Historical engineering notes should link to current
   contracts rather than present old behavior as current implementation.
 - A push to `main` touching `site/**` triggers Pages independently of a tag.
-  Keep v0.6.0 labels until public artifacts contain the feature. Protocol
+  Keep availability labels aligned with the artifacts that actually ship. Protocol
   documentation has its own mirror workflow; inspect it when changing that
   contract. These checks do not authorize a deployment or publication.
 

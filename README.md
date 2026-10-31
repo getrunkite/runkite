@@ -69,7 +69,7 @@ value rather than execution idempotency.
 
 ### Bring your framework
 
-The v0.6.0 runner packages include these profiles. Each supports its documented
+The v0.6.1 runner packages (Apache-2.0) include these profiles. Each supports its documented
 subset of the framework's native features.
 
 | Managed framework | Install or select | Runnable example |

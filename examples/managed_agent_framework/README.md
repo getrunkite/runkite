@@ -9,7 +9,7 @@ which only submits tool decisions while the app keeps the loop.
 
 ## Run
 
-The optional runner packaging ships in published PyPI **0.6.0**.
+The optional runner packaging ships in published PyPI **0.6.1**.
 From the repository root, or via `pip install 'runkite-runner[agent-framework]'`:
 build and install the local package in a clean Python 3.11+ environment
 (shown here with 3.12):
