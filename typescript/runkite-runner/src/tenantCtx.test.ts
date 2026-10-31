@@ -9,11 +9,15 @@ import {
   currentTenant,
   HEADER_GENERATION,
   HEADER_RUN_ID,
+  HEADER_RUN_ID_B64,
   HEADER_TENANT_ID,
+  HEADER_TENANT_ID_B64,
   runWithBinding,
   runWithTenant,
   storageThreadId,
   tenantHeaders,
+  runIdHeaders,
+  validateNativeCheckpointIdentity,
 } from "./tenantCtx.js";
 
 test("default tenant is 'default'", () => {
@@ -29,9 +33,12 @@ test("runWithTenant binds for the duration of the callback", async () => {
   assert.equal(currentTenant(), "default");
 });
 
-test("empty / whitespace binds as 'default'", async () => {
-  await runWithTenant("  ", async () => {
+test("empty binds as default while a nonempty tenant remains exact", async () => {
+  await runWithTenant("", async () => {
     assert.equal(currentTenant(), "default");
+  });
+  await runWithTenant("  ", async () => {
+    assert.equal(currentTenant(), "  ");
   });
 });
 
@@ -51,8 +58,60 @@ test("concurrent jobs keep distinct tenants", async () => {
 test("checkpointThreadId encodes non-default tenants", () => {
   assert.equal(checkpointThreadId(undefined, "t1"), "t1");
   assert.equal(checkpointThreadId("default", "t1"), "t1");
-  assert.equal(checkpointThreadId("  ", "t1"), "t1");
+  assert.equal(checkpointThreadId("  ", "t1"), "  :t1");
   assert.equal(checkpointThreadId("acme", "t1"), "acme:t1");
+});
+
+test("run bindings preserve exact IDs across the HTTP header boundary", async () => {
+  for (const runId of ["run ", " run", "run\tpart", "run\npart", "run-ré-雪", "\u00a0run"]) {
+    await runWithBinding({ tenantId: " acme ", runId, generation: 4 }, async () => {
+      assert.equal(currentTenant(), " acme ");
+      const headers = tenantHeaders();
+      assert.equal(headers[HEADER_TENANT_ID], undefined);
+      assert.equal(Buffer.from(headers[HEADER_TENANT_ID_B64], "base64url").toString("utf8"), " acme ");
+      assert.equal(headers[HEADER_RUN_ID], undefined);
+      assert.equal(Buffer.from(headers[HEADER_RUN_ID_B64], "base64url").toString("utf8"), runId);
+      assert.equal(headers[HEADER_GENERATION], "4");
+      assert.doesNotThrow(() => new Headers(headers));
+    });
+  }
+  assert.deepEqual(runIdHeaders("run /?#%"), { [HEADER_RUN_ID]: "run /?#%" });
+  assert.throws(() => runIdHeaders("run\ud800"), /invalid Unicode/);
+});
+
+test("tenant headers preserve Unicode and whitespace identities without raw aliases", async () => {
+  for (const tenant of ["tenant-ré-雪", " acme ", "acme\twest"]) {
+    await runWithTenant(tenant, async () => {
+      const headers = tenantHeaders();
+      assert.equal(headers[HEADER_TENANT_ID], undefined);
+      assert.equal(Buffer.from(headers[HEADER_TENANT_ID_B64], "base64url").toString("utf8"), tenant);
+      assert.doesNotThrow(() => new Headers(headers));
+    });
+  }
+});
+
+test("native saver delimiter validation preserves safe existing keys", () => {
+  for (const [tenant, thread] of [
+    [undefined, "t1"],
+    ["default", "t1"],
+    ["acme", "west:t1"],
+  ])
+    assert.doesNotThrow(() => validateNativeCheckpointIdentity(tenant, thread!, "memory"));
+  for (const [tenant, thread] of [
+    ["default", "acme:t1"],
+    ["default", "cron:daily"],
+    ["acme:west", "t1"],
+    [" acme", "t1"],
+    ["acme\twest", "t1"],
+  ])
+    assert.throws(() => validateNativeCheckpointIdentity(tenant, thread, "memory"), /ambiguous native LangGraph/);
+});
+
+test("persistent native state refuses named tenants even with delimiter-safe identities", () => {
+  assert.doesNotThrow(() => validateNativeCheckpointIdentity(undefined, "existing", "direct-postgres"));
+  assert.doesNotThrow(() => validateNativeCheckpointIdentity("default", "existing", "direct-postgres"));
+  for (const tenant of ["acme", "acme:west", "tenant-雪"])
+    assert.throws(() => validateNativeCheckpointIdentity(tenant, "target", "direct-postgres"), /ownership/);
 });
 
 test("storageThreadId strips tenant prefix for non-default tenants", async () => {

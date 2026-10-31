@@ -10,7 +10,53 @@ helpers now use one operation deadline and explicit safe-renewal reasons, and
 credential-bearing HTTP clients refuse redirects. See
 [Connectors](connectors.md#deadlines-cancellation-and-retry-safety-unreleased).
 
+## Unreleased identity and native checkpoint guard
+
+The pre-execution status lookup now uses the assignment tenant and encodes the
+run ID as one URL component. Empty tenant still selects `default`; nonempty
+identities are preserved exactly. Raw printable ASCII headers remain compatible.
+Unicode and legacy header-unsafe identities use `X-Runkite-Run-Id-B64` or
+`X-Runkite-Tenant-Id-B64` with unpadded base64url UTF-8, omitting the corresponding
+raw header. Upgrade the plane before runners that send these representations.
+The status lookup remains advisory; this does not change its failure policy.
+
+**Direct Postgres LangGraph now permits only the default tenant with thread IDs
+without `:`.** Every named tenant is refused before graph factory, state access
+or execution, even if its new identity is delimiter-safe: a legacy default thread
+such as `acme:target` could otherwise be read by named tenant `acme` / `target`.
+There is no trusted ownership marker on those old saver rows. Named LangGraph
+tenants must use HTTP proxy checkpoints and explicitly resolve prior native
+history. Safe default direct keys remain reachable without renaming.
+
+Fresh shared memory still permits named tenants under its delimiter guard:
+default-tenant thread IDs cannot contain `:`, named tenant IDs cannot contain `:`,
+and tenant IDs cannot have outer whitespace or ASCII controls. Named-tenant memory
+thread IDs may contain colons. Proxy checkpoints support all tenants without
+these native saver restrictions. Managed AI SDK, Microsoft, OpenAI Agents,
+Pydantic AI and Google ADK already use opaque HTTP state and are unaffected.
+
+Default cron uses `cron:<name>` threads and must use proxy checkpoints too.
+Unset runner `POSTGRES_DSN` and set `RUNKITE_HTTP_URL`. Switching modes imports no
+native history and does not repair previously mixed data. Resolve ownership and
+continuity explicitly before continuing; no blank-namespace or memory fallback
+is automatic. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased)
+and [engineering rationale](internal/atomic-results-and-identities.md).
+
+The bridge also verifies the actual dequeued assignment's kind before advancing
+its durable attempt or delivering input. Authenticated cross-kind misroutes are
+rejected and generation-Nacked; trusted no-token local behavior is unchanged.
+For NATS, choose kinds with distinct derived durable names: `.` maps to `_`, so
+`a.b` and `a_b` conflict. An existing durable with a different filter now produces
+an error instead of being retargeted. Reconcile queued work before a consistent
+kind rename; no automatic consumer/history migration occurs.
+
+In-process return/reclaim also keeps the original lease when its ready buffer is
+full or the caller is already cancelled. These paths fail without blocking or
+advancing a generation for an unqueued assignment, allowing normal later retry.
+Memory still does not survive process exit.
+
 ## Install (published packages)
+
 
 ```bash
 # Python — LangGraph runner (+ importable SDK)

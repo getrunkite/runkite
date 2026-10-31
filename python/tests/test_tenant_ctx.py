@@ -3,7 +3,7 @@
 Proves:
 1. Default tenant is "default" (and the proxy header matches).
 2. bind_tenant / reset_tenant round-trip restores the prior value.
-3. Empty / whitespace binds as "default".
+3. Empty binds as "default"; nonempty tenant IDs remain exact.
 4. Concurrent asyncio tasks each see their own bound tenant -- a
    ContextVar leak would clobber shared-runner multi-tenant jobs.
 
@@ -66,9 +66,15 @@ def test_bind_and_reset():
 
 
 def test_empty_binds_default():
+    for value in (None, ""):
+        token = bind_tenant(value)
+        try:
+            check("empty binds as 'default'", current_tenant() == "default")
+        finally:
+            reset_tenant(token)
     token = bind_tenant("  ")
     try:
-        check("whitespace binds as 'default'", current_tenant() == "default")
+        check("nonempty whitespace tenant is preserved exactly", current_tenant() == "  ")
     finally:
         reset_tenant(token)
 
@@ -98,7 +104,7 @@ def test_concurrent_jobs_do_not_clobber():
 def test_checkpoint_thread_id_encoding():
     check("absent tenant → bare", checkpoint_thread_id(None, "t1") == "t1")
     check("default tenant → bare", checkpoint_thread_id("default", "t1") == "t1")
-    check("whitespace tenant → bare", checkpoint_thread_id("  ", "t1") == "t1")
+    check("whitespace tenant is not silently normalized", checkpoint_thread_id("  ", "t1") == "  :t1")
     check("acme tenant → prefixed", checkpoint_thread_id("acme", "t1") == "acme:t1")
 
 

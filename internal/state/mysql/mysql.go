@@ -1430,39 +1430,7 @@ func nullStringToPtr(s sql.NullString) *string {
 // --------------------------------------------------------------------------
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
-	for _, raw := range []json.RawMessage{run.Input, run.Config} {
-		if err := s.validateApplicationJSON(ctx, raw); err != nil {
-			return err
-		}
-	}
-	meta, _ := json.Marshal(run.Metadata)
-	// error_msg is written explicitly as '' rather than left to a
-	// schema-level DEFAULT: unlike Postgres, plain MySQL TEXT columns
-	// reject a literal string DEFAULT outright (ER_BLOB_CANT_HAVE_DEFAULT,
-	// confirmed against a live MySQL 8.4 container) -- only an
-	// expression-syntax default like `DEFAULT ('')` is accepted, and
-	// that's a more obscure dialect quirk to lean on than just writing
-	// the value explicitly here, where every other Run field is
-	// already written explicitly. scanRun's plain string destination
-	// for this column (not sql.NullString) depends on this column
-	// never actually being SQL NULL for an app-created row.
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
-		nullableJSON(run.Input), nullableJSON(run.Config), "",
-		run.CreatedAt, run.UpdatedAt, nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
-	if isDuplicateKeyError(err) {
-		// run_id is the primary key; wrap into state.ErrConflict, same
-		// idiom CreateThread already uses -- otherwise a cross-tenant
-		// run_id collision (GetRun is tenant-scoped, so createRunCtx's
-		// own retry-race fallback can't find the OTHER tenant's row to
-		// dispatch through) falls all the way back to the API layer as
-		// a raw, unwrapped *mysql.MySQLError, surfacing as a generic
-		// 500 instead of a clean 409.
-		return &state.ErrConflict{Resource: "run", ID: run.RunID}
-	}
-	return err
+	return s.CreateRunAdmitted(ctx, run, nil)
 }
 
 func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
@@ -1778,12 +1746,13 @@ func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.
 		}
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	return s.completionDriver().WithThread(ctx, threadID, func(tx sqlcompletion.Tx) error {
+		return tx.Exec(ctx, `
 		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
-		nullableString(parentID), vals, meta, next, tasks, interrupts, createdAt)
-	return err
+			nullableString(parentID), vals, meta, next, tasks, interrupts, createdAt)
+	})
 }
 
 func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error) {
@@ -2536,6 +2505,8 @@ func (s *Store) putOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 		if err := driver.LockRunCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
 			return 0, err
 		}
+	} else if _, err := s.completionDriver().LockThread(ctx, sqlcompletion.WrapSQLTransaction(tx), threadID); err != nil {
+		return 0, err
 	}
 
 	// Create-only (If-None-Match: *): INSERT, conflict if the row exists.

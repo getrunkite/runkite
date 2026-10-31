@@ -218,6 +218,11 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 	if models.RunIsSimulation(run.Metadata) {
 		return nil
 	}
+	// Cached output retains the original provider metadata for the caller,
+	// but this run did no model work. Replaying it must not bill those tokens.
+	if run.Metadata["cache_hit"] == true {
+		return nil
+	}
 	if !isTerminalStatus(run.Status) {
 		return nil
 	}

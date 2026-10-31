@@ -244,6 +244,8 @@ jobs:
           python python/tests/test_tls_utils.py
           python python/tests/test_schema_introspect.py
           python python/tests/test_tenant_ctx.py
+          python python/tests/test_run_identity_headers.py
+          python python/tests/test_checkpoint_identity.py
           python python/tests/test_connectors.py
           python python/tests/test_tracing.py
           python python/tests/test_otel_callbacks.py

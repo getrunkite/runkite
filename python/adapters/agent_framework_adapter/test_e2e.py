@@ -129,7 +129,9 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         self.profile = "Postgres + Redis" if postgres else "SQLite + in-process"
         self.http = httpx.Client(timeout=20, trust_env=False)
         prefix = uuid.uuid4().hex[:12]
-        self.tenant_a = f"{self.fixture_label}-e2e-a-{prefix}"
+        # Exercise encoded identity headers in every managed SDK profile
+        # that inherits this installed-wheel harness.
+        self.tenant_a = f"{self.fixture_label}-e2e-a-雪-{prefix}"
         self.tenant_b = f"{self.fixture_label}-e2e-b-{prefix}"
         self.agent = f"{self.fixture_label}_e2e_{prefix}"
         self.slow = f"{self.fixture_label}_e2e_slow_{prefix}"

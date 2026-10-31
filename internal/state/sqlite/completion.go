@@ -13,3 +13,8 @@ func (s *SQLiteStore) BeginRunAttempt(ctx context.Context, id string, generation
 func (s *SQLiteStore) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
 	return sqlcompletion.DatabaseSQL(s.db, "sqlite").CompleteRun(ctx, c)
 }
+
+func (s *SQLiteStore) completionDriver() sqlcompletion.Driver {
+	driver := sqlcompletion.DatabaseSQL(s.db, "sqlite")
+	return driver
+}

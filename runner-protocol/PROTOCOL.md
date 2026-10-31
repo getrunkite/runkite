@@ -142,7 +142,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `connector_needs` | array of strings | No | Pre-warm hint. The control plane MAY call GetSession for these connectors at dispatch (e.g. warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
 | `allowed_tools` | array of strings | No | Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = the runner MUST refuse tool names not listed before framework tool side effects (emit `tool_call`, then `tool_auth` deny + `error` + `end` status error). Distinct from connector policy grants on the MCP/proxy path. |
 | `generation` | integer | No | Fencing token for this dispatch attempt. Starts at 1 when a run is created; the control plane increments it on reclaim so a superseded runner's late Heartbeat / StreamEvents / ReportStatus can be rejected. The runner MUST echo the assigned value on every run-specific RPC and bound HTTP call. Zero matches only an actual generation-zero assignment; it never bypasses fencing or inherits a newer attempt. Older runners that omit the field must upgrade for positive-generation assignments. |
-| `tenant_id` | string | No | Tenant that authenticated the originating request. Runners MUST scope direct-mode `store_items`/`vector_items` SQL (and proxy `X-Runkite-Tenant-Id` on `/internal/*`) to this value. Absent on older control planes -- runners fall back to `"default"`. LangGraph runners MUST also encode this into the checkpointer key: `configurable.thread_id` is the bare `thread_id` when tenant is `"default"`/absent, otherwise `"{tenant_id}:{thread_id}"` (logical thread remains the top-level `thread_id` field; avoid `:` inside tenant ids -- the encoding is a single colon split). Proxy-mode: after kind-token auth the control plane accepts the runner-supplied `X-Runkite-Tenant-Id`, optionally constrained by `RUNNER_TENANTS_<kind>` when configured; see docs/auth.md. |
+| `tenant_id` | string | No | Exact tenant from the originating authenticated request. Empty resolves to `default`. Runners MUST preserve this identity in task-local store/vector access and internal HTTP headers. Run-bound routes derive it from the assignment; unbound routes validate its runner-kind allowlist. Native LangGraph checkpoint keys retain the legacy bare-default / tenant-prefix layout only for unambiguous identities; see section 6.6. Proxy mode uses the bare thread ID under the exact tenant. |
 | `trace_context` | object | No | W3C Trace Context for cross-process observability. The runner SHOULD set this as the active trace context before executing the agent, so that all spans (LLM calls, tool invocations, etc.) are children of this trace. |
 
 ### 3.3 Rules
@@ -383,7 +383,7 @@ Body: [
 - In proxy mode, checkpoint data is opaque bytes. The control plane stores and returns them without parsing. Soft size cap: 16 MiB per blob (`413` if exceeded).
 - LangGraph's Python and TypeScript `ProxyCheckpointSaver` pack checkpoint + metadata + pending writes (`aput_writes` / `putWrites`) into each blob. HITL interrupt→resume and mid-superstep pending writes are full-fidelity in proxy mode (same resume path as direct mode). Concurrent writers MUST use conditional PUT: `If-None-Match: *` for first create (both put and putWrites on 404 — create-only, `412` if the id already exists) and `If-Match` / ETag for updates, retrying on `412` so pending channels are not silently dropped. A GET 200 without an ETag MUST NOT fall through to an unconditional PUT (savers refuse the update). Late writes after cancel/reclaim soft-no-op on `403 run_not_inflight` (MUST NOT crash the runner process). Paths the saver cannot support MUST fail loud (e.g. `alist(filter=...)` / `list({filter})`).
 - Opaque blob **envelope** schema is shared across languages, but serde payloads inside are runtime-specific: a Python runner MUST NOT resume a thread whose checkpoints were written by the TypeScript saver (and vice versa). Same-language resume across processes/backends is the supported path.
-- Proxy mode `/internal/checkpoints/*` requires run binding (`X-Runkite-Run-Id` + `X-Runkite-Generation`); the path `thread_id` MUST match the in-flight assignment's `thread_id` (`403 run_thread_mismatch` otherwise). Path `thread_id` is the assignment's bare thread id (not a tenant-prefixed LangGraph checkpointer key).
+- Proxy mode `/internal/checkpoints/*` requires run binding (one run identity header (section 6.6) + `X-Runkite-Generation`); the path `thread_id` MUST match the in-flight assignment's `thread_id` (`403 run_thread_mismatch` otherwise). Path `thread_id` is the assignment's bare thread id (not a tenant-prefixed LangGraph checkpointer key).
 - The path `checkpoint_id` is an opaque string owned by the framework. Clients MAY encode framework-specific structure inside it (e.g. LangGraph folds `checkpoint_ns` as `{ns}\x1f{checkpoint_id}`); the control plane MUST treat it as an opaque key and MUST NOT parse it.
 - The control plane stores checkpoint identity (`thread_id` + `checkpoint_id`) for its own bookkeeping and forwards a client-chosen past checkpoint via `RunAssignment.checkpoint_ref` for time-travel resume. HITL resume uses `resume_command` (optionally combined with `checkpoint_ref`); without `checkpoint_ref`, HITL resumes from the thread's latest checkpoint.
 - The runner MUST write a checkpoint after each node step if the agent framework supports it. This enables crash recovery and HITL resume at the correct position.
@@ -394,7 +394,7 @@ Body: [
 
 Proxy checkpoint I/O is run-bound, not a free blob store: every
 `/internal/checkpoints/*` request must present an active assignment
-(`X-Runkite-Run-Id` + `X-Runkite-Generation`, plus `X-Runner-Kind` /
+(one run identity header (section 6.6) + `X-Runkite-Generation`, plus `X-Runner-Kind` /
 `X-Runner-Token` when production runner auth is enabled). Missing or
 non-dispatched assignment returns `403 run_not_inflight`; a different path thread
 returns `403 run_thread_mismatch`. Tenant comes from the assignment. The plane
@@ -429,6 +429,40 @@ LangGraph proxy savers (§6.3) own many checkpoint ids per thread (one per step 
 - **Envelope.** Bytes remain opaque to the control plane. Cross-framework or cross-language resume of adapter blobs is unsupported unless an adapter explicitly documents a shared schema.
 
 ---
+
+### 6.6 Exact identities and native checkpoint boundaries
+
+Run IDs and tenant IDs are identities, not strings to trim. HTTP helpers use the
+raw `X-Runkite-Run-Id` or `X-Runkite-Tenant-Id` only when safely representable.
+Otherwise they send `X-Runkite-Run-Id-B64` or `X-Runkite-Tenant-Id-B64`, containing
+canonical unpadded base64url of the original UTF-8 bytes. Each identity uses one
+form only. Duplicate, conflicting, malformed or noncanonical encoded headers
+fail closed. Generation remains `X-Runkite-Generation`. Run binding requires a
+nonempty run ID; an absent tenant on an unbound route resolves to `default`.
+
+The plane validates encoded identities before exact lookup. Runner-kind tenant
+allowlists compare exact identities, with only the empty-to-default fallback.
+Bound proxies always derive tenant and agent from the in-flight assignment.
+Upgrade the plane before helpers that use encoded headers. Older planes reject
+an encoded-only run binding rather than guessing another ID. New run creation
+rejects controls and outer whitespace; updated helpers can address existing
+legacy IDs exactly without renaming stored records. URL path components must
+also be escaped independently of header encoding.
+
+The legacy native LangGraph key layout is not injective over arbitrary strings:
+default thread `acme:target` aliases tenant `acme`, thread `target`. Direct
+Postgres execution therefore refuses every non-default tenant before factory or
+checkpoint access: even a currently delimiter-safe pair could read an older
+key written by a different owner. Named tenants must use HTTP proxy checkpoints
+and explicitly resolve prior native history; switching modes does not import it.
+Direct default-tenant threads containing `:` are also refused, including
+`cron:<name>`. Fresh in-memory execution permits named tenants only within the
+disjoint delimiter domain (no colon in tenant IDs and no noncanonical tenant
+whitespace/ASCII controls); default memory threads cannot contain `:` either.
+Default direct histories with non-colon IDs retain their layout. Potentially
+contaminated historical keys require operator investigation; the guard cannot
+reconstruct their owners.
+No cross-language native resume or automatic history import is introduced.
 
 ## 7. Store API
 

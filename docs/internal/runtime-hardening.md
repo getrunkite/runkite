@@ -15,6 +15,9 @@ Read [Architecture](../architecture.md), [Trust and governance](../trust-governa
 and [Limitations](../limitations.md) for the product contract. Older engineering
 chapters remain historical; this record explains the corrected paths.
 
+The follow-up [atomic results and exact identities](atomic-results-and-identities.md)
+record covers cache completion, parent replacement and native saver identity.
+
 ## The invariants
 
 A runner mutation belongs to one run and one generation. An approval belongs to

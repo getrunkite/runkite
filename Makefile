@@ -255,6 +255,8 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tls_utils.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_schema_introspect.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tenant_ctx.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_run_identity_headers.py && \
+		PYTHONPATH=python python/.venv/bin/python python/tests/test_checkpoint_identity.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_connectors.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tracing.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_otel_callbacks.py && \
@@ -294,6 +296,8 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_tls_utils.py && \
 		PYTHONPATH=python python3 python/tests/test_schema_introspect.py && \
 		PYTHONPATH=python python3 python/tests/test_tenant_ctx.py && \
+		PYTHONPATH=python python3 python/tests/test_run_identity_headers.py && \
+		PYTHONPATH=python python3 python/tests/test_checkpoint_identity.py && \
 		PYTHONPATH=python python3 python/tests/test_connectors.py && \
 		PYTHONPATH=python python3 python/tests/test_tracing.py && \
 		PYTHONPATH=python python3 python/tests/test_otel_callbacks.py && \
@@ -473,8 +477,9 @@ test-managed-ai-sdk: test-managed-chat-ui
 	@managed_test_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$managed_test_dir"' EXIT; \
 	go build -o "$$managed_test_dir/runkite" ./cmd && \
+	go build -o "$$managed_test_dir/seed" ./test/e2e/ai_sdk_seed && \
 	cd typescript/runkite-runner && \
-	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" node --import tsx --test src/aiSdk*.test.ts
+	RUNKITE_TEST_BINARY="$$managed_test_dir/runkite" RUNKITE_TEST_SEED_BINARY="$$managed_test_dir/seed" node --import tsx --test src/aiSdk*.test.ts
 
 # App-owned tool governance, including real SDK execution with an offline model.
 test-governance-ts:

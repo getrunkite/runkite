@@ -10,10 +10,11 @@ cancel path; a brief CP blip must not drop every job.
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 import httpx
 
-from .tenant_ctx import HEADER_TENANT_ID
+from .tenant_ctx import tenant_id_headers
 from .tls_utils import httpx_tls_kwargs
 
 logger = logging.getLogger("runkite.runner")
@@ -36,15 +37,15 @@ async def should_skip_run(
     # Runs are tenant-scoped; without this header GetRun resolves to
     # tenant "default" and a non-default assignment looks like a 404 miss
     # (then discarded forever until reclaim exhausts).
-    tid = (tenant_id or "").strip()
+    tid = tenant_id or ""
     if tid:
-        headers[HEADER_TENANT_ID] = tid
+        headers.update(tenant_id_headers(tid))
     if runner_token:
         headers["X-Runner-Kind"] = runner_kind or "python-langgraph"
         headers["X-Runner-Token"] = runner_token
     try:
         async with httpx.AsyncClient(timeout=5.0, **httpx_tls_kwargs()) as client:
-            resp = await client.get(f"{base}/internal/runs/{run_id}/status", headers=headers)
+            resp = await client.get(f"{base}/internal/runs/{quote(run_id, safe='')}/status", headers=headers)
         if resp.status_code == 404:
             logger.warning("pre-exec status: run %s not found; discarding", run_id)
             return True

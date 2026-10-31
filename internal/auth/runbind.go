@@ -2,10 +2,13 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -14,9 +17,36 @@ import (
 // Headers runners must send on run-bound /internal/* proxy paths so the
 // control plane can prove the call belongs to an active dispatch.
 const (
-	HeaderRunID      = "X-Runkite-Run-Id"
-	HeaderGeneration = "X-Runkite-Generation"
+	HeaderRunID       = "X-Runkite-Run-Id"
+	HeaderRunIDBase64 = "X-Runkite-Run-Id-B64"
+	HeaderGeneration  = "X-Runkite-Generation"
 )
+
+// ValidRunID rejects new identifiers that older helpers would normalize or
+// could not carry safely. Empty selects a generated ID. Unicode is supported
+// through the encoded binding header, without changing the stored identifier.
+func ValidRunID(id string) bool {
+	if strings.TrimSpace(id) != id || !utf8.ValidString(id) {
+		return false
+	}
+	return !strings.ContainsFunc(id, unicode.IsControl)
+}
+
+func exactIdentityHeader(r *http.Request, rawName, encodedName string) (string, bool) {
+	rawValues, encodedValues := r.Header.Values(rawName), r.Header.Values(encodedName)
+	raw, encoded := r.Header.Get(rawName), r.Header.Get(encodedName)
+	if len(rawValues) > 1 || len(encodedValues) > 1 || (len(rawValues) != 0 && len(encodedValues) != 0) {
+		return "", false
+	}
+	if len(encodedValues) != 0 {
+		data, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+		if err != nil || len(data) == 0 || !utf8.Valid(data) || base64.RawURLEncoding.EncodeToString(data) != encoded {
+			return "", false
+		}
+		return string(data), true
+	}
+	return raw, ValidRunID(raw)
+}
 
 // Stable reason_code values for run-binding denials (and related
 // /internal/* auth failures). Clients and SIEM can key off these
@@ -85,11 +115,11 @@ func requiresRunBinding(path string) bool {
 // context with tenant (+ optional principal) derived from the
 // assignment. Call only when opts.Inflight != nil and requiresRunBinding.
 func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens *RunnerTokens, inflight InflightLookup) (context.Context, bool) {
-	runID := strings.TrimSpace(r.Header.Get(HeaderRunID))
+	runID, validRunID := exactIdentityHeader(r, HeaderRunID, HeaderRunIDBase64)
 	genRaw := strings.TrimSpace(r.Header.Get(HeaderGeneration))
-	if runID == "" || genRaw == "" {
+	if !validRunID || runID == "" || genRaw == "" {
 		writeDenied(w, http.StatusUnauthorized, ReasonRunBindingRequired,
-			"missing X-Runkite-Run-Id or X-Runkite-Generation")
+			"missing or invalid run identity header or X-Runkite-Generation")
 		return nil, false
 	}
 	generation, err := strconv.ParseInt(genRaw, 10, 64)
@@ -122,7 +152,7 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 		return nil, false
 	}
 
-	tenantID := strings.TrimSpace(assignment.TenantID)
+	tenantID := assignment.TenantID
 	if tenantID == "" {
 		tenantID = tenant.DefaultTenant
 	}

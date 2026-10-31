@@ -43,6 +43,25 @@ it is not an automatic retry signal. Logout revocation failure returns HTTP 503
 
 Completion `/state` and history snapshots include merged thread values, while
 run output remains per-run. New literal `.` and `..` run/thread IDs return 400.
+New run IDs containing controls or leading/trailing whitespace also return 400;
+Unicode and other custom path characters remain supported. Cached creation on
+built-in stores commits output, merged state and checkpoint atomically. Cached
+original usage remains in output but is not charged again in the usage ledger.
+A delayed child insert whose parent was replaced by another tenant returns 404.
+
+Internal HTTP calls preserve identity exactly. A bound run requires generation
+and one run identity representation: `X-Runkite-Run-Id` or
+`X-Runkite-Run-Id-B64`. The latter is unpadded base64url UTF-8 for Unicode or legacy
+header-unsafe IDs. Unbound tenant claims similarly use `X-Runkite-Tenant-Id` or
+`X-Runkite-Tenant-Id-B64`; bound tenant authority still comes from the assignment.
+For the identity used by a route, both representations at once, duplicate
+headers or malformed encoding are rejected. Upgrade the plane before these runner helpers.
+The Compatible NATS backend has a narrower literal run-ID alphabet. Its queue,
+event and cancel operations reject wildcards and other unsupported subject/KV
+keys, including Unicode. Run creation returns 400 before mutation on this
+backend; see [backend limitations](limitations.md). A supported
+custom URL component is not necessarily a valid NATS partition key.
+
 See [rollout requirements](ops-runbook.md#hardening-upgrade-unreleased) and the
 [design record](internal/runtime-hardening.md).
 

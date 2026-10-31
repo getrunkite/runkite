@@ -115,6 +115,16 @@ MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `sta
 
 `internal/transport/nats` is the second full transport implementation (**Compatible** tier -- see [Backend support tiers](#backend-support-tiers)), checked with the exact same `internal/transport/conformance` suite Redis's own transport is (JobQueue, EventBroker, and CancelBroker, all three -- Kafka, added later, deliberately only implements JobQueue; see its own package doc for why NATS specifically earns the full triad and Kafka doesn't). Wired the same way as Redis: set `NATS_URL` (e.g. `nats://localhost:4222`), no code changes.
 
+Unreleased run-identity hardening treats every NATS run ID as a literal
+partition, never a subject filter. IDs must be nonempty ASCII letters/digits,
+`-`, `_`, `/`, `=` or single internal dots, with no leading/trailing dot or empty
+dot segment. Wildcards, whitespace, colons and Unicode fail closed before queue,
+event or cancellation operations. Valid existing keys/subjects are unchanged.
+Unsupported legacy queued messages are retained with delayed negative
+acknowledgement for operator reconciliation. This is a Compatible NATS boundary,
+not a restriction on the Supported Postgres/Redis profile. See the
+[design record](internal/atomic-results-and-identities.md#nats-must-treat-a-run-id-as-a-literal-partition).
+
 The queue side genuinely differs from Redis's, not just in wire format: NATS JetStream gives two of this project's own three crash-recovery problems natively -- `AckWait` (a per-message redelivery timer, closing the same gap Redis's hand-built lease-and-reaper closes) and `InProgress` (a heartbeat call that resets that timer without acking, backing `Renew` directly). Fencing is the one piece NOT native, confirmed against a real, still-open NATS issue ([nats-server#4786](https://github.com/nats-io/nats-server/issues/4786)): JetStream currently accepts an ack arriving after a message has already been redelivered to a different consumer -- the exact "stale runner's late report clobbers the current attempt" gap Redis needed generation fencing for. Closed the same way conceptually, but for free where Redis needed a hand-rolled counter: a message's own `NumDelivered` (1 on first delivery, incremented natively by the server on every redelivery) *is* this backend's fencing generation. Shared, cross-replica in-flight tracking (the same requirement the Redis transport uses for multi-replica reclaim) is a JetStream KV bucket holding each in-flight run's reply subject -- a NATS reply subject is just a string, so any control-plane replica holding it can publish an ack/nak/in-progress signal directly, without needing the original connection that received the message.
 
 Passes all 26 conformance tests, but not on the first attempt -- two real, live-found bugs along the way: comparing JetStream sentinel errors with `==` instead of `errors.Is` silently never matched (they come back wrapped), breaking not-found handling in several places at once; and `Replay`'s first implementation reused the same `OrderedConsumer` type `Subscribe` uses for its live tail, which turned out to have self-healing reset/retry logic that doesn't behave well driven by repeated one-shot `FetchNoWait` calls -- it hung retrying an internal consumer reset indefinitely. Fixed by giving `Replay` its own plain ephemeral consumer instead, explicitly deleted when done, with none of `OrderedConsumer`'s continuous-tail machinery to misbehave. Also needed a config-file-only server setting (`max_payload: 8MB` in `deploy/nats-server.conf`, mounted into `docker-compose.test.yml`'s `nats` service): the server's own default (1MB) is smaller than this project's own large-payload conformance test, confirmed live via a genuine "maximum payload exceeded" rejection before the fix.
@@ -151,6 +161,19 @@ Agent graph checkpoints and control-plane run/thread metadata are **intentionall
 - **In-memory fallback** (neither DSN nor HTTP URL): LangGraph's `MemorySaver`. Explicitly ephemeral — fine for local/dev; does **not** survive a runner restart.
 
 **HITL / mid-superstep fidelity (proxy):** full LangGraph interrupt→resume and pending writes, not a half-promise. `ProxyCheckpointSaver` packs `checkpoint` + `metadata` + `writes` (pending channel writes from `aput_writes` / `putWrites`) into each opaque blob; `aput`/`put` preserves existing `writes`; concurrent writers merge via If-Match / ETag CAS (no silent drop). A GET 200 without ETag refuses the update rather than issuing an unconditional PUT. `aput_writes`/`putWrites` without `checkpoint_id` raises. Pregel calls writes before put for a new id — both paths treat a missing blob as create-only (`If-None-Match: *`): writes insert a shell, put inserts the full checkpoint; if a peer already won, `412` → GET+merge so an unconditional put cannot wipe a shell. Late writes after cancel/reclaim soft-no-op on `403 run_not_inflight` (must not crash the Node runner). Unsupported paths fail loud (`alist(filter=...)` / `list({filter})`). **Not cross-language resume:** envelope `v`/field layout matches across Python and TypeScript, but `dumps_typed` payloads are runtime-specific — do not hand a TS-written thread to a Python runner (or the reverse). Proven by `python/tests/test_proxy_checkpoint.py`, `typescript/runkite-runner` `proxyCheckpoint` tests, and matrix `hitl_restart` (interrupt → kill runner → resume) on SQLite and MySQL CP with blank runner `POSTGRES_DSN` for both `python-langgraph` and `typescript-langgraphjs`.
+
+**Unreleased direct LangGraph boundary:** direct Postgres checkpoints now accept
+only the default tenant with thread IDs without `:`. Every named tenant is
+refused before factory/state access because a new delimiter-safe prefix can still
+select legacy default-tenant history. Named LangGraph tenants require exact
+scoped HTTP proxy checkpoints and explicit resolution of prior native history.
+Fresh memory permits named tenants under its delimiter guard; default colon
+thread IDs, colon-containing named tenants and tenant IDs with outer
+whitespace/ASCII controls are refused. Default cron threads (`cron:<name>`) need
+proxy mode too. Proxy supports all tenants, but selecting it imports no native
+history and provides no automatic ownership repair or blank fallback. Managed
+opaque SDK profiles are unaffected. See the
+[upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
 
 **MySQL / Mongo / SQLite control planes:** unset `POSTGRES_DSN` on runners and set `RUNKITE_HTTP_URL` so checkpoints (and store) use **proxy mode**. Do not leave `POSTGRES_DSN` pointed at a separate Postgres or you silently split state. Direct-mode LangGraph tables remain Postgres-only; proxy mode is the durable path for every other CP backend.
 

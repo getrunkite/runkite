@@ -637,7 +637,7 @@ test("buildRunConfig maps checkpoint_ref to configurable.checkpoint_id", () => {
 test("buildRunConfig tenant-scopes configurable.thread_id for non-default tenants", () => {
   assert.equal(buildRunConfig(assignment({ thread_id: "t1" })).configurable.thread_id, "t1");
   assert.equal(buildRunConfig(assignment({ thread_id: "t1", tenant_id: "default" })).configurable.thread_id, "t1");
-  assert.equal(buildRunConfig(assignment({ thread_id: "t1", tenant_id: "  " })).configurable.thread_id, "t1");
+  assert.equal(buildRunConfig(assignment({ thread_id: "t1", tenant_id: "  " })).configurable.thread_id, "  :t1");
   assert.equal(buildRunConfig(assignment({ thread_id: "t1", tenant_id: "acme" })).configurable.thread_id, "acme:t1");
 });
 

@@ -1670,12 +1670,13 @@ func (s *Store) SaveCheckpoint(ctx context.Context, threadID string, ts *models.
 		}
 	}
 
-	_, err := s.pool.Exec(ctx, `
+	return s.completionDriver().WithThread(ctx, threadID, func(tx sqlcompletion.Tx) error {
+		return tx.Exec(ctx, `
 		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
-		parentID, vals, meta, next, tasks, interrupts, createdAt)
-	return err
+			parentID, vals, meta, next, tasks, interrupts, createdAt)
+	})
 }
 
 func (s *Store) GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error) {
@@ -1799,28 +1800,7 @@ func fillPgCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID *
 // --------------------------------------------------------------------------
 
 func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
-	meta, _ := json.Marshal(run.Metadata)
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at, parent_run_id, root_run_id, depth)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
-		nullableJSON(run.Input), nullableJSON(run.Config),
-		run.CreatedAt, run.UpdatedAt, run.ParentRunID, run.RootRunID, run.Depth)
-	if err != nil {
-		// run_id is the primary key; wrap a unique violation into
-		// state.ErrConflict, same idiom CreateThread already uses --
-		// otherwise a cross-tenant run_id collision (GetRun is
-		// tenant-scoped, so createRunCtx's own retry-race fallback
-		// can't find the OTHER tenant's row to dispatch through) falls
-		// all the way back to the API layer as a raw, unwrapped
-		// *pgconn.PgError, surfacing as a generic 500 instead of a
-		// clean 409.
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return &state.ErrConflict{Resource: "run", ID: run.RunID}
-		}
-	}
-	return err
+	return s.CreateRunAdmitted(ctx, run, nil)
 }
 
 func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {

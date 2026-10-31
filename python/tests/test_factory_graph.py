@@ -400,7 +400,7 @@ def test_build_run_config_tenant_scopes_checkpoint_thread_id():
     check("default tenant keeps bare thread_id", default["configurable"]["thread_id"] == "t1")
 
     blank = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "  "})
-    check("whitespace tenant keeps bare thread_id", blank["configurable"]["thread_id"] == "t1")
+    check("nonempty tenant whitespace is not normalized", blank["configurable"]["thread_id"] == "  :t1")
 
     acme = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "acme"})
     check("non-default tenant prefixes thread_id", acme["configurable"]["thread_id"] == "acme:t1")

@@ -238,6 +238,9 @@ export async function executeRun(
   };
 
   try {
+    // Refuse ambiguous native saver keys before graph factories or state reads.
+    // Lightweight unit adapters without a managed checkpointer omit this hook.
+    adapter.validateCheckpointIdentity?.(assignment.tenant_id, assignment.thread_id);
     // Emitted BEFORE building the graph, not after: for a factory graph
     // (see factoryGraph.ts) this construction runs fresh, on the
     // request path, every single run -- it can genuinely take seconds

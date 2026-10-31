@@ -11,7 +11,8 @@
 - **Released in v0.5.8: opaque checkpoint hardening.** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
 
 For current unreleased authority, recovery, connector and Admin corrections, read
-[Runtime hardening](runtime-hardening.md). It records the source invariants,
+[Runtime hardening](runtime-hardening.md) and
+[atomic results and exact identities](atomic-results-and-identities.md). They record the source invariants,
 operator upgrade steps and test boundaries without rewriting historical chapters.
 
 Managed execution and app-owned tool governance are separate entry paths. Neither one governs a native tool that bypasses its policy hook or the connector proxy. The new managed AI SDK integration checks do not establish a new live multi-replica HA soak or exactly-once external side effects before a checkpoint commit.

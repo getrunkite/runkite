@@ -44,6 +44,8 @@ export declare class LangGraphAdapter {
      * is a runner concern (see checkpoint.ts), not something agent
      * authors configure in their own graph.ts. */
     attachCheckpointer(manager: CheckpointerManager): void;
+    /** Native saver keys use a legacy delimiter format; proxy state is scoped by the plane. */
+    validateCheckpointIdentity(tenantId: string | undefined, threadId: string): void;
     /** Attaches the runner's Store Dual Mode client (see store.ts) to
      * every loaded STATIC graph, the same way attachCheckpointer works,
      * and remembers it for factory graphs. */

@@ -1501,13 +1501,14 @@ func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, threadID string, ts *m
 		parentID = &ts.ParentCheckpoint.CheckpointID
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	return s.completionDriver().WithThread(ctx, threadID, func(tx sqlcompletion.Tx) error {
+		return tx.Exec(ctx, `
 		INSERT INTO thread_checkpoints (tenant_id, checkpoint_id, thread_id, checkpoint_ns, parent_id, values_json, metadata, next_nodes, tasks, interrupts, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
-		parentID, string(vals), string(meta), string(next), string(tasks), string(interrupts),
-		nilOrNow(ts.CreatedAt))
-	return err
+			parentID, string(vals), string(meta), string(next), string(tasks), string(interrupts),
+			nilOrNow(ts.CreatedAt))
+	})
 }
 
 func (s *SQLiteStore) GetLatestCheckpoint(ctx context.Context, threadID string) (*models.ThreadState, error) {
@@ -1633,25 +1634,7 @@ func nilOrNow(t *string) string {
 // --------------------------------------------------------------------------
 
 func (s *SQLiteStore) CreateRun(ctx context.Context, run *models.Run) error {
-	meta, _ := json.Marshal(run.Metadata)
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, created_at, updated_at, parent_run_id, root_run_id, depth)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, string(meta),
-		string(run.Input), string(run.Config),
-		run.CreatedAt.Format(time.RFC3339), run.UpdatedAt.Format(time.RFC3339),
-		nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
-	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
-		// run_id is the primary key; wrap into state.ErrConflict, same
-		// idiom CreateThread already uses -- otherwise a cross-tenant
-		// run_id collision (GetRun is tenant-scoped, so createRunCtx's
-		// own retry-race fallback can't find the OTHER tenant's row to
-		// dispatch through) falls all the way back to the API layer as
-		// a raw, unwrapped driver error, surfacing as a generic 500
-		// instead of a clean 409.
-		return &state.ErrConflict{Resource: "run", ID: run.RunID}
-	}
-	return err
+	return s.CreateRunAdmitted(ctx, run, nil)
 }
 
 func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, error) {

@@ -117,6 +117,20 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		return state.CompletionResult{}, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	result, err := d.CompleteRunInTx(ctx, tx, c)
+	if err != nil || !result.Applied {
+		return result, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return state.CompletionResult{}, err
+	}
+	return result, nil
+}
+
+// CompleteRunInTx shares the completion writes with synchronous cached-run
+// creation. The caller owns the transaction and must commit only after every
+// admission, parent-ownership and completion operation succeeds.
+func (d Driver) CompleteRunInTx(ctx context.Context, tx Tx, c *state.RunCompletion) (state.CompletionResult, error) {
 	tid, threadID, st, meta, err := d.load(ctx, tx, c.RunID)
 	if err != nil {
 		return state.CompletionResult{}, err
@@ -210,9 +224,6 @@ func (d Driver) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 		if err := tx.Exec(ctx, d.query(`UPDATE threads SET status = ?, updated_at = ? WHERE thread_id = ? AND tenant_id = ? AND status = 'busy'`), string(threadStatus), d.now(now), threadID, tid); err != nil {
 			return state.CompletionResult{}, err
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return state.CompletionResult{}, err
 	}
 	return result, nil
 }

@@ -128,6 +128,16 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 		_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
 		return nil, ctx.Err()
 	}
+	// A backend routing/filter collision must not expose another kind's input
+	// or advance its durable attempt. Local mode has no authenticated identity.
+	if err := requireRunnerKind(ctx, job.RunnerKind); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if nackErr := s.queue.Nack(cleanupCtx, job.RunID, job.Generation); nackErr != nil {
+			return nil, status.Error(codes.Unavailable, "failed to return unauthorized assignment")
+		}
+		return nil, err
+	}
 
 	if s.attemptCallback != nil {
 		accepted, err := s.attemptCallback(ctx, job.RunID, job.Generation)

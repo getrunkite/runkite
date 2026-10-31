@@ -37,7 +37,16 @@ func (s *Store) BeginRunAttempt(ctx context.Context, id string, generation int64
 func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
 	var result state.CompletionResult
 	err := s.withTransaction(ctx, func(ctx context.Context) error {
-		result = state.CompletionResult{}
+		var err error
+		result, err = s.completeRunInTransaction(ctx, c)
+		return err
+	})
+	return result, err
+}
+
+func (s *Store) completeRunInTransaction(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
+	var result state.CompletionResult
+	err := func() error {
 		run, err := s.GetRun(ctx, c.RunID)
 		if err != nil {
 			return err
@@ -107,6 +116,6 @@ func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.
 			}
 		}
 		return nil
-	})
+	}()
 	return result, err
 }

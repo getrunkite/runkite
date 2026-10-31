@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ConnectorError, getConnectorSession, HEADER_CONNECTOR_SESSION, proxyConnectorMcp } from "./connectors.js";
-import { HEADER_GENERATION, HEADER_RUN_ID } from "./tenantCtx.js";
+import { HEADER_GENERATION, HEADER_RUN_ID, HEADER_RUN_ID_B64, runIdHeaders, runWithBinding } from "./tenantCtx.js";
 
 test("getConnectorSession rejects config without run_id", async () => {
   await assert.rejects(() => getConnectorSession({ configurable: {} }, "sf"), /run_id/);
@@ -29,6 +29,32 @@ test("run-bound headers include generation from configurable", async () => {
     const headers = seen as Record<string, string>;
     assert.equal(headers[HEADER_RUN_ID], "run-1");
     assert.equal(headers[HEADER_GENERATION], "4");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("explicit connector config replaces inherited raw and encoded run headers", async () => {
+  const original = globalThis.fetch;
+  let seen: Record<string, string> = {};
+  globalThis.fetch = (async (_url, init) => {
+    seen = init?.headers as Record<string, string>;
+    return new Response(JSON.stringify({ session_token: "token" }));
+  }) as typeof fetch;
+  try {
+    for (const [bound, explicit] of [
+      ["old", "ré 雪"],
+      ["old ", "new"],
+    ]) {
+      await runWithBinding({ runId: bound, generation: 1 }, () =>
+        getConnectorSession({ run_id: explicit, generation: 3 }, "workspace"),
+      );
+      const actual = Object.fromEntries(
+        Object.entries(seen).filter(([key]) => key === HEADER_RUN_ID || key === HEADER_RUN_ID_B64),
+      );
+      assert.deepEqual(actual, runIdHeaders(explicit));
+      assert.equal(seen[HEADER_GENERATION], "3");
+    }
   } finally {
     globalThis.fetch = original;
   }

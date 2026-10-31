@@ -82,10 +82,38 @@
         <p class="lede">The plane stores <a href="./decisions/why-opaque-checkpoints.html">opaque blobs</a>. Frameworks own the bytes; Runkite owns durability and tenancy keys.</p>
         <h2>Modes</h2>
         <ul>
-          <li><strong>Direct Postgres</strong>: LangGraph AsyncPostgresSaver against your DSN.</li>
+          <li><strong>Direct Postgres</strong>: LangGraph AsyncPostgresSaver against your DSN. Unreleased access is limited to the default tenant with thread IDs without <code>:</code>; named tenants require HTTP proxy mode.</li>
           <li><strong>HTTP proxy</strong>: opaque blobs via <code>/internal/checkpoints</code> (any CP backend). Used by LangGraph when DSN is unset, and by CrewAI / LlamaIndex / AutoGen / LangChain adapters for multi-turn continuity.</li>
           <li><strong>Memory</strong>: fallback when neither DSN nor HTTP URL is set. Demo only.</li>
         </ul>
+        <h2 id="native-identity">Unreleased native identity guard</h2>
+        <p>
+          <strong>Direct Postgres LangGraph now refuses every named tenant before
+          factory, state access or execution.</strong> A new delimiter-safe named key
+          can still read older default-tenant history: <code>acme</code> / <code>target</code>
+          selects the legacy default key <code>acme:target</code>. Those saver rows have
+          no trusted tenant ownership marker. Named LangGraph tenants must use HTTP
+          proxy checkpoints and explicitly resolve prior native history. Default direct
+          thread IDs without <code>:</code> keep their existing history.
+        </p>
+        <p>
+          Fresh shared memory still allows named tenants under a delimiter guard:
+          default thread IDs cannot contain <code>:</code>, named tenant IDs cannot
+          contain <code>:</code>, and tenant IDs cannot have outer whitespace or ASCII
+          controls. Named-tenant memory thread IDs may contain colons. HTTP proxy
+          supports all tenants without these native saver restrictions. Managed AI SDK,
+          Microsoft, OpenAI Agents, Pydantic AI and Google ADK already use opaque HTTP
+          state and are unaffected.
+        </p>
+        <p class="note">
+          <strong>Default cron uses <code>cron:&lt;name&gt;</code> threads and needs proxy
+          checkpoints too.</strong> Unset runner <code>POSTGRES_DSN</code> and set
+          <code>RUNKITE_HTTP_URL</code>. Changing modes imports no native history.
+          Audit ownership and explicitly resolve affected histories first; a blank proxy
+          thread is not proof of migration. There is no automatic owner marker, import,
+          renamed namespace or silent memory fallback. See
+          <a href="ops.html#identity-upgrade">upgrade guidance</a>.
+        </p>
         <h2>Adapter multi-turn</h2>
         <p>
           Non-LangGraph runners opt in via <code>checkpoint_framework</code> on the adapter. With
@@ -122,7 +150,7 @@
         </p>
         <h2>How to choose</h2>
         <ul>
-          <li><strong>Supported profile</strong>: Postgres state + Redis transport, with auth, runner tokens and TLS. LangGraph can use direct Postgres or the HTTP proxy. Other backend tiers remain as documented.</li>
+          <li><strong>Supported profile</strong>: Postgres state + Redis transport, with auth, runner tokens and TLS. LangGraph uses the HTTP proxy for named tenants; direct Postgres remains available for guarded default-tenant IDs. Other backend tiers remain as documented.</li>
           <li><strong>Demo</strong>: <code>docker-compose.dev.yml</code> sets <code>RUNKITE_HTTP_URL</code>, so checkpoints use the HTTP proxy into the plane's SQLite file. They survive runner and same-container restarts. The file is not volume-mounted, so recreating the plane container loses it.</li>
           <li>Never put production traffic on memory just because health checks are green.</li>
         </ul>

@@ -36,7 +36,9 @@ is historical and points to the implemented API.
 
 The unreleased [runtime hardening design record](internal/runtime-hardening.md)
 explains the failure cases, invariants, tests and upgrade requirements for current
-authorization, recovery, connectors and Admin changes.
+authorization, recovery, connectors and Admin changes. The follow-up
+[atomic results and exact runtime identities](internal/atomic-results-and-identities.md)
+record covers transactional cache results, child ownership and SDK identity boundaries.
 
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters and unpublished

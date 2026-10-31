@@ -132,7 +132,7 @@
         "properties": {
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "thread_id": {
             "type": "string",
@@ -364,7 +364,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "payload": {
             "type": "object"
@@ -421,7 +421,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "generation": {
             "type": "integer"
@@ -500,7 +500,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "generation": {
             "type": "integer",

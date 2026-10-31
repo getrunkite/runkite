@@ -2,7 +2,7 @@
  * Run-bound connector session and MCP proxy helpers. One operation deadline
  * covers session minting, optional renewal, network calls and response bodies.
  */
-import { HEADER_GENERATION, HEADER_RUN_ID, runnerHeaders } from "./tenantCtx.js";
+import { HEADER_GENERATION, HEADER_RUN_ID, HEADER_RUN_ID_B64, runIdHeaders, runnerHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export const HEADER_CONNECTOR_SESSION = "X-Runkite-Connector-Session";
 export class ConnectorError extends Error {
@@ -22,10 +22,13 @@ function runBoundHeaders(config) {
             "with the RunnableConfig a graph node itself received (buildRunConfig " +
             "sets run_id and generation)");
     }
+    const headers = runnerHeaders();
+    delete headers[HEADER_RUN_ID];
+    delete headers[HEADER_RUN_ID_B64];
     return {
         "Content-Type": "application/json",
-        ...runnerHeaders(),
-        [HEADER_RUN_ID]: String(runId),
+        ...headers,
+        ...runIdHeaders(String(runId)),
         [HEADER_GENERATION]: String(cfg.generation ?? 0),
     };
 }

@@ -3,7 +3,7 @@
   "info": {
     "title": "Runkite Internal (Runner) API",
     "version": "0.1.0",
-    "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers."
+    "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require X-Runkite-Generation and exactly one run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Upgrade the plane before runners that use encoded identities."
   },
   "tags": [
     {
@@ -184,7 +184,7 @@
           },
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "payload": {
             "type": "object"
@@ -207,7 +207,7 @@
         "properties": {
           "run_id": {
             "type": "string",
-            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
           },
           "status": {
             "type": "string"

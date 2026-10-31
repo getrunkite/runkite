@@ -139,13 +139,41 @@
           reasoning.
         </p>
 
+        <p>
+          <strong>Unreleased NATS partition guard:</strong> a run ID is a literal
+          partition, not a subject filter. Queue, stream and cancel paths reject
+          wildcards and unsupported JetStream keys, and consumers verify the exact
+          received subject. Valid subject/key layouts are unchanged. See the
+          <a href="ops.html#identity-upgrade">Compatible NATS upgrade boundary</a>;
+          Postgres/Redis does not share this transport-specific ID restriction.
+        </p>
+        <p>
+          Authenticated dispatch verifies the actual dequeued job's kind before attempt
+          advancement or input delivery, returning a misroute with a generation-bearing
+          Nack. NATS consumer creation rejects a conflicting filter when kind names
+          collide after dot-to-underscore conversion. See
+          <a href="ops.html#identity-upgrade">operator reconciliation guidance</a>.
+          Trusted no-token local mode remains unchanged.
+        </p>
+        <h2 id="exact-runtime-identities">Unreleased exact runtime identities</h2>
+        <p>
+          The runner and plane preserve nonempty tenant/run identities exactly. Unicode
+          or legacy header-unsafe identities use unpadded base64url UTF-8 in
+          <code>X-Runkite-Run-Id-B64</code> or <code>X-Runkite-Tenant-Id-B64</code>, omitting
+          the corresponding raw header. Upgrade the plane before those helpers. Bound
+          proxy authority still comes from the active assignment; a tenant claim cannot
+          replace it. Mixed, duplicate or malformed representations of the identity
+          used by a route are rejected. New run IDs with controls or outer whitespace
+          return HTTP 400; stored legacy IDs are not renamed.
+        </p>
         <h2>Tenancy, what "multi-tenant" means here today</h2>
         <p>
           Every resource (agent, thread, run) carries a flat <code>tenant_id</code>: this is
           isolation by a tag on each row, not a full organization/team/workspace hierarchy
           with its own nested permissions. Plane-managed state and opaque checkpoints
-          carry tenant binding; direct LangGraph checkpoint mode uses a tenant-prefixed
-          thread key rather than a separate SQL tenant column. If you're using runner tokens
+          carry tenant binding. Unreleased direct Postgres LangGraph is limited to guarded
+          default-tenant thread IDs; named tenants require HTTP proxy checkpoints
+          because legacy prefixed rows have no trusted ownership attestation. If you're using runner tokens
           (multiple runner fleets sharing one control plane), you must also configure
           <code>RUNNER_TENANTS_&lt;kind&gt;</code> per runner kind, see
           <a href="multi-tenant.html">Multi-tenant keys</a> for the full setup and what
@@ -153,6 +181,16 @@
           unbound tenant claim).
         </p>
 
+        <p>
+          Child mutations now hold exact parent-tenant ownership through the transaction.
+          Mongo deletes the parent and that tenant's children atomically. Native
+          LangGraph direct checkpoints refuse every named tenant, while fresh memory
+          keeps its delimiter guard. Default-tenant colon thread IDs also need proxy
+          mode. Existing named direct history requires explicit ownership resolution. See
+          <a href="checkpoints.html#native-identity">the checkpoint boundary</a> and
+          <a href="ops.html#identity-upgrade">upgrade instructions</a> before continuing
+          affected histories. Previously mixed native data is not repaired automatically.
+        </p>
         <p class="note">
           <strong>Unreleased MySQL identity fix:</strong> schema v17 replaces the
           default case/accent-insensitive behavior on identity and security columns

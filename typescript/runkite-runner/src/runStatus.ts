@@ -5,6 +5,7 @@
  * transport errors -- WatchCancels remains the primary cancel path.
  */
 import { logger } from "./logger.js";
+import { tenantHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 
 const SKIP_STATUSES = new Set(["interrupted", "success", "error", "timeout"]);
@@ -17,7 +18,9 @@ export async function shouldSkipRun(
   opts?: { runnerKind?: string; runnerToken?: string },
 ): Promise<boolean> {
   const base = httpAddress.replace(/\/+$/, "");
-  const headers: Record<string, string> = {};
+  // The status route uses tenant-scoped storage even though it does not require
+  // an active run binding. Preserve the assignment's current tenant here too.
+  const headers: Record<string, string> = tenantHeaders();
   if (opts?.runnerToken) {
     headers["X-Runner-Kind"] = opts.runnerKind || "typescript-langgraphjs";
     headers["X-Runner-Token"] = opts.runnerToken;
@@ -31,7 +34,7 @@ export async function shouldSkipRun(
       dispatcher: httpDispatcher(),
       signal: AbortSignal.timeout(5_000),
     };
-    const resp = await fetch(`${base}/internal/runs/${runId}/status`, init);
+    const resp = await fetch(`${base}/internal/runs/${encodeURIComponent(runId)}/status`, init);
     if (resp.status === 404) {
       logger.warn(`pre-exec status: run ${runId} not found; discarding`);
       return true;

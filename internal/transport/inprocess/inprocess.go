@@ -5,6 +5,7 @@ package inprocess
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -36,6 +37,10 @@ func NewQueue() *Queue {
 func (q *Queue) getChannel(runnerKind string) chan *transport.RunAssignment {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	return q.channelLocked(runnerKind)
+}
+
+func (q *Queue) channelLocked(runnerKind string) chan *transport.RunAssignment {
 	ch, ok := q.jobs[runnerKind]
 	if !ok {
 		ch = make(chan *transport.RunAssignment, 1000)
@@ -144,19 +149,36 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 // Nack re-enqueues a previously dequeued job so another runner can take it.
 func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
 	q.mu.Lock()
+	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
 	if !ok || !generationMatches(entry, generation) {
-		q.mu.Unlock()
 		return nil
+	}
+	if err := q.enqueueReadyLocked(ctx, entry.job); err != nil {
+		return err
 	}
 	delete(q.inflight, runID)
-	canceled := q.canceled[runID]
-	q.mu.Unlock()
+	return nil
+}
 
-	if canceled {
+var errReadyQueueFull = errors.New("inprocess: ready queue is full")
+
+// enqueueReadyLocked never blocks while holding mu. The caller removes the
+// retained lease only after the ready write commits under that same lock.
+func (q *Queue) enqueueReadyLocked(ctx context.Context, job *transport.RunAssignment) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if q.canceled[job.RunID] {
 		return nil
 	}
-	return q.Enqueue(ctx, entry.job)
+	assignment := *job
+	select {
+	case q.channelLocked(job.RunnerKind) <- &assignment:
+		return nil
+	default:
+		return errReadyQueueFull
+	}
 }
 
 // Cancel marks a run_id as canceled. Enqueued jobs with this ID are skipped
@@ -194,7 +216,8 @@ func (q *Queue) Ping(ctx context.Context) error {
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
 	cutoff := time.Now().Add(-maxAge)
 	q.mu.Lock()
-	var stale []*transport.RunAssignment
+	defer q.mu.Unlock()
+	var reclaimed int
 	var dead []transport.PoisonPill
 	for runID, entry := range q.inflight {
 		if entry.dequeuedAt.Before(cutoff) {
@@ -213,18 +236,14 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 			}
 			assignment := *entry.job
 			assignment.Generation = newGen
-			stale = append(stale, &assignment)
+			if err := q.enqueueReadyLocked(ctx, &assignment); err != nil {
+				return reclaimed, dead, err
+			}
 			delete(q.inflight, runID)
+			reclaimed++
 		}
 	}
-	q.mu.Unlock()
-
-	for _, job := range stale {
-		if err := q.Enqueue(ctx, job); err != nil {
-			return 0, dead, err
-		}
-	}
-	return len(stale), dead, nil
+	return reclaimed, dead, nil
 }
 
 // --------------------------------------------------------------------------

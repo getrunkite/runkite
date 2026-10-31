@@ -3,20 +3,40 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // CreateRunAdmitted runs COUNT + INSERT under BEGIN IMMEDIATE so concurrent
 // writers serialize (SQLite write lock) before either observes the other.
 func (s *SQLiteStore) CreateRunAdmitted(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
-	if !caps.Enabled() {
-		return s.CreateRun(ctx, run)
+	return s.createRun(ctx, run, caps, false, nil)
+}
+
+func (s *SQLiteStore) CreateCachedRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps) error {
+	pending, completion, err := state.PrepareCachedRun(run)
+	if err != nil {
+		return err
 	}
+	return s.createRun(ctx, pending, caps, true, func(tx sqlcompletion.Tx) error {
+		result, err := s.completionDriver().CompleteRunInTx(ctx, tx, completion)
+		if err != nil {
+			return err
+		}
+		if !result.Applied {
+			return fmt.Errorf("cache completion was not applied")
+		}
+		return nil
+	})
+}
+
+func (s *SQLiteStore) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
 
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -35,6 +55,22 @@ func (s *SQLiteStore) CreateRunAdmitted(ctx context.Context, run *models.Run, ca
 	}()
 
 	tid := tenant.FromContext(ctx)
+
+	driver := s.completionDriver()
+	locked := sqlcompletion.WrapSQLiteConnection(conn)
+	status, err := driver.LockThread(ctx, locked, run.ThreadID)
+	if err != nil {
+		return err
+	}
+	if claim && status == models.ThreadStatusBusy {
+		return &state.ErrConflict{Resource: "thread", ID: run.ThreadID, Reason: "is busy"}
+	}
+	if claim {
+		if err := locked.Exec(ctx, `UPDATE threads SET status = 'busy' WHERE thread_id = ? AND tenant_id = ?`, run.ThreadID, tid); err != nil {
+			return err
+		}
+	}
+
 	countActive := func(agentID string) (int, error) {
 		q := `SELECT COUNT(*) FROM runs WHERE status IN ('pending','running') AND tenant_id = ?`
 		args := []interface{}{tid}
@@ -74,6 +110,11 @@ func (s *SQLiteStore) CreateRunAdmitted(ctx context.Context, run *models.Run, ca
 	}
 	if err != nil {
 		return err
+	}
+	if afterInsert != nil {
+		if err := afterInsert(locked); err != nil {
+			return err
+		}
 	}
 	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
 		return err

@@ -83,6 +83,11 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.
 	if reason := s.fingerprintMismatch(run, req, effectiveThreadID); reason != "" {
 		return nil, &state.ErrConflict{Resource: "run", ID: runID, Reason: reason}
 	}
+	if run.Metadata["cache_hit"] == true && state.TerminalRunStatus(run.Status) {
+		if err := s.finalizeCommittedRun(ctx, run, false); err != nil {
+			return nil, err
+		}
+	}
 	return run, nil
 }
 
@@ -229,6 +234,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	if invalidResourceID(threadID) || invalidResourceID(req.RunID) {
 		return nil, nil, errInvalidResourceID
 	}
+	if !auth.ValidRunID(req.RunID) {
+		return nil, nil, fmt.Errorf("%w: must not contain control characters or leading/trailing whitespace", errInvalidRunID)
+	}
 	// Empty / whitespace-only checkpoint_ref is treated as absent (resume
 	// from the thread's latest checkpoint). A non-empty value is forwarded
 	// on RunAssignment so LangGraph runners can time-travel via
@@ -256,6 +264,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	runID := req.RunID
 	if runID == "" {
 		runID = uuid.New().String()
+	}
+	if validator, ok := s.queue.(transport.RunIDValidator); ok {
+		if err := validator.ValidateRunID(runID); err != nil {
+			return nil, nil, fmt.Errorf("%w: %v", errInvalidRunID, err)
+		}
 	}
 
 	// SDK compat: accept assistant_id as alias for agent_id
@@ -396,7 +409,8 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// key derived from a hash of the input. A resume is inherently
 	// continuing a specific prior execution, never a fresh cacheable
 	// computation, so it's excluded regardless of the agent's cache config. A hit
-	// short-circuits entirely: no thread claim, no RunAssignment, no
+	// short-circuits dispatch: its admitted result, merged state and checkpoint
+	// commit under the store's thread lock. There is no RunAssignment or
 	// runner dispatch -- callers (all 8 call sites) check for a nil
 	// assignment and skip enqueue. Placed after thread creation above --
 	// a cache-hit run record still needs a real thread row to satisfy the
@@ -854,6 +868,10 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantI
 // run and nil error) means "proceed with a normal run" -- the overwhelmingly
 // common case (agent has no cache config, or a real cache miss).
 func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, req *models.RunCreate, now time.Time, requestedAlias string, agentForRun *models.Agent) (run *models.Run, hit bool, err error) {
+	creator, supported := s.store.(state.CachedRunCreator)
+	if !supported {
+		return nil, false, nil
+	}
 	agent := agentForRun
 	if agent == nil {
 		var agentErr error
@@ -873,17 +891,13 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		return nil, false, nil // miss (including "not found or expired") -- caller proceeds normally
 	}
 
-	// Cache hits run before TryClaimThread. If the thread is already busy
-	// with a real run, mutating values/checkpoint here races that run and
-	// leaves two "success" narratives for one thread. Refuse the hit and
-	// let the caller take the normal claim path (which will 409).
-	if th, thErr := s.store.GetThread(ctx, threadID); thErr == nil && th != nil {
-		if th.Status == models.ThreadStatusBusy {
-			return nil, false, &state.ErrConflict{Resource: "thread", ID: threadID, Reason: "is busy"}
-		}
+	if cached == nil || cached.Output == nil {
+		return nil, false, nil
 	}
-
-	outputJSON, _ := json.Marshal(cached.Output)
+	outputJSON, err := json.Marshal(cached.Output)
+	if err != nil {
+		return nil, false, fmt.Errorf("encode cached result: %w", err)
+	}
 	// A cache hit never reaches the normal manifest-building code below
 	// (this function returns before that point) -- build one here too so
 	// "what was this run authorized to do" has the same answer whether or
@@ -921,53 +935,37 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		Output:    outputJSON,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.createRunRespectingLimits(ctx, run, now); err != nil {
+	// Admission, exact parent ownership, the busy-thread guard and all result
+	// writes share one transaction. A failed cache hit must never leave a
+	// successful row with missing output or an unqueued pending assignment.
+	if err := creator.CreateCachedRun(ctx, run, s.admissionLimits.toCaps(now)); err != nil {
+		// A matching concurrent retry can lose either the unique insert or
+		// the admission check after its winner commits. Reuse the shared
+		// fingerprint/finalization path instead of charging a second run or
+		// returning a conflict for the winner's own quota consumption.
+		if req.RunID != "" {
+			existing, retryErr := s.findRunForRetry(ctx, req.RunID, req, threadID)
+			if retryErr != nil {
+				return nil, false, retryErr
+			}
+			if existing != nil {
+				return nil, false, &errRunRetryRace{run: existing}
+			}
+		}
 		return nil, false, err
 	}
-	s.placeUsageHold(ctx, run)
-	// CreateRun's INSERT has no output column (output is normally only
-	// known after the run finishes) -- a cache hit already has it at
-	// creation time, so persist it in a separate, explicit update.
-	if err := s.store.UpdateRunStatus(ctx, runID, models.RunStatusSuccess, outputJSON, ""); err != nil {
-		slog.Error("failed to persist cached run output", "run_id", runID, "error", err)
-		// Still drop the create-time hold. This run is terminal for
-		// budgeting purposes either way (cache hit has no further work).
-		// releaseUsageHold logs its own failure.
-		_ = s.releaseUsageHold(ctx, runID)
-	} else {
-		run.Status = models.RunStatusSuccess
-		run.Output = outputJSON
-		if run.TenantID == "" {
-			run.TenantID = tenant.FromContext(ctx)
-		}
-		_ = s.ingestTerminalUsage(ctx, run)
-		_ = s.releaseUsageHold(ctx, runID)
-		s.maybeCancelInflightAfterTerminal(ctx, run)
+	run, err = s.store.GetRun(ctx, runID)
+	if err != nil {
+		return nil, false, err
 	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "cache_hit").Inc()
-
-	// Keep thread state consistent with what a normal completed run would
-	// produce -- a client reading GET /threads/{id}/state right after a
-	// cache hit must see the (cached) values, same as any other run.
-	s.saveRunCheckpoint(ctx, threadID, cached.Output)
-	_, _ = s.store.UpdateThread(ctx, threadID, &models.ThreadPatch{Values: cached.Output})
-
-	tid := tenant.FromContext(ctx)
-	s.hooks.Dispatch(hooks.Event{Type: hooks.RunStart, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, TenantID: tid, Timestamp: now})
-	s.hooks.Dispatch(hooks.Event{
-		Type: hooks.RunComplete, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, TenantID: tid,
-		Data: map[string]interface{}{"status": "success", "cache_hit": true}, Timestamp: time.Now().UTC(),
-	})
-
-	// No events are ever published for this run (there's no runner
-	// dispatch), so any later s.broker.Subscribe(runID) call -- e.g. the
-	// WebSocket/streaming-commands run.start path, which always tails a
-	// run's events after starting it -- would otherwise block forever on
-	// a channel nothing ever closes. Closing it now (Subscribe on an
-	// already-closed run returns an immediately-closed channel on both the
-	// in-process and Redis brokers) makes that tailer exit immediately
-	// instead of leaking a goroutine per cache-hit run.
-	_ = s.broker.Close(runID)
+	s.hooks.Dispatch(hooks.Event{Type: hooks.RunStart, RunID: runID, ThreadID: threadID, AgentID: req.AgentID, TenantID: tenant.FromContext(ctx), Timestamp: now})
+	// No model work ran, no usage hold is needed, and the source cache TTL
+	// must not slide on reads. Normal finalization skips cached usage and
+	// has durable hook claims; a same-ID retry can finish it after failure.
+	if err := s.finalizeCommittedRun(ctx, run, false); err != nil {
+		return nil, false, err
+	}
 
 	return run, true, nil
 }

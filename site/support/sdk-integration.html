@@ -117,6 +117,19 @@
           </table>
         </div>
 
+        <p class="note">
+          <strong>Unreleased runner identity fixes:</strong> TypeScript status checks now
+          include the assignment tenant, and both helpers encode custom run IDs as one
+          URL component. Unicode/legacy header-unsafe identities use new base64url
+          headers and require a plane-first upgrade. New run IDs reject controls and
+          outer whitespace. Named LangGraph tenants must use HTTP proxy checkpoints;
+          direct Postgres now rejects every non-default tenant before factory/state
+          access because legacy history has no ownership attestation. Default cron
+          threads need proxy mode too. Review the
+          <a href="checkpoints.html#native-identity">native boundary and explicit history
+          resolution</a> before continuing. Managed Python SDK profiles and AI SDK opaque history
+          continue using the exact scoped HTTP checkpoint boundary.
+        </p>
         <h2 id="app-owned">App-owned tool governance</h2>
         <p>
           A normal AI SDK <code>tool.execute</code> or a Microsoft local function can
