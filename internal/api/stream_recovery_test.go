@@ -247,6 +247,7 @@ func TestStreamRecoveryWebSocketSurvivesSupersededTerminal(t *testing.T) {
 	if runID == "" {
 		t.Fatal("run.start missing run ID")
 	}
+	t.Cleanup(func() { _ = queue.Cancel(context.Background(), runID) })
 	recoveryWaitSubscribed(t, ctx, broker)
 	for _, generation := range []int64{1, 2} {
 		if accepted, err := store.BeginRunAttempt(ctx, runID, generation); err != nil || !accepted {
