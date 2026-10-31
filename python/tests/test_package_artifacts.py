@@ -102,7 +102,9 @@ class PackageArtifactTests(unittest.TestCase):
             [prefix] = {member.name.split("/", 1)[0] for member in sdist.getmembers() if member.isfile()}
             for name in ("LICENSE", "NOTICE"):
                 expected = (self.source / name).read_bytes()
-                [content] = [data for path, data in self.members.items() if path.endswith(f".dist-info/licenses/{name}")]
+                [content] = [
+                    data for path, data in self.members.items() if path.endswith(f".dist-info/licenses/{name}")
+                ]
                 self.assertEqual(content, expected, name)
                 member = sdist.extractfile(f"{prefix}/{name}")
                 self.assertIsNotNone(member)

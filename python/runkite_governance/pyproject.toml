@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "runkite-governance"
-version = "0.6.0"
+version = "0.6.1"
 description = "Small decide and pending-action helper for app-owned agent loops."
 readme = "README.md"
 license = "Apache-2.0"

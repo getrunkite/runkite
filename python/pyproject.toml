@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "runkite-runner"
-version = "0.6.0"
+version = "0.6.1"
 description = "Python runner for Runkite: LangGraph and optional Microsoft Agent Framework, OpenAI Agents, Pydantic AI and Google ADK over Runner Protocol."
 readme = "README.md"
 license = "Apache-2.0"

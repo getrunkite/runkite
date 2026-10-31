@@ -23,7 +23,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 | **Protocol surface** | Agent Protocol client search is offset-only (Admin lists have keyset cursors). TS / non-LangGraph runners report stub JSON Schema for agents. |
 | **Fixture replay** | `runkite sim` is not a sandbox. In-graph tools stay ungoverned. Allow cases hit the real MCP server. Pending does not auto-approve. |
 | **Payload shrink** | Opt-in connector MCP result cap. Not a token SLA. No Redis = no shrink. Enabled shrink means durable audit keeps the preview plus ref, not the original body. |
-| **License** | Current source uses [Apache-2.0](../LICENSE), including commercial use and redistribution under its terms. Published v0.6.0 artifacts retain their shipped [BUSL-1.1 license](https://github.com/getrunkite/runkite/blob/v0.6.0/LICENSE). This source change does not rewrite existing releases or create a hosted Runkite offering. |
+| **License** | Current source and v0.6.1+ artifacts use [Apache-2.0](../LICENSE), including commercial use and redistribution under its terms. Published v0.6.0 artifacts retain their shipped [BUSL-1.1 license](https://github.com/getrunkite/runkite/blob/v0.6.0/LICENSE). This does not rewrite older releases or create a hosted Runkite offering. |
 
 **Not limitations of the product claim:** multi-replica CP behind a load balancer, framework adapters (LangGraph / LangChain / CrewAI / LlamaIndex / AutoGen / LangGraph.js), and the framework×backend matrix are implemented and soak-tested on Supported.
 

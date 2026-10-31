@@ -31,8 +31,8 @@ license grant for those historical versions.
 
 Current-source documentation can say Apache-2.0 while linking to v0.6.0 for
 downloads only if it explains that boundary. The existing changelog entries
-remain historical. The new license belongs in `Unreleased` until a new version
-is cut. Never replace an existing package or image version to make its license
+remain historical. The first Apache-licensed package cut is v0.6.1.
+Older published versions keep their shipped terms. Never replace an existing package or image version to make its license
 match the current branch.
 
 ## Rights review before merge

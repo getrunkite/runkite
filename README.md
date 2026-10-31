@@ -14,7 +14,7 @@ tool calls. Your framework still owns the model loop.
 [![npm](https://img.shields.io/npm/v/runkite-runner)](https://www.npmjs.com/package/runkite-runner)
 [![GHCR](https://img.shields.io/badge/GHCR-getrunkite%2Frunkite-blue)](https://github.com/getrunkite/runkite/pkgs/container/runkite)
 
-Current source is Apache-2.0. Published v0.6.0 downloads retain BUSL-1.1.
+Current source and v0.6.1+ downloads are Apache-2.0. Published v0.6.0 downloads retain BUSL-1.1.
 See [license scope](#license).
 
 **[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Try the sandbox](https://getrunkite.com/support/try.html)**
@@ -244,8 +244,8 @@ hosting under Apache-2.0. Third-party components retain their own licenses;
 the license does not grant general trademark rights. Runkite remains a
 self-hosted product.
 
-The change applies to source from the relicensing commit onward and future
-releases. Already-published v0.6.0 and earlier artifacts retain their shipped
+v0.6.1 and later releases ship under Apache-2.0. Already-published v0.6.0 and
+earlier artifacts retain their shipped
 [BUSL-1.1 terms](https://github.com/getrunkite/runkite/blob/v0.6.0/LICENSE).
 For the scope and release checks, see the
 [license transition record](docs/internal/apache-2.0-transition.md).

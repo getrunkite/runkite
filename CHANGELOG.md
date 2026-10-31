@@ -4,6 +4,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+## [0.6.1] - 2026-10-31
+
+First Apache-2.0 release of current source. Same feature surface as v0.6.0;
+published v0.6.0 and earlier artifacts remain BUSL-1.1.
+
 ### Changed
 - License this source tree and future releases under Apache-2.0, replacing the first-party BUSL-1.1 license copies, package metadata and current documentation. Commercial use, redistribution and hosting are permitted under the license terms. Copyright ownership and third-party licenses are unchanged. Published v0.6.0 and earlier artifacts retain their shipped BUSL terms; existing tags and package versions are not rewritten. See the [transition record](docs/internal/apache-2.0-transition.md).
 - Include first-party attribution in `NOTICE` files and distribute the embedded Admin fonts' original license notices with release archives and images.

@@ -26,14 +26,12 @@ verified maintainer publication.
 
 ## Apache-2.0 transition
 
-Current source uses Apache-2.0. Published v0.6.0 artifacts retain their shipped
-BUSL-1.1 license. Use a new version and tag for Apache-licensed artifacts; do not
-replace old release files, move old tags or relabel existing registry versions.
-Until that release is published, the README and site must distinguish current
-source from the v0.6.0 downloads. See the
+Current source and v0.6.1+ artifacts use Apache-2.0. Published v0.6.0 artifacts retain their shipped
+BUSL-1.1 license. Do not replace old release files, move old tags or relabel
+existing registry versions. See the
 [transition record](internal/apache-2.0-transition.md) for scope and rationale.
 
-Before publishing that release:
+When cutting an Apache-licensed release:
 
 - Inspect the built Go release archives for the current `LICENSE` and `NOTICE`.
 - Inspect npm tarballs, Python wheels and source distributions for Apache-2.0
