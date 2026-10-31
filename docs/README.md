@@ -40,6 +40,10 @@ authorization, recovery, connectors and Admin changes. The follow-up
 [atomic results and exact runtime identities](internal/atomic-results-and-identities.md)
 record covers transactional cache results, child ownership and SDK identity boundaries.
 
+The unreleased [local HA validation record](internal/ha-recovery-validation.md)
+separates steady load from bounded cache, cancel, reclaim and retained-stream
+recovery checks, with fixture setup and measured rehearsal limits.
+
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters and unpublished
 governance helpers are labeled separately from tagged runner packages.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
 import time
 from collections import Counter
@@ -42,7 +43,7 @@ def classify_result(agent: str, result) -> str:
 
 
 async def worker(name: str, url: str, stop_at: float, stats: Counter, lock: asyncio.Lock) -> None:
-    client = get_client(url=url)
+    client = get_client(url=url, api_key=os.environ.get("SOAK_API_KEY"))
     while time.time() < stop_at:
         agent = pick_agent()
         t0 = time.monotonic()

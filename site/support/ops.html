@@ -138,6 +138,27 @@
           or establish a new multi-replica HA soak. See the
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">runtime hardening engineering note</a>.
         </p>
+        <h2 id="local-recovery">Unreleased local recovery checks</h2>
+        <p>
+          The bundled multi-plane runners now use HTTP proxy checkpoints while the
+          plane keeps Postgres persistence. This supports default cron thread IDs
+          under the native identity guard. Proxy mode imports no existing native
+          history. The soak sink port now configures both the listener and fixture
+          URLs; optional loader API keys support authenticated test overlays.
+        </p>
+        <p>
+          The new bounded recovery harness targets an explicitly named disposable
+          Compose project. It checks concurrent cache retries, cross-replica cancel,
+          process-loss reclaim and retained raw SSE, and writes a case report.
+          Its metered fixture emits synthetic token counts without calling a model
+          provider. The local 120-second load rehearsal is below the 30-minute
+          announce bar and is not a cloud HA result. Postgres and Redis remain
+          running during these process-loss checks. Read the
+          <a href="https://github.com/getrunkite/runkite/blob/main/bench/soak/WRITEUP.md">commands and pass criteria</a>
+          and the
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">engineering validation record</a>
+          before repeating the checks or making a recovery claim.
+        </p>
         <h2 id="identity-upgrade">Unreleased identity and atomic-result upgrade</h2>
         <p>
           Upgrade the plane before runner helpers using encoded run/tenant identity

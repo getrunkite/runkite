@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 const URL = process.env.SOAK_URL || "http://127.0.0.1:2026";
 const WORKERS = Number(process.env.SOAK_JS_WORKERS || 12);
 const DURATION = Number(process.env.SOAK_DURATION || 1800);
+const AUTH = process.env.SOAK_API_KEY ? { Authorization: `Bearer ${process.env.SOAK_API_KEY}` } : {};
 
 const AGENTS = [
   ["echo_agent", 0.5],
@@ -32,7 +33,7 @@ async function oneCycle() {
   try {
     const create = await fetch(`${URL}/threads/${threadId}/runs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...AUTH, "Content-Type": "application/json" },
       body: JSON.stringify({
         agent_id: agent,
         input: { messages: [{ role: "user", content: `soak-js-${Date.now()}` }] },
@@ -40,7 +41,7 @@ async function oneCycle() {
     });
     if (!create.ok) throw new Error(`create ${create.status}`);
     const { run_id } = await create.json();
-    const wait = await fetch(`${URL}/threads/${threadId}/runs/${run_id}/wait`);
+    const wait = await fetch(`${URL}/threads/${threadId}/runs/${run_id}/wait`, { headers: AUTH });
     if (!wait.ok) throw new Error(`wait ${wait.status}`);
     const body = await wait.json();
     const status = body?.run?.status || body?.status;

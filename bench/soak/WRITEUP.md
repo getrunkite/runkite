@@ -26,6 +26,79 @@ Artifacts land under `bench/soak/out/<timestamp>/` (gitignored), including
 auto-generated `REPORT.md`. Longer local runs (`SOAK_DURATION=21600`, etc.)
 are optional; they are **not** required for this writeup's pass bar.
 
+## Checkpoint and sink setup (unreleased)
+
+The bundled multi-plane runners now use HTTP proxy checkpoints and store access:
+their `POSTGRES_DSN` is empty and `RUNKITE_HTTP_URL` points at the plane. The planes
+retain Postgres. This supports default `cron:<name>` threads under the native
+checkpoint identity guard. Existing test volumes with native history need
+explicit reconciliation before switching modes; new proxy state is not a history
+migration. Older direct-mode timing results are not an identical workload.
+
+`SOAK_SINK_PORT` selects both the host sink listener and fixture webhook/preflight
+URLs; default `9099` is unchanged. The Python and JavaScript loaders also accept
+optional `SOAK_API_KEY` for authenticated test overlays. The checked-in stack
+keeps its documented local open-client mode unless an overlay configures auth.
+
+## Bounded recovery checks (unreleased)
+
+`run.sh` exercises steady create/wait traffic. Its completion message is not an
+automatic grade of every pass criterion below. The separate
+[`recovery.py`](recovery.py) harness asserts cache, cancel, process-loss reclaim
+and full retained raw SSE replay through different replicas. It returns nonzero
+on an assertion failure and restores the services it stops.
+
+Use a disposable project named `runkite-ha-<name>`. The optional
+[`docker-compose.recovery.yml`](../../docker-compose.recovery.yml) overlay
+removes database debug ports and publishes distinct fixed loopback ports for
+the planes and load balancer. It requires Compose support for `!reset` and
+`!override` (validated with Compose 5.6). Check that ports `23261`, `23262`,
+`23263`, `23266` and `25251` are free, or copy the overlay and choose free fixed
+ports. Automatically allocated host port `0` can change after stop/start, which
+invalidates recovery URLs.
+
+Set `RUNNER_TOKEN` as required by the multi-plane fixture. Start the sink in one
+terminal, retaining its JSONL file for per-run hook assertions:
+
+```bash
+mkdir -p bench/soak/out/recovery-local
+python3 bench/soak/webhook_sink.py 9099 bench/soak/out/recovery-local/webhooks.jsonl
+```
+
+In another terminal, start the disposable project and run its checks. Include
+the same overlays and explicit project name in every Compose command:
+
+```bash
+SOAK_SINK_PORT=9099 docker compose -p runkite-ha-local \
+  -f docker-compose.multi.yml \
+  -f docker-compose.soak.yml \
+  -f docker-compose.recovery.yml up -d --build
+
+python3 bench/soak/recovery.py \
+  --url http://127.0.0.1:23266 \
+  --replica-url http://127.0.0.1:23261 \
+  --replica-url http://127.0.0.1:23262 \
+  --replica-url http://127.0.0.1:23263 \
+  --project runkite-ha-local \
+  --compose-file docker-compose.multi.yml \
+  --compose-file docker-compose.soak.yml \
+  --compose-file docker-compose.recovery.yml \
+  --webhook-log bench/soak/out/recovery-local/webhooks.jsonl \
+  --output bench/soak/out/recovery-local
+```
+
+For an authenticated overlay, set `SOAK_API_KEY`. Optional
+`SOAK_ADMIN_API_KEY` supplies separate Admin read access. The harness does not
+record either key. The `metered_agent` fixture emits explicitly synthetic 20/4
+token metadata so cache replay is tested against a positive usage ledger. It
+does not invoke a provider or establish vendor billing accuracy.
+
+Read `recovery-report.json` and its case evidence before quoting a result.
+Full raw SSE replay does not establish managed UI reconnect or incremental cursor
+behavior. Postgres and Redis remain alive during these process-loss cases.
+The [engineering record](../../docs/internal/ha-recovery-validation.md) explains
+the invariants, fixture correction and evidence limits.
+
 ## Pass criteria (announce bar = 30 min)
 
 Evaluate against start/end artifacts (`overview-start.json`,

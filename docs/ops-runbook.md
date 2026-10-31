@@ -130,6 +130,22 @@ docker compose -f docker-compose.multi.yml up -d --build
 curl -sf http://localhost:2026/readyz
 ```
 
+The bundled multi-plane runners now use HTTP proxy checkpoints, with runner
+`POSTGRES_DSN` empty and `RUNKITE_HTTP_URL` set. The plane still persists to
+Postgres. This lets default cron threads (`cron:<name>`) satisfy the native
+checkpoint identity guard. Proxy mode does not import existing native history;
+resolve that history before changing an existing deployment.
+
+`make smoke-multi` checks readiness and a successful run. The load harness and
+its 30-minute announce criteria are separate from the unreleased bounded
+[recovery harness](../bench/soak/WRITEUP.md#bounded-recovery-checks-unreleased).
+Run the recovery harness only against an explicitly named disposable local
+project. It interrupts runner and plane processes and checks cache completion,
+cross-replica cancel, reclaim and retained raw SSE. Read the case report before
+claiming recovery passed. The [validation record](internal/ha-recovery-validation.md)
+labels the short local rehearsal and its limits; it does not establish a cloud
+deployment or a Postgres/Redis outage result.
+
 Zero-deps laptop demo (SQLite + in-memory, **not** Supported):
 
 ```bash
