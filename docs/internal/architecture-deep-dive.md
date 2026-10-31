@@ -10,7 +10,7 @@
 - **Managed AI SDK (v0.5.8+):** `typescript/runkite-runner/src/aiSdkAdapter.ts` uses public `ToolLoopAgent` APIs; `examples/managed_ai_sdk/bridge.ts` bridges the app to managed runs. These executions create Runkite Threads and Runs because the app dispatches its model loop to a runner. Native history and committed-turn receipts use run-bound opaque checkpoints with CAS. See [the managed example](../../examples/managed_ai_sdk/README.md) for limits, including no native approval/resume, streaming tool outputs, time travel or whole-run caching.
 - **Released in v0.5.8: opaque checkpoint hardening.** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
 
-For current unreleased authority, recovery, connector and Admin corrections, read
+For current v0.6.0 authority, recovery, connector and Admin corrections, read
 [Runtime hardening](runtime-hardening.md) and
 [atomic results and exact identities](atomic-results-and-identities.md). They record the source invariants,
 operator upgrade steps and test boundaries without rewriting historical chapters.

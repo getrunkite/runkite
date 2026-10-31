@@ -26,7 +26,7 @@ verified maintainer publication.
 
 ## Documentation and embedded UI release checks
 
-- Keep `CHANGELOG.md` Unreleased separate from the latest tag. Move an item only
+- Keep `CHANGELOG.md` v0.6.0 separate from the latest tag. Move an item only
   when the corresponding source and artifact are included in the release.
 - Check the README, `docs/client-sdk.md`, `docs/runners.md`, integration examples
   and `site/support/sdk-integration.html` for matching framework/package status.
@@ -40,7 +40,7 @@ verified maintainer publication.
   embedded assets change. Historical engineering notes should link to current
   contracts rather than present old behavior as current implementation.
 - A push to `main` touching `site/**` triggers Pages independently of a tag.
-  Keep unreleased labels until public artifacts contain the feature. Protocol
+  Keep v0.6.0 labels until public artifacts contain the feature. Protocol
   documentation has its own mirror workflow; inspect it when changing that
   contract. These checks do not authorize a deployment or publication.
 

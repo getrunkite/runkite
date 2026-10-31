@@ -1,6 +1,6 @@
 {
   "name": "runkite-runner",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "description": "TypeScript runner for Runkite: LangGraph.js and optional AI SDK managed agents over Runner Protocol.",
   "type": "module",
   "bin": {

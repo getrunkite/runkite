@@ -96,7 +96,7 @@ The managed AI SDK runner in this working tree uses `runner_kind: "typescript-ai
 
 `llm_cache` is per-agent and opt-in -- never on by default, since an agent with side effects (e.g. "send an email") must never have its result cached and replayed for a repeated input. The control plane caches whole-run results (keyed by a hash of `tenant_id` + `agent_id` + `input` + `config`), not individual LLM calls -- it never sees inside a runner's execution to do the latter without becoming framework-aware. A cache hit short-circuits entirely: no queue entry, no runner dispatch, the run comes back immediately with `metadata.cache_hit: true` and the previously-produced output. Resumes (`command.resume`) are never served from or written to the cache -- they continue a specific prior execution, never a fresh cacheable computation. Cache entries expire via `ttl_seconds`; there's no active cleanup sweep for expired rows (they're just never returned), so a very long-running deployment with many distinct inputs would want a periodic `DELETE WHERE expires_at < NOW()` -- not built.
 
-Unreleased cache completion uses the existing transaction for admission, output,
+v0.6.0 cache completion uses the existing transaction for admission, output,
 merged state and checkpoint on built-in stores. A failed write returns an error;
 custom stores without optional `state.CachedRunCreator` dispatch normally instead.
 Cache hits retain original output metadata but create no new model usage or hold.
@@ -108,7 +108,7 @@ The managed AI SDK adapter does not support whole-run `llm_cache`: its loader re
 
 Dispatch itself runs on a small bounded worker pool (20 workers, a queue depth of 500), not one goroutine per sink per event -- a burst of run completions, each fanning out to every configured sink, each of which can itself hold a delivery attempt open for up to ~30s while retrying an unreachable endpoint, would otherwise grow goroutines/sockets without limit. Still fully non-blocking for the caller either way: if the pool and its queue are both saturated, the event is dropped (logged, and counted in `runkite_webhook_queue_dropped_total`) rather than delaying run execution or growing the queue without bound. One real, documented trade-off from sharing a pool across every sink: a genuinely slow or hung endpoint can occupy enough workers to delay (not silently lose -- the retry/dead-letter path is unaffected once a job is actually picked up) a different, healthy sink's delivery. A well-sized pool makes this rare, not impossible.
 
-In the unreleased run-creation path, the plane attempts the tool-call broker
+In the v0.6.0 run-creation path, the plane attempts the tool-call broker
 subscription synchronously before enqueue. A successful registration therefore
 precedes the runner's first event; event consumption and sink dispatch remain
 asynchronous. Subscription failure is logged and run creation continues. The

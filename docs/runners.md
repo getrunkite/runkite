@@ -2,15 +2,15 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
-The unreleased heartbeat update bounds each RPC to one second by default. A
+The v0.6.0 heartbeat update bounds each RPC to one second by default. A
 hung request cannot block later renewals. Stopping a TypeScript loop cancels its
 active call and suppresses late superseded callbacks. The normal heartbeat cadence
 and reclaim age remain independent; partitions can still cause reclaim. Connector
 helpers now use one operation deadline and explicit safe-renewal reasons, and
 credential-bearing HTTP clients refuse redirects. See
-[Connectors](connectors.md#deadlines-cancellation-and-retry-safety-unreleased).
+[Connectors](connectors.md#deadlines-cancellation-and-retry-safety).
 
-## Unreleased identity and native checkpoint guard
+## Identity and native checkpoint guard (v0.6.0)
 
 The pre-execution status lookup now uses the assignment tenant and encodes the
 run ID as one URL component. Empty tenant still selects `default`; nonempty
@@ -39,7 +39,7 @@ Default cron uses `cron:<name>` threads and must use proxy checkpoints too.
 Unset runner `POSTGRES_DSN` and set `RUNKITE_HTTP_URL`. Switching modes imports no
 native history and does not repair previously mixed data. Resolve ownership and
 continuity explicitly before continuing; no blank-namespace or memory fallback
-is automatic. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased)
+is automatic. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade)
 and [engineering rationale](internal/atomic-results-and-identities.md).
 
 The bridge also verifies the actual dequeued assignment's kind before advancing
@@ -79,7 +79,7 @@ are installed some other way, e.g. `uv pip install -e python/`); TypeScript's
 `npx tsx src/cli.ts` needs `npm ci` in `typescript/runkite-runner/` first.
 CrewAI, LlamaIndex, AutoGen and plain LangChain adapters under `python/adapters/`
 remain checkout-only. Use `PYTHONPATH` as below after installing each adapter's
-own dependencies. The Microsoft adapter has an unreleased optional install
+own dependencies. The Microsoft adapter has an v0.6.0 optional install
 profile in the same Python runner package, described below.
 
 The plane does not proxy model HTTP and does not pick models. Put an LLM gateway in front of the runner if you want per-call model routing.
@@ -128,7 +128,7 @@ the exhausted delivery leased with `+WPI`; any native redelivery still passes th
 existing generation fence and completion recovery before execution. See
 [Runner Protocol](../runner-protocol/PROTOCOL.md).
 
-### Live streaming during reclaim (unreleased)
+### Live streaming during reclaim (v0.6.0)
 
 Run SSE, thread SSE and WebSocket streams confirm terminal events through the
 existing durable completion fence. A delayed terminal from a superseded attempt
@@ -200,14 +200,15 @@ run/tenant/generation binding and conditional writes. State must commit before
 terminal success. Reclaim can replay an already-committed turn without repeating
 tools. Earlier crashes remain subject to downstream side-effect idempotency.
 
-### Managed Microsoft Agent Framework Python runner (unreleased)
+### Managed Microsoft Agent Framework Python runner (v0.6.0)
 
 The `python-agent-framework` adapter executes a per-run factory
 returning a public `agent_framework.Agent`. Load a config declaring
 `runner_kind: python-agent-framework` in both the plane and runner. Source-built
 `runkite-runner` wheels and sdists include the adapter; the `agent-framework`
-extra pins `agent-framework-core==1.23.0`. This packaging is unreleased and is
-absent from the published PyPI `0.5.8` artifact. From the repository root:
+extra pins `agent-framework-core==1.23.0`. This packaging ships in published
+PyPI `0.6.0`. From the repository root, or with
+`pip install 'runkite-runner[agent-framework]'`:
 
 ```bash
 python3.12 -m venv .venv-agent-framework
@@ -222,9 +223,7 @@ The installed module alternative is `python -m agent_framework_adapter`; no
 `PYTHONPATH` is needed. Python 3.11+ remains supported. The ordinary
 `runkite-runner` command still starts LangGraph, and its stock Python image
 installs `[otel]` without the Microsoft SDK. Use your own environment or image
-with this extra and entrypoint. After a release containing this change is
-published, `pip install 'runkite-runner[agent-framework]'` will install the profile
-from PyPI. Setup and the offline factory are in the
+with this extra and entrypoint. Setup and the offline factory are in the
 [managed Microsoft example](../examples/managed_agent_framework/README.md).
 
 These executions create ordinary Threads/Runs and use managed dispatch, cancel
@@ -240,7 +239,7 @@ last committed history and report usage already observed. Workflows, .NET,
 non-text input, caller-supplied assistant/tool history, time travel and native
 approval/resume are unsupported. Native approval/resume fails explicitly.
 
-The unreleased Microsoft profile enforces the dispatched `allowed_tools` snapshot
+The v0.6.0 Microsoft profile enforces the dispatched `allowed_tools` snapshot
 at the native function invocation boundary, before a local tool body runs. An
 omitted graph entry is unrestricted, `[]` denies all local tools, and a nonempty
 list permits only those names. A configured restriction fails before model
@@ -260,7 +259,7 @@ API cancellation retains usage already delivered to the plane by the current
 attempt. Usage still buffered in the runner or provider when cancellation
 commits is unavailable. Cancellation does not undo completed external effects.
 
-### Managed OpenAI Agents SDK Python runner (unreleased)
+### Managed OpenAI Agents SDK Python runner (v0.6.0)
 
 The optional `python-openai-agents` profile executes per-run factories returning
 public `agents.Agent` objects through the existing generic worker. Its native
@@ -271,9 +270,8 @@ session service is used.
 Source-built `runkite-runner` wheels and sdists include the runtime adapter and
 `runkite-runner-openai-agents` CLI. Install `./python[openai-agents]` from a source
 checkout in a clean environment; its optional SDK is pinned to
-`openai-agents==0.24.0`. This profile is unreleased and is absent from the
-published PyPI `0.5.8` artifact. After a release contains it, the public install
-will be `pip install 'runkite-runner[openai-agents]'`. The stock Python image
+`openai-agents==0.24.0`. This profile ships in published PyPI `0.6.0` via
+`pip install 'runkite-runner[openai-agents]'`. The stock Python image
 continues to use LangGraph and does not install this optional SDK.
 
 Load `runner_kind: python-openai-agents` in the plane's agent config. Send only
@@ -294,7 +292,7 @@ generic-worker OTLP run spans use the existing exporter variables. See the
 [offline example](../examples/managed_openai_agents/README.md) and
 [adapter contract](../python/adapters/openai_agents_adapter/README.md).
 
-### Managed Pydantic AI Python runner (unreleased)
+### Managed Pydantic AI Python runner (v0.6.0)
 
 `python-pydantic-ai` executes native per-run agent factories through the generic
 worker. The model loop stays in Python; Runkite owns dispatch, Threads/Runs,
@@ -305,8 +303,8 @@ and validation to finish before committing success.
 The source-built `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0` and includes
 the `pydantic_ai_adapter` module and `runkite-runner-pydantic-ai` command.
 Applications install their chosen providers separately. The ordinary CLI and
-stock image keep their LangGraph defaults. This profile is unreleased and absent
-from published PyPI `0.5.8`; follow the
+stock image keep their LangGraph defaults. This profile ships in published
+PyPI `0.6.0`; follow the
 [offline example](../examples/managed_pydantic_ai/README.md).
 
 Native conversations retain message/tool history and cumulative SDK usage.
@@ -322,7 +320,7 @@ approval/resume, output functions, multimodal input and additional workflow
 engines are unsupported. See the
 [adapter contract](../python/adapters/pydantic_ai_adapter/README.md).
 
-### Managed Google ADK Python runner (unreleased)
+### Managed Google ADK Python runner (v0.6.0)
 
 `python-google-adk` runs fresh ordinary `LlmAgent` factories through the generic
 worker. It uses public ADK `Runner.run_async`, model/tool plugins and a run-local
@@ -331,7 +329,7 @@ is no second session database or hosted Agent Engine deployment.
 
 The source-built `google-adk` extra pins `google-adk==2.13.0`, includes
 `google_adk_adapter` and provides `runkite-runner-google-adk`. Published PyPI
-`0.5.8` lacks this profile, and the stock image does not install its optional SDK.
+`0.6.0` includes this profile; the stock image does not install its optional SDK.
 The default Python command remains LangGraph. See the
 [offline example](../examples/managed_google_adk/README.md).
 

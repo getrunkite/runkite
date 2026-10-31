@@ -10,9 +10,9 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 |------|------------|
 | **Scale-out** | Agent Protocol MCP sessions (`/mcp`) are **process-local** (sticky routing). Admin UI sessions and connector MCP capability tokens are shared when `REDIS_URL` is set; without Redis they stay process-local. Runner tokens are per-kind (optional comma allowlist for fleets/rotation), not unique per pod. SSE event streaming uses one goroutine + one Redis connection per concurrent run; per-CP ceiling is ~3,000–5,000 concurrent SSE streams before Redis connection pool pressure (mitigate by adding CP replicas). |
 | **Authz** | Route-level `read` / `write` / `admin`, plus optional `agents:<id>:run` (write only on run-create routes, then agent check at create). Not per-tool ACLs (connector tools use policy grants and argument predicates on MCP `tools/call`). |
-| **Tenancy** | Flat `tenant_id`; no tenant registry UI. Unreleased named-tenant LangGraph checkpoint access requires HTTP proxy mode; direct Postgres is limited to guarded default-tenant IDs. With client auth + `RUNNER_TOKEN_*`, `serve` requires `RUNNER_TENANTS_*` per tokenized kind (use `default` for single-tenant). |
-| **Checkpoints** | Unreleased direct Postgres LangGraph accepts only default-tenant thread IDs without `:`; named tenants require HTTP proxy mode plus explicit resolution of prior native history. Durable LangGraph checkpoints: **Postgres direct mode** (AsyncPostgresSaver) or **HTTP proxy mode** (opaque blobs via `/internal/checkpoints`, any CP backend). Without POSTGRES_DSN and without RUNKITE_HTTP_URL the runner falls back to in-memory; blank/whitespace `RUNKITE_HTTP_URL` counts as unset (MemorySaver), not a broken proxy attempt. `checkpoint_ref` time-travel is LangGraph-only; CP does not pre-validate that the id exists. Proxy HITL + mid-superstep pending writes (`aput_writes` / `putWrites`) are full-fidelity (blob stores checkpoint+writes; CAS merge; matrix `hitl_restart` for Python **and** TypeScript). Late writes after cancel soft-no-op on `403 run_not_inflight` (must not crash Node). Proxy `alist(filter=...)` is unsupported (raises). Proxy writes use per-blob in-process locks plus **If-Match / ETag CAS** so multi-replica GET-modify-PUT retries instead of silent clobber; GET 200 without ETag refuses the update. Envelope is shared, but Python↔TS cannot resume each other's threads (serde payloads differ). Opaque list soft-caps ~1000 (no cursor yet). **Non-LangGraph adapters** (CrewAI / LlamaIndex / AutoGen / LangChain) reuse the same HTTP proxy with a stable `adapter-state` id for **message continuity** across runs (not channel-state HITL / not full crew-memory); without `RUNKITE_HTTP_URL` they stay single-shot. See deep-dive bullet below. |
-| **Streaming** | The bridge checks generation before every publish; output and status commit atomically under a durable attempt fence. Unreleased run SSE, thread SSE and WebSocket recovery confirms terminal events through that durable fence, ignores superseded terminals and uses retained replay plus durable-state checks if a broker subscription closes early. Queue checks and broker publication remain separate, so raw nonterminal events can still be advisory during reclaim. Already displayed old-attempt text cannot be withdrawn; clients must respect preserved attempt identities instead of merging attempts. `/wait` returns persisted current output. Generation must exactly match the active attempt. Legacy generation `0` matches only an actual generation `0`, so older runners that omit the field must upgrade for current assignments. |
+| **Tenancy** | Flat `tenant_id`; no tenant registry UI. v0.6.0 named-tenant LangGraph checkpoint access requires HTTP proxy mode; direct Postgres is limited to guarded default-tenant IDs. With client auth + `RUNNER_TOKEN_*`, `serve` requires `RUNNER_TENANTS_*` per tokenized kind (use `default` for single-tenant). |
+| **Checkpoints** | v0.6.0 direct Postgres LangGraph accepts only default-tenant thread IDs without `:`; named tenants require HTTP proxy mode plus explicit resolution of prior native history. Durable LangGraph checkpoints: **Postgres direct mode** (AsyncPostgresSaver) or **HTTP proxy mode** (opaque blobs via `/internal/checkpoints`, any CP backend). Without POSTGRES_DSN and without RUNKITE_HTTP_URL the runner falls back to in-memory; blank/whitespace `RUNKITE_HTTP_URL` counts as unset (MemorySaver), not a broken proxy attempt. `checkpoint_ref` time-travel is LangGraph-only; CP does not pre-validate that the id exists. Proxy HITL + mid-superstep pending writes (`aput_writes` / `putWrites`) are full-fidelity (blob stores checkpoint+writes; CAS merge; matrix `hitl_restart` for Python **and** TypeScript). Late writes after cancel soft-no-op on `403 run_not_inflight` (must not crash Node). Proxy `alist(filter=...)` is unsupported (raises). Proxy writes use per-blob in-process locks plus **If-Match / ETag CAS** so multi-replica GET-modify-PUT retries instead of silent clobber; GET 200 without ETag refuses the update. Envelope is shared, but Python↔TS cannot resume each other's threads (serde payloads differ). Opaque list soft-caps ~1000 (no cursor yet). **Non-LangGraph adapters** (CrewAI / LlamaIndex / AutoGen / LangChain) reuse the same HTTP proxy with a stable `adapter-state` id for **message continuity** across runs (not channel-state HITL / not full crew-memory); without `RUNKITE_HTTP_URL` they stay single-shot. See deep-dive bullet below. |
+| **Streaming** | The bridge checks generation before every publish; output and status commit atomically under a durable attempt fence. v0.6.0 run SSE, thread SSE and WebSocket recovery confirms terminal events through that durable fence, ignores superseded terminals and uses retained replay plus durable-state checks if a broker subscription closes early. Queue checks and broker publication remain separate, so raw nonterminal events can still be advisory during reclaim. Already displayed old-attempt text cannot be withdrawn; clients must respect preserved attempt identities instead of merging attempts. `/wait` returns persisted current output. Generation must exactly match the active attempt. Legacy generation `0` matches only an actual generation `0`, so older runners that omit the field must upgrade for current assignments. |
 | **Rate limits** | Shared cluster-wide only with Redis backend (auto when `REDIS_URL` is set). |
 | **Observability** | OTel/Prometheus emit run + metadata LLM/tool spans — not full prompt/completion capture (use your OTLP backend / Langfuse). AutoGen uses native GenAI span names, not `runkite.llm` / `runkite.tool`. |
 | **Governance on Mongo** | Durable `audit_events` / `policy_grants` / `pending_actions` / `kill_switches` / `break_glass_windows` / `mandatory_hitl_rules` / `usage_events` are SQL-only (Postgres / MySQL / SQLite). Mongo skips audit/usage writes; Admin grant/pending/audit/kill/break-glass/mandatory-hitl/usage routes return `501`; webhook `pending` cannot persist. See [Trust & governance](trust-governance.md#governance-durability-sql-backends). |
@@ -40,7 +40,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   [the example](../examples/managed_ai_sdk/README.md). Raw SSE is advisory; the
   bridge confirms durable completion and refuses to combine attempts after a
   reclaim. Interrupted turns retain only previously committed history.
-- **Managed Microsoft Agent Framework (unreleased) is a separate Python runner
+- **Managed Microsoft Agent Framework (v0.6.0) is a separate Python runner
   kind** (`python-agent-framework`). It manages real Threads/Runs with public
   Agent streaming/session APIs, opaque CAS receipts and local tools. Workflows,
   .NET, non-text inputs, caller-supplied assistant/tool history, native
@@ -54,18 +54,18 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   own idempotency. Source-built `runkite-runner` wheels and sdists now include
   the adapter and dedicated `runkite-runner-agent-framework` CLI. The optional
   `agent-framework` extra pins `agent-framework-core==1.23.0`. This install path
-  is unreleased and absent from the published PyPI `0.5.8` artifact; use the
-  [source install](../examples/managed_agent_framework/README.md) until a release
-  contains it. The ordinary Python CLI and stock image keep their LangGraph
+  is included in the published PyPI `0.6.0` artifact; see the
+  [source install](../examples/managed_agent_framework/README.md).
+  The ordinary Python CLI and stock image keep their LangGraph
   defaults; the image does not install the Microsoft SDK. The four older
   CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain checkout-only.
   Decision-only `runkite_governance.agent_framework` middleware remains a
   different boundary (app-owned loop, no managed run).
-- **Managed OpenAI Agents SDK (unreleased)** uses `python-openai-agents`, public
+- **Managed OpenAI Agents SDK (v0.6.0)** uses `python-openai-agents`, public
   native streaming/history and successful-turn opaque CAS receipts. Its optional
   `openai-agents` extra pins `openai-agents==0.24.0`; source-built wheels include
-  the dedicated `runkite-runner-openai-agents` entrypoint. Published PyPI `0.5.8`
-  lacks this profile. The stock Python image does not install its optional SDK. The first
+  the dedicated `runkite-runner-openai-agents` entrypoint. Published PyPI `0.6.0`
+  includes this profile. The stock Python image does not install its optional SDK. The first
   profile supports one text agent and local function tools. Native approval or
   resume, handoffs, agents-as-tools, hosted/MCP tools, structured final output,
   non-text input and unfinished-turn restoration are unsupported. Failed or
@@ -74,19 +74,19 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   Native reasoning items remain in durable history and are not UI output.
   Native SDK trace export is disabled; generic-worker OTLP run tracing remains.
   See the [example](../examples/managed_openai_agents/README.md).
-- **Managed Pydantic AI (unreleased)** uses `python-pydantic-ai`, native text and
+- **Managed Pydantic AI (v0.6.0)** uses `python-pydantic-ai`, native text and
   validated JSON final results. The optional `pydantic-ai` extra pins
   `pydantic-ai-slim==2.63.0`; provider packages are application choices. Published
-  PyPI `0.5.8` lacks this profile. The stock image does not install its SDK.
+  PyPI `0.6.0` includes this profile. The stock image does not install its SDK.
   Successful native conversations and receipts use opaque CAS state. Per-run
   usage excludes earlier conversation turns. Partial JSON cannot complete a run.
   Native deferred approvals, output functions, multimodal input and additional
   workflow engines are outside the initial scope. Local tools acquire connector
   policy only through the existing connector helpers. See the
   [example](../examples/managed_pydantic_ai/README.md).
-- **Managed Google ADK (unreleased)** uses `python-google-adk` with one ordinary
+- **Managed Google ADK (v0.6.0)** uses `python-google-adk` with one ordinary
   text `LlmAgent`, local function tools and session-local state. The source extra
-  pins `google-adk==2.13.0`; published PyPI `0.5.8` lacks the profile and the stock
+  pins `google-adk==2.13.0`; published PyPI `0.6.0` includes the profile and the stock
   image does not install its SDK. A run-local public session service uses existing
   opaque CAS state and successful receipts. Cross-session `app:`/`user:` state
   is rejected rather than made thread-local; `temp:` state is not durable.
@@ -94,7 +94,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   output, long-running tools and live audio are unsupported. A final-response
   event alone cannot mark a run successful. See the
   [example](../examples/managed_google_adk/README.md).
-- **Managed UI reconnect is an unreleased, same-attempt example update.** The
+- **Managed UI reconnect is a same-attempt example update (v0.6.0).** The
   app may detach browser delivery and attach its stored thread/run again without
   another model invocation. It must retain that mapping and its own UI messages;
   this is not a durable UI-message service. Native full replay requires a start
@@ -110,7 +110,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
   authenticated cancel route; aborting a local reader is not run cancellation.
   The existing create default remains cancel. See the
   [managed example](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
-- **Shared Python UI profiles are unreleased example code.** Microsoft, OpenAI
+- **Shared Python UI profiles are v0.6.0 example code.** Microsoft, OpenAI
   Agents, Pydantic AI and Google ADK can use the existing app-side AI SDK UI bridge
   for text and Pydantic final JSON. Attach expects a bridge-created single-user
   string turn. Native tool UI, reasoning display and multimodal parts remain
@@ -130,22 +130,22 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 Honest gaps, not hidden ones:
 
-- **Cache hits require atomic completion (unreleased).** Built-in stores atomically
+- **Cache hits require atomic completion (v0.6.0).** Built-in stores atomically
   insert the admitted run, output, merged state and checkpoint. Custom stores
   without optional `state.CachedRunCreator` use normal dispatch on a cache lookup.
   Cache replay does not bill original output usage or extend cache TTL. It still
   creates a logical run for daily quotas. Whole-run caching stays opt-in and
   unsuitable for agents with external side effects; managed AI SDK rejects it.
-- **Exact identity transport requires plane-first upgrades (unreleased).** Unicode
+- **Exact identity transport requires plane-first upgrades (v0.6.0).** Unicode
   or legacy header-unsafe run/tenant identities use new base64url UTF-8 headers;
   older planes do not understand them. New run IDs with controls or outer
   whitespace are rejected. Existing IDs are not renamed.
-- **Parent ownership is checked at mutation (unreleased).** A deleted thread ID
+- **Parent ownership is checked at mutation (v0.6.0).** A deleted thread ID
   recreated by another tenant cannot accept the old tenant's delayed run or
   checkpoint. Mongo parent and tenant-scoped children delete atomically. This
   prevents new malformed relationships and does not reconstruct historical ones.
 
-- **Application JSON number preservation (unreleased)** covers run results,
+- **Application JSON number preservation (v0.6.0)** covers run results,
   thread values/history, checkpoint values/tasks/interrupts, store values and
   cached output.
   These paths keep JSON numbers without converting them through a Go float.
@@ -168,7 +168,7 @@ Honest gaps, not hidden ones:
 - **`admission_limits` use locked COUNT+INSERT (not Redis).** Multi-replica deployments share the state store; creates for the same tenant/agent scope serialize on a DB lock so burst traffic cannot all clear a stale COUNT. Daily windows are UTC only. `a2a.max_breadth` still uses a separate check-then-create path and can overshoot under concurrent fan-out.
 - **Admin UI uses httpOnly cookie sessions + CSRF.** Login (`POST /admin-api/session`) exchanges an API key/JWT for an httpOnly `runkite_admin_session` cookie; the credential is not kept in JavaScript. Mutating `/admin-api/*` calls require `X-CSRF-Token` (from the login/status JSON). Machine clients still use `Authorization: Bearer` (no CSRF). Session lifetime is a 12h sliding TTL. With `REDIS_URL`, sessions live in Redis (`rk:admin:sess:*`) and any replica can authenticate or logout the browser; without Redis they are process-local and multi-replica Admin UI needs sticky routing to the minting replica. MCP session ownership stays process-local either way (sticky `/mcp`).
 - **Authorization is route-level plus optional agent run grants.** Permissions are `read`/`write`/`admin` at the method layer. `agents:<id>:run` unlocks only run-create POST routes (not cancel/delete/store); `CanRunAgent` then scopes the agent_id (see Auth and [Trust & governance](trust-governance.md)). Optional per-graph `allowed_tools` is enforced by LangGraph runners on observed stream `tool_calls` (not a full per-tool ACL engine / AuthorizeTool RPC). Connector tools use policy grants and optional argument predicates on connector MCP `tools/call` (pre-call only; not in-graph AuthorizeTool).
-- **MySQL identity isolation requires schema version 17 (unreleased).** Older
+- **MySQL identity isolation requires schema version 17 (v0.6.0).** Older
   default collations can equate distinct tenant/resource identifiers. Version 17
   uses MySQL 8 `utf8mb4_0900_bin` NO PAD on identity/security columns and leaves
   human search/display semantics intact. All writers must stop for this ALTER
@@ -176,14 +176,14 @@ Honest gaps, not hidden ones:
   child ownership; investigate and repair before retrying. DDL is not one atomic
   transaction, but interrupted upgrades resume and stamp only after foreign-key
   restoration. Downgrade refuses unsafe merging, and overwritten identities
-  cannot be reconstructed. See [upgrade procedure](ops-runbook.md#hardening-upgrade-unreleased).
+  cannot be reconstructed. See [upgrade procedure](ops-runbook.md#hardening-upgrade).
 - **State-store and pgvector schemas use numbered up/down migrations; Qdrant/Weaviate/Pinecone stay create-if-missing.** `runkite db upgrade` / `serve` apply state versions via `schema_migrations`. pgvector uses a separate `vector_schema_migrations` table (same Postgres DB must not share version rows with state) via `Init` / `runkite vector upgrade`. `db downgrade` / `vector downgrade` each roll back one step -- baseline (v1) Down is destructive (CLI warns). Pre-versioned databases run baseline Up then stamp v1. Cloud vector backends have no DDL trail.
 - **Runner OTel creates a per-job `runkite.run` child span under the control plane's `traceparent` when `OTEL_EXPORTER_OTLP_*` is set** (same env contract as the control plane; no-op otherwise). Python LangGraph / plain-LangChain, TypeScript LangGraph.js, CrewAI (event bus), and LlamaIndex (instrumentation handler) auto-attach thin listeners that open `runkite.llm` / `runkite.tool` children under that span (metadata only -- no prompts/completions). AutoGen nests its own GenAI `invoke_agent` / `execute_tool` spans under `runkite.run` when OTel is on, but does not emit `runkite.llm` / `runkite.tool` (no LLM callback surface without wrapping `ChatCompletionClient`).
-- **Direct Postgres LangGraph is default-tenant-only (unreleased).** Every non-default tenant fails before factory/state access, since even a delimiter-safe new named key can read legacy default-tenant history. Use HTTP proxy mode for named LangGraph tenants and explicitly resolve prior native state. Default direct thread IDs without `:` retain history. Fresh memory permits named tenants under its delimiter guard: no colon in named tenant IDs or default thread IDs, and no outer whitespace/ASCII controls in tenant IDs. Default cron threads need proxy mode. Proxy supports all tenants and imports no native history automatically; there is no ownership marker or blank fallback. Managed opaque SDK profiles are unaffected. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
+- **Direct Postgres LangGraph is default-tenant-only (v0.6.0).** Every non-default tenant fails before factory/state access, since even a delimiter-safe new named key can read legacy default-tenant history. Use HTTP proxy mode for named LangGraph tenants and explicitly resolve prior native state. Default direct thread IDs without `:` retain history. Fresh memory permits named tenants under its delimiter guard: no colon in named tenant IDs or default thread IDs, and no outer whitespace/ASCII controls in tenant IDs. Default cron threads need proxy mode. Proxy supports all tenants and imports no native history automatically; there is no ownership marker or blank fallback. Managed opaque SDK profiles are unaffected. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 - **Proxy-mode writes use GET-modify-PUT with CAS.** An in-process `asyncio.Lock` per blob serializes parallel LangGraph tasks in one runner. Across replicas, PUTs send `If-Match` (ETag/version) and retry on `412` so concurrent `aput` / `aput_writes` merge instead of silently dropping channels. HITL interrupt→resume and mid-superstep pending writes are full-fidelity (same as direct mode for LangGraph); `aput_writes` without `checkpoint_id` raises rather than no-op. LangGraph Pregel calls `aput_writes` for a *new* checkpoint id *before* `aput`, so a missing blob is normal: both `aput_writes` and `aput` create via `If-None-Match: *` (create-only); if a concurrent peer already won, `412` retries as GET+merge instead of clobbering (so an unconditional `aput` cannot wipe an `aput_writes` shell). Weak/malformed `If-Match` is rejected with `400` (not treated as absent). Checkpoint id `latest` is reserved (`400`; conflicts with `GET .../latest`). `alist(filter=...)` raises `NotImplementedError` (metadata filter is not applied to opaque blobs). `aget_tuple` without an id uses `GET .../latest?ns=` (one round-trip). Opaque list endpoints soft-cap at ~1000 rows (no cursor yet) — deep history / many subgraph ns keys can truncate; `/latest` covers the resume hot path.
 - **Store/vector/connector session+MCP are run-bound** (tenant derived from the in-flight assignment). Other `/internal/*` routes still honor `X-Runkite-Tenant-Id` after kind-token auth — set `RUNNER_TENANTS_<kind>` in multi-tenant deployments (see docs/auth.md and docs/trust-governance.md).
 - **Connector policy durability is SQL-only; Mongo remains a gap.** In-process Decide (static grants + argument predicates + sync webhook) runs on every state backend. Durable `audit_events`, Admin `/admin-api/policy-grants` overlays, `/admin-api/mandatory-hitl`, `/admin-api/pending-actions` HITL, `/admin-api/kill-switches`, `/admin-api/break-glass`, and `/admin-api/usage/summary` require Postgres, MySQL, or SQLite; Mongo returns `501` for those Admin routes, skips audit/usage writes, and fails closed on webhook `pending` (deny, no `action_id`). Do not market equal governance proofs on Mongo — see [Trust & governance](trust-governance.md#governance-durability-sql-backends).
-- **Connector HITL approval is an exact, one-shot argument binding (unreleased hardening).** Versioned digests retain numeric value and JSON type. A matching approval can bypass another pending result, but a current explicit deny still wins. Old lossy hashes and empty-digest wildcards cannot authorize new requests; legacy pending/approved app actions must be resubmitted for fresh review. Display maps remain capped/redacted and subject to backend/browser precision limits. No automatic execution or native framework resume is added. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+- **Connector HITL approval is an exact, one-shot argument binding (v0.6.0 hardening).** Versioned digests retain numeric value and JSON type. A matching approval can bypass another pending result, but a current explicit deny still wins. Old lossy hashes and empty-digest wildcards cannot authorize new requests; legacy pending/approved app actions must be resubmitted for fresh review. Display maps remain capped/redacted and subject to backend/browser precision limits. No automatic execution or native framework resume is added. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 - **FinOps is spend control + metering, not a full BI warehouse.** Optional `finops` budgets (hard/soft UTC-day USD/tokens/runs), terminal `usage_events`, Admin Spend (`/admin/spend`) with alerts (`budget_soft` / `budget_exceeded` / `budget_alert` / `budget_kill` / `budget_route` / `usage_unpriced` / `usage_unmetered`), CSV/JSON export, and cheaper-alias routing ship on SQL. `usage_unmetered` fires when a reply comes back but every extraction path found zero tokens/cost in any recognized shape (a brand-new/unrecognized provider integration) — the LlamaIndex adapter reads only real provider-reported usage for this (`_RealUsageOnlyHandler`), deliberately skipping LlamaIndex's own `TokenCountingHandler` fallback that would otherwise silently re-tokenize the prompt/response with tiktoken (not the actual provider's tokenizer) and report a plausible-but-fabricated number instead of raising this alert. Optional `finops.reservation` holds count toward **USD/token** day caps until terminal release (not toward `max_runs_per_day` — run creates are already counted by `CountRunsSince`); with reservation unset (0), concurrent creates can still overshoot USD/tokens; with reservation on, set `hold_ttl` or a crashed runner can leave holds that inflate caps until UTC midnight rolls. A `hold_ttl` shorter than a still-running job drops that run's hold mid-flight and under-reserves until terminal release — size TTL above your longest expected run. Reservation estimates can be wrong; use `reservation.agents` for per-agent sizes when costs differ. Routing only rewrites configured aliases. Approach `budget_alert` is once-per-day-per-process (best-effort). Mid-run cancel is opt-in (`on_hard_breach: cancel_inflight`); no streaming mid-run metering (a run in progress is only metered once it reaches a terminal or interrupted status), no multi-currency. Mongo: budgets fail-open; usage Admin `501`.
 - **USD on Admin Spend is an estimate, never a vendor invoice.** Token counts come from the model provider's own response metadata (genuinely accurate); dollars come from either your `finops.pricebook` rate for that model id, or — when the runner is talking to an LLM gateway that reports cost inline with token usage (OpenRouter's `usage.cost`, and OpenAI-compatible gateways following the same convention) — that reported figure, which the pricebook never overrides. Neither path calls a provider billing API. Swap models and forget to add a pricebook row (while the book is non-empty) → tokens are still recorded but USD resolves to `$0`, which raises a `usage_unpriced` audit/alert instead of failing silently. An empty pricebook is tokens-only metering (no alert); a present row with `$0` rates is intentional free tier (no alert). Gateways that report cost out-of-band instead of inline on the response (Portkey response headers, Helicone's async dashboard) are not read by the runner today — routing LLM calls through one still works (it is a plain `base_url` change in your agent code, nothing Runkite-specific), but its cost figure will not reach Runkite unless it also inlines cost the way OpenRouter does; those runs still price from tokens × your pricebook.
 - **No central tenant registry, and no user/API-key management UI.** See Multi-tenancy and Admin UI -- a tenant exists implicitly the moment a resource is tagged with it, and there's no persisted user/API-key table to manage in the first place (`api_key` entries are static config).
@@ -192,7 +192,7 @@ Honest gaps, not hidden ones:
 - **Payload shrink is not a token SLA.** Opt-in connector MCP `tools/call` result cap. Token spend may drop only if the runner reports fewer tokens; shrink does not write `usage_events` and Admin Spend does not move on shrink alone.
 - **No Redis means no shrink.** `payload_shrink.enabled` without `REDIS_URL` forwards the original body. A Redis error after a successful downstream call also forwards the original; the tool call is not failed.
 - **Enabled shrink means durable audit does not keep the original MCP body.** The hop's trail is the preview plus ref. Retrieve is for the agent during Redis TTL, not forensics. Grants / pending / HITL / kill stay fully audited. Leave shrink off if the audit path must retain oversized results. See [Connectors](connectors.md#payload-shrink-opt-in).
-- **In-graph `allowed_tools` requires runner cooperation and is not a sandbox.** Python/TS LangGraph runners deny non-listed names observed in stream chunks before ToolNode runs. Managed AI SDK, Microsoft, OpenAI Agents, Pydantic AI and Google ADK profiles check local tool names before their bodies run, including an explicit empty deny-all list. The unreleased Microsoft check uses native function middleware; a configured restriction fails before model execution when a custom client lacks that invocation boundary. Older generic adapters do not enforce this allowlist. Tools that never pass a cooperating runner hook are not filtered. There is no general `AuthorizeTool` round-trip; connector policy remains on the proxy path. See [Trust & governance](trust-governance.md).
+- **In-graph `allowed_tools` requires runner cooperation and is not a sandbox.** Python/TS LangGraph runners deny non-listed names observed in stream chunks before ToolNode runs. Managed AI SDK, Microsoft, OpenAI Agents, Pydantic AI and Google ADK profiles check local tool names before their bodies run, including an explicit empty deny-all list. The v0.6.0 Microsoft check uses native function middleware; a configured restriction fails before model execution when a custom client lacks that invocation boundary. Older generic adapters do not enforce this allowlist. Tools that never pass a cooperating runner hook are not filtered. There is no general `AuthorizeTool` round-trip; connector policy remains on the proxy path. See [Trust & governance](trust-governance.md).
 - **In-runner custom routes are ASGI-only.** `uvicorn` (the SDK's only custom-routes dependency) doesn't serve WSGI apps -- Flask needs an adapter (e.g. `a2wsgi.WSGIMiddleware`) wrapped around it first. Sidecar mode has no such restriction (any language, any framework).
 - **Real agent schema introspection is Python-only.** See the Agents API reference above -- the Python LangGraph runner reports each static graph's real input/output/state/config JSON Schema at startup via genuine public LangGraph API; the TypeScript runner still reports the `{"type": "object"}` bootstrap stub, since LangGraph.js's compiled graph has no public equivalent of Python's `get_input_jsonschema()`/etc (only private, underscore-prefixed internal fields, not safe to depend on across versions). CrewAI/LlamaIndex/AutoGen/plain LangChain (via `generic_worker.py`) also keep the stub -- none of them have a typed state-graph concept the same way, so there's no equivalently real schema to report in the first place.
 - **`checkpoint_ref` time-travel is LangGraph-only.** A non-empty `checkpoint_ref` on create-run is forwarded on `RunAssignment` and mapped by the Python/TypeScript LangGraph runners to `configurable.checkpoint_id` (LangGraph's native resume-from-past-checkpoint key). Non-LangGraph runners (`generic_worker` adapters) reject it with an error event rather than silently ignoring it. The control plane does not verify that the checkpoint exists for the thread before dispatch -- an unknown id fails at the checkpointer during execution. Empty/whitespace values are treated as absent (resume from the thread's latest checkpoint).
@@ -202,18 +202,18 @@ Honest gaps, not hidden ones:
 - **`action=rollback` on run cancel doesn't delete checkpoints.** See the Runs API reference above -- it deletes the run record, but not any checkpoints, despite the Agent Protocol spec's literal wording. Checkpoints are keyed by `thread_id`, not `run_id` (accumulated across every run on a thread, with no per-run attribution to select just one run's slice), and in direct mode live entirely in LangGraph's own Postgres tables, outside this project's own state store.
 - **TypeScript runner's Docker image (`Dockerfile.runner-ts`) is built and live-verified** (a real run against `echo_agent_ts` through `docker-compose.ts.yml` completes and echoes back correctly), but its own VG-001/002/003-equivalent verification is otherwise manual-only, not regression-guarded in CI (same as cron's multi-instance claim test).
 - **Vector store supports pgvector, Qdrant, Weaviate, and Pinecone.** Every backend named in the original plan is implemented -- see the Vector Store section.
-- **In-process requeue retains failed handoffs (unreleased).** A full ready
+- **In-process requeue retains failed handoffs (v0.6.0).** A full ready
   buffer or cancelled Nack/reclaim call keeps its original lease and generation
   for retry. Reclaim counts only successful ready writes. This closes local
   lost-work paths; it adds no durability across process exit or multi-replica HA.
-- **Dispatch verifies actual assignment kind (unreleased).** Token-authenticated
+- **Dispatch verifies actual assignment kind (v0.6.0).** Token-authenticated
   GetJob checks the dequeued job before advancing its durable attempt or exposing
   input, returning a misroute with a generation-bearing Nack. No-token local mode
   stays trusted. NATS durable names map `.` to `_`; kinds such as `a.b` and `a_b`
   cannot coexist under that name. Conflicting filters fail instead of retargeting
   a durable. Reconcile work before renaming config/tokens/runners; no automatic
   consumer or history migration is provided.
-- **NATS run IDs must be literal subject/KV partitions (unreleased).** Use
+- **NATS run IDs must be literal subject/KV partitions (v0.6.0).** Use
   nonempty ASCII letters/digits, `-`, `_`, `/`, `=` or single internal dots,
   without leading/trailing dots or empty dot segments. Wildcards, whitespace,
   colons and Unicode are rejected before NATS queue/event/cancel operations.
@@ -221,7 +221,7 @@ Honest gaps, not hidden ones:
   be readable, but stream/cancel operations fail closed and queued legacy work
   is retained with delayed negative acknowledgement for operator investigation.
   Postgres/Redis does not impose this NATS-only boundary. See the
-  [operator notes](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
+  [operator notes](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 - **Transport supports in-memory, Redis, NATS (JetStream), and Kafka.** See the NATS transport section for its own real difference from Redis: fencing generation reuses JetStream's native per-message delivery count instead of a hand-rolled counter, and `EventBroker.Close` is a documented no-op there (a late `Subscribe` on an already-finished run gets a silently-empty channel, not an immediately-closed one the way Redis's explicit closed-marker gives). Kafka is JobQueue-only (pair with Redis for broker/cancelbus). Multi-replica Kafka reclaim double-dispatch is closed when Redis is present (cluster-wide reclaim-leader lock); Kafka without Redis remains single-instance / experimental for that race -- see the Kafka transport section.
 - **Admin UI list endpoints support keyset `?cursor=` (preferred) and `?limit=&offset=`** (default 50, max 200). Full pages return `X-Next-Cursor`; cursor and offset are mutually exclusive. Agent Protocol client search stays offset-only. Overview uses real `COUNT`/`GROUP BY`.
 - **Factory Graph's `_ExecutionRuntime` construction depends on `langgraph_sdk`'s internal (underscore-prefixed) class.** `langgraph_sdk.runtime.ServerRuntime` has no public constructor -- factory_graph.py constructs `_ExecutionRuntime` directly, which could break on a `langgraph-sdk` upgrade that changes its internals; a `_MinimalRuntime` duck-typed stand-in (covering the same documented `.user`/`.store`/`.execution_runtime`/`.ensure_user()` surface) is used as a fallback if that construction fails, so factory graphs keep working either way for the common case.

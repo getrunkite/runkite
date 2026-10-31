@@ -66,7 +66,7 @@ tool outputs and native approval/resume are outside the initial managed adapter.
 Neither an app-owned allow decision nor an operation `run_id` proves execution
 or supplies idempotency. See [client integration guidance](client-sdk.md).
 
-The unreleased shared bridge can also present managed Microsoft, OpenAI Agents,
+The v0.6.0 shared bridge can also present managed Microsoft, OpenAI Agents,
 Pydantic AI and Google ADK Python output in the same AI SDK UI. Its server-selected
 profiles translate ordinary text events and validate the current durable turn;
 Pydantic JSON remains a separate final result. Reconnect and Stop keep the same
@@ -83,8 +83,7 @@ create a Runkite run or resume a managed Microsoft agent. The tested optional
 core is pinned to `agent-framework-core==1.23.0`. This middleware is separate
 from the [managed Microsoft runner](../examples/managed_agent_framework/README.md),
 which creates real Threads/Runs and persists native session state. Its optional
-`runkite-runner[agent-framework]` install profile remains unreleased; use a
-source-built package until a release contains it.
+`runkite-runner[agent-framework]` install profile ships in v0.6.0.
 
 Upstream: [microsoft/agent-framework](https://github.com/microsoft/agent-framework).
 Use public function middleware APIs; no upstream fork, second approval service
@@ -102,9 +101,8 @@ and [history APIs](https://developers.openai.com/api/docs/guides/agents/results)
 without an upstream fork or OpenAI-hosted Agents API session service.
 
 The optional `openai-agents` extra pins `openai-agents==0.24.0`, and the installed
-entrypoint is `runkite-runner-openai-agents`. This profile is unreleased and not
-present in published PyPI `0.5.8`; use the source-install instructions in the
-example. Text and local function tools are the initial scope. Native approvals,
+entrypoint is `runkite-runner-openai-agents`. This profile ships in published
+PyPI `0.6.0`; see the install instructions in the example. Text and local function tools are the initial scope. Native approvals,
 resume, handoffs, agents-as-tools, hosted/MCP tools and structured final outputs
 are unsupported. Connector policy applies only to tools using the existing
 connector helpers. Native SDK trace export is disabled; generic-worker OTLP run
@@ -123,8 +121,8 @@ validation and model loop. Runkite reuses its generic worker and opaque CAS
 checkpoint surface, with successful-turn receipts for reclaim.
 
 The optional `pydantic-ai` extra pins `pydantic-ai-slim==2.63.0` and provides
-`runkite-runner-pydantic-ai`. This source-built profile is unreleased and not in
-published PyPI `0.5.8`; application providers are installed separately.
+`runkite-runner-pydantic-ai`. This profile ships in published PyPI `0.6.0`;
+application providers are installed separately.
 Native conversation serialization preserves SDK metadata while per-run billing
 excludes previously committed turns. Deferred approvals, output functions,
 multimodal input and external workflow engines are not part of this profile.
@@ -143,8 +141,8 @@ The plane retains dispatch, admission, cancel, spend and audit through existing
 protocols. No upstream server, session database or hosted Agent Engine is added.
 
 The source-built `google-adk` extra pins `google-adk==2.13.0` and provides
-`runkite-runner-google-adk`. This profile is unreleased and absent from published
-PyPI `0.5.8`. Start with one user text message per run and ordinary local tools.
+`runkite-runner-google-adk`. This profile ships in published PyPI `0.6.0`.
+Start with one user text message per run and ordinary local tools.
 Connector policy requires existing connector helpers. Shared `app:`/`user:` state,
 native confirmation/resume, workflows/delegation, memory/artifacts, structured
 output and live audio are outside the first profile.

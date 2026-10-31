@@ -9,8 +9,8 @@ which only submits tool decisions while the app keeps the loop.
 
 ## Run
 
-The optional runner packaging is **unreleased**. The published PyPI `0.5.8`
-artifact does not contain this adapter or its CLI. From the repository root,
+The optional runner packaging ships in published PyPI **0.6.0**.
+From the repository root, or via `pip install 'runkite-runner[agent-framework]'`:
 build and install the local package in a clean Python 3.11+ environment
 (shown here with 3.12):
 
@@ -26,8 +26,7 @@ python3.12 -m venv .venv-agent-framework
 The extra pins `agent-framework-core==1.23.0`. The installed module alternative
 is `.venv-agent-framework/bin/python -m agent_framework_adapter` with the same
 arguments; neither command needs `PYTHONPATH`. The regular `runkite-runner` CLI
-and stock Python image retain their LangGraph defaults. After a release
-containing this change is published, install the profile with
+and stock Python image retain their LangGraph defaults. Install the profile with
 `pip install 'runkite-runner[agent-framework]'` instead of the local package.
 
 Create runs against graph id `managed_agent_framework` with `input.messages`
@@ -38,7 +37,7 @@ unsupported. Session history and turn receipts survive runner
 restarts via opaque checkpoints. Reclaim of the same `run_id` replays without
 another model or tool cycle.
 
-The unreleased [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
+The v0.6.0 [shared UI bridge](../managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 uses profile `agent-framework` for bridge-created single-user string turns.
 The application keeps UI authentication, presentation history and its stored
 chat/turn mapping.

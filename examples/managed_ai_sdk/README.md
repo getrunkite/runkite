@@ -15,7 +15,7 @@ no provider credentials. `langgraph.json` retains the existing configuration
 filename and `graphs` mapping so the control plane can register it without a new
 configuration subsystem. Its runner kind is `typescript-ai-sdk`.
 
-**Unreleased bridge update:** this checkout adds shared Python text/result
+**v0.6.0 bridge update:** this checkout adds shared Python text/result
 profiles, detach, reattach and explicit Stop helpers to the app-side example.
 They are separate from the managed runner
 that shipped in v0.5.8, and do not change the plane's run API or SDK model loop.
@@ -136,7 +136,7 @@ replace the runner's durable model history.
 
 ## Use the same frontend with a Python runner
 
-The unreleased `profile` option selects a checked server-side mapping:
+The v0.6.0 `profile` option selects a checked server-side mapping:
 
 - `ai-sdk` is the default and preserves native AI SDK UI events and tool parts.
 - `agent-framework` uses the managed Microsoft Python runner.

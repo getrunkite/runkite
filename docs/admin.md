@@ -86,21 +86,20 @@ Building the UI from source (only needed if you're changing `admin-ui/` itself -
 cd admin-ui && npm ci && npm run build   # builds straight into internal/adminui/dist/
 ```
 
-The unreleased hardening update confirms logout through the server, serializes
+The v0.6.0 hardening update confirms logout through the server, serializes
 polls and aborts obsolete reads on navigation. Event readers preserve valid SSE
 line endings and whitespace. Debug event panes show bounded previews with an
 explicit truncation notice; durable output/API data is separate. IDs in Admin
 paths are encoded, while new literal `.` and `..` run/thread IDs are rejected.
 Manual dead-letter replay uses indexed ID lookup on built-in stores, including
 records older than the latest 1,000. Replay refuses redirects, succeeds only on
-2xx and remains unsigned. See [upgrade guidance](ops-runbook.md#hardening-upgrade-unreleased).
+2xx and remains unsigned. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 
 ## Managed runs and in-process decisions
 
 Threads, Runs and Try agent show executions Runkite creates and dispatches to a
-runner. The optional managed AI SDK runner in this working tree uses these same
-records after the app adopts the managed request path. It is unreleased until a
-maintainer publishes a runner package/image containing it. Its initial scope is
+runner. The managed AI SDK runner (from v0.5.8) uses these same
+records after the app adopts the managed request path. Its initial scope is
 text and local JSON-result tools, without native approval/resume or time travel.
 See [Runners](runners.md) and the [integration guide](../site/support/sdk-integration.html).
 

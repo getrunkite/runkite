@@ -1,6 +1,6 @@
 # Local HA validation: load and recovery are separate claims
 
-This design record accompanies the unreleased validation changes based on
+This design record accompanies the v0.6.0 validation changes based on
 `53160fc`. Postgres and Redis remain the Supported state/transport pair. The
 control plane stays one binary; runners, nginx and the webhook sink remain
 separate processes. No new runtime service or persistence subsystem is added.

@@ -133,7 +133,7 @@
           Predicates never <code>allow</code>. There is no Admin CRUD for them this release.
         </p>
         <p>
-          <strong>Unreleased argument hardening:</strong> equality and ordering use
+          <strong>v0.6.0 argument hardening:</strong> equality and ordering use
           exact numeric values. Different large integer IDs and decimal thresholds
           cannot collapse through floating-point rounding; equivalent JSON spellings
           such as <code>1</code> and <code>1e0</code> compare equal. Duplicate argument
@@ -155,7 +155,7 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
           an embedded approval must enforce its own execution idempotency.
         </p>
         <p class="note" id="approval-upgrade">
-          <strong>Unreleased upgrade requirement:</strong> approval argument digests
+          <strong>v0.6.0 upgrade requirement:</strong> approval argument digests
           now use a v2-namespaced SHA-256 over exact, normalized numeric values and
           sorted object keys. Pending or approved pre-v2 actions, including legacy
           rows with an empty digest, require resubmission and fresh review. Admin

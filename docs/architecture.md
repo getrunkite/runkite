@@ -103,10 +103,10 @@ Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`
 **Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the multi-compose topology without extra caveats. MySQL and SQLite share SQL governance tables with Postgres (audit / grants / pending / kill / break-glass / mandatory HITL); Mongo does not. NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
 
 MySQL identity/security columns use an explicit binary NO PAD collation from
-state migration 17 (unreleased). A database default that equates case or accents
+state migration 17 (v0.6.0). A database default that equates case or accents
 cannot enforce exact tenant boundaries. Existing installations need a stopped-writer
 maintenance upgrade and a verified backup; see the
-[operator procedure](ops-runbook.md#hardening-upgrade-unreleased) and
+[operator procedure](ops-runbook.md#hardening-upgrade) and
 [design record](internal/runtime-hardening.md#mysql-identity-comparison-must-preserve-tenant-boundaries).
 
 MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `state.Store` is implementable against a document store, and a template for community backends. It passes the identical conformance suite Postgres and SQLite do; `UpsertAgent`/`PublishRegistryEntry`/`DeleteRegistryEntry` run inside real Mongo transactions, so the connected Mongo **must be a replica set** (even a single-node one) -- a standalone `mongod` rejects the transaction outright. MySQL (`internal/state/mysql`) is the second SQL exemplar alongside Postgres/SQLite -- same conformance suite, fully wired into `runkite serve`/`db upgrade`/`db downgrade`/`db reset` via `MYSQL_DSN` (Mongo via `MONGO_URI` the same way); DynamoDB remains a documented possible future driver, not built at all.
@@ -115,7 +115,7 @@ MongoDB (`internal/state/mongo`) is the project's non-SQL exemplar -- proof `sta
 
 `internal/transport/nats` is the second full transport implementation (**Compatible** tier -- see [Backend support tiers](#backend-support-tiers)), checked with the exact same `internal/transport/conformance` suite Redis's own transport is (JobQueue, EventBroker, and CancelBroker, all three -- Kafka, added later, deliberately only implements JobQueue; see its own package doc for why NATS specifically earns the full triad and Kafka doesn't). Wired the same way as Redis: set `NATS_URL` (e.g. `nats://localhost:4222`), no code changes.
 
-Unreleased run-identity hardening treats every NATS run ID as a literal
+v0.6.0 run-identity hardening treats every NATS run ID as a literal
 partition, never a subject filter. IDs must be nonempty ASCII letters/digits,
 `-`, `_`, `/`, `=` or single internal dots, with no leading/trailing dot or empty
 dot segment. Wildcards, whitespace, colons and Unicode fail closed before queue,
@@ -162,7 +162,7 @@ Agent graph checkpoints and control-plane run/thread metadata are **intentionall
 
 **HITL / mid-superstep fidelity (proxy):** full LangGraph interrupt→resume and pending writes, not a half-promise. `ProxyCheckpointSaver` packs `checkpoint` + `metadata` + `writes` (pending channel writes from `aput_writes` / `putWrites`) into each opaque blob; `aput`/`put` preserves existing `writes`; concurrent writers merge via If-Match / ETag CAS (no silent drop). A GET 200 without ETag refuses the update rather than issuing an unconditional PUT. `aput_writes`/`putWrites` without `checkpoint_id` raises. Pregel calls writes before put for a new id — both paths treat a missing blob as create-only (`If-None-Match: *`): writes insert a shell, put inserts the full checkpoint; if a peer already won, `412` → GET+merge so an unconditional put cannot wipe a shell. Late writes after cancel/reclaim soft-no-op on `403 run_not_inflight` (must not crash the Node runner). Unsupported paths fail loud (`alist(filter=...)` / `list({filter})`). **Not cross-language resume:** envelope `v`/field layout matches across Python and TypeScript, but `dumps_typed` payloads are runtime-specific — do not hand a TS-written thread to a Python runner (or the reverse). Proven by `python/tests/test_proxy_checkpoint.py`, `typescript/runkite-runner` `proxyCheckpoint` tests, and matrix `hitl_restart` (interrupt → kill runner → resume) on SQLite and MySQL CP with blank runner `POSTGRES_DSN` for both `python-langgraph` and `typescript-langgraphjs`.
 
-**Unreleased direct LangGraph boundary:** direct Postgres checkpoints now accept
+**v0.6.0 direct LangGraph boundary:** direct Postgres checkpoints now accept
 only the default tenant with thread IDs without `:`. Every named tenant is
 refused before factory/state access because a new delimiter-safe prefix can still
 select legacy default-tenant history. Named LangGraph tenants require exact
@@ -173,7 +173,7 @@ whitespace/ASCII controls are refused. Default cron threads (`cron:<name>`) need
 proxy mode too. Proxy supports all tenants, but selecting it imports no native
 history and provides no automatic ownership repair or blank fallback. Managed
 opaque SDK profiles are unaffected. See the
-[upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade-unreleased).
+[upgrade procedure](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 
 **MySQL / Mongo / SQLite control planes:** unset `POSTGRES_DSN` on runners and set `RUNKITE_HTTP_URL` so checkpoints (and store) use **proxy mode**. Do not leave `POSTGRES_DSN` pointed at a separate Postgres or you silently split state. Direct-mode LangGraph tables remain Postgres-only; proxy mode is the durable path for every other CP backend.
 

@@ -96,7 +96,7 @@
           before selecting a package version.
         </p>
         <p class="note">
-          <strong>Unreleased source-built Python profiles:</strong> the checkout also
+          <strong>source-built Python profiles:</strong> the checkout also
           packages managed Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK workers
           with optional dependencies and dedicated commands. Existing published
           PyPI <code>0.5.8</code> does not contain those profiles. See the
@@ -118,7 +118,7 @@
         </div>
 
         <p class="note">
-          <strong>Unreleased runner identity fixes:</strong> TypeScript status checks now
+          <strong>v0.6.0 runner identity fixes:</strong> TypeScript status checks now
           include the assignment tenant, and both helpers encode custom run IDs as one
           URL component. Unicode/legacy header-unsafe identities use new base64url
           headers and require a plane-first upgrade. New run IDs reject controls and
@@ -153,14 +153,14 @@
           Admin approval updates the pending row and does not execute or resume your app.
         </p>
         <p>
-          The unreleased argument parser preserves the submitted JSON type. This door
+          The v0.6.0 argument parser preserves the submitted JSON type. This door
           still accepts any JSON argument value, but a string containing JSON remains
           a string rather than being parsed again. Submit an object when your policy
           predicates inspect its fields; ambiguous duplicate keys or invalid Unicode
           receive HTTP <code>400</code>.
         </p>
         <p>
-          <strong>Unreleased approval upgrade:</strong> pending or approved actions
+          <strong>v0.6.0 approval upgrade:</strong> pending or approved actions
           created before the v2 argument binding now poll as <code>rejected</code>
           with <code>approval_binding_legacy</code>, and Admin refuses to approve them.
           Do not execute the saved operation from that result. Resubmit for a new
@@ -242,7 +242,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           part of this initial bridge.
         </p>
         <p class="note">
-          <strong>Unreleased checkout bridge update:</strong> the app can explicitly
+          <strong>v0.6.0 checkout bridge update:</strong> the app can explicitly
           detach delivery, reattach its owned run through an authenticated GET, and
           request run cancellation through a separate app POST. Create still cancels
           on disconnect by default;
@@ -257,13 +257,13 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
 
         <h2>Durability and limits</h2>
         <ul>
-          <li>The unreleased bridge applies <code>timeoutMs</code> (30 seconds by default) to browser request-body intake as well as HTTP setup and durable-completion reads. A stalled intake is canceled before any run is created. This is not a duration limit on the running chat stream.</li>
+          <li>The v0.6.0 bridge applies <code>timeoutMs</code> (30 seconds by default) to browser request-body intake as well as HTTP setup and durable-completion reads. A stalled intake is canceled before any run is created. This is not a duration limit on the running chat stream.</li>
           <li>New thread/run IDs equal to <code>.</code> or <code>..</code> are rejected with HTTP <code>400</code> before persistence. Other custom string IDs remain supported; encode them as individual URL components. The bridge already refuses dot-only IDs.</li>
           <li>Native successful-turn history uses the existing run-bound opaque checkpoint API, with framework/agent validation, exact generation and tenant binding, strong ETags and CAS.</li>
           <li>State must commit before success. A committed current-run receipt replays after reclaim without repeating its model or tools. A crash before commit can still repeat external writes; downstream idempotency is required.</li>
           <li>Initial scope is text and local JSON-result tools. No native approval/resume, client/provider tools, async-iterable tool outputs, binary attachments, time travel, partial-turn restore or whole-run caching.</li>
           <li>Run lifecycle does not automatically govern every native tool body. Connector policy still requires the real connector path. Cancellation cannot undo an already completed effect.</li>
-          <li>Unreleased connector helpers use one total operation deadline and refuse redirects. Pass the TypeScript run signal, or cancel the Python coroutine, to stop delivery. Only the plane's explicit pre-dispatch <code>connector_session_invalid</code> response permits automatic renewal. Upgrade the plane first; an upstream <code>401</code> becomes <code>502 connector_upstream_unauthorized</code> and is not retried. See <a href="connectors.html">connector recovery rules</a>.</li>
+          <li>v0.6.0 connector helpers use one total operation deadline and refuse redirects. Pass the TypeScript run signal, or cancel the Python coroutine, to stop delivery. Only the plane's explicit pre-dispatch <code>connector_session_invalid</code> response permits automatic renewal. Upgrade the plane first; an upstream <code>401</code> becomes <code>502 connector_upstream_unauthorized</code> and is not retried. See <a href="connectors.html">connector recovery rules</a>.</li>
           <li>Successful turns report provider tokens. The plane can settle cancellation before trailing usage arrives, so complete canceled-run spend is not guaranteed.</li>
           <li>State is capped at 16 MiB, a turn's UI receipt at 8 MiB and final output at 3 MiB. The example bridge has its own documented request/frame limits.</li>
         </ul>
@@ -282,7 +282,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           <a href="frameworks.html">framework matrix</a> and
           <a href="limitations.html">limitations</a> before claiming feature parity.
         </p>
-        <h2 id="managed-python">Managed Python SDK profiles (unreleased)</h2>
+        <h2 id="managed-python">Managed Python SDK profiles (v0.6.0)</h2>
         <p>
           Microsoft factories return a public <code>agent_framework.Agent</code> for
           <code>python-agent-framework</code>. OpenAI factories return a public
@@ -326,7 +326,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
         </ul>
         <p>
           The application retains its UI authentication and presentation history.
-          The unreleased shared application bridge can translate these Python
+          The v0.6.0 shared application bridge can translate these Python
           profiles' ordinary Agent Protocol text for the same AI SDK UI transport.
           Choose the profile on the server and use the
           <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_ai_sdk#use-the-same-frontend-with-a-python-runner">Next/Nuxt route recipes</a>.
@@ -338,7 +338,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           use offline native models with a real plane on SQLite/in-process and
           Postgres/Redis, not an external model provider or a multi-replica HA soak.
         </p>
-        <h2 id="managed-pydantic">Managed Pydantic AI (unreleased)</h2>
+        <h2 id="managed-pydantic">Managed Pydantic AI (v0.6.0)</h2>
         <p>
           Native <code>pydantic_ai.Agent</code> factories run as
           <code>python-pydantic-ai</code> through the existing generic worker.
@@ -368,7 +368,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           See the <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai">offline example</a>
           and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/pydantic_ai_adapter">adapter contract and tests</a>.
         </p>
-        <h2 id="managed-google-adk">Managed Google ADK (unreleased)</h2>
+        <h2 id="managed-google-adk">Managed Google ADK (v0.6.0)</h2>
         <p>
           A fresh ordinary <code>LlmAgent</code> runs as <code>python-google-adk</code>
           through the Python worker. The public ADK runner keeps the model loop;

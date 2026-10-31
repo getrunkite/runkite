@@ -2,7 +2,7 @@
 
 Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
 
-## Hardening upgrade (unreleased)
+## Hardening upgrade
 
 **MySQL operators:** state schema version 17 changes identity/security columns to
 `utf8mb4_0900_bin` (NO PAD). Take a verified backup and stop all writers, including
@@ -47,7 +47,7 @@ The public Runner Protocol wire format is unchanged.
 See [the engineering record](internal/runtime-hardening.md) for the rationale,
 validation boundaries and retained product limitations.
 
-## Follow-up identity and completion upgrade (unreleased)
+## Follow-up identity and completion upgrade
 
 New cache hits do not bill the original result's usage again. Historical usage
 ledger rows are retained; audit earlier cache-hit accounting before correcting
@@ -118,7 +118,7 @@ schema migration and do not repair historical malformed links. The separate
 MySQL version 17 maintenance instructions above still apply when upgrading from
 an older schema. See [the follow-up design record](internal/atomic-results-and-identities.md).
 
-## Retained recovery work (unreleased)
+## Retained recovery work
 
 Redis reclaim now keeps caller-selected run IDs separate from poison metadata
 and retains the original lease and generation if a ready-list write fails. The
@@ -169,8 +169,8 @@ checkpoint identity guard. Proxy mode does not import existing native history;
 resolve that history before changing an existing deployment.
 
 `make smoke-multi` checks readiness and a successful run. The load harness and
-its 30-minute announce criteria are separate from the unreleased bounded
-[recovery harness](../bench/soak/WRITEUP.md#bounded-recovery-checks-unreleased).
+its 30-minute announce criteria are separate from the v0.6.0 bounded
+[recovery harness](../bench/soak/WRITEUP.md#bounded-recovery-checks).
 Run the recovery harness only against an explicitly named disposable local
 project. It interrupts runner and plane processes and checks cache completion,
 cross-replica cancel, reclaim and retained raw SSE. Read the case report before
@@ -257,7 +257,7 @@ of reporting a replacement agent error.
 
 **Reconcile durable completion.** Raw SSE is advisory during the check/publish
 race. Read the stored run or use `/wait` before presenting success as final.
-For failed opaque state writes in the unreleased adapter update, expect withheld
+For failed opaque state writes in the v0.6.0 adapter update, expect withheld
 completion and reclaim rather than a successful run with lost history. Inspect
 state availability before retrying external writes; they still need idempotency.
 
