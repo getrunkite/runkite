@@ -1,9 +1,9 @@
 # Maintainers
 
-Status: proposed documentation on this branch. This file and the process in
-[GOVERNANCE.md](GOVERNANCE.md) take effect when merged. They describe the current
-founder-maintained project and a proposed path for additional committers; they
-do not appoint anyone or grant repository permissions by themselves.
+This file records Runkite's current maintainers and their responsibilities.
+[GOVERNANCE.md](GOVERNANCE.md) defines the process for adding committers and
+maintainers. Appointments and repository permissions require separate explicit
+decisions under that process.
 
 ## Current maintainer
 

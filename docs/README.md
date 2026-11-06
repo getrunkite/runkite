@@ -52,6 +52,6 @@ Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters and unpublished
 governance helpers are labeled separately from tagged runner packages.
 
-[AAIF Sandbox proposal materials](foundation/README.md) describe the project's
+[AAIF Sandbox application materials](foundation/README.md) describe the project's
 intended users, current stewardship, dependency review scope and community
 roadmap. This is application preparation, not a foundation admission claim.

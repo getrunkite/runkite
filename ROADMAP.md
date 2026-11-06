@@ -1,6 +1,6 @@
 # Runkite community roadmap
 
-Proposed on 6 November 2026. This roadmap describes priorities for review, not
+Updated on 6 November 2026. This roadmap sets priorities and targets, not
 delivery guarantees. Runkite is applying for AAIF Sandbox consideration; it is
 not an admitted AAIF project. The milestones below are measured from admission
 if the application succeeds. Useful work can start before that decision.
@@ -12,7 +12,7 @@ support it.
 
 ## First three months: make contribution and evaluation repeatable
 
-- Publish the current maintainer list and decision process. Invite contributors
+- Maintain the public maintainer list and decision process. Invite contributors
   through small, scoped issues for documentation, reproduction cases and
   protocol compatibility. Recognize authorship and review work publicly.
 - Keep a clean-install walkthrough and an offline, reproducible MCP example

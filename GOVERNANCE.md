@@ -1,8 +1,7 @@
 # Project governance
 
-Status: proposed documentation on this branch. This document takes effect when
-merged. It records Runkite's current founder-maintained decision process and
-proposes an explicit way to add committers and maintainers.
+This document records Runkite's founder-maintained decision process and the
+process for adding committers and maintainers.
 
 ## Current stewardship
 
@@ -43,7 +42,7 @@ coordinated disclosure permits.
 
 ## Committer and maintainer nominations
 
-The following process is proposed for adding people beyond the current
+Use this process to add committers and maintainers beyond the current
 maintainer:
 
 1. Anyone may nominate themselves or another contributor through a public

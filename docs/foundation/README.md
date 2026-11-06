@@ -1,9 +1,9 @@
-# AAIF Sandbox proposal materials
+# AAIF Sandbox application
 
-These documents prepare Runkite for an application to the Agentic AI Foundation
-(AAIF). They do not establish admission, endorsement, a signed contribution
-agreement or transfer of any project asset. On a proposal branch, governance
-and roadmap changes remain proposed until merged.
+These documents support Runkite's application to the Agentic AI Foundation
+(AAIF). Runkite is not an admitted AAIF project. An application does not
+establish endorsement, a signed contribution agreement or transfer of any
+project asset.
 
 - [Sandbox thesis](aaif-sandbox-thesis.md): intended users, working evidence,
   pre-adoption case and graduation goals.
@@ -24,11 +24,11 @@ Sandbox is the requested stage. Runkite is not claiming the production adopters
 or organizational diversity required for Growth.
 
 The form requires the prospective signatory's country and an express agreement
-to transfer project trademarks and accounts if accepted. The project owner must
-provide those answers. Preparing documentation or filing an application does
-not execute a contribution agreement, adopt a legal charter, transfer accounts,
-domains or trademarks, or establish acceptance. The authorized signatory must
-review those commitments separately with LF staff.
+to transfer project trademarks and accounts if accepted. Application contact
+and signatory details are provided separately. Preparing documentation or
+filing an application does not execute a contribution agreement, adopt a legal
+charter, transfer accounts, domains or trademarks, or establish acceptance. The
+authorized signatory must review those commitments separately with LF staff.
 
 Admission requires the approvals, executed agreements, asset transfers and
 onboarding conditions in the

@@ -92,10 +92,14 @@ build tools and container layers. Record the versions shipped and preserve the
 required license texts, attribution and any source or redistribution obligations.
 MPL and LGPL components need explicit consideration in that distribution review.
 
-First-party contribution rights and any contractual restrictions also need
-owner confirmation, as described in the transition record. This document does
-not resolve those questions, certify existing binaries or attest to a
-foundation's IP policy. It does not propose changing third-party licenses.
+For this application, Sharan Harsoor has stated that he is the sole founder
+and developer and undertook first-party development in a personal capacity
+using personal resources and accounts. That is the owner's statement, not an
+independent rights audit. The transition record preserves the scope of the
+original license-change review. LF legal review, any required rights
+confirmations and the full artifact inventory remain separate work. This
+document does not certify existing binaries, attest to a foundation's IP policy
+or propose changing third-party licenses.
 
 [go-mod]: https://github.com/getrunkite/runkite/blob/edf36c133955aeea3d9c28b353e64b0a64a3a3b4/go.mod
 [python-manifest]: https://github.com/getrunkite/runkite/blob/edf36c133955aeea3d9c28b353e64b0a64a3a3b4/python/pyproject.toml
