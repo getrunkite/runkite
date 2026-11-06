@@ -4,6 +4,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Security
+
+- Update the indirect `github.com/klauspost/compress` dependency to v1.20.2 to fix crafted-input zstd decoder crashes ([GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865)).
+
 ## [0.6.1] - 2026-10-31
 
 First Apache-2.0 release of current source. Same feature surface as v0.6.0;
