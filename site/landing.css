@@ -40,6 +40,14 @@ h1 em, .demo-section h2 em { color: var(--accent-2); font-weight: 500; }
 .framework-strip ul { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .7rem 1.2rem; margin: 0; padding: 0; list-style: none; }
 .framework-strip a { font-size: .83rem; color: #c0bcb6; text-decoration: none; }
 .framework-strip a:hover { color: var(--accent); }
+.published-guide { padding-top: 1.5rem; }
+.guide-callout { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem 2rem; padding: 1.5rem 1.7rem; border: 1px solid #4a3e2c; border-left: 3px solid var(--accent); background: linear-gradient(110deg, #251d0e66, #121211); }
+.guide-callout > div { min-width: 0; }
+.guide-callout .eyebrow { margin-bottom: .55rem; }
+.guide-callout h2 { font-size: clamp(1.3rem, 2.2vw, 1.7rem); letter-spacing: -.02em; margin: 0 0 .55rem; }
+.guide-callout p:not(.eyebrow) { color: #b5b3b1; font-size: .85rem; line-height: 1.7; margin: 0; max-width: 43rem; }
+.guide-callout .inline-link { flex-shrink: 0; gap: .7rem; }
+@media (max-width: 800px) { .guide-callout { align-items: flex-start; flex-direction: column; padding: 1.3rem; gap: 1rem; } }
 .section { padding: 5.8rem 0; scroll-margin-top: 6rem; }
 .section-heading { max-width: 40rem; margin-bottom: 2.5rem; }
 h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spacing: -.035em; margin: 0 0 1.2rem; }

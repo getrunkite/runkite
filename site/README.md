@@ -1,6 +1,7 @@
 # Runkite landing (GitHub Pages)
 
-Product site served from this folder via `.github/workflows/pages.yml`.
+Product site source. `.github/workflows/pages.yml` publishes this folder to
+https://getrunkite.github.io/runkite/.
 Visuals live in `assets/`.
 
 **Live:** https://getrunkite.com/
@@ -24,6 +25,12 @@ landing. Keep those stubs as redirects, not alternate copies of the product page
 The Pages workflow uploads this directory as static HTML whenever `site/**`
 changes reach `main`. Editing Markdown in `docs/` does not regenerate this
 handbook. Keep the public HTML and its linked Markdown references aligned.
+
+A separately hosted copy of `getrunkite.com` must also receive the updated site
+files through its own deployment. A successful Pages run alone does not prove
+that the canonical domain is current. Verify the rendered content on both URLs
+after publication. Deploy only static site files; preserve the domain's Admin
+and API routes.
 
 The SDK integration guide separates the released decision API, unpublished
 in-repository helpers, and the managed AI SDK backend (v0.5.8+). A checkout
@@ -63,16 +70,21 @@ The root README uses `docs/assets/runkite-overview.svg` for the two integration
 paths. These diagrams explain product boundaries; they are not live activity or
 screenshots. Existing screenshots and engineering evidence remain unchanged.
 
+The homepage links to the published Runkite integration guide on the vLLM
+Semantic Router blog, directly below the framework strip. Keep its attribution
+explicit. Publication is an integration walkthrough, not an endorsement,
+partnership or production-adopter claim. The callout is static HTML and does not
+depend on JavaScript or a third-party embed.
+
 Keep runtime ownership explicit when editing the page: managed executions create
 Threads and Runs; app-owned tool decisions do not. Connector policy requires the
 connector gate, and the bridge and governance helpers remain repository code.
 Current source uses Apache-2.0 and may be described as open source. Keep the
 product self-host only. The homepage links to the published v0.6.1 release,
-whose binaries, images and packages retain their shipped BUSL-1.1 terms. Preserve
-that distinction until an Apache-licensed release is published; changing the
-source license does not update old registry artifacts or tags. The footer links
-to the Apache-2.0 source license and notes that published v0.6.0 remains BUSL. Published framework
-rows link to their integration contracts.
+the first Apache-2.0 release. Published v0.6.0 retains its shipped BUSL-1.1 terms;
+changing the source license does not update old registry artifacts or tags.
+The footer preserves that distinction. Published framework rows link to their
+integration contracts.
 
 For a presentation change, check the homepage at 320, 390, 768 and 1440 pixel
 widths, keyboard focus and Play/Pause behavior. Verify local links, SVG/JPEG
