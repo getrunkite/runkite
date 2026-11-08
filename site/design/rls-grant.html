@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -94,7 +94,16 @@
         test DSN, is worth writing down.
       </p>
 
-      <h2>Why RLS needs a second, weaker role at all</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#why-rls-needs-a-second-weaker-role-at-all">Why RLS needs a second, weaker role at all</a></li>
+          <li><a href="#the-gotcha-creating-a-role-and-being-able-to-become-it-are-different-things">The gotcha: creating a role and being able to become it are different things</a></li>
+          <li><a href="#why-a-superuser-test-dsn-hides-all-of-this">Why a superuser test DSN hides all of this</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="why-rls-needs-a-second-weaker-role-at-all" tabindex="-1">Why RLS needs a second, weaker role at all</h2>
       <p>
         A Postgres superuser (and, by default, the owner of a table) bypasses row-level
         security entirely. <code>FORCE ROW LEVEL SECURITY</code> exists specifically
@@ -111,7 +120,7 @@
         role and sees everything, same as before.
       </p>
 
-      <h2>The gotcha: creating a role and being able to become it are different things</h2>
+      <h2 id="the-gotcha-creating-a-role-and-being-able-to-become-it-are-different-things" tabindex="-1">The gotcha: creating a role and being able to become it are different things</h2>
       <p>
         Postgres 16 added a convenience: a non-superuser with <code>CREATEROLE</code>
         who creates a new role is automatically granted membership in it. That sounds
@@ -122,8 +131,8 @@
         <code>SET</code> option explicitly granted, <code>SET ROLE</code> fails. <code>permission denied to set role</code>: on a role you just created and
         technically "own."
       </p>
-      <div class="diagram" role="img" aria-label="ADMIN option without SET still cannot SET ROLE">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="ADMIN option without SET still cannot SET ROLE (scrollable diagram)">
 <span class="dim">non-superuser DSN with CREATEROLE, no explicit grant tuning:</span>
 
   CREATE ROLE runkite_app ...          <span class="ok">succeeds</span>: CREATEROLE is enough to create
@@ -149,7 +158,7 @@
         buying anything.
       </p>
 
-      <h2>Why a superuser test DSN hides all of this</h2>
+      <h2 id="why-a-superuser-test-dsn-hides-all-of-this" tabindex="-1">Why a superuser test DSN hides all of this</h2>
       <p>
         A superuser can <code>SET ROLE</code> to anything, membership grant or not, the membership/<code>SET</code>-option check is skipped entirely for
         superusers. A test suite that only ever exercises this against a superuser
@@ -182,7 +191,7 @@
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="../support/multi-tenant.html">Docs · Multi-tenant keys</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">Configuration docs</a>
         </div>

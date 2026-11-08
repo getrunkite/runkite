@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -97,9 +97,21 @@
         and the request-path change.
       </p>
 
-      <h2>Two completion boundaries</h2>
-      <div class="diagram" role="img" aria-label="Native state commit precedes UI finish and run completion">
-        <pre>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#two-completion-boundaries">Two completion boundaries</a></li>
+          <li><a href="#the-crash-after-put">The crash after PUT</a></li>
+          <li><a href="#what-cas-protects">What CAS protects</a></li>
+          <li><a href="#the-boundary-before-commit">The boundary before commit</a></li>
+          <li><a href="#ui-delivery-is-another-boundary">UI delivery is another boundary</a></li>
+          <li><a href="#proof-and-source">Proof and source</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="two-completion-boundaries" tabindex="-1">Two completion boundaries</h2>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="Native state commit precedes UI finish and run completion (scrollable diagram)">
 app → Runkite run → native ToolLoopAgent
                       → model/tool messages
                       → <span class="ok">CAS state + current-run receipt</span>
@@ -115,7 +127,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
         the recovery design must handle a process disappearing between them.
       </p>
 
-      <h2>The crash after PUT</h2>
+      <h2 id="the-crash-after-put" tabindex="-1">The crash after PUT</h2>
       <p>
         Native state contains full model/tool message history and a receipt for the last
         successful turn. The receipt binds the run ID and canonical new-turn input inside
@@ -129,7 +141,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
         durable run-completion keys prevent a recovered turn from being charged twice.
       </p>
 
-      <h2>What CAS protects</h2>
+      <h2 id="what-cas-protects" tabindex="-1">What CAS protects</h2>
       <p>
         Reads require the expected framework, agent and strong numeric ETag. Writes use
         <code>If-Match</code>, or create-only <code>If-None-Match: *</code>. Tenant, runner
@@ -139,7 +151,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
         The Go plane stores opaque bytes and does not import the SDK or its schema.
       </p>
 
-      <h2>The boundary before commit</h2>
+      <h2 id="the-boundary-before-commit" tabindex="-1">The boundary before commit</h2>
       <p>
         If a tool's external write succeeds but the process dies before the state commit,
         the next attempt cannot infer that write from an absent receipt. It may execute
@@ -154,7 +166,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
         using the same opaque endpoint.
       </p>
 
-      <h2>UI delivery is another boundary</h2>
+      <h2 id="ui-delivery-is-another-boundary" tabindex="-1">UI delivery is another boundary</h2>
       <p>
         Ordinary progress can stream before state commits. Native UI finish waits for
         that commit, and the app bridge waits for the plane's durable <code>/wait</code>
@@ -174,7 +186,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
         its stated scope.
       </p>
 
-      <h2>Proof and source</h2>
+      <h2 id="proof-and-source" tabindex="-1">Proof and source</h2>
       <p>
         The subprocess suite kills a real runner after the plane accepts PUT but before
         the runner receives its response. Reclaim advances generation; the next runner
@@ -201,7 +213,7 @@ plane → <span class="ok">durable current-attempt completion</span> → finaliz
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">Architecture docs</a>
         </div>
       </footer>

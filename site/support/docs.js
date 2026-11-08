@@ -20,6 +20,11 @@
       wrap.className = "code-block";
       pre.parentNode.insertBefore(wrap, pre);
       wrap.appendChild(pre);
+      pre.setAttribute("tabindex", "0");
+      if (!pre.getAttribute("role")) pre.setAttribute("role", "group");
+      if (!pre.getAttribute("aria-label") && !pre.getAttribute("aria-labelledby")) {
+        pre.setAttribute("aria-label", "Code example");
+      }
 
       var btn = document.createElement("button");
       btn.type = "button";
@@ -183,21 +188,13 @@
 
   function injectLiveAdmin() {
     var href = adminHref();
-    if (!document.getElementById("rk-live-admin-style")) {
-      var style = document.createElement("style");
-      style.id = "rk-live-admin-style";
-      style.textContent =
-        ".sidebar nav a.nav-live-admin{color:var(--accent);font-weight:600;box-shadow:inset 3px 0 0 var(--accent);margin-bottom:.85rem}" +
-        ".topbar a[data-live-admin]{color:var(--accent-2);font-weight:600}";
-      document.head.appendChild(style);
-    }
 
     var topbar = document.querySelector(".topbar");
     if (topbar && !topbar.querySelector("[data-live-admin]")) {
       var top = document.createElement("a");
       top.href = href;
       top.setAttribute("data-live-admin", "1");
-      top.textContent = "Live Admin";
+      top.textContent = "Open Admin";
       markDemoOffline(top);
       var product = null;
       var links = topbar.querySelectorAll("a[href]");
@@ -221,7 +218,7 @@
       side.href = href;
       side.setAttribute("data-live-admin", "1");
       side.className = "nav-live-admin";
-      side.textContent = "Live Admin";
+      side.textContent = "Open Admin";
       markDemoOffline(side);
       nav.insertBefore(side, nav.firstChild);
     }

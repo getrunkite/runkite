@@ -70,6 +70,7 @@
   font-weight: 550;
   letter-spacing: -0.02em;
   margin: 2.25rem 0 0.75rem;
+  scroll-margin-top: 1.5rem;
 }
 
 .shell p,
@@ -163,7 +164,7 @@
 
 .siblings a.here {
   background: var(--accent);
-  color: #fff;
+  color: #14110a;
   border-color: var(--accent);
 }
 
@@ -219,6 +220,49 @@
   margin: 0.35rem 0 0;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.note-toc {
+  margin: 1.7rem 0 2rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+}
+
+.note-toc > .note-toc-title {
+  margin: 0 0 .65rem;
+  color: var(--muted);
+  font: .68rem/1.5 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.note-toc ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-toc a {
+  display: block;
+  padding: .2rem 0;
+  color: var(--accent-2);
+  font-size: .84rem;
+  line-height: 1.5;
+  text-decoration: underline;
+  text-underline-offset: .18em;
+}
+
+.note-toc a:hover {
+  color: #ffe0a0;
+  text-decoration-thickness: 2px;
+}
+
+@media (max-width: 640px) {
+  .note-toc ul { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {

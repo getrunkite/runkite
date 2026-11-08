@@ -81,6 +81,7 @@ function handbook(options = {}) {
   const main = body.appendChild(new Element("main"));
   const pre = main.appendChild(new Element("pre", "runkite dev --config examples/echo_agent/langgraph.json"));
   pre.className = "mono-block";
+  for (const [key, value] of Object.entries(options.codeAttributes || {})) pre.setAttribute(key, value);
   const pending = new Element("td", "Not yet");
   const storage = new Map(Object.entries(options.saved || {}));
   document = {
@@ -178,11 +179,11 @@ test("a pending clipboard write keeps focus and ignores duplicate clicks", async
   assert.equal(page.button.getAttribute("aria-busy"), null);
 });
 
-test("blocked browser storage does not disable copy, pending badges or Live Admin", async () => {
+test("blocked browser storage does not disable copy, pending badges or Open Admin", async () => {
   const page = handbook({ blockedStorage: true, fallbackResult: true });
   assert.equal(page.pending.getAttribute("data-pending"), "matrix-gap");
-  assert.equal(page.topbar.querySelector("[data-live-admin]").textContent, "Live Admin");
-  assert.equal(page.nav.querySelector("[data-live-admin]").textContent, "Live Admin");
+  assert.equal(page.topbar.querySelector("[data-live-admin]").textContent, "Open Admin");
+  assert.equal(page.nav.querySelector("[data-live-admin]").textContent, "Open Admin");
   assert.doesNotThrow(() => { page.fire(page.sidebar, "scroll"); page.fire(page.nav, "scroll"); });
   await page.click();
   assert.equal(page.button.textContent, "Copied");
@@ -240,17 +241,37 @@ test("the FinOps configuration example is copyable JSON in a bounded code block"
   assert.ok(config.finops.budgets.tenants);
 });
 
-test("Admin links retain their labels and URLs while exposing static availability", () => {
+test("Open Admin links retain their URLs and expose static availability", () => {
   for (const hostname of ["getrunkite.com", "getrunkite.github.io"]) {
     const page = handbook({ hostname });
     const expected = hostname === "getrunkite.com" ? "/admin/" : "https://getrunkite.com/admin/";
     for (const parent of [page.topbar, page.nav]) {
       const link = parent.querySelector("[data-live-admin]");
-      assert.equal(link.textContent, "Live Admin");
+      assert.equal(link.textContent, "Open Admin");
       assert.equal(link.getAttribute("href"), expected);
       assert.equal(link.getAttribute("data-demo-offline"), "");
       assert.equal(link.getAttribute("title"), "Shared live demo currently unavailable; local self-hosting is available.");
-      assert.match(link.getAttribute("aria-label"), /^Live Admin \(shared live demo currently unavailable/);
+      assert.match(link.getAttribute("aria-label"), /^Open Admin \(shared live demo currently unavailable/);
     }
   }
+});
+
+test("code examples are named keyboard stops without changing copied code", async () => {
+  const page = handbook({ clipboard: () => Promise.resolve() });
+  assert.equal(page.pre.getAttribute("tabindex"), "0");
+  assert.equal(page.pre.getAttribute("role"), "group");
+  assert.equal(page.pre.getAttribute("aria-label"), "Code example");
+  page.pre.focus();
+  assert.equal(page.document.activeElement, page.pre);
+  await page.click();
+  assert.equal(page.state.copied[0], "runkite dev --config examples/echo_agent/langgraph.json");
+  assert.equal(page.button.textContent, "Copied");
+});
+
+test("code enhancement preserves an authored accessible name", () => {
+  const labeled = handbook({ codeAttributes: { "aria-label": "Local installation command" } });
+  assert.equal(labeled.pre.getAttribute("aria-label"), "Local installation command");
+  const described = handbook({ codeAttributes: { "aria-labelledby": "install-heading" } });
+  assert.equal(described.pre.getAttribute("aria-labelledby"), "install-heading");
+  assert.equal(described.pre.getAttribute("aria-label"), null);
 });

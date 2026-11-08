@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./support.css?v=20261108d" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
   </head>
   <body>
     <a class="docs-skip" href="#main-content">Skip to content</a>
@@ -86,6 +86,11 @@
           Threads, runs, streaming, the public, framework-agnostic client API. SDKs and
           HTTP clients live here. This is what product UIs and automations call.
         </p>
+        <p>
+          Follow the <a href="https://github.com/getrunkite/runkite/blob/main/docs/client-sdk.md#agent-protocol-clients-come-first">LangGraph client walkthrough (Markdown on GitHub)</a>
+          to create a thread and stream a run with <code>langgraph_sdk.get_client</code>.
+          The client calls the plane while a separate runner executes the graph.
+        </p>
         <ul>
           <li>Create thread → create run → wait or stream</li>
           <li>Cancel; framework-native interrupt/resume when the adapter supports it</li>
@@ -129,6 +134,6 @@
 
       </main>
     </div>
-      <script src="./docs.js?v=20261108-status" defer></script>
+      <script src="./docs.js?v=20261108-final" defer></script>
   </body>
 </html>

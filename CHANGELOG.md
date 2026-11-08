@@ -6,6 +6,9 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Documentation
 
+- Use consistent homepage link cues and keyboard feedback. Add section links to
+  Engineering articles and connect public guides to the client walkthrough and
+  website hosting runbook.
 - Serve the public product website and handbook from GitHub Pages through the
   canonical domain. Preserve the public Admin URL as an availability page while
   the demo backend is offline, with local setup and future restoration guidance.
@@ -25,6 +28,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Correct handbook link colors, catalog alignment and a misleading second
+  selected-page highlight. Improve selected-topic contrast and keyboard access
+  to scrollable code and Engineering diagrams. Retain the public Admin URL with
+  the neutral "Open Admin" label and availability guidance.
+  Keep section headings visible when mobile navigation wraps with enlarged text.
 - Public docs report clipboard failures honestly, retain keyboard focus and
   continue working when browser storage is blocked. Sidebar scrolling stays
   inside the navigation container, preserving section links. Every handbook

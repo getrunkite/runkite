@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -91,14 +91,25 @@
         a superseded runner from replacing the current result.
       </p>
 
-      <h2>The race that breaks queues</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#the-race-that-breaks-queues">The race that breaks queues</a></li>
+          <li><a href="#what-generation-actually-gates">What generation actually gates</a></li>
+          <li><a href="#zero-is-an-exact-generation">Zero is an exact generation</a></li>
+          <li><a href="#complete-before-acknowledging">Complete before acknowledging</a></li>
+          <li><a href="#same-contract-across-transports">Same contract across transports</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="the-race-that-breaks-queues" tabindex="-1">The race that breaks queues</h2>
       <p>
         Runner A takes a job. Heartbeats stop (pause, partition, OOM). After ~6s the
         reclaim loop bumps generation and requeues. Runner B finishes successfully.
         Then A wakes up and tries to report success.
       </p>
-      <div class="diagram" role="img" aria-label="Without fencing, A overwrites B">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="Without fencing, A overwrites B (scrollable diagram)">
 <span class="dim">t=0</span>   A dequeues  <span class="ok">generation=1</span>
 <span class="dim">t=6</span>   reclaim → B dequeues  <span class="ok">generation=2</span>  · B reports success
 <span class="dim">t=?</span>   A recovers · ReportStatus(gen=1)
@@ -108,7 +119,7 @@
         </pre>
       </div>
 
-      <h2>What generation actually gates</h2>
+      <h2 id="what-generation-actually-gates" tabindex="-1">What generation actually gates</h2>
       <ul>
         <li>
           <strong>Heartbeat</strong>: control plane answers with
@@ -133,7 +144,7 @@
         authoritative, and Admin Run Detail reloads the record when its stream ends.
       </p>
 
-      <h2>Zero is an exact generation</h2>
+      <h2 id="zero-is-an-exact-generation" tabindex="-1">Zero is an exact generation</h2>
       <p>
         Since v0.5.6, <code>0</code> matches only an actual generation-zero assignment.
         It cannot borrow a later attempt's generation or bypass Renew/Ack. New assignments
@@ -141,7 +152,7 @@
         generation on every run-bound RPC and internal HTTP call.
       </p>
 
-      <h2>Complete before acknowledging</h2>
+      <h2 id="complete-before-acknowledging" tabindex="-1">Complete before acknowledging</h2>
       <p>
         <code>ReportStatus</code> commits the current attempt's status and output before
         <code>Ack</code> removes its queue lease. Failed database writes leave the job
@@ -153,7 +164,7 @@
         <a href="https://github.com/getrunkite/runkite/blob/main/internal/api/completion.go"><code>CompleteRun</code></a>.
       </p>
 
-      <h2>Same contract across transports</h2>
+      <h2 id="same-contract-across-transports" tabindex="-1">Same contract across transports</h2>
       <p>
         Redis bumps a hand-rolled counter on reclaim. NATS reuses JetStream
         <code>NumDelivered</code>. Kafka stores generation in the compacted state topic
@@ -182,7 +193,7 @@
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">Architecture docs</a>
         </div>
       </footer>
