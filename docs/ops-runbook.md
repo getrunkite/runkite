@@ -186,7 +186,11 @@ Zero-deps laptop demo (SQLite + in-memory, **not** Supported):
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Site walkthrough: [Try it](https://getrunkite.com/support/try.html).
+Static walkthrough: [Demo guide](https://getrunkite.com/support/try.html).
+The [public Admin route](https://getrunkite.com/admin/) currently shows demo
+availability rather than a running backend. The Compose instance above serves
+its own Admin at `http://localhost:2026/admin/`. See
+[website and backend hosting](site-hosting.md) for the public-domain boundary.
 
 ### Helm
 

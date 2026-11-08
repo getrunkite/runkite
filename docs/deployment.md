@@ -2,6 +2,12 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md). For Supported install / reclaim / kill / secrets in one page, see the [Ops runbook](ops-runbook.md).
 
+This guide deploys the Go control plane and its separate runners. The public
+product website uses GitHub Pages and does not run those services. The public
+demo Admin is currently offline; local and self-hosted deployments below are
+independent of that demo. See [public website hosting](site-hosting.md) for the
+custom domain and retained `/admin/` route.
+
 ## Docker
 
 Control-plane and runner images (`Dockerfile`, `Dockerfile.runner`, `Dockerfile.runner-ts`) run as a non-root user (`uid 65532`). The control-plane image sets `DATABASE_PATH=/tmp/runkite.db` so SQLite-backed compose profiles can create the DB file without root. Every HTTP response also carries security headers (CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`) -- see Known Limitations for Admin credential storage, which is a separate concern.

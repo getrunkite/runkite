@@ -1,10 +1,12 @@
 # Runkite landing (GitHub Pages)
 
-Product site source. `.github/workflows/pages.yml` publishes this folder to
-https://getrunkite.github.io/runkite/.
+Product site source. `.github/workflows/pages.yml` publishes this folder as a
+GitHub Pages artifact. Once the custom domain and DNS are configured, the same
+deployment serves https://getrunkite.com/; the project URL
+https://getrunkite.github.io/runkite/ redirects to the canonical domain.
 Visuals live in `assets/`.
 
-**Live:** https://getrunkite.com/
+**Website:** https://getrunkite.com/
 
 **Brand system:** [`brand.css`](./brand.css) is the shared NOC canvas (Fraunces + IBM Plex Sans + JetBrains Mono, amber). The product landing ([`landing.css`](./landing.css)) uses a product-first hero, two execution paths and a self-hosted topology. Support and design notes retain the shared brand.
 
@@ -15,6 +17,7 @@ Visuals live in `assets/`.
 - [`/support/`](./support/). Docs handbook (catalog + feature guides + chapters + decisions)
 - [`/support/sdk-integration.html`](./support/sdk-integration.html), execution ownership and SDK integration paths
 - [`/design/`](./design/), engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
+- [`/admin/`](https://getrunkite.com/admin/), retained public Admin availability route
 
 `try.html` at the site root redirects to `/support/try.html`.
 `www-getrunkite/index.html` is a compatibility redirect to the canonical product
@@ -26,11 +29,19 @@ The Pages workflow uploads this directory as static HTML whenever `site/**`
 changes reach `main`. Editing Markdown in `docs/` does not regenerate this
 handbook. Keep the public HTML and its linked Markdown references aligned.
 
-A separately hosted copy of `getrunkite.com` must also receive the updated site
-files through its own deployment. A successful Pages run alone does not prove
-that the canonical domain is current. Verify the rendered content on both URLs
-after publication. Deploy only static site files; preserve the domain's Admin
-and API routes.
+There is no second static-site deployment to a separate web server. Configure
+the canonical custom domain in the repository's Pages settings and DNS, then
+verify its HTTPS response after the Pages workflow completes. The publishing
+source is GitHub Actions, so a source-tree `CNAME` file is not required and is
+ignored by Pages. See [the hosting runbook](../docs/site-hosting.md) and the
+[GitHub domain instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).
+
+The public demo backend is currently offline. Keep Admin links and `/admin/`
+available as a small static status page with local setup guidance. Availability
+belongs on that route and its link tooltip, not in a site-wide alert. The static
+website does not provide Agent Protocol APIs, SSE/WebSocket execution or the
+runner's gRPC service. A future backend can be connected without replacing
+every published Admin link; the hosting runbook describes the boundary.
 
 The SDK integration guide separates the released decision API, unpublished
 in-repository helpers, and the managed AI SDK backend (v0.5.8+). A checkout
@@ -39,7 +50,7 @@ When a feature is released, update these labels together with the changelog and
 package install guidance. Keep public install commands unpinned unless an API
 compatibility example specifically requires a tested SDK version.
 
-The product is self-host only. The public demo Admin is a sandbox, not a hosted
+The product is self-host only. The offline public demo is not a hosted
 control-plane offering. Keep model-loop ownership explicit: managed runners
 produce Threads/Runs; app-owned decisions do not. Claims about approvals, kill,
 spend, native resume and durable state must name the boundary that enforces them.

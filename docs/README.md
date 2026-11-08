@@ -22,6 +22,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [Integrations](integrations.md) | Existing MCP clients, framework runners, Semantic Router and OTLP backends |
 | [Runner Protocol](../runner-protocol/README.md) ([public mirror](https://github.com/getrunkite/runner-protocol)) | Worker contract (gRPC + opaque checkpoints) |
 | [Deployment](deployment.md) | Docker, Helm/kind (Compatible), Compose soak |
+| [Public website hosting](site-hosting.md) | GitHub Pages custom domain, offline public Admin and future backend restoration |
 | [Ops runbook](ops-runbook.md) | Supported install, reclaim, kill, secrets |
 | [API](api.md) | OpenAPI and HTTP API reference |
 | [Known Limitations](limitations.md) | Release summary + full caveats (link from GitHub Releases) |
