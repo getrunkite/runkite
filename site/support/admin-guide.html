@@ -31,7 +31,7 @@
           <a href="./">Overview</a>
           <a href="try.html">Try it</a>
           <a href="admin-login.html">Admin login</a>
-          <a class="active" href="admin-guide.html">Admin UI guide</a>
+          <a class="active" href="admin-guide.html" aria-current="page">Admin UI guide</a>
           <a href="credentials.html">Credentials map</a>
           <a href="why.html">Why a plane</a>
           <a href="scenario.html">Scenario</a>
@@ -71,7 +71,7 @@
           <a href="chapters/">Chapters</a>
           <a href="blog/">Blog</a>
           <a href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -136,7 +136,7 @@
         </p>
 
         <p class="note">
-          <strong>Unreleased hardening:</strong> Sign out is confirmed only after the
+          <strong>v0.6.0 session hardening:</strong> Sign out is confirmed only after the
           server revokes the session. If Redis revocation fails, the API returns
           <code>503 admin_session_revoke_failed</code>, the cookie is retained, and
           Admin shows that sign out was not confirmed. Retry after the service recovers;
@@ -287,6 +287,13 @@
             you're replaying its recorded history.
           </li>
           <li>
+            The <strong>Output</strong> card shows the saved run result, including
+            structured JSON such as Pydantic AI's <code>output.result</code>. Run
+            Detail refreshes this durable record when the event stream ends. The
+            event pane is a bounded diagnostic view, not the only place to find a
+            completed answer.
+          </li>
+          <li>
             This is the single best tool for debugging "the agent did something weird", you
             see every tool call, every value the graph produced, and the final status, in
             order, without needing to reproduce the run yourself.
@@ -310,7 +317,7 @@
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs list" width="960" height="600" />
         </figure>
         <p>
-          <strong>Unreleased debugging bounds:</strong> refresh requests run one at a
+          <strong>v0.6.0 debugging bounds:</strong> refresh requests run one at a
           time, and navigation aborts the old request. Run and thread IDs are encoded as
           opaque URL segments. New create requests using only <code>.</code> or
           <code>..</code> receive HTTP <code>400</code> before persistence, because URL
@@ -482,7 +489,7 @@
         </ol>
         <p class="note">Approving does not create a standing grant. Connector retry consumption is one-shot. Embedded <code>/governance/decide</code> rows belong to an app-owned operation that may have no managed run; the app polls and continues the exact saved arguments with its own idempotency. Embedded rows expire after 24 hours and cannot be approved after expiry. See <a href="sdk-integration.html">SDK integrations</a>.</p>
         <p>
-          <strong>Unreleased approval safety:</strong> a current explicit policy deny
+          <strong>v0.6.0 approval safety:</strong> a current explicit policy deny
           wins over a previous connector approval. New argument hashes preserve exact
           numeric values and use a versioned format. Pending or approved actions created
           before that format, including legacy rows with no digest, cannot be approved

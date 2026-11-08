@@ -88,6 +88,11 @@ The stock Python image keeps its LangGraph default and does not install the four
 optional SDK extras. See the [profile contracts](docs/limitations.md) before
 moving agents that use native workflows, approvals, handoffs or multimodal input.
 
+For a runnable model-routing integration, read
+[One Conversation, Multiple Models: Runkite and vLLM Semantic Router](https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/).
+The managed AI SDK runner keeps its native loop, Runkite operates the run, and
+Semantic Router selects among configured model backends.
+
 ## Quick start
 
 Try the [public sandbox](https://getrunkite.com/support/try.html) with its shared

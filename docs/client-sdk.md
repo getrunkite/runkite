@@ -52,7 +52,7 @@ loop in its HTTP handler. Native successful-turn history is stored by the runner
 through the plane; frontend presentation history stays with the app. Initial
 support is text and local JSON-result tools. Native approvals/resume, streaming
 tool outputs, binary/client/provider tools, time travel and whole-run caching
-are unsupported. The separate [Microsoft managed runner](#managed-microsoft-agent-framework)
+are unsupported. The separate [Microsoft managed runner](#managed-microsoft-agent-framework-v061)
 has its own Python factory and session profile.
 
 This backend ships in tagged `v0.5.8` `runkite-runner` artifacts. Install the

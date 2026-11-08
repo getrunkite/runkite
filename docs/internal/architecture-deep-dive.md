@@ -6,9 +6,16 @@
 
 - **Released in v0.5.6:** authenticated runner-kind binding, exact generation fencing including generation 0, final persistence and finalization before queue acknowledgement, retained leases at the retry ceiling, strict MCP parsing and opt-in upstream `streamable_http`. Follow `internal/bridge/server.go:StreamEvents/ReportStatus`, `internal/api/completion.go:BeginRunAttempt/CompleteRun/CompleteReclaimedRun`, `cmd/reclaim.go:finishPoisonPill`, and `internal/connector/mcpproxy.go`.
 - **Released in v0.5.7:** Go and Admin UI build dependency security updates, with no additional runner behavior change. Postgres and Redis remain the supported HA pair. Runkite remains self-host only.
-- **On main, untagged and unpublished:** app-owned TypeScript `createGovernedExecute` and Python Microsoft Agent Framework function middleware use the existing decision API. `internal/api/governance_decide.go` does not create Threads or Runs, dispatch a job, or apply managed-run kill switches, break-glass or spend caps. An allow is a decision, not evidence that a tool ran.
+- **Released in v0.5.8; helper packages remain unpublished:** app-owned TypeScript `createGovernedExecute` and Python Microsoft Agent Framework function middleware use the existing decision API. `internal/api/governance_decide.go` does not create Threads or Runs, dispatch a job, or apply managed-run kill switches, break-glass or spend caps. An allow is a decision, not evidence that a tool ran.
 - **Managed AI SDK (v0.5.8+):** `typescript/runkite-runner/src/aiSdkAdapter.ts` uses public `ToolLoopAgent` APIs; `examples/managed_ai_sdk/bridge.ts` bridges the app to managed runs. These executions create Runkite Threads and Runs because the app dispatches its model loop to a runner. Native history and committed-turn receipts use run-bound opaque checkpoints with CAS. See [the managed example](../../examples/managed_ai_sdk/README.md) for limits, including no native approval/resume, streaming tool outputs, time travel or whole-run caching.
 - **Released in v0.5.8: opaque checkpoint hardening.** `python/runkite_runner/generic_worker.py` withholds successful or interrupted completion until state is saved, and fails closed on load/save errors. Older tagged opaque adapters can still log a failed save and return their agent status. Do not infer that this fix shipped in v0.5.7.
+
+The v0.6.0 release also adds managed Microsoft, OpenAI Agents, Pydantic AI and
+Google ADK Python profiles, plus shared AI SDK UI presentation and same-attempt
+reconnect. Their native feature subsets, CAS receipts and app-owned chat mapping
+are documented in [Client access](../client-sdk.md) and [Runners](../runners.md).
+The v0.6.1 release keeps that feature surface and changes current-source and new
+release licensing to Apache-2.0; older artifacts retain their shipped license.
 
 For current v0.6.0 authority, recovery, connector and Admin corrections, read
 [Runtime hardening](runtime-hardening.md) and

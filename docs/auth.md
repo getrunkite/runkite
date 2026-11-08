@@ -35,7 +35,12 @@ Configure the final sidecar URL directly. These changes do not alter the existin
 
 **Run-binding** applies to proxy-mode store/vector calls, opaque checkpoints and connector `session`/`mcp`: runners must send `X-Runkite-Run-Id` + `X-Runkite-Generation` for an in-flight assignment. With runner tokens enabled, the authenticated kind must own that assignment. The control plane derives tenant, agent and thread from the assignment rather than trusting `X-Runkite-Tenant-Id`; checkpoint URLs must also match the bound thread. Connector MCP requires a short-lived `session_token` from GetSession (`X-Runkite-Connector-Session`). See [Connectors](connectors.md) and [Trust & governance](trust-governance.md).
 
-The managed AI SDK runner in this working tree uses `RUNNER_TOKEN_TYPESCRIPT_AI_SDK` and `RUNNER_TENANTS_TYPESCRIPT_AI_SDK` on the plane, and presents one matching `RUNNER_TOKEN` from its worker. This uses the existing kind-token model. It does not reuse the application server's client API key. Build the updated runner from the checkout until its package/image is released.
+The managed AI SDK runner (published from v0.5.8) uses
+`RUNNER_TOKEN_TYPESCRIPT_AI_SDK` and `RUNNER_TENANTS_TYPESCRIPT_AI_SDK` on the
+plane, and presents one matching `RUNNER_TOKEN` from its worker. This uses the
+existing kind-token model. It does not reuse the application server's client API
+key. The [managed Python profiles](runners.md) use their own kind-specific token
+and tenant variables under the same contract.
 
 Example (webhook sidecar):
 ```json

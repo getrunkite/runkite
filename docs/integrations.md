@@ -73,6 +73,21 @@ Pydantic JSON remains a separate final result. Reconnect and Stop keep the same
 application ownership checks. See the
 [Next/Nuxt route recipes](../examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner).
 
+## vLLM Semantic Router routes the runner's model calls
+
+The published walkthrough
+[One Conversation, Multiple Models](https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/)
+connects a Runkite-managed AI SDK agent to Semantic Router through the runner's
+OpenAI-compatible model client. Runkite admits and dispatches the run, the SDK
+executes its loop, and Semantic Router selects among configured model backends.
+The plane does not proxy model traffic or choose models.
+
+Follow the walkthrough for its runnable setup, connector allow/deny exercise and
+recorded verification scope. Its integration example is external to this
+repository; it is not another shipped runner package. Keep Semantic Router
+separate from Runkite's process, policy store and secrets. Publication describes
+working interoperability, not production adoption or an endorsement.
+
 ## Microsoft Agent Framework: function middleware
 
 The [Python example](../examples/governance_agent_framework/README.md) attaches

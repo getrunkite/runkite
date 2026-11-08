@@ -68,8 +68,8 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
-          <a class="active" href="limitations.html">Limitations</a>
+          <a href="./engineering.html">Engineering</a>
+          <a class="active" href="limitations.html" aria-current="page">Limitations</a>
         </nav>
       </aside>
       <main class="main">
@@ -93,7 +93,7 @@
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) run on SQL. Holds reduce admission overshoot; estimates can be wrong. <code>on_hard_breach: cancel_inflight</code> can cancel in-scope runs after a hard breach, but usage is not continuously metered and canceled-run accounting can be incomplete.</li>
           <li>Kubernetes/Helm: kind K0–K3 ops proofs and a named EKS smoke exist. Packaging is Compatible; a longer cloud HA soak is still outstanding. Supported backend HA evidence remains the Compose topology.</li>
           <li><code>POST /governance/decide</code> creates no managed thread or run and applies no run kill switch, break-glass or spend cap. The app executes and owns pending continuation.</li>
-          <li>Every runner generation, including zero, must match exactly. Queue fencing and event publish remain two operations; raw SSE is advisory while durable completion and <code>/wait</code> reject superseded results.</li>
+          <li>Every runner generation, including zero, must match exactly. Stream terminals pass the durable completion fence; superseded terminals do not finish a replacement attempt. Queue checks and publication remain separate, so nonterminal output is advisory during reclaim. Clients must not combine attempts. Stored output and <code>/wait</code> remain authoritative.</li>
         </ul>
         <h2>Managed AI SDK profile (v0.5.8+)</h2>
         <p>
@@ -103,6 +103,25 @@
           restore and whole-run caching are unsupported. The UI bridge requires an app-side
           request-path change. See
           <a href="sdk-integration.html">SDK integrations and availability</a>.
+        </p>
+        <h2>Managed Python profiles and shared chat (v0.6.1)</h2>
+        <p>
+          The published Python wheel includes Microsoft Agent Framework, OpenAI
+          Agents SDK, Pydantic AI and Google ADK adapters through optional extras.
+          Each has a specific text/local-tool profile, successful-turn CAS state
+          and explicit native feature exclusions. The stock image does not install
+          their optional SDKs. Pydantic AI additionally supports validated final
+          JSON; this does not add structured output to every framework. Compare
+          <a href="sdk-integration.html#managed-python">the profile contracts</a>.
+        </p>
+        <p>
+          The repository's shared AI SDK UI bridge supports these managed profiles
+          and same-attempt detach/reattach. It requires app-owned authentication,
+          saved UI messages, a chat/turn-to-run mapping and assistant-ID binding.
+          Reconnect needs complete retained history and refuses mixed generations;
+          it is not a durable chat-storage service or an automatic model retry.
+          Detach leaves execution running, and explicit Stop needs the app's cancel
+          route. See <a href="sdk-integration.html#managed-ui">managed chat and reconnect</a>.
         </p>
         <p class="note">
           Full list:

@@ -1,0 +1,62 @@
+.execution-flow { border-top: 1px solid #302b23; }
+.execution-flow .execution-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; margin-bottom: 2rem; }
+.execution-flow .execution-heading h2 { margin: .5rem 0 .8rem; font: 500 clamp(1.8rem, 3vw, 2.6rem)/1.15 var(--font-display); letter-spacing: -.03em; }
+.execution-flow .execution-heading p:not(.eyebrow) { margin: 0; max-width: 43rem; color: #b5b3b1; line-height: 1.75; }
+.execution-flow .execution-toggle { flex-shrink: 0; border: 1px solid #62502f; border-radius: 3px; background: #1c170d; color: #f4c46d; padding: .65rem .85rem; font: 500 .8rem var(--font-sans); cursor: pointer; }
+.execution-flow .execution-toggle[hidden] { display: none; }
+.execution-flow .execution-toggle:hover { border-color: var(--accent); background: #2c2312; }
+.execution-flow .execution-toggle:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 4px; }
+.execution-flow .execution-figure { margin: 0; padding: clamp(1rem, 2.8vw, 2.2rem); border: 1px solid #463b2a; border-radius: 5px; background: radial-gradient(ellipse at 38% 10%, #3d2b124d, transparent 65%), #0f0e0c; }
+.execution-flow .execution-map { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: 1fr 1fr; column-gap: 5.455%; row-gap: 20.513%; aspect-ratio: 1100 / 390; isolation: isolate; }
+.execution-flow .execution-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: -1; }
+.execution-flow .execution-wire { fill: none; stroke: #b58b47; stroke-width: 1.5; marker-end: url(#execution-arrow); }
+.execution-flow .execution-wire-optional { stroke-dasharray: 5 5; stroke: #b58b47a6; }
+.execution-flow .execution-particle { display: none; fill: #ffd78d; filter: url(#execution-glow); }
+.execution-flow.execution-ready .execution-particle { display: block; }
+.execution-flow .execution-node { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: clamp(.7rem, 1.5vw, 1.1rem); border: 1px solid #484137; border-radius: 7px; background: #15130f; }
+.execution-flow .execution-node-label { color: #a6a098; font: .6rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.execution-flow .execution-node h3 { margin: .55rem 0 .5rem; font: 500 clamp(.88rem, 1.35vw, 1.08rem)/1.35 var(--font-sans); color: #f3ede2; }
+.execution-flow .execution-node p { margin: 0; color: #aaa69f; font-size: clamp(.7rem, 1vw, .79rem); line-height: 1.65; }
+.execution-flow .execution-plane { grid-column: 2; grid-row: 1; border-color: #b38339; background: linear-gradient(145deg, #3c2b13, #1d180f); box-shadow: 0 0 38px #e6a33219; }
+.execution-flow .execution-plane h3 { color: #ffd58b; }
+.execution-flow .execution-runner { grid-column: 3; grid-row: 1; }
+.execution-flow .execution-model { grid-column: 4; grid-row: 1; }
+.execution-flow .execution-gate { grid-column: 2; grid-row: 2; border-color: #8c6c37; border-style: dashed; background: #221c11; }
+.execution-flow .execution-service { grid-column: 3; grid-row: 2; border-style: dashed; }
+.execution-flow .execution-caption { margin: 1.4rem 0 0; border-top: 1px solid #332d23; padding-top: 1.2rem; color: #a7a39c; font-size: .8rem; line-height: 1.8; }
+.execution-flow .execution-caption p { margin: 0; }
+.execution-flow .execution-caption p + p { margin-top: .4rem; }
+.execution-flow .execution-caption strong { font-weight: 500; color: #ddd3c1; }
+.execution-flow .execution-caption a { color: #f4c46d; text-underline-offset: 3px; }
+@media (max-width: 1000px) {
+  .execution-flow .execution-heading { display: block; }
+  .execution-flow .execution-toggle { display: none; }
+  .execution-flow .execution-map { grid-template-columns: 1fr 1fr; grid-template-rows: auto; gap: 2.2rem .8rem; aspect-ratio: auto; }
+  .execution-flow .execution-wires { display: none; }
+  .execution-flow .execution-node { position: relative; min-height: 8.5rem; padding: 1rem; }
+  .execution-flow .execution-node h3 { font-size: 1rem; }
+  .execution-flow .execution-node p { font-size: .79rem; }
+  .execution-flow .execution-node-label { font-size: .58rem; }
+  .execution-flow .execution-app { grid-column: 1; grid-row: 1; }
+  .execution-flow .execution-plane { grid-column: 2; grid-row: 1; }
+  .execution-flow .execution-runner { grid-column: 2; grid-row: 2; }
+  .execution-flow .execution-model { grid-column: 1; grid-row: 2; }
+  .execution-flow .execution-gate { grid-column: 2; grid-row: 3; }
+  .execution-flow .execution-service { grid-column: 1; grid-row: 3; }
+  .execution-flow .execution-app::after, .execution-flow .execution-runner::after, .execution-flow .execution-gate::after { content: "→"; position: absolute; left: calc(100% + .15rem); top: 50%; color: #c99d54; font: 1rem var(--font-mono); transform: translateY(-50%); }
+  .execution-flow .execution-runner::after, .execution-flow .execution-gate::after { content: "←"; left: auto; right: calc(100% + .15rem); }
+  .execution-flow .execution-plane::after { content: "↓"; position: absolute; top: calc(100% + .6rem); left: 50%; color: #c99d54; font: 1rem var(--font-mono); transform: translateX(-50%); }
+  .execution-flow .execution-gate::before { content: "Optional: runner → Runkite"; position: absolute; bottom: calc(100% + .55rem); left: 0; color: #b8a47e; font: .58rem var(--font-mono); }
+}
+@media (max-width: 480px) {
+  .execution-flow .execution-map { display: flex; flex-direction: column; gap: 1.7rem; }
+  .execution-flow .execution-node { min-height: 0; padding: 1rem; }
+  .execution-flow .execution-node h3 { margin-block: .4rem; }
+  .execution-flow .execution-node::after { content: "↓"; position: absolute; top: calc(100% + .4rem); left: 50%; right: auto; transform: translateX(-50%); color: #c99d54; font: 1rem var(--font-mono); }
+  .execution-flow .execution-model::after { content: none; }
+  .execution-flow .execution-gate { margin-top: 1.2rem; }
+  .execution-flow .execution-service::after { content: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .execution-flow .execution-toggle { transition: none; }
+}

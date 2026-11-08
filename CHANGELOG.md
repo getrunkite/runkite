@@ -4,6 +4,18 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Documentation
+
+- Refresh published SDK availability and recovery guidance across Markdown and
+  the public handbook. Framework links open their contracts, and Engineering
+  has consistent navigation with desktop and mobile topic menus.
+- Highlight the published vLLM Semantic Router walkthrough with an attributed
+  publisher logo and a fully clickable, keyboard-accessible card. Add an
+  offline public-site link and asset check before Pages publication.
+- Restore the animated managed-execution flow on the product page, with pause,
+  reduced-motion and static mobile behavior. Keep the Admin walkthrough as a
+  separate opt-in preview.
+
 ### Security
 
 - Update the indirect `github.com/klauspost/compress` dependency to v1.20.2 to fix crafted-input zstd decoder crashes ([GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865)).
@@ -97,6 +109,8 @@ claim, and **not** a hosted control plane.
 - The Release workflow still publishes only `runkite-runner`. `runkite-governance` stays unpublished; install from the repository or a local pack/wheel.
 - SQLite/in-process and single-plane Postgres/Redis integration checks cover restart and crash-after-commit receipt recovery. They do not establish a new multi-replica HA soak or exactly-once external writes before state commit.
 - **Self-host only.** A managed/hosted control plane is not in this release.
+
+[0.6.1]: https://github.com/getrunkite/runkite/releases/tag/v0.6.1
 
 [0.6.0]: https://github.com/getrunkite/runkite/releases/tag/v0.6.0
 

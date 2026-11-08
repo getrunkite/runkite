@@ -58,11 +58,11 @@
           <a  href="a2a.html">A2A coordination</a>
           <a  href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
-          <a class="active" href="feature-map.html">Feature map</a>
+          <a class="active" href="feature-map.html" aria-current="page">Feature map</a>
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -85,7 +85,7 @@
               <tr><td>Agents</td><td><a href="./agents.html">Agents</a> · <a href="./admin-guide.html#2-agents">Admin guide</a> · <a href="./first-agent.html">First agent</a></td><td>Detail page: schema + version history</td></tr>
               <tr><td>Try agent</td><td><a href="./admin-guide.html#3-try-agent">Admin UI guide → Try agent</a></td><td>Playground; <code>pending_agent</code> lands in Pending</td></tr>
               <tr><td>Registry</td><td><a href="./registry.html">Registry</a></td><td>Publish/edit/delete in Admin; catalog, not deploy</td></tr>
-              <tr><td>Threads / Runs</td><td><a href="./runs.html">Runs &amp; threads</a> · <a href="./run-manifest.html">Run manifest</a> · <a href="./sdk-integration.html">SDK integration paths</a></td><td>Managed runs only. App-owned decision calls do not appear here. The managed AI SDK backend (v0.5.8+) does create these records.</td></tr>
+              <tr><td>Threads / Runs</td><td><a href="./runs.html">Runs &amp; threads</a> · <a href="./run-manifest.html">Run manifest</a> · <a href="./sdk-integration.html">SDK integration paths</a></td><td>Managed runs only. App-owned decision calls do not appear here. All published managed SDK profiles create these records. Run Detail includes durable output, including structured results.</td></tr>
               <tr><td>Connectors</td><td><a href="./connectors.html">Connectors</a> · <a href="./secrets.html">Secrets</a></td><td>Opt-in <code>payload_shrink</code> (Redis); retrieve is plane-served</td></tr>
               <tr><td>Cron</td><td><a href="./cron.html">Cron</a> · <a href="./admin-guide.html#7-cron">Admin guide</a></td><td>Read-only; schedules from langgraph.json</td></tr>
               <tr><td>Webhooks</td><td><a href="./webhooks.html">Webhooks</a></td><td>Dead letters</td></tr>
@@ -93,10 +93,20 @@
               <tr><td>Kill / Break-glass</td><td><a href="./kill.html">Kill &amp; break-glass</a></td><td>Managed-run controls; not applied by <code>/governance/decide</code></td></tr>
               <tr><td>Spend</td><td><a href="./finops.html">Spend (FinOps)</a></td><td>Usage and estimated USD for managed runs, SQL only. Decision-only calls are not metered or capped here.</td></tr>
               <tr><td>No key editor</td><td><a href="./credentials.html">Credentials</a> · <a href="./runner-auth.html">Runner auth</a> · <a href="./multi-tenant.html">Multi-tenant</a></td><td>No Admin CRUD for keys</td></tr>
+              <tr><td>Observability</td><td><a href="./security.html">Trace and data boundaries</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md#distributed-tracing-opentelemetry">Telemetry setup</a></td><td>OTLP trace export, Prometheus metrics and stdout logs are separate paths. No automatic full prompt/completion capture.</td></tr>
               <tr><td>Deployment</td><td><a href="./production.html">Production day-0</a> · <a href="./migrate-agents.html">Migrate</a></td><td>Enterprise path</td></tr>
             </tbody>
           </table>
         </div>
+
+        <h2>Integration entry points</h2>
+        <ul class="links">
+          <li><a href="sdk-integration.html#managed-langgraph">LangGraph / LangGraph.js</a> and <a href="sdk-integration.html#managed">Vercel AI SDK</a>: managed execution and native conversation state.</li>
+          <li><a href="sdk-integration.html#managed-microsoft">Microsoft Agent Framework</a>, <a href="sdk-integration.html#managed-openai">OpenAI Agents SDK</a>, <a href="sdk-integration.html#managed-pydantic">Pydantic AI</a> and <a href="sdk-integration.html#managed-google-adk">Google ADK</a>: published Python extras, dedicated commands and profile limits.</li>
+          <li><a href="sdk-integration.html#managed-ui">Managed chat UI and reconnect</a>: shared Next/Nuxt route recipes, detach/reattach and explicit Stop. The app owns UI storage and authentication.</li>
+          <li><a href="sdk-integration.html#app-owned">App-owned tool decisions</a>: allow/deny/pending without managed Threads/Runs; repository helpers remain unpublished.</li>
+          <li><a href="checkpoints.html">Checkpoint continuity</a> and <a href="ops.html">upgrade/recovery operations</a>: CAS receipts, exact identities and retained leases.</li>
+        </ul>
 
         <figure class="shot">
           <div class="cap">Admin walkthrough across primary surfaces</div>

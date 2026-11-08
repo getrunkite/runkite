@@ -47,7 +47,7 @@
           <a  href="runs.html">Runs &amp; threads</a>
           <a  href="cron.html">Cron</a>
           <a  href="webhooks.html">Webhooks</a>
-          <a class="active" href="ops.html">Ops</a>
+          <a class="active" href="ops.html" aria-current="page">Ops</a>
           <a  href="runner-auth.html">Runner auth</a>
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
@@ -68,7 +68,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -116,7 +116,10 @@
           Since v0.5.6, generation <code>0</code> is exact, not a wildcard. Old custom
           runners must echo the assigned generation. The event check and publish are still
           two operations, so use the stored run or <code>/wait</code> for the authoritative
-          outcome; a raw SSE terminal can be advisory during reclaim.
+          outcome. Since v0.6.0, run SSE, thread SSE and WebSocket terminal events
+          pass that durable completion fence, so a superseded terminal cannot close
+          a replacement attempt. Nonterminal output remains advisory during reclaim;
+          clients must not combine attempts.
         </p>
         <h2>Completion delivery</h2>
         <p>

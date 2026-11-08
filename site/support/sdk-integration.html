@@ -39,7 +39,7 @@
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
-          <a class="active" href="sdk-integration.html">SDK integrations</a>
+          <a class="active" href="sdk-integration.html" aria-current="page">SDK integrations</a>
           <a href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
@@ -68,7 +68,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -86,8 +86,9 @@
           your caller needs. The frontend can remain in Next, Nuxt or another app.
         </p>
         <p class="note">
-          <strong>Availability checked 2026-10-29.</strong> The latest published tag is
-          <a href="https://github.com/getrunkite/runkite/releases/tag/v0.5.8">v0.5.8</a>.
+          <strong>Availability checked 2026-11-08.</strong> The latest published tag is
+          <a href="https://github.com/getrunkite/runkite/releases/tag/v0.6.1">v0.6.1</a>,
+          the first Apache-2.0 release. Published v0.6.0 artifacts retain BUSL-1.1.
           The decision API shipped in v0.5.3. The managed AI SDK runner ships in
           <code>runkite-runner</code> from v0.5.8 (optional peer <code>ai@7.0.155</code>).
           Repository helper guards and Microsoft function middleware remain unpublished
@@ -96,11 +97,21 @@
           before selecting a package version.
         </p>
         <p class="note">
-          <strong>source-built Python profiles:</strong> the checkout also
-          packages managed Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK workers
-          with optional dependencies and dedicated commands. Existing published
-          PyPI <code>0.5.8</code> does not contain those profiles. See the
-          <a href="#managed-python">Python runner installation boundary</a> below.
+          <strong>Published Python profiles:</strong> the v0.6.1
+          <code>runkite-runner</code> wheel includes managed Microsoft Agent Framework,
+          OpenAI Agents SDK, Pydantic AI and Google ADK adapters, installed through
+          optional extras with dedicated commands. The stock Python image keeps its
+          LangGraph default and does not install these optional SDK dependencies.
+        </p>
+        <p class="note">
+          Jump to <a href="#managed-langgraph">LangGraph / LangGraph.js</a>,
+          <a href="#managed">Vercel AI SDK</a>,
+          <a href="#managed-microsoft">Microsoft Agent Framework</a>,
+          <a href="#managed-openai">OpenAI Agents SDK</a>,
+          <a href="#managed-pydantic">Pydantic AI</a>,
+          <a href="#managed-google-adk">Google ADK</a>,
+          <a href="#managed-ui">managed chat and reconnect</a> or
+          <a href="#app-owned">app-owned tool decisions</a>.
         </p>
 
         <h2>Choose the execution boundary</h2>
@@ -182,6 +193,27 @@
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework">Microsoft function-middleware example</a></li>
         </ul>
 
+        <h2 id="managed-langgraph">Managed LangGraph and LangGraph.js</h2>
+        <p>
+          The default Python and TypeScript <code>runkite-runner</code> commands
+          execute LangGraph and LangGraph.js in separate workers. Install with
+          <code>pip install runkite-runner</code> or
+          <code>npm install -g runkite-runner</code>, then load a graph from your
+          runner config. These profiles create managed Threads/Runs and support
+          their documented native interrupt/resume and checkpoint paths.
+          Start with the <a href="first-agent.html">first-agent walkthrough</a>,
+          <a href="agents.html">agent registration and runner commands</a> and
+          <a href="frameworks.html">capability matrix</a>.
+        </p>
+        <p>
+          Named tenants and default <code>cron:&lt;name&gt;</code> threads must use
+          <a href="checkpoints.html#native-identity">HTTP proxy checkpoints</a>.
+          Direct Postgres checkpoints are limited to guarded default-tenant IDs;
+          switching modes does not import old native history. The four older
+          CrewAI, LlamaIndex, AutoGen and plain LangChain adapters remain
+          checkout-only integrations.
+        </p>
+
         <h2 id="managed">Managed Vercel AI SDK runs</h2>
         <p>
           The new TypeScript backend executes public AI SDK <code>ToolLoopAgent</code>
@@ -224,7 +256,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           <a href="production.html">auth, runner-token, TLS and deployment profile</a>.
         </p>
 
-        <h2>Keep the AI SDK chat UI</h2>
+        <h2 id="managed-ui">Keep the AI SDK chat UI</h2>
         <p>
           AI SDK <code>useChat</code> reads its own UI message protocol. The example's
           app-side bridge converts the runner's <code>custom:ai_sdk</code> events through
@@ -292,8 +324,10 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           it does not embed an SDK runtime or use a hosted agent-session service.
         </p>
         <p>
-          Build from this repository with <code>pip install './python[agent-framework]'</code>
-          or <code>pip install './python[openai-agents]'</code> in a clean environment.
+          Install the published v0.6.1 profiles with
+          <code>pip install 'runkite-runner[agent-framework]'</code> or
+          <code>pip install 'runkite-runner[openai-agents]'</code> in a clean environment.
+          Source installs from <code>./python</code> remain available for contributors.
           Run <code>runkite-runner-agent-framework</code> or
           <code>runkite-runner-openai-agents</code> with the matching config. The SDKs
           are pinned to <code>agent-framework-core==1.23.0</code> and
@@ -320,10 +354,25 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           client lacks that invocation boundary. This cooperative check is not a
           sandbox or a replacement for connector policy.
         </p>
-        <ul>
-          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_agent_framework">Managed Microsoft example and installed-runner tests</a></li>
-          <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_openai_agents">Managed OpenAI Agents example and installed-runner tests</a></li>
-        </ul>
+        <h3 id="managed-microsoft">Microsoft Agent Framework</h3>
+        <p>
+          Select <code>python-agent-framework</code> in the plane config and run
+          <code>runkite-runner-agent-framework</code>. A per-run factory returns
+          <code>agent_framework.Agent</code>; the adapter preserves successful
+          native <code>AgentSession</code> history. Workflows, .NET, non-text input
+          and native approval/resume remain outside this profile. Follow the
+          <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_agent_framework">managed Microsoft example and installed-runner tests</a>.
+        </p>
+        <h3 id="managed-openai">OpenAI Agents SDK</h3>
+        <p>
+          Select <code>python-openai-agents</code> and run
+          <code>runkite-runner-openai-agents</code>. A per-run factory returns
+          <code>agents.Agent</code>; the adapter streams text and persists native
+          successful-turn history. Native approval/resume, handoffs, hosted/MCP
+          tools and structured final output are unsupported. Follow the
+          <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_openai_agents">managed OpenAI Agents example and installed-runner tests</a>.
+        </p>
+        <h3>Use the shared UI bridge</h3>
         <p>
           The application retains its UI authentication and presentation history.
           The v0.6.1 shared application bridge can translate these Python
@@ -347,11 +396,12 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           execution commits success; partial JSON is not a durable result.
         </p>
         <p>
-          Build locally with <code>pip install './python[pydantic-ai]'</code> and
-          run <code>runkite-runner-pydantic-ai</code>. The optional extra pins
-          <code>pydantic-ai-slim==2.63.0</code>; install your chosen provider
-          separately. This profile is not in published PyPI <code>0.5.8</code>
-          or the stock image's optional dependencies. The default CLI remains LangGraph.
+          Install with <code>pip install 'runkite-runner[pydantic-ai]'</code> and
+          run <code>runkite-runner-pydantic-ai</code>. Published PyPI v0.6.1 includes
+          this adapter. The optional extra pins <code>pydantic-ai-slim==2.63.0</code>;
+          install your chosen provider separately. Source installs from
+          <code>./python[pydantic-ai]</code> remain available. The stock image does
+          not install this SDK, and the default CLI remains LangGraph.
         </p>
         <p>
           Native conversations retain metadata and successful history through
@@ -376,11 +426,12 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           No hosted Agent Engine or additional session database is required.
         </p>
         <p>
-          Build locally with <code>pip install './python[google-adk]'</code>, then run
+          Install with <code>pip install 'runkite-runner[google-adk]'</code>, then run
           <code>runkite-runner-google-adk</code> with the same config loaded in the plane.
-          The optional extra pins <code>google-adk==2.13.0</code>. This profile is
-          absent from published PyPI <code>0.5.8</code>; the default CLI and stock
-          image keep their LangGraph defaults and the image does not install this SDK.
+          Published PyPI v0.6.1 includes this adapter; the optional extra pins
+          <code>google-adk==2.13.0</code>. Source installs from
+          <code>./python[google-adk]</code> remain available. The default CLI and stock
+          image keep their LangGraph defaults, and the image does not install this SDK.
         </p>
         <p>
           Send exactly one new user text message per run. Native events, tool results

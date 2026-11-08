@@ -5,7 +5,7 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | Doc | Topic |
 |-----|-------|
 | [Quick Start](quickstart.md) | Longer getting-started walkthrough |
-| [Client access and SDK integrations](client-sdk.md) | Choose managed execution or app-owned tool decisions; package status and AI SDK/Microsoft examples |
+| [Client access and SDK integrations](client-sdk.md) | Managed AI SDK and Python profiles, shared chat/reconnect, app-owned tool decisions and package availability |
 | [Configuration](configuration.md) | `langgraph.json` and environment variables, including opt-in `payload_shrink` |
 | [Auth](auth.md) | Auth, TLS/mTLS, multi-tenancy |
 | [Trust & governance](trust-governance.md) | Trust boundary, run-binding, non-goals; `make smoke-governance` |
@@ -18,7 +18,8 @@ Focused guides extracted from the root README. Start with the [root README](../R
 | [MCP Server](mcp-server.md) | MCP server surface |
 | [Registry](registry.md) | Agent marketplace / registry |
 | [Architecture](architecture.md) | Control plane, backends, dual modes |
-| [Runners](runners.md) | Published LangGraph runners, checkout adapters and the managed AI SDK backend (v0.5.8+) |
+| [Runners](runners.md) | Published LangGraph, AI SDK, Microsoft, OpenAI Agents, Pydantic AI and Google ADK profiles; checkout-only adapters |
+| [Integrations](integrations.md) | Existing MCP clients, framework runners, Semantic Router and OTLP backends |
 | [Runner Protocol](../runner-protocol/README.md) ([public mirror](https://github.com/getrunkite/runner-protocol)) | Worker contract (gRPC + opaque checkpoints) |
 | [Deployment](deployment.md) | Docker, Helm/kind (Compatible), Compose soak |
 | [Ops runbook](ops-runbook.md) | Supported install, reclaim, kill, secrets |
