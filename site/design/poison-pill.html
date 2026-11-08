@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -92,14 +92,23 @@
         assignment stays recoverable until terminal persistence and finalization succeed.
       </p>
 
-      <h2>What “poison” means here</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#what-poison-means-here">What “poison” means here</a></li>
+          <li><a href="#config">Config</a></li>
+          <li><a href="#how-it-pairs-with-fencing">How it pairs with fencing</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="what-poison-means-here" tabindex="-1">What “poison” means here</h2>
       <p>
         Not content filtering. A job that keeps killing runners (OOM, bad tool, broken
         graph) would otherwise bounce reclaim → dequeue → crash → reclaim…
         forever, burning capacity and drowning operators in noise.
       </p>
-      <div class="diagram" role="img" aria-label="Reclaim ceiling sequence">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="Reclaim ceiling sequence (scrollable diagram)">
 <span class="dim">attempt 1</span>  dequeue · crash · reclaim   <span class="ok">generation++</span>
 <span class="dim">attempt 2</span>  dequeue · crash · reclaim   <span class="ok">generation++</span>
 <span class="dim">attempt 3</span>  dequeue · crash · next reclaim would be 4th
@@ -110,7 +119,7 @@
         </pre>
       </div>
 
-      <h2>Config</h2>
+      <h2 id="config" tabindex="-1">Config</h2>
       <ul>
         <li>
           <code>reclaim.max_retries</code> in the control plane's first discovered config
@@ -130,7 +139,7 @@
         Source: <a href="https://github.com/getrunkite/runkite/blob/main/cmd/reclaim.go"><code>finishPoisonPill</code> / <code>reclaimStaleJobs</code></a>.
       </p>
 
-      <h2>How it pairs with fencing</h2>
+      <h2 id="how-it-pairs-with-fencing" tabindex="-1">How it pairs with fencing</h2>
       <p>
         Fencing answers: “which attempt is allowed to write?” The poison pill answers:
         “how many attempts are allowed at all?” You need both, otherwise a
@@ -157,7 +166,7 @@
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="../support/ops.html">Docs · Ops</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">Ops runbook</a>
         </div>

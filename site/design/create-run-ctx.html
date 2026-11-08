@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -92,13 +92,22 @@
         production-safe posture.
       </p>
 
-      <h2>createRunCtx is the choke point</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#createrunctx-is-the-choke-point">createRunCtx is the choke point</a></li>
+          <li><a href="#fail-closed-serve">Fail-closed serve</a></li>
+          <li><a href="#fail-closed-fail-open-everywhere">Fail-closed ≠ fail-open everywhere</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="createrunctx-is-the-choke-point" tabindex="-1">createRunCtx is the choke point</h2>
       <p>
         Handlers stay thin. The shared funnel does the work that must never diverge
         across entry points:
       </p>
-      <div class="diagram" role="img" aria-label="createRunCtx checklist">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="createRunCtx checklist (scrollable diagram)">
 <span class="dim">alias → load agent → rate limit</span>
 <span class="ok">admission gates</span>   kill / agents:&lt;id&gt;:run / policy run.create
 <span class="ok">claim thread</span>       idle → busy (409 if already owned)
@@ -122,7 +131,7 @@
         </li>
       </ul>
 
-      <h2>Fail-closed serve</h2>
+      <h2 id="fail-closed-serve" tabindex="-1">Fail-closed serve</h2>
       <p>
         An earlier default let <code>serve</code> boot on SQLite + in-process + no
         runner tokens + no client auth, still green on <code>/readyz</code>, so
@@ -141,7 +150,7 @@
         <code>runkite dev</code> for the zero-dependency laptop path.
       </p>
 
-      <h2>Fail-closed ≠ fail-open everywhere</h2>
+      <h2 id="fail-closed-fail-open-everywhere" tabindex="-1">Fail-closed ≠ fail-open everywhere</h2>
       <p>
         Serve admission and policy Decide deny when unsure (security). Rate limiting
         fails open on a Redis blip (availability). Same word, different risk
@@ -169,7 +178,7 @@
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">Ops runbook</a>
         </div>
       </footer>

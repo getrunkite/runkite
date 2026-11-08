@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -92,15 +92,24 @@
         <em>hold</em>: a guess reserved at create time, settled for real at the end.
       </p>
 
-      <h2>The gap a terminal-only check leaves open</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#the-gap-a-terminal-only-check-leaves-open">The gap a terminal-only check leaves open</a></li>
+          <li><a href="#what-a-hold-actually-is">What a hold actually is</a></li>
+          <li><a href="#the-failure-mode-a-hold-introduces-and-how-it-s-closed">The failure mode a hold introduces, and how it&#x27;s closed</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="the-gap-a-terminal-only-check-leaves-open" tabindex="-1">The gap a terminal-only check leaves open</h2>
       <p>
         Terminal usage, the actual token counts and USD estimate, is only known once
         a run finishes. If admission only asks "how much have finished runs cost
         today," a burst of concurrent creates all see the same pre-burst total and all
         pass, because none of them has reported anything back yet.
       </p>
-      <div class="diagram" role="img" aria-label="Concurrent creates overshoot a terminal-only cap">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="Concurrent creates overshoot a terminal-only cap (scrollable diagram)">
 <span class="dim">cap = $10/day, spent-so-far = $9.50, avg run ≈ $1</span>
 
 <span class="bad">terminal-only check:</span>
@@ -115,7 +124,7 @@
         </pre>
       </div>
 
-      <h2>What a hold actually is</h2>
+      <h2 id="what-a-hold-actually-is" tabindex="-1">What a hold actually is</h2>
       <p>
         At run-create time, if <code>finops.reservation</code> is configured, the plane
         writes one row to a <code>usage_holds</code> table: an estimated USD/token
@@ -140,15 +149,15 @@
         </li>
       </ul>
 
-      <h2>The failure mode a hold introduces, and how it's closed</h2>
+      <h2 id="the-failure-mode-a-hold-introduces-and-how-it-s-closed" tabindex="-1">The failure mode a hold introduces, and how it's closed</h2>
       <p>
         An optimistic reservation is a promise to release later. If the runner that
         opened it crashes before reporting a terminal status, that promise is never
         kept, the hold sits open forever, silently eating into tomorrow's budget
         along with today's, because nothing ever releases it.
       </p>
-      <div class="diagram" role="img" aria-label="A hold TTL sweeper closes the crashed-runner gap">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="A hold TTL sweeper closes the crashed-runner gap (scrollable diagram)">
 run creates → hold opens ($1, tenant=acme)
 runner crashes mid-execution → no terminal event ever arrives
                               → hold never releases on its own
@@ -190,7 +199,7 @@ runner crashes mid-execution → no terminal event ever arrives
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="../support/finops.html">Docs · Spend (FinOps)</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">Configuration docs</a>
         </div>

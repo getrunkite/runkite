@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20261108b" />
+    <link rel="stylesheet" href="./story.css?v=20261108c" />
   </head>
   <body>
     <a class="engineering-skip" href="#engineering-content">Skip to content</a>
@@ -91,14 +91,23 @@
         client never sees the opening of the answer.
       </p>
 
-      <h2>The silent gap</h2>
+      <nav class="note-toc" aria-label="On this page">
+        <p class="note-toc-title">On this page</p>
+        <ul>
+          <li><a href="#the-silent-gap">The silent gap</a></li>
+          <li><a href="#what-the-code-actually-does">What the code actually does</a></li>
+          <li><a href="#why-redis-streams-not-pub-sub">Why Redis Streams (not pub/sub)</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="the-silent-gap" tabindex="-1">The silent gap</h2>
       <p>
         Creating a run and streaming it back look like one HTTP request, but three
         processes are involved: the control-plane replica holding the SSE connection,
         Redis (or NATS) as the event log, and a runner that may start in milliseconds.
       </p>
-      <div class="diagram" role="img" aria-label="Enqueue-first loses early events">
-        <pre>
+      <div class="diagram">
+        <pre tabindex="0" role="region" aria-label="Enqueue-first loses early events (scrollable diagram)">
 <span class="bad">enqueue first</span>
   LPUSH queue  →  runner starts  →  XADD token#1
   Subscribe…   ← too late · token#1 already past the tail
@@ -110,7 +119,7 @@
         </pre>
       </div>
 
-      <h2>What the code actually does</h2>
+      <h2 id="what-the-code-actually-does" tabindex="-1">What the code actually does</h2>
       <p>
         For <code>POST …/runs/stream</code> and <code>…/runs/wait</code> the handler
         order is fixed:
@@ -135,7 +144,7 @@
         events (~24h TTL).
       </p>
 
-      <h2>Why Redis Streams (not pub/sub)</h2>
+      <h2 id="why-redis-streams-not-pub-sub" tabindex="-1">Why Redis Streams (not pub/sub)</h2>
       <p>
         Pub/sub is fire-and-forget: miss the window and the message is gone. Streams
         are an ordered log with offsets, so Subscribe can block on new entries and
@@ -162,7 +171,7 @@
       <footer class="note-footer">
         <div>© Runkite · engineering notes</div>
         <div>
-          <a href="../">Landing</a> ·
+          <a href="../">Product</a> ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">Architecture docs</a>
         </div>
       </footer>

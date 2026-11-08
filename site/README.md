@@ -109,6 +109,22 @@ attribution when updating the artwork. Framework names link to their individual
 contracts in the SDK guide. The "Bring your framework" introduction opens that
 guide too.
 
+Use the same visible destination cues on homepage action links and framework
+profiles: `→` for another site page, `↗` for an external destination, and `↓` for
+a section of the current page. Keep these decorative spans `aria-hidden="true"`
+so screen readers announce the link's name. Navigation and underlined prose
+links do not need extra arrows. Match hover feedback with visible keyboard
+focus, and reserve selected-page styling for the actual current page.
+
+Engineering articles have static section links and named keyboard-scrollable
+diagrams. Preserve those targets when changing headings or diagrams. Handbook
+code blocks are focusable groups so keyboard users can scroll long commands;
+the Copy control must still copy only the original code. Keep the Admin entry
+point labeled "Open Admin" while its destination explains shared-demo
+availability, without a misleading current-page highlight.
+Wrapped handbook navigation scrolls with the page so enlarged text cannot
+obscure linked section headings.
+
 Keep runtime ownership explicit when editing the page: managed executions create
 Threads and Runs; app-owned tool decisions do not. Connector policy requires the
 connector gate, and the bridge and governance helpers remain repository code.
