@@ -16,9 +16,10 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./support.css?v=20260920" />
+    <link rel="stylesheet" href="./support.css?v=20261108d" />
   </head>
   <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
     <div class="layout">
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
@@ -72,7 +73,7 @@
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
-      <main class="main">
+      <main class="main" id="main-content" tabindex="-1">
         <div class="topbar">
           <a href="../">← Product</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
@@ -332,10 +333,11 @@
         <p>
           Provider credentials (a Salesforce OAuth secret, a GitHub token) live in your
           connector config or a secrets manager, never copied into every agent's process
-          environment. When an agent needs to call out, the plane mints a short-lived,
-          run-bound session at the moment it is needed. MCP credentials stay on the plane
+          environment. For an MCP connector call, the plane mints a short-lived,
+          run-bound capability at the moment it is needed. MCP credentials stay on the plane
           and are injected on outbound proxy calls; non-MCP sessions can return credentials
-          to trusted runner code. The plane does not maintain a database of user OAuth tokens. See
+          to trusted runner code, and their expiry metadata does not revoke a static
+          upstream key. The plane does not maintain a database of user OAuth tokens. See
           <a href="secrets.html">Secrets</a> for the three ways to reference a credential
           (env var, mounted file, or HashiCorp Vault) and <a href="connectors.html">Connectors
           &amp; HITL</a> for the full setup.
@@ -372,6 +374,6 @@
 
       </main>
     </div>
-      <script src="./docs.js?v=20260920" defer></script>
+      <script src="./docs.js?v=20261108d" defer></script>
   </body>
 </html>
