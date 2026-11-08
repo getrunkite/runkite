@@ -92,6 +92,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Test public site interactions
+        run: make test-site
+
       - name: Install Python runner dependencies
         run: pip install -r python/requirements.txt
 
