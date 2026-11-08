@@ -1,0 +1,17 @@
+vLLM Semantic Router logo
+
+The unmodified vllm-semantic-router-logo.png comes from the vLLM Semantic
+Router project:
+https://github.com/vllm-project/semantic-router
+
+Original file: website/static/img/vllm-sr-logo.white.png
+Source revision: 0ffd9858fc92044abc1aede8f02b531697b4cbac
+Source URL:
+https://raw.githubusercontent.com/vllm-project/semantic-router/0ffd9858fc92044abc1aede8f02b531697b4cbac/website/static/img/vllm-sr-logo.white.png
+
+The source repository is licensed under Apache-2.0. Its original license is
+included in vllm-semantic-router-LICENSE.txt next to this notice.
+
+The logo identifies the publisher of the linked integration walkthrough.
+Names and marks remain with their respective owners. This use does not claim
+an endorsement or partnership.

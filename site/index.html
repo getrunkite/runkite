@@ -24,8 +24,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261108" />
+    <link rel="stylesheet" href="./landing.css?v=20261108b" />
+    <link rel="stylesheet" href="./execution-flow.css?v=20261108" />
     <script src="./landing.js?v=20261031" defer></script>
+    <script src="./execution-flow.js?v=20261108" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -51,6 +53,7 @@
               <a class="btn btn-ghost" href="#demo">Explore the demo</a>
             </div>
             <p class="hero-footnote">One Go binary. Embedded Admin. Framework runners for managed execution.</p>
+            <a class="hero-flow-link" href="#execution">See how Runkite works <span aria-hidden="true">↓</span></a>
           </div>
           <figure class="product-preview">
             <div class="preview-chrome"><span class="window-mark" aria-hidden="true">RK</span><span>Runkite Admin</span><span class="preview-caption">Demo data</span></div>
@@ -59,26 +62,101 @@
           </figure>
         </div>
         <div class="wrap framework-strip" aria-label="Published managed runner profiles">
-          <p>Bring your framework<span>Python + TypeScript runners</span></p>
+          <a class="framework-intro" href="./support/sdk-integration.html">Bring your framework <span aria-hidden="true">↗</span><small>Python + TypeScript runners</small></a>
           <ul>
-            <li><a href="./support/sdk-integration.html">LangGraph / LangGraph.js</a></li>
-            <li><a href="./support/sdk-integration.html">Vercel AI SDK</a></li>
-            <li><a href="./support/sdk-integration.html">Microsoft Agent Framework</a></li>
-            <li><a href="./support/sdk-integration.html">OpenAI Agents</a></li>
-            <li><a href="./support/sdk-integration.html">Pydantic AI</a></li>
-            <li><a href="./support/sdk-integration.html">Google ADK</a></li>
+            <li><a href="./support/sdk-integration.html#managed-langgraph">LangGraph / LangGraph.js</a></li>
+            <li><a href="./support/sdk-integration.html#managed">Vercel AI SDK</a></li>
+            <li><a href="./support/sdk-integration.html#managed-microsoft">Microsoft Agent Framework</a></li>
+            <li><a href="./support/sdk-integration.html#managed-openai">OpenAI Agents</a></li>
+            <li><a href="./support/sdk-integration.html#managed-pydantic">Pydantic AI</a></li>
+            <li><a href="./support/sdk-integration.html#managed-google-adk">Google ADK</a></li>
           </ul>
         </div>
       </section>
 
       <section class="published-guide" aria-labelledby="guide-title">
-        <div class="wrap guide-callout">
-          <div>
-            <p class="eyebrow">On the vLLM Semantic Router blog</p>
-            <h2 id="guide-title">One Conversation, Multiple Models</h2>
-            <p>Follow a conversation through Runkite's managed AI SDK runner and Semantic Router's model routing, with code you can run.</p>
+        <div class="wrap">
+          <a class="guide-callout" href="https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/" aria-labelledby="guide-title guide-cta" aria-describedby="guide-summary">
+            <div class="guide-brand" aria-hidden="true">
+              <span class="guide-published">Published on</span>
+              <img src="./assets/vllm-semantic-router-logo.png" alt="" width="1508" height="620" loading="lazy" />
+              <span class="guide-source">The Semantic Router blog</span>
+            </div>
+            <div class="guide-copy">
+              <p class="eyebrow">Featured integration</p>
+              <h2 id="guide-title">One Conversation,<br />Multiple Models</h2>
+              <p id="guide-summary">See Runkite's managed AI SDK runner and vLLM Semantic Router work together, with a conversation, model routing and connector policy you can run yourself.</p>
+              <span class="guide-cta" id="guide-cta">Read the integration guide <span aria-hidden="true">↗</span></span>
+            </div>
+            <span class="guide-open" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="section execution-flow" id="execution" aria-labelledby="execution-title">
+        <div class="wrap">
+          <div class="execution-heading">
+            <div>
+              <p class="eyebrow">Follow a managed run</p>
+              <h2 id="execution-title">Your code runs the agent.<br />Runkite operates the run.</h2>
+              <p>The app starts a run, Runkite dispatches it, and your framework runner calls the model backend you configured.</p>
+            </div>
+            <button class="execution-toggle" type="button" aria-pressed="false" hidden>Play flow</button>
           </div>
-          <a class="inline-link" href="https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/" aria-label="Read the integration guide: Runkite and vLLM Semantic Router">Read the integration guide <span aria-hidden="true">↗</span></a>
+          <figure class="execution-figure" aria-labelledby="execution-title" aria-describedby="execution-caption">
+            <div class="execution-map">
+              <svg class="execution-wires" viewBox="0 0 1100 390" fill="none" aria-hidden="true" focusable="false">
+                <defs>
+                  <marker id="execution-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#b58b47" stroke-width="1.2" /></marker>
+                  <filter id="execution-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="4" result="halo" /><feMerge><feMergeNode in="halo" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                </defs>
+                <path class="execution-wire" d="M230 77.5 H290" />
+                <path class="execution-wire" d="M520 77.5 H580" />
+                <path class="execution-wire" d="M810 77.5 H870" />
+                <path class="execution-wire execution-wire-optional" d="M695 155 C695 220 405 170 405 235" />
+                <path class="execution-wire execution-wire-optional" d="M520 312.5 H580" />
+                <circle class="execution-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="2.8s" repeatCount="indefinite" path="M230 77.5 H290" /></circle>
+                <circle class="execution-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.2s" repeatCount="indefinite" path="M520 77.5 H580" /></circle>
+                <circle class="execution-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="2.6s" repeatCount="indefinite" path="M810 77.5 H870" /></circle>
+                <circle class="execution-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.4s" repeatCount="indefinite" path="M695 155 C695 220 405 170 405 235" /></circle>
+                <circle class="execution-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3s" repeatCount="indefinite" path="M520 312.5 H580" /></circle>
+              </svg>
+              <div class="execution-node execution-app">
+                <span class="execution-node-label">01 / Request</span>
+                <h3>Your app</h3>
+                <p>Create a thread and run.<br />Consume the result stream.</p>
+              </div>
+              <div class="execution-node execution-plane">
+                <span class="execution-node-label">02 / Operations</span>
+                <h3>Runkite</h3>
+                <p>Admission, dispatch,<br />durable state and audit.</p>
+              </div>
+              <div class="execution-node execution-runner">
+                <span class="execution-node-label">03 / Execution</span>
+                <h3>Your framework runner</h3>
+                <p>Your agent logic,<br />tools and model loop.</p>
+              </div>
+              <div class="execution-node execution-model">
+                <span class="execution-node-label">04 / Inference</span>
+                <h3>Your model backend</h3>
+                <p>Your SDK's configured provider or model router.</p>
+              </div>
+              <div class="execution-node execution-gate">
+                <span class="execution-node-label">Optional / At Runkite</span>
+                <h3>MCP connector gate</h3>
+                <p>Grants, sessions and marked-call approval.</p>
+              </div>
+              <div class="execution-node execution-service">
+                <span class="execution-node-label">Configured MCP service</span>
+                <h3>Your MCP server</h3>
+                <p>Plane proxy forwards with resolved credentials.</p>
+              </div>
+            </div>
+            <figcaption class="execution-caption" id="execution-caption">
+              <p><strong>Illustrative flow, not live traffic.</strong> Model calls go from the runner to its backend. Optional MCP connector calls return to Runkite's gate, which checks policy and proxies allowed requests to the configured MCP server. Ordinary local tools do not automatically pass through that gate.</p>
+              <p>This is managed execution. If your app keeps its own loop, use the separate <a href="./support/sdk-integration.html#app-owned">tool decision API</a>. It does not create a Runkite thread or run.</p>
+            </figcaption>
+          </figure>
         </div>
       </section>
 

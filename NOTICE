@@ -12,3 +12,9 @@ The public API specification includes material derived from LangChain's Agent
 Protocol under MIT. See spec/third-party/agent-protocol-MIT.txt in source,
 licenses/agent-protocol-MIT.txt in release archives, and the
 x-third-party-notices field in spec/openapi.json.
+
+The public website includes an unmodified vLLM Semantic Router logo to identify
+the publisher of its linked integration guide. Source attribution and the
+original Apache-2.0 license are distributed in site/assets/NOTICE.txt and
+site/assets/vllm-semantic-router-LICENSE.txt. The logo is not embedded in the
+control-plane binary or the runner packages.

@@ -44,7 +44,7 @@ import { getConnectorSession, proxyConnectorMcp } from "runkite-runner";
 const sess = await getConnectorSession(config, "salesforce");
 ```
 
-The managed AI SDK factory in this working tree receives the same binding as `context.runkiteConfig`. Pass it to these TypeScript helpers inside a server tool's `execute` function. Registering a local AI SDK tool does not automatically route that tool through a connector or apply connector grants.
+The managed AI SDK factory (published from v0.5.8) receives the same binding as `context.runkiteConfig`. Pass it to these TypeScript helpers inside a server tool's `execute` function. Registering a local AI SDK tool does not automatically route that tool through a connector or apply connector grants.
 
 Apps using only `/governance/decide` have no in-flight assignment and cannot use these internal proxy routes with that client credential. They keep execution and pending continuation in the app. See the [SDK integration guide](../site/support/sdk-integration.html).
 

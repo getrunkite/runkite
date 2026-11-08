@@ -38,7 +38,7 @@
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
-          <a class="active" href="runs.html">Runs &amp; threads</a>
+          <a class="active" href="runs.html" aria-current="page">Runs &amp; threads</a>
           <a  href="cron.html">Cron</a>
           <a  href="webhooks.html">Webhooks</a>
           <a  href="ops.html">Ops</a>
@@ -62,7 +62,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -128,7 +128,7 @@
         <ul class="expect">
           <li><strong>Statuses</strong>: pending, running, success, error and interrupted. Cancellation and supported framework interrupts can produce interrupted; native resume support depends on the adapter.</li>
           <li><strong>sim badge</strong>: runs created with <code>X-Runkite-Simulation</code> (<code>runkite sim</code>) show <code>sim</code> on the list and detail. Spend and daily caps skip; policy still runs. See <a href="sim.html">Fixture replay</a>.</li>
-          <li><strong>Streaming</strong>: Admin and clients read the same event stream. Raw SSE is advisory during reclaim; Run Detail reloads durable status/output when it ends. Use <code>/wait</code> or the stored run for the authoritative result.</li>
+          <li><strong>Streaming</strong>: Admin and clients read the same event stream. Terminal events pass the durable completion fence and superseded terminals are ignored. Nonterminal output remains advisory during reclaim; clients must not combine attempts. Run Detail reloads durable status/output when the stream ends. Use <code>/wait</code> or the stored run for the authoritative result.</li>
           <li><strong>Reclaim</strong>: if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
         </ul>
         <p class="note">

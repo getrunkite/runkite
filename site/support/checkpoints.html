@@ -40,7 +40,7 @@
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
           <a href="sdk-integration.html">SDK integrations</a>
-          <a class="active" href="checkpoints.html">Checkpoints</a>
+          <a class="active" href="checkpoints.html" aria-current="page">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
           <a  href="registry.html">Registry</a>
           <div class="nav-group">Operate</div>
@@ -68,7 +68,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -141,6 +141,17 @@
           Python adapters' message-only state and unconditional PUT. A crash before commit
           can still repeat an external effect, so use downstream idempotency. See
           <a href="sdk-integration.html#managed">managed AI SDK integration</a>.
+        </p>
+        <h2>Managed Python SDK history (v0.6.1)</h2>
+        <p>
+          Microsoft Agent Framework, OpenAI Agents, Pydantic AI and Google ADK
+          preserve native successful-turn history through versioned opaque CAS
+          writes and committed-turn receipts. They use the same scoped HTTP
+          checkpoint boundary rather than the older transcript-only adapters'
+          unconditional PUT. Reclaim after commit replays the saved turn without
+          another model/tool cycle. Failed or cancelled turns retain prior committed
+          history; external effects before commit still need idempotency. See the
+          <a href="sdk-integration.html#managed-python">published Python profile contracts</a>.
         </p>
         <h2>Why opaque</h2>
         <p>

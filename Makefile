@@ -24,6 +24,10 @@ vet:
 
 # --- Tests ---
 
+.PHONY: check-doc-links
+check-doc-links:
+	python3 scripts/check-doc-links.py
+
 # Default: SQLite + in-memory only (no external services needed).
 # Explicitly unset backend env vars so inherited shell env doesn't leak.
 test:

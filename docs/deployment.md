@@ -39,15 +39,17 @@ The dev SQLite file is `/tmp/runkite.db` in the control-plane container's writab
 
 ### Managed AI SDK runner (v0.5.8+)
 
-The managed AI SDK backend is in the working tree and needs a newly built
-TypeScript runner until its updated package/image is released. Register a
-configuration with `runner_kind: "typescript-ai-sdk"` in the plane, and load the
+The managed AI SDK backend ships in the published TypeScript runner package
+and image from v0.5.8. The npm installation also needs its tested `ai` peer.
+Register a configuration with `runner_kind: "typescript-ai-sdk"` in the plane, and load the
 matching file in the worker. Its `graphs` entries point to agent factories; the
 code and its dependencies must be available in the worker image. Keep
 `llm_cache` disabled for these agents. See
 [the example](../examples/managed_ai_sdk/README.md) for the factory and app bridge.
 
-For a local container connected to an already running plane:
+The following source build includes the bundled offline example. For your own
+agent, build or mount its factory and dependencies into a worker based on the
+published image. A local container connected to an already running plane:
 
 ```bash
 docker build -t runkite-runner-ts:managed-local -f Dockerfile.runner-ts .

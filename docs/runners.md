@@ -8,7 +8,7 @@ active call and suppresses late superseded callbacks. The normal heartbeat caden
 and reclaim age remain independent; partitions can still cause reclaim. Connector
 helpers now use one operation deadline and explicit safe-renewal reasons, and
 credential-bearing HTTP clients refuse redirects. See
-[Connectors](connectors.md#deadlines-cancellation-and-retry-safety).
+[Connectors](connectors.md#deadlines-cancellation-and-retry-safety-v060).
 
 ## Identity and native checkpoint guard (v0.6.0)
 
@@ -79,8 +79,9 @@ are installed some other way, e.g. `uv pip install -e python/`); TypeScript's
 `npx tsx src/cli.ts` needs `npm ci` in `typescript/runkite-runner/` first.
 CrewAI, LlamaIndex, AutoGen and plain LangChain adapters under `python/adapters/`
 remain checkout-only. Use `PYTHONPATH` as below after installing each adapter's
-own dependencies. The Microsoft adapter has an v0.6.0 optional install
-profile in the same Python runner package, described below.
+own dependencies. Current v0.6.1 Python packages also provide the optional
+`agent-framework`, `openai-agents`, `pydantic-ai` and `google-adk` install profiles
+described below. Each has its own command and documented native-feature subset.
 
 The plane does not proxy model HTTP and does not pick models. Put an LLM gateway in front of the runner if you want per-call model routing.
 
@@ -329,7 +330,7 @@ is no second session database or hosted Agent Engine deployment.
 
 The source-built `google-adk` extra pins `google-adk==2.13.0`, includes
 `google_adk_adapter` and provides `runkite-runner-google-adk`. Published PyPI
-`0.6.0` includes this profile; the stock image does not install its optional SDK.
+`0.6.1` includes this profile; the stock image does not install its optional SDK.
 The default Python command remains LangGraph. See the
 [offline example](../examples/managed_google_adk/README.md).
 
@@ -359,10 +360,11 @@ cannot be loaded and withholds completion when a required save fails. A rejected
 message blobs fail before agent execution. This replaces warning-and-continue
 behavior; it does not add full framework HITL resume.
 
-The older Python generic opaque client still uses unconditional PUT. The managed
-AI SDK and Microsoft paths use CAS and committed-turn receipts. Do not infer
-those stronger recovery properties for every existing adapter. None of these
-paths guarantees exactly once external effects before state commit.
+The older CrewAI, LlamaIndex, AutoGen and plain LangChain adapter path still
+saves through unconditional PUT. Managed AI SDK, Microsoft, OpenAI Agents,
+Pydantic AI and Google ADK use CAS and committed-turn receipts. Those stronger
+recovery properties do not apply to every adapter. None of these paths
+guarantees exactly once external effects before state commit.
 
 **Opaque multi-turn (proxy):** when an adapter sets `checkpoint_framework` and `RUNKITE_HTTP_URL` (or the worker http address) is set, `generic_worker` loads `GET /internal/checkpoints/{thread}/adapter-state` before execute and `PUT`s that same id after success/interrupted — so clients can send only the new turn. This is **message continuity**, not LangGraph channel-state HITL: LlamaIndex restores native chat history; CrewAI / LangChain typically fold prior turns into the next prompt; AutoGen seeds model context. Not full CrewAI crew-memory restore. `checkpoint_ref` stays LangGraph-only (adapters reject it). Without an HTTP base URL, adapters stay single-shot. Same `/internal/checkpoints` surface as LangGraph proxy mode; adapters must not use `.../latest` on shared threads. See Runner Protocol §6.5 and `docs/limitations.md`.
 

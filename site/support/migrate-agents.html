@@ -31,7 +31,7 @@
           <a  href="production.html">Production day-0</a>
           <a  href="first-agent.html">First agent</a>
           <a  href="agents.html">Agents (Py / JS)</a>
-          <a class="active" href="migrate-agents.html">Migrate agents</a>
+          <a class="active" href="migrate-agents.html" aria-current="page">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
           <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
@@ -62,7 +62,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -100,7 +100,7 @@
         <h2>How to implement managed runners</h2>
         <ol class="steps">
           <li><strong>Inventory</strong>: list agent entrypoints, checkpoint stores, tools that need secrets, HITL points, cron/triggers.</li>
-          <li><strong>Pick runner kind</strong>: LangGraph stays on the published runners. Other existing Python frameworks use checkout-only <code>python/adapters/*</code>. The AI SDK kind is <code>typescript-ai-sdk</code> (see <a href="./frameworks.html">matrix</a>).</li>
+          <li><strong>Pick runner kind</strong>: LangGraph uses the default published runners. AI SDK uses <code>typescript-ai-sdk</code>; Microsoft, OpenAI Agents, Pydantic AI and Google ADK use their <a href="./sdk-integration.html#managed-python">published optional Python profiles</a>. CrewAI, LlamaIndex, AutoGen and plain LangChain remain checkout-only. Compare the <a href="./frameworks.html">profile matrix</a> before cutover.</li>
           <li><strong>Wire config</strong>: <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
           <li><strong>Checkpoints</strong>: LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts, clients can send only the new turn.</li>
           <li><strong>Connector secrets</strong>: configure <code>secret_ref</code> with <code>env:</code>, <code>file:</code> or <code>vault:</code>. Sessions resolve these references and the plane injects credentials on outgoing connector calls. Use actual connector gates for governed external access.</li>

@@ -32,7 +32,7 @@
           <a  href="first-agent.html">First agent</a>
           <a  href="agents.html">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
-          <a class="active" href="frameworks.html">Framework matrix</a>
+          <a class="active" href="frameworks.html" aria-current="page">Framework matrix</a>
           <a href="sdk-integration.html">SDK integrations</a>
           <a  href="checkpoints.html">Checkpoints</a>
           <a  href="connectors.html">Connectors</a>
@@ -62,7 +62,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -81,7 +81,7 @@
           <section>
             <h2>What it is</h2>
             <p>
-              The published Python and npm runner packages execute LangGraph and LangGraph.js. CrewAI, LlamaIndex, AutoGen, and plain LangChain have in-repository adapters under <code>python/adapters/</code>; they are not included in the published Python package.
+              Published v0.6.1 runner packages include LangGraph, LangGraph.js and the optional TypeScript AI SDK backend. The Python wheel also includes Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK adapters through optional SDK extras. CrewAI, LlamaIndex, AutoGen and plain LangChain remain checkout-only adapters under <code>python/adapters/</code>.
             </p>
           </section>
           <section>
@@ -92,7 +92,7 @@
           </section>
         </div>
 
-        <h2>Support matrix</h2>
+        <h2>LangGraph and checkout-adapter capabilities</h2>
         <div class="table-wrap">
           <table class="matrix">
             <thead>
@@ -123,7 +123,7 @@
           (not a full framework-native memory graph). LlamaIndex restores <code>chat_history</code> natively. LangGraph keeps
           its own saver (direct Postgres or HTTP proxy). <code>checkpoint_ref</code> time-travel remains LangGraph-only. Cancellation is cooperative and cannot undo completed external writes.</p>
 
-        <h2>AI SDK and app-owned helpers</h2>
+        <h2>Additional published SDK profiles and app-owned helpers</h2>
         <ul class="expect">
           <li><strong>Managed AI SDK (TypeScript, v0.5.8+)</strong>: the <code>typescript-ai-sdk</code> backend uses <code>--framework ai-sdk</code> and a per-run factory. It creates real Threads/Runs, streams through the plane, and restores committed native history. Ships in <code>runkite-runner</code> with optional peer <code>ai@7.0.155</code>.</li>
           <li><strong>AI SDK scope</strong>: new text turns and local JSON-result tools; no native approval/resume, binary/client/provider tools, streaming tool outputs, whole-run cache or time travel. The app needs a <code>useChat</code> bridge. Canceled-run spend can be incomplete.</li>

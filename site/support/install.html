@@ -33,7 +33,7 @@
           <a href="why.html">Why a plane</a>
           <a href="scenario.html">Scenario</a>
           <div class="nav-group">Build</div>
-          <a class="active" href="install.html">Install</a>
+          <a class="active" href="install.html" aria-current="page">Install</a>
           <a href="production.html">Production day-0</a>
           <a href="first-agent.html">First agent</a>
           <a href="agents.html">Agents (Py / JS)</a>
@@ -68,7 +68,7 @@
           <a href="chapters/">Chapters</a>
           <a href="blog/">Blog</a>
           <a href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -182,7 +182,7 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
         </p>
 
         <h2>Package and upgrade boundaries</h2>
-        <p>Registry installs follow the <a href="https://github.com/getrunkite/runkite/releases/latest">latest tagged release</a>. From v0.5.8, published <code>runkite-runner</code> includes LangGraph defaults and the optional AI SDK backend (<code>--framework ai-sdk</code>). Governance helpers (<code>createGovernedExecute</code>, Microsoft function middleware) remain unpublished packages; install them from the repository. See <a href="./sdk-integration.html">the integration guide</a>.</p>
+        <p>Registry installs follow the <a href="https://github.com/getrunkite/runkite/releases/latest">latest tagged release</a>. The v0.6.1 packages use Apache-2.0 and include LangGraph defaults and the optional TypeScript AI SDK backend (<code>--framework ai-sdk</code>). The Python wheel also packages managed Microsoft, OpenAI Agents, Pydantic AI and Google ADK adapters: install the matching <a href="./sdk-integration.html#managed-python">optional extra and dedicated command</a>. The stock Python image does not install these optional SDKs. Governance helpers (<code>createGovernedExecute</code>, Microsoft function middleware) remain unpublished packages; install them from the repository. See <a href="./sdk-integration.html">the integration guide</a>.</p>
         <p>Custom or older runners must echo the assignment's exact generation on run-specific RPCs and bound HTTP calls. Generation <code>0</code> is not a wildcard for a later attempt. Runner tokens are bound to their kind. Upgrade and test custom runners with the plane before replacing production replicas.</p>
 
         <h2>What to expect</h2>

@@ -30,7 +30,7 @@
           <a  href="install.html">Install</a>
           <a  href="production.html">Production day-0</a>
           <a  href="first-agent.html">First agent</a>
-          <a class="active" href="agents.html">Agents (Py / JS)</a>
+          <a class="active" href="agents.html" aria-current="page">Agents (Py / JS)</a>
           <a  href="migrate-agents.html">Migrate agents</a>
           <a  href="frameworks.html">Framework matrix</a>
           <a href="sdk-integration.html">SDK integrations</a>
@@ -62,7 +62,7 @@
           <a  href="chapters/">Chapters</a>
           <a  href="blog/">Blog</a>
           <a  href="decisions/">Decisions</a>
-          <a href="./engineering.html">Engineering notes</a>
+          <a href="./engineering.html">Engineering</a>
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
@@ -101,6 +101,7 @@
           <li><strong>TypeScript (LangGraph.js)</strong>: install the TS runner, same config shape, same plane.</li>
           <li><strong>Checkout adapters</strong>: CrewAI / LlamaIndex / AutoGen / LangChain use the shared generic worker loop and their own dependency setup. They are not packaged in the published Python runner.</li>
           <li><strong>Managed AI SDK (v0.5.8+)</strong>: use <code>runkite-runner</code> with a per-run settings factory and <code>--framework ai-sdk</code> (peer <code>ai@7.0.155</code>). Follow <a href="./sdk-integration.html">the integration guide</a>.</li>
+          <li><strong>Managed Python SDKs (v0.6.1)</strong>: install the optional <code>agent-framework</code>, <code>openai-agents</code>, <code>pydantic-ai</code> or <code>google-adk</code> extra on <code>runkite-runner</code>. Select its matching runner kind and dedicated command in the <a href="./sdk-integration.html#managed-python">integration guide</a>; the stock image does not include these optional SDKs.</li>
           <li><strong>Verify</strong>: Admin → Agents shows registered ids (click a row for schema + version history); create a thread + run with that <code>agent_id</code>.</li>
         </ol>
         <pre class="mono-block"># Python

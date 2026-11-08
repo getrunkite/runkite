@@ -19,10 +19,11 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./story.css?v=20260920" />
+    <link rel="stylesheet" href="./story.css?v=20261108" />
   </head>
   <body>
-        <div class="shell">
+    <a class="engineering-skip" href="#engineering-content">Skip to content</a>
+    <div class="engineering-shell">
       <header class="note-header">
         <a class="site-logo" href="../">~/ <span>runkite</span></a>
         <nav class="note-nav" aria-label="Primary">
@@ -30,10 +31,57 @@
           <a href="https://getrunkite.com/admin/">Admin</a>
           <a href="../support/try.html">Try</a>
           <a href="../support/">Docs</a>
-          <a class="active" href="./">Notes</a>
+          <a class="active" href="./" aria-current="location">Engineering</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </nav>
       </header>
+      <div class="engineering-layout">
+        <aside class="engineering-sidebar">
+          <nav aria-label="Engineering topics">
+            <p class="engineering-nav-group">Design notes</p>
+            <a href="./">Engineering overview</a>
+            <a href="./fencing.html">Generation fencing</a>
+            <a href="./subscribe-before-enqueue.html">Subscribe before enqueue</a>
+            <a href="./create-run-ctx.html">Admission and fail closed</a>
+            <a class="active" aria-current="page" href="./poison-pill.html">Reclaim ceiling</a>
+            <a href="./finops-holds.html">Spend holds</a>
+            <a href="./rls-grant.html">Postgres RLS</a>
+            <a href="./managed-ai-sdk.html">Managed AI SDK receipts</a>
+            <p class="engineering-nav-group">Recent engineering records</p>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">Runtime hardening <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md">Atomic results and identities <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">Local HA recovery validation <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <p class="engineering-nav-group">Build and operate</p>
+            <a href="../support/sdk-integration.html">SDK integration contracts</a>
+            <a href="../support/ops.html">Upgrade and recovery guide</a>
+            <a href="../support/engineering.html">All engineering references</a>
+            <a href="../support/">Documentation</a>
+          </nav>
+        </aside>
+        <main class="shell" id="engineering-content" tabindex="-1">
+          <details class="engineering-menu">
+            <summary>Engineering topics</summary>
+            <nav aria-label="Engineering topics on mobile">
+            <p class="engineering-nav-group">Design notes</p>
+            <a href="./">Engineering overview</a>
+            <a href="./fencing.html">Generation fencing</a>
+            <a href="./subscribe-before-enqueue.html">Subscribe before enqueue</a>
+            <a href="./create-run-ctx.html">Admission and fail closed</a>
+            <a class="active" aria-current="page" href="./poison-pill.html">Reclaim ceiling</a>
+            <a href="./finops-holds.html">Spend holds</a>
+            <a href="./rls-grant.html">Postgres RLS</a>
+            <a href="./managed-ai-sdk.html">Managed AI SDK receipts</a>
+            <p class="engineering-nav-group">Recent engineering records</p>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/runtime-hardening.md">Runtime hardening <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md">Atomic results and identities <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">Local HA recovery validation <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <p class="engineering-nav-group">Build and operate</p>
+            <a href="../support/sdk-integration.html">SDK integration contracts</a>
+            <a href="../support/ops.html">Upgrade and recovery guide</a>
+            <a href="../support/engineering.html">All engineering references</a>
+            <a href="../support/">Documentation</a>
+            </nav>
+          </details>
 
       <p class="kicker">Engineering note · 4 of 7</p>
       <h1>Crash loops must <em>end</em>.</h1>
@@ -100,7 +148,7 @@
         <a href="./fencing.html">Fencing</a>
         <a href="./subscribe-before-enqueue.html">Subscribe-before-enqueue</a>
         <a href="./create-run-ctx.html">createRunCtx</a>
-        <a class="here" href="./poison-pill.html">Poison pill</a>
+        <a class="here" href="./poison-pill.html" aria-current="page">Poison pill</a>
         <a href="./finops-holds.html">FinOps holds</a>
         <a href="./rls-grant.html">Postgres RLS grant</a>
         <a href="./managed-ai-sdk.html">AI SDK receipts</a>
@@ -114,6 +162,8 @@
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">Ops runbook</a>
         </div>
       </footer>
+        </main>
+      </div>
     </div>
   </body>
 </html>

@@ -4,8 +4,10 @@ This walkthrough uses the published LangGraph runner path. If your app keeps its
 own SDK loop, use the [decision-only helper](client-sdk.md#embedded-governance-helper)
 instead; it does not create Threads/Runs. For managed Vercel AI SDK execution,
 the [managed AI SDK example](../examples/managed_ai_sdk/README.md) includes
-the runner factory and app-side UI stream bridge. Existing `v0.5.7` registry
-artifacts do not contain that backend. Compare the paths in
+the runner factory and app-side UI stream bridge. That TypeScript backend ships
+from v0.5.8. Current v0.6.1 packages also include optional managed Microsoft,
+OpenAI Agents, Pydantic AI and Google ADK Python profiles. Compare their install
+commands and execution boundaries in
 [client integration guidance](client-sdk.md#choose-who-owns-execution).
 
 End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
@@ -323,7 +325,7 @@ Create `connectors/github.yaml`:
 ```yaml
 auth:
   type: bearer
-  bearer_token: ${GITHUB_TOKEN}
+  secret_ref: env:GITHUB_TOKEN
 ```
 
 Reference it in `langgraph.json`:
@@ -335,7 +337,13 @@ Reference it in `langgraph.json`:
 }
 ```
 
-Runners can then call `POST /internal/connectors/github/session` to get the token without storing it themselves.
+Set `GITHUB_TOKEN` on the control plane. `secret_ref` resolves it when a session
+is requested. Agent code should use the [run-bound connector helpers](connectors.md#calling-connectors-from-agent-code-run-bound),
+which supply the assignment identity and generation. This non-MCP connector
+returns its credential to the runner for the outgoing request. If a connector
+also configures `mcp.url`, the session instead points at the plane's MCP proxy;
+downstream credentials stay at the plane, where tool policy is enforced. See
+[connector credential boundaries](connectors.md#tool-allowdeny-enforcement-mcp-connectors).
 
 ### Run with production infrastructure
 

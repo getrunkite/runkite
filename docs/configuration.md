@@ -90,7 +90,14 @@
 
 `runner_kind` is the routing label for every agent in this file. It defaults to `python-langgraph`; `typescript-langgraphjs` selects the existing TypeScript fleet. The control plane accepts configured kind strings rather than a built-in enum, but a worker must poll that exact kind and understand the referenced agents. Use separate config files for different runner implementations. See [Runners](runners.md).
 
-The managed AI SDK runner in this working tree uses `runner_kind: "typescript-ai-sdk"` and must be started with `--framework ai-sdk`. Setting the kind alone does not switch the TypeScript CLI away from its default LangGraph.js backend. An explicit `--runner-kind` override must match the file. These additions require a checkout build until an updated package or image is published.
+The managed AI SDK runner (published from v0.5.8) uses
+`runner_kind: "typescript-ai-sdk"` and must be started with `--framework ai-sdk`.
+Setting the kind alone does not switch the TypeScript CLI away from its default
+LangGraph.js backend. An explicit `--runner-kind` override must match the file.
+Install the tested `ai` peer alongside the npm runner, or provide the agent code
+and dependencies in its worker image. Current v0.6.1 Python packages expose the
+managed Microsoft, OpenAI Agents, Pydantic AI and Google ADK profiles through
+their dedicated commands; see [Runners](runners.md).
 
 `allowed_tools` is per-agent and opt-in. An absent agent key applies no local name filter; a present empty list refuses every local tool. LangGraph runners reject an unlisted name observed in the stream before ToolNode side effects and emit `tool_call`, `tool_auth` with `reason_code: tool_not_allowed`, then `error` / `end`. The managed AI SDK adapter checks the name in its local `execute` wrapper before invoking the tool; it does not emit that LangGraph `tool_call` / `tool_auth` sequence. This is a runner capability, not a universal filter on arbitrary framework code. Connector `policy` grants remain separate and apply on the actual MCP/session paths. See [Trust & governance](trust-governance.md).
 

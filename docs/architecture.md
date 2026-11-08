@@ -74,9 +74,9 @@ So: Agent Protocol = “what the product client speaks.” Runner Protocol = “
 
 **Runner Protocol** (gRPC, versioned):
 - Runners pull jobs from the control plane
-- Execute agent graphs (LangGraph `astream()` / LangGraph.js `stream()` -- see Runners below)
+- Execute agents inside separate Python or TypeScript framework runtimes; see [Runners](runners.md) for profiles
 - Stream events back (values, updates, messages, lifecycle)
-- Support interrupt/resume for HITL
+- Carry interrupt/resume where the runner profile supports it. Managed SDK profiles do not inherit LangGraph native resume
 
 ### Backend support tiers
 
@@ -195,12 +195,16 @@ identity. Zero matches only an actual generation-zero assignment; it never
 inherits a later generation or disables the fence. Runner tokens also bind these
 calls to the authenticated kind.
 
-The queue check and broker publication are separate operations. Raw SSE can
-therefore briefly expose a stale event during reclaim, including a terminal
-event. Durable completion and `/wait` select only values from the accepted
-generation. Live stream consumers must reconcile the durable run before treating
-an advisory terminal as its final result. Admin Run Detail does this after SSE
-ends; the AI SDK UI bridge also checks the durable attempt before UI finish.
+The queue check and broker publication are separate operations. Raw broker
+history can therefore contain stale events during reclaim. Since v0.6.0,
+`replayRunEvents` in `internal/api/run_events.go` gates terminal delivery for run
+SSE, thread SSE and WebSocket streams through `CompleteRun`. A superseded terminal
+does not end a replacement attempt's stream. Early broker closure uses retained
+replay and the durable run record; `/wait` returns the accepted persisted output.
+Nonterminal output remains advisory, and clients must preserve attempt identities
+instead of merging old and new text. Admin reloads the durable run after SSE
+ends; the managed UI bridge additionally checks its current-turn and generation
+contract before UI finish.
 
 `internal/api/completion.go` (`BeginRunAttempt`, `CompleteRun`) and the state
 store's terminal transaction persist output and status before the lease is
