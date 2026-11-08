@@ -116,8 +116,9 @@ Current source uses Apache-2.0 and may be described as open source. Keep the
 product self-host only. The homepage links to the published v0.6.1 release,
 the first Apache-2.0 release. Published v0.6.0 retains its shipped BUSL-1.1 terms;
 changing the source license does not update old registry artifacts or tags.
-The footer preserves that distinction. Published framework rows link to their
-integration contracts.
+The footer links to the current Apache-2.0 license. Keep the historical
+distinction in licensing and release documentation. Published framework rows
+link to their integration contracts.
 
 For a presentation change, check the homepage at 320, 390, 768 and 1440 pixel
 widths, keyboard focus and Play/Pause behavior. Verify local links, SVG/JPEG
