@@ -7,6 +7,7 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 ### Security
 
 - Update the indirect `github.com/klauspost/compress` dependency to v1.20.2 to fix crafted-input zstd decoder crashes ([GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865)).
+- Update the indirect `golang.org/x/net` dependency to v0.62.0 to address the HTML parser denial-of-service advisory reported by the control-plane image scan ([GO-2026-6860](https://pkg.go.dev/vuln/GO-2026-6860)).
 
 ## [0.6.1] - 2026-10-31
 
