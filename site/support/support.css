@@ -1,9 +1,26 @@
 /* Docs handbook — same brand system as landing */
 @import url("../brand.css");
 
+.docs-skip {
+  position: fixed;
+  top: -5rem;
+  left: 1rem;
+  z-index: 100;
+  padding: .65rem 1rem;
+  color: var(--accent-2);
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+}
+
+.docs-skip:focus {
+  top: .5rem;
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+}
+
 .layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -87,6 +104,7 @@
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .topbar {
@@ -306,6 +324,9 @@
   border-radius: var(--radius);
   display: block;
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: normal;
   color: var(--ink-dim);
   margin: 1rem 0;
 }
@@ -342,9 +363,16 @@
   border-color: var(--line-strong);
 }
 
+.copy-btn[aria-busy="true"] { cursor: progress; }
+
 .copy-btn.is-copied {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.copy-btn.is-error {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 table.matrix td.pending {
@@ -354,7 +382,7 @@ table.matrix td.pending {
 
 @media (max-width: 860px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
     position: relative;
@@ -377,6 +405,7 @@ table.matrix td.pending {
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
+    scroll-padding-inline: 1rem 2rem;
     gap: 0.15rem;
     padding: 0.15rem 1.25rem 0.35rem 0;
     margin: 0 -1rem 0 0;
@@ -416,6 +445,7 @@ table.matrix td.pending {
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(8px);
   }
+  .main [id] { scroll-margin-top: 4.5rem; }
 }
 
 .try-visual {
@@ -498,12 +528,13 @@ table.matrix td.pending {
 
 .guide-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin: 1.25rem 0 1.75rem;
 }
 
 .guide-grid section {
+  min-width: 0;
   padding: 1rem 1.1rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -599,6 +630,8 @@ table.matrix td.pending {
 /* Framework matrix */
 .table-wrap {
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
   margin: 1rem 0 1.5rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -610,6 +643,7 @@ table.matrix {
   border-collapse: collapse;
   font-size: 0.88rem;
   min-width: 720px;
+  overflow-wrap: normal;
 }
 
 table.matrix th,

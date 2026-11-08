@@ -19,9 +19,10 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="../support.css?v=20260920" />
+    <link rel="stylesheet" href="../support.css?v=20261108d" />
   </head>
   <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
     <div class="layout">
       <aside class="sidebar">
         <a class="brand" href="../../">run<span>kite</span></a>
@@ -75,7 +76,7 @@
           <a href="../limitations.html">Limitations</a>
         </nav>
       </aside>
-      <main class="main">
+      <main class="main" id="main-content" tabindex="-1">
         <div class="topbar">
           <a href="./">← Blog</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
@@ -123,8 +124,11 @@
           allowed to do when it calls out.
         </p>
         <p>
-          Connectors mint short-lived sessions. Optional <code>secret_ref</code> keeps
-          long-lived Vault/K8s secrets out of agent env. Optional Postgres RLS is
+          MCP connectors keep downstream credentials at the plane and mint short-lived,
+          run-bound proxy capabilities. Non-MCP sessions can return credentials to trusted
+          runner code; those requests do not inherit MCP tool enforcement. Optional
+          <code>secret_ref</code> resolves credentials from your existing secret store.
+          Optional Postgres RLS is
           defense-in-depth under application tenant filters. Kill and break-glass are
           operator tools, not afterthoughts.
         </p>
@@ -132,9 +136,8 @@
         <h2>When to skip it</h2>
         <p>
           Still prototyping prompts on one laptop? Stay in the framework. One agent, one
-          env, no shared connectors? You do not need a plane yet. Need a fully hosted cloud
-          CP today with no self-host path? That is on the roadmap (CLOUD), self-host is
-          what ships first.
+          env, no shared connectors? You do not need a plane yet. Runkite is self-host
+          only; operating the control plane remains your responsibility.
         </p>
 
         <h2>Try it</h2>
@@ -149,6 +152,6 @@
         </p>
       </main>
     </div>
-    <script src="../docs.js?v=20260920" defer></script>
+    <script src="../docs.js?v=20261108d" defer></script>
   </body>
 </html>

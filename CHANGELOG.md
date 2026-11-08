@@ -12,9 +12,20 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 - Highlight the published vLLM Semantic Router walkthrough with an attributed
   publisher logo and a fully clickable, keyboard-accessible card. Add an
   offline public-site link and asset check before Pages publication.
-- Restore the animated managed-execution flow on the product page, with pause,
-  reduced-motion and static mobile behavior. Keep the Admin walkthrough as a
-  separate opt-in preview.
+- Restore the animated managed-execution flow on the product page, with the
+  original Agent Protocol/LangGraph client view alongside the framework runner
+  and model-call view. Include pause, reduced-motion and static mobile behavior.
+  Keep the Admin walkthrough as a separate opt-in preview.
+- Balance the homepage operations cards and improve small-screen and enlarged-
+  text reflow across the product, handbook and Engineering notes. Correct the
+  FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
+
+### Fixed
+
+- Public docs report clipboard failures honestly, retain keyboard focus and
+  continue working when browser storage is blocked. Sidebar scrolling stays
+  inside the navigation container, preserving section links. Every handbook
+  page includes a keyboard skip link.
 
 ### Security
 

@@ -37,6 +37,21 @@ unpublished governance helpers only request decisions. There is no general
 first-party Runkite client SDK yet. The public
 [integration guide](../site/support/sdk-integration.html) compares the paths.
 
+### Agent Protocol clients come first
+
+The original end-to-end LangGraph path is still a managed execution path:
+`langgraph_sdk.get_client(url=...)` calls Runkite, creates a thread, and streams a
+run. Runkite dispatches the graph to a separate LangGraph or LangGraph.js runner
+over Runner Protocol; events return through the plane to the client. See the
+[client examples](#use-today-recommended) and
+[quickstart](quickstart.md#6-use-the-sdk).
+
+Here, the LangGraph **client SDK** calls the plane. The LangGraph **framework**
+executes the graph on the runner. Newer managed framework profiles reuse that
+Thread/Run entry point; they do not replace it. A native chat UI such as AI SDK's
+`useChat` still needs the documented application-side stream bridge. The
+separate decision API is for apps that keep execution in their own process.
+
 ### Managed Vercel AI SDK (v0.5.8)
 
 The optional TypeScript backend uses `--framework ai-sdk`, runner kind

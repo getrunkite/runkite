@@ -24,10 +24,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261108b" />
-    <link rel="stylesheet" href="./execution-flow.css?v=20261108" />
+    <link rel="stylesheet" href="./landing.css?v=20261108g" />
+    <link rel="stylesheet" href="./execution-flow.css?v=20261108g" />
     <script src="./landing.js?v=20261031" defer></script>
-    <script src="./execution-flow.js?v=20261108" defer></script>
+    <script src="./execution-flow.js?v=20261108g" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -52,7 +52,7 @@
               <a class="btn btn-primary" href="./support/install.html">Get started <span aria-hidden="true">→</span></a>
               <a class="btn btn-ghost" href="#demo">Explore the demo</a>
             </div>
-            <p class="hero-footnote">One Go binary. Embedded Admin. Framework runners for managed execution.</p>
+            <p class="hero-footnote">Agent Protocol clients. LangGraph and other framework runners. One Go control plane.</p>
             <a class="hero-flow-link" href="#execution">See how Runkite works <span aria-hidden="true">↓</span></a>
           </div>
           <figure class="product-preview">
@@ -97,15 +97,83 @@
         <div class="wrap">
           <div class="execution-heading">
             <div>
-              <p class="eyebrow">Follow a managed run</p>
-              <h2 id="execution-title">Your code runs the agent.<br />Runkite operates the run.</h2>
-              <p>The app starts a run, Runkite dispatches it, and your framework runner calls the model backend you configured.</p>
+              <p class="eyebrow">Follow the complete managed path</p>
+              <h2 id="execution-title">From client to agent execution.<br />One control plane.</h2>
+              <p>Start with the original LangGraph SDK client path, then look inside the framework runner. These are two views of the same Runkite-managed system.</p>
             </div>
+          </div>
+          <div class="execution-controls" role="group" aria-label="Execution views" hidden>
+            <button class="execution-view-button" id="execution-protocol-button" type="button" aria-pressed="true" aria-controls="execution-protocol">LangGraph + Agent Protocol</button>
+            <button class="execution-view-button" id="execution-native-button" type="button" aria-pressed="false" aria-controls="execution-native">SDK runners + model calls</button>
             <button class="execution-toggle" type="button" aria-pressed="false" hidden>Play flow</button>
           </div>
-          <figure class="execution-figure" aria-labelledby="execution-title" aria-describedby="execution-caption">
+          <div class="execution-panel execution-protocol" id="execution-protocol">
+            <figure class="execution-figure" aria-labelledby="execution-protocol-title" aria-describedby="execution-protocol-caption">
+              <h3 class="execution-view-title" id="execution-protocol-title">From a LangGraph SDK client to a completed run</h3>
+              <p class="execution-view-intro">Create a thread, start a run and stream events through Runkite. The graph executes on your runner.</p>
+              <div class="execution-map protocol-map">
+                <svg class="execution-wires" viewBox="0 0 1100 390" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false">
+                  <defs>
+                    <marker id="protocol-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#b58b47" stroke-width="1.2" /></marker>
+                    <filter id="protocol-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="4" result="halo" /><feMerge><feMergeNode in="halo" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                  </defs>
+                  <path class="execution-wire protocol-wire" d="M230 77.5 H435" />
+                  <path class="execution-wire protocol-wire protocol-return" d="M435 94 H230" />
+                  <path class="execution-wire protocol-wire" d="M230 312.5 H435" />
+                  <path class="execution-wire protocol-wire" d="M665 77.5 H870" />
+                  <path class="execution-wire protocol-wire protocol-return" d="M870 94 H665" />
+                  <path class="execution-wire protocol-wire execution-wire-optional" d="M985 155 C985 220 745 195 665 235" />
+                  <path class="execution-wire protocol-wire execution-wire-optional" d="M665 312.5 H870" />
+                  <circle class="execution-particle protocol-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3s" repeatCount="indefinite" path="M230 77.5 H435" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.5s" repeatCount="indefinite" path="M435 94 H230" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.7s" repeatCount="indefinite" path="M230 312.5 H435" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.2s" repeatCount="indefinite" path="M665 77.5 H870" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.6s" repeatCount="indefinite" path="M870 94 H665" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.9s" repeatCount="indefinite" path="M985 155 C985 220 745 195 665 235" /></circle>
+                  <circle class="execution-particle protocol-particle" r="3.5" cx="0" cy="0"><animateMotion begin="indefinite" dur="3.1s" repeatCount="indefinite" path="M665 312.5 H870" /></circle>
+                </svg>
+                <span class="protocol-transport protocol-client-transport" aria-hidden="true">Agent Protocol<br />HTTP + SSE / WS</span>
+                <span class="protocol-transport protocol-runner-transport" aria-hidden="true">Runner Protocol<br />gRPC pull + events</span>
+                <div class="execution-node protocol-client">
+                  <span class="execution-node-label">Client / Your app</span>
+                  <h3>LangGraph client SDK</h3>
+                  <p><code>langgraph_sdk</code><br />or an Agent Protocol HTTP client.</p>
+                </div>
+                <div class="execution-node protocol-operators">
+                  <span class="execution-node-label">Operate / Schedule</span>
+                  <h3>Admin + Cron</h3>
+                  <p>Inspect managed runs.<br />Schedule agent work.</p>
+                </div>
+                <div class="execution-node execution-plane protocol-plane">
+                  <span class="execution-node-label">One control plane</span>
+                  <h3>Runkite</h3>
+                  <p>Threads and runs.<br />Admission and dispatch.<br />Cancellation, usage and audit.</p>
+                  <span class="protocol-gate-label">Run-bound MCP gate</span>
+                  <p>Grants, credentials and marked-call approval.</p>
+                </div>
+                <div class="execution-node protocol-runner">
+                  <span class="execution-node-label">Separate process</span>
+                  <h3>LangGraph runner</h3>
+                  <p>Python or LangGraph.js.<br />Execute the graph and report events.</p>
+                </div>
+                <div class="execution-node protocol-mcp">
+                  <span class="execution-node-label">Optional / Governed</span>
+                  <h3>Your MCP server</h3>
+                  <p>Allowed tool calls pass through the plane's proxy.</p>
+                </div>
+              </div>
+              <figcaption class="execution-caption" id="execution-protocol-caption">
+                <p><strong>Client to plane to runner, then back.</strong> The LangGraph client SDK creates runs and consumes HTTP/SSE through Runkite. The runner pulls work over gRPC and reports events; Runkite returns the stream to the client. WebSocket is another Runkite client endpoint. Admin and Cron use the same plane.</p>
+                <p>Model calls originate in the runner. Optional MCP connector calls return through Runkite's gate; direct local tools do not acquire connector policy automatically. <a href="./support/protocol.html">Explore the two protocols</a>.</p>
+              </figcaption>
+            </figure>
+          </div>
+          <div class="execution-panel execution-native" id="execution-native">
+          <figure class="execution-figure" aria-labelledby="execution-native-title" aria-describedby="execution-native-caption">
+            <h3 class="execution-view-title" id="execution-native-title">Inside the framework runner</h3>
+            <p class="execution-view-intro">LangGraph, Vercel AI SDK and managed Python SDKs keep their native agent logic in a separate runner.</p>
             <div class="execution-map">
-              <svg class="execution-wires" viewBox="0 0 1100 390" fill="none" aria-hidden="true" focusable="false">
+              <svg class="execution-wires" viewBox="0 0 1100 390" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false">
                 <defs>
                   <marker id="execution-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#b58b47" stroke-width="1.2" /></marker>
                   <filter id="execution-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="4" result="halo" /><feMerge><feMergeNode in="halo" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
@@ -152,11 +220,12 @@
                 <p>Plane proxy forwards with resolved credentials.</p>
               </div>
             </div>
-            <figcaption class="execution-caption" id="execution-caption">
-              <p><strong>Illustrative flow, not live traffic.</strong> Model calls go from the runner to its backend. Optional MCP connector calls return to Runkite's gate, which checks policy and proxies allowed requests to the configured MCP server. Ordinary local tools do not automatically pass through that gate.</p>
-              <p>This is managed execution. If your app keeps its own loop, use the separate <a href="./support/sdk-integration.html#app-owned">tool decision API</a>. It does not create a Runkite thread or run.</p>
+            <figcaption class="execution-caption" id="execution-native-caption">
+              <p><strong>Illustrated managed execution.</strong> Model calls go from the runner to its backend. Optional MCP connector calls return to Runkite's gate, which checks policy and proxies allowed requests to the configured MCP server. Ordinary local tools do not automatically pass through that gate.</p>
             </figcaption>
           </figure>
+          </div>
+          <p class="execution-boundary">Keeping the model loop in your app instead? The separate <a href="./support/sdk-integration.html#app-owned">tool decision API</a> governs individual operations without creating a Runkite thread or run.</p>
         </div>
       </section>
 
@@ -191,7 +260,7 @@
         <div class="wrap operations-grid">
           <div class="section-heading"><p class="eyebrow">The operational layer</p><h2 id="operations-title">From agent code<br />to an accountable operation.</h2><p>Use the plane's gates and durable records for shared operations across your agents.</p><a class="inline-link" href="./support/grants.html">Read the governance guide <span aria-hidden="true">↗</span></a></div>
           <div class="operation-list">
-            <article><span class="operation-number" aria-hidden="true">01</span><div><h3>Resolve connector credentials at the plane.</h3><p>Run-bound connector sessions resolve configured secrets and inject them on outgoing calls. Grants control which connector operations proceed.</p><a href="./support/connectors.html">Connector policy <span aria-hidden="true">→</span></a></div></article>
+            <article><span class="operation-number" aria-hidden="true">01</span><div><h3>Resolve connector credentials at the plane.</h3><p>Resolve configured credentials at session time. MCP calls are proxied with those credentials; non-MCP sessions can return them to your runner.</p><a href="./support/connectors.html">Connector policy <span aria-hidden="true">→</span></a></div></article>
             <article><span class="operation-number" aria-hidden="true">02</span><div><h3>Put a person at the decision point.</h3><p>Marked connector calls can wait for approval. Review the requested operation in Admin, then approve or deny it. SQL audit records the decision.</p><a href="./support/admin-guide.html">Approvals and audit <span aria-hidden="true">→</span></a></div></article>
             <article><span class="operation-number" aria-hidden="true">03</span><div><h3>Know what your runs consume.</h3><p>Track recorded tokens and estimated cost. Managed-run admission checks daily caps and configured reservations. Estimates and cancellation have explicit limits.</p><a href="./support/finops.html">Usage and spend controls <span aria-hidden="true">→</span></a></div></article>
             <article><span class="operation-number" aria-hidden="true">04</span><div><h3>Recover work without accepting stale results.</h3><p>Dispatch generations fence superseded attempts. Completion and thread state commit together, with retryable finalization before the queue lease is acknowledged.</p><a href="./support/engineering.html">How recovery works <span aria-hidden="true">→</span></a></div></article>

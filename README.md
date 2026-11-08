@@ -55,6 +55,13 @@ the enforcement and deployment contracts.
 | **What Admin sees** | Managed Threads and Runs, outputs and reported usage. | Submitted policy decisions and pending actions on SQL backends. No managed Thread or Run is created. |
 | **Controls** | Managed-run admission, cooperative cancel, usage accounting and recovery; connector policy where used. | Allow, deny or pending for the submitted tool call. Run kill switches, break-glass and spend caps do not apply. |
 
+The original LangGraph client path remains available: use
+`langgraph_sdk.get_client(url=...)` to create a thread and stream a run from
+Runkite, while a separate LangGraph runner executes the graph. See the
+[client-first walkthrough](docs/client-sdk.md#agent-protocol-clients-come-first).
+Choosing another managed runner changes the executor, while Threads and Runs
+still enter through the plane's public API.
+
 For managed chat, your app creates a Runkite run and consumes its stream. The
 [shared AI SDK UI bridge](examples/managed_ai_sdk/README.md#use-the-same-frontend-with-a-python-runner)
 keeps UI authentication, saved chat ownership, reconnect and explicit Stop in

@@ -59,16 +59,23 @@ Then open http://127.0.0.1:8765/
 
 The homepage uses the real `ui-runs.png` Admin capture, explicitly labeled as
 demo data. `landing.js` optionally swaps it for the existing walkthrough GIF
-when a visitor presses Play, and restores the still on Pause. Nothing animates
-automatically. With JavaScript disabled, all copy, navigation and the static
-product image remain available; the inactive Play control stays hidden.
+when a visitor presses Play, and restores the still on Pause. The Admin GIF does
+not play automatically. With JavaScript disabled, all copy, navigation and the
+static product image remain available; the inactive Play control stays hidden.
 
 The separate `execution-flow.css` and `execution-flow.js` restore the animated
-managed-run diagram near the top of the page, also linked from the hero. It is
-an illustration of protocol handoffs, not live telemetry. Model calls originate
-in the runner; the optional MCP branch returns through the plane's connector
-gate. App-owned decisions are a separate path. Motion starts only on desktop
-when reduced motion is not requested, pauses outside the viewport or in a
+managed-run diagram near the top of the page, also linked from the hero. Its two
+views explain the same managed execution model: the original Agent Protocol /
+LangGraph client entry, and framework runners with model calls. Keep the
+original client path discoverable before the framework profiles. View controls
+are progressive enhancement; both labeled views remain readable without
+JavaScript, and a browser without animation support must still display their
+content and navigation.
+
+The diagrams illustrate protocol handoffs, not live telemetry. Model calls
+originate in the runner; the optional MCP branch returns through the plane's
+connector gate. App-owned decisions are a separate path. Motion starts only on
+desktop when reduced motion is not requested, pauses outside the viewport or in a
 hidden tab, and has a visible Pause control. Mobile, reduced-motion and
 JavaScript-disabled views retain the labeled topology. Keep the desktop and
 mobile arrow directions consistent when changing this diagram.
@@ -104,8 +111,20 @@ integration contracts.
 For a presentation change, check the homepage at 320, 390, 768 and 1440 pixel
 widths, keyboard focus and Play/Pause behavior. Verify local links, SVG/JPEG
 dimensions and all images before allowing the existing Pages workflow to publish.
+Also inspect the entire page from hero to footer at wide and narrow widths,
+including each flow view and the operations section. Check text reflow at 200%
+browser zoom, not only page width: compare text and card bounds, look for clipped
+copy or offscreen controls, and confirm short introductions do not leave a large
+empty column beside long content. A successful link scan does not validate those
+visual conditions.
 
 Run `make check-doc-links` after editing the public HTML. The checker validates
 local links, section anchors, CSS assets and GitHub Pages path compatibility. It
 also reports pages not reached from the product, docs or engineering catalogs.
 External sites and backend routes require separate checks.
+
+Run `make test-site` for the link check and the shared UI regression tests. They
+cover copy failures, focus, optional storage, sidebar scrolling, skip targets,
+the FinOps JSON sample, view selection and animation fallback behavior. Keep
+visual checks for every page and full content bounds alongside these tests;
+unit fixtures do not verify browser layout.

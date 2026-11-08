@@ -148,7 +148,13 @@ The runner connects to the control plane's gRPC bridge and waits for jobs.
 
 ## 6. Use the SDK
 
-Install the LangGraph SDK (works with Runkite since it implements the same Agent Protocol). There is no separate Runkite client package yet — see [`docs/client-sdk.md`](client-sdk.md) for curl/OpenAPI usage and the deferred first-party SDK plan.
+Install the LangGraph client SDK to call the plane over its Agent Protocol HTTP
+and SSE surface. The LangGraph framework executes separately in the runner from
+step 5. This remains the original managed Thread/Run path, alongside the newer
+framework runner profiles. There is no separate Runkite client package yet; see
+[client integration guidance](client-sdk.md#agent-protocol-clients-come-first)
+for the client/runner distinction, curl/OpenAPI usage and the first-party SDK
+plan.
 
 ```bash
 pip install langgraph-sdk

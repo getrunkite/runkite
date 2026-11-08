@@ -10,9 +10,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./support.css?v=20260920" />
+    <link rel="stylesheet" href="./support.css?v=20261108d" />
   </head>
   <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
     <div class="layout">
       <aside class="sidebar">
         <a class="brand" href="../">run<span>kite</span></a>
@@ -66,7 +67,7 @@
           <a  href="limitations.html">Limitations</a>
         </nav>
       </aside>
-      <main class="main">
+      <main class="main" id="main-content" tabindex="-1">
         <div class="topbar">
           <a href="../">← Product</a>
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
@@ -103,7 +104,7 @@
           <li><strong>Pick runner kind</strong>: LangGraph uses the default published runners. AI SDK uses <code>typescript-ai-sdk</code>; Microsoft, OpenAI Agents, Pydantic AI and Google ADK use their <a href="./sdk-integration.html#managed-python">published optional Python profiles</a>. CrewAI, LlamaIndex, AutoGen and plain LangChain remain checkout-only. Compare the <a href="./frameworks.html">profile matrix</a> before cutover.</li>
           <li><strong>Wire config</strong>: <code>langgraph.json</code> / adapter config with stable <code>agent_id</code>s matching what clients will call.</li>
           <li><strong>Checkpoints</strong>: LangGraph: direct Postgres or HTTP opaque proxy. Adapters (CrewAI / LlamaIndex / AutoGen / LangChain): set <code>RUNKITE_HTTP_URL</code> so the generic worker load/saves opaque message transcripts, clients can send only the new turn.</li>
-          <li><strong>Connector secrets</strong>: configure <code>secret_ref</code> with <code>env:</code>, <code>file:</code> or <code>vault:</code>. Sessions resolve these references and the plane injects credentials on outgoing connector calls. Use actual connector gates for governed external access.</li>
+          <li><strong>Connector secrets</strong>: configure <code>secret_ref</code> with <code>env:</code>, <code>file:</code> or <code>vault:</code>. MCP proxy calls resolve these references and inject credentials at the plane. Non-MCP sessions can return credentials to trusted runner code; their downstream requests do not inherit MCP tool enforcement.</li>
           <li><strong>Cutover</strong>: run shadow traffic on the plane; compare outputs; switch clients to plane base URL + API keys.</li>
         </ol>
 
@@ -127,6 +128,6 @@
 
       </main>
     </div>
-    <script src="./docs.js?v=20260920" defer></script>
+    <script src="./docs.js?v=20261108d" defer></script>
   </body>
 </html>

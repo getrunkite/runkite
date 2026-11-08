@@ -1,6 +1,7 @@
 /* Docs handbook helpers: copy blocks, keep sidebar scroll, pending badges. */
 (function () {
   var SIDEBAR_KEY = "runkite-docs-nav-scroll";
+  var NAV_HORIZONTAL_KEY = SIDEBAR_KEY + "-x";
 
   function ready(fn) {
     if (document.readyState === "loading") {
@@ -25,69 +26,131 @@
       btn.className = "copy-btn";
       btn.textContent = "Copy";
       btn.setAttribute("aria-label", "Copy code");
+      btn.setAttribute("aria-live", "polite");
       wrap.appendChild(btn);
 
       btn.addEventListener("click", function (ev) {
         var target = ev.currentTarget;
+        if (target.copyPending) return;
         var code = target.parentElement.querySelector("pre");
         var text = code ? code.textContent : "";
+        clearTimeout(target.copyReset);
+        target.copyPending = true;
+        target.setAttribute("aria-busy", "true");
+        target.textContent = "Copying";
+        target.setAttribute("aria-label", "Copying code");
+        target.classList.remove("is-copied", "is-error");
+        target.removeAttribute("title");
         function ok() {
+          target.copyPending = false;
+          target.removeAttribute("aria-busy");
           target.textContent = "Copied";
+          target.setAttribute("aria-label", "Copied code");
           target.classList.add("is-copied");
-          setTimeout(function () {
+          target.copyReset = setTimeout(function () {
             target.textContent = "Copy";
+            target.setAttribute("aria-label", "Copy code");
             target.classList.remove("is-copied");
           }, 1400);
         }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(ok).catch(function () {
-            fallbackCopy(text, ok);
-          });
-        } else {
-          fallbackCopy(text, ok);
+        function failed() {
+          target.copyPending = false;
+          target.removeAttribute("aria-busy");
+          target.textContent = "Copy failed";
+          target.setAttribute("aria-label", "Copy failed. Select and copy the code manually.");
+          target.setAttribute("title", "Select and copy the code manually, or try again.");
+          target.classList.add("is-error");
+        }
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok).catch(function () {
+              fallbackCopy(text, ok, failed);
+            });
+          } else {
+            fallbackCopy(text, ok, failed);
+          }
+        } catch (_) {
+          fallbackCopy(text, ok, failed);
         }
       });
     }
   }
 
-  function fallbackCopy(text, ok) {
+  function fallbackCopy(text, ok, failed) {
+    var previousFocus = document.activeElement;
     var ta = document.createElement("textarea");
     ta.value = text;
     ta.setAttribute("readonly", "");
     ta.style.position = "fixed";
     ta.style.left = "-9999px";
+    ta.style.top = "0";
     document.body.appendChild(ta);
-    ta.select();
+    var copied = false;
     try {
-      document.execCommand("copy");
-      ok();
+      ta.focus({ preventScroll: true });
+      ta.select();
+      copied = document.execCommand("copy") === true;
     } catch (_) {}
     document.body.removeChild(ta);
+    if (previousFocus && previousFocus.focus) previousFocus.focus({ preventScroll: true });
+    if (copied) ok();
+    else failed();
+  }
+
+  function savedOffset(key) {
+    try {
+      var value = parseFloat(sessionStorage.getItem(key));
+      return isFinite(value) ? Math.max(0, value) : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function saveOffset(key, value) {
+    try {
+      sessionStorage.setItem(key, String(value));
+    } catch (_) {
+      // Navigation and other helpers do not depend on browser storage.
+    }
   }
 
   function keepSidebarScroll() {
     var sidebar = document.querySelector(".sidebar");
     if (!sidebar) return;
 
-    var saved = sessionStorage.getItem(SIDEBAR_KEY);
-    if (saved !== null) {
-      sidebar.scrollTop = parseInt(saved, 10) || 0;
-    }
-
+    var nav = sidebar.querySelector("nav");
+    sidebar.scrollTop = savedOffset(SIDEBAR_KEY);
+    if (nav) nav.scrollLeft = savedOffset(NAV_HORIZONTAL_KEY);
     var active = sidebar.querySelector("a.active");
-    if (active) {
-      // Keep the current item in view without yanking the list to the top.
-      try {
-        active.scrollIntoView({ block: "nearest", inline: "nearest" });
-      } catch (_) {
-        /* older browsers */
+
+    function revealActive() {
+      if (!active) return;
+      // Scroll only the navigation containers. Scrolling the link's ancestors
+      // would also move the document away from a requested section anchor.
+      var box = active.getBoundingClientRect();
+      if (sidebar.scrollHeight > sidebar.clientHeight) {
+        var sideBox = sidebar.getBoundingClientRect();
+        if (box.top < sideBox.top) sidebar.scrollTop += box.top - sideBox.top;
+        else if (box.bottom > sideBox.bottom) sidebar.scrollTop += box.bottom - sideBox.bottom;
+      }
+      if (nav && nav.scrollWidth > nav.clientWidth) {
+        var navBox = nav.getBoundingClientRect();
+        var style = window.getComputedStyle(nav);
+        var left = navBox.left + (parseFloat(style.scrollPaddingLeft) || 0);
+        var right = navBox.right - (parseFloat(style.scrollPaddingRight) || 0);
+        if (box.left < left) nav.scrollLeft += box.left - left;
+        else if (box.right > right) nav.scrollLeft += box.right - right;
       }
     }
+    revealActive();
+    window.addEventListener("resize", revealActive);
 
     function persist() {
-      sessionStorage.setItem(SIDEBAR_KEY, String(sidebar.scrollTop));
+      saveOffset(SIDEBAR_KEY, sidebar.scrollTop);
+      if (nav) saveOffset(NAV_HORIZONTAL_KEY, nav.scrollLeft);
     }
     sidebar.addEventListener("scroll", persist, { passive: true });
+    if (nav) nav.addEventListener("scroll", persist, { passive: true });
     var links = sidebar.querySelectorAll("a[href]");
     for (var i = 0; i < links.length; i++) {
       links[i].addEventListener("click", persist);
@@ -158,8 +221,8 @@
 
   ready(function () {
     enhanceCodeBlocks();
-    keepSidebarScroll();
     markPendingCells();
     injectLiveAdmin();
+    keepSidebarScroll();
   });
 })();
