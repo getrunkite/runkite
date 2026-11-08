@@ -33,6 +33,8 @@ import httpx
 ROOT = Path(__file__).resolve().parents[3]
 ADAPTER = Path(__file__).resolve().parent
 TERMINAL = {"success", "error", "timeout", "interrupted"}
+# A short key such as "e2e-a" can occur inside a legitimate UUID response header.
+BRIDGE_API_KEY = "runkite-e2e-bridge-synthetic-api-key"
 
 
 def wait_for(description: str, operation: Callable[[], Any], timeout: float = 25.0) -> Any:
@@ -153,6 +155,11 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                         "keys": {
                             "e2e-admin": {"name": "admin", "permissions": ["admin"]},
                             "e2e-a": {"name": "a", "tenant_id": self.tenant_a, "permissions": ["read", "write"]},
+                            BRIDGE_API_KEY: {
+                                "name": "a",
+                                "tenant_id": self.tenant_a,
+                                "permissions": ["read", "write"],
+                            },
                             "e2e-b": {"name": "b", "tenant_id": self.tenant_b, "permissions": ["read", "write"]},
                         },
                     },
@@ -487,7 +494,7 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             self.assertEqual(final["output"][self.metadata_key]["generation"], generation)
             configuration = {
                 "baseUrl": self.base,
-                "apiKey": "e2e-a",
+                "apiKey": BRIDGE_API_KEY,
                 "profile": self.install_extra,
                 "agentId": self.agent,
                 "slowAgentId": self.slow,
