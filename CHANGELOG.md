@@ -6,6 +6,9 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Documentation
 
+- Serve the public product website and handbook from GitHub Pages through the
+  canonical domain. Preserve the public Admin URL as an availability page while
+  the demo backend is offline, with local setup and future restoration guidance.
 - Refresh published SDK availability and recovery guidance across Markdown and
   the public handbook. Framework links open their contracts, and Engineering
   has consistent navigation with desktop and mobile topic menus.

@@ -97,7 +97,7 @@ function handbook(options = {}) {
     document,
     window: { addEventListener() {}, getComputedStyle: () => ({ scrollPaddingLeft: "16px", scrollPaddingRight: "32px" }) },
     navigator: { clipboard: options.clipboard ? { writeText: (text) => { state.copied.push(text); return options.clipboard(text); } } : undefined },
-    location: { hostname: "getrunkite.com", hash: "#managed" },
+    location: { hostname: options.hostname || "getrunkite.com", hash: "#managed" },
     setTimeout: (fn) => { state.timers.set(++timerId, fn); return timerId; },
     clearTimeout: (id) => state.timers.delete(id),
   };
@@ -238,4 +238,19 @@ test("the FinOps configuration example is copyable JSON in a bounded code block"
   const config = JSON.parse(sample[1]);
   assert.ok(config.finops.pricebook);
   assert.ok(config.finops.budgets.tenants);
+});
+
+test("Admin links retain their labels and URLs while exposing static availability", () => {
+  for (const hostname of ["getrunkite.com", "getrunkite.github.io"]) {
+    const page = handbook({ hostname });
+    const expected = hostname === "getrunkite.com" ? "/admin/" : "https://getrunkite.com/admin/";
+    for (const parent of [page.topbar, page.nav]) {
+      const link = parent.querySelector("[data-live-admin]");
+      assert.equal(link.textContent, "Live Admin");
+      assert.equal(link.getAttribute("href"), expected);
+      assert.equal(link.getAttribute("data-demo-offline"), "");
+      assert.equal(link.getAttribute("title"), "Shared live demo currently unavailable; local self-hosting is available.");
+      assert.match(link.getAttribute("aria-label"), /^Live Admin \(shared live demo currently unavailable/);
+    }
+  }
 });

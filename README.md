@@ -17,7 +17,7 @@ tool calls. Your framework still owns the model loop.
 Current source and v0.6.1+ downloads are Apache-2.0. Published v0.6.0 downloads retain BUSL-1.1.
 See [license scope](#license).
 
-**[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Try the sandbox](https://getrunkite.com/support/try.html)**
+**[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Demo guide](https://getrunkite.com/support/try.html)**
 
 <p align="center">
   <img src="docs/assets/runkite-overview.svg" alt="Two ways to use one Runkite plane: managed agents create Threads and Runs through runners; app-owned loops request individual tool decisions without creating managed runs." width="1120" />
@@ -102,9 +102,10 @@ Semantic Router selects among configured model backends.
 
 ## Quick start
 
-Try the [public sandbox](https://getrunkite.com/support/try.html) with its shared
-demo key, or run the local LangGraph example below. The sandbox uses fake agents;
-you operate your own production plane.
+Run the local LangGraph example below, or follow the
+[demo guide](https://getrunkite.com/support/try.html). The public demo Admin is
+currently offline; the website and recorded walkthrough remain available.
+You operate your own control plane.
 
 From a checkout, with Go and Python installed:
 
@@ -133,14 +134,15 @@ runner tokens and TLS. [Deployment](docs/deployment.md) and the
 ### See the real Admin
 
 <p align="center">
-  <a href="https://getrunkite.com/admin/">
-    <img src="docs/assets/admin-walkthrough.gif" alt="Real Runkite Admin walkthrough showing agents, runs, connectors, approvals and audit." width="920" loading="lazy" />
+  <a href="https://getrunkite.com/admin/" title="Public demo Admin is currently offline. Open for availability and local setup.">
+    <img src="docs/assets/admin-walkthrough.gif" alt="Recorded Runkite Admin walkthrough with sample agents, runs, connectors, approvals and audit." width="920" loading="lazy" />
   </a>
 </p>
 
 The Admin UI ships inside the control-plane binary. It needs no separate frontend
-server. [Open the sandbox](https://getrunkite.com/support/try.html) or read the
-[Admin guide](docs/admin.md).
+server. The [public Admin link](https://getrunkite.com/admin/) is retained while
+the demo is offline. Start your own instance with the quickstart above or read
+the [Admin guide](docs/admin.md).
 
 ## Architecture
 

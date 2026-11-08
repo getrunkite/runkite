@@ -175,6 +175,12 @@
     return "/admin/";
   }
 
+  function markDemoOffline(link) {
+    link.setAttribute("data-demo-offline", "");
+    link.setAttribute("title", "Shared live demo currently unavailable; local self-hosting is available.");
+    link.setAttribute("aria-label", link.textContent + " (shared live demo currently unavailable; local self-hosting is available)");
+  }
+
   function injectLiveAdmin() {
     var href = adminHref();
     if (!document.getElementById("rk-live-admin-style")) {
@@ -192,6 +198,7 @@
       top.href = href;
       top.setAttribute("data-live-admin", "1");
       top.textContent = "Live Admin";
+      markDemoOffline(top);
       var product = null;
       var links = topbar.querySelectorAll("a[href]");
       for (var i = 0; i < links.length; i++) {
@@ -215,6 +222,7 @@
       side.setAttribute("data-live-admin", "1");
       side.className = "nav-live-admin";
       side.textContent = "Live Admin";
+      markDemoOffline(side);
       nav.insertBefore(side, nav.firstChild);
     }
   }

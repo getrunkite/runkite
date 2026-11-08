@@ -63,7 +63,11 @@ def check(site):
                 base = source.parent
             first = path.lstrip('/').split('/', 1)[0]
             if (url.netloc or path.startswith('/')) and first in BACKEND_ROUTES:
-                continue
+                # Pages serves the public demo's availability page. Deeper
+                # Admin paths and API routes still belong to a real backend.
+                static_admin = path.strip('/') in ('admin', 'admin/index.html') and (site / 'admin/index.html').is_file()
+                if not static_admin:
+                    continue
             error = None
             if not url.netloc and path.startswith('/'):
                 error = 'root-relative static URL breaks GitHub Pages; use a relative URL'

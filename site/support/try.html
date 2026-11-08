@@ -80,14 +80,15 @@
         </div>
 
         <h1 class="one-line">Compose → refund → Pending</h1>
-        <p class="lede">Public Admin first. Cause a hold, approve it, screenshot the audit row.</p>
+        <p class="lede">Run the demo locally, cause a hold, approve it and inspect the audit row. The recorded Admin preview is also available.</p>
 
         <div class="callout" style="border:1px solid rgba(244,244,245,0.18);padding:1rem 1.15rem;margin:0 0 1.75rem;background:#121214">
-          <p><strong>Live sandbox</strong>:
-            <a href="https://getrunkite.com/admin/">getrunkite.com/admin</a>
-            is a running Runkite process (Postgres, Redis, runners), not a mock.
-            Shared key is on the product page. Fake agents only. Compose below is a local
-            replica, not the production shape. Production: <a href="./install.html">Install</a>.</p>
+          <p><strong>Public sandbox availability</strong>:
+            <a href="https://getrunkite.com/admin/" data-demo-offline title="Shared live demo currently unavailable; local self-hosting is available." aria-label="getrunkite.com/admin (shared live demo currently unavailable; local self-hosting is available)">getrunkite.com/admin</a>
+            is currently unavailable. Watch the <a href="../#product-image">recorded preview</a>
+            or follow the local Compose walkthrough below. This status applies to the
+            shared public demo; your own self-hosted plane includes Admin. The local
+            demo uses fake agents. For production, see <a href="./install.html">Install</a>.</p>
         </div>
 
         <div class="try-visual">
@@ -104,7 +105,7 @@
         </div>
 
 
-        <h2>1. Bring the plane up</h2>
+        <h2 id="local-compose">1. Bring the local plane up</h2>
         <pre class="mono-block">git clone https://github.com/getrunkite/runkite && cd runkite
 docker compose -f docker-compose.dev.yml up -d --build
 curl -sf http://localhost:2026/readyz && echo OK
@@ -159,6 +160,6 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
 
       </main>
     </div>
-      <script src="./docs.js?v=20261108d" defer></script>
+      <script src="./docs.js?v=20261108-status" defer></script>
   </body>
 </html>
