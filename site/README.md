@@ -69,10 +69,11 @@ Then open http://127.0.0.1:8765/
 ## Presentation assets and behavior
 
 The homepage uses the real `ui-runs.png` Admin capture, explicitly labeled as
-demo data. `landing.js` optionally swaps it for the existing walkthrough GIF
-when a visitor presses Play, and restores the still on Pause. The Admin GIF does
-not play automatically. With JavaScript disabled, all copy, navigation and the
-static product image remain available; the inactive Play control stays hidden.
+demo data. `landing.js` starts the existing walkthrough GIF automatically unless
+the visitor requests reduced motion. Pause restores the still; Play restarts the
+walkthrough. A load failure restores the still and marks the control unavailable.
+With JavaScript disabled, all copy, navigation and the static product image
+remain available; the inactive Play control stays hidden.
 
 The separate `execution-flow.css` and `execution-flow.js` restore the animated
 managed-run diagram near the top of the page, also linked from the hero. Its two
@@ -85,9 +86,13 @@ content and navigation.
 
 The diagrams illustrate protocol handoffs, not live telemetry. Model calls
 originate in the runner; the optional MCP branch returns through the plane's
-connector gate. App-owned decisions are a separate path. Motion starts only on
-desktop when reduced motion is not requested, pauses outside the viewport or in a
-hidden tab, and has a visible Pause control. Mobile, reduced-motion and
+connector gate. App-owned decisions are a separate path. Both views start in
+play mode unless reduced motion is requested. Desktop uses SVG particles;
+mobile pulses its existing directional arrows while keeping desktop SVG paths
+hidden. Only the selected, visible flow animates. Offscreen and hidden-tab
+suspension preserve play intent; the control continues to offer Pause. A manual
+Pause survives view and viewport changes. An explicit Play can override the
+initial reduced-motion default, while enabling reduced motion pauses playback.
 JavaScript-disabled views retain the labeled topology. Keep the desktop and
 mobile arrow directions consistent when changing this diagram.
 
