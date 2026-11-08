@@ -13,7 +13,7 @@
     ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: true };
   var desktop = typeof window.matchMedia === "function"
     ? window.matchMedia("(min-width: 1001px)") : { matches: false };
-  var requested = !reduced.matches && desktop.matches;
+  var requested = !reduced.matches;
   var inView = !window.IntersectionObserver;
   var current = 0;
   var motion = panels.map(function (panel) {
@@ -37,15 +37,18 @@
 
   function update() {
     var active = motion[current];
-    var playing = requested && active.capable && desktop.matches && inView && !document.hidden;
+    var capable = !desktop.matches || active.capable;
+    var playing = requested && capable && inView && !document.hidden;
     motion.forEach(function (entry, index) {
+      panels[index].setAttribute("data-execution-playing", String(playing && index === current));
       if (!entry.capable) return;
-      if (playing && index === current) entry.svg.unpauseAnimations();
+      if (playing && desktop.matches && index === current) entry.svg.unpauseAnimations();
       else entry.svg.pauseAnimations();
     });
-    toggle.hidden = !active.capable || !desktop.matches;
-    toggle.textContent = playing ? "Pause flow" : "Play flow";
-    toggle.setAttribute("aria-pressed", String(playing));
+    toggle.hidden = !capable;
+    // Visibility only suspends work; the control always represents play intent.
+    toggle.textContent = requested ? "Pause flow" : "Play flow";
+    toggle.setAttribute("aria-pressed", String(requested));
   }
 
   function select(index) {

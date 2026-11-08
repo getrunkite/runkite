@@ -50,8 +50,12 @@
 .execution-flow .execution-caption strong { font-weight: 500; color: #ddd3c1; }
 .execution-flow .execution-caption a, .execution-flow .execution-boundary a { color: #f4c46d; text-underline-offset: 3px; }
 .execution-flow .execution-boundary { max-width: 58rem; margin: 1.25rem 0 0; color: #aaa69f; font-size: .82rem; line-height: 1.8; }
+@keyframes execution-arrow-pulse {
+  0%, 100% { opacity: .65; }
+  50% { opacity: 1; }
+}
 @media (max-width: 1000px) {
-  .execution-flow .execution-toggle { display: none; }
+  .execution-flow .execution-panel[data-execution-playing="true"] .execution-node::after { animation: execution-arrow-pulse 1.8s ease-in-out infinite; }
   .execution-flow .execution-map { grid-template-columns: 1fr 1fr; grid-template-rows: auto; gap: 2.2rem .8rem; aspect-ratio: auto; min-height: 0; }
   .execution-flow .execution-wires, .execution-flow .protocol-transport { display: none; }
   .execution-flow .execution-node { position: relative; min-height: 8.5rem; padding: 1rem; }

@@ -20,8 +20,9 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   offline public-site link and asset check before Pages publication.
 - Restore the animated managed-execution flow on the product page, with the
   original Agent Protocol/LangGraph client view alongside the framework runner
-  and model-call view. Include pause, reduced-motion and static mobile behavior.
-  Keep the Admin walkthrough as a separate opt-in preview.
+  and model-call view. The Admin walkthrough and both flow views start in play
+  mode by default, with Pause controls and reduced-motion preferences respected.
+  Mobile flows animate their directional arrows while desktop uses SVG motion.
 - Balance the homepage operations cards and improve small-screen and enlarged-
   text reflow across the product, handbook and Engineering notes. Correct the
   FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
