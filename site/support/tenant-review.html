@@ -79,6 +79,7 @@
         <h1>Tenant review</h1>
         <p class="lede">Give a reviewer access to their team's operations without making them a deployment-wide administrator.</p>
         <p class="note"><strong>Availability:</strong> unreleased source after v0.6.1. Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+        <p>Reviewer permissions are implemented in that source. Upgrading every HTTP replica is a rollout requirement: old binaries cannot recognize the new role strings. API-key/JWT/webhook providers already default to strict permissions unless explicitly overridden; the Helm example also sets them to true.</p>
 
         <h2 id="scope">Start with the right access</h2>
         <p>Global Admin remains the place for deployment-wide operations. A tenant reviewer uses the separate <code>/admin/review/</code> workspace. Its API takes the tenant from verified authentication, not an editable filter, URL or request header.</p>
@@ -136,6 +137,11 @@
           <li><strong>501:</strong> use a SQL state backend, or implement the optional isolated Review-session capability if you supply a custom session store.</li>
         </ul>
         <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Two-person/no-self-approval rules and revision-pinned tool approvals are not part of this slice.</p>
+
+        <h2 id="qualification">Test the multi-replica boundary locally</h2>
+        <p>From a source checkout with Go, Docker and Compose, run <code>make test-review-ha</code>. It creates disposable Postgres/Redis services and starts two real control-plane processes with strict authentication and a synthetic MCP target. It checks cross-replica sessions, tenant/role isolation, competing approval and dispatch, process loss, retained evidence and logout. It uses no paid model or cloud account.</p>
+        <p>For bounded repetition, run <code>RUNKITE_TEST_REVIEW_REPETITIONS=3 make test-review-ha</code> (1 through 20). Each cycle normally takes about a minute. The printed output directory contains a JSON report and sanitized process/fixture logs. Each database uses a generated per-run password; retained configuration contains its reference. The wrapper removes only its own infrastructure and ignores inherited database URLs and repository <code>.env</code> settings.</p>
+        <p>Use an isolated CI worker or firewall-protected workstation. Only database mappings are loopback-bound; the current CLI's HTTP/gRPC listeners can accept connections on other interfaces. This finite test does not qualify live model providers, database failover, arbitrary-code sandboxing or a long cloud soak.</p>
 
         <h2 id="reference">API and engineering</h2>
         <p>Review uses <code>/review-api/session</code>, <code>/review-api/pending-actions</code> (list, detail, approve and deny), and <code>/review-api/connector-actions</code> (list and metadata detail). Lists are bounded to 100 records per page and use <code>X-Next-Cursor</code>. Detail and mutations stay tenant scoped. There is no general Audit, Threads, Runs, grant or secret-management API here.</p>

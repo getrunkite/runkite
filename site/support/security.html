@@ -84,7 +84,7 @@
         <h1>Security</h1>
         <p class="lede">
           Four layers, stacked: who can talk to the plane at all, who can run which agent,
-          which connectors an agent may call, and a durable record of every decision. This
+          which connectors an agent may call, and records of policy decisions. This
           page explains each layer and, importantly, where the edges of what the plane can
           see and enforce actually are.
         </p>
@@ -123,23 +123,45 @@
         <p>
           This is the connector policy layer, covered in full on
           <a href="connectors.html">Connectors &amp; HITL</a>. Short version: a connector
-          call with a configured policy section is denied unless a matching grant exists (static in config, or created live in
-          Admin), and you can force specific tools to require human approval regardless of
-          the grant. Every decision, allow, deny, or pending, gets written to a durable
-          audit trail on SQL backends, searchable from
+          call under default-deny policy needs a matching grant (static in config, or created live in
+          Admin). Operators can explicitly configure a different default effect. You can
+          force specific tools to require human approval regardless of
+          the grant. Policy auditing writes decisions to SQL, searchable from
           <a href="admin-guide.html#14-audit">Admin → Audit</a>.
+          Best-effort auditing does not guarantee a saved row during a storage failure.
+          Current unreleased source adds <code>policy.audit_required</code> to require
+          durable decisions before protected access. Published v0.6.1 does not implement
+          that mode. See <a href="connector-actions.html">audit and action evidence</a>.
         </p>
 
-        <h2>Fail-closed by default</h2>
+        <h2>Where fail-closed applies</h2>
         <p>
-          If a security-relevant check can't be evaluated cleanly, a database write for an
-          audit record fails, a required config value is missing, Redis is unreachable when
-          a shared session lookup needs it, the plane's default behavior is to deny, not to
-          quietly let the request through. In production mode, <code>serve</code> refuses to
+          Authentication, permissions and shared session lookup failures refuse access.
+          A failed policy audit write blocks protected access only when the unreleased
+          required-audit mode is configured; best-effort audit does not supply that
+          guarantee. In production mode, <code>serve</code> refuses to
           even start with an insecure combination (e.g. runner tokens configured but no
           matching tenant allow-list) rather than booting into a state that looks secure but
           isn't. See <a href="./decisions/why-fail-closed.html">Why fail-closed</a> for the
           reasoning.
+        </p>
+
+        <h2 id="execution-containment">Process isolation is a separate boundary</h2>
+        <p>
+          Connector policy and runner tool allowlists do not sandbox arbitrary code.
+          Direct file access and network calls outside those hooks remain the operator's
+          responsibility. The Helm defaults already use a non-root identity, dropped
+          capabilities and disabled privilege escalation. The chart's optional network
+          policies restrict ingress, not runner egress. Use an external execution sandbox
+          when untrusted code needs stronger confinement.
+        </p>
+        <p>
+          OpenShell is a candidate for that boundary, not an available Runkite integration.
+          Putting the whole worker in a sandbox does not by itself hide its runner token
+          from in-process agent code. The
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md#execution-containment-is-an-external-boundary">execution-boundary rationale</a>
+          describes the trusted worker, isolated agent and evidence needed before we can
+          claim compatibility.
         </p>
 
         <p>

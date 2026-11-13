@@ -139,6 +139,51 @@ Frontend tests cover session validation, expiry, request bounds, stale-data
 suppression, fixed API base and role-limited mutations. Browser qualification uses
 synthetic evidence and credentials, with no live model/provider data.
 
+### Qualify the assembled multi-replica path
+
+The existing `scripts/smoke-multi.sh` and `bench/soak` cover multi-process managed
+execution and recovery. Their Compose profile deliberately has no client auth.
+The new permissions needed a separate test of authenticated `serve` processes,
+shared Redis sessions and atomic SQL authority across process boundaries.
+
+`make test-review-ha` runs `test/e2e/reviewha` through
+`scripts/test-review-ha.sh`. It creates a uniquely named disposable Postgres/Redis
+pair, starts two actual binaries and uses a deterministic MCP fixture. The
+fixture seeds an active run/attempt/queue assignment; it does not run an SDK,
+model or managed admission. Production middleware, configuration, session
+storage, proxy dispatch and the real action reconciler remain on the path.
+
+The checks cover cookies and connector capabilities crossing replicas,
+read/approve projections, tenant isolation, CSRF and Admin separation. Competing
+approval and approved-dispatch requests must have one winner. Both replicas
+must expose the same durable metadata without fixture credential, argument,
+RPC-ID or response-body sentinels. After a target accepts an operation, the test
+kills one process and waits for the surviving process's real reconciler to mark
+the unconfirmed intent unknown without replay. Restart preserves evidence and
+the Review session. Logout through the other peer invalidates that cookie.
+
+Use `RUNKITE_TEST_REVIEW_REPETITIONS=3 make test-review-ha` for bounded repetition
+(1 through 20). Each repetition includes a kill/reconcile/restart cycle, normally
+about one minute. The wrapper prints an output directory containing
+`review-ha-report.json`, sanitized process logs and fixture startup/cleanup logs.
+The `review-ha` CI job runs one cycle independently of the SDK matrix. Report or
+log persistence failures fail the test.
+
+The wrapper never consumes inherited database URLs or a repository `.env` and
+removes only its own Compose project. Each invocation generates a fresh database
+password and retains its configuration reference rather than its value.
+Direct test invocation refuses non-loopback
+database URLs, a database without the dedicated prefix, a pre-existing public
+schema or populated Redis. It never truncates or flushes shared infrastructure.
+Only database container mappings are loopback-bound. The current CLI uses
+`:port` HTTP/gRPC listeners, so run this test on a firewall-protected workstation
+or isolated CI worker. Random per-invocation fixture keys are not production
+credentials, and this harness is not itself a sandbox.
+
+This closes a reproducible two-process qualification gap. It does not establish
+database/Redis failover, long-duration or cloud soak results, live-provider
+compatibility, throughput capacity, or safety for hostile in-process agent code.
+
 This is not general per-resource RBAC or a per-user identity directory. Review
 is flat-tenant scoped. It adds no two-person/no-self-approval rule, target/tool
 revision pinning, dynamic Vault leases, reliable evidence export outbox or

@@ -1,0 +1,29 @@
+name: Review HA
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-ha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test qualification process cleanup
+        run: python3 -m unittest discover -s scripts -p test_review_ha_supervisor.py
+
+      - name: Review and connector evidence across two real replicas
+        env:
+          RUNKITE_TEST_REVIEW_OUTPUT: ${{ runner.temp }}/runkite-review-ha
+        run: make test-review-ha

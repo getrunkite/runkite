@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add reproducible two-process Review/action-evidence qualification on disposable
+  Postgres/Redis, with cross-replica auth/approval races, process-loss recovery,
+  bounded repetition and a separate CI job. Use synthetic assignments and MCP
+  effects without model/provider calls.
+
 - Add a separate tenant Review workspace/API with explicit primary identity,
   tenant and `governance:read` / `governance:approve`. Keep global Admin unchanged.
   Scope pending reads/mutations in SQL, omit arguments for read-only reviewers,
@@ -26,6 +31,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   v0.6.1, not a change to previously published artifacts.
 
 ### Documentation
+
+- Distinguish implemented reviewer permissions from operator rollout requirements.
+  Document reproducible HA qualification, the external execution-containment
+  boundary and the proposed OpenShell integration. Correct the support guide's
+  best-effort versus required-audit guarantees; no sandbox integration is claimed.
 
 - Use consistent homepage link cues and keyboard feedback. Add section links to
   Engineering articles and connect public guides to the client walkthrough and

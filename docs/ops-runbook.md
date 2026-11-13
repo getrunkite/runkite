@@ -90,6 +90,21 @@ login, fixed expiry, 403/404/409/501 and recovery. The
 [engineering note](internal/tenant-scoped-review.md) records scope, session
 purpose, SQL predicates and regression rationale.
 
+The replica upgrade is an operator rollout step, not a missing permission
+implementation. Configured API-key/JWT/webhook providers already default to
+strict permissions unless explicitly overridden, and the Helm example sets it
+to true. A new binary cannot teach an older replica the new role vocabulary.
+
+For a disposable local qualification, run `make test-review-ha`. It starts two
+real strict-auth control planes sharing its own Postgres/Redis pair, then checks
+cross-replica sessions, tenant isolation, approval/dispatch races and process-loss
+reconciliation. Use `RUNKITE_TEST_REVIEW_REPETITIONS=3` for bounded repetition.
+The target uses synthetic credentials and MCP effects, makes no model-provider
+calls, prints its evidence directory and cleans up its own infrastructure.
+Use an isolated CI worker or firewall-protected workstation: database mappings
+are loopback-only, but the CLI's HTTP/gRPC listeners follow their existing
+all-interface binding. This is a finite qualification, not a long cloud soak.
+
 ## Hardening upgrade
 
 **MySQL operators:** state schema version 17 changes identity/security columns to

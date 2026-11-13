@@ -115,6 +115,54 @@ Optional per-graph allowlist in `langgraph.json`:
 
 `runkite sim` drives the same connector policy path with `X-Runkite-Simulation`. FinOps holds and UTC-day run caps skip; concurrent admission, rate limits, kill, and HITL still apply. Not a sandbox. See [Fixture replay](sim.md).
 
+## Execution containment is an external boundary
+
+An operator running shell, browser or generated-code tools on untrusted input
+needs controls below an SDK callback. A tool can open a file or make a direct
+network request without calling a Runkite connector. Existing runner allowlists
+and connector approvals do not confine that process. The Helm chart already
+defaults to a non-root identity, disabled privilege escalation and dropped
+capabilities in `deploy/helm/runkite/values.yaml`. Its optional network policies
+are disabled by default and restrict ingress, not runner egress. Its root
+filesystem is writable by default.
+Those controls are useful but do not establish an arbitrary-code sandbox.
+
+OpenShell is a possible external execution provider, not an implemented Runkite
+integration. Its [architecture](https://docs.nvidia.com/openshell/v0.1.8/about/architecture)
+separates a trusted supervisor from the workload and enforces filesystem,
+process and outbound-network restrictions. Its
+[security guide](https://docs.nvidia.com/openshell/v0.1.8/security/best-practices)
+distinguishes enforcement from audit-only policy and documents required kernel
+and CNI support. These references were reviewed against v0.1.8 on 2026-11-13.
+Configured policy is not proof that the underlying platform enforced it.
+
+Wrapping today's entire runner in a sandbox would not automatically hide its
+Runkite runner token from agent code in the same process. Both
+`python/runkite_runner/generic_worker.py` and
+`typescript/runkite-runner/src/worker.ts` authenticate the worker and execute
+adapters in that process. A stronger integration needs a trusted worker outside
+the sandbox, a sandboxed agent process, and a narrow bridge for input, events,
+checkpoints and cancellation. It is a new execution boundary, not a deployment
+flag that makes existing adapters safe for hostile code.
+
+For that possible integration, Runkite would keep managed admission, assignment,
+business-tool approvals, usage and durable action evidence. OpenShell would own
+sandbox lifecycle and OS/network confinement. An allow at one boundary must not
+override a deny at the other. Keep each credential in its chosen secret system;
+do not copy connector secrets into a second provider database or expose the
+control-plane database or host container socket to the workload. OpenShell
+already has [credential drivers](https://docs.nvidia.com/openshell/v0.1.8/extensibility/drivers),
+including Vault-compatible storage.
+
+A first prototype must prove that an untrusted workload cannot read the runner
+credential or a file outside its workspace, bypass outbound restrictions, or
+authenticate as another run. It must also preserve streaming, cancellation,
+generation fencing and checkpoint delivery. Bind sandbox identity and the
+effective enforced policy to the original run attempt using trusted runtime
+evidence. Stopping a sandbox still cannot undo a completed external side effect;
+retain unknown outcomes and do not automatically replay a tool. No sandbox
+compatibility, attestation or provider-secret isolation is claimed today.
+
 ## Required audit before access
 
 Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not

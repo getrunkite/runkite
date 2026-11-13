@@ -188,6 +188,11 @@ test-e2e:
 	REDIS_URL="redis://localhost:6380" \
 		go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
+# Disposable Postgres + Redis, two real plane processes, synthetic identities.
+.PHONY: test-review-ha
+test-review-ha:
+	bash scripts/test-review-ha.sh
+
 # Cross-framework × backend test matrix: every framework runner
 # (python-langgraph, typescript-langgraphjs, python-langchain/-crewai/
 # -llamaindex/-autogen) against every backend combination
