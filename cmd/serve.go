@@ -304,7 +304,12 @@ func startServer(opts serverOpts) {
 		slog.Info("event hooks: enabled")
 	}
 
-	if eng, runEvents := initPolicy(opts.configPath, store, hookDispatcher); eng != nil {
+	eng, runEvents, err := initPolicy(opts.configPath, store, hookDispatcher)
+	if err != nil {
+		slog.Error("failed to initialize policy", "error", err)
+		os.Exit(1)
+	}
+	if eng != nil {
 		apiServer.SetPolicyEngine(eng)
 		apiServer.SetPolicyRunEvents(runEvents)
 		// Sibling replicas only see Admin grant writes via this poll;

@@ -13,27 +13,11 @@
 // sense: createRunCtx and waitForRunResult are the identical functions
 // every client-facing run-creation path already uses.
 //
-// Three things this endpoint adds on top of that shared path:
-//
-//  1. Auth context propagation: on_behalf_of forwards identity/
-//     permissions into the sub-run (propagation, not enforcement --
-//     the body is trusted from the runner; runs don't persist the
-//     original caller's auth to compare against). Tenant is derived
-//     from the PARENT run's own tenant_id (looked up server-side),
-//     never from the request body. Parent lookup uses SystemContext
-//     (runner-trusted /internal/*), so a compromised runner that
-//     knows another tenant's run UUID could attach a child there --
-//     same trust boundary as the rest of /internal/*, stated plainly.
-//  2. Recursion limits: parent_run_id is required, and createRunCtx
-//     (see runs.go) enforces a2a.max_depth against the parent's own
-//     depth, failing a chain that's gone too deep (accidental cycle or
-//     runaway delegation) with 400, not a resource leak.
-//  3. Cost attribution: every delegated run's root_run_id points at the
-//     top of its delegation tree (persisted + indexed). RunSearchRequest
-//     exposes this as a client-facing filter (root_run_id) so any run
-//     in a tree can be used to find every other run in it with one
-//     query, and GET /runs/{runID}/cost (below) aggregates best-effort
-//     token/cost usage across the whole tree from it.
+// Delegation is bound to the currently in-flight parent assignment. Its
+// tenant and initiating user are server-owned. on_behalf_of can only narrow
+// explicit permissions while retaining that user's identity and claims.
+// Recursion limits, tree cost attribution and cancellation reuse the normal
+// run lifecycle.
 //
 // Runner-authenticated (mounted under /internal/*, not client-facing) --
 // this is infrastructure a runner's own SDK helper calls on an agent's
@@ -45,12 +29,18 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"reflect"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -58,13 +48,13 @@ import (
 
 // A2ARunRequest is the body for POST /internal/a2a/runs.
 type A2ARunRequest struct {
-	AgentID     string                 `json:"agent_id"`
-	ThreadID    string                 `json:"thread_id,omitempty"` // auto-generated if empty
-	Input       json.RawMessage        `json:"input,omitempty"`
-	Config      json.RawMessage        `json:"config,omitempty"`
-	ParentRunID string                 `json:"parent_run_id"` // required
-	OnBehalfOf  *transport.UserContext `json:"on_behalf_of,omitempty"`
-	Wait        bool                   `json:"wait,omitempty"`
+	AgentID     string          `json:"agent_id"`
+	ThreadID    string          `json:"thread_id,omitempty"` // auto-generated if empty
+	Input       json.RawMessage `json:"input,omitempty"`
+	Config      json.RawMessage `json:"config,omitempty"`
+	ParentRunID string          `json:"parent_run_id"` // required
+	OnBehalfOf  json.RawMessage `json:"on_behalf_of,omitempty"`
+	Wait        bool            `json:"wait,omitempty"`
 }
 
 // POST /internal/a2a/runs
@@ -83,27 +73,59 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// System context to look up the parent regardless of which tenant
-	// it's in -- this endpoint has no client auth to derive a tenant
-	// from (it's runner-authenticated, not user-authenticated). The
-	// sub-run's actual tenant scoping is set below from the parent's
-	// own tenant_id, not trusted from anywhere in the request body.
-	parent, err := s.store.GetRun(tenant.SystemContext(r.Context()), req.ParentRunID)
+	binding := auth.RunBindingFromContext(r.Context())
+	if binding == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "parent run binding required", "reason_code": auth.ReasonRunBindingRequired})
+		return
+	}
+	if req.ParentRunID != binding.RunID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent_run_id does not match run binding", "reason_code": "a2a_parent_mismatch"})
+		return
+	}
+	// Read again after the body. A parent can be reclaimed while a slow
+	// request is being read. This check does not claim an atomic transaction
+	// across the queue and child creation.
+	current, err := s.queue.LookupInflight(r.Context(), binding.RunID)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "failed to resolve parent assignment", "reason_code": auth.ReasonRunBindingLookupFailed})
+		return
+	}
+	if current == nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent run is not in-flight", "reason_code": auth.ReasonRunNotInflight})
+		return
+	}
+	if current.Generation != binding.Generation {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent generation mismatch", "reason_code": auth.ReasonRunGenerationMismatch})
+		return
+	}
+	tenantID := current.TenantID
+	if tenantID == "" {
+		tenantID = tenant.DefaultTenant
+	}
+	if tenantID != binding.TenantID || current.GraphID != binding.AgentID || current.ThreadID != binding.ThreadID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent assignment changed", "reason_code": "a2a_parent_mismatch"})
+		return
+	}
+	ctx := tenant.WithContext(r.Context(), tenantID)
+	parent, err := s.store.GetRun(ctx, binding.RunID)
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
-
-	ctx := tenant.WithContext(r.Context(), parent.TenantID)
-	if req.OnBehalfOf != nil {
-		ctx = auth.WithContext(ctx, &auth.AuthResult{
-			Identity:    req.OnBehalfOf.Identity,
-			Permissions: req.OnBehalfOf.Permissions,
-			TenantID:    parent.TenantID, // never trust on_behalf_of's own tenant claim
-			DisplayName: req.OnBehalfOf.DisplayName,
-			Extra:       req.OnBehalfOf.Extra,
-		})
+	if parent.ThreadID != current.ThreadID || parent.AgentID != current.GraphID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent assignment does not match stored run", "reason_code": "a2a_parent_mismatch"})
+		return
 	}
+	if parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent run is terminal", "reason_code": auth.ReasonRunNotInflight})
+		return
+	}
+	principal, err := a2aDelegatedPrincipal(current.User, parent, req.OnBehalfOf)
+	if err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": err.Error(), "reason_code": "a2a_authority_denied"})
+		return
+	}
+	ctx = auth.WithContext(ctx, principal)
 
 	threadID := req.ThreadID
 	if threadID == "" {
@@ -118,6 +140,20 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		ParentRunID: &parentRunID,
 	})
 	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+
+	if err := s.checkA2AParentCurrent(ctx, parentRunID); err != nil {
+		// Use canonical completion so an overlapping parent cancellation
+		// cascade cannot finalize or decrement this child a second time.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		_, cleanupErr := s.cancelRunCore(cleanupCtx, run.RunID, false, false)
+		cancel()
+		if cleanupErr != nil {
+			handleStoreError(w, cleanupErr)
+			return
+		}
 		handleStoreError(w, err)
 		return
 	}
@@ -138,6 +174,160 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, *resp)
+}
+
+// checkA2AParentCurrent closes slow preflight and connector setup windows.
+// Queue validation and durable insertion remain separate operations; this is
+// not an atomic cross-store delegation transaction.
+func (s *Server) checkA2AParentCurrent(ctx context.Context, parentID string) error {
+	binding := auth.RunBindingFromContext(ctx)
+	if binding == nil || binding.RunID != parentID {
+		return &hooks.ErrDenied{Reason: "parent run binding changed"}
+	}
+	current, err := s.queue.LookupInflight(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("resolve parent assignment: %w", err)
+	}
+	if current == nil || current.Generation != binding.Generation || current.ThreadID != binding.ThreadID || current.GraphID != binding.AgentID {
+		return &hooks.ErrDenied{Reason: "parent assignment is no longer current"}
+	}
+	tenantID := current.TenantID
+	if tenantID == "" {
+		tenantID = tenant.DefaultTenant
+	}
+	if tenantID != binding.TenantID || tenantID != tenant.FromContext(ctx) {
+		return &hooks.ErrDenied{Reason: "parent assignment tenant changed"}
+	}
+	parent, err := s.store.GetRun(ctx, parentID)
+	if err != nil {
+		return err
+	}
+	if parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending {
+		return &hooks.ErrDenied{Reason: "parent run is no longer active"}
+	}
+	return nil
+}
+
+// a2aDelegatedPrincipal retains server-owned identity and attributes. The
+// optional body only selects a literal subset of the parent's explicit grants.
+func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw json.RawMessage) (*auth.AuthResult, error) {
+	var principal *auth.AuthResult
+	if user != nil && user.Identity != "" {
+		principal = &auth.AuthResult{Identity: user.Identity, Permissions: append([]string(nil), user.Permissions...), TenantID: parent.TenantID, DisplayName: user.DisplayName, Extra: user.Extra}
+	}
+	if frozen, present := parent.Metadata["run_manifest"]; present {
+		encoded, err := json.Marshal(frozen)
+		var manifest models.RunManifest
+		if err != nil || json.Unmarshal(encoded, &manifest) != nil {
+			return nil, fmt.Errorf("parent manifest is invalid")
+		}
+		if manifest.Principal != nil {
+			if principal == nil || principal.Identity != manifest.Principal.Identity || !samePermissionSet(principal.Permissions, manifest.Principal.Permissions) {
+				return nil, fmt.Errorf("parent identity does not match frozen manifest")
+			}
+		} else if principal != nil {
+			return nil, fmt.Errorf("parent manifest has no delegated identity")
+		}
+	}
+	if len(raw) == 0 {
+		return principal, nil
+	}
+	var fields map[string]json.RawMessage
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return nil, fmt.Errorf("on_behalf_of must be an object")
+	}
+	if principal == nil {
+		return nil, fmt.Errorf("anonymous parent cannot supply on_behalf_of")
+	}
+	for name, value := range fields {
+		switch name {
+		case "identity", "display_name":
+			var supplied string
+			want := principal.Identity
+			if name == "display_name" {
+				want = principal.DisplayName
+			}
+			if json.Unmarshal(value, &supplied) != nil || supplied != want {
+				return nil, fmt.Errorf("on_behalf_of cannot replace parent identity or claims")
+			}
+		case "is_authenticated":
+			var supplied bool
+			if json.Unmarshal(value, &supplied) != nil || supplied != user.IsAuthenticated {
+				return nil, fmt.Errorf("on_behalf_of cannot replace parent identity or claims")
+			}
+		case "permissions":
+			var supplied []string
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &supplied) != nil || (len(supplied) == 0 && len(user.Permissions) != 0) {
+				// Empty grants mean unrestricted in the existing auth contract.
+				// They can preserve an unrestricted parent, never widen a
+				// restricted parent. Omit the field to inherit either form.
+				return nil, fmt.Errorf("on_behalf_of permissions must preserve or narrow parent permissions; omit to inherit")
+			}
+			for _, permission := range supplied {
+				if permission == "" || (len(user.Permissions) != 0 && !containsPermission(user.Permissions, permission)) {
+					return nil, fmt.Errorf("on_behalf_of cannot expand parent permissions")
+				}
+			}
+			principal.Permissions = supplied
+		case "extra":
+			var supplied map[string]interface{}
+			if json.Unmarshal(value, &supplied) != nil || supplied == nil {
+				return nil, fmt.Errorf("on_behalf_of claims are invalid")
+			}
+			for key, claim := range supplied {
+				if !sameA2AClaim(principal.Extra, key, claim) {
+					return nil, fmt.Errorf("on_behalf_of cannot replace parent identity or claims")
+				}
+			}
+		default:
+			var claim interface{}
+			if json.Unmarshal(value, &claim) != nil || !sameA2AClaim(principal.Extra, name, claim) {
+				return nil, fmt.Errorf("on_behalf_of cannot replace parent identity or claims")
+			}
+		}
+	}
+	return principal, nil
+}
+
+func sameA2AClaim(extra map[string]interface{}, name string, value interface{}) bool {
+	original, exists := extra[name]
+	if !exists {
+		return false
+	}
+	// Normalize JSON number/container representation from trusted in-memory
+	// fixtures and decoded queue assignments before comparing claims.
+	raw, err := json.Marshal(original)
+	if err != nil {
+		return false
+	}
+	var normalized interface{}
+	return json.Unmarshal(raw, &normalized) == nil && reflect.DeepEqual(normalized, value)
+}
+
+func containsPermission(permissions []string, want string) bool {
+	for _, permission := range permissions {
+		if permission == want {
+			return true
+		}
+	}
+	return false
+}
+
+func samePermissionSet(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	for _, permission := range a {
+		if !containsPermission(b, permission) {
+			return false
+		}
+	}
+	for _, permission := range b {
+		if !containsPermission(a, permission) {
+			return false
+		}
+	}
+	return true
 }
 
 // --------------------------------------------------------------------------

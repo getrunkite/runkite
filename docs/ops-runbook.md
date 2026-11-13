@@ -314,3 +314,13 @@ Retention `checkpoints_keep_last` prunes Agent Protocol history **and** opaque p
 - [Configuration](configuration.md) — `langgraph.json` knobs
 - [Auth](auth.md) — client + runner credentials, TLS
 - [Limitations](limitations.md) — Supported vs Compatible honesty
+
+## Authority hardening upgrade
+
+This change has no database migration. Before rolling out the plane, verify that custom A2A callers send their current parent run and generation binding. Deploy compatible runner helpers with the plane release; requests with missing binding or elevated `on_behalf_of` are rejected. Existing client-facing run creation is unchanged.
+
+Enable `policy.audit_required: true` only after checking durable SQL audit availability. An audit outage intentionally blocks admission and connector calls, even under break-glass. Restore audit storage rather than disabling the gate as an automatic recovery action. A request rejected before dispatch is safe to resubmit; an earlier downstream timeout still requires reconciliation. The normal mode remains best-effort unless this option is selected.
+
+OAuth endpoint errors retain status and recognized standard OAuth codes, but omit arbitrary provider bodies. Custom connector error mappings that matched descriptive body text must use the supported safe codes. Token files are reread on resolution; existing OAuth access tokens can remain cached until expiry. Rotating a client secret does not revoke those tokens. Vault lookup failure does not silently enable a stale-secret fallback.
+
+See [design and regression coverage](internal/action-authority-hardening.md), [A2A upgrade guidance](a2a.md#upgrade-and-troubleshooting), and [required audit configuration](configuration.md#required-policy-audit).

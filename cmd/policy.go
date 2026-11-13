@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -24,19 +25,23 @@ type mandatoryHITLLister interface {
 }
 
 // initPolicy loads langgraph.json's "policy" section (first file) and
-// builds an Engine. Returns (nil, false) when absent/empty (V1 open).
+// builds an Engine. Absent policy preserves V1 open behavior. Configuration
+// errors and unsupported required-audit backends must stop startup.
 // When policy.siem is set, registers an async WebhookSink on dispatcher
 // for policy_decision events and attaches it as the Engine's Exporter.
 // runEvents is true by default (tool_auth RunEvents on denials) unless
 // policy.run_events is explicitly false.
-func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatcher) (eng *policy.Engine, runEvents bool) {
+func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatcher) (eng *policy.Engine, runEvents bool, err error) {
 	paths := config.FindLangGraphJSON(configPath)
 	if len(paths) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	cfg, err := config.LoadLangGraphJSON(paths[0])
-	if err != nil || cfg.Policy == nil {
-		return nil, false
+	if err != nil {
+		return nil, false, fmt.Errorf("load policy configuration: %w", err)
+	}
+	if cfg.Policy == nil {
+		return nil, false, nil
 	}
 	p := cfg.Policy
 
@@ -90,7 +95,10 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		if aw, ok := store.(policy.AuditStore); ok {
 			auditor = policy.NewStoreAuditor(aw)
 		} else {
-			slog.Warn("policy: audit writes enabled but state backend has no durable audit store — decisions will not be persisted (Mongo; use Postgres/MySQL/SQLite for the trail)")
+			if p.AuditRequired {
+				return nil, false, fmt.Errorf("policy.audit_required requires a state backend with durable audit storage (Postgres, MySQL or SQLite)")
+			}
+			slog.Warn("policy: audit writes enabled but state backend has no durable audit store; decisions will not be persisted (Mongo; use Postgres/MySQL/SQLite for the trail)")
 		}
 	}
 
@@ -98,6 +106,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		DefaultEffect: p.DefaultEffect,
 		FailClosed:    p.FailClosed,
 		Auditor:       auditor,
+		AuditRequired: p.AuditRequired,
 		Overlays:      overlays,
 		ForceEnable:   true,
 	}
@@ -156,7 +165,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 
 	eng = policy.New(pcfg)
 	if eng == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	if len(mhitlOverlays) > 0 {
 		eng.ReplaceMandatoryHITL(mhitlOverlays)
@@ -188,10 +197,11 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		"webhook", pcfg.Webhook != nil,
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,
+		"audit_required", p.AuditRequired,
 		"siem", siemOn,
 		"run_events", runEvents,
 	)
-	return eng, runEvents
+	return eng, runEvents, nil
 }
 
 // siemExporter fans Decide results onto the shared hooks.Dispatcher
@@ -218,6 +228,9 @@ func (s *siemExporter) ExportPolicyDecision(_ context.Context, in policy.PolicyI
 	}
 	if in.ArgsDigest != "" {
 		data["args_digest"] = in.ArgsDigest
+	}
+	if dec.AuditFailed {
+		data["audit_failed"] = true
 	}
 	s.d.Dispatch(hooks.Event{
 		Type:      hooks.PolicyDecision,

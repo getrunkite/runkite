@@ -45,6 +45,11 @@ See [trust and governance](docs/trust-governance.md), [connectors](docs/connecto
 and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
 the enforcement and deployment contracts.
 
+For sensitive operations, optional [required policy audit](docs/configuration.md#required-policy-audit)
+blocks access when its SQL decision record cannot be saved. Agent delegation
+derives authority from the active parent assignment. See the
+[hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
+
 ## Choose an integration path
 
 | | Runkite owns execution | Your app owns execution |

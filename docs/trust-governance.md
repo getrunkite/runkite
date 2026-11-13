@@ -59,7 +59,9 @@ Proxy paths that touch tenant data or credentials require an **active run**:
 | `POST /internal/connectors/{name}/mcp` | Required |
 | `/internal/store/*` | Required |
 | `/internal/vectors/*` | Required |
-| Other `/internal/*` (schema, status, A2A, connector metadata) | Runner token only |
+| `/internal/checkpoints/*` | Required |
+| `POST /internal/a2a/runs` | Required for the active parent |
+| Other `/internal/*` (schema, status, connector metadata) | Runner token only |
 
 Runners send `X-Runkite-Run-Id` and `X-Runkite-Generation` (the fencing generation from `GetJob`). The control plane looks up the in-flight `RunAssignment` and derives `tenant_id` / agent (`graph_id`) / principal (`user`) from that record. Runner-supplied `X-Runkite-Tenant-Id` is **not** trusted on bound paths. The supplied generation must exactly match the active assignment, including when either value is `0`. Zero is never a wildcard: a caller sending `0` cannot bind to generation `1` or a reclaimed generation `2`. An actual legacy assignment at generation `0` accepts only `0` until it is reclaimed.
 
@@ -112,6 +114,14 @@ Optional per-graph allowlist in `langgraph.json`:
 ## Fixture replay
 
 `runkite sim` drives the same connector policy path with `X-Runkite-Simulation`. FinOps holds and UTC-day run caps skip; concurrent admission, rate limits, kill, and HITL still apply. Not a sandbox. See [Fixture replay](sim.md).
+
+## Required audit before access
+
+The optional `policy.audit_required: true` setting requires a durable policy decision before managed admission, connector access or an in-process decision can allow or become pending. It requires auditing enabled and a SQL state backend. Startup rejects an incompatible configuration. The default remains best-effort auditing.
+
+A required-audit outage blocks dispatch, including approved connector retries and break-glass use. Approved capabilities remain unconsumed. Existing explicit denials keep their reason; traces and SIEM separately identify the audit failure. A failed write cannot appear as a successfully saved SQL audit row. Use operational logs, traces and database health to investigate, then retry only a request known to have been blocked before dispatch.
+
+Argument metadata recursively removes common password, token, secret and API-key aliases while preserving the original arguments for policy evaluation and the exact digest. Name-based filtering cannot find credentials embedded in arbitrary text. Avoid secret-bearing tool arguments and sensitive payload capture. A policy decision remains separate from evidence that a downstream operation executed.
 
 ## Governance durability (SQL backends)
 

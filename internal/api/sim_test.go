@@ -266,7 +266,7 @@ func TestSimulation_A2AChildInheritsWithoutHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	childResp, err := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	childResp, err := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id":      "child_agent",
 		"parent_run_id": parent.RunID,
 		"input":         map[string]interface{}{"messages": []interface{}{}},

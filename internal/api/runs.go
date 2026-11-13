@@ -379,6 +379,14 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		cancel()
 	}
 
+	// A slow preflight gate must not resurrect a canceled or reclaimed
+	// delegation after the parent's cancellation cascade has completed.
+	if req.ParentRunID != nil && auth.RunBindingFromContext(ctx) != nil {
+		if err = s.checkA2AParentCurrent(ctx, *req.ParentRunID); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// Ensure thread exists (create if requested)
 	_, err = s.store.GetThread(ctx, threadID)
 	if err != nil {
@@ -599,6 +607,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// admission_limits (when configured) use CreateRunAdmitted: scope
 	// lock + COUNT + INSERT on one connection/tx so a burst cannot all
 	// pass a stale COUNT. Over-cap → *state.ErrAdmissionLimitExceeded (429).
+	if req.ParentRunID != nil && auth.RunBindingFromContext(ctx) != nil {
+		if err = s.checkA2AParentCurrent(ctx, *req.ParentRunID); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err = s.createRunRespectingLimits(ctx, run, now); err != nil {
 		// run_id is the primary key, so this fails with a unique-
 		// constraint violation if a concurrent request already inserted
@@ -737,7 +750,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// useful. Stock runners call GetSession at use time; this loop warms OAuth
 	// caches and surfaces policy/auth failures in logs early.
 	if s.connectors != nil && len(assignment.ConnectorNeeds) > 0 {
-		prewarmCtx := withPolicyAgent(ctx, req.AgentID, runID)
+		// Delegated creation retains its parent binding on ctx for lifecycle
+		// checks. Pre-warm is the child's policy decision, so only this
+		// derived context clears that binding while preserving caller/tenant.
+		prewarmCtx := withPolicyAgent(auth.WithRunBinding(ctx, nil), req.AgentID, runID)
 		for _, name := range assignment.ConnectorNeeds {
 			if dec, deny := s.checkConnectorPolicy(prewarmCtx, s.policyInput(prewarmCtx, policy.StageConnectorSession, name, "")); deny {
 				slog.Warn("connector pre-warm skipped by policy", "connector", name, "run_id", runID, "reason_code", dec.ReasonCode)

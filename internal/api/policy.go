@@ -71,7 +71,9 @@ func (s *Server) checkConnectorPolicy(ctx context.Context, in policy.PolicyInput
 	if !s.policy.Enabled() {
 		return policy.PolicyDecision{}, false
 	}
-	if s.tryBreakGlassBypass(ctx, in) {
+	// In required-audit mode, establish a durable decision before any
+	// exceptional authorization. An audit outage cannot become a bypass.
+	if !s.policy.AuditRequired() && s.tryBreakGlassBypass(ctx, in) {
 		return policy.PolicyDecision{
 			Effect:     policy.EffectAllow,
 			Reason:     "break-glass window active",
@@ -79,6 +81,13 @@ func (s *Server) checkConnectorPolicy(ctx context.Context, in policy.PolicyInput
 		}, false
 	}
 	dec := s.policy.Decide(ctx, in)
+	if !dec.AuditFailed && s.policy.AuditRequired() && s.tryBreakGlassBypass(ctx, in) {
+		return policy.PolicyDecision{
+			Effect:     policy.EffectAllow,
+			Reason:     "break-glass window active",
+			ReasonCode: policy.ReasonBreakGlass,
+		}, false
+	}
 	if dec.Effect != policy.EffectAllow {
 		return dec, true
 	}

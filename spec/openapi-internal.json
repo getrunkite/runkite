@@ -68,7 +68,7 @@
           },
           "on_behalf_of": {
             "type": "object",
-            "description": "Auth context propagation for the sub-run."
+            "description": "Optional attenuation of the authenticated parent identity. Omit to inherit. Identity and claims cannot be replaced; permissions may only narrow the parent's authority. An empty list cannot remove existing restrictions. Null is rejected."
           },
           "wait": {
             "type": "boolean",
@@ -820,8 +820,38 @@
           "Runner"
         ],
         "summary": "Create A2A Delegated Run",
-        "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.",
+        "description": "Create a child of the currently assigned parent. Requires exact run/generation binding, including generation zero only for an actual zero assignment. parent_run_id must match the run header. Tenant and principal come from the active assignment and frozen parent manifest; on_behalf_of can only narrow authority. Depth and breadth limits still apply. This does not provide per-worker isolation within a trusted runner kind.",
         "operationId": "create_a2a_run",
+        "parameters": [
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Current parent assignment generation. Duplicate values are rejected.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact parent run ID. Supply exactly one raw or encoded run identity header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 parent run ID. Use instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -844,7 +874,37 @@
             }
           },
           "400": {
-            "description": "Bad Request (depth exceeded)",
+            "description": "Invalid body or delegation limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid runner/run binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Parent, generation, tenant or delegated authority mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Parent assignment lookup unavailable",
             "content": {
               "application/json": {
                 "schema": {

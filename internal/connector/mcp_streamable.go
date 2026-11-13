@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"sync/atomic"
@@ -37,7 +36,7 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 		if oversized.Load() {
 			return nil, 0, ErrBodyTooLarge
 		}
-		return nil, 0, fmt.Errorf("initialize upstream MCP: %w", err)
+		return nil, 0, safeConnectorRequestError(ctx, "initialize upstream MCP failed", err)
 	}
 	defer session.Close()
 	if oversized.Load() {
@@ -121,7 +120,7 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 	if err != nil {
 		var rpcErr *jsonrpc.Error
 		if !errors.As(err, &rpcErr) {
-			return nil, 0, err
+			return nil, 0, safeConnectorRequestError(ctx, "upstream MCP operation failed", err)
 		}
 		response.Error = &jsonRPCError{Code: int(rpcErr.Code), Message: rpcErr.Message, Data: rpcErr.Data}
 	} else {
@@ -201,11 +200,12 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	response, err := t.next.RoundTrip(r)
 	if err != nil {
+		safeErr := safeConnectorRequestError(requestCtx, "upstream MCP request failed", err)
 		if response != nil && response.Body != nil {
 			response.Body.Close()
 		}
 		cleanup()
-		return nil, err
+		return nil, safeErr
 	}
 	if response.ContentLength > MaxMCPResponseBytes {
 		if t.oversized != nil {
@@ -215,7 +215,7 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		cleanup()
 		return nil, ErrBodyTooLarge
 	}
-	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: MaxMCPResponseBytes, oversized: t.oversized, cleanup: cleanup}
+	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: MaxMCPResponseBytes, oversized: t.oversized, cleanup: cleanup, ctx: requestCtx}
 	return response, nil
 }
 
@@ -226,13 +226,17 @@ type mcpLimitedBody struct {
 	remaining int64
 	oversized *atomic.Bool
 	cleanup   func()
+	ctx       context.Context
 }
 
 func (r *mcpLimitedBody) Close() error {
 	if r.cleanup != nil {
 		defer r.cleanup()
 	}
-	return r.ReadCloser.Close()
+	if err := r.ReadCloser.Close(); err != nil {
+		return safeConnectorRequestError(r.ctx, "close upstream MCP response failed", err)
+	}
+	return nil
 }
 
 func (r *mcpLimitedBody) Read(p []byte) (int, error) {
@@ -249,6 +253,9 @@ func (r *mcpLimitedBody) Read(p []byte) (int, error) {
 			r.oversized.Store(true)
 		}
 		return n, ErrBodyTooLarge
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		err = safeConnectorRequestError(r.ctx, "read upstream MCP response failed", err)
 	}
 	return n, err
 }

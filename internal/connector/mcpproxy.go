@@ -190,7 +190,7 @@ func DeniedRPCResult(id json.RawMessage, message string, data map[string]interfa
 func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, fmt.Errorf("build request: %w", err)
+		return nil, 0, safeConnectorRequestError(ctx, "build MCP request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if accessToken != "" {
@@ -199,13 +199,13 @@ func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, safeConnectorRequestError(ctx, "MCP request failed", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := readLimitedBody(resp.Body, MaxMCPResponseBytes)
 	if err != nil {
-		return nil, 0, fmt.Errorf("read response: %w", err)
+		return nil, 0, safeConnectorRequestError(ctx, "read MCP response failed", err)
 	}
 	return respBody, resp.StatusCode, nil
 }

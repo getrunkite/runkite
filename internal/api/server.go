@@ -961,7 +961,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		dec, deny := s.checkConnectorPolicy(r.Context(), in)
 		approved := false
-		if !deny || dec.Effect == policy.EffectPending {
+		if !dec.AuditFailed && (!deny || dec.Effect == policy.EffectPending) {
 			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest)
 		}
 		if deny && !approved {

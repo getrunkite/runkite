@@ -111,6 +111,11 @@ async def coordinator_node(state, config):
 import { callAgent } from "runkite-runner";
 const result = await callAgent(config, "worker_agent", { messages: [...] }, { wait: true });</pre>
 
+        <h2 id="parent-authority">Parent authority and upgrades</h2>
+        <p>The plane requires the active parent run and its exact generation. The body parent must match that binding. Tenant and principal come from the assignment, checked against any frozen parent principal. Omit <code>on_behalf_of</code> to inherit; a supplied permission list may only narrow the parent. Identity and claims cannot be replaced.</p>
+        <p>Use the packaged helper inside its worker context. Custom callers must send <code>X-Runkite-Generation</code> and exactly one raw or encoded run-ID header. Missing binding, stale attempts and elevated authority are rejected. Do not retry with zero or a different parent.</p>
+        <p>This retains the trusted-fleet model. It does not isolate workers sharing a runner kind or downscope external bearer credentials. Queue checks and child persistence remain separate operations. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/action-authority-hardening.md">engineering rationale and regression boundaries</a>.</p>
+
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin overview: plane activity while agents coordinate</div>

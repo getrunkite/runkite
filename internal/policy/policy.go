@@ -43,6 +43,7 @@ const (
 	ReasonPolicyMissingBinding = "policy_missing_binding"
 	ReasonPolicyPending        = "policy_pending"
 	ReasonPolicyAdmissionDeny  = "policy_admission_deny"
+	ReasonPolicyAuditFailed    = "policy_audit_failed"
 	ReasonBreakGlass           = "break_glass"
 	ReasonKillActive           = "kill_active"
 	ReasonKillActivate         = "kill_activate"
@@ -82,6 +83,9 @@ type PolicyDecision struct {
 	ReasonCode string
 	RuleID     string
 	LatencyMs  int
+	// AuditFailed marks a required persistence failure independently of the
+	// policy reason. Callers must not bypass it with approval or break-glass.
+	AuditFailed bool `json:"-"`
 }
 
 // Provider evaluates one policy layer.
@@ -114,6 +118,7 @@ type Engine struct {
 	mandatoryHITL         []MandatoryHITLRule // force allow → pending on tool.call
 	predicates            []Predicate         // config-only; deny/pending after grants
 	auditor               Auditor
+	auditRequired         bool
 	exporter              Exporter
 	cache                 *decisionCache
 	defaultEffect         string
@@ -134,7 +139,10 @@ type Config struct {
 	Predicates []Predicate
 	Webhook    *WebhookConfig
 	Auditor    Auditor
-	Exporter   Exporter
+	// AuditRequired refuses allow/pending when durable decision persistence
+	// fails or no auditor is present. Deployment wiring validates the backend.
+	AuditRequired bool
+	Exporter      Exporter
 	// ForceEnable builds an engine even with no grants/webhook (empty
 	// "policy": {} for Admin-API-only grant management).
 	ForceEnable bool
@@ -156,7 +164,7 @@ func New(cfg Config) *Engine {
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
 	hasMandatory := len(cfg.MandatoryHITL) > 0
 	hasPredicates := len(preds) > 0
-	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !hasPredicates && !cfg.ForceEnable {
+	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !hasPredicates && !cfg.ForceEnable && !cfg.AuditRequired {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -171,6 +179,7 @@ func New(cfg Config) *Engine {
 		defaultEffect:         def,
 		failClosed:            failClosed,
 		auditor:               cfg.Auditor,
+		auditRequired:         cfg.AuditRequired,
 		exporter:              cfg.Exporter,
 		baseline:              append([]Grant(nil), cfg.Grants...),
 		mandatoryHITLBaseline: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
@@ -304,6 +313,11 @@ func (e *Engine) Enabled() bool {
 	return e != nil
 }
 
+// AuditRequired reports whether every policy decision requires a durable write.
+func (e *Engine) AuditRequired() bool {
+	return e != nil && e.auditRequired
+}
+
 // Decide evaluates static grants, then argument predicates, then webhook.
 // Call only when Enabled(). Every call (including cache hits) emits an
 // OTel span event, writes audit when configured, and fans out to
@@ -313,12 +327,26 @@ func (e *Engine) Decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	dec := e.decide(ctx, in)
 	dec = e.applyMandatoryHITL(in, dec)
 	dec.LatencyMs = int(time.Since(start).Milliseconds())
-	recordPolicySpanEvent(ctx, in, dec)
+	auditFailed := e.auditRequired && e.auditor == nil
 	if e.auditor != nil {
 		if err := e.auditor.WritePolicyDecision(ctx, in, dec); err != nil {
 			slog.Warn("policy: audit write failed", "error", err, "stage", in.Stage, "run_id", in.RunID)
+			auditFailed = e.auditRequired
 		}
 	}
+	if auditFailed {
+		dec.AuditFailed = true
+		// Keep an existing denial and its authoritative reason. The separate
+		// failure flag still prevents any caller from overriding that denial.
+		if dec.Effect != EffectDeny {
+			dec.Effect = EffectDeny
+			dec.Reason = "required policy audit could not be persisted"
+			dec.ReasonCode = ReasonPolicyAuditFailed
+		}
+	}
+	// Report the final decision, including a required-audit failure. The
+	// decision cache contains only policy results, never persistence failures.
+	recordPolicySpanEvent(ctx, in, dec)
 	if e.exporter != nil {
 		e.exporter.ExportPolicyDecision(ctx, in, dec)
 	}
@@ -340,6 +368,9 @@ func recordPolicySpanEvent(ctx context.Context, in PolicyInput, dec PolicyDecisi
 	}
 	if dec.RuleID != "" {
 		attrs = append(attrs, attribute.String("policy.rule_id", dec.RuleID))
+	}
+	if dec.AuditFailed {
+		attrs = append(attrs, attribute.Bool("policy.audit_failed", true))
 	}
 	if in.TenantID != "" {
 		attrs = append(attrs, attribute.String("tenant.id", in.TenantID))

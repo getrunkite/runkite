@@ -95,11 +95,13 @@ func RunBindingFromContext(ctx context.Context) *RunBinding {
 }
 
 // requiresRunBinding reports whether path is a proxy surface that must
-// prove an active run (connector session/MCP, store, vectors). Other
-// /internal/* routes (schema publish, run status, A2A, connector
-// metadata) stay runner-token-only -- they are not always issued under
-// an in-flight assignment.
+// prove an active run (A2A, connector session/MCP, store, vectors). Other
+// /internal/* routes (schema publish, run status, connector metadata) stay
+// runner-token-only because they can occur outside an assignment.
 func requiresRunBinding(path string) bool {
+	if strings.TrimSuffix(path, "/") == "/internal/a2a/runs" {
+		return true
+	}
 	if strings.HasPrefix(path, "/internal/store") ||
 		strings.HasPrefix(path, "/internal/vectors") ||
 		strings.HasPrefix(path, "/internal/checkpoints") {
@@ -117,7 +119,7 @@ func requiresRunBinding(path string) bool {
 func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens *RunnerTokens, inflight InflightLookup) (context.Context, bool) {
 	runID, validRunID := exactIdentityHeader(r, HeaderRunID, HeaderRunIDBase64)
 	genRaw := strings.TrimSpace(r.Header.Get(HeaderGeneration))
-	if !validRunID || runID == "" || genRaw == "" {
+	if !validRunID || runID == "" || genRaw == "" || len(r.Header.Values(HeaderGeneration)) != 1 {
 		writeDenied(w, http.StatusUnauthorized, ReasonRunBindingRequired,
 			"missing or invalid run identity header or X-Runkite-Generation")
 		return nil, false

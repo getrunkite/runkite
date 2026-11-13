@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import httpx  # noqa: E402
 from runkite_runner.a2a import A2AError, call_agent  # noqa: E402
+from runkite_runner.tenant_ctx import bind_run, reset_run  # noqa: E402
 
 
 def check(name, cond):
@@ -53,7 +54,7 @@ async def test_builds_correct_request_body_and_headers():
         captured["url"] = str(request.url)
         captured["headers"] = dict(request.headers)
         captured["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"run_id": "child-run", "status": "pending"})
+        return httpx.Response(200, json={"run_id": "child-run", "generation": 3, "status": "pending"})
 
     transport = httpx.MockTransport(handler)
 
@@ -73,6 +74,7 @@ async def test_builds_correct_request_body_and_headers():
         config = {
             "configurable": {
                 "run_id": "parent-run-123",
+                "generation": 3,
                 "langgraph_auth_user": _FakeUser({"identity": "alice", "email": "alice@example.com"}),
             }
         }
@@ -96,8 +98,10 @@ async def test_builds_correct_request_body_and_headers():
         captured["body"]["on_behalf_of"] == {"identity": "alice", "email": "alice@example.com"},
     )
     check("runner auth headers set from RUNNER_TOKEN", captured["headers"].get("x-runner-kind") == "python-langgraph")
+    check("parent binding header set", captured["headers"].get("x-runkite-run-id") == "parent-run-123")
+    check("actual generation header set", captured["headers"].get("x-runkite-generation") == "3")
     check("runner token header set", captured["headers"].get("x-runner-token") == "test-token")
-    check("returns the parsed response", result == {"run_id": "child-run", "status": "pending"})
+    check("returns the parsed response", result == {"run_id": "child-run", "generation": 3, "status": "pending"})
 
 
 async def test_no_user_in_config_omits_on_behalf_of():
@@ -105,7 +109,7 @@ async def test_no_user_in_config_omits_on_behalf_of():
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"run_id": "child-run"})
+        return httpx.Response(200, json={"run_id": "child-run", "generation": 3})
 
     transport = httpx.MockTransport(handler)
     import runkite_runner.a2a as a2a_module
@@ -114,7 +118,7 @@ async def test_no_user_in_config_omits_on_behalf_of():
     a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=transport, **kw)
 
     try:
-        config = {"configurable": {"run_id": "parent-run-456"}}
+        config = {"configurable": {"run_id": "parent-run-456", "generation": 3}}
         await call_agent(config, "worker_agent", {}, wait=False)
     finally:
         a2a_module.httpx.AsyncClient = original_client
@@ -135,7 +139,7 @@ async def test_error_response_raises_a2a_error():
     a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=transport, **kw)
 
     try:
-        config = {"configurable": {"run_id": "parent-run"}}
+        config = {"configurable": {"run_id": "parent-run", "generation": 3}}
         for status in (302, 400):
             try:
                 await call_agent(config, "worker_agent", {}, wait=False)
@@ -146,11 +150,51 @@ async def test_error_response_raises_a2a_error():
         a2a_module.httpx.AsyncClient = original_client
 
 
+async def test_generation_and_active_parent_binding():
+    captured = []
+
+    def handler(request):
+        captured.append(request)
+        return httpx.Response(200, json={})
+
+    import runkite_runner.a2a as a2a_module
+
+    original_client = httpx.AsyncClient
+    a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=httpx.MockTransport(handler), **kw)
+    try:
+        for generation in (None, -1, 1.5, "3", True):
+            try:
+                await call_agent({"configurable": {"run_id": "parent", "generation": generation}}, "child", {})
+                check("invalid generation rejected", False)
+            except RuntimeError:
+                pass
+        check("invalid generations dispatch nothing", not captured)
+        token = bind_run("parent", 7)
+        try:
+            for run_id, generation in (("foreign", 7), ("parent", 6)):
+                try:
+                    await call_agent({"configurable": {"run_id": run_id, "generation": generation}}, "child", {})
+                    check("active binding replacement rejected", False)
+                except RuntimeError:
+                    pass
+            check("binding replacements dispatch nothing", not captured)
+            await call_agent({"configurable": {"run_id": "parent"}}, "child", {})
+            check("inherits active generation", captured[-1].headers["X-Runkite-Generation"] == "7")
+        finally:
+            reset_run(token)
+        await call_agent({"configurable": {"run_id": "parent-雪", "generation": 0}}, "child", {})
+        check("Unicode parent uses encoded header", "X-Runkite-Run-Id-B64" in captured[-1].headers)
+        check("actual legacy zero retained", captured[-1].headers["X-Runkite-Generation"] == "0")
+    finally:
+        a2a_module.httpx.AsyncClient = original_client
+
+
 def main():
     asyncio.run(test_missing_run_id_raises())
     asyncio.run(test_builds_correct_request_body_and_headers())
     asyncio.run(test_no_user_in_config_omits_on_behalf_of())
     asyncio.run(test_error_response_raises_a2a_error())
+    asyncio.run(test_generation_and_active_parent_binding())
     print("\nAll checks passed.")
 
 

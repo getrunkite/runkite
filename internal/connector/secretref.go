@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Shared Vault HTTP client — one Timeout for all secret_ref vault: lookups
+// Shared Vault HTTP client: one Timeout for all secret_ref vault: lookups
 // (avoids per-call Client allocation and keeps dial/timeout behavior consistent).
 var vaultHTTPClient = &http.Client{
 	Timeout:       10 * time.Second,
@@ -120,7 +120,7 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 	endpoint.RawPath = ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return "", err
+		return "", safeConnectorRequestError(ctx, "secret_ref vault: build request failed", err)
 	}
 	req.Header.Set("X-Vault-Token", token)
 	if ns := os.Getenv("VAULT_NAMESPACE"); ns != "" {
@@ -129,12 +129,12 @@ func resolveVaultKV(ctx context.Context, pathAndField string) (string, error) {
 
 	resp, err := vaultHTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("secret_ref vault: %w", err)
+		return "", safeConnectorRequestError(ctx, "secret_ref vault: request failed", err)
 	}
 	defer resp.Body.Close()
 	body, err := readLimitedBody(resp.Body, 1<<20)
 	if err != nil {
-		return "", err
+		return "", safeConnectorRequestError(ctx, "secret_ref vault: read response failed", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("secret_ref vault: HTTP %d", resp.StatusCode)

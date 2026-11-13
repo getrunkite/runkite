@@ -127,11 +127,10 @@ type LangGraphConfig struct {
 	// isn't an alias 404s, same as always.
 	AgentAliases map[string]AgentAliasEntry `json:"agent_aliases,omitempty"`
 	// Policy is control-plane-wide, same first-file convention as
-	// Auth/PreflightHooks (see initPolicy in cmd/policy.go). Absent or
-	// empty (no grants, no webhook) preserves V1 open connector access
-	// after runner auth + run-binding. When any grant or webhook is
-	// present, connector.session / tool.call default to deny unless a
-	// grant matches (see internal/policy).
+	// Auth/PreflightHooks (see initPolicy in cmd/policy.go). Absent
+	// preserves V1 open connector access after runner auth + run-binding.
+	// A configured section, including an empty object, enables the engine
+	// with default deny for unmatched connector requests (see internal/policy).
 	Policy *PolicyEntry `json:"policy,omitempty"`
 	// FinOps is control-plane-wide, first-file (see initFinOps in
 	// cmd/serve.go). Optional model pricebook for usage_events USD
@@ -156,9 +155,12 @@ type PolicyEntry struct {
 	FailClosed *bool `json:"fail_closed,omitempty"`
 	// CacheTTLMS is short-TTL decision cache for webhook backends (0 = off).
 	CacheTTLMS int `json:"cache_ttl_ms,omitempty"`
-	// Audit enables durable audit_events writes on Supported (Postgres).
+	// Audit enables durable audit_events writes on Postgres, MySQL and SQLite.
 	// Default true when policy is configured.
 	Audit *bool `json:"audit,omitempty"`
+	// AuditRequired blocks policy-authorized execution when its durable audit
+	// write fails. Requires audit enabled and a supported durable audit store.
+	AuditRequired bool `json:"audit_required,omitempty"`
 	// RunEvents emits method "tool_auth" RunEvents on connector policy
 	// denials (session + tools/call). Default true when policy is configured.
 	RunEvents *bool `json:"run_events,omitempty"`
@@ -776,6 +778,9 @@ func LoadLangGraphJSON(path string) (*LangGraphConfig, error) {
 	}
 	if len(cfg.Graphs) == 0 {
 		return nil, fmt.Errorf("langgraph.json: no graphs defined")
+	}
+	if cfg.Policy != nil && cfg.Policy.AuditRequired && cfg.Policy.Audit != nil && !*cfg.Policy.Audit {
+		return nil, fmt.Errorf("langgraph.json: policy.audit_required requires policy.audit enabled")
 	}
 	if cfg.RunnerKind == "" {
 		cfg.RunnerKind = "python-langgraph"

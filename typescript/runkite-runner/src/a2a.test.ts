@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { callAgent, A2AError } from "./a2a.js";
+import { runWithBinding } from "./tenantCtx.js";
 
 /** Mocks the global fetch for the duration of one test, capturing the
  * single request made and returning fn's response. Node's fetch is a
@@ -35,7 +36,7 @@ test("callAgent throws when config itself is null/undefined", async () => {
 });
 
 test("callAgent posts to /internal/a2a/runs with the correct body, headers, and forwards on_behalf_of from langgraph_auth_user.toDict()", async () => {
-  const mock = mockFetchOnce(200, { run_id: "child-run", status: "pending" });
+  const mock = mockFetchOnce(200, { run_id: "child-run", generation: 3, status: "pending" });
   const originalToken = process.env.RUNNER_TOKEN;
   process.env.RUNNER_TOKEN = "test-token";
 
@@ -43,6 +44,7 @@ test("callAgent posts to /internal/a2a/runs with the correct body, headers, and 
     const config = {
       configurable: {
         run_id: "parent-run-123",
+        generation: 3,
         langgraph_auth_user: { toDict: () => ({ identity: "alice", email: "alice@example.com" }) },
       },
     };
@@ -64,9 +66,11 @@ test("callAgent posts to /internal/a2a/runs with the correct body, headers, and 
     assert.equal(body.wait, false);
     assert.deepEqual(body.on_behalf_of, { identity: "alice", email: "alice@example.com" });
     const headers = mock.calls[0].init.headers as Record<string, string>;
+    assert.equal(headers["X-Runkite-Run-Id"], "parent-run-123");
+    assert.equal(headers["X-Runkite-Generation"], "3");
     assert.equal(headers["X-Runner-Kind"], "typescript-langgraphjs");
     assert.equal(headers["X-Runner-Token"], "test-token");
-    assert.deepEqual(result, { run_id: "child-run", status: "pending" });
+    assert.deepEqual(result, { run_id: "child-run", generation: 3, status: "pending" });
   } finally {
     mock.restore();
     if (originalToken === undefined) delete process.env.RUNNER_TOKEN;
@@ -75,9 +79,9 @@ test("callAgent posts to /internal/a2a/runs with the correct body, headers, and 
 });
 
 test("callAgent omits on_behalf_of when config has no authenticated user", async () => {
-  const mock = mockFetchOnce(200, { run_id: "child-run" });
+  const mock = mockFetchOnce(200, { run_id: "child-run", generation: 3 });
   try {
-    await callAgent({ configurable: { run_id: "parent-run-456" } }, "worker_agent", {}, { wait: false });
+    await callAgent({ configurable: { run_id: "parent-run-456", generation: 3 } }, "worker_agent", {}, { wait: false });
     const body = JSON.parse(mock.calls[0].init.body as string);
     assert.ok(!("on_behalf_of" in body), "expected on_behalf_of to be omitted when no authenticated user in config");
   } finally {
@@ -86,10 +90,10 @@ test("callAgent omits on_behalf_of when config has no authenticated user", async
 });
 
 test("callAgent omits on_behalf_of when langgraph_auth_user has no toDict method", async () => {
-  const mock = mockFetchOnce(200, { run_id: "child-run" });
+  const mock = mockFetchOnce(200, { run_id: "child-run", generation: 3 });
   try {
     await callAgent(
-      { configurable: { run_id: "parent-run-456", langgraph_auth_user: { identity: "alice" } } },
+      { configurable: { run_id: "parent-run-456", generation: 3, langgraph_auth_user: { identity: "alice" } } },
       "worker_agent",
       {},
       { wait: false },
@@ -105,7 +109,7 @@ test("callAgent throws A2AError on a non-2xx response, with the response body in
   const mock = mockFetchOnce(400, { message: "a2a delegation depth 11 exceeds max_depth 10" });
   try {
     await assert.rejects(
-      () => callAgent({ configurable: { run_id: "parent-run" } }, "worker_agent", {}, { wait: false }),
+      () => callAgent({ configurable: { run_id: "parent-run", generation: 3 } }, "worker_agent", {}, { wait: false }),
       (err: unknown) => {
         assert.ok(err instanceof A2AError);
         assert.match((err as Error).message, /depth/);
@@ -118,10 +122,10 @@ test("callAgent throws A2AError on a non-2xx response, with the response body in
 });
 
 test("callAgent includes thread_id and run_config in the request body when provided", async () => {
-  const mock = mockFetchOnce(200, { run_id: "child-run" });
+  const mock = mockFetchOnce(200, { run_id: "child-run", generation: 3 });
   try {
     await callAgent(
-      { configurable: { run_id: "parent-run" } },
+      { configurable: { run_id: "parent-run", generation: 3 } },
       "worker_agent",
       {},
       {
@@ -141,9 +145,58 @@ test("callAgent includes thread_id and run_config in the request body when provi
 test("callAgent defaults wait to true when not specified", async () => {
   const mock = mockFetchOnce(200, { run: {}, values: {} });
   try {
-    await callAgent({ configurable: { run_id: "parent-run" } }, "worker_agent", {});
+    await callAgent({ configurable: { run_id: "parent-run", generation: 3 } }, "worker_agent", {});
     const body = JSON.parse(mock.calls[0].init.body as string);
     assert.equal(body.wait, true);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("callAgent refuses missing or invalid generations before dispatch", async () => {
+  const mock = mockFetchOnce(200, {});
+  try {
+    for (const generation of [undefined, null, -1, 1.5, "3", true]) {
+      await assert.rejects(
+        () => callAgent({ configurable: { run_id: "parent", generation } }, "child", {}),
+        /generation/,
+      );
+    }
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("callAgent preserves Unicode parent identity and actual legacy zero", async () => {
+  const mock = mockFetchOnce(200, {});
+  try {
+    await callAgent({ configurable: { run_id: "parent-雪", generation: 0 } }, "child", {});
+    const headers = mock.calls[0].init.headers as Record<string, string>;
+    assert.equal(headers["X-Runkite-Run-Id"], undefined);
+    assert.equal(Buffer.from(headers["X-Runkite-Run-Id-B64"], "base64url").toString("utf8"), "parent-雪");
+    assert.equal(headers["X-Runkite-Generation"], "0");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("callAgent cannot replace its current worker parent or generation", async () => {
+  const mock = mockFetchOnce(200, {});
+  try {
+    await runWithBinding({ runId: "parent", generation: 7 }, async () => {
+      await assert.rejects(
+        () => callAgent({ configurable: { run_id: "foreign", generation: 7 } }, "child", {}),
+        /parent differs/,
+      );
+      await assert.rejects(
+        () => callAgent({ configurable: { run_id: "parent", generation: 6 } }, "child", {}),
+        /generation differs/,
+      );
+      assert.equal(mock.calls.length, 0);
+      await callAgent({ configurable: { run_id: "parent" } }, "child", {});
+      assert.equal((mock.calls[0].init.headers as Record<string, string>)["X-Runkite-Generation"], "7");
+    });
   } finally {
     mock.restore();
   }

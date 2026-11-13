@@ -24,7 +24,7 @@
  * replica of the same runner_kind, or `wait: false` + polling the
  * child run yourself) for any graph that delegates synchronously.
  */
-import { runnerHeaders } from "./tenantCtx.js";
+import { runnerHeaders, runIdHeaders, HEADER_RUN_ID, HEADER_RUN_ID_B64, HEADER_GENERATION } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 export class A2AError extends Error {
 }
@@ -53,7 +53,7 @@ export class A2AError extends Error {
 export async function callAgent(config, agentId, input, opts = {}) {
     const configurable = config?.configurable ?? {};
     const parentRunId = configurable.run_id;
-    if (!parentRunId) {
+    if (typeof parentRunId !== "string" || !parentRunId) {
         throw new Error("callAgent: config has no configurable.run_id -- must be called " +
             "with the RunnableConfig a graph node itself received, not a " +
             "hand-built or empty one");
@@ -81,6 +81,20 @@ export async function callAgent(config, agentId, input, opts = {}) {
     }
     const baseUrl = (opts.controlPlaneUrl ?? process.env.RUNKITE_HTTP_URL ?? "http://localhost:2026").replace(/\/+$/, "");
     const headers = { "Content-Type": "application/json", ...runnerHeaders() };
+    const expected = runIdHeaders(parentRunId);
+    if ((headers[HEADER_RUN_ID] !== undefined || headers[HEADER_RUN_ID_B64] !== undefined) &&
+        (headers[HEADER_RUN_ID] !== expected[HEADER_RUN_ID] || headers[HEADER_RUN_ID_B64] !== expected[HEADER_RUN_ID_B64])) {
+        throw new Error("callAgent: config parent differs from the active run binding");
+    }
+    const generation = configurable.generation ??
+        (headers[HEADER_GENERATION] === undefined ? undefined : Number(headers[HEADER_GENERATION]));
+    if (!Number.isSafeInteger(generation) || generation < 0) {
+        throw new Error("callAgent: configurable.generation or an active run generation is required");
+    }
+    if (headers[HEADER_GENERATION] !== undefined && headers[HEADER_GENERATION] !== String(generation)) {
+        throw new Error("callAgent: config generation differs from the active run binding");
+    }
+    Object.assign(headers, expected, { [HEADER_GENERATION]: String(generation) });
     const fetchOpts = {
         redirect: "error",
         method: "POST",

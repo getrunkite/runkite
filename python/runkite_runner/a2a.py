@@ -29,7 +29,7 @@ from typing import Any
 
 import httpx
 
-from .tenant_ctx import runner_headers
+from .tenant_ctx import HEADER_GENERATION, HEADER_RUN_ID, HEADER_RUN_ID_B64, run_id_headers, runner_headers
 from .tls_utils import httpx_tls_kwargs
 
 
@@ -96,7 +96,7 @@ async def call_agent(
     """
     configurable = config.get("configurable", {}) if config else {}
     parent_run_id = configurable.get("run_id")
-    if not parent_run_id:
+    if not isinstance(parent_run_id, str) or not parent_run_id:
         raise RuntimeError(
             "call_agent: config has no configurable.run_id -- must be called "
             "with the RunnableConfig a graph node itself received, not a "
@@ -122,6 +122,20 @@ async def call_agent(
 
     base_url = control_plane_url or os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026")
     headers = runner_headers()
+    expected = run_id_headers(parent_run_id)
+    if (HEADER_RUN_ID in headers or HEADER_RUN_ID_B64 in headers) and any(
+        headers.get(name) != expected.get(name) for name in (HEADER_RUN_ID, HEADER_RUN_ID_B64)
+    ):
+        raise RuntimeError("call_agent: config parent differs from the active run binding")
+    generation = configurable.get("generation")
+    if generation is None and HEADER_GENERATION in headers:
+        generation = int(headers[HEADER_GENERATION])
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+        raise RuntimeError("call_agent: configurable.generation or an active run generation is required")
+    if HEADER_GENERATION in headers and headers[HEADER_GENERATION] != str(generation):
+        raise RuntimeError("call_agent: config generation differs from the active run binding")
+    headers.update(expected)
+    headers[HEADER_GENERATION] = str(generation)
 
     async with httpx.AsyncClient(timeout=timeout, **httpx_tls_kwargs()) as client:
         resp = await client.post(f"{base_url}/internal/a2a/runs", json=body, headers=headers)

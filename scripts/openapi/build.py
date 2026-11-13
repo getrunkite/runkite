@@ -1815,7 +1815,7 @@ def _build_internal_spec() -> dict:
                         "input": {"type": "object"},
                         "config": {"type": "object"},
                         "parent_run_id": {"type": "string"},
-                        "on_behalf_of": {"type": "object", "description": "Auth context propagation for the sub-run."},
+                        "on_behalf_of": {"type": "object", "description": "Optional attenuation of the authenticated parent identity. Omit to inherit. Identity and claims cannot be replaced; permissions may only narrow the parent's authority. An empty list cannot remove existing restrictions. Null is rejected."},
                         "wait": {"type": "boolean", "default": False},
                     },
                     "title": "A2ARunRequest",
@@ -1897,7 +1897,24 @@ def _build_internal_spec() -> dict:
             },
             "/internal/vectors/search": {"post": {"tags": ["Vectors"], "summary": "Search Vectors (internal)", "operationId": "internal_search_vectors", "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"})}}},
             "/internal/webhooks/dead-letters": {"get": {"tags": ["Runner"], "summary": "List Dead Letters", "operationId": "list_dead_letters", "parameters": [{"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 50}}], "responses": {**_json_response("200", "Success", _array_of(_ref("WebhookDeadLetter")))}}},
-            "/internal/a2a/runs": {"post": {"tags": ["Runner"], "summary": "Create A2A Delegated Run", "description": "Agent-to-Agent delegation: create a sub-run on behalf of a parent run. Requires parent_run_id for recursion limit enforcement.", "operationId": "create_a2a_run", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("A2ARunRequest")}}}, "responses": {**_json_response("200", "Success", _ref("Run")), "400": {"description": "Bad Request (depth exceeded)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
+            "/internal/a2a/runs": {"post": {
+                "tags": ["Runner"], "summary": "Create A2A Delegated Run",
+                "description": "Create a child of the currently assigned parent. Requires exact run/generation binding, including generation zero only for an actual zero assignment. parent_run_id must match the run header. Tenant and principal come from the active assignment and frozen parent manifest; on_behalf_of can only narrow authority. Depth and breadth limits still apply. This does not provide per-worker isolation within a trusted runner kind.",
+                "operationId": "create_a2a_run",
+                "parameters": [
+                    {"name": "X-Runkite-Generation", "in": "header", "required": True, "description": "Current parent assignment generation. Duplicate values are rejected.", "schema": {"type": "integer", "format": "int64"}},
+                    {"name": "X-Runkite-Run-Id", "in": "header", "required": False, "description": "Exact parent run ID. Supply exactly one raw or encoded run identity header.", "schema": {"type": "string"}},
+                    {"name": "X-Runkite-Run-Id-B64", "in": "header", "required": False, "description": "Canonical unpadded base64url of the UTF-8 parent run ID. Use instead of the raw header.", "schema": {"type": "string"}},
+                ],
+                "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("A2ARunRequest")}}},
+                "responses": {
+                    **_json_response("200", "Success", _ref("Run")),
+                    "400": {"description": "Invalid body or delegation limit exceeded", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "401": {"description": "Missing or invalid runner/run binding", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "403": {"description": "Parent, generation, tenant or delegated authority mismatch", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    "503": {"description": "Parent assignment lookup unavailable", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                },
+            }},
             "/internal/checkpoints/{thread_id}": {
                 "get": {
                     "tags": ["Checkpoints"],

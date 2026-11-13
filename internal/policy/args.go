@@ -146,8 +146,19 @@ func copyRedactedValue(v any, depth int) any {
 }
 
 func secretArgKey(k string) bool {
-	switch strings.ToLower(strings.TrimSpace(k)) {
-	case "password", "token", "secret", "authorization", "api_key":
+	// Normalize common credential spellings, including camelCase and header
+	// names, without removing unrelated fields such as token_count or api_key_id.
+	k = strings.Map(func(r rune) rune {
+		if r == '_' || r == '-' || r == ' ' {
+			return -1
+		}
+		return r
+	}, strings.ToLower(strings.TrimSpace(k)))
+	switch k {
+	case "password", "passphrase", "token", "secret", "authorization", "apikey",
+		"accesstoken", "refreshtoken", "clientsecret", "bearertoken", "idtoken",
+		"ssotoken", "subjecttoken", "actortoken", "sessiontoken", "privatekey",
+		"secretkey", "clientassertion", "xapikey", "xauthtoken":
 		return true
 	default:
 		return false

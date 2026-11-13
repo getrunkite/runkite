@@ -29,6 +29,19 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Bind A2A delegation to the active parent run and exact generation. Derive
+  identity from the assignment and frozen manifest; reject foreign parents,
+  elevated permissions and replaced claims. Custom callers must send current
+  parent binding. Python and TypeScript helpers validate and carry it.
+- Sanitize OAuth provider and connector transport diagnostics before logging.
+  Retain recognized safe error classifications while excluding raw endpoint and
+  provider-body content. Expand nested argument-display credential redaction
+  without changing policy evaluation or canonical argument digests.
+- Add optional `policy.audit_required: true` on SQL backends. Refuse startup
+  without an enabled durable auditor and block access on required-write failure,
+  including cache hits, approved retries and break-glass. Preserve approvals
+  during outages. See [design and upgrade guidance](docs/internal/action-authority-hardening.md).
+
 - Correct handbook link colors, catalog alignment and a misleading second
   selected-page highlight. Improve selected-topic contrast and keyboard access
   to scrollable code and Engineering diagrams. Retain the public Admin URL with

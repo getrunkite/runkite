@@ -485,7 +485,7 @@ Here is what it does, in order:
 **3h. A2A checks (if this is agent-to-agent).** This step only fires when one agent is calling another agent (not when a human client creates a run). How does the CP know the difference? It's structural — there are two separate endpoints:
 
 - Human clients hit `POST /threads/{id}/runs` (public Agent Protocol). The `ParentRunID` field is NEVER populated from a client request body.
-- Agents call `POST /internal/a2a/runs` (internal-only, runner-authenticated). This endpoint REQUIRES `parent_run_id` in the body.
+- Agents call `POST /internal/a2a/runs` (internal-only, runner-authenticated). This endpoint requires `parent_run_id` in the body plus the active parent run/generation binding headers. The body parent must match that binding, and supplied authority may only narrow the trusted parent.
 
 So the check is simply: `if ParentRunID != nil` → this is agent-to-agent. A human cannot fake this because the public endpoint ignores that field entirely.
 
@@ -3382,7 +3382,7 @@ All SQL queries include a tenant_id scope. A user in tenant "acme" cannot see th
 
 ## Cross-tenant A2A prevention
 
-When an agent creates an A2A child run, the control plane looks up the parent run, extracts the parent's tenant_id, and FORCES the child to inherit it. The runner cannot say "create this child run for tenant X" if X differs from the parent's tenant. This prevents cross-tenant delegation forgery.
+When an agent creates an A2A child run, the control plane authenticates the active parent assignment and generation, requires the body parent to match, and looks up that parent within its tenant. Identity and permission ceilings come from the assignment and frozen parent principal. Supplied permissions can narrow that authority. Workers sharing a runner kind remain a trusted fleet; queue checks, child persistence and enqueue are separate operations. See [the hardening design](action-authority-hardening.md) for the exact guarantees and regression coverage.
 
 ## Admin access
 

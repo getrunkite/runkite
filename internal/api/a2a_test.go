@@ -10,6 +10,7 @@ import (
 	"github.com/getrunkite/runkite/internal/api"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 func upsertA2AAgent(t *testing.T, env *testEnv, ctx context.Context, agentID string) {
@@ -34,7 +35,7 @@ func TestA2A_CreatesRunWithParentAndRootLinkage(t *testing.T) {
 	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctx, &models.Run{RunID: "parent-run", ThreadID: "t1", AgentID: "parent_agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp, err := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	resp, err := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id":      "child_agent",
 		"parent_run_id": "parent-run",
 		"input":         map[string]interface{}{"messages": []interface{}{}},
@@ -83,7 +84,7 @@ func TestA2A_RootPropagatesThroughMultipleHops(t *testing.T) {
 	env.store.CreateRun(ctx, &models.Run{RunID: "root-run", ThreadID: "t1", AgentID: "agent_a", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
 	// Hop 1: root -> agent_b
-	resp1, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	resp1, _ := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id": "agent_b", "parent_run_id": "root-run",
 	})
 	defer resp1.Body.Close()
@@ -94,7 +95,7 @@ func TestA2A_RootPropagatesThroughMultipleHops(t *testing.T) {
 	}
 
 	// Hop 2: agent_b's run -> agent_c (a sub-sub-agent)
-	resp2, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	resp2, _ := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id": "agent_c", "parent_run_id": run1.RunID,
 	})
 	defer resp2.Body.Close()
@@ -127,7 +128,7 @@ func TestA2A_DepthLimitEnforced(t *testing.T) {
 	env.store.CreateRun(ctx, &models.Run{RunID: "run-0", ThreadID: "t1", AgentID: "agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
 	// Depth 1: allowed (1 <= max_depth 2)
-	resp1, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "run-0"})
+	resp1, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": "run-0"})
 	defer resp1.Body.Close()
 	if resp1.StatusCode != http.StatusOK {
 		t.Fatalf("depth 1: expected 200, got %d: %s", resp1.StatusCode, readBody(t, resp1))
@@ -136,7 +137,7 @@ func TestA2A_DepthLimitEnforced(t *testing.T) {
 	json.Unmarshal(readBody(t, resp1), &run1)
 
 	// Depth 2: allowed (2 <= max_depth 2)
-	resp2, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": run1.RunID})
+	resp2, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": run1.RunID})
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("depth 2: expected 200, got %d: %s", resp2.StatusCode, readBody(t, resp2))
@@ -145,7 +146,7 @@ func TestA2A_DepthLimitEnforced(t *testing.T) {
 	json.Unmarshal(readBody(t, resp2), &run2)
 
 	// Depth 3: rejected (3 > max_depth 2)
-	resp3, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": run2.RunID})
+	resp3, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": run2.RunID})
 	defer resp3.Body.Close()
 	if resp3.StatusCode != http.StatusBadRequest {
 		t.Fatalf("depth 3: expected 400 (depth limit exceeded), got %d: %s", resp3.StatusCode, readBody(t, resp3))
@@ -165,7 +166,7 @@ func TestA2A_BreadthLimitEnforced(t *testing.T) {
 	env.store.CreateRun(ctx, &models.Run{RunID: "parent", ThreadID: "t1", AgentID: "agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
 	for i := 0; i < 2; i++ {
-		resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
+		resp, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
 		body := readBody(t, resp)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
@@ -173,7 +174,7 @@ func TestA2A_BreadthLimitEnforced(t *testing.T) {
 		}
 	}
 
-	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
+	resp, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": "parent"})
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("child 3: expected 400 (breadth limit exceeded), got %d: %s", resp.StatusCode, readBody(t, resp))
@@ -194,7 +195,9 @@ func TestA2A_IdentityPropagatesToRunnerAssignment(t *testing.T) {
 	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctx, &models.Run{RunID: "parent-run", ThreadID: "t1", AgentID: "parent_agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	activateA2AParent(t, env, "parent-run", &transport.UserContext{Identity: "alice", IsAuthenticated: true, Permissions: []string{"read", "write"}, Extra: map[string]interface{}{"email": "alice@example.com"}})
+
+	resp, _ := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id":      "child_agent",
 		"parent_run_id": "parent-run",
 		"on_behalf_of": map[string]interface{}{
@@ -236,7 +239,7 @@ func TestA2A_TenantDerivedFromParentNotTrustedFromRequest(t *testing.T) {
 	env.store.CreateThread(ctxTenantA, &models.Thread{ThreadID: "t1", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctxTenantA, &models.Run{RunID: "parent-run", ThreadID: "t1", AgentID: "parent_agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{
+	resp, _ := postA2AJSON(t, env, map[string]interface{}{
 		"agent_id": "child_agent", "parent_run_id": "parent-run",
 	})
 	defer resp.Body.Close()
@@ -261,19 +264,19 @@ func TestA2A_TenantDerivedFromParentNotTrustedFromRequest(t *testing.T) {
 // cover the two basic validation paths.
 func TestA2A_MissingParentRunIDRejected(t *testing.T) {
 	env := newTestEnv(t)
-	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent"})
+	resp, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent"})
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing parent_run_id, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing parent binding, got %d", resp.StatusCode)
 	}
 }
 
-func TestA2A_UnknownParentRun404(t *testing.T) {
+func TestA2A_UnknownParentRunRejected(t *testing.T) {
 	env := newTestEnv(t)
-	resp, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "agent", "parent_run_id": "does-not-exist"})
+	resp, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "agent", "parent_run_id": "does-not-exist"})
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 for unknown parent_run_id, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for inactive parent_run_id, got %d", resp.StatusCode)
 	}
 }
 
@@ -293,12 +296,12 @@ func TestA2A_CancelCascadesToDelegatedChildren(t *testing.T) {
 	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t-cascade", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctx, &models.Run{RunID: "root-run", ThreadID: "t-cascade", AgentID: "root_agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp1, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "root-run"})
+	resp1, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "root-run"})
 	defer resp1.Body.Close()
 	var childRun models.Run
 	json.Unmarshal(readBody(t, resp1), &childRun)
 
-	resp2, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "grandchild_agent", "parent_run_id": childRun.RunID})
+	resp2, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "grandchild_agent", "parent_run_id": childRun.RunID})
 	defer resp2.Body.Close()
 	var grandchildRun models.Run
 	json.Unmarshal(readBody(t, resp2), &grandchildRun)
@@ -346,12 +349,12 @@ func TestA2A_CancelCascadesOnlyDownwardNotToAncestors(t *testing.T) {
 	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t-cascade2", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctx, &models.Run{RunID: "root-run-2", ThreadID: "t-cascade2", AgentID: "root_agent", Status: models.RunStatusRunning, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp1, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "root-run-2"})
+	resp1, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "root-run-2"})
 	defer resp1.Body.Close()
 	var childRun models.Run
 	json.Unmarshal(readBody(t, resp1), &childRun)
 
-	resp2, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "grandchild_agent", "parent_run_id": childRun.RunID})
+	resp2, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "grandchild_agent", "parent_run_id": childRun.RunID})
 	defer resp2.Body.Close()
 	var grandchildRun models.Run
 	json.Unmarshal(readBody(t, resp2), &grandchildRun)
@@ -418,7 +421,7 @@ func TestA2A_CostAggregationSumsUsageAcrossDelegationTree(t *testing.T) {
 	env.store.CreateThread(ctx, &models.Thread{ThreadID: "t-cost", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 	env.store.CreateRun(ctx, &models.Run{RunID: "cost-root", ThreadID: "t-cost", AgentID: "root_agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now})
 
-	resp1, _ := postJSON(env.srv.URL+"/internal/a2a/runs", map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "cost-root"})
+	resp1, _ := postA2AJSON(t, env, map[string]interface{}{"agent_id": "child_agent", "parent_run_id": "cost-root"})
 	defer resp1.Body.Close()
 	var childRun models.Run
 	json.Unmarshal(readBody(t, resp1), &childRun)

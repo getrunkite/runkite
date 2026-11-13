@@ -216,3 +216,46 @@ func TestMiddleware_RunBindingRequiresRunnerKindOwner(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestMiddleware_A2ARequiresCurrentParentBinding(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		generation []string
+		want       int
+	}{
+		{"missing", nil, http.StatusUnauthorized},
+		{"duplicate", []string{"2", "2"}, http.StatusUnauthorized},
+		{"ambiguous", []string{"2", "1"}, http.StatusUnauthorized},
+		{"stale", []string{"1"}, http.StatusForbidden},
+		{"legacy zero", []string{"0"}, http.StatusForbidden},
+		{"current", []string{"2"}, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inflight := mapInflight{"parent": {RunID: "parent", Generation: 2, TenantID: "acme", GraphID: "parent-agent", User: &transport.UserContext{Identity: "alice"}}}
+			called := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				binding := auth.RunBindingFromContext(r.Context())
+				if binding == nil || binding.RunID != "parent" || binding.Generation != 2 || binding.TenantID != "acme" || binding.User.Identity != "alice" {
+					t.Fatalf("binding=%+v", binding)
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight}, next)
+			req := httptest.NewRequest(http.MethodPost, "/internal/a2a/runs", nil)
+			req.Header.Set(auth.HeaderRunID, "parent")
+			req.Header.Set(auth.HeaderTenantID, "foreign")
+			for _, generation := range tc.generation {
+				req.Header.Add(auth.HeaderGeneration, generation)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != tc.want {
+				t.Fatalf("status=%d want=%d body=%s", recorder.Code, tc.want, recorder.Body.String())
+			}
+			if called != (tc.want == http.StatusOK) {
+				t.Fatalf("handler called=%v", called)
+			}
+		})
+	}
+}

@@ -195,3 +195,9 @@ Custom routes go through the same client auth middleware as the Agent Protocol A
 | `X-Runkite-User` | JSON object with the above fields |
 
 `Authorization` is still forwarded if present. Custom apps should treat the `X-Runkite-*` headers as the trust boundary for "who is this?" when traffic arrives via the control plane. Python helpers: `runkite_runner.custom_auth.user_from_request` and `runkite_runner.custom_helpers.ControlPlaneClient` (store/thread/run HTTP calls with the caller's Bearer). See `examples/custom_routes_agent/` (`/ping`, `/whoami`).
+
+## Credential-safe diagnostics and rotation
+
+OAuth acquisition errors expose HTTP status and recognized standard OAuth error codes, without provider descriptions, response bodies or raw endpoint URLs. Connector transport failures retain safe classifications such as cancellation, deadlines and connection errors. Custom `errors` mappings that relied on arbitrary body text must use the recognized safe codes instead. Tool responses remain upstream content; transport sanitization is not a general secret scanner.
+
+The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. This patch does not add dynamic Vault leases or provider-side revocation. See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).

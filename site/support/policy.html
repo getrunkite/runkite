@@ -111,6 +111,11 @@
   }
 }</pre>
 
+        <h2 id="required-audit">Require durable policy audit</h2>
+        <p>Add <code>"audit_required": true</code> to the existing policy block when sensitive access must stop if its decision cannot be saved. Auditing must be enabled and the backend must be Postgres, MySQL or SQLite; incompatible configurations stop startup. The default remains best-effort audit.</p>
+        <p>During a required-audit outage, allow and pending become deny. Approved connector capabilities remain unconsumed, and break-glass cannot bypass the failed write. Restore the audit database before resubmitting requests known to have been blocked before dispatch. A failed write cannot appear in SQL Audit; inspect operational logs and configured traces or SIEM for the failure marker.</p>
+        <p>Webhook <code>data.args</code> is capped, redacted display metadata. It is not the full argument object. Named-field redaction cannot detect every secret in arbitrary text.</p>
+
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin → Grants: durable connector overlays next to your PDP / webhook Decide</div>
@@ -121,7 +126,7 @@
         <ul class="expect">
           <li><strong>Fail-closed</strong>: webhook errors and timeouts deny (or pending per contract), never open the gate silently.</li>
           <li><strong>Scope</strong>: governs connectors / admission on the plane, not arbitrary in-graph tools that never call a connector.</li>
-          <li><strong>Break-glass</strong>: timed bypass skips Decide; audit notes when mandatory HITL would have matched.</li>
+          <li><strong>Break-glass</strong>: timed bypass requires a durable use audit. Required-audit mode also requires the normal decision write to succeed; audit notes when mandatory HITL would have matched.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/trust-governance.md">docs/trust-governance.md</a>

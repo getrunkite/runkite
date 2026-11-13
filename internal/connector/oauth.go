@@ -3,12 +3,72 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// OAuthEndpointError retains only safe classification from a rejected token
+// request. Provider bodies, descriptions, headers and endpoint URLs are omitted.
+type OAuthEndpointError struct {
+	StatusCode int
+	Code       string
+}
+
+func (e *OAuthEndpointError) Error() string {
+	if code := safeOAuthErrorCode(e.Code); code != "" {
+		return fmt.Sprintf("oauth token endpoint returned %d: %s", e.StatusCode, code)
+	}
+	return fmt.Sprintf("oauth token endpoint returned %d", e.StatusCode)
+}
+
+// Accept named protocol errors only. A length or character check would still
+// allow an upstream service to return a credential in the error field.
+func safeOAuthErrorCode(code string) string {
+	switch code {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client",
+		"unsupported_grant_type", "invalid_scope", "invalid_target", "access_denied",
+		"unsupported_response_type", "server_error", "temporarily_unavailable",
+		"interaction_required", "login_required", "account_selection_required", "consent_required":
+		return code
+	default:
+		return ""
+	}
+}
+
+func oauthTokenRequest(ctx context.Context, tokenURL string, data url.Values) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, errors.New("build token request: invalid endpoint request")
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, safeConnectorRequestError(ctx, "token request failed", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := readLimitedBody(resp.Body, MaxOAuthResponseBytes)
+	if err != nil {
+		return nil, safeConnectorRequestError(ctx, "read token response failed", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		var providerError struct {
+			Code string `json:"error"`
+		}
+		// Unknown or malformed provider content contributes no error text.
+		code := ""
+		if json.Unmarshal(body, &providerError) == nil {
+			code = safeOAuthErrorCode(providerError.Code)
+		}
+		return nil, &OAuthEndpointError{StatusCode: resp.StatusCode, Code: code}
+	}
+	return body, nil
+}
 
 // oauth2ClientCredentials performs a standard OAuth2 client_credentials grant.
 func oauth2ClientCredentials(ctx context.Context, cfg AuthConfig) (*CachedToken, error) {
@@ -26,25 +86,9 @@ func oauth2ClientCredentials(ctx context.Context, cfg AuthConfig) (*CachedToken,
 		data.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
+	body, err := oauthTokenRequest(ctx, tokenURL, data)
 	if err != nil {
-		return nil, fmt.Errorf("build token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := readLimitedBody(resp.Body, MaxOAuthResponseBytes)
-	if err != nil {
-		return nil, fmt.Errorf("read token response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
 	var tokenResp struct {
@@ -55,7 +99,7 @@ func oauth2ClientCredentials(ctx context.Context, cfg AuthConfig) (*CachedToken,
 		InstanceURL  string `json:"instance_url"`
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return nil, fmt.Errorf("parse token response: %w", err)
+		return nil, errors.New("parse token response: invalid response")
 	}
 
 	if tokenResp.AccessToken == "" {
@@ -75,7 +119,7 @@ func oauth2ClientCredentials(ctx context.Context, cfg AuthConfig) (*CachedToken,
 	}, nil
 }
 
-// oauth2TokenExchange performs RFC 8693 token exchange — exchanges an SSO token
+// oauth2TokenExchange performs RFC 8693 token exchange: exchanges an SSO token
 // for a service-specific access token. The exact request shape is provider-specific;
 // this implements the standard grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 // flow that works with compliant identity providers.
@@ -101,25 +145,9 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 		data.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
+	body, err := oauthTokenRequest(ctx, tokenURL, data)
 	if err != nil {
-		return nil, fmt.Errorf("build token exchange request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("token exchange request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := readLimitedBody(resp.Body, MaxOAuthResponseBytes)
-	if err != nil {
-		return nil, fmt.Errorf("read token exchange response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange returned %d: %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
 	var tokenResp struct {
@@ -130,7 +158,7 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 		InstanceURL  string `json:"instance_url"`
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return nil, fmt.Errorf("parse token exchange response: %w", err)
+		return nil, errors.New("parse token exchange response: invalid response")
 	}
 
 	if tokenResp.AccessToken == "" {

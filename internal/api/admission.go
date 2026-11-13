@@ -97,20 +97,15 @@ func (g *admissionGate) Decide(ctx context.Context, event hooks.Event) hooks.Dec
 			RunID:     event.RunID,
 			Principal: principal,
 		}
-		if s.tryBreakGlassBypass(ctx, in) {
-			// Break-glass skips policy only; budgets still apply below.
-		} else {
-			dec := s.policy.Decide(ctx, in)
-			if dec.Effect != policy.EffectAllow {
-				reason := dec.Reason
-				if reason == "" {
-					reason = dec.ReasonCode
-				}
-				if reason == "" {
-					reason = "run.create denied by policy"
-				}
-				return hooks.Decision{Allow: false, Reason: reason}
+		if dec, deny := s.checkConnectorPolicy(ctx, in); deny {
+			reason := dec.Reason
+			if reason == "" {
+				reason = dec.ReasonCode
 			}
+			if reason == "" {
+				reason = "run.create denied by policy"
+			}
+			return hooks.Decision{Allow: false, Reason: reason}
 		}
 	}
 
