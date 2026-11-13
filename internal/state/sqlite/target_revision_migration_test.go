@@ -32,20 +32,20 @@ func TestTargetRevisionMigrationPreservesHistoryWithoutAuthority(t *testing.T) {
 	}
 	for _, status := range []string{models.PendingStatusPending, models.PendingStatusApproved} {
 		row, err := s.GetPendingAction(ctx, "old-"+status)
-		if err != nil || row.TargetRevision != "" || row.RunIncarnationID != "original-incarnation" || row.Status != status || row.ArgsDigest != "digest" {
+		if err != nil || row.TargetRevision != "" || row.RunIncarnationID != "original-incarnation" || row.Status != status || row.ArgsDigest != "digest" || row.PolicyRevision != "" || row.ToolRevision != "" || row.RequesterIdentity != "" || row.RequiredApprovals != 1 || row.ApprovalCount != 0 || len(row.Approvals) != 0 {
 			t.Fatalf("migration guessed or changed historical authority: %+v %v", row, err)
 		}
 	}
 	if err := s.SetPendingActionApproved(ctx, "old-pending", "reviewer"); err == nil {
 		t.Fatal("migration silently authorized old target")
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "acme", "agent", "old-run", 0, "files", "write", "digest", testPendingTargetRevision); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "acme", "agent", "old-run", 0, "files", "write", "digest", testPendingTargetRevision, testPendingPolicyRevision, ""); err != nil || id != "" {
 		t.Fatal("historical target was consumable")
 	}
 	if err := s.Downgrade(ctx); err == nil || !strings.Contains(err.Error(), "backup") {
 		t.Fatalf("unsafe downgrade accepted: %v", err)
 	}
-	if version, err := bk.Current(ctx); err != nil || version != 18 {
+	if version, err := bk.Current(ctx); err != nil || version != s.migrations()[len(s.migrations())-1].Version {
 		t.Fatalf("refused downgrade changed version: %d %v", version, err)
 	}
 	if err := s.Init(ctx); err != nil {

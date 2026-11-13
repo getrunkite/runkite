@@ -203,9 +203,10 @@ mcp:
 characters. Changing it invalidates earlier managed approvals. It is a manual
 label, not automatic schema discovery, a signed release identity or proof of the
 remote tool's implementation. Coordinate it with the upstream deployment;
-unchanged endpoint/label configuration cannot detect a changed remote service.
-The existing negotiated transport's `tools/list` lookup does not establish that
-stronger guarantee.
+unchanged endpoint/label configuration cannot detect changed remote implementation.
+Optional `mcp.pin_tools` now detects the observed tool-contract changes described
+[below](#managed-policy-and-tool-contracts-unreleased); neither mechanism proves
+which remote code executed.
 
 Historical managed approvals without a target revision remain records but cannot
 be approved or consumed. Do not fill that column by guessing today's target.
@@ -293,4 +294,31 @@ Custom routes go through the same client auth middleware as the Agent Protocol A
 
 OAuth acquisition errors expose HTTP status and recognized standard OAuth error codes, without provider descriptions, response bodies or raw endpoint URLs. Connector transport failures retain safe classifications such as cancellation, deadlines and connection errors. Custom `errors` mappings that relied on arbitrary body text must use the recognized safe codes instead. Tool responses remain upstream content; transport sanitization is not a general secret scanner.
 
-The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. This patch does not add dynamic Vault leases or provider-side revocation. See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).
+The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. The ordinary KV resolver does not add dynamic leases. The separately registered `vault_database` consumer path in current source now coordinates bounded issuance and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md). See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).
+
+## Managed policy and tool contracts (unreleased)
+
+Current source after v0.6.1 extends target-bound approvals with the configured
+`policy-v1-` revision and optional `tool-v1-` schema revision. `policy.webhook.revision`
+represents operator-declared remote PDP changes, not verified remote execution.
+Both capture-on and capture-off dispatch require exact matching revisions.
+Historical approvals missing managed policy or target identity need new submission
+and review. Reusing the same arguments does not repair missing authority.
+
+Set `mcp.pin_tools: true` to discover the requested tool's actual MCP schema via
+`tools/list` and recheck it at dispatch. Discovery failure, a missing tool or a
+changed contract blocks the send rather than borrowing an old approval. Schema
+pinning does not prove remote implementation identity. Keep the separate optional
+`mcp.revision` label for operator-managed remote contract changes. New pinning or
+credential-binding options produce `target-v2-`; existing configurations retain
+the original `target-v1-` descriptor. Credential values remain outside both.
+
+`auth.type: vault_database` plus an operator-registered `credential_binding`
+provides a different path from KV `secret_ref`: a trusted external MCP executor
+receives a short-lived PostgreSQL username/password through private HTTP Basic.
+Initialization and schema listing acquire no database lease. Only an authorized
+managed tool dispatch may start issuance. Binding/provider revisions are immutable
+and included in target-v2. Keep retired providers registered for old cleanup.
+See [configuration](configuration.md#registered-vault-database-credentials-unreleased),
+the [separate executor example](../examples/vault_database_executor/README.md), and
+[lease lifecycle rationale](internal/credential-lifecycle.md).

@@ -54,9 +54,11 @@ later use `approved_capability`; an audited break-glass exception records its
 window ID. Recording a decision does not consume an approval. The later
 [target-bound approval milestone](target-bound-approvals.md) now fills the
 configured target revision and matches it during approval consumption, including
-when capture is off. Policy, upstream tool implementation and credential
-revision fields remain unavailable. The target digest does not attest remote
-code or schema.
+when capture is off. Subsequent unreleased work now records configured policy,
+optional observed tool-contract identity and registered credential provenance.
+See [approval authority](approval-authority-and-quorum.md) and
+[credential lifecycle](credential-lifecycle.md). No target or schema digest
+attests remote implementation or its business effect.
 
 New records exclude raw arguments, response bodies, raw JSON-RPC request IDs,
 endpoint URLs, resolved credentials and arbitrary provider error text. Identifiers,
@@ -182,7 +184,12 @@ uses bounded, serialized reads and offers manual refresh after polling stops.
 The response header `X-Runkite-Connector-Action-Id`, policy audit attribute
 `connector_action_id`, policy trace attribute `connector.action.id`, and existing
 SIEM policy events carry the same identity. They correlate a decision with SQL
-history. They do not provide a reliable lifecycle-export outbox.
+history. Those correlation channels alone are not reliable lifecycle export.
+Current source separately offers an opt-in
+[durable action-event outbox](action-delivery-outbox.md): event and delivery
+creation commit in the same SQL transaction, and HTTP delivery uses stable IDs
+with at-least-once retry. Receivers must deduplicate; retrying evidence never
+replays the tool.
 
 Only managed connector `tools/call` uses this recorder. Local framework tools,
 model calls, session minting, discovery and standalone `/governance/decide` are
@@ -289,5 +296,7 @@ rewrite historical payloads or infer that an old tool did not execute.
   requirements and bounded system-scoped sweeps.
 
 These checks do not demonstrate exactly-once external effects, live-provider
-semantics, a public cloud soak, cryptographic tamper evidence or enforced tool
-schema revisions. Keep those boundaries in user-facing claims.
+semantics, a public cloud soak, cryptographic tamper evidence or remote implementation identity. Subsequent unreleased
+[optional schema/review binding](approval-authority-and-quorum.md) and
+[durable export](action-delivery-outbox.md) extend this original milestone;
+those checks have their own conformance and operational boundaries.

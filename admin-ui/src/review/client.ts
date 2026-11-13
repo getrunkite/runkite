@@ -3,7 +3,14 @@ import { reviewDetailPath } from "./contracts.ts";
 import type { ReviewIdentity, ReviewPendingAction, ReviewSessionStatus, ReviewSnapshot } from "./contracts.ts";
 
 const BASE = "/review-api";
-function assertReviewScope(data: unknown, tenant: string): void {
+function assertReviewScope(data: unknown, tenant: string, path: string): void {
+  if (/^\/credential-leases(?:[/?]|$)/.test(path)) {
+    const checkLease = (row: unknown) => {
+      if (!row || typeof row !== "object" || !("lease_ref" in row) || typeof row.lease_ref !== "string" || !("owner" in row) || !row.owner || typeof row.owner !== "object" || !("tenant_id" in row.owner) || row.owner.tenant_id !== tenant) throw new ReviewError(503, "Review returned an unexpected credential tenant scope. No records were displayed.");
+    };
+    if (Array.isArray(data)) data.forEach(checkLease); else checkLease(data);
+    return;
+  }
   const check = (row: unknown) => {
     if (!row || typeof row !== "object" || !("tenant_id" in row) || row.tenant_id !== tenant)
       throw new ReviewError(503, "Review returned an unexpected tenant scope. No records were displayed.");
@@ -49,7 +56,7 @@ export function createReviewClient() {
     publish({ identity: status.identity, tenant_id: status.tenant_id, can_read: true, can_approve: status.can_approve, expires_at: status.expires_at }, true);
   }
   async function request<T>(path: string, init: RequestInit = {}, session = false): Promise<{ data: T; nextCursor: string | null; revision: number }> {
-    if (!/^\/(?:connector-actions|pending-actions)(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path) && !/^\/pending-actions\/[^/?#]+\/(?:approve|deny)$/.test(path) && path !== "/session") throw new ReviewError(400, "Unsupported Review endpoint.");
+    if (!/^\/(?:connector-actions|pending-actions|credential-leases)(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path) && !/^\/pending-actions\/[^/?#]+\/(?:approve|deny)$/.test(path) && path !== "/session") throw new ReviewError(400, "Unsupported Review endpoint.");
     const identity = session ? null : current();
     if (!session && !identity) throw new ReviewError(401, "Your Review session ended. Sign in again.");
     const revision = snapshot.revision;
@@ -72,7 +79,7 @@ export function createReviewClient() {
       const data = response.status === 204 ? undefined as T : await response.json() as T;
       signal.throwIfAborted();
       if (!session && (revision !== snapshot.revision || !current())) throw new ReviewError(401, "An expired Review response was discarded.");
-      if (!session) assertReviewScope(data, identity!.tenant_id);
+      if (!session) assertReviewScope(data, identity!.tenant_id, path);
       return { data, nextCursor: response.headers.get("X-Next-Cursor"), revision };
     } finally { controllers.delete(controller); }
   }

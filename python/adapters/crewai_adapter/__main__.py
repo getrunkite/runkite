@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 
+from runkite_runner.execution_pool import pool_runner_kind
 from runkite_runner.generic_worker import run_worker
 from runkite_runner.logging_config import setup_logging
 
@@ -28,7 +29,9 @@ def main():
         default=os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026"),
         help="Control plane HTTP address for opaque checkpoints (env: RUNKITE_HTTP_URL)",
     )
+    parser.add_argument("--execution-pool", default=os.environ.get("RUNKITE_EXECUTION_POOL"))
     args = parser.parse_args()
+    args.runner_kind = pool_runner_kind(args.runner_kind, args.execution_pool)
 
     setup_logging()
 

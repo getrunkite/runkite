@@ -49,6 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a class="active" aria-current="page" href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -136,7 +137,7 @@
   }
 }</pre>
         <p>Only old blocked, not-dispatched and response-observed records are pruned, with their events. Unresolved attempts, pending review, intents and unknown outcomes remain. Earlier pending attempts can stay in that state after a later retry consumes the approval, so retention does not guarantee bounded storage. Plan backups, archival and capacity accordingly.</p>
-        <p>New action records contain typed metadata, not raw arguments, result bodies, credentials, endpoint URLs or provider error text. Principal, identifiers, digests and trace IDs are still sensitive. Existing policy audit has its own capped, redacted argument display and retention. This feature does not add a vault, dynamic secret leases, tool-implementation verification or a reliable lifecycle export.</p>
+        <p>New action records contain typed metadata, not raw arguments, result bodies, credentials, endpoint URLs or provider error text. Principal, identifiers, digests and trace IDs are still sensitive. Existing policy audit has its own capped, redacted argument display and retention. This action trail is not a vault or implementation verifier. Separate unreleased <a href="security-completion.html">registered database leases and durable action export</a> extend it under explicit lifecycle contracts.</p>
 
         <h2 id="reference">API and design</h2>
         <p>Read-only Admin endpoints: <code>GET /admin-api/connector-actions</code> and <code>GET /admin-api/connector-actions/{actionID}</code>. Both require Admin authority when authentication is configured and return <code>501</code> on stores without action support. Lists use bounded pages and <code>X-Next-Cursor</code>; detail includes the action, ordered events and whether its original run remains available.</p>
@@ -145,6 +146,8 @@
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
         <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="lifecycle-and-export">Approval, credential and export references (unreleased)</h2>
+        <p>Current source populates configured policy and optional observed tool-schema identities. A credential reference from the registered Vault database path links to metadata-only lifecycle detail; private cleanup handles are never returned. An export sink reference links Admin to durable event delivery. An export retry resends evidence only. See <a href="security-completion.html">review/quorum, lifecycle, export and upgrade contracts</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

@@ -33,6 +33,7 @@ import grpc
 from . import runner_pb2, runner_pb2_grpc
 from .cancellation import PendingCancels, record_cancel_signal, register_run, unregister_run
 from .completion import CompletionDeliveryError, finish_run
+from .execution_pool import validate_pool_environment
 from .heartbeat import heartbeat_loop
 from .run_status import should_skip_run
 from .tls_utils import grpc_channel_credentials
@@ -168,6 +169,7 @@ async def run_worker(
     concurrency controls how many jobs this process handles at once (see
     _poll_loop's dispatcher below) -- default 1 preserves the original
     one-job-at-a-time behavior exactly."""
+    validate_pool_environment(runner_kind)
     tracing_shutdown = init_tracing()
 
     await adapter.load_config(config_path)
@@ -304,6 +306,7 @@ async def _handle_job(
             runner_kind=runner_kind,
             runner_token=runner_token,
             tenant_id=assignment.get("tenant_id") or "",
+            generation=generation,
         ):
             return
 

@@ -121,19 +121,25 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 		return nil, &ErrCircuitOpen{Connector: c.Name}
 	}
 
-	token, err := c.getTokenForAuth(ctx, userCtx, false, cfg.Auth)
+	if req.Method == "tools/call" {
+		if err := r.recheckToolRevision(ctx, target, req.Tool, userCtx); err != nil {
+			trace.notDispatched("connector_tool_revision_changed")
+			return nil, err
+		}
+	}
+	authorization, err := mcpAuthorization(ctx, c, cfg, userCtx, req.Method)
 	if err != nil {
 		trace.notDispatched("connector_credentials_unavailable")
 		c.breaker.RecordFailure()
-		return nil, fmt.Errorf("connector %s: %w", name, err)
+		return nil, err
 	}
 
 	var respBody []byte
 	var statusCode int
 	if cfg.MCP.Transport == "streamable_http" {
-		respBody, statusCode, err = forwardStreamableMCP(ctx, cfg.MCP.URL, token.AccessToken, req)
+		respBody, statusCode, err = forwardStreamableMCPAuthorization(ctx, cfg.MCP.URL, authorization, req)
 	} else {
-		respBody, statusCode, err = forwardMCPRequest(ctx, cfg.MCP.URL, token.AccessToken, body)
+		respBody, statusCode, err = forwardMCPRequestAuthorization(ctx, cfg.MCP.URL, authorization, body)
 	}
 	if err != nil {
 		if errors.Is(err, ErrMCPDispatchBlocked) {
@@ -198,14 +204,22 @@ func DeniedRPCResult(id json.RawMessage, message string, data map[string]interfa
 // the runner never needs to see or forward raw downstream credentials
 // for MCP traffic -- it only ever talks to this proxy.
 func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte) ([]byte, int, error) {
+	authorization := ""
+	if accessToken != "" {
+		authorization = "Bearer " + accessToken
+	}
+	return forwardMCPRequestAuthorization(ctx, url, authorization, body)
+}
+
+func forwardMCPRequestAuthorization(ctx context.Context, url, authorization string, body []byte) ([]byte, int, error) {
 	trace := actionTrace(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, safeConnectorRequestError(ctx, "build MCP request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if accessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+accessToken)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
 	}
 	if err := trace.beforeDispatch(ctx); err != nil {
 		return nil, 0, err

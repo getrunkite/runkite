@@ -59,6 +59,33 @@ approvals also [bind to the configured connector target](docs/connectors.md#targ
 so a changed target cannot consume an earlier approval. Credential values can
 rotate without changing that binding.
 
+### Security completion in current source (unreleased)
+
+Source after v0.6.1 adds three opt-in controls around existing managed connector
+authority: [distinct-reviewer quorum and requester separation](docs/internal/approval-authority-and-quorum.md),
+[durable action evidence export](docs/internal/action-delivery-outbox.md), and
+[registered Vault database credential leases](docs/internal/credential-lifecycle.md).
+Managed approvals bind the current configured policy and optional observed MCP
+tool schema as well as arguments, target and run incarnation. Historical unbound
+approvals require fresh review. These settings are not in published v0.6.1 packages.
+
+[Execution pools and an experimental external OpenShell bridge](docs/internal/constrained-execution.md)
+add a separately credentialed fleet and explicit workload boundary. Existing SDK
+workers are not automatically sandboxed; the bridge requires its JSONL workload
+contract. Rendered network policy and configuration hashes do not prove runtime
+or CNI enforcement. Disposable qualification has passed with an installed Python
+runner, a real SQLite plane and OpenShell 0.1.8, plus a separate enforcing-CNI
+profile. The [qualification record](docs/internal/constrained-execution.md#verification-and-remaining-qualification)
+states the tested cases and remaining limits. Start with the [security operations guide](site/support/security-completion.html)
+and [upgrade procedure](docs/ops-runbook.md#security-completion-upgrade).
+
+The [release qualification record](docs/internal/security-completion-qualification.md)
+collects the tested backends, installed SDK profiles, failure cases and release
+gates for this source cut.
+The experimental JSONL profile does not yet report model/token usage or settle
+model spend. A zero in Admin is not proof of free execution; existing SDK usage
+reporting is a separate capability.
+
 ## Choose an integration path
 
 | | Runkite owns execution | Your app owns execution |

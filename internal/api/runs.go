@@ -321,6 +321,14 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// recurs.
 	}
 
+	// Reject unauthorized pool routing before creating a thread, run, cache
+	// result or pre-warmed connector session. Bridge checks independently
+	// before any assignment input is returned to a worker.
+	runnerKind := runnerKindForAgent(agentForRun)
+	if !s.executionPools.AllowsRoute(runnerKind, tenant.FromContext(ctx), req.AgentID) {
+		return nil, nil, errExecutionPoolDenied
+	}
+
 	// Per-agent rate limiting -- one dimension of the broader per-user,
 	// per-agent, per-tenant limiting scheme. Enforced here rather than in
 	// generic HTTP middleware because agent_id is parsed from the request
@@ -593,6 +601,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		agent:            agentForRun,
 		policyFailClosed: s.policy != nil,
 		user:             userContextFromAuth(ctx),
+		identityVerified: auth.HasVerifiedIdentity(auth.FromContext(ctx)),
 		parentRunID:      req.ParentRunID,
 		depth:            depth,
 	})
@@ -675,28 +684,22 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// agent lookup fails or predates this field, matching the config
 	// loader's own default and preserving every existing deployment's
 	// behavior unchanged.
-	runnerKind := "python-langgraph"
-	if agentForRun != nil {
-		if rk, ok := agentForRun.Metadata["runner_kind"].(string); ok && rk != "" {
-			runnerKind = rk
-		}
-	}
-
 	// Build RunAssignment for the runner
 	assignment := &transport.RunAssignment{
-		RunID:          runID,
-		ThreadID:       threadID,
-		RunnerKind:     runnerKind,
-		GraphID:        req.AgentID,
-		Input:          req.Input,
-		Config:         req.Config,
-		CheckpointRef:  req.CheckpointRef,
-		ResumeCommand:  req.ResumeCommand,
-		StreamModes:    []string{"values", "updates"},
-		ConnectorNeeds: []string{},
-		RunManifest:    runManifestToRaw(manifest),
-		User:           userContextFromAuth(ctx),
-		TenantID:       tenant.FromContext(ctx),
+		RunID:            runID,
+		RunIncarnationID: run.IncarnationID,
+		ThreadID:         threadID,
+		RunnerKind:       runnerKind,
+		GraphID:          req.AgentID,
+		Input:            req.Input,
+		Config:           req.Config,
+		CheckpointRef:    req.CheckpointRef,
+		ResumeCommand:    req.ResumeCommand,
+		StreamModes:      []string{"values", "updates"},
+		ConnectorNeeds:   []string{},
+		RunManifest:      runManifestToRaw(manifest),
+		User:             userContextFromAuth(ctx),
+		TenantID:         tenant.FromContext(ctx),
 		// Generation starts at 1 for every fresh dispatch (see its own
 		// doc comment on RunAssignment for the full fencing rationale)
 		// -- ReclaimStale is the only thing that ever increments it
@@ -932,6 +935,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		agent:            agent,
 		policyFailClosed: s.policy != nil,
 		user:             userContextFromAuth(ctx),
+		identityVerified: auth.HasVerifiedIdentity(auth.FromContext(ctx)),
 	})
 	metadata := map[string]interface{}{
 		"cache_hit":    true,

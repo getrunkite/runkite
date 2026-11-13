@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getrunkite/runkite/internal/execution"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -149,9 +150,23 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 			// Run-bound proxy paths: prove an active assignment and derive
 			// tenant/agent from it. Inflight nil → legacy tenant header
 			// (unit tests); production serve always wires the job queue.
-			if opts.Inflight != nil && requiresRunBinding(path) {
+			poolKind := execution.IsPoolKind(kind)
+			if poolKind && !runnerTokens.Validate(kind, r.Header.Get(HeaderRunnerToken)) {
+				writeDenied(w, http.StatusUnauthorized, ReasonRunnerCredentialsInvalid, "invalid runner credentials")
+				return
+			}
+			poolSchema := poolKind && poolSchemaAgentAllowed(runnerTokens, kind, r)
+			if poolKind && !poolSchema && opts.Inflight == nil {
+				writeDenied(w, http.StatusServiceUnavailable, ReasonRunBindingLookupFailed, "execution pool requires active assignment lookup")
+				return
+			}
+			if opts.Inflight != nil && (requiresRunBinding(path) || (poolKind && !poolSchema)) {
 				ctx, ok := bindInternalRun(w, r, kind, runnerTokens, opts.Inflight)
 				if !ok {
+					return
+				}
+				if poolKind && !poolRunPathAllowed(r, RunBindingFromContext(ctx)) {
+					writeDenied(w, http.StatusForbidden, "execution_pool_denied", "route is not allowed for this execution pool")
 					return
 				}
 				next.ServeHTTP(w, r.WithContext(ctx))

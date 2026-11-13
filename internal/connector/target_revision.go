@@ -72,12 +72,22 @@ func TargetRevisionForConfig(cfg ConnectorConfig) (string, error) {
 		AllowedTools    []string `json:"allowed_tools"`
 		DeniedTools     []string `json:"denied_tools"`
 	}{cfg.MCP.URL, mode, cfg.MCP.Revision, cfg.Auth.Type, cfg.Auth.Issuer, cfg.Auth.TokenURL, cfg.Auth.ClientID, cfg.Auth.SecretRef, targetSet(cfg.Auth.Scopes), targetSet(allow), targetSet(deny)}
-	raw, err := json.Marshal(descriptor)
+	var value any = descriptor
+	prefix := "target-v1-"
+	if cfg.MCP.PinTools || cfg.Auth.CredentialBinding != "" {
+		prefix = "target-v2-"
+		value = struct {
+			Base                                         any
+			PinTools                                     bool
+			CredentialBinding, CredentialBindingRevision string
+		}{descriptor, cfg.MCP.PinTools, cfg.Auth.CredentialBinding, cfg.Auth.CredentialBindingRevision}
+	}
+	raw, err := json.Marshal(value)
 	if err != nil {
 		return "", ErrTargetRevisionUnavailable
 	}
 	digest := sha256.Sum256(raw)
-	return "target-v1-" + hex.EncodeToString(digest[:]), nil
+	return prefix + hex.EncodeToString(digest[:]), nil
 }
 
 func nonsecretTargetURL(endpoint string) bool {

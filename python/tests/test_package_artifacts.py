@@ -216,6 +216,7 @@ class PackageArtifactTests(unittest.TestCase):
             dict(parser["console_scripts"]),
             {
                 "runkite-runner": "runkite_runner.worker:main",
+                "runkite-runner-isolated": "runkite_runner.isolated:main",
                 "runkite-runner-agent-framework": "agent_framework_adapter.__main__:main",
                 "runkite-runner-openai-agents": "openai_agents_adapter.__main__:main",
                 "runkite-runner-pydantic-ai": "pydantic_ai_adapter.__main__:main",

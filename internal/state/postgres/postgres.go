@@ -350,6 +350,15 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 				return fmt.Errorf("postgres: target-bound approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
 			},
 		},
+		{Version: 19, Name: "pending_review_authority", Up: func(ctx context.Context) error { return s.upPendingReviewAuthority(ctx, conn) }, Down: func(context.Context) error {
+			return fmt.Errorf("postgres: revision and quorum approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 20, Name: "action_delivery_outbox", Up: func(ctx context.Context) error { return s.upActionDeliveries(ctx, conn) }, Down: func(context.Context) error {
+			return fmt.Errorf("postgres: action delivery outbox cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 21, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx, conn) }, Down: func(context.Context) error {
+			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
+		}},
 	}
 }
 
@@ -368,6 +377,8 @@ func (s *Store) dropSchemaLocked(ctx context.Context, conn *pgxpool.Conn) error 
 			webhook_dead_letters,
 			audit_events,
 			policy_grants,
+			action_deliveries,
+			pending_action_approvals,
 			pending_actions,
 			kill_switches,
 			break_glass_windows,
@@ -806,7 +817,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	// same bug, found via audit and fixed here -- same class of gap as
 	// the identical one already fixed for Mongo's TruncateAll).
 	_, err := s.pool.Exec(ctx, `
-		TRUNCATE connector_action_events, connector_actions, store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, mandatory_hitl_rules, usage_events, usage_holds, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
+		TRUNCATE action_deliveries, pending_action_approvals, connector_action_events, connector_actions, store_items, runs, threads, agent_schemas, agents, agent_versions, registry_entries, registry_entry_versions, webhook_dead_letters, audit_events, policy_grants, pending_actions, kill_switches, break_glass_windows, mandatory_hitl_rules, usage_events, usage_holds, run_cache, cron_schedules, cron_claims, terminal_hook_claims CASCADE
 	`)
 	return err
 }
@@ -3093,8 +3104,7 @@ func (s *Store) upPendingActionsExpiresAt(ctx context.Context, conn *pgxpool.Con
 	return err
 }
 
-const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at, run_incarnation_id, target_revision`
+const pendingActionSelectCols = sqlcompletion.PendingActionSelectColumns
 
 // CreatePendingAction inserts or reuses a scoped open approval. The canonical
 // action ID is written back to a.ID. A nullable unique key arbitrates concurrent
@@ -3116,7 +3126,7 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 	}
 	var openKey any
 	if a.Status == models.PendingStatusPending {
-		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision)
+		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision, a.PolicyRevision, a.ToolRevision, a)
 		if err != nil {
 			return err
 		}
@@ -3131,16 +3141,16 @@ func (s *Store) CreatePendingAction(ctx context.Context, a *models.PendingAction
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by, expires_at, pending_key, run_incarnation_id, target_revision
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) ON CONFLICT (pending_key) DO NOTHING
+			args_digest, args, decided_by, expires_at, pending_key, run_incarnation_id, target_revision,policy_revision,tool_revision,requester_identity,required_approvals,exclude_requester
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) ON CONFLICT (pending_key) DO NOTHING
 	`, a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, a.CreatedAt, a.UpdatedAt,
-		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy, a.ExpiresAt, openKey, a.RunIncarnationID, a.TargetRevision)
+		a.ArgsDigest, models.MarshalPendingArgs(a.Args), a.DecidedBy, a.ExpiresAt, openKey, a.RunIncarnationID, a.TargetRevision, a.PolicyRevision, a.ToolRevision, a.RequesterIdentity, a.RequiredApprovals, a.ExcludeRequester)
 	if err != nil {
 		return err
 	}
 	if openKey != nil {
-		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision)
+		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision, a.PolicyRevision, a.ToolRevision, a)
 		if err != nil {
 			return err
 		}
@@ -3172,21 +3182,11 @@ func (s *Store) ExpireGovernancePending(ctx context.Context, now time.Time) erro
 
 // GetPendingAction returns one row by id.
 func (s *Store) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
-	query := `SELECT ` + pendingActionSelectCols + ` FROM pending_actions WHERE id = $1`
-	args := []any{id}
-	if !tenant.IsSystem(ctx) {
-		query += " AND tenant_id = $2"
-		args = append(args, tenant.FromContext(ctx))
-	}
-	row := s.pool.QueryRow(ctx, query, args...)
-	a, err := scanPendingAction(row)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &state.ErrNotFound{Resource: "pending_action", ID: id}
-		}
-		return nil, err
-	}
-	return a, nil
+	return s.completionDriver().GetPendingAction(ctx, id)
+}
+
+func (s *Store) ListPendingActionApprovals(ctx context.Context, id string) ([]models.PendingActionApproval, error) {
+	return s.completionDriver().ListPendingActionApprovals(ctx, id)
 }
 
 // SearchPendingActions lists pending actions with optional filters.
@@ -3216,6 +3216,18 @@ func (s *Store) SearchPendingActions(ctx context.Context, req *models.PendingAct
 		args = append(args, req.TargetRevision)
 		argN++
 	}
+	if req.PolicyRevision != "" {
+		where = append(where, fmt.Sprintf("policy_revision = $%d", argN))
+		args = append(args, req.PolicyRevision)
+		argN++
+	}
+
+	if req.ToolRevision != "" {
+		where = append(where, fmt.Sprintf("tool_revision = $%d", argN))
+		args = append(args, req.ToolRevision)
+		argN++
+	}
+
 	if req.Status != "" {
 		where = append(where, fmt.Sprintf("status = $%d", argN))
 		args = append(args, req.Status)
@@ -3288,10 +3300,12 @@ func (s *Store) SetPendingActionStatus(ctx context.Context, id, fromStatus, toSt
 
 // FindOpenPendingAction returns the oldest still-pending row for this
 // call tuple and argument digest. Different amounts do not share a row.
-func (s *Store) FindOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision string, embedded bool) (*models.PendingAction, error) {
+func (s *Store) FindOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision, policyRevision, toolRevision string, embedded bool) (*models.PendingAction, error) {
 	if embedded {
 		targetRevision = ""
-	} else if !models.ValidConnectorTargetRevision(targetRevision) {
+		policyRevision = ""
+		toolRevision = ""
+	} else if !models.ValidConnectorTargetRevision(targetRevision) || !models.ValidPolicyRevision(policyRevision) || !models.ValidToolRevision(toolRevision) {
 		return nil, nil
 	}
 	incarnation := ""
@@ -3302,73 +3316,27 @@ func (s *Store) FindOpenPendingAction(ctx context.Context, tenantID, agentID, ru
 			return nil, err
 		}
 	}
-	return s.findOpenPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, embedded, incarnation, targetRevision)
+	return s.findOpenPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, embedded, incarnation, targetRevision, policyRevision, toolRevision, nil)
 }
 
-func (s *Store) findOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool, incarnation, targetRevision string) (*models.PendingAction, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT `+pendingActionSelectCols+`
-		FROM pending_actions
-		WHERE run_id = $1 AND generation = $2 AND connector = $3 AND tool = $4
-		  AND status = $5 AND args_digest = $6
-		  AND tenant_id = $7 AND agent_id = $8 AND (expires_at IS NOT NULL) = $9 AND run_incarnation_id = $10 AND target_revision = $11
-		ORDER BY created_at ASC
-		LIMIT 1
-	`, runID, generation, connector, tool, models.PendingStatusPending, argsDigest, tenantID, agentID, embedded, incarnation, targetRevision)
-	a, err := scanPendingAction(row)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return a, nil
+func (s *Store) findOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool, incarnation, targetRevision, policyRevision, toolRevision string, plan *models.PendingAction) (*models.PendingAction, error) {
+	return s.completionDriver().FindOpenPendingCall(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, embedded, incarnation, targetRevision, policyRevision, toolRevision, plan)
 }
 
 // SetPendingActionApproved moves pending → approved and records who decided.
 func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
-	now := time.Now().UTC()
-	query := `
-		UPDATE pending_actions SET status = $1, decided_by = $2, updated_at = $3, pending_key = NULL
-		WHERE id = $4 AND status = $5 AND (expires_at IS NULL OR expires_at > $3) AND (
-            expires_at IS NOT NULL
-            OR EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id AND r.agent_id=pending_actions.agent_id AND r.incarnation_id=pending_actions.run_incarnation_id AND r.incarnation_id<>'')
-            OR (run_incarnation_id='' AND NOT EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id))
-        ) AND (expires_at IS NOT NULL OR (length(target_revision)=74 AND target_revision ~ '^target-v1-[0-9a-f]{64}$'))`
-	args := []any{models.PendingStatusApproved, decidedBy, now, id, models.PendingStatusPending}
-	if !tenant.IsSystem(ctx) {
-		query += " AND tenant_id = $6"
-		args = append(args, tenant.FromContext(ctx))
-	}
-	tag, err := s.pool.Exec(ctx, query, args...)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return &state.ErrConflict{Resource: "pending_action", ID: id, Reason: "status changed or approval expired"}
-	}
-	return nil
+	return s.completionDriver().ApprovePendingAction(ctx, id, decidedBy)
 }
 
 // ConsumeApprovedAction atomically marks an approved action consumed for
 // the matching run/generation/connector/tool and argument digest.
 // Unbound legacy approvals cannot authorize a newly interpreted operation.
-func (s *Store) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision string) (string, error) {
-	return s.completionDriver().ConsumeApprovedPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, targetRevision)
+func (s *Store) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision, policyRevision, toolRevision string) (string, error) {
+	return s.completionDriver().ConsumeApprovedPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, targetRevision, policyRevision, toolRevision)
 }
 
 func scanPendingAction(row policyGrantScanner) (*models.PendingAction, error) {
-	var a models.PendingAction
-	var argsRaw []byte
-	if err := row.Scan(
-		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
-		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &a.CreatedAt, &a.UpdatedAt,
-		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &a.ExpiresAt, &a.RunIncarnationID, &a.TargetRevision,
-	); err != nil {
-		return nil, err
-	}
-	a.Args = models.UnmarshalPendingArgs(argsRaw)
-	return &a, nil
+	return sqlcompletion.ScanPendingAction(row)
 }
 
 func (s *Store) SaveWebhookDeadLetter(ctx context.Context, dl *models.WebhookDeadLetter) error {

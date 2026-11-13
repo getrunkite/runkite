@@ -115,13 +115,21 @@ bytes without control characters. Advancing it changes the descriptor when the
 endpoint stays constant. Coordinate that label with the remote deployment; the
 plane does not verify a signed release, image digest or actual implementation.
 
-JSON mode forwards the protected POST without requiring discovery. Negotiated
-mode calls `findUpstreamTool` before execution to populate the SDK's tool cache
-and derive protocol headers. That lookup checks the advertised name. It does
-not compare stored schemas or prove that the advertised implementation is the
-one executing. A schema digest alone would not establish that proof either.
-Unchanged URL/label configuration cannot detect an upstream behavior change.
-`ToolRevision`, policy revision and credential lifecycle remain separate work.
+Default JSON mode forwards the protected POST without requiring discovery.
+Negotiated mode discovers the advertised tool before execution to populate the
+SDK's tool cache and derive protocol headers. Discovery alone does not prove
+that the advertised implementation is the one executing. Unchanged URL/label
+configuration cannot detect every upstream behavior change.
+
+Current source adds optional `mcp.pin_tools` in both transports. It computes an
+observed `tool-v1-` schema revision, binds managed approval to that revision and
+rechecks the contract at dispatch. This closes a changed-advertised-schema gap;
+it still cannot pin upstream code or prove truthful tool behavior. Managed
+approvals also bind the [configured policy revision](approval-authority-and-quorum.md).
+Optional [registered database credentials](credential-lifecycle.md) bind an
+immutable provider descriptor through target-v2 while resolved values rotate
+outside the digest. These are additive controls, not remote attestation or a
+second vault.
 
 A human approval still does not execute a tool or resume a framework. A timeout,
 disconnect or missing evidence response after dispatch remains uncertain. Never
@@ -185,3 +193,15 @@ when the registry cannot resolve the target.
 These are configured-target and approval tests. They do not establish remote
 implementation attestation, schema compatibility, sandbox containment,
 exactly-once effects or live-provider behavior.
+
+## Subsequent approval and schema contracts
+
+The original v1 descriptor remains unchanged for existing configurations.
+Subsequent unreleased `mcp.pin_tools` and registered credential-binding options
+use a v2 descriptor, and managed approvals also require configured policy identity
+and optional observed MCP tool-contract identity. Target v1/v2 are exact versioned
+formats, not aliases. Schema discovery/recheck can reject advertised-contract
+changes; it cannot attest the upstream implementation. See
+[approval authority and quorum](approval-authority-and-quorum.md),
+[dynamic credentials](credential-lifecycle.md), and the
+[combined upgrade procedure](../ops-runbook.md#security-completion-upgrade).

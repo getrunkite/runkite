@@ -41,6 +41,8 @@ func (s *Store) CreateCachedRun(ctx context.Context, run *models.Run, caps *stat
 }
 
 func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
+	// The caller never supplies the durable insertion identity.
+	run.IncarnationID = ""
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -115,12 +117,23 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 		}
 		return err
 	}
+	var incarnation string
+	if err := tx.QueryRow(ctx, `SELECT incarnation_id FROM runs WHERE run_id=$1 AND tenant_id=$2 FOR UPDATE`, run.RunID, tid).Scan(&incarnation); err != nil {
+		return err
+	}
+	if incarnation == "" {
+		return fmt.Errorf("run insertion identity missing")
+	}
 	if afterInsert != nil {
 		if err := afterInsert(locked); err != nil {
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	run.IncarnationID = incarnation
+	return nil
 }
 
 func pgXactLock(ctx context.Context, tx pgx.Tx, key string) error {

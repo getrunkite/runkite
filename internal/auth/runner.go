@@ -2,10 +2,13 @@ package auth
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/getrunkite/runkite/internal/execution"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -31,6 +34,7 @@ import (
 // A missing header is treated as "default" for the allow check. Tenant lists
 // are per-kind, not per fleet token.
 type RunnerTokens struct {
+	pools   *execution.Catalog
 	tokens  map[string][]string            // runner_kind -> accepted tokens (allowlist)
 	tenants map[string]map[string]struct{} // runner_kind -> allowed tenant ids (absent/empty = unrestricted)
 }
@@ -130,6 +134,11 @@ func (rt *RunnerTokens) Enabled() bool {
 // constant-time equality (OR of matches) so a leaked fleet A token can be
 // revoked without rotating fleet B.
 func (rt *RunnerTokens) Validate(runnerKind, token string) bool {
+	if execution.IsPoolKind(runnerKind) {
+		if _, ok := rt.executionPools().Lookup(runnerKind); !ok {
+			return false
+		}
+	}
 	if !rt.Enabled() {
 		return true
 	}
@@ -143,6 +152,59 @@ func (rt *RunnerTokens) Validate(runnerKind, token string) bool {
 		match |= subtle.ConstantTimeCompare(got, []byte(cand))
 	}
 	return match == 1
+}
+
+func (rt *RunnerTokens) executionPools() *execution.Catalog {
+	if rt == nil {
+		return nil
+	}
+	return rt.pools
+}
+
+// ConfigureExecutionPools requires separate credentials for each pool. A
+// credential reused by another kind would erase the intended fleet boundary.
+func (rt *RunnerTokens) ConfigureExecutionPools(pools *execution.Catalog) error {
+	for _, kind := range pools.Kinds() {
+		if rt == nil || len(rt.tokens[kind]) == 0 {
+			return fmt.Errorf("execution pool %q requires a configured runner token", kind)
+		}
+		for other, values := range rt.tokens {
+			if other == kind {
+				continue
+			}
+			for _, value := range rt.tokens[kind] {
+				if slices.Contains(values, value) {
+					return fmt.Errorf("execution pool credentials must not be shared across runner kinds")
+				}
+			}
+		}
+		pool, _ := pools.Lookup(kind)
+		rt.tenants[kind] = make(map[string]struct{}, len(pool.Tenants))
+		for _, id := range pool.Tenants {
+			rt.tenants[kind][id] = struct{}{}
+		}
+	}
+	for kind := range rt.tokens {
+		if execution.IsPoolKind(kind) {
+			if _, ok := pools.Lookup(kind); !ok {
+				return fmt.Errorf("runner token uses an unknown reserved execution pool kind")
+			}
+		}
+	}
+	rt.pools = pools
+	return nil
+}
+
+func (rt *RunnerTokens) AllowsAssignment(kind, tenantID, agentID string) bool {
+	if tenantID == "" {
+		tenantID = tenant.DefaultTenant
+	}
+	return rt.executionPools().AllowsRoute(kind, tenantID, agentID) && rt.AllowsTenant(kind, tenantID)
+}
+
+func (rt *RunnerTokens) AllowsPoolAgent(kind, agentID string) bool {
+	p, ok := rt.executionPools().Lookup(kind)
+	return ok && slices.Contains(p.Agents, agentID)
 }
 
 // AllowsTenant reports whether runnerKind may claim tenantID on /internal/*

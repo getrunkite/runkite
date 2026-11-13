@@ -5,6 +5,7 @@ import { ReviewProvider } from "./ReviewContext";
 import { useReview } from "./context";
 import { reviewClient } from "./client";
 import { REVIEW_HELP, REVIEW_ROOT } from "./contracts";
+import { ReviewCredentialLeases, ReviewCredentialLeaseDetail } from "./ReviewCredentialLeases";
 import { ReviewEvidenceDetail, ReviewList, ReviewPendingDetail } from "./ReviewPages";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -26,6 +27,8 @@ function ReviewGate() {
       <Route path="connector-actions/:actionId" element={<ReviewEvidenceDetail />} />
       <Route path="pending" element={<ReviewList kind="pending-actions" />} />
       <Route path="pending/:pendingId" element={<ReviewPendingDetail />} />
+      <Route path="credential-leases" element={<ReviewCredentialLeases />} />
+      <Route path="credential-leases/:leaseRef" element={<ReviewCredentialLeaseDetail />} />
       <Route path="*" element={<Navigate to={REVIEW_ROOT} replace />} />
     </Route>
   </Routes></div>;
@@ -82,6 +85,7 @@ function ReviewLayout() {
       <nav aria-label="Review navigation" className="flex flex-wrap items-center gap-4 text-sm">
         <NavLink end to={REVIEW_ROOT} className={({ isActive }) => isActive ? "text-primary underline underline-offset-4" : "hover:text-primary"}>Evidence</NavLink>
         <NavLink to={`${REVIEW_ROOT}/pending`} className={({ isActive }) => isActive ? "text-primary underline underline-offset-4" : "hover:text-primary"}>Approvals</NavLink>
+        <NavLink to={`${REVIEW_ROOT}/credential-leases`} className={({ isActive }) => isActive ? "text-primary underline underline-offset-4" : "hover:text-primary"}>Credential leases</NavLink>
         <a href={REVIEW_HELP} target="_blank" rel="noopener noreferrer" className="hover:text-primary">Help ↗</a>
         <Button size="sm" variant="ghost" disabled={busy} onClick={logout}><LogOut className="size-4" />Sign out</Button>
       </nav>

@@ -55,6 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -96,6 +97,7 @@
           <li>FinOps caps + metering + Admin Spend (<code>/admin/spend</code>) run on SQL. Holds reduce admission overshoot; estimates can be wrong. <code>on_hard_breach: cancel_inflight</code> can cancel in-scope runs after a hard breach, but usage is not continuously metered and canceled-run accounting can be incomplete.</li>
           <li>Kubernetes/Helm: kind K0–K3 ops proofs and a named EKS smoke exist. Packaging is Compatible; a longer cloud HA soak is still outstanding. Supported backend HA evidence remains the Compose topology.</li>
           <li><code>POST /governance/decide</code> creates no managed thread or run and applies no run kill switch, break-glass or spend cap. The app executes and owns pending continuation.</li>
+          <li>The experimental isolated JSONL profile does not report model/token usage or define spend settlement. Zero recorded spend is not proof of free execution. Use external provider accounting and limits; existing native SDK usage support is separate. See <a href="security-completion.html#execution-boundary">the execution scope</a>.</li>
           <li>Every runner generation, including zero, must match exactly. Stream terminals pass the durable completion fence; superseded terminals do not finish a replacement attempt. Queue checks and publication remain separate, so nonterminal output is advisory during reclaim. Clients must not combine attempts. Stored output and <code>/wait</code> remain authoritative.</li>
         </ul>
         <h2>Managed AI SDK profile (v0.5.8+)</h2>
@@ -131,6 +133,9 @@
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/limitations.md">docs/limitations.md</a>
         </p>
 
+        <h2 id="security-completion-limits">Security completion limits (unreleased)</h2>
+        <p>Current-source quorum counts identities, not independently verified people. Configured policy hashing and optional MCP schema pinning do not attest remote implementation. Action export is at least once and can arrive out of order; old destination queues remain held and delivered history needs capacity/retention planning.</p>
+        <p>Vault database leases require fixed registered roles and a trusted credential-aware consumer. Unknown issuance can lose the cleanup handle; provider role TTL must independently limit exposure. Revocation cannot undo prior work or prove every existing session closed. Pools route separately credentialed fleets but do not isolate arbitrary in-process code. The external JSONL/OpenShell bridge and egress manifests do not imply qualified runtime/CNI enforcement or drop-in compatibility with an existing SDK. See <a href="security-completion.html">Security operations</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

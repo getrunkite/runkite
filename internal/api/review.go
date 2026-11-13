@@ -66,29 +66,38 @@ func reviewListPaging(r *http.Request) (adminPaging, error) {
 // reviewPendingAction is an allowlist. New storage fields are not automatically
 // exposed to reviewers, even when the model later gains sensitive metadata.
 type reviewPendingAction struct {
-	ID               string         `json:"id"`
-	RunID            string         `json:"run_id"`
-	RunIncarnationID string         `json:"run_incarnation_id,omitempty"`
-	TargetRevision   string         `json:"target_revision,omitempty"`
-	Generation       int64          `json:"generation"`
-	TenantID         string         `json:"tenant_id"`
-	AgentID          string         `json:"agent_id"`
-	Connector        string         `json:"connector"`
-	Tool             string         `json:"tool"`
-	RuleID           string         `json:"rule_id,omitempty"`
-	ReasonCode       string         `json:"reason_code,omitempty"`
-	Status           string         `json:"status"`
-	ArgsDigest       string         `json:"args_digest,omitempty"`
-	Args             map[string]any `json:"args,omitempty"`
-	DecidedBy        string         `json:"decided_by,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
+	ID                string                         `json:"id"`
+	RunID             string                         `json:"run_id"`
+	RunIncarnationID  string                         `json:"run_incarnation_id,omitempty"`
+	TargetRevision    string                         `json:"target_revision,omitempty"`
+	PolicyRevision    string                         `json:"policy_revision,omitempty"`
+	ToolRevision      string                         `json:"tool_revision,omitempty"`
+	RequesterIdentity string                         `json:"requester_identity,omitempty"`
+	RequiredApprovals int                            `json:"required_approvals"`
+	ExcludeRequester  bool                           `json:"exclude_requester,omitempty"`
+	ApprovalCount     int                            `json:"approval_count"`
+	Approvals         []models.PendingActionApproval `json:"approvals,omitempty"`
+	Generation        int64                          `json:"generation"`
+	TenantID          string                         `json:"tenant_id"`
+	AgentID           string                         `json:"agent_id"`
+	Connector         string                         `json:"connector"`
+	Tool              string                         `json:"tool"`
+	RuleID            string                         `json:"rule_id,omitempty"`
+	ReasonCode        string                         `json:"reason_code,omitempty"`
+	Status            string                         `json:"status"`
+	ArgsDigest        string                         `json:"args_digest,omitempty"`
+	Args              map[string]any                 `json:"args,omitempty"`
+	DecidedBy         string                         `json:"decided_by,omitempty"`
+	CreatedAt         time.Time                      `json:"created_at"`
+	UpdatedAt         time.Time                      `json:"updated_at"`
+	ExpiresAt         *time.Time                     `json:"expires_at,omitempty"`
 }
 
 func reviewPendingProjection(action *models.PendingAction, caps auth.ReviewCapabilities) reviewPendingAction {
 	out := reviewPendingAction{
 		ID: action.ID, RunID: action.RunID, RunIncarnationID: action.RunIncarnationID, TargetRevision: action.TargetRevision,
+		PolicyRevision: action.PolicyRevision, ToolRevision: action.ToolRevision, RequesterIdentity: action.RequesterIdentity,
+		RequiredApprovals: action.RequiredApprovals, ExcludeRequester: action.ExcludeRequester, ApprovalCount: action.ApprovalCount, Approvals: action.Approvals,
 		Generation: action.Generation, TenantID: action.TenantID, AgentID: action.AgentID,
 		Connector: action.Connector, Tool: action.Tool, RuleID: action.RuleID, ReasonCode: action.ReasonCode,
 		Status: action.Status, ArgsDigest: action.ArgsDigest, DecidedBy: action.DecidedBy,

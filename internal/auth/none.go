@@ -6,5 +6,5 @@ import "net/http"
 type NoneProvider struct{}
 
 func (n *NoneProvider) Authenticate(r *http.Request) (*AuthResult, error) {
-	return &AuthResult{Identity: "anonymous"}, nil
+	return &AuthResult{Identity: "anonymous", identityMissing: true}, nil
 }

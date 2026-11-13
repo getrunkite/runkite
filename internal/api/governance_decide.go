@@ -141,6 +141,10 @@ func (s *Server) handleGovernanceDecide(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) writeGovernancePending(w http.ResponseWriter, r *http.Request, in policy.PolicyInput, dec policy.PolicyDecision) {
+	if s.policy.ApprovalRequirements().ExcludeRequester && !auth.HasVerifiedIdentity(auth.FromContext(r.Context())) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "a verified requester identity is required for separation of duties", "reason_code": "verified_requester_required"})
+		return
+	}
 	if in.RunID == "" {
 		writeError(w, http.StatusBadRequest, "run_id is required when the decision is pending")
 		return
@@ -198,6 +202,13 @@ func (s *Server) handleGovernanceGetAction(w http.ResponseWriter, r *http.Reques
 	if !currentPendingBinding(a) && (a.Status == models.PendingStatusPending || a.Status == models.PendingStatusApproved) {
 		writeJSON(w, http.StatusOK, governanceActionResponse{ActionID: a.ID, Status: "rejected", Reason: "resubmit the operation for fresh approval", ReasonCode: "approval_binding_legacy"})
 		return
+	}
+	requirements := s.policy.ApprovalRequirements()
+	if a.Status == models.PendingStatusPending || a.Status == models.PendingStatusApproved {
+		if a.RequiredApprovals != requirements.RequiredApprovals || a.ExcludeRequester != requirements.ExcludeRequester {
+			writeJSON(w, http.StatusOK, governanceActionResponse{ActionID: a.ID, Status: "rejected", Reason: "approval requirements changed; resubmit for fresh review", ReasonCode: "approval_requirements_changed"})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, governanceActionResponse{
 		ActionID:   a.ID,

@@ -19,6 +19,7 @@ import { initTracing, setRunStatus, withRunSpan, type TraceContextFields } from 
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
+import { validatePoolEnvironment } from "./executionPool.js";
 import {
   createRunnerClient,
   type CancelSignal,
@@ -180,6 +181,7 @@ function logTraceContext(runId: string, tc?: TraceContextFields): void {
 }
 
 export async function runWorker(opts: WorkerOptions): Promise<void> {
+  validatePoolEnvironment(opts.runnerKind);
   const tracingShutdown = await initTracing();
 
   // Runner auth, two-tier model: if the control plane has
@@ -388,6 +390,7 @@ async function handleJobUnderTenant(
     (await shouldSkipRun(opts.httpAddress, runId, {
       runnerKind: opts.runnerKind,
       runnerToken: opts.runnerToken,
+      generation,
     }))
   ) {
     return undefined;

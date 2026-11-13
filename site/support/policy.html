@@ -49,6 +49,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a class="active" href="policy.html" aria-current="page">PDP / Cedar</a>
@@ -144,6 +145,8 @@
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
         <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="declared-policy-revision">Declared policy revision (unreleased)</h2>
+        <p>Managed approvals bind the effective configured policy as <code>policy-v1-</code>, including optional reviewer requirements and operator-declared <code>policy.webhook.revision</code>. Advance that nonsecret revision when remote PDP rules change. It is not remote attestation. Existing hard deny, mandatory HITL and required audit still run. <code>policy.action_export</code> is a durable action-evidence outbox, separate from best-effort decision hooks. See <a href="security-completion.html">Security operations</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

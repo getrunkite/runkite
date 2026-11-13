@@ -60,14 +60,14 @@ func newReviewFixture(t *testing.T) *reviewFixture {
 		seedManagedPendingFixture(t, db, binding)
 		for i := 0; i < 3; i++ {
 			_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":123,"apiKey":"synthetic-credential"}`))
-			row := &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: scope, AgentID: "agent", RunID: binding.RunID, Generation: 1, Connector: "files", Tool: "write", ArgsDigest: digest, Args: args, Reason: "synthetic-sensitive-freeform", ReasonCode: "mandatory_hitl", TargetRevision: targetRevision}
+			row := &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: scope, AgentID: "agent", RunID: binding.RunID, Generation: 1, Connector: "files", Tool: "write", ArgsDigest: digest, Args: args, Reason: "synthetic-sensitive-freeform", ReasonCode: "mandatory_hitl", TargetRevision: targetRevision, PolicyRevision: s.policy.Revision()}
 			// Distinct operations avoid the existing open-action deduplication key.
 			row.Tool += strings.Repeat("x", i)
 			if err := db.CreatePendingAction(ctx, row); err != nil {
 				t.Fatal(err)
 			}
 			out.pending[scope] = append(out.pending[scope], row.ID)
-			action, err := db.CreateConnectorAction(ctx, &models.ConnectorAction{ID: uuid.NewString(), TenantID: scope, AgentID: "agent", RunID: binding.RunID, ThreadID: binding.ThreadID, Generation: 1, Connector: "files", Tool: row.Tool, ArgsDigest: digest, TargetRevision: &targetRevision}, uuid.NewString())
+			action, err := db.CreateConnectorAction(ctx, &models.ConnectorAction{ID: uuid.NewString(), TenantID: scope, AgentID: "agent", RunID: binding.RunID, ThreadID: binding.ThreadID, Generation: 1, Connector: "files", Tool: row.Tool, ArgsDigest: digest, TargetRevision: &targetRevision, PolicyRevision: optionalRevision(s.policy.Revision())}, uuid.NewString())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -229,14 +229,14 @@ func TestReviewApproveDenyBodyAndOriginalSafety(t *testing.T) {
 		t.Fatalf("approval: %d %s", w.Code, w.Body.String())
 	}
 	ctx := tenant.ScopedContext(t.Context(), "a")
-	if got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 1, "files", "write", "wrong", approved.TargetRevision); err != nil || got != "" {
+	if got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 1, "files", "write", "wrong", approved.TargetRevision, approved.PolicyRevision, approved.ToolRevision); err != nil || got != "" {
 		t.Fatalf("mismatched digest consumed: %s %v", got, err)
 	}
-	if got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 2, "files", "write", approved.ArgsDigest, approved.TargetRevision); err != nil || got != "" {
+	if got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 2, "files", "write", approved.ArgsDigest, approved.TargetRevision, approved.PolicyRevision, approved.ToolRevision); err != nil || got != "" {
 		t.Fatalf("other generation consumed approval: %s %v", got, err)
 	}
 	for i := 0; i < 2; i++ {
-		got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 1, "files", "write", approved.ArgsDigest, approved.TargetRevision)
+		got, err := env.store.ConsumeApprovedAction(ctx, "a", "agent", "run-a", 1, "files", "write", approved.ArgsDigest, approved.TargetRevision, approved.PolicyRevision, approved.ToolRevision)
 		if err != nil || (i == 0 && got != id) || (i == 1 && got != "") {
 			t.Fatalf("one-shot i=%d id=%s err=%v", i, got, err)
 		}
@@ -312,6 +312,7 @@ func TestReviewApprovalRetainsExpiryLegacyAuditAndIncarnationChecks(t *testing.T
 					row.ExpiresAt = &past
 				} else {
 					row.TargetRevision = currentFixtureTargetRevision(t, env.server, "files")
+					row.PolicyRevision = env.server.policy.Revision()
 				}
 				if err := env.store.CreatePendingAction(ctx, row); err != nil {
 					t.Fatal(err)

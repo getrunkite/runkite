@@ -22,7 +22,7 @@ type ReviewCapabilities struct {
 // Scope comes from verified identity claims, not request metadata.
 func ReviewCapabilitiesFromResult(result *AuthResult) (ReviewCapabilities, bool) {
 	var caps ReviewCapabilities
-	if result == nil || result.identityMissing || strings.TrimSpace(result.Identity) == "" || strings.TrimSpace(result.TenantID) == "" {
+	if !HasVerifiedIdentity(result) || strings.TrimSpace(result.TenantID) == "" {
 		return caps, false
 	}
 	for _, permission := range result.Permissions {
@@ -59,7 +59,7 @@ func reviewRoutePermission(method, path string) string {
 		return GovernanceReadPermission
 	}
 	parts := strings.Split(strings.TrimPrefix(path, "/review-api/"), "/")
-	if len(parts) == 0 || (parts[0] != "pending-actions" && parts[0] != "connector-actions") {
+	if len(parts) == 0 || (parts[0] != "pending-actions" && parts[0] != "connector-actions" && parts[0] != "credential-leases") {
 		return ""
 	}
 	if (method == http.MethodGet || method == http.MethodHead) && (len(parts) == 1 || (len(parts) == 2 && validReviewID(parts[1]))) {

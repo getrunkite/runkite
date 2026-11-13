@@ -244,7 +244,7 @@ func TestRecordedConnectorActionsObserveBothTransportsAndAuthorities(t *testing.
 				if row.TargetRevision == nil || *row.TargetRevision != currentFixtureTargetRevision(t, env.s, "fixture") {
 					t.Fatal("action did not retain its configured target revision")
 				}
-				if row.ToolRevision != nil || row.CredentialRef != nil || row.PolicyRevision != nil || row.ResponseDigest != "" {
+				if row.ToolRevision != nil || row.CredentialRef != nil || row.PolicyRevision == nil || *row.PolicyRevision != env.s.policy.Revision() || row.ResponseDigest != "" {
 					t.Fatal("action evidence invented unavailable provenance or hashed a response")
 				}
 			})

@@ -49,6 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a class="active" aria-current="page" href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -137,7 +138,7 @@
           <li><strong>409:</strong> current policy, expiry, status or approval binding prevents approval. A prior approval is not a permanent policy exception.</li>
           <li><strong>501:</strong> use a SQL state backend, or implement the optional isolated Review-session capability if you supply a custom session store.</li>
         </ul>
-        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Two-person/no-self-approval rules and verification of remote tool schemas or implementations are not part of this slice.</p>
+        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Subsequent unreleased <a href="security-completion.html#review-authority">review quorum and requester exclusion</a> are now available, with configured policy and optional advertised-schema binding. Neither proves remote implementation. Review also reads own-tenant lease metadata but cannot renew/revoke.</p>
 
         <h2 id="qualification">Test the multi-replica boundary locally</h2>
         <p>From a source checkout with Go, Docker and Compose, run <code>make test-review-ha</code>. It creates disposable Postgres/Redis services and starts two real control-plane processes with strict authentication and a synthetic MCP target. It checks cross-replica sessions, tenant/role isolation, competing approval and dispatch, process loss, retained evidence and logout. It uses no paid model or cloud account.</p>

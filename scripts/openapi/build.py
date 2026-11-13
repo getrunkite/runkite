@@ -69,8 +69,57 @@ _VERSION_PARAM = _path_param("version", "The version number.", fmt="")
 # ---------------------------------------------------------------------------
 
 
+def _run_manifest_schemas() -> dict:
+    return {
+        "RunManifestPrincipal": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "Frozen run principal. A nonempty identity alone is not proof that a primary authentication provider verified it.",
+            "properties": {
+                "identity": {"type": "string"},
+                "verified_identity": {
+                    "type": "boolean",
+                    "description": "True only when the server captured an explicit authenticated primary identity. Omitted or false is not sufficient for requester-exclusion authority.",
+                },
+                "permissions": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "RunManifest": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "Server-created dispatch authorization snapshot. This is not runtime attestation or a client-supplied authority override.",
+            "required": ["schema_version", "captured_at", "tenant_id", "agent_id", "runner_kind", "policy_fail_closed"],
+            "properties": {
+                "schema_version": {"type": "integer"},
+                "captured_at": {"type": "string", "format": "date-time"},
+                "tenant_id": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "requested_alias": {"type": "string"},
+                "agent_version": {"type": "integer"},
+                "runner_kind": {"type": "string"},
+                "connector_needs": {"type": "array", "items": {"type": "string"}},
+                "allowed_tools": {"type": "array", "items": {"type": "string"}},
+                "policy_fail_closed": {"type": "boolean"},
+                "principal": _ref("RunManifestPrincipal"),
+                "parent_run_id": {"type": "string"},
+                "depth": {"type": "integer"},
+            },
+        },
+    }
+
+
+def _run_metadata_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {"run_manifest": _ref("RunManifest")},
+        "additionalProperties": True,
+        "description": "Run metadata, including the server's frozen dispatch manifest when available. Other metadata keys remain application-defined.",
+    }
+
+
 def _new_schemas() -> dict:
     return {
+        **_run_manifest_schemas(),
         "AgentVersion": {
             "type": "object",
             "required": ["agent_id", "version", "name", "capabilities", "created_at"],
@@ -324,7 +373,7 @@ def _new_schemas() -> dict:
                 "reason": {"type": "string"},
                 "reason_code": {
                     "type": "string",
-                    "description": "pending_expired when the embedded row passed its 24h ceiling while still pending.",
+                    "description": "pending_expired when a pending row passes its 24h ceiling; approval_requirements_changed when its immutable separation/quorum plan is obsolete.",
                 },
             },
             "title": "GovernanceActionResponse",
@@ -408,6 +457,7 @@ def _build_public_spec() -> dict:
         for part in run_extra_props["allOf"]:
             props = part.get("properties", {})
             if "run_id" in props:
+                props["metadata"] = _run_metadata_schema()
                 if "parent_run_id" not in props:
                     props["parent_run_id"] = {"type": "string", "format": "uuid", "description": "Parent run in an A2A delegation chain."}
                 if "root_run_id" not in props:
@@ -818,8 +868,8 @@ def _build_public_spec() -> dict:
                 "Requires permission governance:decide (admin implies it; write, read, and agents:<id>:run do not). "
                 "Tenant is the authenticated key's tenant. "
                 "An engine effect of pending is returned as pending with action_id when run_id is set. "
-                "The same run_id, generation 0, connector, tool, and argument digest reuses the open row. "
-                "Poll GET /governance/actions/{action_id}. Admin approves or denies that row. "
+                "The same run_id, generation 0, connector, tool, argument digest and immutable requester/review plan reuse the open row. "
+                "Poll GET /governance/actions/{action_id}. Admin or an own-tenant approver records review; partial quorum remains pending. "
                 "Embedded rows expire after 24h if still pending. Connector HITL rows do not."
             ),
             "operationId": "governance_decide",
@@ -862,7 +912,9 @@ def _build_public_spec() -> dict:
                 "Requires governance:decide. Another tenant's id is 404. "
                 "A row still pending after 24h is rejected with reason_code pending_expired. "
                 "Legacy pending/approved rows return rejected with reason_code "
-                "approval_binding_legacy; resubmit the operation for fresh review."
+                "approval_binding_legacy; resubmit the operation for fresh review. A changed "
+                "separation/quorum plan returns HTTP 200 with status rejected and "
+                "reason_code approval_requirements_changed, including formerly approved rows."
             ),
             "operationId": "governance_get_action",
             "parameters": [_path_param("action_id", "The pending action id.", fmt="")],
@@ -1082,7 +1134,7 @@ def _admin_run_view() -> dict:
             "status": {"type": "string"},
             "created_at": {"type": "string", "format": "date-time"},
             "updated_at": {"type": "string", "format": "date-time"},
-            "metadata": {"type": "object"},
+            "metadata": _run_metadata_schema(),
             "error": {"type": "string"},
             "tenant_id": {"type": "string"},
         },
@@ -1239,6 +1291,7 @@ def _build_admin_spec() -> dict:
                 "AdminAgentView": _admin_agent_view(),
                 "AdminThreadView": _admin_thread_view(),
                 "AdminRunView": _admin_run_view(),
+                **_run_manifest_schemas(),
                 **_connector_action_schemas(),
                 "AdminRegistryEntryView": {
                     "type": "object",
@@ -2246,6 +2299,74 @@ def _write_spec(spec: dict, path: Path) -> int:
     return _count_ops(spec)
 
 
+def _add_security_completion(spec: dict) -> None:
+    """Unreleased approval authority and metadata lifecycle contracts."""
+    schemas = spec["components"]["schemas"]
+    stamp = {"type": "string", "format": "date-time"}
+    text = {"type": "string"}
+    revision = lambda prefix: {"type": "string", "pattern": f"^{prefix}-[0-9a-f]{{64}}$", "minLength": len(prefix) + 65, "maxLength": len(prefix) + 65}
+    target = revision("target-v[12]")
+    target.update(minLength=74, maxLength=74)
+    policy = revision("policy-v1")
+    tool = {"type": "string", "pattern": "^(?:|tool-v1-[0-9a-f]{64})$", "maxLength": 72, "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."}
+    schemas["PendingActionApproval"] = {"type": "object", "additionalProperties": False, "required": ["pending_action_id", "reviewer_identity", "reviewed_at"], "properties": {"pending_action_id": text, "reviewer_identity": {"type": "string", "description": "Exact authenticated identity, without case normalization. Empty only in legacy default-one local mode."}, "reviewed_at": stamp}}
+    pending = schemas["PendingAction"]
+    pending["additionalProperties"] = False
+    pending["properties"].update({
+        "target_revision": target, "policy_revision": policy, "tool_revision": tool,
+        "requester_identity": {"type": "string", "description": "Immutable durable managed-run principal or authenticated standalone requester."},
+        "required_approvals": {"type": "integer", "minimum": 1, "maximum": 5, "default": 1},
+        "exclude_requester": {"type": "boolean"}, "approval_count": {"type": "integer", "minimum": 0},
+        "approvals": {"type": "array", "maxItems": 5, "items": _ref("PendingActionApproval"), "description": "Retained exact reviewer history on detail. Lists provide a derived approval_count."},
+    })
+    pending["required"] = ["id", "run_id", "required_approvals", "approval_count", "generation", "tenant_id", "agent_id", "connector", "tool", "status", "created_at", "updated_at"]
+    pending["description"] = "Immutable held operation and quorum plan. Approve records one vote and may return pending until quorum. Historical managed missing revisions require fresh submission; standalone plan changes require fresh review. No tool executes during review."
+    action = schemas["ConnectorAction"]["properties"]
+    action.update({"export_sink_id": {"type": "string", "maxLength": 64, "description": "Immutable effective destination identity. Current HTTP exporter derives SHA-256(name, exact URL, envelope schema); endpoint and HMAC key are excluded from this response."}, "target_revision": target, "policy_revision": policy, "tool_revision": tool})
+    owner = {name: copy.deepcopy(text) for name in ("tenant_id", "run_id", "run_incarnation_id", "action_id", "consumer_id")}
+    owner["generation"] = {"type": "integer", "format": "int64", "minimum": 1}
+    schemas["CredentialLeaseOwner"] = {"type": "object", "additionalProperties": False, "required": list(owner), "properties": owner}
+    lease = {name: copy.deepcopy(text) for name in ("lease_ref", "binding_id", "binding_revision", "reason_code")}
+    lease["lease_ref"].update(pattern="^cred-[0-9a-f]{56}$", minLength=61, maxLength=61)
+    lease.update({"owner": _ref("CredentialLeaseOwner"), "state": {"type": "string", "enum": ["issuance_intent", "active", "issuance_unknown", "not_issued", "renewal_intent", "renewal_unknown", "revocation_intent", "revocation_unknown", "revoked"]}, "version": {"type": "integer", "format": "int64"}, "granted_ttl_seconds": {"type": "integer", "format": "int64"}, "renewable": {"type": "boolean"}, "cleanup_requested": {"type": "boolean"}})
+    for name in ("created_at", "updated_at", "operation_deadline", "expires_at", "use_started_at"):
+        lease[name] = copy.deepcopy(stamp)
+    schemas["CredentialLease"] = {"type": "object", "additionalProperties": False, "properties": lease, "required": [name for name in lease if name not in {"reason_code", "use_started_at"}], "description": "Metadata only. No database credential, workload token or protected/raw provider lease handle. Unknown states do not establish absence or revocation. Actual grant TTL bounds a consumer callback; no automatic renewal."}
+    envelope = {"schema": {"type": "string", "const": "runkite.action-event.v1"}, "delivery_id": text, "sink_id": text, "action": _ref("ConnectorAction"), "event": _ref("ConnectorActionEvent")}
+    schemas["ActionDeliveryPayload"] = {"type": "object", "additionalProperties": False, "required": list(envelope), "properties": envelope, "description": "Typed metadata envelope, bounded to 64 KiB in storage. At-least-once receivers deduplicate delivery_id and order by action/event sequence. Never a tool execution request."}
+    delivery = {name: copy.deepcopy(text) for name in ("id", "sink_id", "tenant_id", "action_id", "last_reason_code")}
+    delivery.update({"sequence": {"type": "integer", "format": "int64"}, "payload": _ref("ActionDeliveryPayload"), "attempts": {"type": "integer", "minimum": 0}, "status": {"type": "string", "enum": ["pending", "delivered", "dead_letter"]}})
+    for name in ("available_at", "created_at", "updated_at", "claim_until"):
+        delivery[name] = copy.deepcopy(stamp)
+    schemas["ActionDelivery"] = {"type": "object", "additionalProperties": False, "properties": delivery, "required": [name for name in delivery if name not in {"claim_until", "last_reason_code"}], "description": "Retained action-event delivery metadata. Claim-token authority is private. Retrying a dead letter resends the same evidence ID and never executes or retries a tool."}
+    schemes = spec["components"]["securitySchemes"]
+    schemes["AdminCSRF"] = {"type": "apiKey", "in": "header", "name": "X-CSRF-Token", "description": "Synchronizer token required for Admin-cookie mutations."}
+    read_auth = [{"BearerAuth": []}, {"ApiKeyAuth": []}, {"AdminSessionAuth": []}]
+    write_auth = [{"BearerAuth": []}, {"ApiKeyAuth": []}, {"AdminSessionAuth": [], "AdminCSRF": []}]
+    tenant_param = {"name": "tenant_id", "in": "query", "required": True, "schema": {"type": "string", "minLength": 1}, "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."}
+    def add(method, path, name, summary, schema, params, mutate=False):
+        operation = {"tags": ["Admin"], "operationId": name, "summary": summary, "security": copy.deepcopy(write_auth if mutate else read_auth), "parameters": params, "responses": {**_json_response("200", "Recorded operation or metadata", schema), "400": {"description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."}, "401": {"description": "Admin authentication required."}, "403": {"description": "Admin authority or cookie CSRF required."}, "404": _ERR_404, "409": _ERR_409, "501": {"description": "Required SQL capability or credential lifecycle configuration unavailable."}, "503": {"description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."}}}
+        if mutate:
+            operation["description"] = "Accepts an empty body or {} only. Tenant and authority cannot be supplied in the body. Inspect current metadata after an unconfirmed response; do not automatically replay effects."
+        spec["paths"].setdefault(path, {})[method] = operation
+        return operation
+    page = [{"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}}, {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}}]
+    filters = [{"name": "status", "in": "query", "schema": delivery["status"]}, {"name": "sink_id", "in": "query", "schema": text}]
+    op = add("get", "/admin-api/action-deliveries", "admin_list_action_deliveries", "List selected tenant's action evidence deliveries", _array_of(_ref("ActionDelivery")), [tenant_param] + page + filters)
+    op["description"] = "Bounded offset paging, without a cursor or stable-page guarantee during updates. Retained metadata and typed evidence payload; no claim tokens."
+    op = add("post", "/admin-api/action-deliveries/{id}/retry", "admin_retry_action_delivery", "Queue a dead-letter evidence delivery without retrying its tool", {"type": "object", "required": ["status", "message"], "additionalProperties": False, "properties": {"status": {"type": "string", "const": "pending"}, "message": text}}, [_path_param("id", "Stable evidence delivery ID.", fmt=""), tenant_param], True)
+    op["description"] += " Only dead_letter can be queued; ID, payload and cumulative attempts are retained."
+    add("get", "/admin-api/credential-leases", "admin_list_credential_leases", "List at most 100 selected-tenant credential metadata records", {"type": "array", "maxItems": 100, "items": _ref("CredentialLease")}, [tenant_param])
+    lease_id = _path_param("id", "Opaque lease_ref, never a provider cleanup handle.", fmt="")
+    add("get", "/admin-api/credential-leases/{id}", "admin_get_credential_lease", "Read one selected-tenant lease lifecycle", _ref("CredentialLease"), [lease_id, tenant_param])
+    op_param = {"name": "operation", "in": "path", "required": True, "schema": {"type": "string", "enum": ["renew", "revoke"]}}
+    op = add("post", "/admin-api/credential-leases/{id}/{operation}", "admin_mutate_credential_lease", "Renew current-owner authority or request exact-lease revocation", _ref("CredentialLease"), [lease_id, op_param, tenant_param], True)
+    op["description"] += " Uses only the stored original owner and registered provider. Renewal cannot extend an already released callback. Revocation does not undo completed business effects."
+    approve = spec["paths"]["/admin-api/pending-actions/{id}/approve"]["post"]
+    approve["description"] = "Record one exact authenticated reviewer vote after rechecking current policy and immutable operation/plan/revision bindings. HTTP 200 can return pending until quorum. Requester exclusion and distinct identities are enforced. Missing or obsolete managed authority and changed standalone review plans require fresh submission. This does not execute a tool."
+    approve["responses"]["200"]["description"] = "Review recorded; inspect status and approval_count/required_approvals"
+
+
 def _add_review_spec(spec: dict) -> None:
     """Keep tenant review separate from the deployment-wide Admin contract."""
     spec["info"]["description"] += (
@@ -2273,7 +2394,7 @@ def _add_review_spec(spec: dict) -> None:
     pending.get("properties", {}).pop("reason", None)
     pending["additionalProperties"] = False
     pending["description"] = "Scoped approval metadata. Free-form reason is excluded. Only an approver receives the existing capped/redacted args display. Read-only evidence permission receives no args."
-    pending["required"] = ["id", "run_id", "generation", "tenant_id", "agent_id", "connector", "tool", "status", "created_at", "updated_at"]
+    pending["required"] = ["id", "run_id", "required_approvals", "approval_count", "generation", "tenant_id", "agent_id", "connector", "tool", "status", "created_at", "updated_at"]
     schemas["ReviewPendingAction"] = pending
     schemas["ReviewConnectorActionDetail"] = {
         "type": "object", "additionalProperties": False, "required": ["action", "events"],
@@ -2320,8 +2441,10 @@ def _add_review_spec(spec: dict) -> None:
     for decision in ("approve", "deny"):
         op = operation("post", "/review-api/pending-actions/{id}/" + decision, "review_" + decision + "_pending_action",
                        decision.title() + " an own-tenant pending action", _ref("ReviewPendingAction"), id_param, mutation=True)
-        op["description"] += " Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval does not execute the tool."
+        op["description"] += " Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval records one vote and can remain pending until quorum. Policy/tool revision drift and changed standalone review plans require fresh review. Approval does not execute the tool."
     operation("get", "/review-api/connector-actions/{action_id}", "review_get_connector_action", "Read own-tenant action metadata and events", _ref("ReviewConnectorActionDetail"), [_path_param("action_id", "Connector action UUID.")])
+    operation("get", "/review-api/credential-leases", "review_list_credential_leases", "Read at most 100 own-tenant lease metadata records", {"type": "array", "maxItems": 100, "items": _ref("CredentialLease")})
+    operation("get", "/review-api/credential-leases/{id}", "review_get_credential_lease", "Read own-tenant credential lifecycle metadata", _ref("CredentialLease"), [_path_param("id", "Opaque lease_ref, never a provider handle.", fmt="")])
     status = operation("get", "/review-api/session", "review_session_status", "Inspect Review session or optional primary bearer", _ref("ReviewSessionStatus"))
     status["security"] = [{}] + copy.deepcopy(read_auth)
     status["description"] = "Public bootstrap returns authenticated=false without a valid Review cookie. No provider reports configured=false. Optional bearer inspection authenticates only through the primary provider. Never exposes forwarded claims or credentials."
@@ -2345,6 +2468,7 @@ def _add_review_spec(spec: dict) -> None:
 def main() -> None:
     public = _build_public_spec()
     admin = _build_admin_spec()
+    _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()
 
@@ -2352,9 +2476,9 @@ def main() -> None:
     n_admin = _write_spec(admin, SPEC_DIR / "openapi-admin.json")
     n_internal = _write_spec(internal, SPEC_DIR / "openapi-internal.json")
 
-    print(f"spec/openapi.json          — {n_pub} operations, {len(public['paths'])} paths")
-    print(f"spec/openapi-admin.json    — {n_admin} operations, {len(admin['paths'])} paths")
-    print(f"spec/openapi-internal.json — {n_internal} operations, {len(internal['paths'])} paths")
+    print(f"spec/openapi.json          : {n_pub} operations, {len(public['paths'])} paths")
+    print(f"spec/openapi-admin.json    : {n_admin} operations, {len(admin['paths'])} paths")
+    print(f"spec/openapi-internal.json : {n_internal} operations, {len(internal['paths'])} paths")
 
 
 if __name__ == "__main__":

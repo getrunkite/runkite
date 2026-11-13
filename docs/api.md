@@ -425,3 +425,50 @@ POST   /assistants/search          Alias for /agents/search
 GET    /assistants/{id}            Alias for /agents/{id}
 GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 ```
+
+## Approval and security operations (unreleased)
+
+Current source after v0.6.1 extends pending-action responses with
+`requester_identity`, `required_approvals`, `exclude_requester`, `approval_count`,
+`approvals[]` (exact reviewer identity and `reviewed_at` on detail),
+`policy_revision` and optional `tool_revision`. A successful approve returns the
+current row and can remain `pending` until quorum. Managed approvals must match
+arguments, run incarnation/generation, target, configured policy and optional
+observed schema. Standalone decisions keep their app-owned execution, but changed
+separation/quorum plans require fresh review. Obsolete status polling returns
+HTTP 200 with `status: rejected` and `reason_code: approval_requirements_changed`,
+including a formerly approved row; it does not authorize execution.
+
+Run response metadata documents the typed `run_manifest` snapshot, including
+`principal.verified_identity`. Current source sets this marker only for an
+explicit identity verified by the primary authentication provider. An identity
+string, fallback display name or legacy manifest without the marker cannot
+supply requester-exclusion authority. Run creation input cannot grant itself
+verified requester status. OpenAPI checks both the Go fields and the actual
+public/Admin metadata schema references.
+
+New metadata/lifecycle routes use existing authentication:
+
+- `GET /admin-api/action-deliveries?tenant_id=...`: explicit tenant, optional
+  `status` (`pending`, `delivered`, `dead_letter`), `sink_id`, `limit` 1..100
+  (default 50), `offset` 0..10000. Offset paging has no cursor guarantee.
+- `POST /admin-api/action-deliveries/{id}/retry?tenant_id=...`: empty body or `{}`;
+  queue an owned dead letter under its same ID. Response is status/message; no
+  tool operation is retried.
+- `GET /admin-api/credential-leases?tenant_id=...`: explicit tenant, at most 100
+  lifecycle metadata rows. `GET /admin-api/credential-leases/{id}?tenant_id=...`
+  reads one exact opaque `cred-...` reference.
+- `POST /admin-api/credential-leases/{id}/{operation}?tenant_id=...`: `operation`
+  is `renew` or `revoke`, body empty or `{}`. Uses the stored original owner and
+  provider binding. An unconfirmed operation returns an error; inspect metadata.
+- `GET /review-api/credential-leases` and `GET /review-api/credential-leases/{id}`:
+  own-tenant read-only metadata using primary review roles or a separate Review
+  session. No tenant override or Review renewal/revocation endpoint exists.
+
+Admin routes retain global Admin authentication and cookie CSRF. Review remains
+flat-tenant scoped. Lease JSON omits encrypted cleanup handles and all credential
+values. Delivery JSON excludes claim-token authority; exported payloads contain
+typed action/event metadata only. Unsupported storage/configuration returns 501;
+missing/foreign records return 404; conflicts or unconfirmed operations must not
+be automatically replayed. See generated [Admin OpenAPI](../spec/openapi-admin.json)
+and the [upgrade procedure](ops-runbook.md#security-completion-upgrade).

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Security operations · Runkite Docs</title>
+    <meta name="description" content="Review quorum, durable evidence delivery, registered Vault database leases and execution boundaries." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a class="active" aria-current="page" href="security-completion.html">Security operations (unreleased)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Govern</p>
+        <h1>Security operations</h1>
+        <p class="lead">Current source after v0.6.1 adds opt-in review authority, evidence delivery and credential lifecycle controls around the existing connector gate.</p>
+        <p class="note">Unreleased source only. Published v0.6.1 binaries and runner packages do not contain these additions. Read the <a href="ops.html#security-completion-upgrade">upgrade procedure</a> before enabling them. No exactly-once external effects or universal sandbox compatibility is claimed.</p>
+
+        <h2 id="review-authority">Review the exact operation</h2>
+        <p><code>policy.approvals.required_approvals</code> defaults to one and accepts one through five. <code>exclude_requester</code> excludes the exact immutable requester. Either strict option requires authenticated reviewer identities; exclusion also requires a known requester. Policy must first hold the operation. These options do not turn every allowed call into an approval.</p>
+        <p>Admin Pending and tenant Review show requester, <code>approval_count/required_approvals</code>, exact reviewer history and revisions. A successful partial vote says <strong>Review recorded</strong> and remains pending. It does not tell the app to continue. Duplicate requests from the same identity do not create extra votes. Stable identity-provider accounts remain the operator's responsibility.</p>
+        <p>Managed approvals match arguments, original run incarnation/generation, configured connector target, <code>policy-v1-</code> revision and optional <code>tool-v1-</code> schema revision. <code>mcp.pin_tools: true</code> discovers the requested MCP tool contract and rechecks it at dispatch. New optional contracts use <code>target-v2-</code>; existing descriptors retain v1. A schema hash does not pin implementation. <code>policy.webhook.revision</code> represents a declared remote PDP contract, not remote attestation.</p>
+        <p>Historical managed rows missing supported revisions need resubmission and fresh review. Standalone tool decisions still create no managed run, kill switch or budget controls. A changed standalone separation/quorum plan requires fresh review, including status polling of old decisions.</p>
+
+        <h2 id="evidence-delivery">Deliver evidence without retrying tools</h2>
+        <p>Set <code>policy.action_export</code> with <code>name</code>, HTTPS <code>url</code>, optional HMAC <code>secret_ref</code> and <code>max_attempts</code> (default 10, at most 100), plus <code>audit_required</code> and <code>action_evidence</code>. Only literal-loopback test HTTP accepts <code>allow_insecure_loopback</code>. URLs cannot include userinfo, query strings or fragments.</p>
+        <p>Each typed action/event metadata delivery is inserted with its SQL action transaction. A failed outbox write blocks protected dispatch before effects and preserves approval. The asynchronous sender uses stable delivery IDs and existing HMAC headers. A lost acknowledgement can resend the same ID; receivers must deduplicate it and reconstruct event order by action/sequence. This is at-least-once delivery, distinct from best-effort decision hooks.</p>
+        <p>Admin <strong>Evidence deliveries</strong> requires an explicit tenant. Filter by sink and pending/delivered/dead-letter state. A retry queues that existing evidence delivery only. It does not create a run, consume approval or execute a tool. Paging uses bounded offsets and can shift while rows update.</p>
+        <p>Effective sink identity hashes logical name, exact URL and schema. A changed destination gets a different queue; removed destination queues stay held. Restore the exact old destination to drain it. Deliveries survive action/run pruning and require operator capacity and explicit retention planning.</p>
+
+        <h2 id="credential-lifecycle">Lease credentials to a trusted consumer</h2>
+        <p>Top-level <code>credential_leases</code> registers fixed Vault database roles, consumers and TTL ceilings. A connector uses <code>auth.type: vault_database</code> and a registered <code>credential_binding</code>. Vault keeps authentication, secrets-engine policy, encryption and revocation authority. Runkite is not another vault.</p>
+        <p>Only an authorized managed dispatch can issue a database lease. The fixed external MCP executor receives its PostgreSQL username/password privately as HTTP Basic credentials; neither the agent, runner session, tool arguments nor Admin receives those values. Initialization/schema discovery do not issue credentials. Ordinary bearer-only MCP servers need a credential-aware adapter.</p>
+        <p>Admin <strong>Credential leases</strong> selects an explicit tenant, shows metadata and permits server-checked manual renewal/revocation. Tenant Review reads its own metadata only. Cleanup handles remain privately encrypted outside public JSON. Opaque credential references link from action evidence to lifecycle detail.</p>
+        <p>Mount process-owned regular mode-0600 keyring and Vault token files. Symlinks are rejected. All replicas need the same retained keys; preserve old keys and retired provider bindings until old leases have confirmed cleanup. Vault must enforce role <code>max_ttl</code>. Actual returned TTL bounds the callback; manual renewal does not extend that released callback, and there is no automatic renewal loop.</p>
+        <p><code>issuance_unknown</code>, <code>renewal_unknown</code> and <code>revocation_unknown</code> remain uncertain. A lost issuance response may also lose its handle. Do not repeat issuance or a tool to hide uncertainty. Investigate Vault audit/database state. Passing an estimated expiry is not provider-confirmed revocation, and revocation cannot undo a completed query or terminate every pre-existing session.</p>
+
+        <h2 id="execution-boundary">Separate fleet authority from workload containment</h2>
+        <p>Execution pools select exact tenant/agent/framework membership and independently credentialed queues. A pool is not isolation between hostile agents inside its trusted worker. The optional Helm egress profile requires proxy-only runners, explicit allowed destinations and an enforcing CNI.</p>
+        <p>The experimental external OpenShell 0.1.8 profile keeps the trusted worker outside an explicit JSONL workload. It requires immutable image/policy configuration and uses incarnation-bound launch intents/receipts. An uncertain launch is not automatically repeated. Existing SDK workers do not become compatible or sandboxed by setting a pool flag. Unit tests and rendered manifests do not qualify runtime or CNI enforcement.</p>
+        <p><strong>Actual disposable qualification passed:</strong> an installed Python runner, real SQLite plane and pooled worker completed five external OpenShell 0.1.8 lifecycle cases with Landlock <code>hard_requirement</code>, parent restart, receipt reclaim, uncertain-intent refusal, cancellation and confirmed cleanup. Separately, 10 chart egress cases passed on kind 0.33.0/Kubernetes 1.37.0 with default kindnet. This does not qualify unchanged SDKs, external multi-replica workloads, every runtime/kernel/CNI, cloud metadata or live providers. The bridge remains experimental and opt-in. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/constrained-execution.md#verification-and-remaining-qualification">qualification record</a>.</p>
+        <p><strong>Isolated-workload spend boundary:</strong> the experimental JSONL protocol has no model/token-usage or spend-settlement contract. Zero recorded spend does not mean no model calls or cost occurred. Managed admission still applies, but token/USD totals cannot cover unreported workload usage. Use external provider accounting and limits. Native SDK adapters' usage reporting is separate.</p>
+
+        <h2 id="engineering">Configuration and engineering records</h2>
+        <ul class="links">
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md#approval-authority-and-quorum-unreleased">Configuration: review, export, leases and pools</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/approval-authority-and-quorum.md">Approval authority and quorum</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/action-delivery-outbox.md">Action delivery outbox</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/credential-lifecycle.md">Credential lifecycle</a> · <a href="https://github.com/getrunkite/runkite/tree/main/examples/vault_database_executor">External database MCP example</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/constrained-execution.md">Execution pools and external workload boundaries</a> · <a href="https://github.com/getrunkite/runkite/tree/main/examples/isolated_agent">Isolated workload example</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/security-completion-qualification.md">Release qualification and remaining gates</a></li>
+        </ul>
+      </main>
+    </div>
+      <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

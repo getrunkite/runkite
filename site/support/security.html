@@ -55,6 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -152,7 +153,7 @@
           Direct file access and network calls outside those hooks remain the operator's
           responsibility. The Helm defaults already use a non-root identity, dropped
           capabilities and disabled privilege escalation. The chart's optional network
-          policies restrict ingress, not runner egress. Use an external execution sandbox
+          default policy restricts ingress. The new optional egress profile requires explicit destinations and an enforcing CNI. Use an external execution sandbox
           when untrusted code needs stronger confinement.
         </p>
         <p>
@@ -262,12 +263,15 @@
         </p>
 
         <h2 id="managed-connector-evidence">Connector action evidence (unreleased)</h2>
-        <p>Current source after v0.6.1 adds an opt-in SQL trail for managed MCP tool attempts. Review the original policy decision, final approval or break-glass authority, dispatch intent and observed response in Admin. A response is not proof of a business effect; an unknown outcome may have executed. This records metadata and adds no credential vault or secret leases. See <a href="connector-actions.html">Connector actions</a> for configuration, fresh-review requirements, investigation and retention.</p>
-        <p>Managed approvals now bind both the original stored run incarnation and the configured connector target, even without evidence capture. A versioned SHA-256 descriptor includes endpoint, transport, auth identity/reference, scopes, filters and optional nonsecret <code>mcp.revision</code>; resolved credentials are excluded. Dispatch uses the configuration snapshot whose revision was evaluated. This does not attest remote tool code, discover schema changes, pin a policy revision or identify the resolved credential version. Historical unbound approvals require fresh review. See <a href="connectors.html#target-bound-approvals">target-bound approvals</a> and the <a href="ops.html#target-bound-approval-upgrade">upgrade procedure</a>.</p>
+        <p>Current source after v0.6.1 adds an opt-in SQL trail for managed MCP tool attempts. Review the original policy decision, final approval or break-glass authority, dispatch intent and observed response in Admin. A response is not proof of a business effect; an unknown outcome may have executed. This records metadata without a credential vault. The separate registered database lease path is described in <a href="security-completion.html#credential-lifecycle">Security operations</a>. See <a href="connector-actions.html">Connector actions</a> for configuration, fresh-review requirements, investigation and retention.</p>
+        <p>Managed approvals now bind both the original stored run incarnation and the configured connector target, even without evidence capture. A versioned SHA-256 descriptor includes endpoint, transport, auth identity/reference, scopes, filters and optional nonsecret <code>mcp.revision</code>; resolved credentials are excluded. Dispatch uses the configuration snapshot whose revision was evaluated. This original target descriptor does not attest remote tool code or a resolved credential version. Subsequent current-source configured policy binding and optional schema pinning are described below. Historical unbound approvals require fresh review. See <a href="connectors.html#target-bound-approvals">target-bound approvals</a> and the <a href="ops.html#target-bound-approval-upgrade">upgrade procedure</a>.</p>
 
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
         <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="security-completion-controls">Revision-bound review and lifecycle (unreleased)</h2>
+        <p><code>policy.approvals</code> can require one to five distinct authenticated identities and exclude the immutable requester. Partial reviews remain pending. Managed approval binds arguments, incarnation/generation, target, configured policy and optional observed schema. Standalone plan changes need fresh review, without creating a managed run or adding kill/spend controls.</p>
+        <p>Durable action export records delivery intent with the action transaction; retries resend metadata under the same delivery ID and never replay tools. Registered Vault database bindings preserve Vault's authentication, policy and revocation authority. Runkite stores metadata and encrypted cleanup handles only. See <a href="security-completion.html">the operation-specific controls and limits</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

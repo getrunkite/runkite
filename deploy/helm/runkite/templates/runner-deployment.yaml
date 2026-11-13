@@ -1,4 +1,17 @@
 {{- if .Values.runner.enabled }}
+{{- if and .Values.runner.executionPool (not (regexMatch "^[a-z][a-z0-9-]{0,30}$" .Values.runner.executionPool)) }}
+{{- fail "runner.executionPool must be a lowercase pool name" }}
+{{- end }}
+{{- if and .Values.runner.executionPool (not .Values.runner.proxyOnly) }}
+{{- fail "runner.executionPool requires runner.proxyOnly" }}
+{{- end }}
+{{- if or .Values.runner.proxyOnly .Values.networkPolicy.egress.enabled }}
+{{- range $key := list "POSTGRES_DSN" "MYSQL_DSN" "MONGO_URI" "REDIS_URL" "NATS_URL" "KAFKA_URL" }}
+{{- if hasKey $.Values.runner.extraEnv $key }}
+{{- fail (printf "runner.extraEnv.%s is incompatible with proxyOnly" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- include "runkite.tls.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
@@ -17,6 +30,9 @@ spec:
       labels:
         {{- include "runkite.runner.selectorLabels" . | nindent 8 }}
     spec:
+      {{- if or .Values.runner.executionPool .Values.networkPolicy.egress.enabled }}
+      automountServiceAccountToken: false
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -30,6 +46,10 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
           imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          {{- with .Values.runner.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: RUNKITE_GRPC_URL
               value: "{{ include "runkite.fullname" . }}:{{ .Values.service.grpcPort }}"
@@ -40,11 +60,17 @@ spec:
                 secretKeyRef:
                   name: {{ include "runkite.secretName" . }}
                   key: RUNNER_TOKEN
+            {{- if not .Values.runner.proxyOnly }}
             - name: POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "runkite.secretName" . }}
                   key: POSTGRES_DSN
+            {{- end }}
+            {{- if .Values.runner.executionPool }}
+            - name: RUNKITE_EXECUTION_POOL
+              value: {{ .Values.runner.executionPool | quote }}
+            {{- end }}
             {{- if .Values.tls.enabled }}
             - name: RUNKITE_TLS_CA_FILE
               value: {{ include "runkite.tls.caDir" . }}/ca.crt

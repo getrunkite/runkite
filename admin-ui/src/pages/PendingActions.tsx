@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Check, Loader2, ShieldAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -14,8 +14,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
-import { pendingApprovalBlockReason } from "../lib/pendingApproval";
+import { pendingApprovalBlockReason, pendingDecisionFeedback } from "../lib/pendingApproval";
 import { ApprovalTargetRevision } from "../components/approval-target-revision";
+
+import { ApprovalProgress } from "../components/approval-plan";
 
 const STATUS_OPTIONS = ["pending", "approved", "denied", "consumed", "all"];
 
@@ -60,12 +62,9 @@ export function PendingActions() {
     }
     setBusyId(a.id);
     try {
-      await api.post(`/pending-actions/${encodeURIComponent(a.id)}/${verb}`);
-      toast.success(verb === "approve" ? "Approved" : "Denied", {
-        description: verb === "approve"
-          ? `${a.connector}.${a.tool} for operation ${a.run_id}. The caller can continue the approved operation.`
-          : `${a.connector}.${a.tool} for operation ${a.run_id} remains blocked.`,
-      });
+      const updated = await api.post<AdminPendingAction>(`/pending-actions/${encodeURIComponent(a.id)}/${verb}`);
+      const feedback = pendingDecisionFeedback(updated, verb);
+      toast.success(feedback.title, { description: feedback.description });
       reload();
     } catch (err) {
       toast.error(verb === "approve" ? "Approve failed" : "Deny failed", {
@@ -80,7 +79,7 @@ export function PendingActions() {
     {
       accessorKey: "id",
       header: "Approval ID",
-      cell: ({ getValue }) => <span className="block max-w-44 truncate font-mono text-xs" title={getValue() as string}>{getValue() as string}</span>,
+      cell: ({ getValue }) => <Link className="block max-w-44 truncate font-mono text-xs text-primary hover:underline" to={`/admin/pending/${encodeURIComponent(getValue() as string)}`} title={getValue() as string}>{getValue() as string}</Link>,
     },
     {
       accessorKey: "created_at",
@@ -109,6 +108,8 @@ export function PendingActions() {
         );
       },
     },
+    { id: "reviews", header: "Reviews", cell: ({ row }) => <ApprovalProgress action={row.original} /> },
+    { accessorKey: "requester_identity", header: "Requester", cell: ({ getValue }) => <span className="text-xs">{getValue() as string || "Not recorded"}</span> },
     {
       accessorKey: "tenant_id",
       header: "Tenant",
@@ -135,7 +136,7 @@ export function PendingActions() {
       cell: ({ row }) => {
         const digest = row.original.args_digest ?? "";
         if (!digest) {
-          return <span className="text-muted-foreground">—</span>;
+          return <span className="text-muted-foreground">Not recorded</span>;
         }
         const args = row.original.args;
         const tip =
@@ -176,7 +177,7 @@ export function PendingActions() {
         const code = row.original.reason_code;
         const reason = row.original.reason;
         const label = code || reason;
-        if (!label) return <span className="text-muted-foreground">—</span>;
+        if (!label) return <span className="text-muted-foreground">Not recorded</span>;
         return (
           <span className="max-w-[12rem] truncate font-mono text-xs text-muted-foreground" title={reason || code}>
             {label}
@@ -228,7 +229,7 @@ export function PendingActions() {
         </>}
       />
 
-      <p className="mb-4 text-xs text-muted-foreground">Managed approvals record a connector configuration revision. A stored revision does not confirm the current configuration on any replica; the server checks it before approval and dispatch. A mismatch requires fresh submission and review. This binding does not identify the upstream tool schema or implementation.</p>
+      <p className="mb-4 text-xs text-muted-foreground">Managed approvals record a connector configuration revision. A stored revision does not confirm the current configuration on any replica; the server checks it before approval and dispatch. A mismatch requires fresh submission and review. Optional schema pinning records the tool contract, but does not pin its implementation. Policy and reviewer requirements also bind managed approval authority.</p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Select

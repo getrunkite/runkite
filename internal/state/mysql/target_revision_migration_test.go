@@ -30,23 +30,25 @@ func TestTargetRevisionMigrationPreservesHistoryWithoutAuthority(t *testing.T) {
 	}
 	for _, status := range []string{models.PendingStatusPending, models.PendingStatusApproved} {
 		row, err := s.GetPendingAction(ctx, "old-"+status)
-		if err != nil || row.TargetRevision != "" || row.RunIncarnationID != "original-incarnation" || row.Status != status || row.ArgsDigest != "digest" {
+		if err != nil || row.TargetRevision != "" || row.RunIncarnationID != "original-incarnation" || row.Status != status || row.ArgsDigest != "digest" || row.PolicyRevision != "" || row.ToolRevision != "" || row.RequesterIdentity != "" || row.RequiredApprovals != 1 || row.ApprovalCount != 0 || len(row.Approvals) != 0 {
 			t.Fatalf("migration guessed or changed authority: %+v %v", row, err)
 		}
 	}
 	if err := s.SetPendingActionApproved(ctx, "old-pending", "reviewer"); err == nil {
 		t.Fatal("historical target could be approved")
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "acme", "agent", "old-run", 0, "files", "write", "digest", "target-v1-"+strings.Repeat("a", 64)); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "acme", "agent", "old-run", 0, "files", "write", "digest", "target-v1-"+strings.Repeat("a", 64), testPendingPolicyRevision, ""); err != nil || id != "" {
 		t.Fatal("historical target was consumed")
 	}
 	if err := s.Downgrade(ctx); err == nil || !strings.Contains(err.Error(), "backup") {
 		t.Fatalf("unsafe downgrade: %v", err)
 	}
-	if version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx); err != nil || version != 19 {
+	if version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx); err != nil || version != s.migrations(nil)[len(s.migrations(nil))-1].Version {
 		t.Fatalf("refused downgrade changed version: %d %v", version, err)
 	}
 	if err := s.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
+
+const testPendingPolicyRevision = "policy-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

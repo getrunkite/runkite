@@ -7,8 +7,10 @@ new opt-in setting.
 
 This note records the first security-roadmap implementation. It strengthens
 existing execution and connector paths. Connector action evidence is documented
-in the linked follow-up. Vault dynamic leases, isolated execution pools and
-provider-confirmed revocation remain separate future work.
+in the linked follow-up. The later [credential lifecycle](credential-lifecycle.md),
+[execution pools](constrained-execution.md) and
+[approval/export controls](approval-authority-and-quorum.md) are now implemented
+in unreleased source under their own explicit boundaries.
 
 ## Why these changes come first
 
@@ -109,8 +111,9 @@ arguments and unnecessary payload capture.
 
 Existing `env:`, `file:` and Vault KV references resolve through
 `ResolveSecretRef`. A configured Vault token file is reread during resolution;
-Agent injection was already supported and documented. This patch does not add
-dynamic-secret issuance or revocation.
+Agent injection was already supported and documented. That original patch did
+not add issuance. Subsequent [registered database bindings](credential-lifecycle.md)
+now coordinate a separate dynamic lease lifecycle without changing KV semantics.
 
 OAuth client-credential tokens remain cached until their existing expiry buffer.
 Rotating an external client secret does not revoke an already-issued access

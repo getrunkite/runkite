@@ -6,12 +6,35 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add optional requester exclusion and one-to-five distinct-reviewer quorum with
+  transactional review history. Bind managed approvals to configured policy and
+  optional actual MCP tool-schema revisions; retain target-v1 descriptors and use
+  target-v2 for new opt-in contracts. Historical managed bindings require fresh review.
+- Add a durable action-event HTTP outbox with stable delivery IDs, HMAC signing,
+  leased claims, bounded retry and dead letters. Destination identity prevents
+  rerouting old queues. Delivery retries resend evidence, never tools.
+- Add registered Vault database credential lifecycle for trusted external MCP
+  consumers, private encrypted cleanup handles, actual-TTL callback bounds,
+  manual Admin renew/revoke, metadata-only tenant Review and cleanup reconciliation.
+- Add separately credentialed execution pools, proxy-only Helm egress profiles
+  and an experimental external OpenShell JSONL workload bridge. Qualify the
+  installed Python runner with a real SQLite plane, pooled worker and OpenShell
+  0.1.8, including Landlock hard requirements, parent restart, committed-receipt
+  reclaim, uncertain-intent refusal, cancellation and confirmed runtime cleanup.
+  Separately qualify 10 chart egress cases on kind 0.33.0/Kubernetes 1.37.0 with
+  default kindnet. No unchanged SDK, live-provider or multi-replica external
+  workload qualification is claimed. The experimental JSONL profile has no model
+  usage/spend-settlement contract; zero recorded usage does not establish zero cost.
+- Add SQL migrations Postgres/SQLite 19/20/21 and MySQL 20/21/22, updated Admin
+  navigation and contract tests, and end-to-end operator/engineering guidance.
+  All entries above remain unreleased source after v0.6.1.
+
 - Bind managed MCP approvals to a `target-v1-` connector configuration digest
   in both recorded and unrecorded paths. Pin request configuration through
   dispatch; require fresh review after a target change. Add optional nonsecret
   `mcp.revision` for operator-managed remote contract changes. Resolved credential
-  values stay outside the digest; no upstream schema or implementation pin is
-  claimed.
+  values stay outside the digest. The target descriptor alone does not identify
+  remote schema or implementation; optional actual schema binding is separate.
 
 - Add reproducible two-process Review/action-evidence qualification on disposable
   Postgres/Redis, with cross-replica auth/approval races, process-loss recovery,
@@ -47,8 +70,9 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 - Distinguish implemented reviewer permissions from operator rollout requirements.
   Document reproducible HA qualification, the external execution-containment
-  boundary and the proposed OpenShell integration. Correct the support guide's
-  best-effort versus required-audit guarantees; no sandbox integration is claimed.
+  boundary and the external OpenShell workload contract. Correct the support guide's
+  best-effort versus required-audit guarantees; distinguish actual disposable
+  runtime/CNI evidence from unit tests, rendered policy and unqualified deployments.
 
 - Use consistent homepage link cues and keyboard feedback. Add section links to
   Engineering articles and connect public guides to the client walkthrough and
@@ -72,6 +96,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
 
 ### Fixed
+
+- Make TypeScript runner `--help` and `-h` exit successfully before reading
+  agent configuration or starting worker setup. Reject malformed, nonpositive
+  and unsafe concurrency values instead of accepting a numeric prefix.
+- Refresh Debian runner image packages during builds to include current vendor
+  security updates.
 
 - Add Postgres/SQLite schema 18 and MySQL schema 19 for target-bound approvals,
   without assigning a target to historical managed rows. Those rows need fresh

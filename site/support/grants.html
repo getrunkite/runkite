@@ -49,6 +49,7 @@
           <a class="active" href="grants.html" aria-current="page">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -200,6 +201,8 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
         <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="review-authority">Immutable review authority (unreleased)</h2>
+        <p>Current source adds requester separation, distinct-reviewer quorum and managed policy/optional schema revisions around existing grants and holds. These settings do not create permission or hold every allowed operation. Partial reviews do not mint authority. See <a href="security-completion.html#review-authority">review controls</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

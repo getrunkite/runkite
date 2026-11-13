@@ -24,7 +24,9 @@ import (
 	"github.com/getrunkite/runkite/internal/adminui"
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/credentials"
 	"github.com/getrunkite/runkite/internal/customroutes"
+	"github.com/getrunkite/runkite/internal/execution"
 	"github.com/getrunkite/runkite/internal/finops"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/models"
@@ -39,22 +41,25 @@ import (
 
 // Server is the HTTP API server for the Agent Protocol.
 type Server struct {
-	store             state.Store
-	queue             transport.JobQueue
-	broker            transport.EventBroker
-	cancel            transport.CancelBroker
-	connectors        *connector.Registry             // nil if no connectors configured
-	connectorSessions connector.ConnectorSessionStore // MCP capability tokens; nil = /mcp fail-closed
-	policy            *policy.Engine                  // nil = V1 open (no policy configured)
-	policyRunEvents   bool                            // emit tool_auth RunEvents on policy denials
-	rateLimit         *ratelimit.Limiter              // nil-safe: nil behaves as disabled
-	hooks             *hooks.Dispatcher               // nil-safe: nil Dispatch/HasSinks are no-ops
-	customProxy       http.Handler                    // nil if no custom_routes configured
-	customMount       string                          // external prefix (default /custom); read on every request
-	vectors           vectorstore.VectorStore         // nil if no vector_store configured; /vectors/* 501s
-	a2aMaxDepth       int                             // 0 means "use the default" -- see SetA2AMaxDepth
-	a2aMaxBreadth     int                             // 0 means "use the default" -- see SetA2AMaxBreadth
-	admissionLimits   *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
+	actionExportSinkID string
+	credentialManager  *credentials.Manager
+	executionPools     *execution.Catalog
+	store              state.Store
+	queue              transport.JobQueue
+	broker             transport.EventBroker
+	cancel             transport.CancelBroker
+	connectors         *connector.Registry             // nil if no connectors configured
+	connectorSessions  connector.ConnectorSessionStore // MCP capability tokens; nil = /mcp fail-closed
+	policy             *policy.Engine                  // nil = V1 open (no policy configured)
+	policyRunEvents    bool                            // emit tool_auth RunEvents on policy denials
+	rateLimit          *ratelimit.Limiter              // nil-safe: nil behaves as disabled
+	hooks              *hooks.Dispatcher               // nil-safe: nil Dispatch/HasSinks are no-ops
+	customProxy        http.Handler                    // nil if no custom_routes configured
+	customMount        string                          // external prefix (default /custom); read on every request
+	vectors            vectorstore.VectorStore         // nil if no vector_store configured; /vectors/* 501s
+	a2aMaxDepth        int                             // 0 means "use the default" -- see SetA2AMaxDepth
+	a2aMaxBreadth      int                             // 0 means "use the default" -- see SetA2AMaxBreadth
+	admissionLimits    *AdmissionLimits                // nil/disabled = unlimited occupancy/quota
 	// strictPermissions is the same bit auth middleware uses
 	// (auth.strict_permissions). Stored at construction so fixture-replay
 	// checks do not re-read langgraph.json per request. Default false.
@@ -480,6 +485,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/mandatory-hitl/{id}", s.handleAdminGetMandatoryHITL)
 	mux.HandleFunc("PUT /admin-api/mandatory-hitl/{id}", s.handleAdminUpdateMandatoryHITL)
 	mux.HandleFunc("DELETE /admin-api/mandatory-hitl/{id}", s.handleAdminDeleteMandatoryHITL)
+	mux.HandleFunc("GET /admin-api/action-deliveries", s.handleAdminActionDeliveries)
+	mux.HandleFunc("POST /admin-api/action-deliveries/{id}/retry", s.handleAdminRetryActionDelivery)
+	mux.HandleFunc("GET /admin-api/credential-leases", s.handleAdminCredentialLeases)
+	mux.HandleFunc("GET /admin-api/credential-leases/{id}", s.handleAdminCredentialLease)
+	mux.HandleFunc("POST /admin-api/credential-leases/{id}/{operation}", s.handleAdminCredentialMutation)
+	mux.HandleFunc("GET /review-api/credential-leases", s.handleReviewCredentialLeases)
+	mux.HandleFunc("GET /review-api/credential-leases/{id}", s.handleReviewCredentialLease)
 	mux.HandleFunc("GET /admin-api/pending-actions", s.handleAdminListPendingActions)
 	mux.HandleFunc("GET /admin-api/pending-actions/{id}", s.handleAdminGetPendingAction)
 	mux.HandleFunc("POST /admin-api/pending-actions/{id}/approve", s.handleAdminApprovePendingAction)
@@ -971,6 +983,8 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	registry := s.connectors
 	targetRevision := ""
+	toolRevision := ""
+	policyRevision := ""
 	if method == "tools/call" {
 		bound, revision, err := registry.BindMCPRequestTarget(r.Context(), name)
 		if err != nil || !models.ValidConnectorTargetRevision(revision) {
@@ -979,15 +993,23 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		targetRevision = revision
 		r = r.WithContext(bound)
+		bound, toolRevision, err = registry.BindMCPToolRevision(r.Context(), name, tool, userCtx)
+		if err != nil {
+			writeError(w, http.StatusConflict, "tool definition unavailable; protected tool was not dispatched")
+			return
+		}
+		r = r.WithContext(bound)
 	}
 	if method == "tools/call" && s.policy.ActionEvidenceEnabled() {
-		s.handleRecordedConnectorAction(w, r, registry, name, userCtx, rpc, targetRevision)
+		s.handleRecordedConnectorAction(w, r, registry, name, userCtx, rpc, targetRevision, toolRevision)
 		return
 	}
 	// Approval bypasses another pending result, never a current explicit deny.
 	if method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
 		in.TargetRevision = targetRevision
+		in.ToolRevision = toolRevision
+		policyRevision = in.PolicyRevision
 		var err error
 		in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict(args)
 		if err != nil {
@@ -997,7 +1019,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		dec, deny := s.checkConnectorPolicy(r.Context(), in)
 		approved := false
 		if !dec.AuditFailed && (!deny || dec.Effect == policy.EffectPending) {
-			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest, targetRevision)
+			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest, targetRevision, in.PolicyRevision, in.ToolRevision)
 		}
 		if deny && !approved {
 			actionID := ""
@@ -1040,9 +1062,19 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := registry.ProxyMCPRequest(r.Context(), name, userCtx, body)
+	ctx := r.Context()
+	if method == "tools/call" && s.policy.Enabled() {
+		revision := policyRevision
+		ctx = connector.WithMCPActionTrace(ctx, connector.NewMCPActionTrace(func(context.Context) error {
+			if revision == "" || revision != s.policy.Revision() {
+				return connector.ErrMCPDispatchBlocked
+			}
+			return nil
+		}))
+	}
+	result, err := registry.ProxyMCPRequest(ctx, name, userCtx, body)
 	if err != nil {
-		if errors.Is(err, connector.ErrTargetRevisionChanged) {
+		if errors.Is(err, connector.ErrTargetRevisionChanged) || errors.Is(err, connector.ErrToolRevisionChanged) || errors.Is(err, connector.ErrToolRevisionUnavailable) || errors.Is(err, connector.ErrMCPDispatchBlocked) {
 			writeError(w, http.StatusConflict, "connector target changed; protected tool was not dispatched")
 			return
 		}
@@ -1304,6 +1336,8 @@ func handleStoreError(w http.ResponseWriter, err error) {
 	var breadthExceeded *ErrA2ABreadthExceeded
 	var admissionExceeded *state.ErrAdmissionLimitExceeded
 	switch {
+	case errors.Is(err, errExecutionPoolDenied):
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "execution pool does not allow this assignment", "reason_code": "execution_pool_denied"})
 	case errors.Is(err, errInvalidResourceID), errors.Is(err, errInvalidRunID):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errSimulationRequiresAdmin):

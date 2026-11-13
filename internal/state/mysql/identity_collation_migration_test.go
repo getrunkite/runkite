@@ -55,7 +55,7 @@ func legacyIdentityStore(t *testing.T) *Store {
 func assertIdentitySchema(t *testing.T, s *Store, historical ...int) {
 	t.Helper()
 	ctx := context.Background()
-	wantVersion := 19
+	wantVersion := s.migrations(nil)[len(s.migrations(nil))-1].Version
 	if len(historical) > 0 {
 		wantVersion = historical[0]
 	}

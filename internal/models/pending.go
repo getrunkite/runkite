@@ -31,25 +31,42 @@ type PendingAction struct {
 	// Embedded decisions leave it empty because they do not create a run.
 	RunIncarnationID string `json:"run_incarnation_id,omitempty"`
 	// TargetRevision pins managed authority to a nonsecret connector target descriptor.
-	TargetRevision string         `json:"target_revision,omitempty"`
-	Generation     int64          `json:"generation"`
-	TenantID       string         `json:"tenant_id"`
-	AgentID        string         `json:"agent_id"`
-	Connector      string         `json:"connector"`
-	Tool           string         `json:"tool"`
-	RuleID         string         `json:"rule_id,omitempty"`
-	Reason         string         `json:"reason,omitempty"`
-	ReasonCode     string         `json:"reason_code,omitempty"`
-	Status         string         `json:"status"`
-	ArgsDigest     string         `json:"args_digest,omitempty"`
-	Args           map[string]any `json:"args,omitempty"`
-	DecidedBy      string         `json:"decided_by,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	TargetRevision    string                  `json:"target_revision,omitempty"`
+	PolicyRevision    string                  `json:"policy_revision,omitempty"`
+	ToolRevision      string                  `json:"tool_revision,omitempty"`
+	RequesterIdentity string                  `json:"requester_identity,omitempty"`
+	RequiredApprovals int                     `json:"required_approvals"`
+	ExcludeRequester  bool                    `json:"exclude_requester,omitempty"`
+	ApprovalCount     int                     `json:"approval_count"`
+	Approvals         []PendingActionApproval `json:"approvals,omitempty"`
+	Generation        int64                   `json:"generation"`
+	TenantID          string                  `json:"tenant_id"`
+	AgentID           string                  `json:"agent_id"`
+	Connector         string                  `json:"connector"`
+	Tool              string                  `json:"tool"`
+	RuleID            string                  `json:"rule_id,omitempty"`
+	Reason            string                  `json:"reason,omitempty"`
+	ReasonCode        string                  `json:"reason_code,omitempty"`
+	Status            string                  `json:"status"`
+	ArgsDigest        string                  `json:"args_digest,omitempty"`
+	Args              map[string]any          `json:"args,omitempty"`
+	DecidedBy         string                  `json:"decided_by,omitempty"`
+	CreatedAt         time.Time               `json:"created_at"`
+	UpdatedAt         time.Time               `json:"updated_at"`
 	// ExpiresAt is set only for embedded-governance rows. Nil means the
 	// row waits until an operator decides, which is connector HITL.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
+
+// PendingActionApproval records one exact reviewer identity, once, for one
+// immutable pending operation. Empty identity is legacy single-reviewer local mode.
+type PendingActionApproval struct {
+	PendingActionID  string    `json:"pending_action_id"`
+	ReviewerIdentity string    `json:"reviewer_identity"`
+	ReviewedAt       time.Time `json:"reviewed_at"`
+}
+
+const MaxRequiredApprovals = 5
 
 // MarshalPendingArgs is the JSON stored on pending_actions.args (display map).
 func MarshalPendingArgs(m map[string]any) []byte {
@@ -79,6 +96,8 @@ func UnmarshalPendingArgs(b []byte) map[string]any {
 type PendingActionSearchRequest struct {
 	TenantID       string `json:"tenant_id,omitempty"`
 	TargetRevision string `json:"target_revision,omitempty"`
+	PolicyRevision string `json:"policy_revision,omitempty"`
+	ToolRevision   string `json:"tool_revision,omitempty"`
 	Status         string `json:"status,omitempty"`
 	RunID          string `json:"run_id,omitempty"`
 	Connector      string `json:"connector,omitempty"`
@@ -92,14 +111,22 @@ type PendingActionSearchRequest struct {
 func PendingActionKey(a *PendingAction) string {
 	parts := []any{a.TenantID, a.AgentID, a.ExpiresAt != nil,
 		a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest}
-	// Preserve historical standalone/unbound keys. A structured new suffix
-	// cannot collide with an old incarnation string, even for store-only fixtures.
+	// Historical namespaces remain readable. New managed authority binds the
+	// revision tuple and immutable separation/quorum plan in a structured suffix.
+	required := a.RequiredApprovals
+	if required == 0 {
+		required = 1
+	}
 	if a.ExpiresAt == nil {
-		if a.TargetRevision != "" {
+		if a.PolicyRevision != "" {
+			parts = append(parts, []any{"approval-authority-v1", a.RunIncarnationID, a.TargetRevision, a.PolicyRevision, a.ToolRevision, a.RequesterIdentity, required, a.ExcludeRequester})
+		} else if a.TargetRevision != "" {
 			parts = append(parts, []string{"target-bound-v1", a.RunIncarnationID, a.TargetRevision})
 		} else if a.RunIncarnationID != "" {
 			parts = append(parts, a.RunIncarnationID)
 		}
+	} else if a.RequesterIdentity != "" || required != 1 || a.ExcludeRequester {
+		parts = append(parts, []any{"approval-plan-v1", a.RequesterIdentity, required, a.ExcludeRequester})
 	}
 	value, _ := json.Marshal(parts)
 	sum := sha256.Sum256(value)
@@ -110,6 +137,24 @@ func PendingActionKey(a *PendingAction) string {
 // It never accepts an absent or malformed managed approval binding.
 func ValidConnectorTargetRevision(value string) bool {
 	const prefix = "target-v1-"
+	if len(value) != len(prefix)+64 || (!strings.HasPrefix(value, prefix) && !strings.HasPrefix(value, "target-v2-")) {
+		return false
+	}
+	for _, c := range value[len(prefix):] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidPolicyRevision requires a complete versioned managed policy identity.
+func ValidPolicyRevision(value string) bool { return validRevision(value, "policy-v1-") }
+
+// ValidToolRevision permits no schema contract or one complete observed schema digest.
+func ValidToolRevision(value string) bool { return value == "" || validRevision(value, "tool-v1-") }
+
+func validRevision(value, prefix string) bool {
 	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
 		return false
 	}

@@ -208,3 +208,23 @@ flowchart LR
   B --> F[Try agent: exercise a registered agent]
   B --> G[Spend: watch usage, edit budgets live]
 ```
+
+## Approval, credential and delivery operations (unreleased)
+
+Current source after v0.6.1 adds approval detail with immutable requester, exact
+reviewer history, quorum progress and policy/tool/target revisions. A successful
+partial review reports “Review recorded” and leaves the caller pending. Admin and
+Review block visibly unsupported historical bindings, while the server also
+checks current policy and remote contracts. Read-only Review still omits arguments.
+
+Admin Credential leases requires an explicit tenant and shows lifecycle metadata
+without passwords, bootstrap tokens or raw provider handles. Detail permits
+current-owner renewal or exact-lease revocation, subject to server checks. Unknown
+states are not treated as confirmed cleanup. Review has an own-tenant read-only
+lease workspace; it grants no lifecycle mutation authority.
+
+Admin Evidence deliveries lists existing event exports by explicit tenant, sink
+and state. Offset paging is bounded and can shift during updates. A dead-letter
+retry queues the same delivery ID for its configured sink; it never executes or
+retries a tool. See [the operations guide](../site/support/security-completion.html)
+for setup, scope, capacity and incident response.

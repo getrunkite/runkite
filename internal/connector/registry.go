@@ -114,6 +114,15 @@ func (r *Registry) GetSession(ctx context.Context, name string, userCtx map[stri
 		return nil, err
 	}
 
+	if c.Config.Auth.Type == "vault_database" {
+		if c.Config.MCP == nil || c.Config.Auth.CredentialBinding == "" || c.Config.Auth.CredentialBindingRevision == "" {
+			return nil, ErrDatabaseCredentialsUnavailable
+		}
+		if _, err := mcpAuthorization(ctx, c, c.Config, nil, "tools/list"); err != nil {
+			return nil, err
+		}
+		return &SessionResponse{ExpiresAt: time.Now().Add(ConnectorSessionTTL).UTC().Format(time.RFC3339), MCP: &MCPSession{URL: "/internal/connectors/" + name + "/mcp", Tools: r.allowedTools(c)}}, nil
+	}
 	token, err := c.getToken(ctx, userCtx)
 	if err != nil {
 		return nil, fmt.Errorf("connector %s: %w", name, err)

@@ -49,6 +49,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -163,6 +164,8 @@
           · <a href="./protocol.html">Protocols</a>
         </p>
 
+        <h2 id="isolated-workloads">External workload profile (unreleased)</h2>
+        <p>The experimental <code>python-isolated</code> profile uses an external OpenShell 0.1.8 supervisor and explicit JSONL input/state/events/tool/result contract. It does not rehost an unchanged SDK or embed a runtime in the plane. Existing SDK workers can select separately credentialed pools without gaining code isolation. Runtime/CNI enforcement requires independent qualification. See <a href="security-completion.html#execution-boundary">scope and examples</a>.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

@@ -27,6 +27,7 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 import httpx
 
@@ -293,8 +294,28 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
         for directory in details["path"]:
             self.assertFalse(Path(directory).resolve().is_relative_to(ROOT), f"Checkout import path: {directory}")
         self.assertEqual(details["sdk"], self.sdk_version)
+        installed_root = Path(details["modules"]["runkite_runner"]).resolve().parent.parent
+        with ZipFile(wheel) as artifact:
+            for member in artifact.namelist():
+                if member.endswith(".py") and member.startswith(("runkite_runner/", f"{self.adapter_package}/")):
+                    self.assertEqual(
+                        (installed_root / member).read_bytes(),
+                        artifact.read(member),
+                        f"Installed module differs from current wheel: {member}",
+                    )
         self.assertEqual(details["entrypoint"][self.runner_command_name], f"{self.adapter_package}.__main__:main")
         self.assertTrue(self.runner_command.is_file(), "The wheel must install its dedicated console command")
+        self.assertEqual(details["entrypoint"]["runkite-runner-isolated"], "runkite_runner.isolated:main")
+        isolated_command = scripts / ("runkite-runner-isolated" + (".exe" if os.name == "nt" else ""))
+        self.assertTrue(isolated_command.is_file(), "The wheel must install the isolated worker command")
+        for command in (
+            [str(isolated_command), "--help"],
+            [str(self.consumer_python), "-I", "-m", "runkite_runner.isolated", "--help"],
+        ):
+            help_text = subprocess.check_output(
+                command, env=self.worker_environment, cwd=self.directory, text=True, timeout=20
+            )
+            self.assertIn("Experimental Runkite external OpenShell worker", help_text)
         for command in (
             [str(self.runner_command), "--help"],
             [str(self.consumer_python), "-I", "-m", self.adapter_package, "--help"],

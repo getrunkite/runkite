@@ -58,6 +58,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
@@ -644,6 +645,12 @@
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
         <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="16-approval-history">16. Approval history and quorum (unreleased)</h2>
+        <p>Open a pending ID to inspect its immutable requester, exact reviewer history, review count, policy/tool/target revisions and original operation. A successful vote can remain pending; only final status approved lets the caller submit its matching operation. Self-exclusion, duplicate identity, expiry and current authority remain server checks.</p>
+        <h2 id="17-credential-leases">17. Credential leases (unreleased)</h2>
+        <p>Select an explicit tenant, then a lease reference. Inspect actual granted TTL, state, registered binding, exact original run/attempt, cleanup requested and fixed reason codes. Credentials and provider handles are absent. Admin can request current-owner renewal or exact-lease revocation. Tenant Review reads only its own metadata. An unknown state is not proof of cleanup.</p>
+        <h2 id="18-evidence-deliveries">18. Evidence deliveries (unreleased)</h2>
+        <p>Select an explicit tenant; filter sink and delivery state. Inspect attempts, availability, claim and action/event sequence. Retry only a dead letter to queue the same metadata ID. This button does not execute a tool. Receivers must deduplicate at-least-once delivery. See <a href="security-completion.html">configuration and incident guidance</a>.</p>
       </main>
     </div>
     <script src="./docs.js?v=20261108-final" defer></script>

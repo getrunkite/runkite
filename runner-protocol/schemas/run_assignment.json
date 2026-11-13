@@ -17,6 +17,11 @@
       "format": "uuid",
       "description": "The thread this run executes on."
     },
+    "run_incarnation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Immutable durable run-row identity, distinct from a reusable client run_id. Preserved on reclaim. Optional for legacy workers; isolated execution requires it and binds durable receipts to this value."
+    },
     "runner_kind": {
       "type": "string",
       "minLength": 1,
@@ -119,7 +124,7 @@
     },
     "run_manifest": {
       "type": "object",
-      "description": "Frozen snapshot of what this run was authorized to do at dispatch time (schema_version, agent, runner_kind, connector_needs, allowed_tools, principal, etc.). Same payload stored in run metadata for Admin/audit.",
+      "description": "Frozen snapshot of what this run was authorized to do at dispatch time (schema_version, agent, runner_kind, connector_needs, allowed_tools, principal, etc.). Same payload stored in run metadata for Admin/audit. Principal verified_identity is a server-captured identity-provenance boolean; absent/false cannot satisfy strict requester separation. User claims and forwarded Extra fields do not supply this proof.",
       "additionalProperties": true
     },
     "tenant_id": {

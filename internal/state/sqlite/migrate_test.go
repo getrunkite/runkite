@@ -231,8 +231,8 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 18 {
-		t.Fatalf("stamped version = %d, %v; want 18", cur, err)
+	if err != nil || cur != s.migrations()[len(s.migrations())-1].Version {
+		t.Fatalf("stamped version = %d, %v; want current migration", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")

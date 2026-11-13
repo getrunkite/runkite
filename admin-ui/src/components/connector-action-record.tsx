@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import type { AdminConnectorAction, AdminConnectorActionEvent } from "../api/types";
 import { ConnectorActionBadge } from "./connector-action-evidence";
 import { formatTimestamp, StatusBadge } from "./common";
+import { credentialLeaseHref } from "../lib/securityRecords";
 import { connectorActionState, connectorAuthority } from "../lib/connectorActions";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -24,6 +25,7 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
 }) {
   const { action, events } = data;
   const visibleRunHref = review ? null : runHref;
+  const leaseHref = credentialLeaseHref(action.credential_ref, action.tenant_id, review);
   return <div className="space-y-4">
       <div className="rounded-sm border border-border p-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -160,7 +162,8 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
               <EvidenceField label="Policy revision">{action.policy_revision || "Not recorded"}</EvidenceField>
               <EvidenceField label="Target revision">{action.target_revision || "Not recorded"}</EvidenceField>
               <EvidenceField label="Tool revision">{action.tool_revision || "Not recorded"}</EvidenceField>
-              <EvidenceField label="Credential reference">{action.credential_ref || "Not recorded"}</EvidenceField>
+              <EvidenceField label="Credential reference">{leaseHref ? <Link to={leaseHref} className="font-mono text-xs text-primary hover:underline">{action.credential_ref}</Link> : action.credential_ref || "Not recorded"}</EvidenceField>
+              <EvidenceField label="Export sink">{!review && action.export_sink_id ? <Link to={`/admin/action-deliveries?${new URLSearchParams({ tenant_id: action.tenant_id, sink_id: action.export_sink_id })}`} className="text-primary hover:underline">{action.export_sink_id}</Link> : action.export_sink_id || "Export not recorded"}</EvidenceField>
             </dl>
             <p className="mt-4 text-xs text-muted-foreground">
               This history excludes arguments, request and response bodies, and credentials. Missing revision or

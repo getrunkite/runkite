@@ -92,7 +92,7 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	}
 	for _, row := range []*models.PendingAction{
 		{ID: "pending-v2-overdue", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "embedded", Connector: "files", Tool: "upload", ExpiresAt: &past},
-		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Generation: 1, RunIncarnationID: run.IncarnationID, Connector: "files", Tool: "upload", TargetRevision: targetRevision},
+		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Generation: 1, RunIncarnationID: run.IncarnationID, Connector: "files", Tool: "upload", TargetRevision: targetRevision, PolicyRevision: policy.New(policy.Config{Grants: []policy.Grant{{TenantID: "default", AgentID: "agent", Connector: "files"}}}).Revision()},
 	} {
 		if err := store.CreatePendingAction(ctx, row); err != nil {
 			t.Fatal(err)

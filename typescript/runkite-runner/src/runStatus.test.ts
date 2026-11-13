@@ -3,6 +3,23 @@ import test from "node:test";
 import { shouldSkipRun } from "./runStatus.js";
 import { runWithBinding } from "./tenantCtx.js";
 
+test("pool status is generation-bound and refuses unverifiable execution", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const status of [403, 503, 200]) {
+      globalThis.fetch = (async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("X-Runkite-Run-Id"), "run-1");
+        assert.equal(headers.get("X-Runkite-Generation"), "3");
+        return new Response("{}", { status });
+      }) as typeof fetch;
+      assert.equal(await shouldSkipRun("http://cp:2026", "run-1", { runnerKind: "pool-finance", generation: 3 }), true);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("shouldSkipRun returns true for interrupted", async () => {
   const orig = globalThis.fetch;
   globalThis.fetch = (async () =>

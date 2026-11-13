@@ -166,13 +166,29 @@ ID does not exist on the first `initialize` call.
 | `terminationGracePeriodSeconds` | `30` | Covers the control plane's drain budget |
 | `autoscaling.enabled` | `false` | Needs `resources.requests.cpu` if turned on |
 | `runner.enabled` | `true` | Optional Python fleet; set `false` if runners run elsewhere |
-| `runner.extraEnv` | `{}` | Literal `value` or `valueFrom`, one per variable; no command/args override |
+| `runner.extraEnv` | `{}` | Literal `value` or `valueFrom`, one per variable; use `runner.args` for explicit worker arguments |
 | `secrets.runnerTokenAllowlist` | `""` | CP `RUNNER_TOKEN_*` allowlist; see [Runner token allowlist](#runner-token-allowlist) |
 | `networkPolicy.enabled` | `false` | Opt-in; requires a NetworkPolicy-capable CNI |
 | `tls.enabled` | `false` | Pod TLS/mTLS; see [Pod TLS / mTLS](#pod-tls--mtls) |
 | `resources.requests` | `100m` / `256Mi` | Production-shaped defaults; override per env |
 
 ## Runner token allowlist
+
+Current unreleased source also supports named execution pools. Set
+`runner.executionPool` to the pool selected by `execution_pool` in the plane's
+agent configuration, and set `runner.proxyOnly: true`. The Secret uses
+`RUNNER_TOKEN_POOL_<NAME>` on the plane and `RUNNER_TOKEN` on that pool's worker.
+Each pool requires a credential not reused under another kind or pool. Pool
+tenant and agent permissions come from the explicit `execution_pools` catalog,
+not a caller's header. `runner.kind` remains the base kind for an unpooled fleet.
+`runner.args` selects the image's actual SDK adapter/configuration when needed.
+
+Pool/proxy mode omits the database credential from the runner environment and
+rejects backend URL overrides in `runner.extraEnv`. Pool workers also reject
+known control-plane backend environment variables at startup. These checks do
+not inspect arbitrary application secrets or protect an in-process runner token
+from agent code. Use the separate external process profile for an experimentally
+isolated workload. See [execution design](../../../docs/internal/constrained-execution.md).
 
 Control plane `RUNNER_TOKEN_<KIND>` accepts a **comma-separated allowlist**
 of equally valid tokens (fleet credentials / rotation), not unique-per-pod
@@ -181,7 +197,7 @@ secrets (Deployments share one Secret across pods).
 | Value | Effect |
 |---|---|
 | `secrets.runnerToken` | This chart’s runner Deployment `RUNNER_TOKEN` (one secret) |
-| `secrets.runnerTokenAllowlist` | When set, CP `RUNNER_TOKEN_PYTHON_LANGGRAPH`; else CP uses `runnerToken` |
+| `secrets.runnerTokenAllowlist` | When set, CP `RUNNER_TOKEN_<KIND>` for the configured fleet/pool; else CP uses `runnerToken` |
 
 **Rotation:** set allowlist to `old,new` → restart CP → roll runners to
 `new` → set allowlist (or `runnerToken`) to `new` → restart CP.
@@ -189,9 +205,28 @@ secrets (Deployments share one Secret across pods).
 **Multi-fleet:** put both fleets’ tokens in the CP allowlist; run a second
 runner Deployment (or `existingSecret`) with a different `RUNNER_TOKEN`.
 Revoke one fleet by dropping its token from the allowlist and restarting CP.
+Fleets on one kind share assignment authority. Use separate named pools when
+tenant/agent dispatch scopes must differ, and upgrade all plane replicas first.
 
 With `helm --set` / `--set-string`, escape commas (`tok-a\,tok-b`) or pass a
 values file — Helm treats unescaped commas as list separators.
+
+## Role-specific egress (unreleased)
+
+`networkPolicy.egress.enabled: true` adds default-deny egress separately from the
+existing ingress setting. It requires a CNI that actually enforces NetworkPolicy,
+explicit `controlPlaneRules` for infrastructure, and `runner.proxyOnly` when the
+runner is enabled. Runners receive only the configured resolver pods and this
+release's plane HTTP/gRPC ports automatically. Add exact model/telemetry peers
+through `runnerRules`; the chart does not add runner database or general internet
+access. These entries are Kubernetes egress rules, not hostname allowlists.
+
+Pool/egress runner pods do not automount a service-account token. These settings
+do not sandbox arbitrary agent code, verify the CNI, or override additive policies
+installed elsewhere in the cluster. Qualify baseline reachability and actual
+positive/negative probes with `scripts/qualify-execution-egress.py` on a disposable
+explicit context before claiming enforcement. The engineering note records the
+test's scope and remaining runtime requirements.
 
 ## Pod TLS / mTLS
 

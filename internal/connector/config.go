@@ -33,6 +33,10 @@ type CircuitBreakerConfig struct {
 
 // AuthConfig describes how to authenticate with the external service.
 type AuthConfig struct {
+	AllowInsecureLoopback     bool   `json:"allow_insecure_loopback,omitempty" yaml:"allow_insecure_loopback,omitempty"`
+	CredentialBinding         string `json:"credential_binding,omitempty" yaml:"credential_binding,omitempty"`
+	CredentialBindingRevision string `json:"-" yaml:"-"`
+
 	Type         string   `json:"type" yaml:"type"` // oauth2_token_exchange, oauth2_client_credentials, api_key, bearer
 	Issuer       string   `json:"issuer,omitempty" yaml:"issuer,omitempty"`
 	TokenURL     string   `json:"token_url,omitempty" yaml:"token_url,omitempty"`
@@ -50,6 +54,8 @@ type AuthConfig struct {
 
 // MCPConfig points to an MCP server endpoint.
 type MCPConfig struct {
+	PinTools bool `json:"pin_tools,omitempty" yaml:"pin_tools,omitempty"`
+
 	URL string `json:"url" yaml:"url"`
 	// Revision is a nonsecret operator contract version for changes not visible
 	// in the endpoint configuration, such as a changed remote implementation.

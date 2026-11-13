@@ -400,6 +400,15 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return fmt.Errorf("mysql: target-bound approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
 			},
 		},
+		{Version: 20, Name: "pending_review_authority", Up: func(ctx context.Context) error { return s.upPendingReviewAuthority(ctx, db) }, Down: func(context.Context) error {
+			return fmt.Errorf("mysql: revision and quorum approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 21, Name: "action_delivery_outbox", Up: func(ctx context.Context) error { return s.upActionDeliveries(ctx, db) }, Down: func(context.Context) error {
+			return fmt.Errorf("mysql: action delivery outbox cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 22, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx, db) }, Down: func(context.Context) error {
+			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
+		}},
 	}
 }
 
@@ -435,7 +444,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 		"connector_action_events", "connector_actions",
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"usage_holds", "usage_events", "finops_overlays",
-		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
+		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "action_deliveries", "pending_action_approvals", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "opaque_checkpoints", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",
@@ -772,16 +781,16 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"store_items", "runs", "opaque_checkpoints", "thread_checkpoints", "threads",
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
-		"webhook_dead_letters", "audit_events", "policy_grants", "pending_actions",
+		"webhook_dead_letters", "audit_events", "policy_grants", "action_deliveries", "pending_action_approvals", "pending_actions",
 		"kill_switches", "break_glass_windows", "mandatory_hitl_rules", "usage_events",
 		"run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {
 		if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE "+tbl); err != nil {
 			// Migration qualification deliberately stops at the older schema.
-			// Only these additive action tables may legitimately be absent.
+			// Only these additive authority tables may legitimately be absent.
 			var missing *mysql.MySQLError
-			if (tbl == "connector_action_events" || tbl == "connector_actions") && errors.As(err, &missing) && missing.Number == 1146 {
+			if (tbl == "connector_action_events" || tbl == "connector_actions" || tbl == "pending_action_approvals" || tbl == "action_deliveries") && errors.As(err, &missing) && missing.Number == 1146 {
 				continue
 			}
 			return fmt.Errorf("mysql: truncate %s: %w", tbl, err)

@@ -15,7 +15,7 @@ import (
 
 // Managed approvals belong to an actual stored run attempt, just as they do
 // behind production run-binding middleware. Keep these fixtures equally real.
-func seedManagedPendingFixture(t *testing.T, store state.Store, binding *auth.RunBinding) {
+func seedManagedPendingFixture(t *testing.T, store state.Store, binding *auth.RunBinding, verified ...bool) {
 	t.Helper()
 	if binding.ThreadID == "" {
 		binding.ThreadID = "pending-thread-" + uuid.NewString()
@@ -31,7 +31,7 @@ func seedManagedPendingFixture(t *testing.T, store state.Store, binding *auth.Ru
 	})
 	manifest := models.RunManifest{SchemaVersion: 1, TenantID: binding.TenantID, AgentID: binding.AgentID}
 	if binding.User != nil {
-		manifest.Principal = &models.RunManifestPrincipal{Identity: binding.User.Identity, Permissions: binding.User.Permissions}
+		manifest.Principal = &models.RunManifestPrincipal{Identity: binding.User.Identity, Permissions: binding.User.Permissions, VerifiedIdentity: len(verified) > 0 && verified[0]}
 	}
 	if err := store.CreateRun(ctx, &models.Run{RunID: binding.RunID, ThreadID: binding.ThreadID, AgentID: binding.AgentID, Status: models.RunStatusPending, Metadata: map[string]interface{}{"run_manifest": manifest}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)

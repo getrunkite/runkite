@@ -17,6 +17,7 @@ import { initTracing, setRunStatus, withRunSpan } from "./tracing.js";
 import { loadRequestHandler, serveCustomApp } from "./customApp.js";
 import { logger } from "./logger.js";
 import { shouldSkipRun } from "./runStatus.js";
+import { validatePoolEnvironment } from "./executionPool.js";
 import { createRunnerClient, } from "./proto.js";
 import { grpcChannelCredentials } from "./tls.js";
 /**
@@ -144,6 +145,7 @@ function logTraceContext(runId, tc) {
         logger.info(`trace ${parts.join(" ")}`);
 }
 export async function runWorker(opts) {
+    validatePoolEnvironment(opts.runnerKind);
     const tracingShutdown = await initTracing();
     // Runner auth, two-tier model: if the control plane has
     // RUNNER_TOKEN_<KIND> configured (production mode), this runner must
@@ -312,6 +314,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
         (await shouldSkipRun(opts.httpAddress, runId, {
             runnerKind: opts.runnerKind,
             runnerToken: opts.runnerToken,
+            generation,
         }))) {
         return undefined;
     }

@@ -5,7 +5,10 @@ FROM python:3.12-slim
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 
-RUN groupadd --gid 65532 runkite && \
+# Refresh vendor security fixes which can postdate the base image build.
+RUN apt-get update && apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 65532 runkite && \
     useradd --uid 65532 --gid 65532 --create-home --home-dir /home/runkite runkite
 
 COPY python/ ./python/

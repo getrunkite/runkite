@@ -122,46 +122,31 @@ needs controls below an SDK callback. A tool can open a file or make a direct
 network request without calling a Runkite connector. Existing runner allowlists
 and connector approvals do not confine that process. The Helm chart already
 defaults to a non-root identity, disabled privilege escalation and dropped
-capabilities in `deploy/helm/runkite/values.yaml`. Its optional network policies
-are disabled by default and restrict ingress, not runner egress. Its root
+capabilities in `deploy/helm/runkite/values.yaml`. Its original optional ingress
+NetworkPolicy and the newer egress profile are both disabled by default. Its root
 filesystem is writable by default.
 Those controls are useful but do not establish an arbitrary-code sandbox.
 
-OpenShell is a possible external execution provider, not an implemented Runkite
-integration. Its [architecture](https://docs.nvidia.com/openshell/v0.1.8/about/architecture)
-separates a trusted supervisor from the workload and enforces filesystem,
-process and outbound-network restrictions. Its
-[security guide](https://docs.nvidia.com/openshell/v0.1.8/security/best-practices)
-distinguishes enforcement from audit-only policy and documents required kernel
-and CNI support. These references were reviewed against v0.1.8 on 2026-11-13.
-Configured policy is not proof that the underlying platform enforced it.
+Current unreleased source adds separately credentialed execution pools, an opt-in
+Helm egress profile and an experimental external OpenShell 0.1.8 JSONL workload
+bridge. The trusted Runkite worker remains outside the workload, owning runner
+authentication, MCP authority, checkpoint CAS and launch receipts. Ordinary SDK
+adapters continue executing in their trusted worker process; selecting a pool
+alone does not hide that process's credential from its agent code.
 
-Wrapping today's entire runner in a sandbox would not automatically hide its
-Runkite runner token from agent code in the same process. Both
-`python/runkite_runner/generic_worker.py` and
-`typescript/runkite-runner/src/worker.ts` authenticate the worker and execute
-adapters in that process. A stronger integration needs a trusted worker outside
-the sandbox, a sandboxed agent process, and a narrow bridge for input, events,
-checkpoints and cancellation. It is a new execution boundary, not a deployment
-flag that makes existing adapters safe for hostile code.
-
-For that possible integration, Runkite would keep managed admission, assignment,
-business-tool approvals, usage and durable action evidence. OpenShell would own
-sandbox lifecycle and OS/network confinement. An allow at one boundary must not
-override a deny at the other. Keep each credential in its chosen secret system;
-do not copy connector secrets into a second provider database or expose the
-control-plane database or host container socket to the workload. OpenShell
-already has [credential drivers](https://docs.nvidia.com/openshell/v0.1.8/extensibility/drivers),
-including Vault-compatible storage.
-
-A first prototype must prove that an untrusted workload cannot read the runner
-credential or a file outside its workspace, bypass outbound restrictions, or
-authenticate as another run. It must also preserve streaming, cancellation,
-generation fencing and checkpoint delivery. Bind sandbox identity and the
-effective enforced policy to the original run attempt using trusted runtime
-evidence. Stopping a sandbox still cannot undo a completed external side effect;
-retain unknown outcomes and do not automatically replay a tool. No sandbox
-compatibility, attestation or provider-secret isolation is claimed today.
+OpenShell supplies the external filesystem/process/network boundary. Runkite
+supplies managed admission and business-tool policy. Either denial remains a
+denial. The bridge requires an explicit compatible workload and immutable
+image/policy, and refuses automatic relaunch after an uncertain durable launch
+intent. A recorded configuration hash does not attest kernel or CNI enforcement.
+The initial chart NetworkPolicy is ingress-only; the new optional egress profile
+needs explicit allowed destinations and an enforcing CNI. See the implementation,
+fixture controls and qualification limits in
+[the constrained execution record](internal/constrained-execution.md).
+The experimental JSONL profile has no model/token-usage or spend-settlement
+contract. Zero recorded spend does not establish free execution, and existing
+native SDK usage reporting is not inherited. Use external provider accounting
+and limits for unreported workload calls.
 
 ## Required audit before access
 
@@ -193,9 +178,14 @@ retries never replay a tool. Actions survive run pruning and have independent,
 opt-in resolved-record retention. Required audit by itself continues to record
 decisions only. See the [manual](../site/support/connector-actions.html) and
 [design rationale](internal/connector-action-evidence.md). Managed approvals now
-bind the [configured target revision](internal/target-bound-approvals.md). This
-does not pin the upstream tool schema, implementation or policy revision. No
-secret vault or reliable action-event export is added.
+bind the [configured target revision](internal/target-bound-approvals.md) and
+[configured policy revision](internal/approval-authority-and-quorum.md).
+`mcp.pin_tools` optionally binds the observed advertised tool schema. These
+digests do not pin upstream implementation or attest a remote PDP's behavior.
+Optional [registered Vault database leases](internal/credential-lifecycle.md) and
+[durable action-event export](internal/action-delivery-outbox.md) reuse the same
+gate and SQL event transactions. Capture alone enables neither option; no second
+vault is introduced.
 
 ## Scoped human review (unreleased)
 
@@ -210,9 +200,12 @@ it does not execute the tool.
 Separate Review sessions have purpose checks, their own cookie/storage namespace,
 CSRF and at most 15 minutes absolute lifetime. There is no anonymous Review mode
 or automatic permission from client read/write. Configured target revisions apply
-to managed approvals on both Review and Admin. No new user directory, two-person
-review rule, upstream tool/policy revision pinning or instant IdP revocation is
-claimed. See [Tenant review](../site/support/tenant-review.html).
+to managed approvals on both Review and Admin. Current source additionally offers
+[requester exclusion and distinct-reviewer quorum](internal/approval-authority-and-quorum.md),
+configured policy binding and optional advertised-tool-schema binding. The
+default remains one approval without requester exclusion. No new user directory,
+proof of independent humans, upstream implementation attestation or instant IdP
+revocation is claimed. See [Tenant review](../site/support/tenant-review.html).
 
 ## Governance durability (SQL backends)
 
@@ -334,3 +327,38 @@ Example:
 ```
 
 Absent / empty `policy` preserves V1 open access after runner auth + run-binding.
+
+## Revision-bound review and lifecycle controls (unreleased)
+
+Source after v0.6.1 adds `policy.approvals` for operations already held by policy.
+`required_approvals` ranges from one to five; `exclude_requester` prevents exact
+requester self-review. Reviewer identities are authenticated and compared exactly,
+with no case folding or user directory. Votes are transactional history; partial
+quorum remains pending and cannot dispatch. The immutable requester comes from
+the durable managed run principal or authenticated standalone caller. Managed
+requester exclusion requires the manifest's server-captured
+`principal.verified_identity: true`; legacy principals and fallback display names
+do not establish verified requester authority. A changed
+standalone separation/quorum plan requires fresh review and is rejected when
+polling an obsolete result. Standalone still creates no run and gains no managed
+kill, spend or break-glass controls.
+
+Managed review additionally binds current configured policy and optional observed
+MCP tool schema, alongside arguments, target, generation and incarnation. A manual
+PDP revision label does not attest remote policy execution; schema identity does
+not pin a remote implementation. Retained historical managed rows with missing
+revisions cannot authorize new effects.
+
+Action export inserts a durable metadata delivery in the same SQL transaction as
+each opted-in action event. Export retries send the same evidence ID over HTTP;
+they do not retry a tool. Registered Vault database bindings issue credentials
+only to a trusted configured consumer. Vault retains authentication, encryption
+and role/revocation authority. Runkite retains bounded lifecycle metadata and an
+encrypted cleanup handle, never a database username/password record. Issuance and
+revocation can remain unknown, requiring provider investigation.
+
+See [review design](internal/approval-authority-and-quorum.md),
+[export design](internal/action-delivery-outbox.md),
+[credential design](internal/credential-lifecycle.md), and
+[operations](ops-runbook.md#security-completion-upgrade). These are unreleased
+controls, not a guarantee of exactly-once external effects or arbitrary-code safety.

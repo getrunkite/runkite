@@ -43,9 +43,14 @@ Unknown outcomes are preserved and never trigger automatic tool replay.
 
 New action tables contain metadata only; existing run streams, checkpoints and
 policy audit have their own data/retention rules. Managed approvals bind to a
-configured target revision, including when capture is off. This does not pin an
-upstream tool implementation/schema or a policy revision. Credential leasing,
-tamper-evident archives and reliable lifecycle export remain outside this slice. Run pruning does not remove action history. Resolved-record retention
+configured target revision and configured policy revision, including when capture
+is off. Optional `mcp.pin_tools` also binds the advertised tool schema; none of
+these digests pins upstream implementation. Optional
+[registered database credential leases](internal/credential-lifecycle.md) and a
+[durable action-event outbox](internal/action-delivery-outbox.md) are available
+in current source. They are not enabled merely by turning on action capture.
+Tamper-evident external archives remain an operator responsibility. Run pruning
+does not remove action history. Resolved-record retention
 is separate and leaves pending/unknown attempts, including earlier pending
 requests whose approval a later attempt consumed. Storage can therefore grow.
 See the [operator guide](../site/support/connector-actions.html).
@@ -62,9 +67,12 @@ Review cookies contain login-time authority for at most 15 minutes absolute;
 activity cannot extend it. IdP changes are not instant revocation of an issued
 cookie. Admin/Review sessions and logout are independent. Reviewer approval
 retains exact argument/run/generation/incarnation/expiry rules and adds configured
-target revision matching for managed connector approvals. It does not enforce
-two-person review or prevent self-approval, and it does not pin upstream code or
-schema. Upgrade all replicas before issuing roles. See [setup and limitations](../site/support/tenant-review.html).
+target, configured policy and optional advertised-schema matching for managed
+connector approvals. Default-one approval permits self-review unless the operator
+enables [requester exclusion and/or reviewer quorum](internal/approval-authority-and-quorum.md).
+Those options count exact authenticated identities, not independently verified
+people. They do not pin upstream code. Upgrade all replicas before issuing roles.
+See [setup and limitations](../site/support/tenant-review.html).
 
 ## Configured target binding (unreleased)
 
@@ -89,7 +97,7 @@ cannot gain that guard retroactively. See the
   after v0.6.1; it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
 - A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. This does not provide isolated identities for workers sharing a runner kind, atomic queue/child-store authorization, or external token downscoping.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
-- Vault references still read KV values. Dynamic lease issuance, renewal, cleanup reconciliation and provider-confirmed revocation are not implemented by this hardening patch.
+- Vault references still read KV values. That original hardening slice did not add lease issuance. Subsequent unreleased registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
 
 ## Deep dive
 
@@ -291,3 +299,45 @@ Honest gaps, not hidden ones:
 - **Admin UI write actions**: cancel-run and delete-thread reuse the exact client-facing handlers under system context (`POST /admin-api/runs/{runID}/cancel`, `DELETE /admin-api/threads/{threadID}`); webhook redelivery (`POST /admin-api/webhooks/dead-letters/{id}/redeliver`) is genuinely new, since the client-facing API has no equivalent. Known limitation: `WebhookDeadLetter` doesn't persist the original signing secret, so a redelivery is sent unsigned -- a receiver enforcing `X-Runkite-Signature` will reject it. Redelivery also doesn't remove the entry from the dead-letter list on success (it stays as an audit record, not a mutation of stored state) -- the response's `delivered` field is the UI's only success signal.
 - **Retention's `checkpoints_keep_last` only covers proxy-mode checkpoints.** See the Retention section above -- direct-mode Python+Postgres deployments use LangGraph's own `AsyncPostgresSaver` tables, which this feature doesn't touch.
 - **SSE event streaming is goroutine-per-run, each holding a Redis connection.** Every `broker.Subscribe(runID)` spawns one goroutine running a blocking `XREAD` loop against the run's Redis Stream (`rk:events:{run_id}`). Go goroutines are cheap (~2-4 KB each), but each one occupies a Redis connection from go-redis's pool for the duration of the SSE stream. At ~3,000-5,000 concurrent SSE connections per CP, the Redis connection pool becomes the bottleneck (Redis default `maxclients` is 10,000, shared across all CPs, queues, heartbeats, and cancels). Mitigation today: horizontal scaling (add CP replicas behind the load balancer). Future optimization path: a multiplexed XREAD reader that tails all active streams in one Redis command/connection and dispatches to per-run Go channels in-memory — same `EventBroker` interface, same handler code, 50x fewer Redis connections. Not implemented because current target scale (hundreds to low thousands of concurrent runs) is well within the goroutine-per-run model.
+
+## Security completion boundaries (unreleased)
+
+Source after v0.6.1 adds optional reviewer separation/quorum, policy and MCP schema
+binding, durable action export, registered Vault database leases and execution
+pools. Published v0.6.1 artifacts do not implement these controls.
+
+- Quorum counts exact authenticated identities, not independently verified humans.
+  Default-one local approval can still lack an actor; strict quorum or requester
+  exclusion cannot. Existing policy must first hold the operation.
+- Configured policy hashing cannot attest changes behind an unchanged PDP label.
+  MCP schema pinning cannot establish remote code identity or transactional tool
+  effects. Cross-system authority checks and sends are not one atomic transaction.
+- Evidence export is at least once and may arrive out of order. Receiver-side
+  deduplication uses delivery ID. Changing destination holds the former sink's
+  queue; dead-letter retry resends evidence only. Delivered rows require explicit
+  operator retention/capacity planning.
+- Dynamic credentials are limited to registered Vault database roles and trusted
+  credential-aware consumers. KV `secret_ref` remains KV lookup. No arbitrary
+  secret issuance, user OAuth-token vault, automatic callback renewal, workload
+  identity bootstrap or universal MCP credential compatibility is added. A lost
+  issuance response may leave an unrecoverable handle and an unknown lease.
+  Confirmed revocation does not undo a query or terminate every existing session.
+- Pools isolate fleet routing and credentials, not hostile code inside one worker.
+  Helm egress manifests need an enforcing CNI. The external OpenShell JSONL bridge
+  remains experimental, with explicit immutable image/policy and durable uncertain
+  launch handling. A disposable SQLite plane/installed pooled worker/OpenShell
+  0.1.8 lifecycle qualification and a separate kind 0.33.0/Kubernetes 1.37.0
+  default-kindnet egress qualification have passed. These do not qualify a
+  different runtime/kernel/CNI, cloud metadata service, hostile workloads sharing
+  one worker, external multi-replica workload or live model/provider. Existing SDK
+  adapters do not become sandboxed merely by selecting a pool. See the
+  [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
+- The experimental isolated JSONL profile has no supported model/token-usage
+  frame or spend-settlement contract. Zero recorded spend does not mean the
+  workload made no model calls or incurred no cost. Managed admission checks
+  still apply, but token/USD caps cannot account for unreported workload usage.
+  Use external provider accounting and limits. Native SDK usage reporting is a
+  separate adapter capability and is not inherited by this profile.
+
+See [support operations](../site/support/security-completion.html) and
+[upgrade constraints](ops-runbook.md#security-completion-upgrade).

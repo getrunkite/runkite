@@ -25,6 +25,7 @@ func TestPendingSecurityLive(t *testing.T) {
 	}
 	conformance.RunPendingSecurity(t, s)
 	conformance.RunPendingTenantScope(t, s)
+	conformance.RunPendingReviewSecurity(t, s)
 	mutationDB, err := sql.Open("mysql", dsn)
 	if err != nil {
 		t.Fatal(err)

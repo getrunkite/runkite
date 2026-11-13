@@ -70,6 +70,8 @@ type PolicyInput struct {
 	// TargetRevision is the plane-resolved managed connector target identity.
 	// Standalone decisions do not claim a Runkite-owned execution target.
 	TargetRevision string
+	PolicyRevision string
+	ToolRevision   string
 	// Args is the full parsed tools/call arguments (predicate eval).
 	// Secret-looking keys stay here; ArgsMeta is the redacted display copy.
 	Args       any
@@ -91,7 +93,8 @@ type PolicyDecision struct {
 	LatencyMs  int
 	// AuditFailed marks a required persistence failure independently of the
 	// policy reason. Callers must not bypass it with approval or break-glass.
-	AuditFailed bool `json:"-"`
+	AuditFailed    bool   `json:"-"`
+	PolicyRevision string `json:"policy_revision,omitempty"`
 }
 
 // Provider evaluates one policy layer.
@@ -130,6 +133,7 @@ type Engine struct {
 	cache                 *decisionCache
 	defaultEffect         string
 	failClosed            bool
+	approvalRequirements  ApprovalRequirements
 }
 
 // Config builds an Engine from langgraph.json's policy section.
@@ -151,8 +155,9 @@ type Config struct {
 	AuditRequired bool
 	// ActionEvidence enables managed MCP action records. Deployment wiring
 	// requires required auditing and a SQL protected-action store.
-	ActionEvidence bool
-	Exporter       Exporter
+	ActionEvidence       bool
+	ApprovalRequirements ApprovalRequirements
+	Exporter             Exporter
 	// ForceEnable builds an engine even with no grants/webhook (empty
 	// "policy": {} for Admin-API-only grant management).
 	ForceEnable bool
@@ -174,7 +179,7 @@ func New(cfg Config) *Engine {
 	hasWebhook := cfg.Webhook != nil && strings.TrimSpace(cfg.Webhook.URL) != ""
 	hasMandatory := len(cfg.MandatoryHITL) > 0
 	hasPredicates := len(preds) > 0
-	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !hasPredicates && !cfg.ForceEnable && !cfg.AuditRequired && !cfg.ActionEvidence {
+	if !hasBaseline && !hasOverlays && !hasWebhook && !hasMandatory && !hasPredicates && !cfg.ForceEnable && !cfg.AuditRequired && !cfg.ActionEvidence && cfg.ApprovalRequirements.RequiredApprovals == 0 && !cfg.ApprovalRequirements.ExcludeRequester {
 		return nil
 	}
 	def := strings.ToLower(strings.TrimSpace(cfg.DefaultEffect))
@@ -195,6 +200,10 @@ func New(cfg Config) *Engine {
 		baseline:              append([]Grant(nil), cfg.Grants...),
 		mandatoryHITLBaseline: append([]MandatoryHITLRule(nil), cfg.MandatoryHITL...),
 		predicates:            preds,
+		approvalRequirements:  cfg.ApprovalRequirements,
+	}
+	if e.approvalRequirements.RequiredApprovals == 0 {
+		e.approvalRequirements.RequiredApprovals = 1
 	}
 	if hasWebhook {
 		e.webhook = NewWebhook(*cfg.Webhook)
@@ -340,8 +349,14 @@ func (e *Engine) ActionEvidenceEnabled() bool {
 // Exporter (SIEM) when set.
 func (e *Engine) Decide(ctx context.Context, in PolicyInput) PolicyDecision {
 	start := time.Now()
+	revision := e.Revision()
+	in.PolicyRevision = revision
 	dec := e.decide(ctx, in)
 	dec = e.applyMandatoryHITL(in, dec)
+	if !e.ApprovalRequirements().Valid() || revision == "" || revision != e.Revision() {
+		dec = PolicyDecision{Effect: EffectDeny, Reason: "policy configuration changed or is invalid", ReasonCode: "policy_revision_changed"}
+	}
+	dec.PolicyRevision = revision
 	dec.LatencyMs = int(time.Since(start).Milliseconds())
 	auditFailed := e.auditRequired && e.auditor == nil
 	if e.auditor != nil {

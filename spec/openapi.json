@@ -3301,7 +3301,7 @@
           "Governance"
         ],
         "summary": "Decide a tool call",
-        "description": "Allow or deny one tool call for an in-process app. Does not create a run, dispatch a job, or apply kill switches or spend caps. The caller executes the tool. Requires permission governance:decide (admin implies it; write, read, and agents:<id>:run do not). Tenant is the authenticated key's tenant. An engine effect of pending is returned as pending with action_id when run_id is set. The same run_id, generation 0, connector, tool, and argument digest reuses the open row. Poll GET /governance/actions/{action_id}. Admin approves or denies that row. Embedded rows expire after 24h if still pending. Connector HITL rows do not.",
+        "description": "Allow or deny one tool call for an in-process app. Does not create a run, dispatch a job, or apply kill switches or spend caps. The caller executes the tool. Requires permission governance:decide (admin implies it; write, read, and agents:<id>:run do not). Tenant is the authenticated key's tenant. An engine effect of pending is returned as pending with action_id when run_id is set. The same run_id, generation 0, connector, tool, argument digest and immutable requester/review plan reuse the open row. Poll GET /governance/actions/{action_id}. Admin or an own-tenant approver records review; partial quorum remains pending. Embedded rows expire after 24h if still pending. Connector HITL rows do not.",
         "operationId": "governance_decide",
         "requestBody": {
           "required": true,
@@ -3383,7 +3383,7 @@
           "Governance"
         ],
         "summary": "Poll a governance action",
-        "description": "Returns the operator decision for one embedded pending row. Does not consume the approval and does not execute the tool. Requires governance:decide. Another tenant's id is 404. A row still pending after 24h is rejected with reason_code pending_expired. Legacy pending/approved rows return rejected with reason_code approval_binding_legacy; resubmit the operation for fresh review.",
+        "description": "Returns the operator decision for one embedded pending row. Does not consume the approval and does not execute the tool. Requires governance:decide. Another tenant's id is 404. A row still pending after 24h is rejected with reason_code pending_expired. Legacy pending/approved rows return rejected with reason_code approval_binding_legacy; resubmit the operation for fresh review. A changed separation/quorum plan returns HTTP 200 with status rejected and reason_code approval_requirements_changed, including formerly approved rows.",
         "operationId": "governance_get_action",
         "parameters": [
           {
@@ -4041,6 +4041,16 @@
               "error": {
                 "type": "string",
                 "description": "Run failure message, when present."
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "run_manifest": {
+                    "$ref": "#/components/schemas/RunManifest"
+                  }
+                },
+                "additionalProperties": true,
+                "description": "Run metadata, including the server's frozen dispatch manifest when available. Other metadata keys remain application-defined."
               }
             },
             "type": "object",
@@ -5142,10 +5152,92 @@
           },
           "reason_code": {
             "type": "string",
-            "description": "pending_expired when the embedded row passed its 24h ceiling while still pending."
+            "description": "pending_expired when a pending row passes its 24h ceiling; approval_requirements_changed when its immutable separation/quorum plan is obsolete."
           }
         },
         "title": "GovernanceActionResponse"
+      },
+      "RunManifestPrincipal": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Frozen run principal. A nonempty identity alone is not proof that a primary authentication provider verified it.",
+        "properties": {
+          "identity": {
+            "type": "string"
+          },
+          "verified_identity": {
+            "type": "boolean",
+            "description": "True only when the server captured an explicit authenticated primary identity. Omitted or false is not sufficient for requester-exclusion authority."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RunManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Server-created dispatch authorization snapshot. This is not runtime attestation or a client-supplied authority override.",
+        "required": [
+          "schema_version",
+          "captured_at",
+          "tenant_id",
+          "agent_id",
+          "runner_kind",
+          "policy_fail_closed"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "requested_alias": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "integer"
+          },
+          "runner_kind": {
+            "type": "string"
+          },
+          "connector_needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policy_fail_closed": {
+            "type": "boolean"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/RunManifestPrincipal"
+          },
+          "parent_run_id": {
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+          },
+          "depth": {
+            "type": "integer"
+          }
+        }
       }
     },
     "responses": {

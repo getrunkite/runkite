@@ -25,6 +25,7 @@ const rlsAppRole = "runkite_app"
 // do not drop it from this list to "fix" that — it isn't broken.
 // Keep in sync with ensureRLS / TestRLS_TableListMatchesTenantColumns.
 var rlsTables = []string{
+	"credential_leases",
 	"connector_actions",
 	"connector_action_events",
 	"agents",
@@ -45,6 +46,8 @@ var rlsTables = []string{
 	"cron_claims",
 	"policy_grants",
 	"pending_actions",
+	"pending_action_approvals",
+	"action_deliveries",
 	"kill_switches",
 	"break_glass_windows",
 	"mandatory_hitl_rules",

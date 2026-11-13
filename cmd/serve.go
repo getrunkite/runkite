@@ -163,7 +163,11 @@ func admissionProblems(opts serverOpts) []string {
 	if os.Getenv("REDIS_URL") == "" && os.Getenv("NATS_URL") == "" && os.Getenv("KAFKA_URL") == "" {
 		problems = append(problems, "no shared transport configured (REDIS_URL, NATS_URL, or KAFKA_URL) -- serve would default to in-process transport, which cannot coordinate multiple replicas at all")
 	}
-	runnerTokens := auth.LoadRunnerTokensFromEnv()
+	runnerTokens, _, poolErr := loadPoolRunnerTokens(opts.configPath)
+	if poolErr != nil {
+		problems = append(problems, poolErr.Error())
+		runnerTokens = auth.LoadRunnerTokensFromEnv()
+	}
 	if !runnerTokens.Enabled() {
 		problems = append(problems, "no RUNNER_TOKEN_* configured -- any process that can reach the gRPC bridge would be trusted as a runner")
 	}
@@ -217,6 +221,11 @@ func authStrictPermissions(configPath string) bool {
 func startServer(opts serverOpts) {
 	setupLogging()
 	checkProductionAdmission(opts)
+	runnerTokens, executionPools, err := loadPoolRunnerTokens(opts.configPath)
+	if err != nil {
+		slog.Error("invalid execution pool configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Cancelable, not context.Background(): every background loop below
 	// (queue-depth poller, stale-job reclaimer, cron scheduler, retention,
@@ -262,6 +271,7 @@ func startServer(opts serverOpts) {
 
 	// HTTP API server
 	apiServer := api.NewServer(store, queue, broker, cancelBus)
+	apiServer.SetExecutionPools(executionPools)
 
 	// Reclaim jobs dequeued by a runner that then died before Ack
 	// (zombie GetJob long-poll / crash between Dequeue and first event).
@@ -271,7 +281,8 @@ func startServer(opts serverOpts) {
 	go reclaimStaleJobs(ctx, queue, rdb, initReclaimMaxAge(opts.configPath), initReclaimMaxRetries(opts.configPath), apiServer.CompleteReclaimedRun)
 
 	// Wire connector registry if configured
-	if reg := bootstrapConnectors(opts.configPath); reg != nil {
+	credentialRegistry := bootstrapConnectors(opts.configPath)
+	if reg := credentialRegistry; reg != nil {
 		apiServer.SetConnectorRegistry(reg)
 		slog.Info("connector registry loaded", "connectors", reg.List())
 	}
@@ -318,6 +329,14 @@ func startServer(opts serverOpts) {
 			go runPolicyOverlayPoll(ctx, lister, apiServer)
 			slog.Info("policy: overlay poll enabled", "interval", policyOverlayPollInterval)
 		}
+	}
+	if err := initCredentialLeases(ctx, opts.configPath, store, apiServer, credentialRegistry); err != nil {
+		slog.Error("invalid credential lifecycle configuration", "error", err)
+		os.Exit(1)
+	}
+	if err := initActionExport(ctx, opts.configPath, store, apiServer); err != nil {
+		slog.Error("invalid action export configuration", "error", err)
+		os.Exit(1)
 	}
 	// Run admission (kill switches + agents:<id>:run + optional policy
 	// run.create) shares the same CheckBeforeRun Gate pipeline as
@@ -469,7 +488,6 @@ func startServer(opts serverOpts) {
 	// call and on every /internal/* HTTP request. Distinct trust boundary
 	// from the client-facing auth provider above -- that one never covers
 	// /internal/* at all.
-	runnerTokens := auth.LoadRunnerTokensFromEnv()
 	if runnerTokens.Enabled() {
 		slog.Info("runner auth: enabled (production mode)")
 	} else {
@@ -1151,6 +1169,11 @@ func bootstrapAgents(store state.Store, configPath string) {
 	}
 
 	ctx := context.Background()
+	pools, poolErr := loadExecutionPools(configPath)
+	if poolErr != nil {
+		slog.Error("invalid execution pool configuration", "error", poolErr)
+		return
+	}
 	for _, path := range paths {
 		cfg, err := config.LoadLangGraphJSON(path)
 		if err != nil {
@@ -1163,7 +1186,19 @@ func bootstrapAgents(store state.Store, configPath string) {
 			continue
 		}
 		for _, entry := range entries {
-			metadata := map[string]interface{}{"source": path, "symbol": entry.Symbol, "runner_kind": cfg.RunnerKind}
+			kind := cfg.RunnerKind
+			if cfg.ExecutionPool != "" {
+				kind, err = pools.Select(cfg.ExecutionPool, cfg.RunnerKind, []string{entry.GraphID})
+				if err != nil {
+					slog.Error("execution pool refuses graph", "graph_id", entry.GraphID)
+					continue
+				}
+			}
+			metadata := map[string]interface{}{"source": path, "symbol": entry.Symbol, "runner_kind": kind}
+			if cfg.ExecutionPool != "" {
+				metadata["execution_pool"] = cfg.ExecutionPool
+				metadata["framework_kind"] = cfg.RunnerKind
+			}
 			if needs, ok := cfg.ConnectorNeeds[entry.GraphID]; ok && len(needs) > 0 {
 				metadata["connector_needs"] = needs
 			}

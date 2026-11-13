@@ -55,6 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -173,6 +174,7 @@
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>When recognized model output has no reported token/cost data, runners emit an explicit unmetered marker instead of presenting missing usage as free. Arbitrary work inside a tool can still be outside the SDK's reported usage.</li>
           <li>Decision-only <code>/governance/decide</code> calls create no managed usage record and do not enforce spend caps.</li>
+          <li>The experimental external JSONL workload has no model/token-usage or spend-settlement contract. Zero recorded spend does not establish free execution. Managed admission still applies, but unreported model calls require external provider accounting and limits; native SDK adapters' usage support is independent. See <a href="security-completion.html#execution-boundary">execution boundaries</a>.</li>
           <li>Connector payload shrink does not write <code>usage_events</code>. Admin Spend moves only if the runner reports fewer tokens.</li>
         </ul>
         <p>

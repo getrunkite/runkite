@@ -500,3 +500,84 @@ Enable `policy.audit_required: true` only after checking durable SQL audit avail
 OAuth endpoint errors retain status and recognized standard OAuth codes, but omit arbitrary provider bodies. Custom connector error mappings that matched descriptive body text must use the supported safe codes. Token files are reread on resolution; existing OAuth access tokens can remain cached until expiry. Rotating a client secret does not revoke those tokens. Vault lookup failure does not silently enable a stale-secret fallback.
 
 See [design and regression coverage](internal/action-authority-hardening.md), [A2A upgrade guidance](a2a.md#upgrade-and-troubleshooting), and [required audit configuration](configuration.md#required-policy-audit).
+
+## Security completion upgrade
+
+Read the [qualification record](internal/security-completion-qualification.md)
+for the exercised scenarios, final release gates and explicit limits.
+
+Availability: unreleased source after v0.6.1. This adds Postgres/SQLite migrations
+19 (review authority/history), 20 (action outbox), 21 (credential leases); MySQL
+uses 20, 21 and 22 respectively. Earlier target-bound migrations 18/19 still
+apply when upgrading older data. No historical identity, managed revision, vote,
+lease or export delivery is guessed or backfilled into authority.
+
+1. Stop admission and drain every control-plane/runner writer. Verify a restorable
+   database backup and separately back up the private retained handle keyring.
+2. Run `runkite db upgrade` with the new binary. Replace all replicas and workers
+   before resuming traffic. Do not mix older writers with the new authority fields.
+3. Resubmit historical managed approvals for fresh review. Inspect standalone
+   pending operations after changing their separation/quorum plan; obsolete plans
+   cannot be approved or polled as current authority.
+4. Configure optional controls consistently across replicas, then test denied,
+   pending, partial quorum and final quorum with synthetic operations. Confirm
+   metadata pages through Admin and an own-tenant read-only Review identity.
+
+These security migrations refuse unsafe downgrade. Recovery requires a reviewed
+pre-upgrade backup and explicit reconciliation of external effects and outstanding
+leases. The new binary's newer-schema guard cannot protect an old released binary
+that does not understand that guard. Do not erase migration stamps or guess
+missing authority fields.
+
+### Review and export incidents
+
+A successful review request can leave an operation `pending`: inspect
+`approval_count/required_approvals` and retained exact reviewer history. Never
+tell the caller to continue before status is approved. Self/duplicate review,
+missing requester, revision drift, expiry and current deny remain server gates.
+
+Open Admin Evidence deliveries, select an explicit tenant and inspect sink ID,
+action/event sequence, attempts, worker claim and last fixed reason code. The
+outbox survives action/run pruning. A failed collector does not trigger tool
+replay. Retry only a dead-letter delivery, using its existing ID. The receiver
+must deduplicate. Removing/changing a destination leaves its prior queue held;
+restore the exact prior name/URL/schema contract to deliver that queue. Preserve
+capacity and define manual delivered-record retention instead of deleting
+unresolved rows to hide an outage.
+
+### Credential incidents and rotation
+
+Open Admin Credential leases with an explicit tenant. Review users can read their
+own tenant's metadata but cannot renew or revoke. `active` records actual granted
+TTL; `revoked` requires provider confirmation. Unknown issuance, renewal or
+revocation is not evidence of absence. Investigate Vault audit and database state
+without repeating issuance or a tool. Provider-side role `max_ttl` is essential
+when a lost response also lost the cleanup handle.
+
+Private token/keyring files must be process-owned regular 0600 files, not symlinks.
+Rotate the external token through its existing issuer. Keep historical decryption
+keys and retired provider bindings on every replica until exact old leases have
+confirmed cleanup. Renewal requires current action/owner authority and never
+extends an already released callback's deadline. Revocation can clean an exact
+old lease after cancel/reclaim/run pruning; it does not revoke a replacement's
+lease or undo completed work. The bounded reconciler does not issue credentials
+or retry tools. See [the lifecycle record](internal/credential-lifecycle.md).
+
+### Pool and external workload rollout
+
+Use distinct pool credentials and exact tenant/agent membership, proxy-only
+workers and operator-specified egress destinations. Test on an isolated disposable
+cluster with an enforcing CNI before claiming egress protection. The experimental
+OpenShell profile requires a compatible JSONL workload, external pinned runtime
+and policy. A retained launch intent without a committed receipt is uncertain:
+inspect the owned sandbox/effects and cleanup before explicitly starting fresh
+work. Local qualification passed with an installed Python runner, real SQLite
+plane and OpenShell 0.1.8, and separately with kind 0.33.0/Kubernetes 1.37.0 default
+kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
+qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
+providers. A failed fixture cleanup exits nonzero and preserves its private
+recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
+The experimental isolated protocol has no model/token-usage or spend-settlement
+contract. Do not infer free execution from zero recorded usage or rely on
+token/USD totals to limit unreported model calls. Keep provider accounting and
+limits at the external issuer; ordinary managed admission still applies.

@@ -7,7 +7,7 @@ import type { ReviewSessionStatus, ReviewPendingAction } from "./contracts.ts";
 function status(tenant = "tenant-a", approve = false): ReviewSessionStatus {
   return { authenticated: true, auth_required: true, configured: true, identity: "reviewer", tenant_id: tenant, can_read: true, can_approve: approve, csrf_token: "review-csrf", expires_at: new Date(Date.now() + 15 * 60_000).toISOString() };
 }
-const pending = { id: "pending-v2-exact/雪?", tenant_id: "tenant-a", status: "pending", args_digest: "bound", run_incarnation_id: "db-proof", target_revision: `target-v1-${"a".repeat(64)}` } as ReviewPendingAction;
+const pending = { id: "pending-v2-exact/雪?", tenant_id: "tenant-a", status: "pending", args_digest: "bound", run_incarnation_id: "db-proof", target_revision: `target-v1-${"a".repeat(64)}`, policy_revision: `policy-v1-${"a".repeat(64)}` } as ReviewPendingAction;
 
 test("Review uses its own API, sends a credential once and never borrows Admin CSRF", async () => {
   const old = globalThis.fetch;
@@ -166,4 +166,25 @@ test("logout preserves a usable session on failure and clears only Review on suc
     await client.logout(); assert.equal(client.snapshot().identity, null);
     assert.equal(getCSRFToken(), "still-admin");
   } finally { globalThis.fetch = old; setCSRFToken(null); }
+});
+
+test("Review leases use nested verified owner scope and reject mutation endpoints", async () => {
+  const old = globalThis.fetch;
+  const ref = `cred-${"a".repeat(56)}`;
+  const lease = { lease_ref: ref, owner: { tenant_id: "tenant-a" }, state: "active" };
+  const urls: string[] = [];
+  globalThis.fetch = async (url) => { urls.push(String(url)); return Response.json(urls.length === 1 ? status() : [lease]); };
+  try {
+    const client = createReviewClient(); await client.login("review-key");
+    const result = await client.getWithMeta<unknown[]>("/credential-leases"); assert.equal(result.data.length, 1);
+    assert.deepEqual(urls, ["/review-api/session", "/review-api/credential-leases"]);
+    await assert.rejects(client.getWithMeta(`/credential-leases/${ref}/revoke`), /Unsupported Review endpoint/);
+    await assert.rejects(client.getWithMeta("/action-deliveries"), /Unsupported Review endpoint/);
+    globalThis.fetch = async () => Response.json([{ ...lease, tenant_id: "tenant-a", owner: { tenant_id: "tenant-b" } }]);
+    await assert.rejects(client.getWithMeta("/credential-leases"), /credential tenant scope/);
+    globalThis.fetch = async () => Response.json({ ...lease, owner: { tenant_id: "tenant-a" } });
+    assert.ok((await client.getWithMeta(`/credential-leases/${ref}`)).data);
+    globalThis.fetch = async () => Response.json([{ tenant_id: "tenant-a", lease_ref: ref }]);
+    await assert.rejects(client.getWithMeta("/credential-leases"), /credential tenant scope/);
+  } finally { globalThis.fetch = old; }
 });

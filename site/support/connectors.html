@@ -55,6 +55,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (unreleased)</a>
           <a  href="sim.html">Fixture replay</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
@@ -414,6 +415,9 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
         <h2 id="connector-action-evidence">Managed connector action evidence (unreleased)</h2>
         <p>Current source after v0.6.1 adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
 
+        <h2 id="policy-schema-credentials">Policy, schema and credential binding (unreleased)</h2>
+        <p>Managed approvals now additionally bind the configured <code>policy-v1-</code> revision and optional actual MCP <code>tool-v1-</code> schema. <code>mcp.pin_tools: true</code> discovers the requested tool contract and rechecks it at dispatch. A configured <code>policy.webhook.revision</code> is an operator label for a remote PDP contract, not attestation. New pinning/credential contracts use target-v2; unchanged legacy descriptors preserve target-v1. Historical missing managed authority requires fresh review.</p>
+        <p>The registered <code>vault_database</code> path releases short-lived PostgreSQL identities privately only to a trusted configured external MCP executor. Credentials do not enter the runner session, model arguments or UI. Ordinary bearer-only MCP servers need an adapter; schema identity does not prove implementation or effects. See <a href="security-completion.html">Security operations</a>.</p>
       </main>
     </div>
     <script src="./docs.js?v=20261108-final" defer></script>

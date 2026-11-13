@@ -56,7 +56,7 @@ func seedForeignConnectorAction(t *testing.T, env *actionAPIEnv) string {
 	action, err := env.store.CreateConnectorAction(ctx, &models.ConnectorAction{
 		ID: uuid.NewString(), TenantID: "beta", RunID: "beta-run", ThreadID: "beta-thread", AgentID: "other-agent",
 		Generation: 1, Connector: "other-connector", Tool: "read", ArgsDigest: strings.Repeat("a", 64),
-		TargetRevision: &revision,
+		TargetRevision: &revision, PolicyRevision: optionalRevision(env.s.policy.Revision()),
 	}, uuid.NewString())
 	if err != nil {
 		t.Fatal(err)

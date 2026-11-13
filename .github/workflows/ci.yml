@@ -241,6 +241,9 @@ jobs:
           python python/tests/test_langchain_adapter.py
           python python/tests/test_worker_cancel_race.py
           python python/tests/test_run_status.py
+          python -m unittest discover -s python/tests -p test_execution_pool.py
+          python -m unittest discover -s python/tests -p test_isolated.py
+          python -m unittest discover -s python/tests -p test_isolated_fixture.py
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py

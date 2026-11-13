@@ -24,7 +24,7 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 	t.Helper()
 	pending, ok := store.(interface {
 		PendingStore
-		FindOpenPendingAction(context.Context, string, string, string, int64, string, string, string, string, bool) (*models.PendingAction, error)
+		FindOpenPendingAction(context.Context, string, string, string, int64, string, string, string, string, string, string, bool) (*models.PendingAction, error)
 	})
 	if !ok {
 		t.Fatal("pending target contract unavailable")
@@ -35,7 +35,7 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 	}
 	ctx, input := connectorActionFixture(t, store)
 	makePending := func(revision, digest string) *models.PendingAction {
-		return &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: input.TenantID, AgentID: input.AgentID, RunID: input.RunID, Generation: input.Generation, Connector: input.Connector, Tool: input.Tool, ArgsDigest: digest, TargetRevision: revision}
+		return &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: input.TenantID, AgentID: input.AgentID, RunID: input.RunID, Generation: input.Generation, Connector: input.Connector, Tool: input.Tool, ArgsDigest: digest, TargetRevision: revision, PolicyRevision: pendingPolicyRevision}
 	}
 	a := makePending(pendingTargetRevision, input.ArgsDigest)
 	if err := pending.CreatePendingAction(ctx, a); err != nil {
@@ -50,7 +50,7 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 		t.Fatalf("different targets merged: %v", err)
 	}
 	for _, row := range []*models.PendingAction{a, b} {
-		found, err := pending.FindOpenPendingAction(ctx, row.TenantID, row.AgentID, row.RunID, row.Generation, row.Connector, row.Tool, row.ArgsDigest, row.TargetRevision, false)
+		found, err := pending.FindOpenPendingAction(ctx, row.TenantID, row.AgentID, row.RunID, row.Generation, row.Connector, row.Tool, row.ArgsDigest, row.TargetRevision, pendingPolicyRevision, "", false)
 		if err != nil || found == nil || found.ID != row.ID {
 			t.Fatalf("target find returned wrong authority: %+v %v", found, err)
 		}
@@ -63,7 +63,7 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 		t.Fatal(err)
 	}
 	consume := func(revision string) (string, error) {
-		return pending.ConsumeApprovedAction(ctx, input.TenantID, input.AgentID, input.RunID, input.Generation, input.Connector, input.Tool, input.ArgsDigest, revision)
+		return pending.ConsumeApprovedAction(ctx, input.TenantID, input.AgentID, input.RunID, input.Generation, input.Connector, input.Tool, input.ArgsDigest, revision, pendingPolicyRevision, "")
 	}
 	if id, err := consume(otherPendingTargetRevision); err != nil || id != "" {
 		t.Fatalf("wrong target consumed approval: %q %v", id, err)
@@ -174,7 +174,7 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 			}
 		}
 		for _, target := range []string{"", pendingTargetRevision} {
-			id, err := pending.ConsumeApprovedAction(ctx, old.TenantID, old.AgentID, old.RunID, old.Generation, old.Connector, old.Tool, old.ArgsDigest, target)
+			id, err := pending.ConsumeApprovedAction(ctx, old.TenantID, old.AgentID, old.RunID, old.Generation, old.Connector, old.Tool, old.ArgsDigest, target, pendingPolicyRevision, "")
 			if err != nil || id != "" {
 				t.Fatal("historical target authorized a new operation")
 			}
@@ -202,3 +202,5 @@ func RunPendingTargetRevisionSecurity(t *testing.T, store state.Store, mutate fu
 		t.Fatal("standalone approval behavior changed")
 	}
 }
+
+const pendingPolicyRevision = "policy-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -2,8 +2,8 @@
 
 Status: unreleased source after v0.6.1, built on the
 [connector action evidence milestone](connector-action-evidence.md). Published
-v0.6.1 binaries do not implement these permissions, routes or sessions. This
-permissions/session slice adds no SQL migration or identity directory. Current
+v0.6.1 binaries do not implement these permissions, routes or sessions. The
+original permissions/session slice adds no SQL migration or identity directory. Current
 source also includes [target-bound approvals](target-bound-approvals.md), whose
 migration and maintenance-window requirements apply when upgrading from a release.
 
@@ -191,7 +191,11 @@ database/Redis failover, long-duration or cloud soak results, live-provider
 compatibility, throughput capacity, or safety for hostile in-process agent code.
 
 This is not general per-resource RBAC or a per-user identity directory. Review
-is flat-tenant scoped. The configured target binding does not pin upstream tool
-implementation/schema. Two-person review and a self-approval prohibition are
-not enforced. Dynamic Vault leases, a reliable evidence export outbox and instant
-upstream identity revocation remain separate work. Those need their own caller and contract.
+remains flat-tenant scoped. Current optional controls also provide
+[requester separation and reviewer quorum](approval-authority-and-quorum.md),
+[configured policy/optional schema binding](target-bound-approvals.md),
+[durable evidence export](action-delivery-outbox.md), and
+[registered Vault database leases](credential-lifecycle.md). Review can inspect
+owned lease metadata but cannot renew/revoke or inspect credential values. None
+of these controls proves remote implementation identity, instant external
+revocation, or exactly-once business effects.
