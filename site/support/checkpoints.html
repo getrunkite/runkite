@@ -53,6 +53,7 @@
           <a  href="secrets.html">Secrets</a>
           <div class="nav-group">Govern</div>
           <a  href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -171,6 +172,10 @@
           ·
           <a href="https://github.com/getrunkite/runkite/blob/main/docs/architecture.md">architecture.md</a>
         </p>
+
+        <h2 id="history-upgrade">Checkpoint history corrections (unreleased)</h2>
+        <p>Current source after v0.6.1 uses bounded opaque completion checkpoint IDs on SQL and Mongo, preserving retained history when a deleted run ID is reused. Use IDs returned by the API; do not construct them from run IDs. Existing IDs remain readable.</p>
+        <p>SQLite upgrade normalizes retained timestamps to fixed-width UTC without changing their instants or payloads. Invalid stored timestamps stop the upgrade for explicit repair. New completion history follows its parent at the backend's precision, separately from wall-clock update time. These corrections do not reconstruct old commit order. Inspect the selected checkpoint and current thread state before resuming a conversation whose history was previously misordered. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#connector-action-evidence-upgrade">upgrade procedure</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md#retained-checkpoint-identity-and-chronology">engineering rationale</a>.</p>
 
       </main>
     </div>

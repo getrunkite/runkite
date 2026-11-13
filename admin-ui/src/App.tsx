@@ -21,6 +21,8 @@ import { KillSwitches } from "./pages/KillSwitches";
 import { BreakGlass } from "./pages/BreakGlass";
 import { MandatoryHITL } from "./pages/MandatoryHITL";
 import { Audit } from "./pages/Audit";
+import { ConnectorActions } from "./pages/ConnectorActions";
+import { ConnectorActionDetail } from "./pages/ConnectorActionDetail";
 import { Spend } from "./pages/Spend";
 import { TryAgent } from "./pages/TryAgent";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -73,6 +75,8 @@ function Gate() {
         <Route path="kill" element={<KillSwitches />} />
         <Route path="break-glass" element={<BreakGlass />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="connector-actions" element={<ConnectorActions />} />
+        <Route path="connector-actions/:actionId" element={<ConnectorActionDetail />} />
         <Route path="spend" element={<Spend />} />
         <Route path="try" element={<TryAgent />} />
       </Route>

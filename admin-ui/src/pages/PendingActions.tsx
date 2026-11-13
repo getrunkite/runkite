@@ -14,13 +14,17 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
+import { pendingApprovalBlockReason } from "../lib/pendingApproval";
 
 const STATUS_OPTIONS = ["pending", "approved", "denied", "consumed", "all"];
 
 export function PendingActions() {
   const [searchParams] = useSearchParams();
   const [tenantId, setTenantId] = useState(() => searchParams.get("tenant_id") ?? "");
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState(() => {
+    const requested = searchParams.get("status") ?? "pending";
+    return STATUS_OPTIONS.includes(requested) ? requested : "pending";
+  });
   const [connector, setConnector] = useState("");
   const [runId, setRunId] = useState(() => searchParams.get("run_id") ?? "");
   const [cursorStack, setCursorStack] = useState<string[]>([]);
@@ -48,6 +52,11 @@ export function PendingActions() {
   const hasFilter = tenant !== "" || status !== "pending" || conn !== "" || run !== "";
 
   const resolve = async (a: AdminPendingAction, verb: "approve" | "deny") => {
+    const blocked = verb === "approve" ? pendingApprovalBlockReason(a) : null;
+    if (blocked) {
+      toast.error("Fresh review required", { description: blocked });
+      return;
+    }
     setBusyId(a.id);
     try {
       await api.post(`/pending-actions/${encodeURIComponent(a.id)}/${verb}`);
@@ -68,6 +77,11 @@ export function PendingActions() {
 
   const columns: ColumnDef<AdminPendingAction, unknown>[] = [
     {
+      accessorKey: "id",
+      header: "Approval ID",
+      cell: ({ getValue }) => <span className="block max-w-44 truncate font-mono text-xs" title={getValue() as string}>{getValue() as string}</span>,
+    },
+    {
       accessorKey: "created_at",
       header: "When",
       cell: ({ getValue }) => {
@@ -83,7 +97,16 @@ export function PendingActions() {
     {
       accessorKey: "status",
       header: "Status",
-      cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+      cell: ({ row }) => {
+        const action = row.original;
+        const blocked = ["pending", "approved"].includes(action.status) ? pendingApprovalBlockReason(action) : null;
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            <StatusBadge status={action.status} />
+            {blocked && <span className="text-xs text-amber-600 dark:text-amber-400" title={blocked}>Fresh review required</span>}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "tenant_id",
@@ -163,9 +186,10 @@ export function PendingActions() {
         const a = row.original;
         if (a.status !== "pending") return null;
         const busy = busyId === a.id;
+        const blocked = pendingApprovalBlockReason(a);
         return (
           <div className="flex justify-end gap-1">
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => resolve(a, "approve")}>
+            <Button size="sm" variant="outline" disabled={busy || Boolean(blocked)} title={blocked ?? undefined} onClick={() => resolve(a, "approve")}>
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
               Approve
             </Button>

@@ -4,6 +4,18 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
+- Opt-in SQL managed MCP action evidence with `policy.action_evidence` plus
+  required audit. Atomically record dispatch intent and one-shot approval
+  consumption, retain original generation and run incarnation, and append bounded
+  response observations. Unknown outcomes never trigger a tool replay.
+- Admin Connector actions list/detail, a Run Detail evidence panel, correlation
+  IDs and an operator investigation guide. Preserve evidence across run pruning;
+  optional independent retention removes only resolved records. Add SQL schema
+  migrations Postgres/SQLite 17 and MySQL 18. This is unreleased source after
+  v0.6.1, not a change to previously published artifacts.
+
 ### Documentation
 
 - Use consistent homepage link cues and keyboard feedback. Add section links to
@@ -28,6 +40,20 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
 
 ### Fixed
+
+- Preserve completion history when terminal run IDs are deleted and reused;
+  use bounded opaque checkpoint IDs on SQL and Mongo. Fix SQLite fractional
+  timestamp ordering, normalize retained timestamps during upgrade, and order
+  new completion snapshots after their locked parent at backend precision.
+- Bind SQL managed connector approvals to an immutable run incarnation, so a
+  retained approval cannot authorize a replacement run with the same ID and
+  generation. Older unbound managed approvals require fresh submission and
+  review, including when action capture is off. Standalone decisions retain
+  their separate expiry/continuation contract. Match connector sessions on
+  tenant and agent as well as run, generation and connector.
+- Count an OAuth-backed MCP request once in its circuit breaker and let one
+  half-open probe cover token preparation plus the protected call. The proxy no
+  longer rejects its own refresh probe or counts a token failure twice.
 
 - Build with Go 1.26.11, including the net/http MaxBytesReader header-race
   security fix (GO-2026-6859). Update the module minimum and image builder

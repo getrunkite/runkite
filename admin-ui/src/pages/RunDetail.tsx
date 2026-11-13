@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { Loader2, Radio, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
@@ -8,12 +8,14 @@ import { streamSSE, type SseEvent } from "../api/sse";
 import { reconcileRun } from "../api/reconcile-run";
 import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
 import { eventPreview } from "../lib/eventPreview";
+import { connectorActionRunReferenceMatches, connectorActionsHref } from "../lib/connectorActions";
 import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminListPath } from "../components/list-pager";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { RunConnectorActions } from "../components/connector-action-evidence";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +62,11 @@ function readRunManifest(metadata: Record<string, unknown> | undefined): RunMani
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
   const run = useApi<AdminRun>(runId ? adminRunPath(runId) : "", [runId]);
+  const [searchParams] = useSearchParams();
+  const expectedTenant = searchParams.get("expected_tenant_id");
+  const expectedIncarnation = searchParams.get("expected_incarnation_id");
+  const hasReference = expectedTenant !== null || expectedIncarnation !== null;
+  const referenceReady = !hasReference || Boolean(run.data && runId && connectorActionRunReferenceMatches(run.data, runId, expectedTenant, expectedIncarnation));
   const childrenPath = runId ? adminListPath("/runs", undefined, { parent_run_id: runId }) : "";
   const children = useApi<AdminRun[]>(childrenPath, [runId]);
   const [events, setEvents] = useState<LogEntry[]>([]);
@@ -88,7 +95,7 @@ export function RunDetail() {
   };
 
   useEffect(() => {
-    if (!runId) return;
+    if (!runId || !referenceReady) return;
     setEvents([]);
     setStreaming(true);
     let active = true;
@@ -122,7 +129,7 @@ export function RunDetail() {
       abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId]);
+  }, [runId, referenceReady]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -131,6 +138,10 @@ export function RunDetail() {
   if (run.loading) return <RunDetailSkeleton />;
   if (run.error) return <ErrorState message={run.error} />;
   if (!run.data) return null;
+  if (!referenceReady) return <div className="space-y-4">
+    <ErrorState message="The original run referenced by this evidence is unavailable. This run ID belongs to a different record, or the reference is incomplete." />
+    <Link className="text-sm text-primary hover:underline" to={connectorActionsHref({ tenant_id: expectedTenant ?? undefined, run_id: runId })}>View retained connector actions →</Link>
+  </div>;
 
   const manifest = readRunManifest(run.data.metadata);
   const isTerminal = TERMINAL_STATUSES.has(run.data.status);
@@ -331,6 +342,8 @@ export function RunDetail() {
           </CardContent>
         </Card>
       )}
+
+      <RunConnectorActions key={JSON.stringify([run.data.tenant_id, run.data.run_id, run.data.incarnation_id])} run={run.data} />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">

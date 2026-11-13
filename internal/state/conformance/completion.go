@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,6 +121,103 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		var output map[string]interface{}
 		if err := json.Unmarshal(run.Output, &output); err != nil || len(output) != 1 || output["second"] != "two" {
 			t.Fatalf("run output must remain per-run result: output=%s err=%v", run.Output, err)
+		}
+	})
+	t.Run("concurrent_completion_latest_contains_every_merged_value", func(t *testing.T) {
+		s, ctx := seed(t)
+		for i := range 8 {
+			runID := fmt.Sprintf("parallel-completion-%d", i)
+			now := time.Now().UTC()
+			if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "completion-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if accepted, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+				t.Fatal(accepted, err)
+			}
+		}
+		var group sync.WaitGroup
+		for i := range 8 {
+			group.Add(1)
+			go func(i int) {
+				defer group.Done()
+				result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: fmt.Sprintf("parallel-completion-%d", i), Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{fmt.Sprintf("key_%d", i): i}})
+				if err != nil || !result.Applied {
+					t.Errorf("completion %d=%+v error=%v", i, result, err)
+				}
+			}(i)
+		}
+		group.Wait()
+		thread, err := s.GetThread(ctx, "completion-thread")
+		if err != nil || len(thread.Values) != 9 {
+			t.Fatalf("merged thread=%+v error=%v", thread, err)
+		}
+		latest, err := s.GetLatestCheckpoint(ctx, "completion-thread")
+		if err != nil || len(latest.Values) != len(thread.Values) {
+			t.Fatalf("latest checkpoint differs from committed merge: checkpoint=%+v error=%v", latest, err)
+		}
+		for key := range thread.Values {
+			if _, found := latest.Values[key]; !found {
+				t.Fatalf("latest checkpoint missing merged key %q", key)
+			}
+		}
+	})
+	t.Run("recreated_run_id_preserves_both_completion_checkpoints", func(t *testing.T) {
+		s, ctx := seed(t)
+		for turn := range 2 {
+			if turn > 0 {
+				if err := s.DeleteRun(ctx, "completion-run"); err != nil {
+					t.Fatal(err)
+				}
+				retained, err := s.ListCheckpoints(ctx, "completion-thread", 10, "")
+				if err != nil || len(retained) != 1 {
+					t.Fatalf("run deletion changed conversation history: %d %v", len(retained), err)
+				}
+				now := time.Now().UTC()
+				if err := s.SetThreadStatus(ctx, "completion-thread", models.ThreadStatusBusy); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.CreateRun(ctx, &models.Run{RunID: "completion-run", ThreadID: "completion-thread", AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if accepted, err := s.BeginRunAttempt(ctx, "completion-run", 1); err != nil || !accepted {
+				t.Fatal(accepted, err)
+			}
+			if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{fmt.Sprintf("turn_%d", turn): turn}}); err != nil || !result.Applied {
+				t.Fatalf("completion of run incarnation %d: %+v %v", turn, result, err)
+			}
+		}
+		history, err := s.ListCheckpoints(ctx, "completion-thread", 10, "")
+		if err != nil || len(history) != 2 {
+			t.Fatalf("replacement run overwrote immutable checkpoint history: %d %v", len(history), err)
+		}
+		if history[0].Checkpoint.CheckpointID == history[1].Checkpoint.CheckpointID || history[1].Values["turn_1"] != nil || history[0].Values["turn_0"] == nil || history[0].Values["turn_1"] == nil {
+			t.Fatalf("replacement completion corrupted conversation history: %+v", history)
+		}
+		if history[0].ParentCheckpoint == nil || history[0].ParentCheckpoint.CheckpointID != history[1].Checkpoint.CheckpointID {
+			t.Fatalf("replacement completion lost its original parent: %+v", history[0])
+		}
+	})
+	t.Run("maximum_length_run_id_has_bounded_completion_checkpoint", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		runID := strings.Repeat("r", 255)
+		if err := s.CreateThread(ctx, &models.Thread{ThreadID: "long-completion-thread", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "long-completion-thread", AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if accepted, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+			t.Fatal(accepted, err)
+		}
+		if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "complete"}}); err != nil || !result.Applied {
+			t.Fatalf("valid stored run ID could not complete: %+v %v", result, err)
+		}
+		latest, err := s.GetLatestCheckpoint(ctx, "long-completion-thread")
+		if err != nil || len(latest.Checkpoint.CheckpointID) > 255 {
+			t.Fatalf("completion checkpoint exceeds SQL identity bound: %+v %v", latest, err)
 		}
 	})
 	t.Run("dispatch_marks_running_and_fences_reclaim", func(t *testing.T) {

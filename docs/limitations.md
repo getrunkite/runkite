@@ -29,6 +29,26 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 ---
 
+## Managed connector action evidence (unreleased)
+
+Current source after v0.6.1 can opt into SQL managed MCP attempt history with
+`policy.action_evidence` and required audit. It does not cover local tools,
+standalone decisions, model calls or every MCP method. Every serving replica
+must enable it; additive migrations do not make older or flag-off writers record.
+Managed approval capabilities bind to the original run incarnation; historical
+unbound managed approvals need fresh review. Standalone decision approvals
+remain app-owned and separate. Intent is permission to attempt, not proof of delivery. A response, error or
+cancel is not proof that a target committed or rolled back its business effect.
+Unknown outcomes are preserved and never trigger automatic tool replay.
+
+New action tables contain metadata only; existing run streams, checkpoints and
+policy audit have their own data/retention rules. No tool/target/policy revision
+pinning, credential leasing, tamper-evident archive or reliable lifecycle export
+is claimed. Run pruning does not remove action history. Resolved-record retention
+is separate and leaves pending/unknown attempts, including earlier pending
+requests whose approval a later attempt consumed. Storage can therefore grow.
+See the [operator guide](../site/support/connector-actions.html).
+
 ## Authority and secret-safety boundaries
 
 - Required policy audit is opt-in and SQL-only. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.

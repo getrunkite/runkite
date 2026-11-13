@@ -101,6 +101,8 @@ export interface AdminThread {
 }
 
 export interface AdminRun {
+  /** SQL-generated proof of this stored run instance; absent on unsupported stores. */
+  incarnation_id?: string;
   tenant_id: string;
   run_id: string;
   thread_id?: string;
@@ -188,6 +190,7 @@ export interface AdminPolicyGrant {
 export interface AdminPendingAction {
   id: string;
   run_id: string;
+  run_incarnation_id?: string;
   generation: number;
   tenant_id: string;
   agent_id: string;
@@ -200,6 +203,7 @@ export interface AdminPendingAction {
   args_digest?: string;
   args?: Record<string, unknown>;
   decided_by?: string;
+  expires_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -307,4 +311,74 @@ export interface AdminFinOpsView {
     updated_at: string;
     updated_by?: string;
   };
+}
+
+/** Metadata-only evidence for a managed MCP tools/call request. */
+export interface AdminConnectorAction {
+  action_id: string;
+  tenant_id: string;
+  run_id: string;
+  run_created_at: string;
+  run_incarnation_id: string;
+  thread_id: string;
+  generation: number;
+  agent_id: string;
+  agent_version: number;
+  principal?: string;
+  connector: string;
+  tool: string;
+  transport: string;
+  args_digest: string;
+  state: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  decision?: string;
+  reason_code?: string;
+  rule_id?: string;
+  authorization_source?: string;
+  pending_action_id?: string;
+  break_glass_id?: string;
+  policy_revision?: string | null;
+  target_revision?: string | null;
+  tool_revision?: string | null;
+  credential_ref?: string | null;
+  trace_id?: string;
+  dispatch_id?: string;
+  dispatch_deadline_at?: string | null;
+  response_kind?: string;
+  http_status?: number | null;
+  rpc_error_code?: number | null;
+  response_digest?: string;
+  response_bytes?: number | null;
+}
+
+export interface AdminConnectorActionEvent {
+  action_id: string;
+  tenant_id: string;
+  sequence: number;
+  mutation_id: string;
+  kind: string;
+  observed_at: string;
+  observer: string;
+  state: string;
+  decision?: string;
+  reason_code?: string;
+  rule_id?: string;
+  authorization_source?: string;
+  pending_action_id?: string;
+  break_glass_id?: string;
+  dispatch_id?: string;
+  response_kind?: string;
+  http_status?: number | null;
+  rpc_error_code?: number | null;
+  response_digest?: string;
+  response_bytes?: number | null;
+}
+
+export interface AdminConnectorActionDetail {
+  action: AdminConnectorAction;
+  events: AdminConnectorActionEvent[];
+  run_available: boolean;
+  events_truncated?: boolean;
 }

@@ -5,8 +5,10 @@ export function pollRequest<T>(
   failed: (error: unknown) => void,
   settled: () => void,
   pollMs?: number,
+  maxPollMs?: number,
 ): () => void {
   const controller = new AbortController();
+  const startedAt = Date.now();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -19,7 +21,8 @@ export function pollRequest<T>(
     } finally {
       if (!stopped) {
         settled();
-        if (pollMs && pollMs > 0) timer = setTimeout(() => void tick(), pollMs);
+        if (pollMs && pollMs > 0 && (maxPollMs === undefined || Date.now() - startedAt < maxPollMs))
+          timer = setTimeout(() => void tick(), pollMs);
       }
     }
   }

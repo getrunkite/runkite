@@ -239,6 +239,18 @@ Plane policy and SQL Admin governance are documented in full elsewhere — this 
 
 Laptop proof for the governance announce bar: `make smoke-governance`.
 
+### Managed connector action readers (unreleased)
+
+The current source after v0.6.1 adds SQL-only Admin readers:
+`GET /admin-api/connector-actions` and
+`GET /admin-api/connector-actions/{actionID}`. Capture requires
+`policy.action_evidence` and required audit. The managed MCP response header
+`X-Runkite-Connector-Action-Id` identifies the request attempt; existing pending
+approval `action_id` semantics are unchanged. Lists return a bounded array and
+`X-Next-Cursor`; detail returns `action`, `events`, `run_available` and optional
+`events_truncated`. See [Admin API](admin.md), the generated Admin specification,
+and the [operator manual](../site/support/connector-actions.html).
+
 ### Custom Routes
 ```
 *      {mount}/*                  Reverse-proxied to custom_routes.url (default mount `/custom`); mount prefix stripped; X-Runkite-* identity headers injected

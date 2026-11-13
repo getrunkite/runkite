@@ -44,6 +44,13 @@ The document is long on purpose. Brevity creates confusion. I would rather over-
 
 
 
+Current unreleased source after v0.6.1 adds opt-in managed MCP action evidence,
+requiring SQL and required audit. See [the engineering record](connector-action-evidence.md)
+for the atomic intent/approval boundary, immutable run incarnations, late
+observations and independent retention. A recorded response is not proof of a
+business effect. The [operator manual](../../site/support/connector-actions.html)
+covers safe investigation and rollout.
+
 ## Table of Contents
 
 **Core Architecture (Chapters 1-22)**

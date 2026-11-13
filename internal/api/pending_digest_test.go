@@ -20,6 +20,7 @@ import (
 	"github.com/getrunkite/runkite/internal/state"
 	pgstore "github.com/getrunkite/runkite/internal/state/postgres"
 	sqlitestore "github.com/getrunkite/runkite/internal/state/sqlite"
+	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
@@ -268,11 +269,12 @@ func newBankTransferHITL(t *testing.T, store state.Store, tenantID, runID string
 		RunID: runID, Generation: 1, TenantID: tenantID, AgentID: "payroll",
 		User: &transport.UserContext{Identity: "alice"},
 	}
+	seedManagedPendingFixture(t, store, binding)
 	call = func(amount string) (int, []byte) {
 		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"transfer","arguments":{"amount":%s}}}`, amount)
 		req := httptest.NewRequest(http.MethodPost, "/internal/connectors/bank/mcp", strings.NewReader(body))
 		req.SetPathValue("name", "bank")
-		req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+		req = req.WithContext(auth.WithRunBinding(tenant.WithContext(req.Context(), binding.TenantID), binding))
 		attachConnectorSession(t, s, binding, "bank", req)
 		rec := httptest.NewRecorder()
 		s.handleProxyMCPRequest(rec, req)

@@ -25,6 +25,8 @@ const rlsAppRole = "runkite_app"
 // do not drop it from this list to "fix" that — it isn't broken.
 // Keep in sync with ensureRLS / TestRLS_TableListMatchesTenantColumns.
 var rlsTables = []string{
+	"connector_actions",
+	"connector_action_events",
 	"agents",
 	"agent_versions",
 	"agent_schemas",

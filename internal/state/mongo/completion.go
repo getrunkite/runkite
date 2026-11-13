@@ -3,6 +3,7 @@ package mongo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/models"
@@ -73,14 +74,27 @@ func (s *Store) completeRunInTransaction(ctx context.Context, c *state.RunComple
 			for key, value := range c.Values {
 				merged[key] = value
 			}
-			now := time.Now().UTC().Format(time.RFC3339Nano)
-			cp := &models.ThreadState{Values: merged, Metadata: map[string]interface{}{}, Next: []string{}, Tasks: []interface{}{}, Interrupts: []interface{}{}, CreatedAt: &now, Checkpoint: models.ThreadCheckpoint{ThreadID: run.ThreadID, CheckpointID: "completion:" + c.RunID}}
 			previous, err := s.GetLatestCheckpoint(ctx, run.ThreadID)
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			var parent *models.ThreadCheckpoint
 			if err == nil {
-				cp.ParentCheckpoint = &previous.Checkpoint
+				parent = &previous.Checkpoint
+				if previous.CreatedAt != nil {
+					parentTime, err := time.Parse(time.RFC3339Nano, *previous.CreatedAt)
+					if err != nil {
+						return fmt.Errorf("parse completion parent time: %w", err)
+					}
+					// BSON Date has millisecond precision. Preserve strict ordering
+					// even when a prior transaction committed within this tick.
+					if !now.After(parentTime) {
+						now = parentTime.UTC().Truncate(time.Millisecond).Add(time.Millisecond)
+					}
+				}
 			} else if _, ok := err.(*state.ErrNotFound); !ok {
 				return err
 			}
+			created := now.Format(time.RFC3339Nano)
+			cp := &models.ThreadState{Values: merged, Metadata: map[string]interface{}{}, Next: []string{}, Tasks: []interface{}{}, Interrupts: []interface{}{}, CreatedAt: &created, ParentCheckpoint: parent, Checkpoint: models.ThreadCheckpoint{ThreadID: run.ThreadID, CheckpointID: state.NewCompletionCheckpointID()}}
 			if err := s.SaveCheckpoint(ctx, run.ThreadID, cp); err != nil {
 				return err
 			}

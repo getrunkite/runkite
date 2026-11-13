@@ -30,6 +30,10 @@ type Driver struct {
 	ValidateValues func(context.Context, Tx, []byte) error
 }
 
+// SQLiteTimestampLayout preserves nanosecond chronology in text comparisons.
+// RFC3339Nano removes trailing zeros, making older fractions sort after newer.
+const SQLiteTimestampLayout = "2006-01-02T15:04:05.000000000Z"
+
 func (d Driver) query(q string) string {
 	if d.Dialect != "postgres" {
 		return q
@@ -50,7 +54,7 @@ func replaceQuestions(q string, next func() string) string {
 }
 func (d Driver) now(t time.Time) interface{} {
 	if d.Dialect == "sqlite" {
-		return t.Format(time.RFC3339Nano)
+		return t.UTC().Format(SQLiteTimestampLayout)
 	}
 	return t
 }
@@ -191,7 +195,8 @@ func (d Driver) CompleteRunInTx(ctx context.Context, tx Tx, c *state.RunCompleti
 			return state.CompletionResult{}, err
 		}
 		var parentID sql.NullString
-		err = tx.Row(ctx, d.query(`SELECT checkpoint_id FROM thread_checkpoints WHERE thread_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 1`), threadID, tid).Scan(&parentID)
+		var parentTime storedTime
+		err = tx.Row(ctx, d.query(`SELECT checkpoint_id,created_at FROM thread_checkpoints WHERE thread_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 1`), threadID, tid).Scan(&parentID, &parentTime)
 		if err != nil && !isNoRows(err) {
 			return state.CompletionResult{}, err
 		}
@@ -199,7 +204,11 @@ func (d Driver) CompleteRunInTx(ctx context.Context, tx Tx, c *state.RunCompleti
 		if parentID.Valid {
 			parent = parentID.String
 		}
-		if err := tx.Exec(ctx, d.query(`INSERT INTO thread_checkpoints (tenant_id,checkpoint_id,thread_id,checkpoint_ns,parent_id,values_json,metadata,next_nodes,tasks,interrupts,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`), tid, "completion:"+c.RunID, threadID, "", parent, threadRaw, []byte(`{}`), []byte(`[]`), []byte(`[]`), []byte(`[]`), d.now(now)); err != nil {
+		// Choose history time under the thread lock. Preserve a strict order
+		// even if the clock moves back or the parent shares SQL microsecond
+		// precision. Run/thread updated_at remain actual wall-clock values.
+		checkpointTime := nextCheckpointTime(time.Now().UTC(), parentTime.Time)
+		if err := tx.Exec(ctx, d.query(`INSERT INTO thread_checkpoints (tenant_id,checkpoint_id,thread_id,checkpoint_ns,parent_id,values_json,metadata,next_nodes,tasks,interrupts,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`), tid, state.NewCompletionCheckpointID(), threadID, "", parent, threadRaw, []byte(`{}`), []byte(`[]`), []byte(`[]`), []byte(`[]`), d.now(checkpointTime)); err != nil {
 			return state.CompletionResult{}, err
 		}
 	}

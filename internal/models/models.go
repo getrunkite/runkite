@@ -229,6 +229,9 @@ const (
 
 // Run represents an execution of an agent.
 type Run struct {
+	// IncarnationID is generated and persisted on SQL insertion. It distinguishes a
+	// deleted run from another row reusing its ID, even at the same timestamp.
+	IncarnationID string `json:"-"`
 	// TenantID is populated on read so internal, non-HTTP callers (the
 	// gRPC bridge's StatusCallback, driven by a runID with no
 	// authenticated request context to derive a tenant from) can

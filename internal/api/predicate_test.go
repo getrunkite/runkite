@@ -138,7 +138,8 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 		RunID: runID, Generation: 1, TenantID: tenantID, AgentID: "payroll",
 		User: &transport.UserContext{Identity: "alice"},
 	}
-	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+	seedManagedPendingFixture(t, store, binding)
+	req = req.WithContext(auth.WithRunBinding(tenant.WithContext(req.Context(), binding.TenantID), binding))
 	attachConnectorSession(t, s, binding, "bank", req)
 	rec := httptest.NewRecorder()
 	s.handleProxyMCPRequest(rec, req)

@@ -24,7 +24,10 @@ func TestHardeningLegacyApprovalCannotContinueThroughPoll(t *testing.T) {
 	server, database, _ := hardeningTestEnv(t)
 	server.SetPolicyEngine(policy.New(policy.Config{ForceEnable: true}))
 	store := any(database).(pendingActionStore)
-	a := &models.PendingAction{ID: "pending-old-binding", RunID: "old-operation", TenantID: "default", AgentID: "agent", Connector: "bank", Tool: "transfer", ArgsDigest: "legacy", Status: models.PendingStatusPending}
+	// This is a historical standalone decision, whose operation ID never
+	// represented a managed run. Its legacy argument binding must still fail.
+	expires := time.Now().Add(time.Hour)
+	a := &models.PendingAction{ID: "pending-old-binding", RunID: "old-operation", TenantID: "default", AgentID: "agent", Connector: "bank", Tool: "transfer", ArgsDigest: "legacy", Status: models.PendingStatusPending, ExpiresAt: &expires}
 	if err := store.CreatePendingAction(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}

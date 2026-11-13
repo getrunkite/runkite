@@ -11,6 +11,7 @@ import (
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 	"github.com/getrunkite/runkite/internal/tenant"
+	"github.com/google/uuid"
 )
 
 // CreateRunAdmitted holds GET_LOCK scopes on one connection, then COUNT +
@@ -111,12 +112,15 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 	}
 
 	meta, _ := json.Marshal(run.Metadata)
+	// Use a literal UUID rather than a nondeterministic SQL default, which is
+	// unsafe for statement-based replication. Never reuse caller-supplied proof.
+	incarnation := uuid.NewString()
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tid, run.RunID, run.ThreadID, run.AgentID, run.Status, meta,
 		nullableJSON(run.Input), nullableJSON(run.Config), "",
-		run.CreatedAt, run.UpdatedAt, nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth)
+		run.CreatedAt, run.UpdatedAt, nullableString(run.ParentRunID), nullableString(run.RootRunID), run.Depth, incarnation)
 	if isDuplicateKeyError(err) {
 		return &state.ErrConflict{Resource: "run", ID: run.RunID}
 	}

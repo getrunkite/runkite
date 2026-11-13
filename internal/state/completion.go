@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/google/uuid"
 )
 
 // These reserved metadata fields are maintained only by the dispatch/completion
@@ -14,6 +15,11 @@ const (
 	AttemptGenerationKey    = "_runkite_attempt_generation"
 	CompletionGenerationKey = "_runkite_completion_generation"
 )
+
+// NewCompletionCheckpointID separates retained conversation history from a run
+// identifier that may be deleted and reused. Completion metadata in the same
+// transaction provides idempotence; the checkpoint identifier does not.
+func NewCompletionCheckpointID() string { return "completion:" + uuid.NewString() }
 
 type RunCompletion struct {
 	// RunnerKind is the authenticated bridge identity; ReplayOnly permits only

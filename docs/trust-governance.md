@@ -123,6 +123,27 @@ A required-audit outage blocks dispatch, including approved connector retries an
 
 Argument metadata recursively removes common password, token, secret and API-key aliases while preserving the original arguments for policy evaluation and the exact digest. Name-based filtering cannot find credentials embedded in arbitrary text. Avoid secret-bearing tool arguments and sensitive payload capture. A policy decision remains separate from evidence that a downstream operation executed.
 
+## Managed MCP action evidence (unreleased)
+
+Current source after v0.6.1 adds optional `policy.action_evidence` on SQL, requiring
+`policy.audit_required`. Each valid managed tool request gets its own identity.
+The original policy effect is retained separately from the final approved or
+break-glass authority. SQL managed approvals bind to the immutable original run
+incarnation even when action capture is off. Historical unbound managed approvals
+require fresh submission and review; they are not inferred from a current run
+with the same ID. Standalone expiring decision approvals remain separate. SQL commits a generation/incarnation-fenced dispatch intent
+with any approval consumption before the protected MCP send. This is an attempt
+trail, not a transaction with the external target.
+
+Response observations exclude bodies and distinguish protocol error/tool error
+from an unknown outcome. Even an observed response does not establish business
+success. A late response remains on the original generation. SQL persistence
+retries never replay a tool. Actions survive run pruning and have independent,
+opt-in resolved-record retention. Required audit by itself continues to record
+decisions only. See the [manual](../site/support/connector-actions.html) and
+[design rationale](internal/connector-action-evidence.md). No secret vault,
+revision-pinned approvals or reliable action-event export is added.
+
 ## Governance durability (SQL backends)
 
 Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs on every state backend when `policy` is configured. The **durable governance trail** needs SQL:

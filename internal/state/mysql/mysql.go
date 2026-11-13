@@ -378,6 +378,22 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return fmt.Errorf("mysql: exact identity collation cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
 			},
 		},
+		{Version: 18, Name: "connector_action_evidence",
+			Up: func(ctx context.Context) error { return s.upConnectorActions(ctx, db) },
+			Down: func(ctx context.Context) error {
+				if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS connector_action_events`); err != nil {
+					return err
+				}
+				if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS connector_actions`); err != nil {
+					return err
+				}
+				if _, err := db.ExecContext(ctx, `ALTER TABLE pending_actions DROP COLUMN run_incarnation_id`); err != nil {
+					return err
+				}
+				_, err := db.ExecContext(ctx, `ALTER TABLE runs DROP COLUMN incarnation_id`)
+				return err
+			},
+		},
 	}
 }
 
@@ -410,6 +426,7 @@ func (s *Store) baselineDown(ctx context.Context, db migrate.DB) error {
 	defer db.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck
 
 	for _, tbl := range []string{
+		"connector_action_events", "connector_actions",
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"usage_holds", "usage_events", "finops_overlays",
 		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
@@ -745,6 +762,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	defer conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck // best-effort reset before the connection returns to the pool
 
 	tables := []string{
+		"connector_action_events", "connector_actions",
 		"store_items", "runs", "opaque_checkpoints", "thread_checkpoints", "threads",
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
@@ -754,6 +772,12 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 	}
 	for _, tbl := range tables {
 		if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE "+tbl); err != nil {
+			// Migration qualification deliberately stops at the older schema.
+			// Only these additive action tables may legitimately be absent.
+			var missing *mysql.MySQLError
+			if (tbl == "connector_action_events" || tbl == "connector_actions") && errors.As(err, &missing) && missing.Number == 1146 {
+				continue
+			}
 			return fmt.Errorf("mysql: truncate %s: %w", tbl, err)
 		}
 	}
@@ -1434,7 +1458,7 @@ func (s *Store) CreateRun(ctx context.Context, run *models.Run) error {
 }
 
 func (s *Store) GetRun(ctx context.Context, runID string) (*models.Run, error) {
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE run_id = ?`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs WHERE run_id = ?`
 	args := []interface{}{runID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -1470,7 +1494,7 @@ func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Tim
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE status IN ('pending','running') AND created_at < ?`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs WHERE status IN ('pending','running') AND created_at < ?`
 	args := []interface{}{before.UTC()}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -1541,7 +1565,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	if limit <= 0 {
 		limit = 10
 	}
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs`
 	var args []interface{}
 	var where []string
 
@@ -1688,7 +1712,7 @@ func scanRun(row rowScanner) (*models.Run, error) {
 	var r models.Run
 	var metaBytes, inputBytes, configBytes, outputBytes []byte
 	var parentRunID, rootRunID sql.NullString
-	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &parentRunID, &rootRunID, &r.Depth); err != nil {
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &parentRunID, &rootRunID, &r.Depth, &r.IncarnationID); err != nil {
 		return nil, err
 	}
 	r.ParentRunID = nullStringToPtr(parentRunID)

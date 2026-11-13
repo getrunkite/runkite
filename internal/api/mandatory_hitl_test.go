@@ -58,11 +58,12 @@ func TestMandatoryHITL_MCPPendingThenApprove(t *testing.T) {
 		RunID: "run-mhitl-1", Generation: 1, TenantID: "acme", AgentID: "sales",
 		User: &transport.UserContext{Identity: "alice"},
 	}
+	seedManagedPendingFixture(t, store, binding)
 	callMCP := func() (status int, body []byte) {
 		reqBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_repo"}}`
 		req := httptest.NewRequest(http.MethodPost, "/internal/connectors/gh/mcp", strings.NewReader(reqBody))
 		req.SetPathValue("name", "gh")
-		req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
+		req = req.WithContext(auth.WithRunBinding(tenant.WithContext(req.Context(), binding.TenantID), binding))
 		attachConnectorSession(t, s, binding, "gh", req)
 		rec := httptest.NewRecorder()
 		s.handleProxyMCPRequest(rec, req)

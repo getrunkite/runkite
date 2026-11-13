@@ -1076,6 +1076,7 @@ def _admin_run_view() -> dict:
         "type": "object",
         "properties": {
             "run_id": {"type": "string", "format": "uuid"},
+            "incarnation_id": {"type": "string", "description": "Opaque, non-reused database identity of this stored SQL run. Absent on unsupported stores; never supplied as client authority."},
             "thread_id": {"type": "string"},
             "agent_id": {"type": "string"},
             "status": {"type": "string"},
@@ -1086,6 +1087,93 @@ def _admin_run_view() -> dict:
             "tenant_id": {"type": "string"},
         },
         "title": "AdminRunView",
+    }
+
+
+_CONNECTOR_ACTION_STATES = [
+    "received", "blocked", "approval_required", "ready", "not_dispatched",
+    "dispatch_intent", "response_observed", "outcome_unknown",
+]
+
+
+def _connector_action_schemas() -> dict:
+    """Explicit metadata-only response contracts for managed connector evidence."""
+    action = {
+        "action_id": {"type": "string", "description": "Server-assigned connector action ID, distinct from any approval ID."},
+        "tenant_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "run_incarnation_id": {"type": "string", "minLength": 1, "description": "Opaque, non-reused database identity of the original stored run. Compare exactly; timestamps and reusable run IDs are insufficient proof."},
+        "run_created_at": {"type": "string", "format": "date-time", "description": "Original run creation time for display, not an incarnation proof."},
+        "thread_id": {"type": "string"},
+        "generation": {"type": "integer", "format": "int64", "minimum": 0},
+        "agent_id": {"type": "string"},
+        "agent_version": {"type": "integer"},
+        "principal": {"type": "string"},
+        "connector": {"type": "string"},
+        "tool": {"type": "string"},
+        "transport": {"type": "string", "enum": ["json", "streamable_http"]},
+        "args_digest": {"type": "string", "description": "Versioned digest binding the submitted arguments. Argument values are excluded."},
+        "state": {"type": "string", "enum": _CONNECTOR_ACTION_STATES, "description": "Dispatch intent does not establish upstream receipt. response_observed records a reply, not business success. outcome_unknown means a side effect may have occurred."},
+        "version": {"type": "integer", "format": "int64", "minimum": 1},
+        "created_at": {"type": "string", "format": "date-time"},
+        "updated_at": {"type": "string", "format": "date-time"},
+        "decision": {"type": "string", "enum": ["allow", "deny", "pending"], "description": "Recorded gate decision. Separate approved-capability or break-glass authority can authorize forwarding while this remains pending or deny."},
+        "reason_code": {"type": "string"},
+        "rule_id": {"type": "string"},
+        "authorization_source": {"type": "string", "enum": ["policy", "approved_capability", "break_glass"], "description": "Final authority source, separate from the recorded decision."},
+        "break_glass_id": {"type": "string", "description": "Reference to the authorizing break-glass window, when used."},
+        "pending_action_id": {"type": "string", "description": "Reference to an existing approval record, not this connector action ID."},
+        "policy_revision": {"type": "string", "description": "Optional authoritative revision reference. Omitted when unavailable; absence does not establish revision pinning."},
+        "target_revision": {"type": "string", "description": "Optional target revision reference. Omitted when unavailable."},
+        "tool_revision": {"type": "string", "description": "Optional tool revision reference. Omitted when unavailable."},
+        "credential_ref": {"type": "string", "description": "Optional safe credential provenance reference. Never a credential value; omitted when unavailable."},
+        "trace_id": {"type": "string"},
+        "dispatch_id": {"type": "string", "description": "Persistence correlation receipt, not permission to execute or retry a tool."},
+        "dispatch_deadline_at": {"type": "string", "format": "date-time"},
+        "response_kind": {"type": "string", "description": "Bounded response classification. Contains no upstream response text."},
+        "http_status": {"type": "integer"},
+        "rpc_error_code": {"type": "integer", "format": "int64"},
+        "response_digest": {"type": "string"},
+        "response_bytes": {"type": "integer", "format": "int64"},
+    }
+    event = {
+        "action_id": copy.deepcopy(action["action_id"]),
+        "tenant_id": {"type": "string"},
+        "sequence": {"type": "integer", "format": "int64", "minimum": 1},
+        "mutation_id": {"type": "string", "description": "Opaque persistence mutation identity. It does not authorize downstream execution."},
+        "kind": {"type": "string"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "observer": {"type": "string", "description": "Provenance of this control-plane observation, such as the connector proxy or reconciler."},
+    }
+    for name in (
+        "state", "decision", "reason_code", "rule_id", "authorization_source",
+        "break_glass_id", "pending_action_id", "dispatch_id", "response_kind",
+        "http_status", "rpc_error_code", "response_digest", "response_bytes",
+    ):
+        event[name] = copy.deepcopy(action[name])
+    return {
+        "ConnectorAction": {
+            "type": "object", "additionalProperties": False,
+            "required": ["action_id", "tenant_id", "run_id", "run_incarnation_id", "run_created_at", "thread_id", "generation", "agent_id", "agent_version", "connector", "tool", "transport", "args_digest", "state", "version", "created_at", "updated_at"],
+            "properties": action,
+            "description": "Retained metadata for one managed MCP tools/call request. Excludes arguments, request/response bodies, provider diagnostics and secret material. Independent of ordinary run retention. Standalone governance decisions and local tools are outside this history.",
+        },
+        "ConnectorActionEvent": {
+            "type": "object", "additionalProperties": False,
+            "required": ["action_id", "tenant_id", "sequence", "mutation_id", "kind", "observed_at", "observer", "state"],
+            "properties": event,
+            "description": "Append-only, sequence-ordered metadata snapshot. Recording a response does not prove the intended business effect succeeded.",
+        },
+        "AdminConnectorActionDetail": {
+            "type": "object", "additionalProperties": False,
+            "required": ["action", "events", "run_available"],
+            "properties": {
+                "action": _ref("ConnectorAction"),
+                "events": {"type": "array", "items": _ref("ConnectorActionEvent"), "maxItems": 200, "description": "First 200 retained events in ascending sequence order."},
+                "run_available": {"type": "boolean", "description": "The current stored run still matches the original database incarnation, tenant, agent and thread. False after deletion, pruning or ID reuse. This is a read-time observation."},
+                "events_truncated": {"type": "boolean", "description": "True when additional recorded events were not returned by the bounded detail view. Omitted when false."},
+            },
+        },
     }
 
 
@@ -1129,6 +1217,10 @@ def _build_admin_spec() -> dict:
                     "name": "X-API-Key",
                     "description": "Admin API key via X-API-Key (alternative to Bearer).",
                 },
+                "AdminSessionAuth": {
+                    "type": "apiKey", "in": "cookie", "name": "runkite_admin_session",
+                    "description": "Existing httpOnly Admin session. These read-only endpoints do not require a CSRF header.",
+                },
             },
             "schemas": {
                 "AdminOverview": {
@@ -1147,6 +1239,7 @@ def _build_admin_spec() -> dict:
                 "AdminAgentView": _admin_agent_view(),
                 "AdminThreadView": _admin_thread_view(),
                 "AdminRunView": _admin_run_view(),
+                **_connector_action_schemas(),
                 "AdminRegistryEntryView": {
                     "type": "object",
                     "properties": {
@@ -1276,6 +1369,7 @@ def _build_admin_spec() -> dict:
                     "properties": {
                         "id": {"type": "string"},
                         "run_id": {"type": "string"},
+                        "run_incarnation_id": {"type": "string", "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."},
                         "generation": {"type": "integer", "format": "int64"},
                         "tenant_id": {"type": "string"},
                         "agent_id": {"type": "string"},
@@ -1290,7 +1384,7 @@ def _build_admin_spec() -> dict:
                         },
                         "args_digest": {
                             "type": "string",
-                            "description": "SHA-256 of the JSON-marshaled tools/call arguments. Empty on rows created before digest-bound HITL; those still consume once on the old tuple.",
+                            "description": "SHA-256 binding of the exact validated tool arguments. Legacy rows without a trusted digest binding cannot authorize execution and require fresh submission and review.",
                         },
                         "args": {
                             "type": "object",
@@ -1301,6 +1395,7 @@ def _build_admin_spec() -> dict:
                             "type": "string",
                             "description": "Admin identity that approved, when request auth carries one.",
                         },
+                        "expires_at": {"type": "string", "format": "date-time", "description": "Present for standalone decision approvals, which use a separate namespace and do not create a managed run. Absent for managed connector approvals."},
                         "created_at": {"type": "string", "format": "date-time"},
                         "updated_at": {"type": "string", "format": "date-time"},
                     },
@@ -1699,6 +1794,51 @@ def _build_admin_spec() -> dict:
                 "400": {"description": "Invalid cursor, cursor+offset, or since/until", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
                 "501": {"description": "State backend is Mongo (governance durability requires SQL)", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
             }}},
+            "/admin-api/connector-actions": {"get": {
+                "tags": ["Admin"], "summary": "List Managed Connector Actions",
+                "operationId": "admin_list_connector_actions",
+                "description": "Metadata-only managed MCP tools/call evidence, newest-first by immutable created_at and action_id. SQL capability required even when recording is currently disabled. Retained rows remain readable after run pruning or recording is disabled. Admin is global; tenant/run filters select records and do not grant scoped reviewer permissions.",
+                "security": [{"BearerAuth": []}, {"ApiKeyAuth": []}, {"AdminSessionAuth": []}],
+                "parameters": [
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "run_id", "in": "query", "required": False, "schema": {"type": "string"}, "description": "Original reusable run ID. Inspect run_incarnation_id to distinguish retained run instances."},
+                    {"name": "agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "connector", "in": "query", "required": False, "schema": {"type": "string"}},
+                    {"name": "state", "in": "query", "required": False, "schema": {"type": "string", "enum": ["", *_CONNECTOR_ACTION_STATES]}, "description": "Empty or omitted selects all evidence states."},
+                    *[copy.deepcopy(parameter) for parameter in admin_page if parameter["name"] != "cursor"],
+                    {"name": "cursor", "in": "query", "required": False, "schema": {"type": "string", "maxLength": 4096}, "description": "Opaque keyset cursor from X-Next-Cursor. Mutually exclusive with offset. The same selection filters must be sent on subsequent requests."},
+                ],
+                "responses": {
+                    "200": {"description": "Retained metadata rows; an empty array does not establish that no actions occurred.", "headers": {
+                        "X-Next-Cursor": {"description": "Opaque continuation cursor, emitted only when an additional matching row exists.", "schema": {"type": "string"}},
+                        "X-Runkite-Action-Evidence": {"description": "Whether this replica currently has action recording enabled. Does not describe historical coverage.", "schema": {"type": "string", "enum": ["true", "false"]}},
+                    }, "content": {"application/json": {"schema": _array_of(_ref("ConnectorAction"))}}},
+                    **_json_response("400", "Invalid state, invalid or oversized cursor, or cursor combined with offset", _ref("ErrorResponse")),
+                    **_json_response("401", "Admin authentication required", _ref("ErrorResponse")),
+                    **_json_response("403", "Admin permission required", _ref("ErrorResponse")),
+                    **_json_response("500", "State backend unavailable or query failed", _ref("ErrorResponse")),
+                    **_json_response("501", "Connector action history requires a supported SQL backend: Postgres, MySQL or SQLite", _ref("ErrorResponse")),
+                },
+            }},
+            "/admin-api/connector-actions/{action_id}": {"get": {
+                "tags": ["Admin"], "summary": "Get Managed Connector Action Evidence",
+                "operationId": "admin_get_connector_action",
+                "description": "Retained metadata and the first 200 events in ascending sequence order. run_available verifies the original non-reused database incarnation, not just the reusable run ID or timestamp. No tool execution, automatic retry, approval or credential material is exposed by this read.",
+                "security": [{"BearerAuth": []}, {"ApiKeyAuth": []}, {"AdminSessionAuth": []}],
+                "parameters": [
+                    _path_param("action_id", "Server-assigned connector action ID, distinct from an approval ID.", fmt=""),
+                    {"name": "tenant_id", "in": "query", "required": False, "schema": {"type": "string"}, "description": "If supplied, must match the record or the response is 404."},
+                    {"name": "run_id", "in": "query", "required": False, "schema": {"type": "string"}, "description": "If supplied, must match the original recorded run ID or the response is 404."},
+                ],
+                "responses": {
+                    **_json_response("200", "Action metadata and bounded recorded timeline", _ref("AdminConnectorActionDetail")),
+                    **_json_response("401", "Admin authentication required", _ref("ErrorResponse")),
+                    **_json_response("403", "Admin permission required", _ref("ErrorResponse")),
+                    **_json_response("404", "Action absent, pruned or outside the supplied selection filters", _ref("ErrorResponse")),
+                    **_json_response("500", "State backend unavailable or query failed", _ref("ErrorResponse")),
+                    **_json_response("501", "Connector action history requires a supported SQL backend: Postgres, MySQL or SQLite", _ref("ErrorResponse")),
+                },
+            }},
             "/admin-api/connectors": {"get": {"tags": ["Admin"], "summary": "List Connectors (admin)", "operationId": "admin_list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/admin-api/connectors/{name}": {"get": {"tags": ["Admin"], "summary": "Get Connector (admin)", "operationId": "admin_get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorInfo")), "404": _ERR_404}}},
             "/admin-api/cron": {"get": {"tags": ["Admin"], "summary": "List Cron Schedules (admin)", "operationId": "admin_list_cron", "responses": {**_json_response("200", "Success", _array_of(_ref("CronSchedule")))}}},

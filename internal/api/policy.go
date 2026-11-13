@@ -12,6 +12,7 @@ import (
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 )
@@ -21,7 +22,8 @@ import (
 const pendingActionIDPrefix = "pending-v2-"
 
 func currentPendingBinding(a *models.PendingAction) bool {
-	return a != nil && a.ArgsDigest != "" && strings.HasPrefix(a.ID, pendingActionIDPrefix)
+	return a != nil && a.ArgsDigest != "" && strings.HasPrefix(a.ID, pendingActionIDPrefix) &&
+		(a.ExpiresAt != nil || a.RunIncarnationID != "")
 }
 
 // policyInputFromRequest builds a PolicyInput from run-binding (preferred)
@@ -68,6 +70,15 @@ func (s *Server) policyInput(ctx context.Context, stage, connectorName, tool str
 // checkConnectorPolicy runs the policy engine when enabled. Returns
 // (decision, true) when the caller should deny; (zero, false) to proceed.
 func (s *Server) checkConnectorPolicy(ctx context.Context, in policy.PolicyInput) (policy.PolicyDecision, bool) {
+	return s.checkConnectorPolicyEvaluation(ctx, in, nil)
+}
+
+type connectorPolicyEvaluation struct {
+	Original     policy.PolicyDecision
+	BreakGlassID string
+}
+
+func (s *Server) checkConnectorPolicyEvaluation(ctx context.Context, in policy.PolicyInput, evaluation *connectorPolicyEvaluation) (policy.PolicyDecision, bool) {
 	if !s.policy.Enabled() {
 		return policy.PolicyDecision{}, false
 	}
@@ -81,12 +92,20 @@ func (s *Server) checkConnectorPolicy(ctx context.Context, in policy.PolicyInput
 		}, false
 	}
 	dec := s.policy.Decide(ctx, in)
-	if !dec.AuditFailed && s.policy.AuditRequired() && s.tryBreakGlassBypass(ctx, in) {
-		return policy.PolicyDecision{
-			Effect:     policy.EffectAllow,
-			Reason:     "break-glass window active",
-			ReasonCode: policy.ReasonBreakGlass,
-		}, false
+	if evaluation != nil {
+		evaluation.Original = dec
+	}
+	if !dec.AuditFailed && s.policy.AuditRequired() {
+		if windowID := s.tryBreakGlassBypassID(ctx, in); windowID != "" {
+			if evaluation != nil {
+				evaluation.BreakGlassID = windowID
+			}
+			return policy.PolicyDecision{
+				Effect:     policy.EffectAllow,
+				Reason:     "break-glass window active",
+				ReasonCode: policy.ReasonBreakGlass,
+			}, false
+		}
 	}
 	if dec.Effect != policy.EffectAllow {
 		return dec, true
@@ -159,6 +178,9 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, in policy.PolicyInput, d
 	}
 	if actionID != "" {
 		payloadMap["action_id"] = actionID
+	}
+	if in.ConnectorActionID != "" {
+		payloadMap["connector_action_id"] = in.ConnectorActionID
 	}
 	if in.ArgsDigest != "" {
 		payloadMap["args_digest"] = in.ArgsDigest
@@ -259,6 +281,26 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 	}
 	if a.ReasonCode == "" {
 		a.ReasonCode = policy.ReasonPolicyPending
+	}
+	if expiresAt == nil {
+		if binding := auth.RunBindingFromContext(ctx); binding != nil {
+			run, err := s.store.GetRun(ctx, binding.RunID)
+			if err != nil {
+				return "", err
+			}
+			if run.TenantID != binding.TenantID || run.AgentID != binding.AgentID ||
+				run.ThreadID != binding.ThreadID || in.RunID != binding.RunID ||
+				in.TenantID != binding.TenantID || in.AgentID != binding.AgentID ||
+				in.Generation != binding.Generation || run.IncarnationID == "" {
+				return "", errString("pending action run identity does not match its binding")
+			}
+			if err := state.CheckRunCheckpointBinding(run, state.RunCheckpointBinding{
+				RunID: binding.RunID, Generation: binding.Generation, ThreadID: binding.ThreadID,
+			}); err != nil {
+				return "", err
+			}
+			a.RunIncarnationID = run.IncarnationID
+		}
 	}
 	if err := store.CreatePendingAction(ctx, a); err != nil {
 		return "", err

@@ -44,6 +44,14 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		return nil, false, nil
 	}
 	p := cfg.Policy
+	if p.ActionEvidence {
+		if !p.AuditRequired {
+			return nil, false, fmt.Errorf("policy.action_evidence requires policy.audit_required")
+		}
+		if _, ok := store.(state.ProtectedActionStore); !ok {
+			return nil, false, fmt.Errorf("policy.action_evidence requires durable SQL connector action storage")
+		}
+	}
 
 	var overlays []policy.Grant
 	if lister, ok := store.(policyGrantLister); ok {
@@ -103,12 +111,13 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	}
 
 	pcfg := policy.Config{
-		DefaultEffect: p.DefaultEffect,
-		FailClosed:    p.FailClosed,
-		Auditor:       auditor,
-		AuditRequired: p.AuditRequired,
-		Overlays:      overlays,
-		ForceEnable:   true,
+		DefaultEffect:  p.DefaultEffect,
+		FailClosed:     p.FailClosed,
+		Auditor:        auditor,
+		AuditRequired:  p.AuditRequired,
+		ActionEvidence: p.ActionEvidence,
+		Overlays:       overlays,
+		ForceEnable:    true,
 	}
 	if p.CacheTTLMS > 0 {
 		pcfg.CacheTTL = time.Duration(p.CacheTTLMS) * time.Millisecond
@@ -198,6 +207,7 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		"default_effect", pcfg.DefaultEffect,
 		"audit", auditor != nil,
 		"audit_required", p.AuditRequired,
+		"action_evidence", p.ActionEvidence,
 		"siem", siemOn,
 		"run_events", runEvents,
 	)
@@ -228,6 +238,9 @@ func (s *siemExporter) ExportPolicyDecision(_ context.Context, in policy.PolicyI
 	}
 	if in.ArgsDigest != "" {
 		data["args_digest"] = in.ArgsDigest
+	}
+	if in.ConnectorActionID != "" {
+		data["connector_action_id"] = in.ConnectorActionID
 	}
 	if dec.AuditFailed {
 		data["audit_failed"] = true

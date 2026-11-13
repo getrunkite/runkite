@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
-from check import _check_model_contract
+from check import _check_connector_action_contract, _check_model_contract
 
 
 class RunContractTests(unittest.TestCase):
@@ -38,6 +38,34 @@ class RunContractTests(unittest.TestCase):
         self.assertTrue(
             any("POST /runs/wait request missing checkpoint_ref" in p for p in _check_model_contract(self.spec))
         )
+
+
+class ConnectorActionContractTests(unittest.TestCase):
+    def setUp(self):
+        self.spec = json.loads((Path(__file__).resolve().parents[2] / "spec/openapi-admin.json").read_text())
+
+    def test_current_metadata_contract_covers_go_models(self):
+        self.assertEqual(_check_connector_action_contract(self.spec), [])
+
+    def test_missing_immutable_run_identity_is_detected(self):
+        del self.spec["components"]["schemas"]["ConnectorAction"]["properties"]["run_incarnation_id"]
+        self.assertTrue(any("missing Go JSON field run_incarnation_id" in problem for problem in _check_connector_action_contract(self.spec)))
+
+    def test_missing_required_evidence_fields_are_detected(self):
+        self.spec["components"]["schemas"]["AdminConnectorActionDetail"]["required"].remove("run_available")
+        self.assertTrue(any("must require Go JSON field run_available" in problem for problem in _check_connector_action_contract(self.spec)))
+
+    def test_payload_bags_cannot_silently_expand_the_metadata_contract(self):
+        action = self.spec["components"]["schemas"]["ConnectorAction"]
+        action["additionalProperties"] = True
+        action["properties"]["credentials"] = {"type": "object"}
+        problems = _check_connector_action_contract(self.spec)
+        self.assertTrue(any("must exclude undeclared payload fields" in problem for problem in problems))
+        self.assertTrue(any("forbidden payload field credentials" in problem for problem in problems))
+
+    def test_new_go_states_must_be_covered(self):
+        self.spec["components"]["schemas"]["ConnectorActionEvent"]["properties"]["state"]["enum"].remove("outcome_unknown")
+        self.assertTrue(any("states differ from Go constants" in problem for problem in _check_connector_action_contract(self.spec)))
 
 
 if __name__ == "__main__":

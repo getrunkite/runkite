@@ -8,6 +8,12 @@ The reverse direction of Connectors: Connectors let a Runkite *agent* consume ex
 POST/GET/DELETE /mcp   Streamable HTTP MCP transport (session-based, per the 2025-03-26/2025-06-18/2025-11-25 spec revisions)
 ```
 
+The unreleased [connector action recorder](../site/support/connector-actions.html)
+is for the other direction: managed agents calling configured external MCP tools
+through Runkite's connector proxy. It does not add an action-evidence record for
+every incoming `/mcp` invocation. An incoming invocation still creates a managed
+run; outgoing gated tool attempts inside that run can be recorded when enabled.
+
 Every configured agent becomes exactly one MCP tool, named after its `agent_id`, using its `description` if set. Calling one dispatches a real run through the exact same `createRunCtx` + wait-for-result path every client-facing create-and-wait endpoint already uses (the same pattern A2A reuses for agent-to-agent calls) and blocks until it finishes -- MCP's `tools/call` is inherently request/response, there's no streaming variant to map Runkite's own SSE/WebSocket paths onto.
 
 ```json

@@ -435,6 +435,12 @@ func startServer(opts serverOpts) {
 		go runRetentionLoop(ctx, store, retentionCfg)
 	}
 
+	// Reconcile retained intents even when new action recording is off.
+	// The SQL transition is idempotent across replicas and never retries tools.
+	if actions, ok := store.(state.ProtectedActionStore); ok {
+		go runConnectorActionSweep(ctx, actions)
+	}
+
 	// Run timeout sweep (opt-in): forces pending/running runs older than
 	// max_duration to status "timeout". Distinct from crash reclaim --
 	// reclaim covers a dead runner; this covers a live hung one. Absent

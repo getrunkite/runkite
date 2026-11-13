@@ -219,11 +219,12 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 			RunID: runHITL, Generation: 1, TenantID: tenantA, AgentID: "sales",
 			User: &transport.UserContext{Identity: "alice"},
 		}
+		seedManagedPendingFixture(t, store, binding)
 		callMCP := func() (int, []byte) {
 			reqBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_repo"}}`
 			req := httptest.NewRequest(http.MethodPost, "/internal/connectors/gh/mcp", strings.NewReader(reqBody))
 			req.SetPathValue("name", "gh")
-			req = req.WithContext(auth.WithRunBinding(context.Background(), binding))
+			req = req.WithContext(auth.WithRunBinding(tenant.WithContext(context.Background(), binding.TenantID), binding))
 			attachConnectorSession(t, s, binding, "gh", req)
 			rec := httptest.NewRecorder()
 			s.handleProxyMCPRequest(rec, req)

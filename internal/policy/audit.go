@@ -71,6 +71,9 @@ func policyAuditAttrs(in PolicyInput, dec PolicyDecision) map[string]interface{}
 	if in.ArgsDigest != "" {
 		attrs["args_digest"] = in.ArgsDigest
 	}
+	if in.ConnectorActionID != "" {
+		attrs["connector_action_id"] = in.ConnectorActionID
+	}
 	if in.ArgsMeta != nil {
 		attrs["args"] = in.ArgsMeta
 	}

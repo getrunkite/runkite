@@ -88,3 +88,24 @@ test("a failed refresh preserves the prior result and schedules recovery", async
   assert.deepEqual(values, [1, 3]);
   stop();
 });
+
+test("bounded evidence polling performs its final read then stops until refreshed", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const values: number[] = [];
+  const start = () => pollRequest(async () => values.length + 1, (value) => values.push(value), () => {}, () => {}, 100, 200);
+  const stop = start();
+  await flush();
+  context.mock.timers.tick(100);
+  await flush();
+  context.mock.timers.tick(100);
+  await flush();
+  assert.deepEqual(values, [1, 2, 3]);
+  context.mock.timers.tick(10_000);
+  await flush();
+  assert.deepEqual(values, [1, 2, 3]);
+  stop();
+  const stopRefresh = start();
+  await flush();
+  assert.deepEqual(values, [1, 2, 3, 4]);
+  stopRefresh();
+});

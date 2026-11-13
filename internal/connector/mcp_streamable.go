@@ -25,7 +25,8 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 		base = http.DefaultTransport
 	}
 	var oversized atomic.Bool
-	client.Transport = mcpAuthTransport{next: base, token: token, oversized: &oversized, scope: ctx}
+	trace := actionTrace(ctx)
+	client.Transport = mcpAuthTransport{next: base, token: token, oversized: &oversized, scope: ctx, action: trace}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	upstream := mcp.NewClient(&mcp.Implementation{Name: "runkite-connector", Version: "0.5.7"},
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
@@ -80,7 +81,15 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 			// before calling, without retrying a tool after dispatch.
 			err = findUpstreamTool(ctx, session, p.Name)
 			if err == nil {
+				if err := trace.beforeDispatch(ctx); err != nil {
+					return nil, 0, err
+				}
 				result, err = session.CallTool(ctx, &p)
+				if err != nil {
+					// SDK errors may also be synthesized locally. Do not claim an
+					// upstream JSON-RPC error was observed solely from their type.
+					trace.failure("connector_sdk_operation_failed")
+				}
 			}
 		}
 	case "resources/list":
@@ -163,6 +172,7 @@ type mcpAuthTransport struct {
 	token     string
 	oversized *atomic.Bool
 	scope     context.Context
+	action    *MCPActionTrace
 }
 
 func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -195,11 +205,15 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	cleanup := func() { stopScope(); cancel() }
 	r = r.Clone(requestCtx)
+	protected := t.action != nil && protectedMCPRequest(r)
 	if t.token != "" {
 		r.Header.Set("Authorization", "Bearer "+t.token)
 	}
 	response, err := t.next.RoundTrip(r)
 	if err != nil {
+		if protected {
+			t.action.failure("connector_transport_failed")
+		}
 		safeErr := safeConnectorRequestError(requestCtx, "upstream MCP request failed", err)
 		if response != nil && response.Body != nil {
 			response.Body.Close()
@@ -207,7 +221,13 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		cleanup()
 		return nil, safeErr
 	}
+	if protected {
+		t.action.status(response.StatusCode)
+	}
 	if response.ContentLength > MaxMCPResponseBytes {
+		if protected {
+			t.action.failure("connector_response_incomplete")
+		}
 		if t.oversized != nil {
 			t.oversized.Store(true)
 		}
@@ -215,7 +235,11 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		cleanup()
 		return nil, ErrBodyTooLarge
 	}
-	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: MaxMCPResponseBytes, oversized: t.oversized, cleanup: cleanup, ctx: requestCtx}
+	var observed *MCPActionTrace
+	if protected {
+		observed = t.action
+	}
+	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: MaxMCPResponseBytes, oversized: t.oversized, cleanup: cleanup, ctx: requestCtx, action: observed}
 	return response, nil
 }
 
@@ -227,6 +251,7 @@ type mcpLimitedBody struct {
 	oversized *atomic.Bool
 	cleanup   func()
 	ctx       context.Context
+	action    *MCPActionTrace
 }
 
 func (r *mcpLimitedBody) Close() error {
@@ -241,6 +266,7 @@ func (r *mcpLimitedBody) Close() error {
 
 func (r *mcpLimitedBody) Read(p []byte) (int, error) {
 	if r.remaining < 0 {
+		r.action.failure("connector_response_incomplete")
 		return 0, ErrBodyTooLarge
 	}
 	if int64(len(p)) > r.remaining+1 {
@@ -249,12 +275,14 @@ func (r *mcpLimitedBody) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
 	r.remaining -= int64(n)
 	if r.remaining < 0 {
+		r.action.failure("connector_response_incomplete")
 		if r.oversized != nil {
 			r.oversized.Store(true)
 		}
 		return n, ErrBodyTooLarge
 	}
 	if err != nil && !errors.Is(err, io.EOF) {
+		r.action.failure("connector_response_incomplete")
 		err = safeConnectorRequestError(r.ctx, "read upstream MCP response failed", err)
 	}
 	return n, err

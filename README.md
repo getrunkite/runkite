@@ -49,6 +49,9 @@ For sensitive operations, optional [required policy audit](docs/configuration.md
 blocks access when its SQL decision record cannot be saved. Agent delegation
 derives authority from the active parent assignment. See the
 [hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
+The current unreleased source also offers opt-in [connector action evidence](site/support/connector-actions.html):
+record intent before managed MCP dispatch and inspect observed responses or
+unknown outcomes in Admin. These settings are not in published v0.6.1 binaries.
 
 ## Choose an integration path
 

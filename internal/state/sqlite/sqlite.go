@@ -281,6 +281,25 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 17, Name: "connector_action_evidence",
+			Up: s.upConnectorActions,
+			Down: func(ctx context.Context) error {
+				if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS connector_action_events`); err != nil {
+					return err
+				}
+				if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS connector_actions`); err != nil {
+					return err
+				}
+				if _, err := s.db.ExecContext(ctx, `DROP TRIGGER IF EXISTS runs_incarnation_after_insert`); err != nil {
+					return err
+				}
+				if _, err := s.db.ExecContext(ctx, `ALTER TABLE pending_actions DROP COLUMN run_incarnation_id`); err != nil {
+					return err
+				}
+				_, err := s.db.ExecContext(ctx, `ALTER TABLE runs DROP COLUMN incarnation_id`)
+				return err
+			},
+		},
 	}
 }
 
@@ -288,6 +307,7 @@ func (s *SQLiteStore) baselineDown(ctx context.Context) error {
 	// Children before parents (FK). schema_migrations is left for the
 	// migrator to unrecord the version row.
 	for _, tbl := range []string{
+		"connector_action_events", "connector_actions",
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"usage_holds", "usage_events", "finops_overlays",
 		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
@@ -1490,6 +1510,10 @@ func (s *SQLiteStore) ReleaseThreadIfNoOtherActive(ctx context.Context, threadID
 // --------------------------------------------------------------------------
 
 func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, threadID string, ts *models.ThreadState) error {
+	created, err := checkpointTimestamp(ts.CreatedAt)
+	if err != nil {
+		return err
+	}
 	vals, _ := json.Marshal(ts.Values)
 	meta, _ := json.Marshal(ts.Metadata)
 	next, _ := json.Marshal(ts.Next)
@@ -1507,7 +1531,7 @@ func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, threadID string, ts *m
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tenant.FromContext(ctx), ts.Checkpoint.CheckpointID, threadID, ts.Checkpoint.CheckpointNS,
 			parentID, string(vals), string(meta), string(next), string(tasks), string(interrupts),
-			nilOrNow(ts.CreatedAt))
+			created)
 	})
 }
 
@@ -1622,13 +1646,6 @@ func fillCheckpoint(ts *models.ThreadState, cpID, tID, cpNS string, parentID sql
 	return nil
 }
 
-func nilOrNow(t *string) string {
-	if t != nil && *t != "" {
-		return *t
-	}
-	return time.Now().UTC().Format(time.RFC3339Nano)
-}
-
 // --------------------------------------------------------------------------
 // Runs
 // --------------------------------------------------------------------------
@@ -1638,7 +1655,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run *models.Run) error {
 }
 
 func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, error) {
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE run_id = ?`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs WHERE run_id = ?`
 	args := []interface{}{runID}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -1649,7 +1666,7 @@ func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*models.Run, er
 	var r models.Run
 	var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 	var createdStr, updatedStr string
-	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
+	if err := row.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth, &r.IncarnationID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, &state.ErrNotFound{Resource: "run", ID: runID}
 		}

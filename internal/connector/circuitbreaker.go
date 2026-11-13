@@ -117,6 +117,18 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	cb.halfOpenInFlight = false
 }
 
+// abandonTrial releases a probe that stopped at a local authorization gate.
+// No upstream health was established. Keep the prior cooldown timestamp so
+// another authorized caller can try the probe immediately.
+func (cb *CircuitBreaker) abandonTrial() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if cb.state == stateHalfOpen {
+		cb.state = stateOpen
+		cb.halfOpenInFlight = false
+	}
+}
+
 // RecordFailure counts a failure, opening the breaker once the threshold
 // is reached (or immediately, if the failure was the half-open trial call).
 func (cb *CircuitBreaker) RecordFailure() {

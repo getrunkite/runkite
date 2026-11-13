@@ -70,6 +70,7 @@ func TestRequiredAuditBlocksMCPBeforeEffectsAndApprovalConsumption(t *testing.T)
 			}
 			s.SetPolicyEngine(policy.New(cfg))
 			binding := &auth.RunBinding{RunID: "fixture-run", Generation: 2, TenantID: "acme", AgentID: "agent", User: &transport.UserContext{Identity: "alice"}}
+			seedManagedPendingFixture(t, store, binding)
 			ctx := auth.WithRunBinding(tenant.WithContext(context.Background(), "acme"), binding)
 			pendingID := ""
 			if mode == "approved" {

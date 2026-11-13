@@ -150,16 +150,25 @@ func runJSONNumberTests(t *testing.T, factory StoreFactory, raw string) {
 		if err != nil || len(history) != 2 {
 			t.Fatalf("history: count=%d err=%v", len(history), err)
 		}
+		seenIDs := map[string]bool{}
+		firstSnapshots, secondSnapshots := 0, 0
 		for _, checkpoint := range history {
+			id := checkpoint.Checkpoint.CheckpointID
+			if seenIDs[id] || id == "" || len(id) > 255 {
+				t.Fatalf("invalid completion checkpoint identity: %#v", checkpoint.Checkpoint)
+			}
+			seenIDs[id] = true
 			expected := map[string]interface{}{"previous": values, "result_1": values}
-			switch checkpoint.Checkpoint.CheckpointID {
-			case "completion:numbers-run-1":
-			case "completion:numbers-run-2":
+			if checkpoint.Values["result_2"] != nil {
 				expected["result_2"] = values
-			default:
-				t.Fatalf("unexpected completion checkpoint: %#v", checkpoint.Checkpoint)
+				secondSnapshots++
+			} else {
+				firstSnapshots++
 			}
 			assertJSONValue(t, checkpoint.Values, expected)
+		}
+		if firstSnapshots != 1 || secondSnapshots != 1 {
+			t.Fatalf("immutable completion snapshots changed: first=%d second=%d", firstSnapshots, secondSnapshots)
 		}
 	})
 	t.Run("checkpoint_values_tasks_and_interrupts", func(t *testing.T) {

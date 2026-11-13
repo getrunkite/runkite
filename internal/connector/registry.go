@@ -183,6 +183,14 @@ func (r *Registry) IsToolAllowed(name string, tool string) bool {
 
 // getToken dispatches to the appropriate auth flow.
 func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}) (*CachedToken, error) {
+	return c.getTokenWithBreaker(ctx, userCtx, true)
+}
+
+// A proxy call already owns the connector breaker admission until its MCP
+// request completes. Nested OAuth admission would reject that same half-open
+// probe, and nested success would release it before the MCP request finished.
+// Standalone GetSession calls continue to manage their own OAuth admission.
+func (c *Connector) getTokenWithBreaker(ctx context.Context, userCtx map[string]interface{}, manageBreaker bool) (*CachedToken, error) {
 	// Copy auth so SecretRef materialization does not mutate the shared
 	// registry config (concurrent GetSession + expandAuthConfig race).
 	auth := c.Config.Auth
@@ -204,7 +212,7 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 		}, nil
 
 	case "oauth2_client_credentials":
-		return c.getClientCredentialsToken(ctx, auth)
+		return c.getClientCredentialsToken(ctx, auth, manageBreaker)
 
 	case "oauth2_token_exchange":
 		ssoToken, _ := userCtx["sso_token"].(string)
@@ -215,15 +223,19 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 		// each exchange is tied to a specific user's sso_token), so the
 		// breaker guards it directly, unlike client_credentials which only
 		// needs guarding on its cache-miss path (see getClientCredentialsToken).
-		if !c.breaker.Allow() {
+		if manageBreaker && !c.breaker.Allow() {
 			return nil, &ErrCircuitOpen{Connector: c.Name}
 		}
 		token, err := oauth2TokenExchange(ctx, auth, ssoToken)
 		if err != nil {
-			c.breaker.RecordFailure()
+			if manageBreaker {
+				c.breaker.RecordFailure()
+			}
 			return nil, err
 		}
-		c.breaker.RecordSuccess()
+		if manageBreaker {
+			c.breaker.RecordSuccess()
+		}
 		return token, nil
 
 	default:
@@ -232,7 +244,7 @@ func (c *Connector) getToken(ctx context.Context, userCtx map[string]interface{}
 }
 
 // getClientCredentialsToken returns a cached token or fetches a new one.
-func (c *Connector) getClientCredentialsToken(ctx context.Context, auth AuthConfig) (*CachedToken, error) {
+func (c *Connector) getClientCredentialsToken(ctx context.Context, auth AuthConfig, manageBreaker bool) (*CachedToken, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
 
@@ -244,15 +256,19 @@ func (c *Connector) getClientCredentialsToken(ctx context.Context, auth AuthConf
 		return c.cachedToken, nil
 	}
 
-	if !c.breaker.Allow() {
+	if manageBreaker && !c.breaker.Allow() {
 		return nil, &ErrCircuitOpen{Connector: c.Name}
 	}
 	token, err := oauth2ClientCredentials(ctx, auth)
 	if err != nil {
-		c.breaker.RecordFailure()
+		if manageBreaker {
+			c.breaker.RecordFailure()
+		}
 		return nil, err
 	}
-	c.breaker.RecordSuccess()
+	if manageBreaker {
+		c.breaker.RecordSuccess()
+	}
 	c.cachedToken = token
 	return token, nil
 }

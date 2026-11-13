@@ -148,7 +148,30 @@ After a successful connector MCP `tools/call`, the plane can stash the original 
 - Token spend may drop if the runner then sends fewer bytes to the model. That effect is **inferred** from whatever the runner already reports. No percent, no invoice, no FinOps SLA. Shrink does not write `usage_events`.
 - **Audit sees the preview plus ref, not the original body.** Grants, pending, HITL, and kill stay fully audited. Operators who need the full MCP result on the audit path leave shrink off. Retrieve exists for the agent during TTL, not for after-the-fact forensics.
 
+### Managed tool attempt evidence (unreleased)
+
+Current source after v0.6.1 can record managed MCP `tools/call` with
+`policy.action_evidence: true` and required SQL audit. Both JSON and streamable
+HTTP call the synchronous intent gate immediately before the protected request.
+Protocol initialization/discovery can happen earlier. Persisting intent and
+consuming an approval are one SQL transaction. A failed pre-dispatch write blocks
+the tool; a missing response after intent remains unknown and never causes replay.
+
+Each request gets `X-Runkite-Connector-Action-Id`; approval IDs are separate.
+Admin records response metadata without raw arguments, bodies or credentials.
+HTTP/RPC errors and tool errors are distinct observations, not proof about a
+business effect. Original generation and run incarnation remain attached after
+reclaim or run pruning. Local tools and `/governance/decide` are outside this
+history. See [Connector actions](../site/support/connector-actions.html) for
+configuration, retention and unknown-outcome investigation.
+
 ### Circuit breakers
+
+Current unreleased source counts an OAuth-backed MCP request once. Its half-open
+probe covers token preparation and the protected request, so refresh cannot
+reject its own probe or close it before the MCP result. A local evidence refusal
+does not count as a target failure. Standalone OAuth session minting retains its
+own breaker admission.
 
 Every OAuth2 connector (`oauth2_client_credentials`, `oauth2_token_exchange`) gets a per-connector circuit breaker guarding its actual token-fetch network call -- always on, with tunable thresholds:
 

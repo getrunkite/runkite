@@ -137,6 +137,49 @@ def _check_model_contract(spec: dict) -> list[str]:
     return problems
 
 
+def _check_connector_action_contract(spec: dict) -> list[str]:
+    """Check metadata response coverage against Go tags, including required fields."""
+    root = REPO_ROOT
+    model_source = (root / "internal/models/connector_action.go").read_text()
+    detail_source = (root / "internal/api/admin_connector_actions.go").read_text()
+    schemas = spec.get("components", {}).get("schemas", {})
+    problems = []
+    for model, schema_name, source in (
+        ("ConnectorAction", "ConnectorAction", model_source),
+        ("ConnectorActionEvent", "ConnectorActionEvent", model_source),
+        ("adminConnectorActionDetail", "AdminConnectorActionDetail", detail_source),
+    ):
+        match = re.search(r"^type " + model + r" struct \{\n(.*?)^\}", source, re.M | re.S)
+        if match is None:
+            problems.append(f"cannot find Go model {model}")
+            continue
+        tags = re.findall(r'`json:"([^"`]+)"', match.group(1))
+        wire = {tag.split(",", 1)[0] for tag in tags} - {"-"}
+        expected_required = {tag.split(",", 1)[0] for tag in tags if "omitempty" not in tag.split(",")[1:]} - {"-"}
+        schema = schemas.get(schema_name, {})
+        fields, required = _schema_shape(spec, schema)
+        for field in sorted(wire - fields):
+            problems.append(f"openapi-admin.json: {schema_name} missing Go JSON field {field}")
+        for field in sorted(expected_required - required):
+            problems.append(f"openapi-admin.json: {schema_name} must require Go JSON field {field}")
+        for field in sorted(required - expected_required):
+            problems.append(f"openapi-admin.json: {schema_name} incorrectly requires optional field {field}")
+        if schema.get("additionalProperties") is not False:
+            problems.append(f"openapi-admin.json: {schema_name} must exclude undeclared payload fields")
+        if schema_name != "AdminConnectorActionDetail":
+            forbidden = fields & {"args", "arguments", "payload", "request_body", "response_body", "credentials", "access_token", "refresh_token", "authorization"}
+            for field in sorted(forbidden):
+                problems.append(f"openapi-admin.json: {schema_name} exposes forbidden payload field {field}")
+    states = set(re.findall(r'ConnectorAction\w+\s*=\s*"([^"\n]+)"', model_source))
+    for name in ("ConnectorAction", "ConnectorActionEvent"):
+        documented = set(schemas.get(name, {}).get("properties", {}).get("state", {}).get("enum", []))
+        if documented != states:
+            problems.append(f"openapi-admin.json: {name} states differ from Go constants")
+    if "incarnation_id" not in schemas.get("AdminRunView", {}).get("properties", {}):
+        problems.append("openapi-admin.json: AdminRunView missing SQL incarnation_id")
+    return problems
+
+
 def main() -> None:
     public = _load_spec("openapi.json")
     admin = _load_spec("openapi-admin.json")
@@ -179,6 +222,7 @@ def main() -> None:
     ):
         integrity.extend(_check_spec_integrity(name, spec))
     integrity.extend(_check_model_contract(public))
+    integrity.extend(_check_connector_action_contract(admin))
 
     if missing or integrity:
         if missing:

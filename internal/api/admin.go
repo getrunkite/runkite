@@ -455,11 +455,12 @@ func (s *Server) handleAdminGetThread(w http.ResponseWriter, r *http.Request) {
 
 type adminRunView struct {
 	*models.Run
-	TenantID string `json:"tenant_id"`
+	TenantID      string `json:"tenant_id"`
+	IncarnationID string `json:"incarnation_id,omitempty"`
 }
 
 func toAdminRunView(run *models.Run) adminRunView {
-	return adminRunView{Run: run, TenantID: run.TenantID}
+	return adminRunView{Run: run, TenantID: run.TenantID, IncarnationID: run.IncarnationID}
 }
 
 // GET /admin-api/threads/{threadID}/runs?limit=&offset=&cursor= -- same data as the

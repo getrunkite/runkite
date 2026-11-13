@@ -67,9 +67,23 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	ctx := tenant.SystemContext(context.Background())
 	past := time.Now().UTC().Add(-time.Hour)
 	_, digest, _ := policy.BindArgs(nil)
+	now := time.Now().UTC()
+	if err := store.CreateThread(ctx, &models.Thread{ThreadID: "connector-thread", Status: models.ThreadStatusBusy, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRun(ctx, &models.Run{RunID: "connector", ThreadID: "connector-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if accepted, err := store.BeginRunAttempt(ctx, "connector", 1); err != nil || !accepted {
+		t.Fatalf("start managed control run: accepted=%v error=%v", accepted, err)
+	}
+	run, err := store.GetRun(ctx, "connector")
+	if err != nil || run.IncarnationID == "" {
+		t.Fatalf("managed control run has no incarnation: error=%v", err)
+	}
 	for _, row := range []*models.PendingAction{
 		{ID: "pending-v2-overdue", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "embedded", Connector: "files", Tool: "upload", ExpiresAt: &past},
-		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Connector: "files", Tool: "upload"},
+		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Generation: 1, RunIncarnationID: run.IncarnationID, Connector: "files", Tool: "upload"},
 	} {
 		if err := store.CreatePendingAction(ctx, row); err != nil {
 			t.Fatal(err)

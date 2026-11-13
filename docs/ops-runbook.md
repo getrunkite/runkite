@@ -2,6 +2,66 @@
 
 Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
 
+## Connector action evidence upgrade
+
+**Unreleased source after v0.6.1:** rebuild the control plane; published v0.6.1
+binaries do not implement `policy.action_evidence`. Take a verified backup and
+stop control-plane writers before `runkite db upgrade`. This adds Postgres/SQLite
+schema 17 and MySQL schema 18, including action history and immutable run
+incarnations. On MySQL, upgrade also includes the earlier identity-collation
+requirements below. Existing rows are not reconstructed into tool histories.
+
+Managed connector approvals now carry the original stored run's immutable
+incarnation, even when action capture is off. Historical managed approvals
+without this binding remain audit records but cannot be approved or consumed.
+Resubmit the operation with its exact arguments and obtain fresh review; do not
+backfill authority onto old rows. Deleting and recreating the same run ID and
+generation does not transfer an existing approval to the replacement run.
+Standalone decision approvals remain in their separate, expiring namespace and
+do not require a managed run.
+
+The SQLite upgrade also normalizes retained checkpoint timestamps to fixed-width
+UTC text without changing their instants or payloads. This repairs latest/history
+ordering for whole-second or trimmed fractional timestamps. Normalization uses
+bounded pages in one transaction; invalid historical timestamps stop the upgrade
+for explicit repair instead of assigning a new time or dropping history. Allow
+time for this scan and keep writers stopped until the upgrade succeeds.
+
+Leave capture off during upgrade. Deploy matching binaries and set both
+`policy.audit_required: true` and `policy.action_evidence: true` consistently on
+every serving replica before relying on write-before-dispatch evidence. An old
+or flag-off replica still uses the prior path. Verify SQL availability, a safe
+fixture tool response in Admin Connector actions, approval behavior and a denied
+request with no protected side effect before production traffic.
+
+Before dispatch, evidence failure blocks the tool. A confirmed SQL rollback leaves
+its approval unconsumed; a lost commit acknowledgement can leave a committed
+intent and consumed approval even when this handler refuses to send. Investigate
+the action and approval records rather than assuming rollback. After intent,
+502/503 or disconnect can mean the tool executed.
+Investigate using the action ID and target's own records before retrying. The
+30-second reconciler only marks expired intent unknown; it never replays tools.
+A late observation can remain attached to the original attempt after reclaim.
+
+Turning new capture off does not remove history or stop reconciliation of retained
+intents. Run pruning also retains it. `retention.connector_actions_max_age` is
+optional and off by default; it prunes only old blocked, not-dispatched and
+response-observed records. Pending and unknown history remains, so plan capacity
+and backup/archive procedures. Do not downgrade/drop evidence tables to silence
+an unresolved operation. Preserve a verified backup and explicitly review any
+pending/uncertain effects before rollback. See the
+[manual](../site/support/connector-actions.html) and
+[engineering rationale](internal/connector-action-evidence.md).
+
+Completion checkpoints now use bounded opaque IDs on SQL and Mongo. Existing
+IDs remain valid; callers must use returned IDs rather than construct one from a
+run ID. New SQL completion history follows its locked parent by at least one
+microsecond; Mongo uses one millisecond. History timestamps can lead wall time
+when a parent was future-dated. Upgrade does not reconstruct old commit order or
+change historical payloads. Before resuming sensitive retained conversations,
+compare the selected checkpoint with current thread state and repair any known
+mismatch explicitly.
+
 ## Hardening upgrade
 
 **MySQL operators:** state schema version 17 changes identity/security columns to
@@ -9,7 +69,8 @@ Thin operator guide for the **Supported** production shape: **Postgres + Redis**
 old control-plane replicas, before running `runkite db upgrade`. Allow time for
 ALTER operations; startup also runs migrations, so avoid rolling this upgrade.
 The server must support that MySQL 8 collation. Display/search fields retain
-their existing rules. Postgres, SQLite and Mongo schemas are unaffected.
+their existing rules. That identity-collation migration does not change Postgres,
+SQLite or Mongo; the later action-evidence migration is described above.
 
 Preflight rejects aliased foreign-key IDs, mismatched child/parent tenants and
 incompatible custom constraints before DDL. Investigate and repair explicitly;

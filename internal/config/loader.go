@@ -161,6 +161,9 @@ type PolicyEntry struct {
 	// AuditRequired blocks policy-authorized execution when its durable audit
 	// write fails. Requires audit enabled and a supported durable audit store.
 	AuditRequired bool `json:"audit_required,omitempty"`
+	// ActionEvidence records managed MCP tool-call attempts before dispatch.
+	// Requires required audit and a SQL protected-action store.
+	ActionEvidence bool `json:"action_evidence,omitempty"`
 	// RunEvents emits method "tool_auth" RunEvents on connector policy
 	// denials (session + tools/call). Default true when policy is configured.
 	RunEvents *bool `json:"run_events,omitempty"`
@@ -430,6 +433,9 @@ type RetentionEntry struct {
 	// failed_at is older than this. Same Go duration string format as
 	// RunsMaxAge; independently optional.
 	WebhookDeadLettersMaxAge string `json:"webhook_dead_letters_max_age,omitempty"`
+	// ConnectorActionsMaxAge independently prunes resolved connector action
+	// evidence. Unconfirmed dispatch and unknown outcomes are retained.
+	ConnectorActionsMaxAge string `json:"connector_actions_max_age,omitempty"`
 	// IntervalMinutes controls how often the background prune loop
 	// runs. Defaults to 60 (once per hour) if any field above is set
 	// but this is omitted.
@@ -781,6 +787,9 @@ func LoadLangGraphJSON(path string) (*LangGraphConfig, error) {
 	}
 	if cfg.Policy != nil && cfg.Policy.AuditRequired && cfg.Policy.Audit != nil && !*cfg.Policy.Audit {
 		return nil, fmt.Errorf("langgraph.json: policy.audit_required requires policy.audit enabled")
+	}
+	if cfg.Policy != nil && cfg.Policy.ActionEvidence && !cfg.Policy.AuditRequired {
+		return nil, fmt.Errorf("langgraph.json: policy.action_evidence requires policy.audit_required")
 	}
 	if cfg.RunnerKind == "" {
 		cfg.RunnerKind = "python-langgraph"

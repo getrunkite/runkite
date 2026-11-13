@@ -1,6 +1,7 @@
 import { NavLink } from "react-router";
 import {
   Ban,
+  Eye,
   Bot,
   Clock,
   KeyRound,
@@ -63,6 +64,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/kill", label: "Kill", icon: Ban },
       { to: "/admin/break-glass", label: "Break-glass", icon: Unlock },
       { to: "/admin/audit", label: "Audit", icon: Shield },
+      { to: "/admin/connector-actions", label: "Connector actions", icon: Eye },
       { to: "/admin/spend", label: "Spend", icon: DollarSign },
     ],
   },

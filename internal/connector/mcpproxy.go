@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -94,6 +95,7 @@ type ProxyMCPResult struct {
 // at the two points where it actually matters. See this file's own doc
 // comment for the full rationale.
 func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map[string]interface{}, body []byte) (*ProxyMCPResult, error) {
+	trace := actionTrace(ctx)
 	c, err := r.Get(name)
 	if err != nil {
 		return nil, err
@@ -113,16 +115,19 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 
 	if req.Method == "tools/call" {
 		if req.Tool == "" || !isAllowed(c.Config.Tools, req.Tool) {
+			trace.notDispatched("connector_tool_denied")
 			return deniedToolResult(req.ID, name, req.Tool)
 		}
 	}
 
 	if !c.breaker.Allow() {
+		trace.notDispatched("connector_circuit_open")
 		return nil, &ErrCircuitOpen{Connector: c.Name}
 	}
 
-	token, err := c.getToken(ctx, userCtx)
+	token, err := c.getTokenWithBreaker(ctx, userCtx, false)
 	if err != nil {
+		trace.notDispatched("connector_credentials_unavailable")
 		c.breaker.RecordFailure()
 		return nil, fmt.Errorf("connector %s: %w", name, err)
 	}
@@ -135,10 +140,19 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 		respBody, statusCode, err = forwardMCPRequest(ctx, c.Config.MCP.URL, token.AccessToken, body)
 	}
 	if err != nil {
-		c.breaker.RecordFailure()
+		if errors.Is(err, ErrMCPDispatchBlocked) {
+			c.breaker.abandonTrial()
+		} else {
+			c.breaker.RecordFailure()
+		}
 		return nil, fmt.Errorf("connector %s: mcp request failed: %w", name, err)
 	}
 	c.breaker.RecordSuccess()
+	if trace != nil && req.Method == "tools/call" {
+		if err := trace.observe(respBody, req.ID, c.Config.MCP.Transport == "streamable_http"); err != nil {
+			return nil, err
+		}
+	}
 
 	if req.Method == "tools/list" {
 		respBody = filterToolsListResponse(respBody, c.Config.Tools)
@@ -188,6 +202,7 @@ func DeniedRPCResult(id json.RawMessage, message string, data map[string]interfa
 // the runner never needs to see or forward raw downstream credentials
 // for MCP traffic -- it only ever talks to this proxy.
 func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte) ([]byte, int, error) {
+	trace := actionTrace(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, safeConnectorRequestError(ctx, "build MCP request failed", err)
@@ -196,15 +211,21 @@ func forwardMCPRequest(ctx context.Context, url, accessToken string, body []byte
 	if accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
+	if err := trace.beforeDispatch(ctx); err != nil {
+		return nil, 0, err
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		trace.failure("connector_transport_failed")
 		return nil, 0, safeConnectorRequestError(ctx, "MCP request failed", err)
 	}
 	defer resp.Body.Close()
+	trace.status(resp.StatusCode)
 
 	respBody, err := readLimitedBody(resp.Body, MaxMCPResponseBytes)
 	if err != nil {
+		trace.failure("connector_response_incomplete")
 		return nil, 0, safeConnectorRequestError(ctx, "read MCP response failed", err)
 	}
 	return respBody, resp.StatusCode, nil

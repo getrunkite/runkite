@@ -56,7 +56,7 @@ func assertIdentitySchema(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
 	version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx)
-	if err != nil || version != 17 {
+	if err != nil || version != 18 {
 		t.Fatalf("identity schema version=%d err=%v", version, err)
 	}
 	for _, table := range identityColumns {
@@ -72,6 +72,13 @@ func assertIdentitySchema(t *testing.T, s *Store) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// Legacy schema fixtures cannot use the current insertion path, which writes
+// the incarnation column added by a later migration.
+func insertLegacyIdentityRun(ctx context.Context, s *Store, run *models.Run) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (tenant_id, run_id, thread_id, agent_id, status, error_msg, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '', ?, ?)`, tenant.FromContext(ctx), run.RunID, run.ThreadID, run.AgentID, run.Status, run.CreatedAt, run.UpdatedAt)
+	return err
 }
 
 func TestIdentityCollationMigrationPreservesDefinitionsDataAndCascades(t *testing.T) {
@@ -108,7 +115,7 @@ func TestIdentityCollationMigrationPreservesDefinitionsDataAndCascades(t *testin
 	if err := s.CreateThread(ctx, &models.Thread{ThreadID: "ThreadA", Status: models.ThreadStatusBusy, Values: map[string]interface{}{"saved": "before migration"}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateRun(ctx, &models.Run{RunID: "RunA", ThreadID: "ThreadA", AgentID: "AgentA", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := insertLegacyIdentityRun(ctx, s, &models.Run{RunID: "RunA", ThreadID: "ThreadA", AgentID: "AgentA", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	created := now.Format(time.RFC3339)
@@ -144,8 +151,19 @@ func TestIdentityCollationMigrationPreservesDefinitionsDataAndCascades(t *testin
 	if err := s.UpsertAgent(tenant.WithContext(ctx, "acme"), &models.Agent{AgentID: "AgentA", Name: "Neighbor"}); err != nil {
 		t.Fatal(err)
 	}
+	// First remove the later action-evidence schema. The next downgrade is
+	// the irreversible identity conversion that this fixture intends to test.
+	if err := s.Downgrade(ctx); err != nil {
+		t.Fatalf("action-evidence downgrade: %v", err)
+	}
 	if err := s.Downgrade(ctx); err == nil || !strings.Contains(err.Error(), "backup") {
 		t.Fatalf("unsafe identity downgrade was not refused: %v", err)
+	}
+	if version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx); err != nil || version != 17 {
+		t.Fatalf("refused identity downgrade changed schema version: %d %v", version, err)
+	}
+	if err := s.Init(ctx); err != nil {
+		t.Fatal(err)
 	}
 	assertIdentitySchema(t, s)
 	if err := s.DeleteThread(ctx, "ThreadA"); err != nil {
@@ -210,7 +228,7 @@ func TestIdentityCollationMigrationRejectsAliasedForeignKeyBeforeDDL(t *testing.
 	if err := s.CreateThread(ctx, &models.Thread{ThreadID: "Parent", Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateRun(ctx, &models.Run{RunID: "child", ThreadID: "parent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := insertLegacyIdentityRun(ctx, s, &models.Run{RunID: "child", ThreadID: "parent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("legacy case-insensitive fixture was not created: %v", err)
 	}
 	if err := s.Init(ctx); err == nil || !strings.Contains(err.Error(), "nonexact foreign-key references") {

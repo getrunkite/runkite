@@ -156,6 +156,24 @@ Set `"audit_required": true` inside the existing `policy` block to require durab
 
 Required audit is checked on every decision, including cache hits. If persistence fails, allow or pending becomes deny with `policy_audit_failed`; existing denials retain their original reason. Approved connector actions are not consumed during the failure, and break-glass cannot bypass it. Traces and SIEM mark strict failures with `policy.audit_failed` and `audit_failed` respectively. Restore the database and retry only operations known not to have been dispatched. Omit `audit_required` to retain best-effort audit behavior.
 
+### Managed connector action evidence
+
+Unreleased source after v0.6.1: set `"action_evidence": true` in the existing
+`policy` block and also enable `"audit_required": true`. SQL is required
+(Postgres, MySQL or SQLite); auditing cannot be disabled. Both flags default off.
+Apply capture consistently to every serving replica after the
+[database upgrade](ops-runbook.md#connector-action-evidence-upgrade).
+
+This records managed MCP `tools/call` attempts, not arbitrary SDK tools or
+standalone decisions. Before the protected send, SQL commits dispatch intent
+and any approval consumption together. Observations distinguish complete
+responses from unknown outcomes; neither is an external-effect guarantee.
+`retention.connector_actions_max_age` optionally prunes old resolved action
+history independently of runs, for example `"720h"`. It is off by default and
+preserves unresolved/unknown records. See the
+[operator manual](../site/support/connector-actions.html) for configuration,
+state meanings, privacy, capacity planning and safe investigation.
+
 ### Payload shrink
 
 Opt-in cap on **connector MCP `tools/call` results** after a successful downstream response. Off by default (missing section or `"enabled": false` is byte-identical to a plane without this feature). First-file, like `policy` / `finops`. Restart to change. No Admin CRUD.

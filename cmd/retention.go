@@ -19,6 +19,7 @@ type retentionConfig struct {
 	cronClaimsMaxAge         time.Duration // zero means cron-claim pruning is off
 	terminalHookClaimsMaxAge time.Duration // zero means terminal-hook-claim pruning is off
 	webhookDeadLettersMaxAge time.Duration // zero means webhook DLQ pruning is off
+	connectorActionsMaxAge   time.Duration // zero means action evidence pruning is off
 	interval                 time.Duration
 }
 
@@ -73,7 +74,15 @@ func initRetentionConfig(configPath string) *retentionConfig {
 			rc.webhookDeadLettersMaxAge = d
 		}
 	}
-	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 && rc.terminalHookClaimsMaxAge <= 0 && rc.webhookDeadLettersMaxAge <= 0 {
+	if cfg.Retention.ConnectorActionsMaxAge != "" {
+		d, parseErr := time.ParseDuration(cfg.Retention.ConnectorActionsMaxAge)
+		if parseErr != nil {
+			slog.Error("retention: invalid connector_actions_max_age, action pruning disabled", "error", parseErr)
+		} else {
+			rc.connectorActionsMaxAge = d
+		}
+	}
+	if rc.runsMaxAge <= 0 && rc.checkpointsKeepLast <= 0 && rc.cronClaimsMaxAge <= 0 && rc.terminalHookClaimsMaxAge <= 0 && rc.webhookDeadLettersMaxAge <= 0 && rc.connectorActionsMaxAge <= 0 {
 		return nil
 	}
 
@@ -116,6 +125,17 @@ func runRetentionLoop(ctx context.Context, store state.Store, rc *retentionConfi
 // so it's directly testable without dealing with tickers/goroutines.
 func runRetentionTick(ctx context.Context, store state.Store, rc *retentionConfig) {
 	sysCtx := tenant.SystemContext(ctx)
+	if rc.connectorActionsMaxAge > 0 {
+		if actions, ok := store.(state.ProtectedActionStore); ok {
+			cutoff := time.Now().UTC().Add(-rc.connectorActionsMaxAge)
+			n, err := actions.PruneConnectorActions(sysCtx, cutoff, 200)
+			if err != nil {
+				slog.Error("retention: connector action pruning failed", "error", err)
+			} else if n > 0 {
+				slog.Info("retention: pruned resolved connector actions", "count", n, "older_than", cutoff)
+			}
+		}
+	}
 	if rc.runsMaxAge > 0 {
 		cutoff := time.Now().UTC().Add(-rc.runsMaxAge)
 		n, err := store.PruneRuns(sysCtx, cutoff)

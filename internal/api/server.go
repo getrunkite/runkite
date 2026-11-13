@@ -451,6 +451,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin-api/runs/{runID}", s.handleAdminGetRun)
 	mux.HandleFunc("GET /admin-api/runs/{runID}/stream", s.handleAdminStreamRun)
 	mux.HandleFunc("GET /admin-api/audit-events", s.handleAdminListAuditEvents)
+	mux.HandleFunc("GET /admin-api/connector-actions", s.handleAdminListConnectorActions)
+	mux.HandleFunc("GET /admin-api/connector-actions/{actionID}", s.handleAdminGetConnectorAction)
 	mux.HandleFunc("GET /admin-api/policy-grants", s.handleAdminListPolicyGrants)
 	mux.HandleFunc("POST /admin-api/policy-grants", s.handleAdminCreatePolicyGrant)
 	mux.HandleFunc("GET /admin-api/policy-grants/{id}", s.handleAdminGetPolicyGrant)
@@ -950,6 +952,10 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		s.servePayloadRetrieve(w, r, rpc.ID, args)
 		return
 	}
+	if method == "tools/call" && s.policy.ActionEvidenceEnabled() {
+		s.handleRecordedConnectorAction(w, r, name, userCtx, rpc)
+		return
+	}
 	// Approval bypasses another pending result, never a current explicit deny.
 	if method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
@@ -1077,7 +1083,8 @@ func (s *Server) requireConnectorSession(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusUnauthorized, "run binding required")
 		return errConnectorSession
 	}
-	if sess.Connector != connectorName || sess.RunID != binding.RunID || sess.Generation != binding.Generation {
+	if sess.Connector != connectorName || sess.RunID != binding.RunID || sess.Generation != binding.Generation ||
+		sess.TenantID != binding.TenantID || sess.AgentID != binding.AgentID {
 		writeError(w, http.StatusForbidden, "connector session token does not match this run")
 		return errConnectorSession
 	}

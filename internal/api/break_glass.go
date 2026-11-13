@@ -17,12 +17,18 @@ import (
 // lookup or audit errors (caller must run normal Decide). Never bypasses
 // kill, authz, or admission_limits — only policy Decide.
 func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput) bool {
+	return s.tryBreakGlassBypassID(ctx, in) != ""
+}
+
+// Return the exact window whose use was durably audited. A later lookup could
+// name a replacement window rather than the authority used by this decision.
+func (s *Server) tryBreakGlassBypassID(ctx context.Context, in policy.PolicyInput) string {
 	if s == nil || !s.policy.Enabled() {
-		return false
+		return ""
 	}
 	store, ok := s.breakGlass()
 	if !ok {
-		return false
+		return ""
 	}
 	tenantID := in.TenantID
 	if tenantID == "" {
@@ -31,10 +37,10 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 	win, err := store.FindActiveBreakGlass(ctx, tenantID, in.AgentID)
 	if err != nil {
 		slog.Warn("break-glass lookup failed", "error", err)
-		return false
+		return ""
 	}
 	if win == nil {
-		return false
+		return ""
 	}
 	aw, ok := s.auditWriter()
 	if !ok {
@@ -42,7 +48,7 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 		// silent bypass.
 		slog.Warn("break-glass active but audit store unavailable; refusing bypass",
 			"window_id", win.ID)
-		return false
+		return ""
 	}
 	actor := in.Principal
 	if actor == "" {
@@ -58,13 +64,16 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 	if err != nil {
 		slog.Warn("break-glass audit id mint failed; refusing bypass",
 			"window_id", win.ID, "error", err)
-		return false
+		return ""
 	}
 	attrs := map[string]interface{}{
 		"reason":     win.Reason,
 		"window_id":  win.ID,
 		"created_by": win.CreatedBy,
 		"expires_at": win.ExpiresAt.UTC().Format(time.RFC3339),
+	}
+	if in.ConnectorActionID != "" {
+		attrs["connector_action_id"] = in.ConnectorActionID
 	}
 	// Observability only: note when this bypass also skipped a
 	// mandatory_hitl gate (no behavior change — break-glass still wins).
@@ -97,7 +106,7 @@ func (s *Server) tryBreakGlassBypass(ctx context.Context, in policy.PolicyInput)
 	if err := aw.WriteAuditEvent(ctx, ev); err != nil {
 		slog.Warn("break-glass audit write failed; refusing bypass",
 			"window_id", win.ID, "error", err)
-		return false
+		return ""
 	}
-	return true
+	return win.ID
 }

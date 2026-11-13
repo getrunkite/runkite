@@ -1,8 +1,11 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestPendingArgsKeepExactNumericDisplay(t *testing.T) {
@@ -18,5 +21,28 @@ func TestPendingArgsKeepExactNumericDisplay(t *testing.T) {
 		if got := UnmarshalPendingArgs([]byte(invalid)); got != nil {
 			t.Fatalf("invalid/empty args %q decoded: %#v", invalid, got)
 		}
+	}
+}
+
+func TestPendingActionKeyPreservesNamespacesAndPinsRunIncarnation(t *testing.T) {
+	a := &PendingAction{TenantID: "tenant", AgentID: "agent", RunID: "operation", Generation: 1, Connector: "files", Tool: "write", ArgsDigest: "digest"}
+	legacy, _ := json.Marshal([]any{a.TenantID, a.AgentID, false, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest})
+	sum := sha256.Sum256(legacy)
+	if PendingActionKey(a) != hex.EncodeToString(sum[:]) {
+		t.Fatal("unbound historical key changed")
+	}
+	unbound := PendingActionKey(a)
+	a.RunIncarnationID = "first"
+	first := PendingActionKey(a)
+	a.RunIncarnationID = "second"
+	if first == unbound || PendingActionKey(a) == first {
+		t.Fatal("managed review key did not distinguish run incarnations")
+	}
+	expires := time.Now().Add(time.Minute)
+	a.ExpiresAt = &expires
+	embedded := PendingActionKey(a)
+	a.RunIncarnationID = ""
+	if PendingActionKey(a) != embedded || embedded == unbound {
+		t.Fatal("embedded decision namespace changed or collided with managed")
 	}
 }
