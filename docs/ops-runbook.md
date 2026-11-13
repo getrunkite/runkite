@@ -317,6 +317,12 @@ Retention `checkpoints_keep_last` prunes Agent Protocol history **and** opaque p
 
 ## Authority hardening upgrade
 
+Build this source with Go 1.26.11 or a newer fixed toolchain. The module and
+container builder now require 1.26.11 for the net/http header-race fix
+[GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859). Existing binaries and images
+must be rebuilt; a source or documentation update does not patch a running
+process. This toolchain patch does not require a state migration.
+
 This change has no database migration. Before rolling out the plane, verify that custom A2A callers send their current parent run and generation binding. Deploy compatible runner helpers with the plane release; requests with missing binding or elevated `on_behalf_of` are rejected. Existing client-facing run creation is unchanged.
 
 Enable `policy.audit_required: true` only after checking durable SQL audit availability. An audit outage intentionally blocks admission and connector calls, even under break-glass. Restore audit storage rather than disabling the gate as an automatic recovery action. A request rejected before dispatch is safe to resubmit; an earlier downstream timeout still requires reconciliation. The normal mode remains best-effort unless this option is selected.

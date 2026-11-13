@@ -29,6 +29,9 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Build with Go 1.26.11, including the net/http MaxBytesReader header-race
+  security fix (GO-2026-6859). Update the module minimum and image builder
+  together; existing binaries require rebuilding to receive the fix.
 - Bind A2A delegation to the active parent run and exact generation. Derive
   identity from the assignment and frozen manifest; reject foreign parents,
   elevated permissions and replaced claims. Custom callers must send current

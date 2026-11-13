@@ -119,6 +119,13 @@ secret revocation. Run cancellation cannot retract an already-dispatched effect.
 
 ## Upgrade and regression evidence
 
+CI's vulnerability scan identified the net/http MaxBytesReader header race
+[GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859) in Go 1.26.10. The module
+minimum and Docker builder move together to Go 1.26.11, the fixed patch release.
+This updates the standard library without changing the framework or adding an
+application-level workaround. Rebuild deployed binaries and images to receive
+the fix. The vulnerability gate remains enabled.
+
 There is no schema migration or wire-protocol generation change. Custom A2A
 callers must supply current parent binding and stop relying on body-selected
 authority. Custom connector error mappings based on arbitrary provider body text
