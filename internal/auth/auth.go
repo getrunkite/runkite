@@ -27,6 +27,9 @@ type AuthResult struct {
 	// decisions in Go -- purely forwarded to the runner.
 	DisplayName string                 `json:"display_name,omitempty"`
 	Extra       map[string]interface{} `json:"extra,omitempty"`
+	// identityMissing records provider compatibility placeholders which are
+	// not verified principals and cannot enter the scoped review surface.
+	identityMissing bool
 }
 
 // Provider is the interface all auth providers implement.
@@ -82,6 +85,9 @@ type MiddlewareOpts struct {
 	// present). Mutating methods require X-CSRF-Token. Bearer auth is
 	// unchanged for machine clients.
 	AdminSessions SessionStore
+	// ReviewSessions uses a separate store and accepts scoped review cookies
+	// only on the allowlisted /review-api surface.
+	ReviewSessions SessionStore
 	// Inflight, when set, enables run-binding on connector session/MCP,
 	// store, and vector /internal/* paths: callers must present
 	// X-Runkite-Run-Id + X-Runkite-Generation for an active assignment,
@@ -112,6 +118,9 @@ func Middleware(provider Provider, adminProvider Provider, runnerTokens *RunnerT
 func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens *RunnerTokens, opts MiddlewareOpts, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		if isReviewAPIPath(path) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 
 		// Public paths must be decided HERE, not by the mux: this
 		// middleware wraps the entire API handler, so a trailing-slash
@@ -119,6 +128,10 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 		// logic -- see isPublicPath / isInternalPath.
 		if isPublicPath(r.Method, path) {
 			next.ServeHTTP(w, r)
+			return
+		}
+		if isReviewAPIPath(path) {
+			serveReviewRequest(w, r, provider, opts, next)
 			return
 		}
 
@@ -172,6 +185,10 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 		// X-CSRF-Token on mutating methods.
 		if isAdminAPIPath(path) && opts.AdminSessions != nil && !hasAuthHeader(r) {
 			if sess := opts.AdminSessions.Get(SessionIDFromRequest(r)); sess != nil {
+				if (sess.Purpose != "" && sess.Purpose != SessionPurposeAdmin) || !authorizedAdmin(&sess.Result, opts.StrictPermissions) {
+					writeUnauthorized(w, "invalid admin session authority")
+					return
+				}
 				if isMutatingMethod(r.Method) && !csrfTokenMatch(r.Header.Get(HeaderCSRF), sess.CSRF) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
@@ -287,7 +304,7 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 func isPublicPath(method, path string) bool {
 	// Admin UI login + session probe -- handlers do their own auth.
 	// Logout (DELETE) is NOT public: it requires the session cookie + CSRF.
-	if path == "/admin-api/session" || path == "/admin-api/session/" {
+	if path == "/admin-api/session" || path == "/admin-api/session/" || path == "/review-api/session" || path == "/review-api/session/" {
 		if method == http.MethodPost || method == http.MethodGet || method == http.MethodHead {
 			return true
 		}
@@ -429,7 +446,7 @@ func hasPermission(permissions []string, required, method, path string) bool {
 }
 
 // appPermission reports whether p is one of this control plane's own
-// RBAC vocabulary strings (read/write/admin, governance:decide, or
+// RBAC vocabulary strings (read/write/admin, governance roles, or
 // agents:<id>:run). Anything else (OIDC consent scopes, Auth0 API
 // permissions like "read:messages", custom realm roles) is not something
 // authorized() understands, and must NOT be kept in AuthResult.Permissions:
@@ -438,7 +455,7 @@ func hasPermission(permissions []string, required, method, path string) bool {
 // bug; same class for an always-on "permissions" claim from Auth0).
 func appPermission(p string) bool {
 	switch p {
-	case "read", "write", "admin", GovernanceDecidePermission:
+	case "read", "write", "admin", GovernanceDecidePermission, GovernanceReadPermission, GovernanceApprovePermission:
 		return true
 	default:
 		return isAgentRunPermission(p)

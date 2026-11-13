@@ -133,7 +133,7 @@ func TestMandatoryHITL_MCPPendingThenApprove(t *testing.T) {
 		t.Fatalf("retry: want policy passthrough (502 from dead MCP ok), got %d %s", st2, b2)
 	}
 
-	got, err := store.GetPendingAction(ctx, actionID)
+	got, err := store.GetPendingAction(tenant.WithContext(ctx, "acme"), actionID)
 	if err != nil {
 		t.Fatal(err)
 	}

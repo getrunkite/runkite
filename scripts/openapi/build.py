@@ -2245,6 +2245,97 @@ def _write_spec(spec: dict, path: Path) -> int:
     return _count_ops(spec)
 
 
+def _add_review_spec(spec: dict) -> None:
+    """Keep tenant review separate from the deployment-wide Admin contract."""
+    spec["info"]["description"] += (
+        " The separate /review-api surface requires primary authentication, an explicit "
+        "identity and tenant, and governance:read or governance:approve. It never grants "
+        "global Admin or conversation access. Unreleased source after v0.6.1."
+    )
+    spec["tags"].append({"name": "Review", "description": "Authenticated-tenant approval and metadata evidence."})
+    schemes = spec["components"]["securitySchemes"]
+    schemes.update({
+        "ReviewBearerAuth": {"type": "http", "scheme": "bearer", "description": "Primary API key or JWT with explicit identity/tenant and governance:read or governance:approve. auth.admin_keys is not accepted."},
+        "ReviewApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key", "description": "Primary API key with scoped review permission; no empty-permission fallback."},
+        "ReviewSessionAuth": {"type": "apiKey", "in": "cookie", "name": "runkite_review_session", "description": "Separate httpOnly tenant Review cookie, at most 15 minutes absolute lifetime. Never an Admin session."},
+        "ReviewCSRF": {"type": "apiKey", "in": "header", "name": "X-CSRF-Token", "description": "Required with cookie authentication on review mutations."},
+    })
+    schemas = spec["components"]["schemas"]
+    session_fields = {
+        "authenticated": {"type": "boolean"}, "auth_required": {"type": "boolean", "const": True},
+        "configured": {"type": "boolean"}, "identity": {"type": "string"}, "tenant_id": {"type": "string"},
+        "can_read": {"type": "boolean"}, "can_approve": {"type": "boolean"}, "csrf_token": {"type": "string"},
+        "expires_at": {"type": ["string", "null"], "format": "date-time", "description": "Absolute cookie-session expiry; null when unauthenticated or inspecting a bearer credential."},
+    }
+    schemas["ReviewSessionStatus"] = {"type": "object", "additionalProperties": False, "properties": session_fields, "required": list(session_fields)}
+    pending = copy.deepcopy(schemas["PendingAction"])
+    pending.get("properties", {}).pop("reason", None)
+    pending["additionalProperties"] = False
+    pending["description"] = "Scoped approval metadata. Free-form reason is excluded. Only an approver receives the existing capped/redacted args display. Read-only evidence permission receives no args."
+    pending["required"] = ["id", "run_id", "generation", "tenant_id", "agent_id", "connector", "tool", "status", "created_at", "updated_at"]
+    schemas["ReviewPendingAction"] = pending
+    schemas["ReviewConnectorActionDetail"] = {
+        "type": "object", "additionalProperties": False, "required": ["action", "events"],
+        "properties": {"action": _ref("ConnectorAction"), "events": _array_of(_ref("ConnectorActionEvent")), "events_truncated": {"type": "boolean"}},
+        "description": "Metadata only. No conversation payload or privileged run-navigation capability. At most 200 ordered events, with explicit truncation.",
+    }
+    read_auth = [{"ReviewBearerAuth": []}, {"ReviewApiKeyAuth": []}, {"ReviewSessionAuth": []}]
+    write_auth = [{"ReviewBearerAuth": []}, {"ReviewApiKeyAuth": []}, {"ReviewSessionAuth": [], "ReviewCSRF": []}]
+    errors = {
+        "400": {"description": "Invalid filter, cursor, limit or decision body."},
+        "401": {"description": "Invalid/missing credentials or expired review session."},
+        "403": {"description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."},
+        "404": {"description": "Resource missing or not in the authenticated tenant."},
+        "409": {"description": "Approval binding/status/expiry or current policy prevents the operation."},
+        "501": {"description": "Review evidence and approvals require SQL capability."},
+        "503": {"description": "Required authentication/session storage or durable audit unavailable."},
+    }
+    def operation(method: str, path: str, name: str, summary: str, schema: dict, parameters=(), mutation=False):
+        responses = _json_response("200", "OK", schema)
+        responses.update(copy.deepcopy(errors))
+        out = {"tags": ["Review"], "operationId": name, "summary": summary,
+               "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+               "security": copy.deepcopy(write_auth if mutation else read_auth), "responses": responses}
+        if parameters:
+            out["parameters"] = list(parameters)
+        spec["paths"].setdefault(path, {})[method] = out
+        return out
+    page = [
+        {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100}},
+        {"name": "cursor", "in": "query", "schema": {"type": "string", "maxLength": 4096}, "description": "Opaque X-Next-Cursor value; mutually exclusive with offset."},
+        {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "default": 0}},
+    ]
+    def query(name: str):
+        return {"name": name, "in": "query", "schema": {"type": "string"}}
+    for collection, component, filters in (
+        ("pending-actions", "ReviewPendingAction", ["status", "run_id", "connector"]),
+        ("connector-actions", "ConnectorAction", ["state", "run_id", "agent_id", "connector"]),
+    ):
+        op = operation("get", "/review-api/" + collection, "review_list_" + collection.replace("-", "_"),
+                       "List own tenant's " + collection, _array_of(_ref(component)), page + [query(f) for f in filters])
+        op["responses"]["200"]["headers"] = {"X-Next-Cursor": {"schema": {"type": "string"}, "description": "Present only when a lookahead row establishes another page."}}
+    id_param = [_path_param("id", "Opaque pending approval ID, not a connector action ID.", fmt="")]
+    operation("get", "/review-api/pending-actions/{id}", "review_get_pending_action", "Read an own-tenant approval", _ref("ReviewPendingAction"), id_param)
+    for decision in ("approve", "deny"):
+        op = operation("post", "/review-api/pending-actions/{id}/" + decision, "review_" + decision + "_pending_action",
+                       decision.title() + " an own-tenant pending action", _ref("ReviewPendingAction"), id_param, mutation=True)
+        op["description"] += " Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool."
+    operation("get", "/review-api/connector-actions/{action_id}", "review_get_connector_action", "Read own-tenant action metadata and events", _ref("ReviewConnectorActionDetail"), [_path_param("action_id", "Connector action UUID.")])
+    status = operation("get", "/review-api/session", "review_session_status", "Inspect Review session or optional primary bearer", _ref("ReviewSessionStatus"))
+    status["security"] = [{}] + copy.deepcopy(read_auth)
+    status["description"] = "Public bootstrap returns authenticated=false without a valid Review cookie. No provider reports configured=false. Optional bearer inspection authenticates only through the primary provider. Never exposes forwarded claims or credentials."
+    login = operation("post", "/review-api/session", "review_create_session", "Create a separate tenant Review session", _ref("ReviewSessionStatus"))
+    login["security"] = [{}, {"ReviewBearerAuth": []}, {"ReviewApiKeyAuth": []}]
+    login["description"] = "Exchange a primary credential for attenuated Review authority. Body credential or Authorization/X-API-Key is accepted. Explicit identity, tenant and review permission are mandatory even when strict_permissions is false. Separate cookie/storage namespace, fixed absolute expiry at most 15 minutes. No provider fails closed."
+    login["requestBody"] = {"required": False, "content": {"application/json": {"schema": {"type": "object", "properties": {"credential": {"type": "string", "writeOnly": True}}, "additionalProperties": False}}}}
+    login["responses"]["200"]["headers"] = {"Set-Cookie": {"schema": {"type": "string"}, "description": "runkite_review_session; Path=/review-api; HttpOnly; SameSite=Lax; Secure under HTTPS."}}
+    login["responses"]["429"] = {"description": "Shared login rate limit exceeded."}
+    logout = operation("delete", "/review-api/session", "review_delete_session", "Revoke the current Review browser session", _ref("ReviewSessionStatus"), mutation=True)
+    logout["responses"].pop("200")
+    logout["responses"]["204"] = {"description": "Review cookie session revoked; bearer-only requests with no cookie are a no-op and do not revoke the API key/JWT."}
+    logout["description"] += " Cookie logout needs CSRF. Mixed bearer plus browser cookie is rejected rather than falsely confirming browser revocation. Failed store deletion returns503 and leaves logout unconfirmed."
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -2253,6 +2344,7 @@ def _write_spec(spec: dict, path: Path) -> int:
 def main() -> None:
     public = _build_public_spec()
     admin = _build_admin_spec()
+    _add_review_spec(admin)
     internal = _build_internal_spec()
 
     n_pub = _write_spec(public, SPEC_DIR / "openapi.json")

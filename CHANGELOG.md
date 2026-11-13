@@ -6,6 +6,15 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a separate tenant Review workspace/API with explicit primary identity,
+  tenant and `governance:read` / `governance:approve`. Keep global Admin unchanged.
+  Scope pending reads/mutations in SQL, omit arguments for read-only reviewers,
+  and preserve all current approval fences.
+- Use isolated Review cookies/session namespaces, CSRF and absolute expiry at
+  most 15 minutes. Recheck purpose/authority on cookie requests, retain legacy
+  Admin session compatibility, and reject unsupported custom Review session
+  stores. Include operator guidance, API contracts, engineering rationale and UI.
+
 - Opt-in SQL managed MCP action evidence with `policy.action_evidence` plus
   required audit. Atomically record dispatch intent and one-shot approval
   consumption, retain original generation and run incarnation, and append bounded

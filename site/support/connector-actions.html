@@ -48,6 +48,7 @@
           <div class="nav-group">Govern</div>
           <a href="grants.html">Grants &amp; HITL</a>
           <a class="active" aria-current="page" href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -136,6 +137,9 @@
         <h2 id="reference">API and design</h2>
         <p>Read-only Admin endpoints: <code>GET /admin-api/connector-actions</code> and <code>GET /admin-api/connector-actions/{actionID}</code>. Both require Admin authority when authentication is configured and return <code>501</code> on stores without action support. Lists use bounded pages and <code>X-Next-Cursor</code>; detail includes the action, ordered events and whether its original run remains available.</p>
         <p><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Engineering rationale and source map</a> · <a href="grants.html">Grants and approval</a> · <a href="connectors.html">Connector setup</a> · <a href="admin-guide.html">Admin guide</a></p>
+
+        <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
+        <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
       </main>
     </div>

@@ -556,11 +556,14 @@ func startServer(opts serverOpts) {
 	// replicas), otherwise process-local memory — same auto pattern as
 	// the rate-limit backend.
 	var adminSessions auth.SessionStore
+	var reviewSessions auth.SessionStore
 	if rdb != nil {
 		adminSessions = auth.NewRedisAdminSessionStore(rdb, 0)
+		reviewSessions = auth.NewRedisReviewSessionStore(rdb, 0)
 		slog.Info("admin sessions: redis backend (shared across replicas)")
 	} else {
 		adminSessions = auth.NewAdminSessionStore(0)
+		reviewSessions = auth.NewReviewSessionStore(0)
 	}
 	strictPerms := authStrictPermissions(opts.configPath)
 	apiServer.SetStrictPermissions(strictPerms)
@@ -570,9 +573,11 @@ func startServer(opts serverOpts) {
 		Provider:      authProvider,
 		Strict:        strictPerms,
 	})
+	apiServer.SetReviewSessions(&auth.ReviewSessionHandlers{Store: reviewSessions, Provider: authProvider})
 	authOpts := auth.MiddlewareOpts{
 		StrictPermissions: strictPerms,
 		AdminSessions:     adminSessions,
+		ReviewSessions:    reviewSessions,
 		// Derive tenant/agent on store/vector/connector proxy calls from
 		// the in-flight RunAssignment (runners must send run id +
 		// generation). Closes the self-reported X-Runkite-Tenant-Id gap

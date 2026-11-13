@@ -132,3 +132,34 @@ Flat tenant scoping -- a full workspace/org/team hierarchy with isolated data wa
 - **Proxy-mode store/vector, opaque checkpoints and connector `session`/`mcp` are run-bound.** After runner-token auth, these paths require generation and one exact run identity header (`X-Runkite-Run-Id` or its unpadded base64url UTF-8 alternative `X-Runkite-Run-Id-B64`). Tenant/agent come from the assignment, and checkpoint paths must match its thread. Unbound schema/status/A2A/connector-metadata calls use the exact tenant header or `X-Runkite-Tenant-Id-B64` after kind-token auth. Duplicate or mixed representations of the identity used by a route are rejected. Set `RUNNER_TENANTS_<kind>` in multi-tenant deployments; membership compares exact tenant identities. Upgrade the plane before helpers using encoded identities. Direct-mode store access still bypasses the plane.
 - **No central tenant registry.** A tenant "exists" the moment any resource is tagged with it -- there's no `POST /tenants` to pre-create one, list all known tenants, or manage tenant-level settings. Fine for a flat, claim-driven model; would matter if a full org/workspace/team hierarchy is built later. The Admin UI's Overview/Agents/Threads/Runs/Cron views do surface `tenant_id` per row across every tenant (see Admin UI below), which covers *visibility* -- there's just no dedicated tenant *management* surface yet.
 - **A pre-existing (upgraded, not freshly created) database keeps its original single-column primary keys** on `agents`/`agent_schemas`/`store_items`/`cron_schedules`/`cron_claims` even after the migration adds `tenant_id` -- SQLite and Postgres both refuse to widen a primary key in place. Explicit unique indexes are created alongside so upserts still work correctly either way; every query still filters by `tenant_id` regardless, so isolation itself holds on both fresh and upgraded databases -- confirmed by running the full conformance suite against a real pre-existing (pre-multi-tenancy) Postgres database, not just fresh ones.
+
+## Tenant review
+
+Unreleased source after v0.6.1 adds a separate `/review-api` surface and
+`/admin/review/` workspace. Published v0.6.1 binaries do not implement them.
+`governance:read` permits own-tenant approval metadata and action evidence;
+`governance:approve` includes that read access, the existing capped/redacted
+argument display and approve/deny. Free-form policy reasons are excluded.
+Neither implies client read/write, agent dispatch or global Admin.
+
+Review requires primary authentication with a real identity, explicit nonempty
+tenant and recognized permission. Set `tenant_id: "default"` explicitly when
+appropriate. Empty permissions never grant Review, even in compatibility mode.
+Separate `auth.admin_keys` remain for Admin, and Admin's global scope is unchanged.
+A primary admin credential with explicit identity/tenant can enter its own
+Review scope, receiving an attenuated review-only cookie.
+
+Review sessions use their own cookie and storage namespace and expire absolutely
+after at most 15 minutes. Activity does not extend authority. Existing Admin
+sessions are independent and compatible. Grant changes are reflected at fresh
+login or bearer authentication, not instantly in an issued cookie. Review cookie
+logout requires CSRF and confirms storage deletion; failed deletion remains
+unconfirmed. Mixed bearer plus cookie logout is refused. Bearer-only logout does
+not revoke the source API key/JWT.
+
+Upgrade every replica before issuing new role strings, use
+`strict_permissions: true`, and retain global Admin recovery access. No SQL
+migration is added by this slice; preceding unreleased SQL migrations and legacy
+managed approval fresh-review rules still apply. See the
+[operator guide](../site/support/tenant-review.html) and
+[engineering note](internal/tenant-scoped-review.md).

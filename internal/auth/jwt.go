@@ -148,8 +148,10 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 	}
 
 	identity := "unknown"
+	identityMissing := true
 	if sub, _ := claims["sub"].(string); sub != "" {
 		identity = sub
+		identityMissing = false
 	}
 
 	var perms []string
@@ -212,11 +214,12 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 	}
 
 	return &AuthResult{
-		Identity:    identity,
-		Permissions: perms,
-		TenantID:    tenantID,
-		DisplayName: displayName,
-		Extra:       extra,
+		Identity:        identity,
+		Permissions:     perms,
+		TenantID:        tenantID,
+		DisplayName:     displayName,
+		Extra:           extra,
+		identityMissing: identityMissing,
 	}, nil
 }
 

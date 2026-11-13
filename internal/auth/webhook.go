@@ -195,10 +195,11 @@ func (p *WebhookProvider) callWebhook(r *http.Request) (*AuthResult, error) {
 		return nil, &ErrUnauthorized{Message: msg}
 	}
 
-	result := &AuthResult{Identity: "webhook-user"}
+	result := &AuthResult{Identity: "webhook-user", identityMissing: true}
 	if wResp.User != nil {
 		if id := stringField(wResp.User, "identity"); id != "" {
 			result.Identity = id
+			result.identityMissing = false
 		}
 		result.Permissions = filterAppPermissions(stringSliceField(wResp.User, "permissions"))
 		result.TenantID = stringField(wResp.User, "tenant_id")

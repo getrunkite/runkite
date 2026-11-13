@@ -180,6 +180,56 @@ def _check_connector_action_contract(spec: dict) -> list[str]:
     return problems
 
 
+def _check_review_contract(spec: dict) -> list[str]:
+    """Guard the scoped response projection and credential boundary."""
+    schemas = spec.get("components", {}).get("schemas", {})
+    problems: list[str] = []
+    for model, schema_name, filename in (
+        ("reviewPendingAction", "ReviewPendingAction", "internal/api/review.go"),
+        ("reviewConnectorActionDetail", "ReviewConnectorActionDetail", "internal/api/review.go"),
+        ("reviewSessionStatus", "ReviewSessionStatus", "internal/auth/reviewsession_http.go"),
+    ):
+        source = (REPO_ROOT / filename).read_text()
+        match = re.search(r"^type " + model + r" struct \{\n(.*?)^\}", source, re.M | re.S)
+        if not match:
+            problems.append(f"cannot find Go review model {model}")
+            continue
+        tags = re.findall(r'`json:"([^"`]+)"', match.group(1))
+        wire = {tag.split(",", 1)[0] for tag in tags} - {"-"}
+        expected_required = {tag.split(",", 1)[0] for tag in tags if "omitempty" not in tag.split(",")[1:]} - {"-"}
+        schema = schemas.get(schema_name, {})
+        fields, required = _schema_shape(spec, schema)
+        if fields != wire:
+            problems.append(f"{schema_name} fields differ from Go review projection")
+        if required != expected_required:
+            problems.append(f"{schema_name} required fields differ from Go review projection")
+        if schema.get("additionalProperties") is not False:
+            problems.append(f"{schema_name} must exclude undeclared fields")
+        if fields & {"reason", "extra", "permissions", "credentials", "response_body", "run_available"}:
+            problems.append(f"{schema_name} exposes privileged or free-form fields")
+    for path, methods in spec.get("paths", {}).items():
+        if not path.startswith("/review-api/") or path == "/review-api/session":
+            continue
+        for method, operation in methods.items():
+            if method not in {"get", "post", "put", "delete", "patch", "head"}:
+                continue
+            security = operation.get("security", spec.get("security", []))
+            if not security:
+                problems.append(f"{method.upper()} {path} must require scoped review authentication")
+            for requirement in security:
+                names = set(requirement)
+                if not names or not names <= {"ReviewBearerAuth", "ReviewApiKeyAuth", "ReviewSessionAuth", "ReviewCSRF"}:
+                    problems.append(f"{method.upper()} {path} permits unscoped authentication")
+                if method in {"post", "put", "delete", "patch"} and "ReviewSessionAuth" in names and "ReviewCSRF" not in names:
+                    problems.append(f"{method.upper()} {path} cookie mutation is missing CSRF")
+    session = schemas.get("ReviewSessionStatus", {}).get("properties", {})
+    if session.get("auth_required", {}).get("const") is not True:
+        problems.append("ReviewSessionStatus must never document default-open review")
+    if spec.get("components", {}).get("securitySchemes", {}).get("ReviewSessionAuth", {}).get("name") != "runkite_review_session":
+        problems.append("Review must use its separate cookie name")
+    return problems
+
+
 def main() -> None:
     public = _load_spec("openapi.json")
     admin = _load_spec("openapi-admin.json")
@@ -223,6 +273,7 @@ def main() -> None:
         integrity.extend(_check_spec_integrity(name, spec))
     integrity.extend(_check_model_contract(public))
     integrity.extend(_check_connector_action_contract(admin))
+    integrity.extend(_check_review_contract(admin))
 
     if missing or integrity:
         if missing:

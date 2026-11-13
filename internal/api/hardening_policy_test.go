@@ -17,6 +17,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/state/sqlite"
+	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport/inprocess"
 )
 
@@ -154,7 +155,7 @@ func TestHardeningApprovalExactArgumentsAndCurrentPolicy(t *testing.T) {
 			if code != -32000 || hits.Load() != 0 {
 				t.Fatalf("approval bypass reached upstream: %s hits=%d", body, hits.Load())
 			}
-			row, err := store.GetPendingAction(context.Background(), id)
+			row, err := store.GetPendingAction(tenant.WithContext(context.Background(), binding.TenantID), id)
 			if err != nil {
 				t.Fatal(err)
 			}

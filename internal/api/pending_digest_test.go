@@ -101,7 +101,7 @@ func TestPendingHITL_ApproveGrantDenyStillRefuses(t *testing.T) {
 		ab, _ := io.ReadAll(appr.Body)
 		t.Fatalf("approve want 409, got %d %s", appr.StatusCode, ab)
 	}
-	got, err := store.GetPendingAction(context.Background(), actionID)
+	got, err := store.GetPendingAction(tenant.WithContext(context.Background(), binding.TenantID), actionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,13 +117,13 @@ func runApprovedDigestMismatch(t *testing.T, store state.Store) {
 	t.Helper()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	var hits atomic.Int32
-	_, admin, _, call, parse := newBankTransferHITL(t, store, "acme-digest-"+suffix, "run-digest-"+suffix, &hits)
+	_, admin, binding, call, parse := newBankTransferHITL(t, store, "acme-digest-"+suffix, "run-digest-"+suffix, &hits)
 
 	pendingStore, ok := store.(pendingActionStore)
 	if !ok {
 		t.Fatal("store does not implement pending actions")
 	}
-	ctx := context.Background()
+	ctx := tenant.WithContext(context.Background(), binding.TenantID)
 
 	st, b := call("500")
 	if st != http.StatusOK {

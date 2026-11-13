@@ -9,6 +9,7 @@ import (
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
 	"github.com/getrunkite/runkite/internal/policy"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -92,60 +93,10 @@ func (s *Server) handleAdminGetPendingAction(w http.ResponseWriter, r *http.Requ
 }
 
 // POST /admin-api/pending-actions/{id}/approve
-// Re-evaluates policy: hard deny refuses approve; allow/pending mints a
-// one-shot capability (status=approved) bound to this row's args_digest.
 func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.pendingActions()
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
-		return
-	}
-	if !s.policy.Enabled() {
-		writeError(w, http.StatusConflict, "policy engine is not enabled")
-		return
-	}
-	ctx := tenant.SystemContext(r.Context())
-	id := r.PathValue("id")
-	a, err := store.GetPendingAction(ctx, id)
+	a, err := s.approvePendingAction(tenant.SystemContext(r.Context()), r.PathValue("id"), pendingActor(r))
 	if err != nil {
-		handleStoreError(w, err)
-		return
-	}
-	if a.Status != models.PendingStatusPending {
-		writeError(w, http.StatusConflict, "pending action is not awaiting approval (status="+a.Status+")")
-		return
-	}
-	if !currentPendingBinding(a) {
-		writeError(w, http.StatusConflict, "legacy argument binding; resubmit the operation for fresh approval")
-		return
-	}
-	dec := s.policy.Decide(ctx, policy.PolicyInput{
-		Stage:      policy.StageToolCall,
-		TenantID:   a.TenantID,
-		AgentID:    a.AgentID,
-		RunID:      a.RunID,
-		Generation: a.Generation,
-		Connector:  a.Connector,
-		Tool:       a.Tool,
-		Args:       a.Args,
-		ArgsDigest: a.ArgsDigest,
-		ArgsMeta:   a.Args,
-	})
-	if dec.Effect != policy.EffectAllow && dec.Effect != policy.EffectPending {
-		writeError(w, http.StatusConflict, "policy still denies this tool call; approve refused")
-		return
-	}
-	decidedBy := ""
-	if ar := auth.FromContext(r.Context()); ar != nil {
-		decidedBy = ar.Identity
-	}
-	if err := store.SetPendingActionApproved(ctx, id, decidedBy); err != nil {
-		handleStoreError(w, err)
-		return
-	}
-	a, err = store.GetPendingAction(ctx, id)
-	if err != nil {
-		handleStoreError(w, err)
+		writePendingDecisionError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -153,30 +104,90 @@ func (s *Server) handleAdminApprovePendingAction(w http.ResponseWriter, r *http.
 
 // POST /admin-api/pending-actions/{id}/deny
 func (s *Server) handleAdminDenyPendingAction(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.pendingActions()
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)")
-		return
-	}
-	ctx := tenant.SystemContext(r.Context())
-	id := r.PathValue("id")
-	a, err := store.GetPendingAction(ctx, id)
+	a, err := s.denyPendingAction(tenant.SystemContext(r.Context()), r.PathValue("id"))
 	if err != nil {
-		handleStoreError(w, err)
-		return
-	}
-	if a.Status != models.PendingStatusPending {
-		writeError(w, http.StatusConflict, "pending action is not awaiting approval (status="+a.Status+")")
-		return
-	}
-	if err := store.SetPendingActionStatus(ctx, id, models.PendingStatusPending, models.PendingStatusDenied); err != nil {
-		handleStoreError(w, err)
-		return
-	}
-	a, err = store.GetPendingAction(ctx, id)
-	if err != nil {
-		handleStoreError(w, err)
+		writePendingDecisionError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
+}
+
+type pendingDecisionError struct {
+	status  int
+	message string
+}
+
+func (e *pendingDecisionError) Error() string { return e.message }
+
+func writePendingDecisionError(w http.ResponseWriter, err error) {
+	if e, ok := err.(*pendingDecisionError); ok {
+		writeError(w, e.status, e.message)
+		return
+	}
+	handleStoreError(w, err)
+}
+
+func pendingActor(r *http.Request) string {
+	if result := auth.FromContext(r.Context()); result != nil {
+		return result.Identity
+	}
+	return ""
+}
+
+// pendingActionForDecision accepts only a trusted system or tenant context.
+// Both approval surfaces use this core and retain the same policy and binding checks.
+func (s *Server) pendingActionForDecision(ctx context.Context, id string) (pendingActionStore, *models.PendingAction, error) {
+	store, ok := s.pendingActions()
+	if !ok {
+		return nil, nil, &pendingDecisionError{http.StatusNotImplemented, "pending actions require a SQL state backend (Postgres, MySQL, or SQLite)"}
+	}
+	a, err := store.GetPendingAction(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !tenant.IsSystem(ctx) && a.TenantID != tenant.FromContext(ctx) {
+		return nil, nil, &state.ErrNotFound{Resource: "pending_action", ID: id}
+	}
+	if a.Status != models.PendingStatusPending {
+		return nil, nil, &pendingDecisionError{http.StatusConflict, "pending action is not awaiting approval (status=" + a.Status + ")"}
+	}
+	return store, a, nil
+}
+
+// approvePendingAction mints the existing one-shot exact-argument capability.
+// The caller chooses an authenticated tenant context or explicit global Admin context.
+func (s *Server) approvePendingAction(ctx context.Context, id, actor string) (*models.PendingAction, error) {
+	store, a, err := s.pendingActionForDecision(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.policy.Enabled() {
+		return nil, &pendingDecisionError{http.StatusConflict, "policy engine is not enabled"}
+	}
+	if !currentPendingBinding(a) {
+		return nil, &pendingDecisionError{http.StatusConflict, "legacy argument binding; resubmit the operation for fresh approval"}
+	}
+	dec := s.policy.Decide(ctx, policy.PolicyInput{
+		Stage: policy.StageToolCall, TenantID: a.TenantID, AgentID: a.AgentID,
+		RunID: a.RunID, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool,
+		Args: a.Args, ArgsDigest: a.ArgsDigest, ArgsMeta: a.Args,
+	})
+	if dec.Effect != policy.EffectAllow && dec.Effect != policy.EffectPending {
+		return nil, &pendingDecisionError{http.StatusConflict, "policy still denies this tool call; approve refused"}
+	}
+	if err := store.SetPendingActionApproved(ctx, id, actor); err != nil {
+		return nil, err
+	}
+	return store.GetPendingAction(ctx, id)
+}
+
+func (s *Server) denyPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
+	store, _, err := s.pendingActionForDecision(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.SetPendingActionStatus(ctx, id, models.PendingStatusPending, models.PendingStatusDenied); err != nil {
+		return nil, err
+	}
+	return store.GetPendingAction(ctx, id)
 }

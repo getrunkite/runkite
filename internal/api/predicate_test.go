@@ -166,15 +166,15 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 		t.Fatalf("missing action_id in %v", resp.Error.Data)
 	}
 	t.Cleanup(func() {
-		_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusApproved, models.PendingStatusDenied)
-		_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusPending, models.PendingStatusDenied)
-		_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusConsumed, models.PendingStatusDenied)
+		_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusApproved, models.PendingStatusDenied)
+		_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusPending, models.PendingStatusDenied)
+		_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusConsumed, models.PendingStatusDenied)
 	})
 	if hits.Load() != 0 {
 		t.Fatalf("downstream must not be called on pending, hits=%d", hits.Load())
 	}
 
-	got, err := store.GetPendingAction(ctx, actionID)
+	got, err := store.GetPendingAction(tenant.WithContext(ctx, binding.TenantID), actionID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -251,6 +251,22 @@ approval `action_id` semantics are unchanged. Lists return a bounded array and
 `events_truncated`. See [Admin API](admin.md), the generated Admin specification,
 and the [operator manual](../site/support/connector-actions.html).
 
+### Tenant Review API (unreleased)
+
+`/review-api` is distinct from global `/admin-api`. Primary authentication must
+supply explicit identity, tenant and `governance:read` or `governance:approve`.
+It provides session GET/POST/DELETE, pending-action list/detail/approve/deny and
+connector-action list/detail. Approve implies read; read-only replies omit pending
+arguments, and both projections omit free-form reason text. Conversation data
+and privileged Admin controls are outside this surface.
+
+Review lists default to 50, cap at 100, use one-row lookahead and
+`X-Next-Cursor`, and refuse cursor/offset combinations. An ordering cursor is not
+an authority token. Foreign tenant selection is forbidden and foreign IDs return
+404. Mutation bodies accept empty or `{}` only. Review-cookie mutations require
+CSRF. See the Review-tagged operations in `spec/openapi-admin.json` and
+[operator manual](../site/support/tenant-review.html).
+
 ### Custom Routes
 ```
 *      {mount}/*                  Reverse-proxied to custom_routes.url (default mount `/custom`); mount prefix stripped; X-Runkite-* identity headers injected

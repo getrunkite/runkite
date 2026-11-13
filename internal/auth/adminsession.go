@@ -21,9 +21,13 @@ import (
 // UI does not need sticky routing (MCP sessions remain process-local).
 
 const (
-	CookieAdminSession = "runkite_admin_session"
-	HeaderCSRF         = "X-CSRF-Token"
-	AdminSessionTTL    = 12 * time.Hour
+	CookieAdminSession   = "runkite_admin_session"
+	HeaderCSRF           = "X-CSRF-Token"
+	AdminSessionTTL      = 12 * time.Hour
+	CookieReviewSession  = "runkite_review_session"
+	ReviewSessionTTL     = 15 * time.Minute
+	SessionPurposeAdmin  = "admin"
+	SessionPurposeReview = "review"
 )
 
 // SessionStore persists Admin UI browser sessions (memory or Redis).
@@ -34,12 +38,20 @@ type SessionStore interface {
 	TTL() time.Duration
 }
 
+// ReviewSessionCreator is optional. A custom store without this attenuation
+// capability cannot create browser review sessions.
+type ReviewSessionCreator interface {
+	CreateReview(result *AuthResult) (*AdminSession, error)
+}
+
 // AdminSession is one browser login.
 type AdminSession struct {
-	ID      string
-	CSRF    string
-	Result  AuthResult
-	Expires time.Time
+	ID              string
+	CSRF            string
+	Result          AuthResult
+	Expires         time.Time
+	Purpose         string
+	AbsoluteExpires time.Time
 }
 
 // AdminSessionStore is the process-local SessionStore (no Redis).
@@ -47,6 +59,8 @@ type AdminSessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]*AdminSession
 	ttl      time.Duration
+	now      func() time.Time
+	purpose  string
 }
 
 // NewAdminSessionStore creates an empty memory store. ttl <= 0 uses AdminSessionTTL.
@@ -54,9 +68,23 @@ func NewAdminSessionStore(ttl time.Duration) *AdminSessionStore {
 	if ttl <= 0 {
 		ttl = AdminSessionTTL
 	}
+	return newSessionStore(ttl, SessionPurposeAdmin)
+}
+
+// NewReviewSessionStore keeps review browser credentials separate from Admin.
+func NewReviewSessionStore(ttl time.Duration) *AdminSessionStore {
+	if ttl <= 0 {
+		ttl = ReviewSessionTTL
+	}
+	return newSessionStore(ttl, SessionPurposeReview)
+}
+
+func newSessionStore(ttl time.Duration, purpose string) *AdminSessionStore {
 	s := &AdminSessionStore{
 		sessions: make(map[string]*AdminSession),
 		ttl:      ttl,
+		now:      time.Now,
+		purpose:  purpose,
 	}
 	go s.sweepLoop()
 	return s
@@ -70,9 +98,9 @@ func (s *AdminSessionStore) sweepLoop() {
 	defer t.Stop()
 	for range t.C {
 		s.mu.Lock()
-		now := time.Now()
+		now := s.now()
 		for id, sess := range s.sessions {
-			if now.After(sess.Expires) {
+			if sessionExpired(sess, now) {
 				delete(s.sessions, id)
 			}
 		}
@@ -83,6 +111,24 @@ func (s *AdminSessionStore) sweepLoop() {
 // Create mints a session for result and returns the new session
 // (caller sets cookies from ID/CSRF).
 func (s *AdminSessionStore) Create(result *AuthResult) (*AdminSession, error) {
+	if s.purpose != SessionPurposeAdmin {
+		return nil, &ErrForbidden{Message: "admin sessions require an Admin store"}
+	}
+	return s.create(result, SessionPurposeAdmin, time.Time{})
+}
+
+func (s *AdminSessionStore) CreateReview(result *AuthResult) (*AdminSession, error) {
+	if s.purpose != SessionPurposeReview {
+		return nil, &ErrForbidden{Message: "review sessions require a review store"}
+	}
+	attenuated, ok := reviewAuthResult(result)
+	if !ok {
+		return nil, &ErrForbidden{Message: "review requires an explicit identity, tenant and role"}
+	}
+	return s.create(attenuated, SessionPurposeReview, s.now().Add(min(s.ttl, ReviewSessionTTL)))
+}
+
+func (s *AdminSessionStore) create(result *AuthResult, purpose string, absolute time.Time) (*AdminSession, error) {
 	id, err := randomToken(32)
 	if err != nil {
 		return nil, err
@@ -93,15 +139,20 @@ func (s *AdminSessionStore) Create(result *AuthResult) (*AdminSession, error) {
 	}
 	copied := copyAuthResult(result)
 	sess := &AdminSession{
-		ID:      id,
-		CSRF:    csrf,
-		Result:  copied,
-		Expires: time.Now().Add(s.ttl),
+		ID:              id,
+		CSRF:            csrf,
+		Result:          copied,
+		Expires:         s.now().Add(s.ttl),
+		Purpose:         purpose,
+		AbsoluteExpires: absolute,
+	}
+	if !absolute.IsZero() && sess.Expires.After(absolute) {
+		sess.Expires = absolute
 	}
 	s.mu.Lock()
 	s.sessions[id] = sess
 	s.mu.Unlock()
-	return sess, nil
+	return copySession(sess), nil
 }
 
 // Get returns a live session by id, sliding its expiry. nil if missing/expired.
@@ -115,12 +166,26 @@ func (s *AdminSessionStore) Get(id string) *AdminSession {
 	if !ok {
 		return nil
 	}
-	if time.Now().After(sess.Expires) {
+	now := s.now()
+	if sessionExpired(sess, now) {
 		delete(s.sessions, id)
 		return nil
 	}
-	sess.Expires = time.Now().Add(s.ttl)
-	return sess
+	sess.Expires = now.Add(s.ttl)
+	if !sess.AbsoluteExpires.IsZero() && sess.Expires.After(sess.AbsoluteExpires) {
+		sess.Expires = sess.AbsoluteExpires
+	}
+	return copySession(sess)
+}
+
+func sessionExpired(sess *AdminSession, now time.Time) bool {
+	return sess == nil || !now.Before(sess.Expires) || (!sess.AbsoluteExpires.IsZero() && !now.Before(sess.AbsoluteExpires))
+}
+
+func copySession(sess *AdminSession) *AdminSession {
+	copy := *sess
+	copy.Result = copyAuthResult(&sess.Result)
+	return &copy
 }
 
 // Delete removes a session (logout). Idempotent.
@@ -204,5 +269,5 @@ func isMutatingMethod(method string) bool {
 // and runner-token gates elsewhere in this codebase. Length mismatch
 // fails closed (ConstantTimeCompare returns 0).
 func csrfTokenMatch(got, want string) bool {
-	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+	return got != "" && want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }

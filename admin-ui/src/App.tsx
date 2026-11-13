@@ -1,4 +1,6 @@
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
+import { ReviewApp } from "./review/ReviewApp";
+import { isReviewRoute } from "./review/contracts";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
@@ -86,11 +88,12 @@ function Gate() {
 }
 
 export default function App() {
+  const location = useLocation();
   return (
     <ErrorBoundary>
-      <AuthProvider>
+      {isReviewRoute(location.pathname) ? <ReviewApp /> : <AuthProvider>
         <Gate />
-      </AuthProvider>
+      </AuthProvider>}
     </ErrorBoundary>
   );
 }

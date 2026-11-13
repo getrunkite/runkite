@@ -49,6 +49,21 @@ is separate and leaves pending/unknown attempts, including earlier pending
 requests whose approval a later attempt consumed. Storage can therefore grow.
 See the [operator guide](../site/support/connector-actions.html).
 
+## Tenant Review boundaries (unreleased)
+
+Current source after v0.6.1 adds flat-tenant approval/evidence permissions in a
+separate Review workspace. This is not general per-resource RBAC or a user
+registry. Review needs verified primary identity, explicit tenant and a new role;
+empty/default-open permissions do not qualify. Global Admin remains global.
+No conversation or general Audit API is exposed to reviewers.
+
+Review cookies contain login-time authority for at most 15 minutes absolute;
+activity cannot extend it. IdP changes are not instant revocation of an issued
+cookie. Admin/Review sessions and logout are independent. Reviewer approval
+retains existing exact argument/run/generation/incarnation/expiry rules but adds
+no no-self-approval or tool/target revision pinning. Upgrade all replicas before
+issuing roles. See [setup and limitations](../site/support/tenant-review.html).
+
 ## Authority and secret-safety boundaries
 
 - Required policy audit is opt-in, SQL-only and available in unreleased source

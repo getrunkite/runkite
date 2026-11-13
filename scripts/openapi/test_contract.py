@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
-from check import _check_connector_action_contract, _check_model_contract
+from check import _check_connector_action_contract, _check_model_contract, _check_review_contract
 
 
 class RunContractTests(unittest.TestCase):
@@ -66,6 +66,38 @@ class ConnectorActionContractTests(unittest.TestCase):
     def test_new_go_states_must_be_covered(self):
         self.spec["components"]["schemas"]["ConnectorActionEvent"]["properties"]["state"]["enum"].remove("outcome_unknown")
         self.assertTrue(any("states differ from Go constants" in problem for problem in _check_connector_action_contract(self.spec)))
+
+
+class ReviewContractTests(unittest.TestCase):
+    def setUp(self):
+        self.spec = json.loads((Path(__file__).resolve().parents[2] / "spec/openapi-admin.json").read_text())
+
+    def test_scoped_wire_contract_matches_go(self):
+        self.assertEqual(_check_review_contract(self.spec), [])
+
+    def test_missing_scope_or_projection_guard_is_detected(self):
+        schema = self.spec["components"]["schemas"]["ReviewPendingAction"]
+        del schema["properties"]["tenant_id"]
+        schema["additionalProperties"] = True
+        problems = _check_review_contract(self.spec)
+        self.assertTrue(any("fields differ" in p for p in problems))
+        self.assertTrue(any("exclude undeclared" in p for p in problems))
+
+    def test_admin_auth_cannot_be_documented_as_review_auth(self):
+        self.spec["paths"]["/review-api/pending-actions"]["get"]["security"] = [{"BearerAuth": []}]
+        self.assertTrue(any("unscoped authentication" in p for p in _check_review_contract(self.spec)))
+
+    def test_review_cookie_mutation_requires_csrf(self):
+        op = self.spec["paths"]["/review-api/pending-actions/{id}/approve"]["post"]
+        op["security"] = [{"ReviewSessionAuth": []}]
+        self.assertTrue(any("missing CSRF" in p for p in _check_review_contract(self.spec)))
+
+    def test_no_default_open_or_admin_cookie_alias(self):
+        self.spec["components"]["schemas"]["ReviewSessionStatus"]["properties"]["auth_required"]["const"] = False
+        self.spec["components"]["securitySchemes"]["ReviewSessionAuth"]["name"] = "runkite_admin_session"
+        problems = _check_review_contract(self.spec)
+        self.assertTrue(any("default-open" in p for p in problems))
+        self.assertTrue(any("separate cookie" in p for p in problems))
 
 
 if __name__ == "__main__":

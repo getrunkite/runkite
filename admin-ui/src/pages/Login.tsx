@@ -103,6 +103,9 @@ export function Login() {
               {submitting ? "Signing in..." : "Sign in"}
             </Button>
           </form>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Tenant reviewer? <a className="text-primary hover:underline" href="/admin/review/">Open Review</a>.
+          </p>
         </CardContent>
       </Card>
     </div>

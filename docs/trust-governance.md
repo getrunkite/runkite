@@ -147,6 +147,22 @@ decisions only. See the [manual](../site/support/connector-actions.html) and
 [design rationale](internal/connector-action-evidence.md). No secret vault,
 revision-pinned approvals or reliable action-event export is added.
 
+## Scoped human review (unreleased)
+
+Current source after v0.6.1 adds `/review-api` and `/admin/review/` with primary
+`governance:read` / `governance:approve` permissions. Scope comes from a verified
+identity and explicit tenant. Global Admin remains global. Reviewers cannot edit
+policy/grants, mint break-glass or read conversations. Read-only pending replies
+omit arguments; approvers receive the existing redacted display. Free-form
+reason text is excluded. Approval still follows current policy and exact binding;
+it does not execute the tool.
+
+Separate Review sessions have purpose checks, their own cookie/storage namespace,
+CSRF and at most 15 minutes absolute lifetime. There is no anonymous Review mode
+or automatic permission from client read/write. No new user directory, two-person
+review rule, revision pinning or instant IdP revocation is claimed. See
+[Tenant review](../site/support/tenant-review.html).
+
 ## Governance durability (SQL backends)
 
 Connector **enforcement** (static grants, sync webhook, fail-closed Decide) runs on every state backend when `policy` is configured. The **durable governance trail** needs SQL:

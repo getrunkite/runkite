@@ -78,7 +78,8 @@ type Server struct {
 	// adminSessions serves POST/GET/DELETE /admin-api/session for the
 	// Admin UI httpOnly cookie login. nil means those routes 404 (tests
 	// that never call SetAdminSessions); production always sets it.
-	adminSessions *auth.AdminSessionHandlers
+	adminSessions  *auth.AdminSessionHandlers
+	reviewSessions *auth.ReviewSessionHandlers
 
 	// runSpans holds the in-flight OTel span for each run, from createRun
 	// until finishRun closes it out. Process-local on purpose: if the
@@ -208,6 +209,11 @@ func (s *Server) SetAliasResolver(r *AliasResolver) {
 // SetAdminSessions wires Admin UI httpOnly cookie session endpoints.
 func (s *Server) SetAdminSessions(h *auth.AdminSessionHandlers) {
 	s.adminSessions = h
+}
+
+// SetReviewSessions wires the separate tenant review cookie endpoints.
+func (s *Server) SetReviewSessions(h *auth.ReviewSessionHandlers) {
+	s.reviewSessions = h
 }
 
 // SetWSOriginPatterns configures WebSocket Origin checks for
@@ -428,6 +434,17 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /admin-api/session", s.adminSessions.Status)
 		mux.HandleFunc("DELETE /admin-api/session", s.adminSessions.Delete)
 	}
+	if s.reviewSessions != nil {
+		mux.HandleFunc("POST /review-api/session", s.reviewSessions.Create)
+		mux.HandleFunc("GET /review-api/session", s.reviewSessions.Status)
+		mux.HandleFunc("DELETE /review-api/session", s.reviewSessions.Delete)
+	}
+	mux.HandleFunc("GET /review-api/pending-actions", s.handleReviewListPendingActions)
+	mux.HandleFunc("GET /review-api/pending-actions/{id}", s.handleReviewGetPendingAction)
+	mux.HandleFunc("POST /review-api/pending-actions/{id}/approve", s.handleReviewApprovePendingAction)
+	mux.HandleFunc("POST /review-api/pending-actions/{id}/deny", s.handleReviewDenyPendingAction)
+	mux.HandleFunc("GET /review-api/connector-actions", s.handleReviewListConnectorActions)
+	mux.HandleFunc("GET /review-api/connector-actions/{actionID}", s.handleReviewGetConnectorAction)
 	mux.HandleFunc("GET /admin-api/overview", s.handleAdminOverview)
 	mux.HandleFunc("GET /admin-api/agents", s.handleAdminListAgents)
 	mux.HandleFunc("GET /admin-api/agents/{agentID}", s.handleAdminGetAgent)

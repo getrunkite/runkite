@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tenant review · Runkite Docs</title>
+    <meta name="description" content="Give a tenant reviewer approval or read-only evidence access without global Admin privileges." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a class="active" aria-current="page" href="tenant-review.html">Tenant review</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Govern</p>
+        <h1>Tenant review</h1>
+        <p class="lede">Give a reviewer access to their team's operations without making them a deployment-wide administrator.</p>
+        <p class="note"><strong>Availability:</strong> unreleased source after v0.6.1. Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+
+        <h2 id="scope">Start with the right access</h2>
+        <p>Global Admin remains the place for deployment-wide operations. A tenant reviewer uses the separate <code>/admin/review/</code> workspace. Its API takes the tenant from verified authentication, not an editable filter, URL or request header.</p>
+        <ul class="expect">
+          <li><code>governance:read</code>: inspect the tenant's approval metadata and recorded connector actions. Argument displays are omitted.</li>
+          <li><code>governance:approve</code>: includes that read access, shows the existing capped/redacted argument display and permits approval or denial.</li>
+          <li>Neither permission allows policy/grant editing, break-glass, agent dispatch, conversations or another tenant's records.</li>
+        </ul>
+        <p>These roles use the existing primary API-key, JWT or auth-webhook provider. They add no user directory. An identity and explicit tenant are required; set the tenant to <code>default</code> deliberately for a single-tenant deployment. Separate <code>auth.admin_keys</code> continue to serve global Admin and are not Review login credentials.</p>
+
+        <h2 id="configure">Configure a reviewer</h2>
+        <p>Merge these entries into your existing authentication configuration. The strings below are placeholders, not usable deployment credentials. Keep your existing global Admin recovery access and runner authentication.</p>
+        <pre class="mono-block">{
+  "auth": {
+    "type": "api_key",
+    "strict_permissions": true,
+    "keys": {
+      "replace-with-read-only-key": {
+        "name": "review-reader",
+        "tenant_id": "acme",
+        "permissions": ["governance:read"]
+      },
+      "replace-with-approver-key": {
+        "name": "review-approver",
+        "tenant_id": "acme",
+        "permissions": ["governance:approve"]
+      }
+    }
+  }
+}</pre>
+        <p>With JWT or webhook auth, map those permission strings and the actual verified identity/tenant through your existing provider. A missing JWT subject or webhook user identity cannot use a compatibility placeholder to obtain review access. Empty permissions never grant Review, even when compatibility <code>strict_permissions: false</code> is configured.</p>
+        <p class="note"><strong>Upgrade every replica before issuing these permissions.</strong> Old binaries do not implement the boundary and may filter unknown role strings differently. Use strict permissions and activate reviewer grants only after the fleet is upgraded. This slice adds no SQL migration, but the preceding unreleased security migrations and legacy approval fresh-review requirements still apply. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tenant-review-upgrade">upgrade procedure</a>.</p>
+
+        <h2 id="use">Review an operation</h2>
+        <ol class="steps">
+          <li>Open <code>$BASE/admin/review/</code> on your self-hosted plane and sign in with the primary reviewer credential. The credential is exchanged once and is not stored in browser storage.</li>
+          <li>Confirm the displayed identity, tenant and access level. There is no tenant picker that can widen your scope.</li>
+          <li>Open Approvals to inspect an operation. An approver sees the existing redacted argument display; a read-only reviewer sees metadata. Legacy or expired rows require fresh submission/review as described by the approval guide.</li>
+          <li>Approve or deny only when your role allows it. The server enforces that rule even for hand-written HTTP requests. Approval records a decision; the caller still continues the exact operation.</li>
+          <li>Use Evidence for managed connector attempts. A response is not business success. Investigate unknown outcomes in the downstream service before retrying.</li>
+        </ol>
+        <p>Standalone app-owned decisions can appear in Approvals without a managed run. Their operation IDs do not imply a conversation exists. Review offers no conversation endpoint or run-detail navigation. Action evidence requires <code>policy.action_evidence</code> with required audit; approval review can be used independently on existing SQL pending actions.</p>
+
+        <h2 id="sessions">Sessions and sign-out</h2>
+        <p>Review sessions have a fixed maximum lifetime of 15 minutes. Activity does not extend it. Expiry clears the workspace and requires fresh login. Roles are captured at login; changing an IdP grant does not instantly revoke an existing cookie. Logout or fixed expiry ends that session.</p>
+        <p>Review has its own httpOnly cookie, CSRF token and memory/Redis namespace. It cannot be moved into global Admin to gain authority. Admin and Review sessions are independent, including sign-out. A failed logout is shown as unconfirmed so you can restore session storage and retry.</p>
+        <p>Machine clients can send the primary Bearer/API key directly to <code>/review-api</code>. Cookie mutations require the matching CSRF token. Do not combine Bearer authentication and a browser cookie for logout; that request is refused. Bearer-only logout does not revoke the API key or JWT.</p>
+
+        <h2 id="troubleshoot">If access is refused</h2>
+        <ul class="expect">
+          <li><strong>No provider configured:</strong> configure primary authentication. Review has no anonymous local/dev access; global Admin retains its existing local mode.</li>
+          <li><strong>403:</strong> check the explicit identity, tenant, role and CSRF token. Client <code>read</code>, <code>write</code>, agent-run and <code>governance:decide</code> permissions do not grant Review.</li>
+          <li><strong>404:</strong> the requested ID is missing or outside your tenant. Filters and cursors do not confer additional authority.</li>
+          <li><strong>409:</strong> current policy, expiry, status or approval binding prevents approval. A prior approval is not a permanent policy exception.</li>
+          <li><strong>501:</strong> use a SQL state backend, or implement the optional isolated Review-session capability if you supply a custom session store.</li>
+        </ul>
+        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Two-person/no-self-approval rules and revision-pinned tool approvals are not part of this slice.</p>
+
+        <h2 id="reference">API and engineering</h2>
+        <p>Review uses <code>/review-api/session</code>, <code>/review-api/pending-actions</code> (list, detail, approve and deny), and <code>/review-api/connector-actions</code> (list and metadata detail). Lists are bounded to 100 records per page and use <code>X-Next-Cursor</code>. Detail and mutations stay tenant scoped. There is no general Audit, Threads, Runs, grant or secret-management API here.</p>
+        <p><a href="connector-actions.html">Connector action investigation</a> · <a href="grants.html">Approval semantics</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">Engineering rationale and source map</a> · <a href="admin-guide.html">Global Admin guide</a></p>
+
+      </main>
+    </div>
+      <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

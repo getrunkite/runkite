@@ -18,6 +18,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/review-api': {
+        target: 'http://localhost:2026',
+      },
       // Forward /admin-api/* as-is -- the Go server expects that prefix
       // (do NOT strip it; a prior rewrite to "/" made every admin call 404).
       '/admin-api': {

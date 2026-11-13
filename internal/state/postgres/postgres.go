@@ -3166,10 +3166,13 @@ func (s *Store) ExpireGovernancePending(ctx context.Context, now time.Time) erro
 
 // GetPendingAction returns one row by id.
 func (s *Store) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT `+pendingActionSelectCols+`
-		FROM pending_actions WHERE id = $1
-	`, id)
+	query := `SELECT ` + pendingActionSelectCols + ` FROM pending_actions WHERE id = $1`
+	args := []any{id}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = $2"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.pool.QueryRow(ctx, query, args...)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -3255,10 +3258,14 @@ func (s *Store) SearchPendingActions(ctx context.Context, req *models.PendingAct
 // SetPendingActionStatus updates status if the row is still in fromStatus
 // (optimistic). Returns ErrConflict if the row moved on.
 func (s *Store) SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE pending_actions SET status = $1, updated_at = $2, pending_key = NULL
-		WHERE id = $3 AND status = $4
-	`, toStatus, time.Now().UTC(), id, fromStatus)
+	query := `UPDATE pending_actions SET status = $1, updated_at = $2, pending_key = NULL
+		WHERE id = $3 AND status = $4`
+	args := []any{toStatus, time.Now().UTC(), id, fromStatus}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = $5"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -3305,14 +3312,19 @@ func (s *Store) findOpenPendingAction(ctx context.Context, tenantID, agentID, ru
 // SetPendingActionApproved moves pending → approved and records who decided.
 func (s *Store) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
 	now := time.Now().UTC()
-	tag, err := s.pool.Exec(ctx, `
+	query := `
 		UPDATE pending_actions SET status = $1, decided_by = $2, updated_at = $3, pending_key = NULL
 		WHERE id = $4 AND status = $5 AND (expires_at IS NULL OR expires_at > $3) AND (
             expires_at IS NOT NULL
             OR EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id AND r.agent_id=pending_actions.agent_id AND r.incarnation_id=pending_actions.run_incarnation_id AND r.incarnation_id<>'')
             OR (run_incarnation_id='' AND NOT EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id))
-        )
-	`, models.PendingStatusApproved, decidedBy, now, id, models.PendingStatusPending)
+        )`
+	args := []any{models.PendingStatusApproved, decidedBy, now, id, models.PendingStatusPending}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = $6"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}

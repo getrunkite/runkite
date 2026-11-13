@@ -45,6 +45,13 @@ func WithContext(ctx context.Context, tenantID string) context.Context {
 	return context.WithValue(ctx, contextKey{}, tenantID)
 }
 
+// ScopedContext sets an exact caller scope and masks any inherited internal
+// system authority. Callers must verify a nonempty tenant before using it.
+func ScopedContext(ctx context.Context, tenantID string) context.Context {
+	ctx = context.WithValue(ctx, systemKey{}, false)
+	return context.WithValue(ctx, contextKey{}, tenantID)
+}
+
 // SystemContext marks ctx as a trusted, internal, control-plane-driven
 // operation that must see across every tenant rather than being filtered
 // to one -- NOT a caller-facing concept, and never derived from anything a

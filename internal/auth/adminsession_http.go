@@ -81,6 +81,10 @@ func (h *AdminSessionHandlers) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess := h.Store.Get(SessionIDFromRequest(r)); sess != nil {
+		if (sess.Purpose != "" && sess.Purpose != SessionPurposeAdmin) || !authorizedAdmin(&sess.Result, h.Strict) {
+			writeJSON(w, http.StatusOK, map[string]any{"authenticated": false, "auth_required": true})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"authenticated": true,
 			"auth_required": true,

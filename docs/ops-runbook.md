@@ -62,6 +62,34 @@ change historical payloads. Before resuming sensitive retained conversations,
 compare the selected checkpoint with current thread state and repair any known
 mismatch explicitly.
 
+## Tenant review upgrade
+
+This slice is unreleased source after v0.6.1 and adds no SQL migration. Complete
+the preceding security migrations first when upgrading from a released binary.
+Deploy matching new binaries to every serving replica before issuing
+`governance:read` / `governance:approve` grants. Old JWT permission filtering does
+not understand these strings. Do not rely on mixed-version/default-open behavior
+for reviewer isolation. Use `strict_permissions: true` and explicit primary
+identity/tenant mapping, then grant the minimum role required. Keep a working
+global Admin credential for bootstrap and lockout recovery.
+
+Review uses its own `runkite_review_session` cookie and `rk:review:sess:` Redis
+namespace. Admin sessions and keys retain their existing behavior. Review role
+snapshots expire absolutely after at most 15 minutes regardless of activity;
+IdP grant changes do not instantly revoke an existing cookie. Logout confirms
+store deletion or reports an unconfirmed failure. Independent Admin and Review
+sessions have independent logout. A custom session store must implement the
+optional isolated Review-session creation capability; unsupported stores refuse
+Review login rather than reuse Admin authority.
+
+Verify two differently scoped synthetic users before granting operational access:
+readers cannot mutate, approvers cannot reach another tenant, and both remain
+outside global Admin/conversation routes. No-provider/default-open Review must
+remain denied. The [operator guide](../site/support/tenant-review.html) covers
+login, fixed expiry, 403/404/409/501 and recovery. The
+[engineering note](internal/tenant-scoped-review.md) records scope, session
+purpose, SQL predicates and regression rationale.
+
 ## Hardening upgrade
 
 **MySQL operators:** state schema version 17 changes identity/security columns to

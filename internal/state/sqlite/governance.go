@@ -492,9 +492,13 @@ func (s *SQLiteStore) ExpireGovernancePending(ctx context.Context, now time.Time
 
 // GetPendingAction returns one row by id.
 func (s *SQLiteStore) GetPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT `+pendingActionSelectCols+`
-		FROM pending_actions WHERE id = ?`, id)
+	query := `SELECT ` + pendingActionSelectCols + ` FROM pending_actions WHERE id = ?`
+	args := []any{id}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = ?"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -572,10 +576,14 @@ func (s *SQLiteStore) SearchPendingActions(ctx context.Context, req *models.Pend
 
 // SetPendingActionStatus updates status if still in fromStatus.
 func (s *SQLiteStore) SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error {
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE pending_actions SET status = ?, updated_at = ?, pending_key = NULL
-		WHERE id = ? AND status = ?`,
-		toStatus, formatTS(time.Now().UTC()), id, fromStatus)
+	query := `UPDATE pending_actions SET status = ?, updated_at = ?, pending_key = NULL
+		WHERE id = ? AND status = ?`
+	args := []any{toStatus, formatTS(time.Now().UTC()), id, fromStatus}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = ?"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	res, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -621,14 +629,19 @@ func (s *SQLiteStore) findOpenPendingAction(ctx context.Context, tenantID, agent
 
 func (s *SQLiteStore) SetPendingActionApproved(ctx context.Context, id, decidedBy string) error {
 	now := time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `
+	query := `
 		UPDATE pending_actions SET status = ?, decided_by = ?, updated_at = ?, pending_key = NULL
 		WHERE id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?) AND (
             expires_at IS NOT NULL
             OR EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id AND r.agent_id=pending_actions.agent_id AND r.incarnation_id=pending_actions.run_incarnation_id AND r.incarnation_id<>'')
             OR (run_incarnation_id='' AND NOT EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id))
-        )`,
-		models.PendingStatusApproved, decidedBy, formatTS(now), id, models.PendingStatusPending, formatExpiry(&now))
+        )`
+	args := []any{models.PendingStatusApproved, decidedBy, formatTS(now), id, models.PendingStatusPending, formatExpiry(&now)}
+	if !tenant.IsSystem(ctx) {
+		query += " AND tenant_id = ?"
+		args = append(args, tenant.FromContext(ctx))
+	}
+	res, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}

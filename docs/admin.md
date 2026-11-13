@@ -97,6 +97,21 @@ Manual dead-letter replay uses indexed ID lookup on built-in stores, including
 records older than the latest 1,000. Replay refuses redirects, succeeds only on
 2xx and remains unsigned. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 
+## Tenant Review workspace (unreleased)
+
+`/admin/review/` is a separate authenticated-tenant workspace. Primary identities
+with `governance:read` can inspect scoped approval metadata and connector action
+evidence. `governance:approve` adds the redacted argument display and approve/deny.
+It grants no conversation, policy, grant or break-glass access. Global Admin and
+its login remain deployment-wide and unchanged; `auth.admin_keys` is not a Review
+credential. Each workspace has its own cookie, CSRF, storage namespace and logout.
+Review sessions expire absolutely after at most 15 minutes.
+
+The separate `/review-api` provides session bootstrap, pending-action list/detail/
+approve/deny and connector-action list/detail. It never derives scope from an
+editable tenant filter. SQL is required for durable approval/evidence operations.
+See [Tenant review](../site/support/tenant-review.html) for setup and rollout.
+
 ## Managed runs and in-process decisions
 
 Threads, Runs and Try agent show executions Runkite creates and dispatches to a

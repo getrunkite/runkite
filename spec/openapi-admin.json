@@ -3,7 +3,7 @@
   "info": {
     "title": "Runkite Admin API",
     "version": "0.1.0",
-    "description": "Cross-tenant administrative API for the Runkite control plane. Requires admin permission.",
+    "description": "Cross-tenant administrative API for the Runkite control plane. Requires admin permission. The separate /review-api surface requires primary authentication, an explicit identity and tenant, and governance:read or governance:approve. It never grants global Admin or conversation access. Unreleased source after v0.6.1.",
     "license": {
       "name": "Apache License, Version 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
@@ -13,6 +13,10 @@
     {
       "name": "Admin",
       "description": "Administrative endpoints for managing the Runkite deployment."
+    },
+    {
+      "name": "Review",
+      "description": "Authenticated-tenant approval and metadata evidence."
     }
   ],
   "security": [
@@ -41,6 +45,29 @@
         "in": "cookie",
         "name": "runkite_admin_session",
         "description": "Existing httpOnly Admin session. These read-only endpoints do not require a CSRF header."
+      },
+      "ReviewBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Primary API key or JWT with explicit identity/tenant and governance:read or governance:approve. auth.admin_keys is not accepted."
+      },
+      "ReviewApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Primary API key with scoped review permission; no empty-permission fallback."
+      },
+      "ReviewSessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "runkite_review_session",
+        "description": "Separate httpOnly tenant Review cookie, at most 15 minutes absolute lifetime. Never an Admin session."
+      },
+      "ReviewCSRF": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "Required with cookie authentication on review mutations."
       }
     },
     "schemas": {
@@ -1249,6 +1276,162 @@
           "has_overlay"
         ],
         "title": "AdminFinOpsView"
+      },
+      "ReviewSessionStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_required": {
+            "type": "boolean",
+            "const": true
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "identity": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "can_read": {
+            "type": "boolean"
+          },
+          "can_approve": {
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Absolute cookie-session expiry; null when unauthenticated or inspecting a bearer credential."
+          }
+        },
+        "required": [
+          "authenticated",
+          "auth_required",
+          "configured",
+          "identity",
+          "tenant_id",
+          "can_read",
+          "can_approve",
+          "csrf_token",
+          "expires_at"
+        ]
+      },
+      "ReviewPendingAction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
+          },
+          "run_incarnation_id": {
+            "type": "string",
+            "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "connector": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending | approved | denied | consumed"
+          },
+          "args_digest": {
+            "type": "string",
+            "description": "SHA-256 binding of the exact validated tool arguments. Legacy rows without a trusted digest binding cannot authorize execution and require fresh submission and review."
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Size-capped, secret-stripped display map persisted for the approver. Not the raw blob."
+          },
+          "decided_by": {
+            "type": "string",
+            "description": "Admin identity that approved, when request auth carries one."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present for standalone decision approvals, which use a separate namespace and do not create a managed run. Absent for managed connector approvals."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "title": "PendingAction",
+        "additionalProperties": false,
+        "description": "Scoped approval metadata. Free-form reason is excluded. Only an approver receives the existing capped/redacted args display. Read-only evidence permission receives no args.",
+        "required": [
+          "id",
+          "run_id",
+          "generation",
+          "tenant_id",
+          "agent_id",
+          "connector",
+          "tool",
+          "status",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ReviewConnectorActionDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "events"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ConnectorAction"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorActionEvent"
+            }
+          },
+          "events_truncated": {
+            "type": "boolean"
+          }
+        },
+        "description": "Metadata only. No conversation payload or privileged run-navigation capability. At most 200 ordered events, with explicit truncation."
       }
     }
   },
@@ -4885,6 +5068,691 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/review-api/pending-actions": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_list_pending_actions",
+        "summary": "List own tenant's pending-actions",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewPendingAction"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Next-Cursor": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present only when a lookahead row establishes another page."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "Opaque X-Next-Cursor value; mutually exclusive with offset."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/review-api/connector-actions": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_list_connector_actions",
+        "summary": "List own tenant's connector-actions",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectorAction"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Next-Cursor": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present only when a lookahead row establishes another page."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "Opaque X-Next-Cursor value; mutually exclusive with offset."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/review-api/pending-actions/{id}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_get_pending_action",
+        "summary": "Read an own-tenant approval",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPendingAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "description": "Opaque pending approval ID, not a connector action ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          }
+        ]
+      }
+    },
+    "/review-api/pending-actions/{id}/approve": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_approve_pending_action",
+        "summary": "Approve an own-tenant pending action",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": [],
+            "ReviewCSRF": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPendingAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "description": "Opaque pending approval ID, not a connector action ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          }
+        ]
+      }
+    },
+    "/review-api/pending-actions/{id}/deny": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_deny_pending_action",
+        "summary": "Deny an own-tenant pending action",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": [],
+            "ReviewCSRF": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPendingAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "description": "Opaque pending approval ID, not a connector action ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          }
+        ]
+      }
+    },
+    "/review-api/connector-actions/{action_id}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_get_connector_action",
+        "summary": "Read own-tenant action metadata and events",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewConnectorActionDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "description": "Connector action UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id",
+              "format": "uuid"
+            },
+            "name": "action_id",
+            "in": "path"
+          }
+        ]
+      }
+    },
+    "/review-api/session": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_session_status",
+        "summary": "Inspect Review session or optional primary bearer",
+        "description": "Public bootstrap returns authenticated=false without a valid Review cookie. No provider reports configured=false. Optional bearer inspection authenticates only through the primary provider. Never exposes forwarded claims or credentials.",
+        "security": [
+          {},
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSessionStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_create_session",
+        "summary": "Create a separate tenant Review session",
+        "description": "Exchange a primary credential for attenuated Review authority. Body credential or Authorization/X-API-Key is accepted. Explicit identity, tenant and review permission are mandatory even when strict_permissions is false. Separate cookie/storage namespace, fixed absolute expiry at most 15 minutes. No provider fails closed.",
+        "security": [
+          {},
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSessionStatus"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "runkite_review_session; Path=/review-api; HttpOnly; SameSite=Lax; Secure under HTTPS."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          },
+          "429": {
+            "description": "Shared login rate limit exceeded."
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credential": {
+                    "type": "string",
+                    "writeOnly": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_delete_session",
+        "summary": "Revoke the current Review browser session",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Cookie logout needs CSRF. Mixed bearer plus browser cookie is rejected rather than falsely confirming browser revocation. Failed store deletion returns503 and leaves logout unconfirmed.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": [],
+            "ReviewCSRF": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          },
+          "204": {
+            "description": "Review cookie session revoked; bearer-only requests with no cookie are a no-op and do not revoke the API key/JWT."
           }
         }
       }

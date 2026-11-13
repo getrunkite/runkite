@@ -16,4 +16,5 @@ func TestPendingSecurityConformance(t *testing.T) {
 		t.Fatal(err)
 	}
 	conformance.RunPendingSecurity(t, s)
+	conformance.RunPendingTenantScope(t, s)
 }

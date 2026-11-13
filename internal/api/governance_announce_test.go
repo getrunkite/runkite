@@ -259,9 +259,9 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 			t.Fatal("missing action_id")
 		}
 		t.Cleanup(func() {
-			_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusApproved, models.PendingStatusDenied)
-			_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusPending, models.PendingStatusDenied)
-			_ = store.SetPendingActionStatus(context.Background(), actionID, models.PendingStatusConsumed, models.PendingStatusDenied)
+			_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusApproved, models.PendingStatusDenied)
+			_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusPending, models.PendingStatusDenied)
+			_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), actionID, models.PendingStatusConsumed, models.PendingStatusDenied)
 		})
 
 		appr, err := http.Post(adminURL+"/admin-api/pending-actions/"+actionID+"/approve", "application/json", nil)
@@ -285,7 +285,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 		} else if st2 != http.StatusBadGateway {
 			t.Fatalf("approved retry: want passthrough (502 from dead MCP ok), got %d %s", st2, b2)
 		}
-		got, err := store.GetPendingAction(ctx, actionID)
+		got, err := store.GetPendingAction(tenant.WithContext(ctx, binding.TenantID), actionID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,7 +306,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 			t.Fatalf("third call should allocate new action_id, got %q (old %q)", newID, actionID)
 		}
 		t.Cleanup(func() {
-			_ = store.SetPendingActionStatus(context.Background(), newID, models.PendingStatusPending, models.PendingStatusDenied)
+			_ = store.SetPendingActionStatus(tenant.WithContext(context.Background(), binding.TenantID), newID, models.PendingStatusPending, models.PendingStatusDenied)
 		})
 	})
 }
