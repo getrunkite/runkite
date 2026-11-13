@@ -192,8 +192,10 @@ success. A late response remains on the original generation. SQL persistence
 retries never replay a tool. Actions survive run pruning and have independent,
 opt-in resolved-record retention. Required audit by itself continues to record
 decisions only. See the [manual](../site/support/connector-actions.html) and
-[design rationale](internal/connector-action-evidence.md). No secret vault,
-revision-pinned approvals or reliable action-event export is added.
+[design rationale](internal/connector-action-evidence.md). Managed approvals now
+bind the [configured target revision](internal/target-bound-approvals.md). This
+does not pin the upstream tool schema, implementation or policy revision. No
+secret vault or reliable action-event export is added.
 
 ## Scoped human review (unreleased)
 
@@ -207,9 +209,10 @@ it does not execute the tool.
 
 Separate Review sessions have purpose checks, their own cookie/storage namespace,
 CSRF and at most 15 minutes absolute lifetime. There is no anonymous Review mode
-or automatic permission from client read/write. No new user directory, two-person
-review rule, revision pinning or instant IdP revocation is claimed. See
-[Tenant review](../site/support/tenant-review.html).
+or automatic permission from client read/write. Configured target revisions apply
+to managed approvals on both Review and Admin. No new user directory, two-person
+review rule, upstream tool/policy revision pinning or instant IdP revocation is
+claimed. See [Tenant review](../site/support/tenant-review.html).
 
 ## Governance durability (SQL backends)
 

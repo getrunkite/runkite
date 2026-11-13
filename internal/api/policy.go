@@ -225,9 +225,9 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// tryConsumePendingCapability burns one approved pending_action for this
-// tools/call when the argument digest matches. Returns true when the call
-// should proceed without Decide.
+// tryConsumePendingCapability consumes one exact approved managed capability.
+// The caller must already have evaluated current policy and refused explicit
+// deny or required-audit failure. This helper does not bypass Decide.
 func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest, targetRevision string) bool {
 	if !models.ValidConnectorTargetRevision(targetRevision) {
 		return false

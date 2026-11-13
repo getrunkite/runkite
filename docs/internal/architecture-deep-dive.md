@@ -1386,15 +1386,15 @@ The original study described framework interrupts and connector approvals. Curre
 5. The control plane does NOT pause the LangGraph graph. It simply returns an error to the MCP call: `{"error": {"code": -32000, "data": {"reason_code": "policy_pending", "action_id": "act_abc123"}}}`.
 6. For pending, the control plane writes a row to `pending_actions` on a SQL backend (Postgres, MySQL or SQLite). A plain deny does not create a pending row; inspect its policy audit instead.
 7. The control plane optionally publishes a `tool_auth` event on the run's SSE stream so dashboards/UIs can show "waiting for approval."
-8. An ADMINISTRATOR opens the Admin UI (`/admin/pending`), sees the pending action, reviews it, and clicks "Approve."
-9. On approve, the control plane re-checks policy and refuses a hard deny. Otherwise it records approval bound to `(tenant_id, agent_id, run_id, generation, connector, tool, args_digest)`. The digest covers the submitted arguments; the Args display map is capped and redacted for operator review, and is used for approval-time policy re-evaluation.
+8. An authorized global administrator or tenant approver opens Admin (`/admin/pending`) or Review (`/admin/review/pending`), inspects the pending operation and chooses Approve.
+9. Admin or tenant Review rechecks current policy and refuses hard deny or failed required audit. Managed approval binds tenant, agent, original run incarnation, run ID, generation, connector, tool, exact argument digest and configured target revision. The capped/redacted Args display supports review and approval-time policy re-evaluation; it does not replace the original digest. Missing historical bindings or changed targets require fresh review.
 10. The caller must retry the same `tools/call` while the original run and generation are still in flight. A matching retry consumes the one-shot capability and forwards the call. Admin does not invoke the tool or resume the framework. If that run has ended, a new run cannot consume its approval.
 11. If the agent calls the same tool a third time, there is no capability remaining, and it goes back to pending/deny.
 
 **Key characteristics:**
 
 - The PLATFORM decides to block (based on policy rules)
-- An ADMINISTRATOR approves (via Admin UI, not the end user)
+- An authorized operator approves through Admin or tenant Review. Chat users do not receive review permissions automatically.
 - The agent framework does NOT pause or enter an interrupt state — it simply gets an error on the tool call
 - The caller owns waiting and retrying under its active binding. An agent may instead report the hold and end, as `pending_agent` does; approving that row does not continue its completed run.
 - Requires SQL backends (Postgres/MySQL/SQLite) for the pending_actions table — MongoDB cannot store these and fails closed to deny
@@ -1425,7 +1425,7 @@ The pending record identifies an operator decision. It does not establish that t
 
 ## What governance means in Runkite
 
-Governance is the control plane deciding: who is allowed to do what, keeping a permanent record of every decision, and giving administrators emergency controls when things go wrong.
+Governance decides who can use the plane's protected resources and supplies approval, audit and emergency controls. Durable policy history depends on SQL audit configuration and retention; required audit gives stronger enforcement than best-effort delivery.
 
 It is NOT:
 
@@ -1447,18 +1447,42 @@ It IS:
 
 ## How the policy engine works (Decide)
 
-Every time something security-relevant happens — a run is created, a connector session is minted, a tool is called — the control plane calls `Engine.Decide()` internally. This function evaluates multiple layers and returns one of three answers: **allow**, **deny**, or **pending**.
+When policy is enabled, the plane evaluates run creation, connector sessions and
+proxied tool calls at their respective gates. It does not observe every native
+SDK tool automatically. `Engine.Decide` returns **allow**, **deny** or **pending**.
 
-The evaluation layers, in order:
+For connector decisions, `internal/policy/policy.go:decide` combines these layers:
 
-1. **Break-glass check:** If there is an active break-glass window, skip everything and allow. But audit MUST still be written — if the audit write fails, break-glass fails closed (you cannot bypass silently).
-2. **Static grants (from config file):** The `langgraph.json` configuration can contain grants like "tenant acme, agent sales-bot, can use connector salesforce, tools: allow [query, getRecord], deny [updateRecord]". These are immutable at runtime.
-3. **SQL overlay grants (from Admin UI):** Administrators can create additional grants via the Admin UI that are stored in Postgres. These override/supplement the static grants. This is how you manage permissions without redeploying.
-4. **Sync webhook (your PDP):** If configured, Runkite sends the decision context to YOUR external policy decision point — an HTTP endpoint you control. This could be OPA (Open Policy Agent), Cedar, your own ABAC system, or anything that speaks HTTP. The webhook receives: what is being requested (stage, tenant, agent, connector, tool) and returns allow/deny/pending. If the webhook times out or returns an error, the decision is **deny** (fail-closed).
-5. **Mandatory HITL rules:** Even if everything above says "allow," a mandatory HITL rule can force it to "pending." This is defense-in-depth: even if your webhook PDP is compromised and says "allow everything," mandatory HITL still blocks dangerous operations.
-6. **Default effect:** If nothing matches and no webhook is configured, the default_effect setting decides (usually deny in production = fail-closed).
+1. **Merged grants:** config grants and SQL Admin overlays form one static layer.
+   Overlays win on the same tenant/agent/connector key. An explicit static deny
+   can finish evaluation before a webhook. A missing grant follows the configured
+   default/webhook rules; it is not an unconditional allow.
+2. **Argument predicates:** config-only rules can deny or hold the exact validated
+   tool arguments. They do not introduce allow authority.
+3. **Synchronous webhook:** a configured external PDP returns allow/deny/pending.
+   Its transport failure follows `fail_closed`, which defaults to true. An
+   operator can explicitly configure fail-open, so it is not a universal guarantee.
+4. **Default effect:** the configured default fills cases not decided by a grant
+   or webhook. It is part of evaluation, not a later override of an explicit deny.
+5. **Mandatory HITL:** `applyMandatoryHITL` can turn an allow into pending. An
+   existing deny remains a deny. Policy cache hits still pass through this rule.
+6. **Audit:** every `Decide` call attempts the configured auditor, including cache
+   hits. With `policy.audit_required: true`, missing or failed durable audit marks
+   the decision as failed and refuses protected allow/pending authority. The
+   default best-effort audit mode logs a write failure without this guarantee.
 
+Exceptional authorization lives in the API layer. A matching one-shot approval
+can satisfy another pending decision, but cannot override a current explicit deny
+or required-audit failure. Break-glass has its own mandatory audit. In required
+mode the original policy decision is evaluated and persisted before considering
+that exception; in best-effort mode a successfully audited break-glass use can
+skip normal Decide. See `internal/api/policy.go:checkConnectorPolicyEvaluation`
+and the detailed managed-call flow below.
 
+Current source after v0.6.1 also adds target-bound managed approvals and opt-in
+connector action evidence. Published v0.6.1 does not implement these additions.
+See [target-bound approvals](target-bound-approvals.md) and
+[connector action evidence](connector-action-evidence.md) for the exact contracts.
 
 ## How the control plane knows which tool is being called
 
@@ -1478,11 +1502,16 @@ A kill switch is an emergency stop for a tenant, an agent, or a tenant+agent com
 - All NEW run creates for that scope are immediately refused (403).
 - Optionally (non-pause mode): all EXISTING pending/running runs in that scope are drained (cancelled in batches with pagination — a bug fix from an earlier version that silently stopped after 200 runs).
 
-Use case: you discover an agent is misbehaving, calling APIs it should not, spending money uncontrollably. You activate the kill switch. Everything stops. You investigate, fix the problem, then deactivate.
+Use case: an agent is misbehaving or spending unexpectedly. Activate the scoped kill to refuse new admissions and, when configured, drain existing managed runs. Already dispatched external effects can still complete; inspect those separately before retrying or restoring traffic.
 
 ## Break-glass
 
-Break-glass is a time-bounded emergency bypass of the policy engine. Maximum duration: 24 hours. While active, `Decide` is skipped — connector calls and run creates proceed without policy evaluation.
+Break-glass is a time-bounded policy exception, with a maximum duration of 24
+hours. Its use requires its own successful durable audit. In best-effort audit
+mode that use can skip normal Decide. With `policy.audit_required: true`, the
+original policy decision is evaluated and audited first; its audit failure
+refuses exceptional authority. Authentication, connector filters and independent
+admission controls still apply.
 
 Use case: your policy webhook (OPA server) is down. All connector calls are being denied because webhook timeout = deny (fail-closed). Production is broken. You mint a break-glass window for 2 hours. During those 2 hours, policy is bypassed. You fix your OPA server. After the window expires (or you manually close it), policy enforcement resumes.
 
@@ -1501,7 +1530,7 @@ There is a sentence in the docs that confuses people: "Connector Decide can run 
 
 What this means:
 
-- **The evaluation** (should this tool call be allowed?) works on ALL backends, including MongoDB. It is just CPU work: compare grants, call webhook, check mandatory rules. No database writes needed for the hot-path decision.
+- **Enforcement-only evaluation** can use config grants, argument predicates and a webhook on any backend, including MongoDB. Required audit and action evidence add SQL durability requirements; they cannot be enabled on a backend that lacks those interfaces.
 - **The durable record** of those decisions needs SQL tables. Audit events, admin-created grants, pending actions, kill switches, break-glass windows, mandatory HITL rules — these are all SQL tables implemented for Postgres, MySQL, and SQLite.
 - **MongoDB cannot store governance data.** On Mongo: audit writes are skipped (no durable trail), Admin governance routes return 501 (not implemented), pending actions cannot be persisted (so pending decisions fail closed to deny).
 - **Therefore:** when we publicly claim features like "audit search, connector HITL, kill switches, break-glass," those claims are honest only for SQL backends. Mongo can enforce allow/deny from config grants, but it is NOT a complete governance story.
@@ -1554,37 +1583,84 @@ The answer is **run-binding** (`internal/auth/runbind.go`). On these sensitive p
 3. Derives tenant_id, agent_id, and user context FROM the assignment (which was written by the trusted createRunCtx path)
 4. Ignores any `X-Runkite-Tenant-Id` header the runner sends
 
-This means: even if a runner process is compromised and sends forged tenant headers, the control plane uses the assignment truth, not the runner's claim. The runner cannot escalate to another tenant's privileges.
+This means: even if a runner process is compromised and sends forged tenant headers, the control plane uses the assignment truth, not the runner's claim. The authenticated kind and tenant allowlist constrain which assignments a runner can present. This does not establish a separate per-process workload identity.
 
-## The complete gate-by-gate walkthrough: one tool call through all security layers
+## The managed tool-call flow through the security layers
 
-All the security features described across Chapters 11, 12, and elsewhere converge on ONE code path. Here is every gate a single `tools/call` passes through, in order, with the exact code file.
+**Example:** Agent `finance_bot` in tenant `acme` calls `transfer_funds` through
+connector `bank`. This is the managed MCP proxy path. Standalone app-owned
+`/governance/decide` and native tools that never use this proxy have different
+boundaries. The ordinary and exceptional authorization branches are described
+explicitly below rather than treating them as a single unconditional sequence.
 
-**Example:** Agent `finance_bot` (tenant `acme`) calls `transfer_funds` on the `bank` connector.
+**1. Runner authentication and run binding.** gRPC uses the bridge interceptors;
+HTTP internal calls also authenticate the configured runner kind/token. On
+run-bound proxy routes, `internal/auth/runbind.go:bindInternalRun` checks the
+current assignment, exact generation, authenticated kind and allowed tenant. It
+derives tenant, agent, thread and user from that assignment. A caller-supplied
+run ID is a lookup key, not proof of authority. Tokens scoped to the same allowed
+kind/tenant are not separate per-process workload identities.
 
-**Gate 0 — Runner authentication** (`internal/bridge/interceptors.go`). Before any of this, the runner authenticated its gRPC connection using `RUNNER_TOKEN_PYTHON_LANGGRAPH` from env vars. If this failed, the runner can't even call GetJob. Configured via environment variables on the CP.
+**2. Connector capability.** `requireConnectorSession` requires a valid
+`X-Runkite-Connector-Session` capability for this connector, run and generation.
+Its absolute default lifetime is 15 minutes. It does not replace run binding or
+policy evaluation, and the managed MCP capability does not expose raw credentials.
 
-**Gate 1 — Run-binding** (`internal/auth/runbind.go`). HTTP middleware on all `/internal/*` routes. The runner sends `X-Runkite-Run-Id` and `X-Runkite-Generation` headers. The CP looks up the inflight assignment in Redis and derives `tenant_id=acme`, `agent_id=finance_bot`, `user=user_alice` from the ASSIGNMENT — ignoring any identity headers the runner sends. This is automatic, no configuration needed.
+**3. One parse and one target snapshot.** `handleProxyMCPRequest` strictly parses
+the JSON-RPC envelope once. Protocol-key ambiguity is rejected, and the same
+validated body is forwarded. A managed `tools/call` binds the configured MCP
+target using `Registry.BindMCPRequestTarget` before policy or approval lookup.
+`policy.BindArgsStrict` binds the exact validated argument object; the redacted
+operator display is not the original argument payload. Plane-served payload
+retrieval uses its own run/generation-bound authorization.
 
-**Gate 2 — Connector session** (`internal/api/server.go`, `requireConnectorSession`). The runner must present a valid `X-Runkite-Connector-Session` token. The CP verifies: token exists, not expired (15min TTL), was minted for THIS connector AND this run_id AND this generation. Prevents stolen tokens from being reused across runs.
+**4. Current policy and audit.** The merged grants, predicates, configured
+webhook and mandatory HITL produce the current decision. Required audit must
+succeed before any protected allow, pending or exceptional authority can proceed.
+Best-effort audit has a weaker delivery guarantee. Other MCP methods skip tool
+policy after session authentication; `tools/list` still uses the connector's
+static tool filter.
 
-**Gate 3 — Extract tool name** (`internal/api/server.go`). The CP parses the JSON-RPC body: `{"method": "tools/call", "params": {"name": "transfer_funds"}}`. Now it has the complete tuple: `(acme, finance_bot, bank, transfer_funds)`. Policy only fires for `tools/call` — read-only methods like `tools/list` skip it.
+**5. Audited break-glass, when configured.**
+`checkConnectorPolicyEvaluation` can authorize a matching emergency window only
+when its use is durably audited. In required-audit mode this follows the original
+policy decision; a failed required write cannot become a bypass. In best-effort
+mode a successful break-glass audit can preempt normal Decide. Break-glass does
+not remove runner/session authentication, static connector filters, run admission
+controls or the target snapshot.
 
-**Gate 4 — One-shot capability** (`internal/api/policy.go`, `tryConsumePendingCapability`). Was this exact `(run_id, generation, connector, tool, args_digest)` already approved by an admin? If YES: consume the capability (delete it from Postgres so it can't be reused), skip all remaining policy gates, forward directly to the upstream bank API. A retry with a different amount does not match. This is how "retry after admin approval" works.
+**6. A matching approved capability, when policy permits it.** A normal retry
+still evaluates current policy. A matching approval can satisfy pending; it
+cannot override explicit deny or failed required audit. The managed SQL tuple
+includes tenant, agent, original run incarnation, run ID, generation, connector,
+tool, exact argument digest and configured target revision. A mismatch cannot
+consume another operation's capability. Consumption changes the retained row to
+`consumed`; it does not delete the approval history. Historical unbound rows
+require fresh review. Admin and tenant Review use the same approval checks.
 
-**Gate 5 — Break-glass** (`internal/api/break_glass.go`, `tryBreakGlassBypass`). Is there an active break-glass window for tenant `acme`? If YES: attempt to write an audit record first. If the audit write succeeds, allow the call (skip grants, webhook, mandatory HITL). If the audit write fails, the bypass itself is REFUSED — you cannot use break-glass silently. Configured via Admin UI `/admin/break-glass`.
+**7. Protected dispatch.** The proxy applies its static tool filter, prepares
+credentials and sends through the pinned endpoint/transport/auth configuration.
+Values at the same `secret_ref` can rotate without changing target identity.
+With `policy.action_evidence: true`, SQL dispatch preparation atomically consumes
+approved authority with the intent and timeline event after checking the live
+assignment and durable attempt. A failed prepare prevents the protected send.
+With capture off, legacy approval consumption is still target-bound, but it does
+not acquire this action-intent transaction or timeline. Neither path makes an
+external business effect atomic with SQL.
 
-**Gate 6 — Static grants** (`internal/policy/static.go`, `decide`). Search the merged grant list for `(tenant=acme, agent=finance_bot, connector=bank)`. If found, check the tool filter: is `transfer_funds` in the deny list? (Blocked.) Is it in the allow list? (Allowed.) No filter? (All tools allowed.) No matching grant at all? (`policy_no_grant` → denied, unless `default_effect` is allow). Configured in `langgraph.json` `policy.grants` AND Admin UI `/admin/grants` (Postgres overlays that win over config on the same key).
+**8. Observation and continuation.** A denied or held call returns a JSON-RPC
+error; a held managed call persists a pending row and publishes a best-effort
+`tool_auth` event. Approval does not itself execute the tool or resume the SDK.
+When action recording is enabled, intent, observed response and unknown outcome
+remain distinct. A response is not proof of business success, and an error after
+dispatch does not prove a write is safe to repeat.
 
-**Gate 7 — Webhook PDP** (`internal/policy/webhook.go`, `Decide`). If configured, the CP POSTs a JSON payload to your external policy server (OPA, Cedar, custom Flask app — anything that speaks HTTP). Your server responds with `{"effect": "allow"}`, `{"effect": "deny"}`, or `{"effect": "pending"}`. If the webhook times out or errors: **deny** (fail-closed by default). Configured in `langgraph.json` `policy.webhook`.
-
-**Gate 8 — Mandatory HITL** (`internal/policy/policy.go`, `applyMandatoryHITL`). Even if the webhook said allow, this gate can override it to pending. If a mandatory rule matches `(acme, bank, transfer_funds)`, the allow is forced to pending. This exists so a compromised PDP that allows everything is still blocked on critical tools. Configured in `langgraph.json` `policy.mandatory_hitl` AND Admin UI `/admin/mandatory-hitl`.
-
-**Gate 9 — Audit** (`internal/policy/policy.go`). Every decision (allow, deny, pending) writes a permanent record to the `audit_events` table in Postgres. This is not a blocking gate for normal decisions, but it is for break-glass (break-glass fails if audit can't be written).
-
-**Final outcome:** ALLOW → forward to the real bank API, inject real credentials, return result. DENY → return JSON-RPC error to the runner. PENDING → persist a `pending_actions` row in Postgres, emit a `tool_auth` SSE event so dashboards can show "waiting for approval", return JSON-RPC error to the runner.
-
-**Important:** Kill switches are NOT in this tool-call path. They block run CREATION (in `createRunCtx` step 3d). By the time a tool call is happening, the run already passed the kill switch check at creation time.
+Kill switches gate managed admission and can cancel active runs. Run binding and
+recorded dispatch fences reject superseded/inactive authority at their checks.
+Cancellation is not an atomic stop of a remote service or arbitrary in-process
+code, and it cannot undo a request already sent. See [trust and governance](../trust-governance.md)
+for the enforcement boundaries and [target-bound approvals](target-bound-approvals.md)
+for rollout and compatibility requirements.
 
 ## Keeping the upstream credential out of `langgraph.json` (`secret_ref`, shipped in v0.3)
 
@@ -1602,7 +1678,7 @@ The config file itself now just says `"secret_ref": "vault:secret/data/runkite/g
 
 **Failure mode is fail-closed:** an env var that's unset or empty, a file that doesn't exist, or a Vault path outside the allowlist all return an error, not an empty string silently used as "no credential." `GetSession` fails; the runner gets an error instead of authenticating to the upstream service with a blank token.
 
-**Code:** `internal/connector/secretref.go` (`ResolveSecretRef`, one function per scheme), `internal/connector/config.go` (`AuthConfig.SecretRef` field), called from `internal/connector/registry.go`'s session-minting path — deliberately at GetSession time, same reasoning as the connector session tokens above: resolve at use time, not dispatch time, so credential rotation doesn't need a restart.
+**Code:** `internal/connector/secretref.go` (`ResolveSecretRef`) and `internal/connector/config.go` (`AuthConfig.SecretRef`). Credential preparation in the session and proxy paths uses the configured reference. Resolution is not limited to session minting: forwarding prepares credentials from the pinned auth configuration too. Existing OAuth caching still follows token expiry; changing a secret reference value is not instant upstream token revocation.
 
 ## The three configuration layers (why settings live in different places)
 
@@ -3413,19 +3489,19 @@ Here is the complete security posture of Runkite, layer by layer:
 
 **Layer 3: Authorization.** Permission-based (read/write/admin, agents:id:run). Thread/run scoped to tenant. Admin routes require admin permission.
 
-**Layer 4: Run-binding.** Proxy paths derive identity from the inflight assignment, not from runner headers. Forgery is impossible unless you can manipulate the Redis inflight record (which requires infrastructure access).
+**Layer 4: Run-binding.** Proxy paths check the live assignment and derive tenant, agent and thread from it. Runner kind and tenant allowlists constrain access. A token shared across an allowed kind/tenant is not a distinct per-process workload identity; a run ID alone is not authority.
 
-**Layer 5: Policy Decide.** Grants + webhook + mandatory HITL. Fail-closed on errors. Tool-level access control.
+**Layer 5: Policy Decide.** Merged grants, argument predicates, webhook and mandatory HITL govern proxied calls. Webhook errors fail closed by default; an explicit fail-open setting is weaker. Configured required-audit failure blocks protected authority.
 
-**Layer 6: Audit.** Every policy decision recorded. Durable on SQL. Searchable.
+**Layer 6: Audit.** SQL audit provides searchable durable decisions when writes succeed. Required-audit mode refuses protected authority on persistence failure. Best-effort audit can lose records; retention and export delivery have separate contracts.
 
-**Layer 7: Emergency controls.** Kill switches (immediate stop). Break-glass (temporary bypass with audit). Both fail-closed on audit write failure.
+**Layer 7: Emergency controls.** Kill switches refuse scoped admission and can cancel managed runs. Break-glass is a temporary policy exception whose use requires durable audit. Cancellation does not undo external effects. Required-audit failure cannot be bypassed.
 
-**Layer 8: Serve admission.** Production refuses to start without proper configuration. Cannot accidentally run insecure.
+**Layer 8: Serve admission.** Normal `serve` admission refuses an insufficient production posture. Explicit development/insecure overrides exist for deliberate local/test deployments; those overrides do not qualify a production security boundary.
 
 **Layer 9: Operational.** Non-root containers. CORS fixed. Secure headers. CSRF for cookie mutations. Constant-time token comparison.
 
-No single layer alone is sufficient. The strength is in their combination: even if one layer is bypassed (e.g., a runner token is leaked), run-binding prevents tenant escalation. Even if the webhook PDP is compromised (returns "allow" for everything), mandatory HITL still blocks dangerous operations. Even if break-glass is used, audit writes are mandatory.
+These layers cover different boundaries. Run binding rejects forged assignment metadata but does not turn a leaked shared runner token into a unique workload identity. Mandatory HITL can hold a configured tool even when a webhook allows it. Break-glass use requires its own durable audit, and required-audit failure prevents exceptional authority. Tools that never reach a cooperating gate remain outside these controls.
 
 ---
 
@@ -4096,25 +4172,40 @@ The admin reviews the transfer and clicks "Approve."
 
 The approval handler:
 
-1. Re-runs Decide to check current policy (in case a hard deny rule was added since the pending was created). If it would now be hard denied, approval fails.
-2. If still not hard denied: marks the pending_action as approved and creates a **one-shot capability**: `(run_id=run_88, generation=1, connector=bank, tool=transfer_funds, args_digest=<sha256 of these arguments>) → approved once`.
-3. Writes an audit event recording the approval.
-
-
+1. Refuses legacy argument/run/target bindings, missing targets and changed
+   configured targets. It re-evaluates current policy using the stored digest and
+   capped display, and refuses hard deny or failed required audit.
+2. Rechecks the target after policy evaluation, then marks the existing pending
+   row approved. Its one-shot authority remains bound to tenant, agent, original
+   run incarnation, generation, connector, tool, exact arguments and target.
+3. Stores the deciding identity when available. Policy re-evaluation uses the
+   configured audit mode; this is not a claim of a separate atomic approval event.
 
 ## Agent retries the tool call
 
-The agent (if well-written) retries the `transfer_funds` call. Runner-A sends the same MCP tools/call request again.
+The caller retries the same managed operation while its original attempt is
+still active. The plane pins that request's configured target and evaluates
+current policy first. If the current result is pending and the full approved
+tuple matches, it consumes that capability once. A current explicit deny or
+required-audit failure still blocks. Changed arguments, targets or run
+incarnations cannot borrow the approval.
 
-The CP receives it. Before consulting grants/webhook, it checks: is there a one-shot capability for (run_88, gen=1, bank, transfer_funds) whose digest matches this call's arguments? YES. It consumes the capability and short-circuits: **allow this one call**. A retry with a different amount would not match and would go through Decide again.
+With action evidence enabled, SQL preparation commits capability consumption and
+dispatch intent together immediately before the protected send. Capture-off
+calls retain the target-bound legacy consumption path. A confirmed preparation
+rollback prevents the recorded send and leaves authority unconsumed. A lost
+commit acknowledgement or error after dispatch needs investigation, not blind
+retry. See [connector action evidence](connector-action-evidence.md).
 
-The CP now forwards the actual request to the upstream banking service, injecting real credentials. The transfer executes. The response flows back to the runner.
+The proxy uses the same target snapshot for credential preparation and the
+upstream request. The returned response establishes only what was observed.
+Approval and transport success alone do not establish the banking effect.
 
 ## Third attempt (no more capability)
 
-If the agent calls `transfer_funds` a THIRD time (different transfer), there is no capability remaining. Decide runs normally. The webhook/mandatory HITL will likely return pending again. A new pending_action is created with a new action_id. The cycle repeats.
+A third call still runs current policy. When policy continues to require review, the consumed approval cannot authorize it and a new pending row is needed. A different transfer cannot match the earlier exact argument digest.
 
-The one-shot capability is deliberately ONE SHOT to prevent: approve once → agent makes unlimited calls forever. Every dangerous call needs its own approval.
+An approval is one-shot authority for its exact operation, not a permanent policy exception. If current policy still requires review after consumption, another call needs another approval. A newly configured ordinary policy allow remains independent authority.
 
 ## What if the approval comes after the run is already done?
 

@@ -39,6 +39,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Documentation
 
+- Correct the engineering guide's managed approval and audit narratives: current
+  policy still runs on retry, consumed approvals remain history, required-audit
+  failures block exceptional authority, and target/run bindings require an exact
+  match. Explain the recorded and capture-off dispatch paths, shared runner-token
+  limits and cancellation's external-effect boundary. Runtime behavior is unchanged.
+
 - Distinguish implemented reviewer permissions from operator rollout requirements.
   Document reproducible HA qualification, the external execution-containment
   boundary and the proposed OpenShell integration. Correct the support guide's
