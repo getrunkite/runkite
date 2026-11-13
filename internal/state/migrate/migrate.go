@@ -55,6 +55,9 @@ func Upgrade(ctx context.Context, bk Bookkeeper, migrations []Migration, legacyE
 	if err != nil {
 		return fmt.Errorf("current schema version: %w", err)
 	}
+	if cur > len(migrations) {
+		return fmt.Errorf("database schema version %d is newer than this binary supports (%d); use a matching binary or restore a reviewed backup", cur, len(migrations))
+	}
 	if cur == 0 && legacyExists != nil {
 		exists, err := legacyExists(ctx)
 		if err != nil {

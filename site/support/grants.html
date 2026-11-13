@@ -170,6 +170,7 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
           approval; approval is not a permanent policy exception. Existing audit rows
           remain historical records.
         </p>
+        <p class="note" id="target-bound-approval-upgrade"><strong>Current unreleased source after v0.6.1:</strong> managed connector approvals also require the original stored run incarnation and a valid configured <code>target_revision</code>, even when action capture is disabled. A changed endpoint, transport, auth identity/reference, scope, filter or operator <code>mcp.revision</code> requires fresh review. Historical missing bindings are not backfilled; Admin and Review disable Approve and keep Deny available for pending rows. Standalone expiring decisions retain their app-owned behavior. Read <a href="connectors.html#target-bound-approvals">target-bound approvals</a> and complete the <a href="ops.html#target-bound-approval-upgrade">SQL upgrade procedure</a> before deploying.</p>
         <h2>In the product</h2>
         <figure class="shot">
           <div class="cap">Admin → Grants: durable connector overlays (SQL)</div>

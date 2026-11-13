@@ -1,0 +1,3 @@
+package mysql_test
+
+const testPendingTargetRevision = "target-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

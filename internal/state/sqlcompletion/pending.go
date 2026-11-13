@@ -43,7 +43,11 @@ func (d Driver) PendingRunIncarnation(ctx context.Context, tenantID, agentID, ru
 func (d Driver) BindPendingAction(ctx context.Context, a *models.PendingAction) error {
 	if a.ExpiresAt != nil {
 		a.RunIncarnationID = ""
+		a.TargetRevision = ""
 		return nil
+	}
+	if !models.ValidConnectorTargetRevision(a.TargetRevision) {
+		return &state.ErrConflict{Resource: "pending_action", ID: a.ID, Reason: "connector target binding required"}
 	}
 	incarnation, err := d.PendingRunIncarnation(ctx, a.TenantID, a.AgentID, a.RunID)
 	if err != nil {
@@ -59,8 +63,8 @@ func (d Driver) BindPendingAction(ctx context.Context, a *models.PendingAction) 
 // ConsumeApprovedPendingAction retains the legacy store API while locking the
 // current run before the approval. An old run's authority never transfers to a
 // replacement that reused its external identifier and attempt generation.
-func (d Driver) ConsumeApprovedPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, digest string) (string, error) {
-	if digest == "" {
+func (d Driver) ConsumeApprovedPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, digest, targetRevision string) (string, error) {
+	if digest == "" || !models.ValidConnectorTargetRevision(targetRevision) {
 		return "", nil
 	}
 	tx, err := d.Begin(ctx)
@@ -72,9 +76,9 @@ func (d Driver) ConsumeApprovedPendingAction(ctx context.Context, tenantID, agen
 	if err != nil {
 		return "", err
 	}
-	q := `SELECT id FROM pending_actions WHERE run_id=? AND generation=? AND connector=? AND tool=? AND status=? AND args_digest=? AND tenant_id=? AND agent_id=? AND expires_at IS NULL AND run_incarnation_id=? ORDER BY created_at ASC LIMIT 1`
+	q := `SELECT id FROM pending_actions WHERE run_id=? AND generation=? AND connector=? AND tool=? AND status=? AND args_digest=? AND tenant_id=? AND agent_id=? AND expires_at IS NULL AND run_incarnation_id=? AND target_revision=? ORDER BY created_at ASC LIMIT 1`
 	var id string
-	err = tx.Row(ctx, d.query(q+d.lock()), runID, generation, connector, tool, models.PendingStatusApproved, digest, tenantID, agentID, incarnation).Scan(&id)
+	err = tx.Row(ctx, d.query(q+d.lock()), runID, generation, connector, tool, models.PendingStatusApproved, digest, tenantID, agentID, incarnation, targetRevision).Scan(&id)
 	if isNoRows(err) {
 		return "", nil
 	}

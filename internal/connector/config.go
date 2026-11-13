@@ -51,6 +51,9 @@ type AuthConfig struct {
 // MCPConfig points to an MCP server endpoint.
 type MCPConfig struct {
 	URL string `json:"url" yaml:"url"`
+	// Revision is a nonsecret operator contract version for changes not visible
+	// in the endpoint configuration, such as a changed remote implementation.
+	Revision string `json:"revision,omitempty" yaml:"revision,omitempty"`
 	// Transport defaults to the existing single-POST JSON proxy. The SDK
 	// mode negotiates an upstream session for each proxied operation.
 	Transport string `json:"transport,omitempty" yaml:"transport,omitempty"` // json or streamable_http

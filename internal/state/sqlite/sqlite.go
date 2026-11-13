@@ -300,6 +300,12 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 18, Name: "pending_target_revision",
+			Up: func(ctx context.Context) error { return s.upPendingTargetRevision(ctx) },
+			Down: func(context.Context) error {
+				return fmt.Errorf("sqlite: target-bound approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+			},
+		},
 	}
 }
 

@@ -15,6 +15,7 @@ import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { pendingApprovalBlockReason } from "../lib/pendingApproval";
+import { ApprovalTargetRevision } from "../components/approval-target-revision";
 
 const STATUS_OPTIONS = ["pending", "approved", "denied", "consumed", "all"];
 
@@ -152,6 +153,11 @@ export function PendingActions() {
       },
     },
     {
+      id: "target_revision",
+      header: "Stored target revision",
+      cell: ({ row }) => <ApprovalTargetRevision revision={row.original.target_revision} standalone={row.original.expires_at != null} compact />,
+    },
+    {
       accessorKey: "run_id",
       header: "Run / operation",
       cell: ({ getValue }) => {
@@ -221,6 +227,8 @@ export function PendingActions() {
           <DocsLink href={supportPage("sdk-integration.html")}>SDK integration →</DocsLink>
         </>}
       />
+
+      <p className="mb-4 text-xs text-muted-foreground">Managed approvals record a connector configuration revision. A stored revision does not confirm the current configuration on any replica; the server checks it before approval and dispatch. A mismatch requires fresh submission and review. This binding does not identify the upstream tool schema or implementation.</p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Select

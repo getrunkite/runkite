@@ -84,6 +84,33 @@ func newMCPFixture(t *testing.T) *mcpFixture {
 	return target
 }
 
+func (target *mcpFixture) revision(t *testing.T) string {
+	t.Helper()
+	revision, err := connector.TargetRevisionForConfig(connector.ConnectorConfig{
+		Auth: connector.AuthConfig{Type: "bearer", BearerToken: fixtureCredential},
+		MCP:  &connector.MCPConfig{URL: target.server.URL},
+	})
+	if err != nil || !models.ValidConnectorTargetRevision(revision) {
+		t.Fatal("synthetic target has no valid revision")
+	}
+	return revision
+}
+
+func (s *haSuite) pending(p *replica, fixture tenantFixture, id string) models.PendingAction {
+	s.t.Helper()
+	response := s.request(p, http.MethodGet, "/review-api/pending-actions/"+id, fixture.approveKey, nil, nil, "")
+	s.expect(response, http.StatusOK)
+	s.assertPrivate(response.body)
+	return decode[models.PendingAction](s.t, response)
+}
+
+func (s *haSuite) requireActionTarget(action models.ConnectorAction, expected string) {
+	s.t.Helper()
+	if action.TargetRevision == nil || *action.TargetRevision != expected {
+		s.t.Fatal("durable action does not identify the configured synthetic target; rebuild the control-plane binary")
+	}
+}
+
 func (s *haSuite) login(p *replica, key string) reviewLogin {
 	s.t.Helper()
 	r := s.request(p, "POST", "/review-api/session", "", map[string]string{"credential": key}, nil, "")
@@ -231,6 +258,11 @@ func TestReviewAndConnectorEvidenceAcrossRealReplicas(t *testing.T) {
 			break
 		}
 	}
+	if !t.Failed() {
+		t.Run("target_revision_drift", func(t *testing.T) {
+			suite.targetDrift(t, target, fixtures[0][0], adminKey)
+		})
+	}
 }
 
 func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own, other tenantFixture, adminKey string, iteration int) {
@@ -240,6 +272,7 @@ func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own
 	s.t = t
 	defer func() { s.t = previous }()
 	writesBefore, holdsBefore := target.writes.Load(), target.holds.Load()
+	targetRevision := target.revision(t)
 	reader := s.login(a, own.readKey)
 	approver := s.login(a, own.approveKey)
 	ownToken := s.connectorSession(a, own)
@@ -260,6 +293,9 @@ func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own
 	s.expect(read, 200)
 	s.assertPrivate(read.body)
 	metadata := decode[map[string]json.RawMessage](t, read)
+	if row := decode[models.PendingAction](t, read); row.TargetRevision != targetRevision {
+		t.Fatal("pending approval does not identify the configured target; rebuild the control-plane binary")
+	}
 	if _, present := metadata["args"]; present {
 		t.Fatal("read-only Review response included arguments")
 	}
@@ -353,6 +389,7 @@ func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own
 			t.Fatal("durable action evidence differs across replicas")
 		}
 		detail := decode[actionDetail](t, left)
+		s.requireActionTarget(detail.Action, targetRevision)
 		if detail.Action.State == models.ConnectorActionResponseObserved {
 			observed++
 		}
@@ -425,6 +462,7 @@ func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own
 	s.expect(evidence, 200)
 	s.assertPrivate(evidence.body)
 	detail := decode[actionDetail](t, evidence)
+	s.requireActionTarget(detail.Action, targetRevision)
 	if detail.Action.State != models.ConnectorActionOutcomeUnknown || len(detail.Events) < 4 || detail.Events[len(detail.Events)-1].Observer != "runkite_reconciler" {
 		t.Fatal("reconciled evidence did not survive process restart")
 	}
@@ -440,4 +478,111 @@ func (s *haSuite) iteration(t *testing.T, target *mcpFixture, a, b *replica, own
 	s.expect(s.request(restarted, "GET", "/review-api/pending-actions", own.approveKey, nil, nil, ""), 200)
 	s.expect(s.request(restarted, "GET", "/admin-api/pending-actions", adminKey, nil, nil, ""), 200)
 	s.record(fmt.Sprintf("%02d_cross_replica_logout", iteration), map[string]any{"revoked_on": "B", "rejected_on": "restarted A"})
+}
+
+func (s *haSuite) targetDrift(t *testing.T, original *mcpFixture, fixture tenantFixture, adminKey string) {
+	previous := s.t
+	s.t = t
+	defer func() { s.t = previous }()
+	a := s.current[0]
+	changed := newMCPFixture(t)
+	var b *replica
+	// Stop the changed peer before its synthetic target closes, including on a
+	// fatal assertion. Root suite cleanup still owns every earlier process.
+	t.Cleanup(func() { s.stop(s.current[1], false) })
+	oldRevision, newRevision := original.revision(t), changed.revision(t)
+	if oldRevision == newRevision {
+		t.Fatal("drift fixture did not change target identity")
+	}
+	oldWrites, oldHolds := original.writes.Load(), original.holds.Load()
+
+	// Decode a fresh copy and write a separate file. Ordinary restart helpers
+	// continue using the original configuration throughout this qualification.
+	raw, err := os.ReadFile(s.config)
+	if err != nil {
+		t.Fatal("read synthetic original config")
+	}
+	var cfg map[string]any
+	if json.Unmarshal(raw, &cfg) != nil {
+		t.Fatal("decode synthetic original config")
+	}
+	connectors, ok := cfg["connectors"].(map[string]any)
+	if !ok {
+		t.Fatal("synthetic connectors missing")
+	}
+	configured, ok := connectors["fixture"].(map[string]any)
+	if !ok {
+		t.Fatal("synthetic connector missing")
+	}
+	mcp, ok := configured["mcp"].(map[string]any)
+	if !ok {
+		t.Fatal("synthetic MCP config missing")
+	}
+	mcp["url"] = changed.server.URL
+	raw, err = json.Marshal(cfg)
+	if err != nil {
+		t.Fatal("encode synthetic changed config")
+	}
+	alternate := filepath.Join(s.directory, "runkite-target-drift.json")
+	if err := os.WriteFile(alternate, raw, 0600); err != nil {
+		t.Fatal("write synthetic changed config")
+	}
+	s.stop(s.current[1], false)
+	b = s.startWithConfig(1, alternate)
+	if a.command.Process.Pid == b.command.Process.Pid {
+		t.Fatal("target drift requires separate processes")
+	}
+
+	aToken := s.connectorSession(a, fixture)
+	bToken := s.connectorSession(b, fixture)
+	oldID := s.held(s.tool(a, fixture, aToken, "write"))
+	old := s.pending(b, fixture, oldID)
+	if old.TargetRevision != oldRevision || old.Status != models.PendingStatusPending {
+		t.Fatal("original target review is not durably bound")
+	}
+	for _, request := range []struct{ path, key string }{
+		{"/review-api/pending-actions/" + oldID + "/approve", fixture.approveKey},
+		{"/admin-api/pending-actions/" + oldID + "/approve", adminKey},
+	} {
+		s.expect(s.request(b, http.MethodPost, request.path, request.key, nil, nil, ""), http.StatusConflict)
+	}
+	if s.pending(a, fixture, oldID).Status != models.PendingStatusPending || original.writes.Load() != oldWrites || changed.writes.Load() != 0 {
+		t.Fatal("mismatched target approval changed authority or produced effects")
+	}
+
+	s.expect(s.request(a, http.MethodPost, "/review-api/pending-actions/"+oldID+"/approve", fixture.approveKey, nil, nil, ""), http.StatusOK)
+	freshResponse := s.tool(b, fixture, bToken, "write")
+	freshID := s.held(freshResponse)
+	fresh := s.pending(a, fixture, freshID)
+	if freshID == oldID || fresh.TargetRevision != newRevision || fresh.Status != models.PendingStatusPending || s.pending(b, fixture, oldID).Status != models.PendingStatusApproved {
+		t.Fatal("different target reused original approval authority")
+	}
+	if original.writes.Load() != oldWrites || changed.writes.Load() != 0 {
+		t.Fatal("unreviewed changed target was contacted")
+	}
+
+	s.expect(s.request(b, http.MethodPost, "/review-api/pending-actions/"+freshID+"/approve", fixture.approveKey, nil, nil, ""), http.StatusOK)
+	executed := s.tool(b, fixture, bToken, "write")
+	s.expect(executed, http.StatusOK)
+	if !strings.Contains(string(executed.body), fixtureReply) || changed.writes.Load() != 1 || original.writes.Load() != oldWrites || original.holds.Load() != oldHolds {
+		t.Fatal("changed target did not execute exactly the newly reviewed fixture call")
+	}
+	if s.pending(a, fixture, freshID).Status != models.PendingStatusConsumed || s.pending(b, fixture, oldID).Status != models.PendingStatusApproved {
+		t.Fatal("changed target consumed the wrong approval")
+	}
+	actionID := executed.header.Get("X-Runkite-Connector-Action-Id")
+	if uuid.Validate(actionID) != nil {
+		t.Fatal("changed target execution has no action identity")
+	}
+	for _, p := range []*replica{a, b} {
+		response := s.request(p, http.MethodGet, "/review-api/connector-actions/"+actionID, fixture.readKey, nil, nil, "")
+		s.expect(response, http.StatusOK)
+		s.assertPrivate(response.body)
+		detail := decode[actionDetail](t, response)
+		s.requireActionTarget(detail.Action, newRevision)
+		if detail.Action.State != models.ConnectorActionResponseObserved || detail.Action.PendingActionID != freshID || detail.Action.AuthorizationSource != "approved_capability" {
+			t.Fatal("changed target evidence does not match its new approval")
+		}
+	}
+	s.record("cross_replica_target_revision_drift", map[string]any{"original_target_revision": oldRevision, "changed_target_revision": newRevision, "original_approval_id": oldID, "changed_approval_id": freshID, "changed_target_effects": changed.writes.Load(), "original_target_additional_effects": original.writes.Load() - oldWrites, "review_and_admin_mismatch_status": http.StatusConflict})
 }

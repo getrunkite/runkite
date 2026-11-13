@@ -46,7 +46,7 @@ and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
 the enforcement and deployment contracts.
 
 Current unreleased source after v0.6.1 adds optional [required policy audit](docs/configuration.md#required-policy-audit)
-blocks access when its SQL decision record cannot be saved. Agent delegation
+that blocks access when its SQL decision record cannot be saved. Agent delegation
 derives authority from the active parent assignment. See the
 [hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
 The current unreleased source also offers opt-in [connector action evidence](site/support/connector-actions.html):
@@ -54,7 +54,10 @@ record intent before managed MCP dispatch and inspect observed responses or
 unknown outcomes in Admin. The same unreleased source adds
 [tenant-scoped review](docs/auth.md#tenant-review): reviewers can inspect evidence
 or approve their own tenant's operations without global Admin access. These
-settings and permissions are not in published v0.6.1 binaries.
+settings and permissions are not in published v0.6.1 binaries. Managed MCP
+approvals also [bind to the configured connector target](docs/connectors.md#target-bound-managed-approvals-unreleased),
+so a changed target cannot consume an earlier approval. Credential values can
+rotate without changing that binding.
 
 ## Choose an integration path
 

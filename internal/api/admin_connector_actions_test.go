@@ -52,9 +52,11 @@ func seedForeignConnectorAction(t *testing.T, env *actionAPIEnv) string {
 	if accepted, err := env.store.BeginRunAttempt(ctx, "beta-run", 1); err != nil || !accepted {
 		t.Fatalf("start foreign fixture: accepted=%v error=%v", accepted, err)
 	}
+	_, revision := fixtureTargetRegistry(t, "other-connector")
 	action, err := env.store.CreateConnectorAction(ctx, &models.ConnectorAction{
 		ID: uuid.NewString(), TenantID: "beta", RunID: "beta-run", ThreadID: "beta-thread", AgentID: "other-agent",
 		Generation: 1, Connector: "other-connector", Tool: "read", ArgsDigest: strings.Repeat("a", 64),
+		TargetRevision: &revision,
 	}, uuid.NewString())
 	if err != nil {
 		t.Fatal(err)

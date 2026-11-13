@@ -27,7 +27,8 @@ func connectorActionFixture(t *testing.T, store state.Store) (context.Context, *
 	t.Helper()
 	ctx := tenant.WithContext(context.Background(), "actions-"+uuid.NewString())
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	a := &models.ConnectorAction{ID: uuid.NewString(), TenantID: tenant.FromContext(ctx), RunID: uuid.NewString(), ThreadID: uuid.NewString(), Generation: 1, AgentID: "agent", AgentVersion: 999, Principal: "alice", Connector: "fixture", Tool: "write", Transport: "json", ArgsDigest: strings.Repeat("a", 64)}
+	revision := pendingTargetRevision
+	a := &models.ConnectorAction{TargetRevision: &revision, ID: uuid.NewString(), TenantID: tenant.FromContext(ctx), RunID: uuid.NewString(), ThreadID: uuid.NewString(), Generation: 1, AgentID: "agent", AgentVersion: 999, Principal: "alice", Connector: "fixture", Tool: "write", Transport: "json", ArgsDigest: strings.Repeat("a", 64)}
 	if err := store.UpsertAgent(ctx, &models.Agent{AgentID: a.AgentID, Name: a.AgentID, Metadata: map[string]interface{}{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +236,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pending := &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: a.TenantID, RunID: a.RunID, Generation: a.Generation, AgentID: a.AgentID, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusPending}
+		pending := &models.PendingAction{TargetRevision: pendingTargetRevision, ID: "pending-v2-" + uuid.NewString(), TenantID: a.TenantID, RunID: a.RunID, Generation: a.Generation, AgentID: a.AgentID, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusPending}
 		if err := approvals.CreatePendingAction(ctx, pending); err != nil {
 			t.Fatal(err)
 		}
@@ -346,7 +347,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 
 	t.Run("approval_authority_does_not_transfer_to_recreated_run", func(t *testing.T) {
 		ctx, original := create(t)
-		pending := &models.PendingAction{ID: uuid.NewString(), TenantID: original.TenantID, AgentID: original.AgentID, RunID: original.RunID, Generation: original.Generation, Connector: original.Connector, Tool: original.Tool, ArgsDigest: original.ArgsDigest}
+		pending := &models.PendingAction{TargetRevision: pendingTargetRevision, ID: uuid.NewString(), TenantID: original.TenantID, AgentID: original.AgentID, RunID: original.RunID, Generation: original.Generation, Connector: original.Connector, Tool: original.Tool, ArgsDigest: original.ArgsDigest}
 		if err := approvals.CreatePendingAction(ctx, pending); err != nil {
 			t.Fatal(err)
 		}
@@ -395,9 +396,9 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 			t.Fatal("replacement consumed original run approval")
 		}
 		consumer := store.(interface {
-			ConsumeApprovedAction(context.Context, string, string, string, int64, string, string, string) (string, error)
+			ConsumeApprovedAction(context.Context, string, string, string, int64, string, string, string, string) (string, error)
 		})
-		if id, err := consumer.ConsumeApprovedAction(ctx, replacement.TenantID, replacement.AgentID, replacement.RunID, replacement.Generation, replacement.Connector, replacement.Tool, replacement.ArgsDigest); err != nil || id != "" {
+		if id, err := consumer.ConsumeApprovedAction(ctx, replacement.TenantID, replacement.AgentID, replacement.RunID, replacement.Generation, replacement.Connector, replacement.Tool, replacement.ArgsDigest, pendingTargetRevision); err != nil || id != "" {
 			t.Fatalf("legacy consume transferred approval: %q %v", id, err)
 		}
 		fresh := *pending

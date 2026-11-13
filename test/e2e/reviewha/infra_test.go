@@ -227,10 +227,14 @@ func freePort(t *testing.T) string {
 }
 
 func (s *haSuite) start(index int) *replica {
+	return s.startWithConfig(index, s.config)
+}
+
+func (s *haSuite) startWithConfig(index int, config string) *replica {
 	s.t.Helper()
 	p := &replica{name: strconv.Itoa(index + 1), httpPort: freePort(s.t), grpcPort: freePort(s.t), done: make(chan struct{})}
 	p.base = "http://127.0.0.1:" + p.httpPort
-	p.command = exec.Command(s.binary, "serve", "--config", s.config, "--port", p.httpPort, "--grpc-port", p.grpcPort)
+	p.command = exec.Command(s.binary, "serve", "--config", config, "--port", p.httpPort, "--grpc-port", p.grpcPort)
 	// An explicit environment prevents inherited providers, hooks, telemetry,
 	// databases, admin credentials or developer .env settings entering the test.
 	encodedKind := strings.ToUpper(strings.ReplaceAll(s.runnerKind, "-", "_"))

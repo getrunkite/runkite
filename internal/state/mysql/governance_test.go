@@ -65,7 +65,7 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 		t.Fatalf("want ErrConflict on duplicate key, got %v", err)
 	}
 
-	a := &models.PendingAction{
+	a := &models.PendingAction{TargetRevision: testPendingTargetRevision,
 		ID: "mysql-p1", RunID: "mysql-r1", Generation: 2, TenantID: "acme", AgentID: "sales",
 		Connector: "sf", Tool: "delete_repo", Status: models.PendingStatusPending, ArgsDigest: "delete-digest",
 	}
@@ -75,11 +75,11 @@ func TestGovernance_AuditGrantPending(t *testing.T) {
 	if err := store.SetPendingActionStatus(sys, "mysql-p1", models.PendingStatusPending, models.PendingStatusApproved); err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.ConsumeApprovedAction(sys, "acme", "sales", "mysql-r1", 2, "sf", "delete_repo", "delete-digest")
+	id, err := store.ConsumeApprovedAction(sys, "acme", "sales", "mysql-r1", 2, "sf", "delete_repo", "delete-digest", testPendingTargetRevision)
 	if err != nil || id != "mysql-p1" {
 		t.Fatalf("ConsumeApprovedAction: id=%q err=%v", id, err)
 	}
-	id, err = store.ConsumeApprovedAction(sys, "acme", "sales", "mysql-r1", 2, "sf", "delete_repo", "delete-digest")
+	id, err = store.ConsumeApprovedAction(sys, "acme", "sales", "mysql-r1", 2, "sf", "delete_repo", "delete-digest", testPendingTargetRevision)
 	if err != nil || id != "" {
 		t.Fatalf("second consume want empty, got %q err=%v", id, err)
 	}

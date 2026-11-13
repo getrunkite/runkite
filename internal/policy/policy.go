@@ -67,6 +67,9 @@ type PolicyInput struct {
 	Generation int64
 	Connector  string
 	Tool       string
+	// TargetRevision is the plane-resolved managed connector target identity.
+	// Standalone decisions do not claim a Runkite-owned execution target.
+	TargetRevision string
 	// Args is the full parsed tools/call arguments (predicate eval).
 	// Secret-looking keys stay here; ArgsMeta is the redacted display copy.
 	Args       any

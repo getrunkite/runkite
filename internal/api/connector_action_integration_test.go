@@ -194,6 +194,7 @@ func (e *actionAPIEnv) call(t *testing.T) *httptest.ResponseRecorder {
 func (e *actionAPIEnv) approve(t *testing.T) string {
 	t.Helper()
 	in := e.s.policyInput(e.ctx, policy.StageToolCall, "fixture", "write")
+	in.TargetRevision = currentFixtureTargetRevision(t, e.s, "fixture")
 	var err error
 	in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict([]byte(`{"amount":1,"access_token":"synthetic-sensitive-argument"}`))
 	if err != nil {
@@ -240,7 +241,10 @@ func TestRecordedConnectorActionsObserveBothTransportsAndAuthorities(t *testing.
 				if strings.Contains(string(raw), "synthetic-sensitive") {
 					t.Fatal("action evidence retained a credential, argument, request ID or response")
 				}
-				if row.TargetRevision != nil || row.ToolRevision != nil || row.CredentialRef != nil || row.PolicyRevision != nil || row.ResponseDigest != "" {
+				if row.TargetRevision == nil || *row.TargetRevision != currentFixtureTargetRevision(t, env.s, "fixture") {
+					t.Fatal("action did not retain its configured target revision")
+				}
+				if row.ToolRevision != nil || row.CredentialRef != nil || row.PolicyRevision != nil || row.ResponseDigest != "" {
 					t.Fatal("action evidence invented unavailable provenance or hashed a response")
 				}
 			})

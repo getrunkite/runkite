@@ -52,11 +52,15 @@ func legacyIdentityStore(t *testing.T) *Store {
 	return s
 }
 
-func assertIdentitySchema(t *testing.T, s *Store) {
+func assertIdentitySchema(t *testing.T, s *Store, historical ...int) {
 	t.Helper()
 	ctx := context.Background()
+	wantVersion := 19
+	if len(historical) > 0 {
+		wantVersion = historical[0]
+	}
 	version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx)
-	if err != nil || version != 18 {
+	if err != nil || version != wantVersion {
 		t.Fatalf("identity schema version=%d err=%v", version, err)
 	}
 	for _, table := range identityColumns {
@@ -125,10 +129,12 @@ func TestIdentityCollationMigrationPreservesDefinitionsDataAndCascades(t *testin
 	if _, err := s.PutOpaqueCheckpoint(ctx, "ThreadA", "OpaqueA", []byte("native bytes"), "test", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Init(ctx); err != nil {
+	if err := s.withSchemaLock(ctx, func(ctx context.Context, conn *sql.Conn) error {
+		return migrate.Upgrade(ctx, migrate.NewSQL(conn, migrate.MySQL), s.migrations(conn)[:18], nil)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	assertIdentitySchema(t, s)
+	assertIdentitySchema(t, s, 18)
 	for key, old := range definitions {
 		parts := strings.SplitN(key, ".", 2)
 		var d definition
@@ -162,10 +168,12 @@ func TestIdentityCollationMigrationPreservesDefinitionsDataAndCascades(t *testin
 	if version, err := migrate.NewSQL(s.db, migrate.MySQL).Current(ctx); err != nil || version != 17 {
 		t.Fatalf("refused identity downgrade changed schema version: %d %v", version, err)
 	}
-	if err := s.Init(ctx); err != nil {
+	if err := s.withSchemaLock(ctx, func(ctx context.Context, conn *sql.Conn) error {
+		return migrate.Upgrade(ctx, migrate.NewSQL(conn, migrate.MySQL), s.migrations(conn)[:18], nil)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	assertIdentitySchema(t, s)
+	assertIdentitySchema(t, s, 18)
 	if err := s.DeleteThread(ctx, "ThreadA"); err != nil {
 		t.Fatal(err)
 	}

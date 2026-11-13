@@ -42,9 +42,10 @@ cancel is not proof that a target committed or rolled back its business effect.
 Unknown outcomes are preserved and never trigger automatic tool replay.
 
 New action tables contain metadata only; existing run streams, checkpoints and
-policy audit have their own data/retention rules. No tool/target/policy revision
-pinning, credential leasing, tamper-evident archive or reliable lifecycle export
-is claimed. Run pruning does not remove action history. Resolved-record retention
+policy audit have their own data/retention rules. Managed approvals bind to a
+configured target revision, including when capture is off. This does not pin an
+upstream tool implementation/schema or a policy revision. Credential leasing,
+tamper-evident archives and reliable lifecycle export remain outside this slice. Run pruning does not remove action history. Resolved-record retention
 is separate and leaves pending/unknown attempts, including earlier pending
 requests whose approval a later attempt consumed. Storage can therefore grow.
 See the [operator guide](../site/support/connector-actions.html).
@@ -60,9 +61,27 @@ No conversation or general Audit API is exposed to reviewers.
 Review cookies contain login-time authority for at most 15 minutes absolute;
 activity cannot extend it. IdP changes are not instant revocation of an issued
 cookie. Admin/Review sessions and logout are independent. Reviewer approval
-retains existing exact argument/run/generation/incarnation/expiry rules but adds
-no no-self-approval or tool/target revision pinning. Upgrade all replicas before
-issuing roles. See [setup and limitations](../site/support/tenant-review.html).
+retains exact argument/run/generation/incarnation/expiry rules and adds configured
+target revision matching for managed connector approvals. It does not enforce
+two-person review or prevent self-approval, and it does not pin upstream code or
+schema. Upgrade all replicas before issuing roles. See [setup and limitations](../site/support/tenant-review.html).
+
+## Configured target binding (unreleased)
+
+Target revisions describe configured MCP endpoint/transport, nonsecret auth
+locators, scopes, tool filters and an optional operator `mcp.revision` label.
+Credential values are excluded; reference changes and credential value rotation
+are different operations. An unchanged URL and label cannot reveal that a remote
+server changed its schema or behavior. Discovery alone does not prove which code
+executes, and the manual label is not an attestation or remote rollback control.
+
+Managed target binding is enforced with or without action capture. Standalone
+`/governance/decide` does not gain a managed run or target. New SQL migrations
+Postgres/SQLite 18 and MySQL 19 leave historical managed target bindings empty;
+those approvals need fresh review. Stop all writers and replace every replica
+before traffic. Current source rejects a newer schema, but old released binaries
+cannot gain that guard retroactively. See the
+[upgrade procedure](ops-runbook.md#connector-target-revision-upgrade).
 
 ## Authority and secret-safety boundaries
 
@@ -220,7 +239,7 @@ Honest gaps, not hidden ones:
   transaction, but interrupted upgrades resume and stamp only after foreign-key
   restoration. Downgrade refuses unsafe merging, and overwritten identities
   cannot be reconstructed. See [upgrade procedure](ops-runbook.md#hardening-upgrade).
-- **State-store and pgvector schemas use numbered up/down migrations; Qdrant/Weaviate/Pinecone stay create-if-missing.** `runkite db upgrade` / `serve` apply state versions via `schema_migrations`. pgvector uses a separate `vector_schema_migrations` table (same Postgres DB must not share version rows with state) via `Init` / `runkite vector upgrade`. `db downgrade` / `vector downgrade` each roll back one step -- baseline (v1) Down is destructive (CLI warns). Pre-versioned databases run baseline Up then stamp v1. Cloud vector backends have no DDL trail.
+- **State-store and pgvector schemas use numbered up/down migrations; Qdrant/Weaviate/Pinecone stay create-if-missing.** `runkite db upgrade` / `serve` apply state versions via `schema_migrations`. pgvector uses a separate `vector_schema_migrations` table (same Postgres DB must not share version rows with state) via `Init` / `runkite vector upgrade`. `db downgrade` / `vector downgrade` each request one rollback step. Security migrations can refuse an unsafe downgrade; target-bound approval migration Postgres/SQLite 18 or MySQL 19 requires a reviewed backup for rollback. Baseline (v1) Down is destructive (CLI warns). Pre-versioned databases run baseline Up then stamp v1. Cloud vector backends have no DDL trail.
 - **Runner OTel creates a per-job `runkite.run` child span under the control plane's `traceparent` when `OTEL_EXPORTER_OTLP_*` is set** (same env contract as the control plane; no-op otherwise). Python LangGraph / plain-LangChain, TypeScript LangGraph.js, CrewAI (event bus), and LlamaIndex (instrumentation handler) auto-attach thin listeners that open `runkite.llm` / `runkite.tool` children under that span (metadata only -- no prompts/completions). AutoGen nests its own GenAI `invoke_agent` / `execute_tool` spans under `runkite.run` when OTel is on, but does not emit `runkite.llm` / `runkite.tool` (no LLM callback surface without wrapping `ChatCompletionClient`).
 - **Direct Postgres LangGraph is default-tenant-only (v0.6.0).** Every non-default tenant fails before factory/state access, since even a delimiter-safe new named key can read legacy default-tenant history. Use HTTP proxy mode for named LangGraph tenants and explicitly resolve prior native state. Default direct thread IDs without `:` retain history. Fresh memory permits named tenants under its delimiter guard: no colon in named tenant IDs or default thread IDs, and no outer whitespace/ASCII controls in tenant IDs. Default cron threads need proxy mode. Proxy supports all tenants and imports no native history automatically; there is no ownership marker or blank fallback. Managed opaque SDK profiles are unaffected. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 - **Proxy-mode writes use GET-modify-PUT with CAS.** An in-process `asyncio.Lock` per blob serializes parallel LangGraph tasks in one runner. Across replicas, PUTs send `If-Match` (ETag/version) and retry on `412` so concurrent `aput` / `aput_writes` merge instead of silently dropping channels. HITL interrupt→resume and mid-superstep pending writes are full-fidelity (same as direct mode for LangGraph); `aput_writes` without `checkpoint_id` raises rather than no-op. LangGraph Pregel calls `aput_writes` for a *new* checkpoint id *before* `aput`, so a missing blob is normal: both `aput_writes` and `aput` create via `If-None-Match: *` (create-only); if a concurrent peer already won, `412` retries as GET+merge instead of clobbering (so an unconditional `aput` cannot wipe an `aput_writes` shell). Weak/malformed `If-Match` is rejected with `400` (not treated as absent). Checkpoint id `latest` is reserved (`400`; conflicts with `GET .../latest`). `alist(filter=...)` raises `NotImplementedError` (metadata filter is not applied to opaque blobs). `aget_tuple` without an id uses `GET .../latest?ns=` (one round-trip). Opaque list endpoints soft-cap at ~1000 rows (no cursor yet) — deep history / many subgraph ns keys can truncate; `/latest` covers the resume hot path.

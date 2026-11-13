@@ -257,6 +257,9 @@ func (d Driver) CreateConnectorAction(ctx context.Context, input *models.Connect
 	if a.Transport != "json" && a.Transport != "streamable_http" {
 		return nil, fmt.Errorf("unsupported connector action transport")
 	}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) {
+		return nil, fmt.Errorf("connector action target binding required")
+	}
 	for _, v := range []*string{a.PolicyRevision, a.TargetRevision, a.ToolRevision, a.CredentialRef} {
 		if v != nil && !actionText(*v, 255) {
 			return nil, fmt.Errorf("invalid connector action provenance")
@@ -396,8 +399,11 @@ func (d Driver) RecordConnectorActionDecision(ctx context.Context, id string, ve
 }
 
 func (d Driver) peekActionApproval(ctx context.Context, tx Tx, a *models.ConnectorAction, id string, locked bool) (*models.PendingAction, error) {
-	q := `SELECT id,decided_by FROM pending_actions WHERE tenant_id=? AND agent_id=? AND run_id=? AND generation=? AND connector=? AND tool=? AND args_digest=? AND status=? AND expires_at IS NULL AND run_incarnation_id=?`
-	args := []interface{}{a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, models.PendingStatusApproved, a.RunIncarnationID}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) {
+		return nil, nil
+	}
+	q := `SELECT id,decided_by FROM pending_actions WHERE tenant_id=? AND agent_id=? AND run_id=? AND generation=? AND connector=? AND tool=? AND args_digest=? AND status=? AND expires_at IS NULL AND run_incarnation_id=? AND target_revision=?`
+	args := []interface{}{a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, models.PendingStatusApproved, a.RunIncarnationID, *a.TargetRevision}
 	if id != "" {
 		q += ` AND id=?`
 		args = append(args, id)
@@ -414,7 +420,7 @@ func (d Driver) peekActionApproval(ctx context.Context, tx Tx, a *models.Connect
 	if err != nil {
 		return nil, err
 	}
-	return &models.PendingAction{ID: found, DecidedBy: reviewer, TenantID: a.TenantID, AgentID: a.AgentID, RunID: a.RunID, RunIncarnationID: a.RunIncarnationID, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusApproved}, nil
+	return &models.PendingAction{ID: found, DecidedBy: reviewer, TenantID: a.TenantID, AgentID: a.AgentID, RunID: a.RunID, RunIncarnationID: a.RunIncarnationID, TargetRevision: *a.TargetRevision, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusApproved}, nil
 }
 func (d Driver) PeekApprovedConnectorAction(ctx context.Context, id string) (*models.PendingAction, error) {
 	tx, err := d.Begin(ctx)
@@ -473,6 +479,9 @@ func (d Driver) PrepareConnectorActionDispatch(ctx context.Context, id string, v
 			return nil, err
 		}
 		return &state.ConnectorActionDispatch{ActionID: a.ID, TenantID: a.TenantID, DispatchID: a.DispatchID, Version: seq}, nil
+	}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) {
+		return nil, actionConflict(id, "connector target binding required")
 	}
 	if a.Version != version || (a.State != models.ConnectorActionReady && a.State != models.ConnectorActionApprovalRequired) {
 		return nil, actionConflict(id, "action is not ready for dispatch")

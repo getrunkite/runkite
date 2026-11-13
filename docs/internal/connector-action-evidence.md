@@ -51,9 +51,12 @@ decision API approvals retain their separate namespace and do not acquire a run.
 
 Policy effect and final authorization are distinct. An original `pending` can
 later use `approved_capability`; an audited break-glass exception records its
-window ID. Recording a decision does not consume an approval. Missing policy,
-target, tool and credential revision fields remain unavailable. This milestone
-does not pin mutable upstream tools or introduce revision-bound approvals.
+window ID. Recording a decision does not consume an approval. The later
+[target-bound approval milestone](target-bound-approvals.md) now fills the
+configured target revision and matches it during approval consumption, including
+when capture is off. Policy, upstream tool implementation and credential
+revision fields remain unavailable. The target digest does not attest remote
+code or schema.
 
 New records exclude raw arguments, response bodies, raw JSON-RPC request IDs,
 endpoint URLs, resolved credentials and arbitrary provider error text. Identifiers,
@@ -93,7 +96,8 @@ upstream even when the protected call is later refused.
 
 The callback rechecks the shared in-flight assignment. SQL prepare then locks
 the stored run/thread, the action and any approval, in that order. It checks the
-stored generation, active run and incarnation. Consuming a matching approval,
+stored generation, active run and incarnation. The target-bound extension also
+matches the action's configured target revision to its approval. Consuming a matching approval,
 updating the action to `dispatch_intent`, and appending its event commit together.
 A rolled-back transaction leaves approval authority unconsumed and sends no
 protected tool request. A lost commit acknowledgement can instead leave durable
@@ -203,6 +207,14 @@ See the database references for [Postgres volatile defaults](https://www.postgre
 [SQLite ADD COLUMN restrictions](https://www.sqlite.org/lang_altertable.html) and
 [MySQL expression defaults and replication](https://dev.mysql.com/doc/refman/8.4/en/data-type-defaults.html).
 
+The subsequent Postgres/SQLite 18 and MySQL 19 migrations add an empty managed
+`target_revision` column without inferring authority for historical approvals.
+They refuse downgrade. Use the stricter
+[target-binding maintenance window](../ops-runbook.md#connector-target-revision-upgrade)
+for current source, including replacing all replicas before traffic. A new
+startup check rejects a future schema; released older binaries do not acquire
+that check retroactively.
+
 ## One breaker admission for one OAuth-backed request
 
 The proxy already owns connector circuit-breaker admission. Re-entering that
@@ -254,6 +266,12 @@ rewrite historical payloads or infer that an old tool did not execute.
 - `internal/state/conformance/connector_action.go`: all three SQL backends share
   CAS, duplicate mutation, approval race, reclaim/late observation, retention,
   pagination, tenant and reused-run identity checks.
+- `internal/state/conformance/pending_target.go` and
+  `internal/api/target_revision_test.go`: configured target isolation, no approval
+  burn on mismatch, historical empty-target refusal and both capture modes.
+- `internal/connector/target_revision_test.go`: descriptor changes, credential
+  rotation and request snapshot behavior. See the target-bound design note for
+  what these configuration checks cannot prove about an upstream service.
 - `internal/state/sqlite/connector_action_atomic_test.go`: injected event-insert
   failure rolls back summary and approval consumption.
 - `internal/api/connector_action_integration_test.go`: real HTTP MCP fixtures for

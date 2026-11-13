@@ -172,6 +172,25 @@ a bounded window; manual Refresh remains available.
 See [Connector actions](../site/support/connector-actions.html) for the complete
 operator workflow, states, retry guidance and independent retention.
 
+## Target-bound approval review (unreleased)
+
+Current source after v0.6.1 displays the stored `target_revision` on managed
+approvals and recorded connector actions. This fingerprints the configured MCP
+target, including the optional nonsecret `mcp.revision` label. It does not verify
+remote tool code, schema or credential values. Missing or malformed managed
+bindings show **Fresh review required** and disable Approve; Deny remains
+available on pending rows. A well-formed displayed revision is historical
+evidence, not a claim that the current target still matches.
+
+The server checks the current target during approval and matches that revision
+again during consumption. A changed target returns HTTP 409 at approval, or
+creates a separate pending action on the next protected call. Submit the
+operation for fresh review; do not edit the old row or automatically retry a
+possibly executed tool. This binding applies even with evidence capture off.
+Standalone expiring app-owned decisions remain unchanged. Follow the
+[migration procedure](ops-runbook.md#connector-target-revision-upgrade) before
+deploying this source to existing SQL databases.
+
 ## Playground
 
 | Route | Purpose |

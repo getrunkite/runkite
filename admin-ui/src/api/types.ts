@@ -191,6 +191,7 @@ export interface AdminPendingAction {
   id: string;
   run_id: string;
   run_incarnation_id?: string;
+  target_revision?: string;
   generation: number;
   tenant_id: string;
   agent_id: string;

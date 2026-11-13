@@ -239,7 +239,7 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 | Stage | Gate |
 |-------|------|
 | `POST .../session` | Grant must match `(tenant_id, agent_id, connector)`; MCP responses include a short-lived `session_token` |
-| `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(run_id, generation, connector)` (15m absolute TTL) |
+| `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(tenant_id, agent_id, run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny + argument digest / config predicates |
 
 Static grants evaluate in-process. Optional **argument predicates** (`policy.predicates` in `langgraph.json`) run after a matching grant and before the sync webhook: they inspect `tools/call` `params.arguments` and may `deny` or `pending`; they never `allow`. Missing `when.path` does not match (the call proceeds to webhook / allow). Numeric comparisons (`eq` / `neq` / `gt` / `gte` / `lt` / `lte`) preserve exact JSON decimal values, including configured thresholds, without binary-float conversion. This is connector MCP, pre-call only: it does not wrap in-graph tools, does not inspect tool responses, and is **not** `AuthorizeTool`. Config-only this release (restart the control plane; no Admin CRUD). Copy-paste and the operator path: [Grants & HITL](../site/support/grants.html#argument-predicates). An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny; first deny wins, and a static allow does **not** bypass the webhook. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
@@ -271,7 +271,27 @@ That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) 
 
 **Admin grant CRUD:** `langgraph.json` `policy.grants` are immutable deployment defaults. Durable overlays live in SQL `policy_grants` and are mutated via `/admin-api/policy-grants` without redeploy — DB rows win on the same `(tenant_id, agent_id, connector)`. A second create for the same key with a different `id` returns `409`. An empty `"policy": {}` section still enables the engine (fail-closed) so deployments can be 100% Admin-managed. The writing replica hot-reloads immediately; every other control-plane replica converges via a 15s SQL fingerprint poll (same cadence as cron). Mongo returns `501`.
 
-**Connector HITL (`pending`):** a webhook or argument predicate can hold a connector call. Admin approves or denies the pending row; it does not run the tool or resume the framework. The caller retries the original active run/generation with the same tenant, agent, connector, tool and exact argument digest. A matching approval is consumed once. A changed payload does not consume it. Current explicit policy deny wins before consumption; another pending result can be bypassed by the approval. Pending decisions are not cached. Approval re-evaluates using the stored capped/redacted display map, so predicates must not rely on omitted secret fields. SQL stores provide durable one-shot consumption; Mongo cannot persist pending and fails closed.
+**Connector HITL (`pending`):** a webhook or argument predicate can hold a
+connector call. Admin approves or denies the row; it does not run the tool or
+resume the framework. The caller retries the original active run/generation
+with the same tenant, agent, connector, tool and exact argument digest. A
+matching approval is consumed once; a changed payload cannot consume it.
+Current explicit policy deny wins before consumption, while a matching approval
+can bypass another pending result. Pending decisions are not cached. Approval
+re-evaluates the stored capped/redacted display map, so predicates must not rely
+on omitted secret fields. SQL stores provide durable one-shot consumption;
+Mongo cannot persist pending and fails closed.
+
+Current unreleased source after v0.6.1 also requires the immutable run incarnation
+and configured connector target revision. The managed request keeps one target
+snapshot through dispatch, and both capture modes enforce the same approval
+match. Admin and Review refuse approval of a historical or changed target;
+resubmit for fresh review when policy requires it. Credential values can rotate
+without changing an otherwise unchanged descriptor. This is configuration
+identity, not upstream code or schema attestation. Standalone expiring decision
+approvals retain their existing contract. See
+[target-bound approvals](connectors.md#target-bound-managed-approvals-unreleased)
+and the [maintenance-window upgrade](ops-runbook.md#connector-target-revision-upgrade).
 
 **v0.6.0 approval upgrade:** policy arguments reject ambiguous JSON and preserve numeric value and submitted type. MCP requires object arguments; governance retains its documented null/omitted shorthand. New digests use a v2 namespace. Old hashes and legacy empty digests are not reused. Old pending/approved rows remain audit records, but Admin refuses new approval of them and app action polling returns `rejected` with `approval_binding_legacy`. Resubmit for fresh review; do not automatically replay uncertain external writes. Drain older replicas and follow [the rollout guide](ops-runbook.md#hardening-upgrade).
 

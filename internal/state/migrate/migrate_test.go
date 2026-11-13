@@ -101,6 +101,29 @@ func TestUpgradeAndDowngrade(t *testing.T) {
 	}
 }
 
+func TestUpgradeRefusesNewerSchemaWithoutMutation(t *testing.T) {
+	db := openMem(t)
+	bk := migrate.NewSQL(db, migrate.SQLite)
+	ctx := t.Context()
+	if err := bk.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := bk.Insert(ctx, 3, "future_schema"); err != nil {
+		t.Fatal(err)
+	}
+	marker := 0
+	err := migrate.Upgrade(ctx, bk, testMigrations(db, &marker), func(context.Context) (bool, error) {
+		t.Fatal("future schema must not run a legacy probe")
+		return false, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "newer than this binary supports") {
+		t.Fatalf("newer schema error = %v", err)
+	}
+	if version, err := bk.Current(ctx); err != nil || version != 3 || marker != 0 {
+		t.Fatalf("future schema changed: version=%d marker=%d error=%v", version, marker, err)
+	}
+}
+
 func TestStampLegacyRunsUpThenStamps(t *testing.T) {
 	db := openMem(t)
 	ctx := context.Background()

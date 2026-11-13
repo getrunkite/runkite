@@ -969,13 +969,25 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		s.servePayloadRetrieve(w, r, rpc.ID, args)
 		return
 	}
+	registry := s.connectors
+	targetRevision := ""
+	if method == "tools/call" {
+		bound, revision, err := registry.BindMCPRequestTarget(r.Context(), name)
+		if err != nil || !models.ValidConnectorTargetRevision(revision) {
+			writeError(w, http.StatusConflict, "connector target is unavailable; protected tool was not dispatched")
+			return
+		}
+		targetRevision = revision
+		r = r.WithContext(bound)
+	}
 	if method == "tools/call" && s.policy.ActionEvidenceEnabled() {
-		s.handleRecordedConnectorAction(w, r, name, userCtx, rpc)
+		s.handleRecordedConnectorAction(w, r, registry, name, userCtx, rpc, targetRevision)
 		return
 	}
 	// Approval bypasses another pending result, never a current explicit deny.
 	if method == "tools/call" {
 		in := s.policyInput(r.Context(), policy.StageToolCall, name, tool)
+		in.TargetRevision = targetRevision
 		var err error
 		in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict(args)
 		if err != nil {
@@ -985,7 +997,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		dec, deny := s.checkConnectorPolicy(r.Context(), in)
 		approved := false
 		if !dec.AuditFailed && (!deny || dec.Effect == policy.EffectPending) {
-			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest)
+			approved = s.tryConsumePendingCapability(r.Context(), name, tool, in.ArgsDigest, targetRevision)
 		}
 		if deny && !approved {
 			actionID := ""
@@ -1028,8 +1040,12 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := s.connectors.ProxyMCPRequest(r.Context(), name, userCtx, body)
+	result, err := registry.ProxyMCPRequest(r.Context(), name, userCtx, body)
 	if err != nil {
+		if errors.Is(err, connector.ErrTargetRevisionChanged) {
+			writeError(w, http.StatusConflict, "connector target changed; protected tool was not dispatched")
+			return
+		}
 		if errors.Is(err, connector.ErrBodyTooLarge) {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"message": "connector response exceeds size limit; the tool may have executed", "reason_code": "connector_response_too_large"})
 			return

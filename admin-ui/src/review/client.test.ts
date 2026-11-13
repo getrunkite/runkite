@@ -7,7 +7,7 @@ import type { ReviewSessionStatus, ReviewPendingAction } from "./contracts.ts";
 function status(tenant = "tenant-a", approve = false): ReviewSessionStatus {
   return { authenticated: true, auth_required: true, configured: true, identity: "reviewer", tenant_id: tenant, can_read: true, can_approve: approve, csrf_token: "review-csrf", expires_at: new Date(Date.now() + 15 * 60_000).toISOString() };
 }
-const pending = { id: "pending-v2-exact/雪?", tenant_id: "tenant-a", status: "pending", args_digest: "bound", run_incarnation_id: "db-proof" } as ReviewPendingAction;
+const pending = { id: "pending-v2-exact/雪?", tenant_id: "tenant-a", status: "pending", args_digest: "bound", run_incarnation_id: "db-proof", target_revision: `target-v1-${"a".repeat(64)}` } as ReviewPendingAction;
 
 test("Review uses its own API, sends a credential once and never borrows Admin CSRF", async () => {
   const old = globalThis.fetch;
@@ -64,8 +64,22 @@ test("foreign approval and legacy managed authority are rejected before mutation
     const client = createReviewClient(); await client.login("test");
     await assert.rejects(client.resolve({ ...pending, tenant_id: "tenant-b" }, "deny"), /outside your Review tenant/);
     await assert.rejects(client.resolve({ ...pending, run_incarnation_id: undefined }, "approve"), /fresh review/);
+    await assert.rejects(client.resolve({ ...pending, target_revision: undefined }, "approve"), /connector target revision/);
+    await assert.rejects(client.resolve({ ...pending, target_revision: "malformed" }, "approve"), /connector target revision/);
     await assert.rejects(client.resolve({ ...pending, expires_at: "2020-01-01T00:00:00Z" }, "approve"), /expired/);
     assert.equal(calls, 1);
+  } finally { globalThis.fetch = old; }
+});
+
+test("stored target binding cannot predict server drift and a 409 is never retried", async () => {
+  const old = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return calls === 1 ? Response.json(status("tenant-a", true)) : Response.json({ message: "connector target changed; resubmit for fresh review" }, { status: 409 }); };
+  try {
+    const client = createReviewClient(); await client.login("test");
+    await assert.rejects(client.resolve(pending, "approve"), (err: unknown) => err instanceof ReviewError && err.status === 409 && /target changed/.test(err.message));
+    assert.equal(calls, 2);
+    assert.ok(client.snapshot().identity);
   } finally { globalThis.fetch = old; }
 });
 

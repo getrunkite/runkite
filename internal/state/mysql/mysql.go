@@ -394,6 +394,12 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 19, Name: "pending_target_revision",
+			Up: func(ctx context.Context) error { return s.upPendingTargetRevision(ctx, db) },
+			Down: func(context.Context) error {
+				return fmt.Errorf("mysql: target-bound approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+			},
+		},
 	}
 }
 

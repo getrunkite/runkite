@@ -26,13 +26,15 @@ test("list filters never accept tenant selection and scope changes discard old c
 
 test("permission controls preserve legacy review and expiry boundaries", () => {
   const identity = { identity: "reader", tenant_id: "a", can_read: true, can_approve: false, expires_at: "2030-01-01T00:00:00Z" } as ReviewIdentity;
-  const action = { id: "pending-v2-test", tenant_id: "a", status: "pending", args_digest: "digest", run_incarnation_id: "opaque-db-proof" } as ReviewPendingAction;
+  const action = { id: "pending-v2-test", tenant_id: "a", status: "pending", args_digest: "digest", run_incarnation_id: "opaque-db-proof", target_revision: `target-v1-${"a".repeat(64)}` } as ReviewPendingAction;
   assert.equal(reviewPendingControls(identity, action).showActions, false);
   const approver = { ...identity, can_approve: true };
   assert.deepEqual(reviewPendingControls(approver, action), { showActions: true, expired: false, approveBlocked: null, denyBlocked: false });
   const legacy = reviewPendingControls(approver, { ...action, run_incarnation_id: undefined });
   assert.match(legacy.approveBlocked!, /fresh review/); assert.equal(legacy.denyBlocked, false);
-  assert.equal(reviewPendingControls(approver, { ...action, run_incarnation_id: undefined, expires_at: "2030-01-01T00:00:00Z" }).approveBlocked, null);
+  const unboundTarget = reviewPendingControls(approver, { ...action, target_revision: undefined });
+  assert.match(unboundTarget.approveBlocked!, /connector target revision/); assert.equal(unboundTarget.denyBlocked, false);
+  assert.equal(reviewPendingControls(approver, { ...action, run_incarnation_id: undefined, target_revision: undefined, expires_at: "2030-01-01T00:00:00Z" }).approveBlocked, null);
   const expired = reviewPendingControls(approver, { ...action, expires_at: "2020-01-01T00:00:00Z" });
   assert.equal(expired.expired, true); assert.equal(expired.denyBlocked, true);
   assert.equal(reviewPendingControls(approver, { ...action, tenant_id: "foreign" }).showActions, false);

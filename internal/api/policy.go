@@ -23,7 +23,7 @@ const pendingActionIDPrefix = "pending-v2-"
 
 func currentPendingBinding(a *models.PendingAction) bool {
 	return a != nil && a.ArgsDigest != "" && strings.HasPrefix(a.ID, pendingActionIDPrefix) &&
-		(a.ExpiresAt != nil || a.RunIncarnationID != "")
+		(a.ExpiresAt != nil || (a.RunIncarnationID != "" && models.ValidConnectorTargetRevision(a.TargetRevision)))
 }
 
 // policyInputFromRequest builds a PolicyInput from run-binding (preferred)
@@ -228,7 +228,10 @@ func randomHex(n int) (string, error) {
 // tryConsumePendingCapability burns one approved pending_action for this
 // tools/call when the argument digest matches. Returns true when the call
 // should proceed without Decide.
-func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest string) bool {
+func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest, targetRevision string) bool {
+	if !models.ValidConnectorTargetRevision(targetRevision) {
+		return false
+	}
 	store, ok := s.pendingActions()
 	if !ok {
 		return false
@@ -237,7 +240,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 	if in.RunID == "" {
 		return false
 	}
-	id, err := store.ConsumeApprovedAction(ctx, in.TenantID, in.AgentID, in.RunID, in.Generation, connectorName, tool, argsDigest)
+	id, err := store.ConsumeApprovedAction(ctx, in.TenantID, in.AgentID, in.RunID, in.Generation, connectorName, tool, argsDigest, targetRevision)
 	if err != nil {
 		slog.Warn("policy: consume approved action failed", "error", err, "run_id", in.RunID)
 		return false
@@ -283,6 +286,10 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 		a.ReasonCode = policy.ReasonPolicyPending
 	}
 	if expiresAt == nil {
+		if !models.ValidConnectorTargetRevision(in.TargetRevision) {
+			return "", errString("managed pending action requires a verified connector target")
+		}
+		a.TargetRevision = in.TargetRevision
 		if binding := auth.RunBindingFromContext(ctx); binding != nil {
 			run, err := s.store.GetRun(ctx, binding.RunID)
 			if err != nil {

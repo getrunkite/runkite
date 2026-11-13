@@ -96,16 +96,12 @@ type ProxyMCPResult struct {
 // comment for the full rationale.
 func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map[string]interface{}, body []byte) (*ProxyMCPResult, error) {
 	trace := actionTrace(ctx)
-	c, err := r.Get(name)
+	target, err := r.requestTarget(ctx, name)
 	if err != nil {
+		trace.notDispatched("connector_target_changed")
 		return nil, err
 	}
-	if c.Config.MCP == nil {
-		return nil, fmt.Errorf("connector %s has no MCP endpoint configured", name)
-	}
-	if mode := c.Config.MCP.Transport; mode != "" && mode != "json" && mode != "streamable_http" {
-		return nil, fmt.Errorf("connector %s: unsupported MCP transport %q", name, mode)
-	}
+	c, cfg := target.connector, target.config
 
 	req, err := ParseMCPRequest(body)
 	if err != nil {
@@ -114,7 +110,7 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 	body = req.Body
 
 	if req.Method == "tools/call" {
-		if req.Tool == "" || !isAllowed(c.Config.Tools, req.Tool) {
+		if req.Tool == "" || !isAllowed(cfg.Tools, req.Tool) {
 			trace.notDispatched("connector_tool_denied")
 			return deniedToolResult(req.ID, name, req.Tool)
 		}
@@ -125,7 +121,7 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 		return nil, &ErrCircuitOpen{Connector: c.Name}
 	}
 
-	token, err := c.getTokenWithBreaker(ctx, userCtx, false)
+	token, err := c.getTokenForAuth(ctx, userCtx, false, cfg.Auth)
 	if err != nil {
 		trace.notDispatched("connector_credentials_unavailable")
 		c.breaker.RecordFailure()
@@ -134,10 +130,10 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 
 	var respBody []byte
 	var statusCode int
-	if c.Config.MCP.Transport == "streamable_http" {
-		respBody, statusCode, err = forwardStreamableMCP(ctx, c.Config.MCP.URL, token.AccessToken, req)
+	if cfg.MCP.Transport == "streamable_http" {
+		respBody, statusCode, err = forwardStreamableMCP(ctx, cfg.MCP.URL, token.AccessToken, req)
 	} else {
-		respBody, statusCode, err = forwardMCPRequest(ctx, c.Config.MCP.URL, token.AccessToken, body)
+		respBody, statusCode, err = forwardMCPRequest(ctx, cfg.MCP.URL, token.AccessToken, body)
 	}
 	if err != nil {
 		if errors.Is(err, ErrMCPDispatchBlocked) {
@@ -149,13 +145,13 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 	}
 	c.breaker.RecordSuccess()
 	if trace != nil && req.Method == "tools/call" {
-		if err := trace.observe(respBody, req.ID, c.Config.MCP.Transport == "streamable_http"); err != nil {
+		if err := trace.observe(respBody, req.ID, cfg.MCP.Transport == "streamable_http"); err != nil {
 			return nil, err
 		}
 	}
 
 	if req.Method == "tools/list" {
-		respBody = filterToolsListResponse(respBody, c.Config.Tools)
+		respBody = filterToolsListResponse(respBody, cfg.Tools)
 	}
 
 	return &ProxyMCPResult{Body: respBody, StatusCode: statusCode}, nil

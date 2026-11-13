@@ -103,7 +103,7 @@ func (s *SQLiteStore) upPendingActionsExpiresAt(ctx context.Context) error {
 }
 
 const pendingActionSelectCols = `id, run_id, generation, tenant_id, agent_id, connector, tool,
-		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at, run_incarnation_id`
+		rule_id, reason, reason_code, status, created_at, updated_at, args_digest, args, decided_by, expires_at, run_incarnation_id, target_revision`
 
 func formatTS(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
@@ -436,7 +436,7 @@ func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.Pending
 	}
 	var openKey any
 	if a.Status == models.PendingStatusPending {
-		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID)
+		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision)
 		if err != nil {
 			return err
 		}
@@ -451,16 +451,16 @@ func (s *SQLiteStore) CreatePendingAction(ctx context.Context, a *models.Pending
 		INSERT INTO pending_actions (
 			id, run_id, generation, tenant_id, agent_id, connector, tool,
 			rule_id, reason, reason_code, status, created_at, updated_at,
-			args_digest, args, decided_by, expires_at, pending_key, run_incarnation_id
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (pending_key) DO NOTHING`,
+			args_digest, args, decided_by, expires_at, pending_key, run_incarnation_id, target_revision
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (pending_key) DO NOTHING`,
 		a.ID, a.RunID, a.Generation, a.TenantID, a.AgentID, a.Connector, a.Tool,
 		a.RuleID, a.Reason, a.ReasonCode, a.Status, formatTS(a.CreatedAt), formatTS(a.UpdatedAt),
-		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy, formatExpiry(a.ExpiresAt), openKey, a.RunIncarnationID)
+		a.ArgsDigest, string(models.MarshalPendingArgs(a.Args)), a.DecidedBy, formatExpiry(a.ExpiresAt), openKey, a.RunIncarnationID, a.TargetRevision)
 	if err != nil {
 		return err
 	}
 	if openKey != nil {
-		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID)
+		existing, err := s.findOpenPendingAction(ctx, a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, a.ExpiresAt != nil, a.RunIncarnationID, a.TargetRevision)
 		if err != nil {
 			return err
 		}
@@ -527,6 +527,10 @@ func (s *SQLiteStore) SearchPendingActions(ctx context.Context, req *models.Pend
 	} else if req.TenantID != "" {
 		where = append(where, "tenant_id = ?")
 		args = append(args, req.TenantID)
+	}
+	if req.TargetRevision != "" {
+		where = append(where, "target_revision = ?")
+		args = append(args, req.TargetRevision)
 	}
 	if req.Status != "" {
 		where = append(where, "status = ?")
@@ -596,7 +600,12 @@ func (s *SQLiteStore) SetPendingActionStatus(ctx context.Context, id, fromStatus
 
 // FindOpenPendingAction returns the oldest still-pending row for this
 // call tuple and argument digest.
-func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool) (*models.PendingAction, error) {
+func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision string, embedded bool) (*models.PendingAction, error) {
+	if embedded {
+		targetRevision = ""
+	} else if !models.ValidConnectorTargetRevision(targetRevision) {
+		return nil, nil
+	}
 	incarnation := ""
 	if !embedded {
 		var err error
@@ -605,18 +614,18 @@ func (s *SQLiteStore) FindOpenPendingAction(ctx context.Context, tenantID, agent
 			return nil, err
 		}
 	}
-	return s.findOpenPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, embedded, incarnation)
+	return s.findOpenPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, embedded, incarnation, targetRevision)
 }
 
-func (s *SQLiteStore) findOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool, incarnation string) (*models.PendingAction, error) {
+func (s *SQLiteStore) findOpenPendingAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string, embedded bool, incarnation, targetRevision string) (*models.PendingAction, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT `+pendingActionSelectCols+`
 		FROM pending_actions
 		WHERE run_id = ? AND generation = ? AND connector = ? AND tool = ?
 		  AND status = ? AND args_digest = ?
-		  AND tenant_id = ? AND agent_id = ? AND (expires_at IS NOT NULL) = ? AND run_incarnation_id = ?
+		  AND tenant_id = ? AND agent_id = ? AND (expires_at IS NOT NULL) = ? AND run_incarnation_id = ? AND target_revision = ?
 		ORDER BY created_at ASC LIMIT 1`,
-		runID, generation, connector, tool, models.PendingStatusPending, argsDigest, tenantID, agentID, embedded, incarnation)
+		runID, generation, connector, tool, models.PendingStatusPending, argsDigest, tenantID, agentID, embedded, incarnation, targetRevision)
 	a, err := scanPendingAction(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -635,7 +644,7 @@ func (s *SQLiteStore) SetPendingActionApproved(ctx context.Context, id, decidedB
             expires_at IS NOT NULL
             OR EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id AND r.agent_id=pending_actions.agent_id AND r.incarnation_id=pending_actions.run_incarnation_id AND r.incarnation_id<>'')
             OR (run_incarnation_id='' AND NOT EXISTS (SELECT 1 FROM runs AS r WHERE r.run_id=pending_actions.run_id AND r.tenant_id=pending_actions.tenant_id))
-        )`
+        ) AND (expires_at IS NOT NULL OR (length(target_revision)=74 AND substr(target_revision,1,10)='target-v1-' AND substr(target_revision,11) NOT GLOB '*[^0-9a-f]*'))`
 	args := []any{models.PendingStatusApproved, decidedBy, formatTS(now), id, models.PendingStatusPending, formatExpiry(&now)}
 	if !tenant.IsSystem(ctx) {
 		query += " AND tenant_id = ?"
@@ -653,8 +662,8 @@ func (s *SQLiteStore) SetPendingActionApproved(ctx context.Context, id, decidedB
 }
 
 // ConsumeApprovedAction atomically marks an approved action consumed.
-func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error) {
-	return s.completionDriver().ConsumeApprovedPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest)
+func (s *SQLiteStore) ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision string) (string, error) {
+	return s.completionDriver().ConsumeApprovedPendingAction(ctx, tenantID, agentID, runID, generation, connector, tool, argsDigest, targetRevision)
 }
 
 func scanPendingAction(row govScanner) (*models.PendingAction, error) {
@@ -664,7 +673,7 @@ func scanPendingAction(row govScanner) (*models.PendingAction, error) {
 	if err := row.Scan(
 		&a.ID, &a.RunID, &a.Generation, &a.TenantID, &a.AgentID, &a.Connector, &a.Tool,
 		&a.RuleID, &a.Reason, &a.ReasonCode, &a.Status, &createdRaw, &updatedRaw,
-		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &expiresRaw, &a.RunIncarnationID,
+		&a.ArgsDigest, &argsRaw, &a.DecidedBy, &expiresRaw, &a.RunIncarnationID, &a.TargetRevision,
 	); err != nil {
 		return nil, err
 	}

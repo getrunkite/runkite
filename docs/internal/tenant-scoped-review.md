@@ -3,8 +3,9 @@
 Status: unreleased source after v0.6.1, built on the
 [connector action evidence milestone](connector-action-evidence.md). Published
 v0.6.1 binaries do not implement these permissions, routes or sessions. This
-slice adds no SQL migration or identity directory. Earlier unreleased SQL
-migrations still apply when upgrading from a release.
+permissions/session slice adds no SQL migration or identity directory. Current
+source also includes [target-bound approvals](target-bound-approvals.md), whose
+migration and maintenance-window requirements apply when upgrading from a release.
 
 ## The caller we could not serve
 
@@ -67,7 +68,9 @@ context; there is no fallback when a scoped lookup fails.
 Admin and Review share the existing approval/denial business core. Review does
 not call a handler that changes its request to system context. The same current
 policy, hard-deny, required-audit, argument-digest, generation, run-incarnation,
-expiry and one-shot consumption rules continue to apply. Recording approval
+expiry and one-shot consumption rules continue to apply. Managed rows also bind
+the configured target revision. Review exposes that revision and refuses an old
+or changed target, using the same business core as global Admin. Recording approval
 does not execute a tool, resume a framework or make an uncertain effect safe to
 retry. Standalone expiring decisions remain app-owned and create no managed run.
 
@@ -121,10 +124,13 @@ issue least-privilege reviewer credentials. Do not mix old and new replicas whil
 relying on the new boundary. Keep a known working global Admin credential for
 bootstrap and recovery; reviewers cannot grant themselves that role.
 
-No SQL schema is added here. When upgrading from v0.6.1, first apply the previous
-security milestone's Postgres/SQLite 17 or MySQL 18 migration and its fresh-review
-requirements for historical unbound managed approvals. This change does not
-backfill old approval authority or infer a reviewer from unverified request data.
+The Review permission slice adds no SQL schema. Upgrading current source from
+v0.6.1 also applies Postgres/SQLite 18 or MySQL 19 for target-bound approvals,
+after the earlier evidence/run-incarnation migration. Follow the
+[target-binding upgrade](../ops-runbook.md#connector-target-revision-upgrade): stop all
+writers, take a verified backup, migrate and replace every replica before traffic.
+Historical managed approvals missing a target or run binding require fresh review;
+neither field is inferred from whichever configuration/run exists at upgrade time.
 
 ## Verification and limits
 
@@ -185,6 +191,7 @@ database/Redis failover, long-duration or cloud soak results, live-provider
 compatibility, throughput capacity, or safety for hostile in-process agent code.
 
 This is not general per-resource RBAC or a per-user identity directory. Review
-is flat-tenant scoped. It adds no two-person/no-self-approval rule, target/tool
-revision pinning, dynamic Vault leases, reliable evidence export outbox or
-instant upstream identity revocation. Those need their own caller and contract.
+is flat-tenant scoped. The configured target binding does not pin upstream tool
+implementation/schema. Two-person review and a self-approval prohibition are
+not enforced. Dynamic Vault leases, a reliable evidence export outbox and instant
+upstream identity revocation remain separate work. Those need their own caller and contract.

@@ -21,7 +21,7 @@ type PendingStore interface {
 	GetPendingAction(context.Context, string) (*models.PendingAction, error)
 	SearchPendingActions(context.Context, *models.PendingActionSearchRequest) ([]*models.PendingAction, error)
 	SetPendingActionApproved(context.Context, string, string) error
-	ConsumeApprovedAction(context.Context, string, string, string, int64, string, string, string) (string, error)
+	ConsumeApprovedAction(context.Context, string, string, string, int64, string, string, string, string) (string, error)
 }
 
 // RunPendingSecurity proves isolation, concurrent dedup and deadline enforcement
@@ -32,7 +32,7 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 	runID := "approval-security-" + uuid.NewString()
 	future := time.Now().UTC().Add(time.Hour)
 	makeRow := func(id, tenantID, agentID string, embedded bool) *models.PendingAction {
-		row := &models.PendingAction{ID: runID + id, TenantID: tenantID, AgentID: agentID, RunID: runID, Connector: "files", Tool: "upload", ArgsDigest: "same-digest"}
+		row := &models.PendingAction{ID: runID + id, TenantID: tenantID, AgentID: agentID, RunID: runID, Connector: "files", Tool: "upload", ArgsDigest: "same-digest", TargetRevision: pendingTargetRevision}
 		if embedded {
 			row.ExpiresAt = &future
 		}
@@ -101,7 +101,7 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 	if err := s.SetPendingActionApproved(ctx, canonical, "synthetic-ops"); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "same-digest"); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "same-digest", pendingTargetRevision); err != nil || id != "" {
 		t.Fatalf("embedded approval consumed as connector: %q %v", id, err)
 	}
 	replacement := makeRow("-replacement", "scope-a", "agent-a", true)
@@ -115,13 +115,13 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 	if err := s.SetPendingActionApproved(ctx, connectorID, "synthetic-ops"); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "scope-b", "agent-a", runID, 0, "files", "upload", "same-digest"); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "scope-b", "agent-a", runID, 0, "files", "upload", "same-digest", pendingTargetRevision); err != nil || id != "" {
 		t.Fatalf("cross-tenant approval consumed: %q %v", id, err)
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", ""); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "", pendingTargetRevision); err != nil || id != "" {
 		t.Fatalf("empty presented digest consumed a bound approval: %q %v", id, err)
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "same-digest"); err != nil || id != connectorID {
+	if id, err := s.ConsumeApprovedAction(ctx, "scope-a", "agent-a", runID, 0, "files", "upload", "same-digest", pendingTargetRevision); err != nil || id != connectorID {
 		t.Fatalf("connector consume: %q %v", id, err)
 	}
 	legacy := makeRow("-unbound-legacy", "scope-a", "agent-a", false)
@@ -134,7 +134,7 @@ func RunPendingSecurity(t *testing.T, s PendingStore) {
 		t.Fatal(err)
 	}
 	for _, presented := range []string{"", "fresh-digest"} {
-		if id, err := s.ConsumeApprovedAction(ctx, legacy.TenantID, legacy.AgentID, legacy.RunID, legacy.Generation, legacy.Connector, legacy.Tool, presented); err != nil || id != "" {
+		if id, err := s.ConsumeApprovedAction(ctx, legacy.TenantID, legacy.AgentID, legacy.RunID, legacy.Generation, legacy.Connector, legacy.Tool, presented, pendingTargetRevision); err != nil || id != "" {
 			t.Fatalf("unbound legacy row authorized digest %q: id=%q err=%v", presented, id, err)
 		}
 	}

@@ -349,7 +349,10 @@
           },
           "target_revision": {
             "type": "string",
-            "description": "Optional target revision reference. Omitted when unavailable."
+            "pattern": "^target-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74,
+            "description": "Fingerprint of the configured MCP target snapshot used for this attempt. Secret values are excluded. Omitted on historical records; this does not attest remote implementation or tool schema."
           },
           "tool_revision": {
             "type": "string",
@@ -875,6 +878,13 @@
             "type": "string",
             "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."
           },
+          "target_revision": {
+            "type": "string",
+            "pattern": "^target-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74,
+            "description": "Configured target fingerprint for a managed MCP approval. A missing, malformed or changed managed target requires fresh submission and review. Absent on standalone expiring decisions and historical unbound rows. Credential values are excluded; remote implementation changes require the operator's mcp.revision update."
+          },
           "generation": {
             "type": "integer",
             "format": "int64"
@@ -1340,6 +1350,13 @@
           "run_incarnation_id": {
             "type": "string",
             "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."
+          },
+          "target_revision": {
+            "type": "string",
+            "pattern": "^target-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74,
+            "description": "Configured target fingerprint for a managed MCP approval. A missing, malformed or changed managed target requires fresh submission and review. Absent on standalone expiring decisions and historical unbound rows. Credential values are excluded; remote implementation changes require the operator's mcp.revision update."
           },
           "generation": {
             "type": "integer",
@@ -3475,7 +3492,7 @@
           "Admin"
         ],
         "summary": "Approve Pending Action",
-        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching call, subject to current explicit deny). Legacy binding rows return 409 and require fresh submission/review.",
+        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching call, subject to current explicit deny). Managed approvals also bind the configured MCP target. Missing, malformed, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions do not bind a managed target. Approval does not execute or retry the operation.",
         "operationId": "admin_approve_pending_action",
         "parameters": [
           {
@@ -3499,7 +3516,7 @@
             }
           },
           "409": {
-            "description": "Not pending, or policy still denies",
+            "description": "Not pending, expired, policy denies, or managed argument/run/target binding is invalid or changed. Resubmit for fresh review; do not automatically replay tools.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5384,7 +5401,7 @@
         ],
         "operationId": "review_approve_pending_action",
         "summary": "Approve an own-tenant pending action",
-        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval does not execute the tool.",
         "security": [
           {
             "ReviewBearerAuth": []
@@ -5451,7 +5468,7 @@
         ],
         "operationId": "review_deny_pending_action",
         "summary": "Deny an own-tenant pending action",
-        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval does not execute the tool.",
         "security": [
           {
             "ReviewBearerAuth": []

@@ -379,6 +379,17 @@
           <a href="admin-guide.html">Admin UI guide</a>
         </p>
 
+        <h2 id="target-bound-approval-upgrade">Target-bound approval upgrade (unreleased)</h2>
+        <p>Current source after v0.6.1 adds Postgres and SQLite migration <strong>18</strong> and MySQL Compatible migration <strong>19</strong> for configured target bindings. These migrations are irreversible. Published v0.6.1 binaries do not implement this feature. The change applies to managed connector approvals even when <code>policy.action_evidence</code> is off.</p>
+        <ol class="steps">
+          <li>Take and verify a restorable database backup. Preserve the matching binary and configuration needed for a full restore.</li>
+          <li>Stop every writer, including all control-plane replicas. Do not run a mixed-version fleet through this upgrade.</li>
+          <li>Use the new binary to run <code>runkite db upgrade</code>. Complete the preceding security migrations as well; their run-identity backfill can take time on large databases.</li>
+          <li>Deploy the matching new binary and consistent connector configuration to every replica before restoring traffic.</li>
+          <li>Resubmit historical managed operations for fresh review. Missing target bindings are deliberately not backfilled, and old approvals cannot authorize the current target. Standalone expiring decisions retain their existing namespace and behavior.</li>
+        </ol>
+        <p>Changing the configured target or nonsecret <code>mcp.revision</code> also requires fresh review. A <code>409</code> during approval can mean the target changed or is unavailable; inspect configuration and submit a new operation rather than editing an old approval. Reverting a binary is not a database downgrade. Recover from a failed rollout with the verified backup and its matching software. See <a href="connectors.html#target-bound-approvals">target-bound approvals</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">engineering record</a>.</p>
+
         <h2 id="connector-action-evidence">Managed connector action evidence (unreleased)</h2>
         <p>Current source after v0.6.1 adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
 

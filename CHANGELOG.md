@@ -6,6 +6,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Bind managed MCP approvals to a `target-v1-` connector configuration digest
+  in both recorded and unrecorded paths. Pin request configuration through
+  dispatch; require fresh review after a target change. Add optional nonsecret
+  `mcp.revision` for operator-managed remote contract changes. Resolved credential
+  values stay outside the digest; no upstream schema or implementation pin is
+  claimed.
+
 - Add reproducible two-process Review/action-evidence qualification on disposable
   Postgres/Redis, with cross-replica auth/approval races, process-loss recovery,
   bounded repetition and a separate CI job. Use synthetic assignments and MCP
@@ -59,6 +66,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
 
 ### Fixed
+
+- Add Postgres/SQLite schema 18 and MySQL schema 19 for target-bound approvals,
+  without assigning a target to historical managed rows. Those rows need fresh
+  review. Downgrade refuses this security migration; restore a reviewed backup
+  for rollback. Stop/drain all writers, back up, upgrade and replace every replica
+  before traffic. Reject a newer-than-supported schema at startup in current
+  source; this cannot protect already-released older binaries.
 
 - Preserve completion history when terminal run IDs are deleted and reused;
   use bounded opaque checkpoint IDs on SQL and Mongo. Fix SQLite fractional

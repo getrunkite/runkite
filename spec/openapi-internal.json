@@ -467,7 +467,7 @@
           "Runner"
         ],
         "summary": "Proxy MCP Request",
-        "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.",
+        "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Managed tool calls pin a configured target snapshot before policy evaluation. Approval for another target is not consumed; changed targets need a new pending action and fresh review, including when action capture is off. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.",
         "operationId": "proxy_mcp_request",
         "parameters": [
           {
@@ -504,6 +504,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pinned target binding changed before dispatch. Fresh review is required; no automatic retry.",
             "content": {
               "application/json": {
                 "schema": {

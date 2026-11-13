@@ -251,6 +251,32 @@ approval `action_id` semantics are unchanged. Lists return a bounded array and
 `events_truncated`. See [Admin API](admin.md), the generated Admin specification,
 and the [operator manual](../site/support/connector-actions.html).
 
+### Managed MCP target binding (unreleased)
+
+Managed connector tool calls pin their configured MCP target before policy and
+approval consumption. Pending actions and recorded attempts expose
+`target_revision`, a `target-v1-` SHA-256 fingerprint. An approved capability
+matches that target as well as the tenant, agent, original run incarnation,
+generation, connector, tool and exact arguments, including when evidence capture
+is off. Changing the target produces a different pending action, with fresh
+review required. Admin and Review refuse approval of missing, invalid or changed
+managed target bindings with HTTP 409. Approval does not execute a tool.
+
+The fingerprint covers the endpoint, transport, nonsecret auth configuration,
+secret reference locator, tool filters and optional operator `mcp.revision`.
+It excludes credential values. Rotating the value at the same secret reference
+does not change the fingerprint. It does not attest the remote implementation,
+tool schema or credential's resolved principal. Bump `mcp.revision` when a remote
+contract changes without a configuration change. Keep all descriptor fields
+nonsecret; URLs with userinfo or recognized credential query parameters are
+refused for managed target binding.
+
+Standalone expiring `/governance/decide` operations retain their existing
+app-owned contract and omit `target_revision`. Historical managed rows remain
+readable but cannot authorize another operation without fresh review. See the
+[upgrade procedure](ops-runbook.md#connector-target-revision-upgrade) and
+[design rationale](internal/target-bound-approvals.md).
+
 ### Tenant Review API (unreleased)
 
 `/review-api` is distinct from global `/admin-api`. Primary authentication must

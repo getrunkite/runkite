@@ -69,6 +69,7 @@ type reviewPendingAction struct {
 	ID               string         `json:"id"`
 	RunID            string         `json:"run_id"`
 	RunIncarnationID string         `json:"run_incarnation_id,omitempty"`
+	TargetRevision   string         `json:"target_revision,omitempty"`
 	Generation       int64          `json:"generation"`
 	TenantID         string         `json:"tenant_id"`
 	AgentID          string         `json:"agent_id"`
@@ -87,7 +88,7 @@ type reviewPendingAction struct {
 
 func reviewPendingProjection(action *models.PendingAction, caps auth.ReviewCapabilities) reviewPendingAction {
 	out := reviewPendingAction{
-		ID: action.ID, RunID: action.RunID, RunIncarnationID: action.RunIncarnationID,
+		ID: action.ID, RunID: action.RunID, RunIncarnationID: action.RunIncarnationID, TargetRevision: action.TargetRevision,
 		Generation: action.Generation, TenantID: action.TenantID, AgentID: action.AgentID,
 		Connector: action.Connector, Tool: action.Tool, RuleID: action.RuleID, ReasonCode: action.ReasonCode,
 		Status: action.Status, ArgsDigest: action.ArgsDigest, DecidedBy: action.DecidedBy,

@@ -11,6 +11,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/api"
 	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/connector"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -81,15 +82,24 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	if err != nil || run.IncarnationID == "" {
 		t.Fatalf("managed control run has no incarnation: error=%v", err)
 	}
+	registry := connector.NewRegistry(map[string]connector.ConnectorConfig{"files": {
+		Auth: connector.AuthConfig{Type: "bearer", BearerToken: "synthetic-fixture-only"},
+		MCP:  &connector.MCPConfig{URL: "http://127.0.0.1:1/fixture-mcp"},
+	}})
+	targetRevision, err := registry.TargetRevision("files")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, row := range []*models.PendingAction{
 		{ID: "pending-v2-overdue", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "embedded", Connector: "files", Tool: "upload", ExpiresAt: &past},
-		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Generation: 1, RunIncarnationID: run.IncarnationID, Connector: "files", Tool: "upload"},
+		{ID: "pending-v2-connector", ArgsDigest: digest, TenantID: "default", AgentID: "agent", RunID: "connector", Generation: 1, RunIncarnationID: run.IncarnationID, Connector: "files", Tool: "upload", TargetRevision: targetRevision},
 	} {
 		if err := store.CreatePendingAction(ctx, row); err != nil {
 			t.Fatal(err)
 		}
 	}
 	srv := api.NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
+	srv.SetConnectorRegistry(registry)
 	srv.SetPolicyEngine(policy.New(policy.Config{Grants: []policy.Grant{{TenantID: "default", AgentID: "agent", Connector: "files"}}}))
 	for _, tc := range []struct {
 		id   string

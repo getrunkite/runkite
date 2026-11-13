@@ -16,7 +16,7 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 
-	if err := s.Init(ctx); err != nil {
+	if err := migrate.Upgrade(ctx, migrate.NewSQL(s.db, migrate.SQLite), s.migrations()[:17], nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
@@ -39,7 +39,7 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatal("opaque_checkpoints.version missing after Init")
 	}
 
-	if err := s.Init(ctx); err != nil {
+	if err := migrate.Upgrade(ctx, migrate.NewSQL(s.db, migrate.SQLite), s.migrations()[:17], nil); err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
@@ -175,7 +175,7 @@ func TestMigrations_UpgradeDowngradeRoundTrip(t *testing.T) {
 		t.Fatalf("extra Downgrade: want ErrNoMigration, got %v", err)
 	}
 
-	if err := s.Init(ctx); err != nil {
+	if err := migrate.Upgrade(ctx, migrate.NewSQL(s.db, migrate.SQLite), s.migrations()[:17], nil); err != nil {
 		t.Fatalf("re-Init after downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)
@@ -231,8 +231,8 @@ func TestMigrations_LegacyBackfillsMissingColumns(t *testing.T) {
 	}
 	bk := migrate.NewSQL(s.db, migrate.SQLite)
 	cur, err := bk.Current(ctx)
-	if err != nil || cur != 17 {
-		t.Fatalf("stamped version = %d, %v; want 17", cur, err)
+	if err != nil || cur != 18 {
+		t.Fatalf("stamped version = %d, %v; want 18", cur, err)
 	}
 	if !columnExists(t, s, "threads", "version") {
 		t.Fatal("threads.version must exist after legacy upgrade (baseline Up self-heal)")

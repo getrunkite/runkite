@@ -26,8 +26,9 @@ type recordedConnectorAction struct {
 	receipt *state.ConnectorActionDispatch
 }
 
-func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Request, name string, userCtx map[string]interface{}, rpc *connector.MCPRequest) {
+func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Request, registry *connector.Registry, name string, userCtx map[string]interface{}, rpc *connector.MCPRequest, targetRevision string) {
 	in := s.policyInput(r.Context(), policy.StageToolCall, name, rpc.Tool)
+	in.TargetRevision = targetRevision
 	var err error
 	in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict(rpc.Arguments)
 	if err != nil {
@@ -47,14 +48,16 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 	id := uuid.NewString()
 	w.Header().Set(headerConnectorActionID, id)
 	in.ConnectorActionID = id
-	transportMode := "json"
-	if cfg, err := s.connectors.Get(name); err == nil && cfg.Config.MCP != nil && cfg.Config.MCP.Transport != "" {
-		transportMode = cfg.Config.MCP.Transport
+	transportMode := connector.BoundMCPTransport(r.Context())
+	if transportMode == "" || !models.ValidConnectorTargetRevision(targetRevision) {
+		writeConnectorActionUnavailable(w, false)
+		return
 	}
 	row := &models.ConnectorAction{
 		ID: id, TenantID: in.TenantID, RunID: in.RunID, ThreadID: binding.ThreadID,
 		Generation: in.Generation, AgentID: in.AgentID, Principal: in.Principal,
 		Connector: name, Tool: rpc.Tool, Transport: transportMode, ArgsDigest: in.ArgsDigest,
+		TargetRevision: &targetRevision,
 	}
 	if span := trace.SpanFromContext(r.Context()).SpanContext(); span.IsValid() {
 		row.TraceID = span.TraceID().String()
@@ -156,7 +159,7 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		return nil
 	})
 	ctx := connector.WithMCPActionTrace(r.Context(), observed)
-	result, forwardErr := s.connectors.ProxyMCPRequest(ctx, name, userCtx, rpc.Body)
+	result, forwardErr := registry.ProxyMCPRequest(ctx, name, userCtx, rpc.Body)
 	ob := observed.Snapshot()
 	if err := action.finish(r.Context(), ob); err != nil {
 		slog.Warn("connector action observation persistence failed", "connector_action_id", id)
@@ -164,6 +167,10 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if forwardErr != nil {
+		if errors.Is(forwardErr, connector.ErrTargetRevisionChanged) {
+			writeError(w, http.StatusConflict, "connector target changed; protected tool was not dispatched")
+			return
+		}
 		if errors.Is(forwardErr, connector.ErrMCPDispatchBlocked) {
 			writeConnectorActionUnavailable(w, false)
 			return

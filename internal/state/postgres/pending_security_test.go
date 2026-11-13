@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -22,4 +23,8 @@ func TestPendingSecurityLive(t *testing.T) {
 	}
 	conformance.RunPendingSecurity(t, s)
 	conformance.RunPendingTenantScope(t, s)
+	conformance.RunPendingTargetRevisionSecurity(t, s, func(ctx context.Context, id, revision, status string) error {
+		_, err := s.pool.Exec(ctx, `UPDATE pending_actions SET target_revision=$1,status=$2,pending_key=NULL WHERE id=$3`, revision, status, id)
+		return err
+	})
 }

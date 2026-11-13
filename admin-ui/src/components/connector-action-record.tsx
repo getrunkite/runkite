@@ -166,6 +166,7 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
               This history excludes arguments, request and response bodies, and credentials. Missing revision or
               credential references do not establish that those checks were performed.
             </p>
+            <p className="mt-2 text-xs text-muted-foreground">A recorded target revision identifies the configured connector target. It does not identify the upstream tool schema or implementation, and does not confirm the target's current configuration on another replica.</p>
           </CardContent>
         </Card>
       </div>

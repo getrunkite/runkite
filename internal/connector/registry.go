@@ -194,6 +194,10 @@ func (c *Connector) getTokenWithBreaker(ctx context.Context, userCtx map[string]
 	// Copy auth so SecretRef materialization does not mutate the shared
 	// registry config (concurrent GetSession + expandAuthConfig race).
 	auth := c.Config.Auth
+	return c.getTokenForAuth(ctx, userCtx, manageBreaker, auth)
+}
+
+func (c *Connector) getTokenForAuth(ctx context.Context, userCtx map[string]interface{}, manageBreaker bool, auth AuthConfig) (*CachedToken, error) {
 	if err := materializeAuthSecret(ctx, &auth); err != nil {
 		return nil, err
 	}
