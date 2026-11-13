@@ -117,6 +117,9 @@ Optional per-graph allowlist in `langgraph.json`:
 
 ## Required audit before access
 
+Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+implement this mode.
+
 The optional `policy.audit_required: true` setting requires a durable policy decision before managed admission, connector access or an in-process decision can allow or become pending. It requires auditing enabled and a SQL state backend. Startup rejects an incompatible configuration. The default remains best-effort auditing.
 
 A required-audit outage blocks dispatch, including approved connector retries and break-glass use. Approved capabilities remain unconsumed. Existing explicit denials keep their reason; traces and SIEM separately identify the audit failure. A failed write cannot appear as a successfully saved SQL audit row. Use operational logs, traces and database health to investigate, then retry only a request known to have been blocked before dispatch.

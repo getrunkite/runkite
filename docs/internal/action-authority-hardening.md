@@ -1,9 +1,14 @@
 # Parent authority and secret-safe policy decisions
 
+Availability: unreleased source after v0.6.1. This is the first security
+milestone. The later [connector action evidence record](connector-action-evidence.md)
+documents the implemented follow-up; published v0.6.1 binaries contain neither
+new opt-in setting.
+
 This note records the first security-roadmap implementation. It strengthens
-existing execution and connector paths. A downstream action ledger, Vault
-dynamic leases, isolated execution pools and provider-confirmed revocation
-remain separate future work.
+existing execution and connector paths. Connector action evidence is documented
+in the linked follow-up. Vault dynamic leases, isolated execution pools and
+provider-confirmed revocation remain separate future work.
 
 ## Why these changes come first
 

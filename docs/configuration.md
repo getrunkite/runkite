@@ -152,6 +152,9 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 
 ### Required policy audit
 
+Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+implement this setting; rebuild from source before relying on it.
+
 Set `"audit_required": true` inside the existing `policy` block to require durable decision writes before admission or connector access proceeds. `audit` defaults to true; combining required audit with `"audit": false` is invalid. Startup requires a SQL audit store (Postgres, MySQL or SQLite). Mongo cannot enable this mode.
 
 Required audit is checked on every decision, including cache hits. If persistence fails, allow or pending becomes deny with `policy_audit_failed`; existing denials retain their original reason. Approved connector actions are not consumed during the failure, and break-glass cannot bypass it. Traces and SIEM mark strict failures with `policy.audit_failed` and `audit_failed` respectively. Restore the database and retry only operations known not to have been dispatched. Omit `audit_required` to retain best-effort audit behavior.

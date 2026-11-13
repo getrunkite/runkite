@@ -113,6 +113,7 @@
 }</pre>
 
         <h2 id="required-audit">Require durable policy audit</h2>
+        <p class="note"><strong>Availability:</strong> unreleased source after v0.6.1. Published v0.6.1 binaries do not implement this setting. Rebuild from current source before relying on required audit.</p>
         <p>Add <code>"audit_required": true</code> to the existing policy block when sensitive access must stop if its decision cannot be saved. Auditing must be enabled and the backend must be Postgres, MySQL or SQLite; incompatible configurations stop startup. The default remains best-effort audit.</p>
         <p>During a required-audit outage, allow and pending become deny. Approved connector capabilities remain unconsumed, and break-glass cannot bypass the failed write. Restore the audit database before resubmitting requests known to have been blocked before dispatch. A failed write cannot appear in SQL Audit; inspect operational logs and configured traces or SIEM for the failure marker.</p>
         <p>Webhook <code>data.args</code> is capped, redacted display metadata. It is not the full argument object. Named-field redaction cannot detect every secret in arbitrary text.</p>

@@ -51,7 +51,8 @@ See the [operator guide](../site/support/connector-actions.html).
 
 ## Authority and secret-safety boundaries
 
-- Required policy audit is opt-in and SQL-only. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
+- Required policy audit is opt-in, SQL-only and available in unreleased source
+  after v0.6.1; it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
 - A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. This does not provide isolated identities for workers sharing a runner kind, atomic queue/child-store authorization, or external token downscoping.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
 - Vault references still read KV values. Dynamic lease issuance, renewal, cleanup reconciliation and provider-confirmed revocation are not implemented by this hardening patch.
