@@ -49,7 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a class="active" aria-current="page" href="tenant-review.html">Tenant review</a>
-          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -79,7 +79,7 @@
         <p class="kicker">Govern</p>
         <h1>Tenant review</h1>
         <p class="lede">Give a reviewer access to their team's operations without making them a deployment-wide administrator.</p>
-        <p class="note"><strong>Availability:</strong> v0.7.0 candidate source (not published). Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+        <p class="note"><strong>Availability:</strong> v0.7.0. Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
         <p>Reviewer permissions are implemented in that source. Upgrading every HTTP replica is a rollout requirement: old binaries cannot recognize the new role strings. API-key/JWT/webhook providers already default to strict permissions unless explicitly overridden; the Helm example also sets them to true.</p>
 
         <h2 id="scope">Start with the right access</h2>
@@ -112,7 +112,7 @@
   }
 }</pre>
         <p>With JWT or webhook auth, map those permission strings and the actual verified identity/tenant through your existing provider. A missing JWT subject or webhook user identity cannot use a compatibility placeholder to obtain review access. Empty permissions never grant Review, even when compatibility <code>strict_permissions: false</code> is configured.</p>
-        <p class="note"><strong>Upgrade every replica before issuing these permissions.</strong> Old binaries do not implement the boundary and may filter unknown role strings differently. Use strict permissions and activate reviewer grants only after the fleet is upgraded. Review sessions add no schema migration of their own, but the v0.7.0 candidate source (not published) includes security and target-binding migrations. Follow the <a href="ops.html#target-bound-approval-upgrade">target-binding maintenance procedure</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tenant-review-upgrade">Review upgrade procedure</a> first.</p>
+        <p class="note"><strong>Upgrade every replica before issuing these permissions.</strong> Old binaries do not implement the boundary and may filter unknown role strings differently. Use strict permissions and activate reviewer grants only after the fleet is upgraded. Review sessions add no schema migration of their own, but the v0.7.0 includes security and target-binding migrations. Follow the <a href="ops.html#target-bound-approval-upgrade">target-binding maintenance procedure</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tenant-review-upgrade">Review upgrade procedure</a> first.</p>
 
         <h2 id="use">Review an operation</h2>
         <ol class="steps">
@@ -138,7 +138,7 @@
           <li><strong>409:</strong> current policy, expiry, status or approval binding prevents approval. A prior approval is not a permanent policy exception.</li>
           <li><strong>501:</strong> use a SQL state backend, or implement the optional isolated Review-session capability if you supply a custom session store.</li>
         </ul>
-        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Subsequent unreleased <a href="security-completion.html#review-authority">review quorum and requester exclusion</a> are now available, with configured policy and optional advertised-schema binding. Neither proves remote implementation. Review also reads own-tenant lease metadata but cannot renew/revoke.</p>
+        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. v0.7.0 <a href="security-completion.html#review-authority">review quorum and requester exclusion</a> are now available, with configured policy and optional advertised-schema binding. Neither proves remote implementation. Review also reads own-tenant lease metadata but cannot renew/revoke.</p>
 
         <h2 id="qualification">Test the multi-replica boundary locally</h2>
         <p>From a source checkout with Go, Docker and Compose, run <code>make test-review-ha</code>. It creates disposable Postgres/Redis services and starts two real control-plane processes with strict authentication and a synthetic MCP target. It checks cross-replica sessions, tenant/role isolation, competing approval and dispatch, process loss, retained evidence and logout. It uses no paid model or cloud account.</p>

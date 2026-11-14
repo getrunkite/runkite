@@ -9,21 +9,29 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
-## Prepared v0.7.0 candidate
+<a id="prepared-v070-candidate"></a>
 
-The current metadata targets v0.7.0. It is a local candidate, not a tag or a
-published release. Published v0.6.1 artifacts do not include the new security
-controls. The governance helpers remain checkout-only even though their local
-package versions match the candidate.
+## v0.7.0 release verification
 
-The earlier qualification record covers the implementation before this metadata
-cut. Build and inspect the final versioned artifacts, run remote CI and verify
-publication before changing download badges or describing v0.7.0 as available.
+The coordinated source metadata and tag identify v0.7.0. Earlier v0.6.1 artifacts
+do not include the new security controls. Governance helpers remain checkout-only
+even though their local package versions match the release.
+
+A tag starts publication; it does not prove every destination succeeded. Verify
+the Release workflow's version check, GoReleaser, Docker, PyPI and npm job
+outcomes, then inspect the actual versioned artifacts before announcing them.
+Check the binary version and checksums, package metadata/entrypoints and both
+image platforms. An optional publication job that skipped is not a registry pass.
+Do not infer that `latest` moved merely because a tag or GitHub Release exists.
+
+The [local qualification record](internal/security-completion-qualification.md)
+identifies its exact tested images and scope. Those pre-release image IDs remain
+historical evidence; final tagged artifacts have their own identities.
 Keep the coordinated SQL upgrade instructions in the
 [operations runbook](ops-runbook.md#security-completion-upgrade) with the release
-notes. The candidate chart still defaults to `latest`, which identifies the
-published images until a new release succeeds. For candidate qualification, build
-matching images and explicitly set the control-plane and runner image tags.
+notes. The chart defaults to mutable `latest`; pin both the control-plane and
+runner image tags to `0.7.0` for this upgrade. Source builds must use matching
+plane and runner revisions as well.
 
 ## Version consistency gate
 
@@ -129,6 +137,12 @@ Repo secret `PYPI_API_TOKEN` (project-scoped token for `runkite-runner` after fi
 
 ### npm — Trusted Publisher (preferred)
 
+The workflow installs npm 12.2.2 explicitly before building and publishing.
+Node 22 can supply npm 10, which does not implement trusted publishing. npm
+requires at least CLI 11.5.1 and Node 22.14.0; the pinned client itself requires
+Node 22.22.2, Node 24.15.0 or Node 26+. Keep that engine requirement in mind when
+changing the publishing runner. See the [npm trusted-publishing contract](https://docs.npmjs.com/trusted-publishers/).
+
 Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 
 1. https://www.npmjs.com/package/runkite-runner → **Settings** → **Trusted Publisher**
@@ -140,6 +154,35 @@ Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 
 **Fallback:** granular token with **Bypass 2FA** → secret `NPM_TOKEN` (often still hits `EOTP` for new packages; prefer Trusted Publisher).
 
+If a tag already published its binaries or other packages before npm failed,
+preserve the tag and successful artifacts. Confirm whether the exact npm version
+exists before retrying. A maintainer can build the exact tagged source with a
+supported CLI, sign in using the personal publishing account and publish the
+verified tarball. Then rerun only the failed npm job; its existing-version check
+can recognize the completed publication. Editing the workflow on `main` does not
+change an old tag's workflow. Do not move the tag or overwrite release assets to
+repair an authentication failure.
+
 ### GHCR
 
 Make `runkite`, `runkite-runner`, and `runkite-runner-ts` **Public** under the org so anonymous `docker pull` works.
+
+### Runner Protocol mirror
+
+The separate `Publish runner-protocol` workflow copies the canonical subtree
+to `getrunkite/runner-protocol`. It does not publish Runkite binaries or packages.
+Its fine-grained personal-account token needs resource owner `getrunkite`, only
+repository `runner-protocol`, and Contents read/write. Metadata read access is
+required automatically. No Actions, Secrets or organization-admin permission is
+needed. Workflows write is unnecessary while the subtree has no workflow files.
+
+Store the token only as the source repository's Actions secret
+`RUNNER_PROTOCOL_MIRROR_TOKEN`. Choose an expiry according to the owner's
+credential policy and replace it before expiration. Never paste credentials into
+issues, chat, release notes or logs. An invalid-token failure needs credential
+rotation, not a protocol source edit or a disabled check.
+
+After rotation, start a fresh manual mirror run so it reads the new secret.
+Verify the authenticated subtree push succeeded and compare the destination's
+root tree with the dispatched source commit's `runner-protocol` tree. Their
+commit IDs differ because subtree splitting creates separate history.

@@ -1,6 +1,6 @@
 # Managed connector action evidence
 
-Status: v0.7.0 candidate source (not published). This extends required policy audit with
+Status: v0.7.0. This extends required policy audit with
 opt-in evidence for managed MCP `tools/call` attempts. Released v0.6.1 binaries
 do not implement these settings or Admin routes. See the
 [operator manual](../../site/support/connector-actions.html) and
@@ -54,7 +54,7 @@ later use `approved_capability`; an audited break-glass exception records its
 window ID. Recording a decision does not consume an approval. The later
 [target-bound approval milestone](target-bound-approvals.md) now fills the
 configured target revision and matches it during approval consumption, including
-when capture is off. Subsequent unreleased work now records configured policy,
+when capture is off. Additional v0.7.0 controls record configured policy,
 optional observed tool-contract identity and registered credential provenance.
 See [approval authority](approval-authority-and-quorum.md) and
 [credential lifecycle](credential-lifecycle.md). No target or schema digest
@@ -296,7 +296,7 @@ rewrite historical payloads or infer that an old tool did not execute.
   requirements and bounded system-scoped sweeps.
 
 These checks do not demonstrate exactly-once external effects, live-provider
-semantics, a public cloud soak, cryptographic tamper evidence or remote implementation identity. Subsequent unreleased
+semantics, a public cloud soak, cryptographic tamper evidence or remote implementation identity. Additional v0.7.0
 [optional schema/review binding](approval-authority-and-quorum.md) and
 [durable export](action-delivery-outbox.md) extend this original milestone;
 those checks have their own conformance and operational boundaries.

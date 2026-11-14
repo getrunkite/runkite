@@ -1,6 +1,6 @@
 # Parent authority and secret-safe policy decisions
 
-Availability: v0.7.0 candidate source (not published). This is the first security
+Availability: v0.7.0. This is the first security
 milestone. The later [connector action evidence record](connector-action-evidence.md)
 documents the implemented follow-up; published v0.6.1 binaries contain neither
 new opt-in setting.
@@ -10,7 +10,7 @@ existing execution and connector paths. Connector action evidence is documented
 in the linked follow-up. The later [credential lifecycle](credential-lifecycle.md),
 [execution pools](constrained-execution.md) and
 [approval/export controls](approval-authority-and-quorum.md) are now implemented
-in unreleased source under their own explicit boundaries.
+in v0.7.0 under their own explicit boundaries.
 
 ## Why these changes come first
 

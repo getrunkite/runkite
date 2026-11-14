@@ -7,8 +7,8 @@ SDK retains its model loop in the Python worker.
 ## Install
 
 Published PyPI `0.6.1` includes this profile through the `google-adk` extra.
-The current checkout targets the v0.7.0 candidate, which is not published yet.
-To install that matching candidate from source, use a clean Python 3.11+
+The current checkout contains the v0.7.0 implementation.
+To install the matching runner from source, use a clean Python 3.11+
 environment from the repository root:
 
 ```bash

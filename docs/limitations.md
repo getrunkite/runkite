@@ -29,9 +29,11 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 ---
 
-## Managed connector action evidence (unreleased)
+<a id="managed-connector-action-evidence-unreleased"></a>
 
-The v0.7.0 candidate (not published) can opt into SQL managed MCP attempt history with
+## Managed connector action evidence (v0.7.0)
+
+v0.7.0 can opt into SQL managed MCP attempt history with
 `policy.action_evidence` and required audit. It does not cover local tools,
 standalone decisions, model calls or every MCP method. Every serving replica
 must enable it; additive migrations do not make older or flag-off writers record.
@@ -55,9 +57,11 @@ is separate and leaves pending/unknown attempts, including earlier pending
 requests whose approval a later attempt consumed. Storage can therefore grow.
 See the [operator guide](../site/support/connector-actions.html).
 
-## Tenant Review boundaries (unreleased)
+<a id="tenant-review-boundaries-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds flat-tenant approval/evidence permissions in a
+## Tenant Review boundaries (v0.7.0)
+
+v0.7.0 adds flat-tenant approval/evidence permissions in a
 separate Review workspace. This is not general per-resource RBAC or a user
 registry. Review needs verified primary identity, explicit tenant and a new role;
 empty/default-open permissions do not qualify. Global Admin remains global.
@@ -74,7 +78,9 @@ Those options count exact authenticated identities, not independently verified
 people. They do not pin upstream code. Upgrade all replicas before issuing roles.
 See [setup and limitations](../site/support/tenant-review.html).
 
-## Configured target binding (unreleased)
+<a id="configured-target-binding-unreleased"></a>
+
+## Configured target binding (v0.7.0)
 
 Target revisions describe configured MCP endpoint/transport, nonsecret auth
 locators, scopes, tool filters and an optional operator `mcp.revision` label.
@@ -93,11 +99,11 @@ cannot gain that guard retroactively. See the
 
 ## Authority and secret-safety boundaries
 
-- Required policy audit is opt-in, SQL-only and available in the v0.7.0 candidate
-  (not published); it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
+- Required policy audit is opt-in, SQL-only and available in v0.7.0; it is absent
+  from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
 - A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. This does not provide isolated identities for workers sharing a runner kind, atomic queue/child-store authorization, or external token downscoping.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
-- Vault references still read KV values. That original hardening slice did not add lease issuance. Subsequent unreleased registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
+- Vault references still read KV values. That original hardening slice did not add lease issuance. The v0.7.0 registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
 
 ## Deep dive
 
@@ -300,9 +306,11 @@ Honest gaps, not hidden ones:
 - **Retention's `checkpoints_keep_last` only covers proxy-mode checkpoints.** See the Retention section above -- direct-mode Python+Postgres deployments use LangGraph's own `AsyncPostgresSaver` tables, which this feature doesn't touch.
 - **SSE event streaming is goroutine-per-run, each holding a Redis connection.** Every `broker.Subscribe(runID)` spawns one goroutine running a blocking `XREAD` loop against the run's Redis Stream (`rk:events:{run_id}`). Go goroutines are cheap (~2-4 KB each), but each one occupies a Redis connection from go-redis's pool for the duration of the SSE stream. At ~3,000-5,000 concurrent SSE connections per CP, the Redis connection pool becomes the bottleneck (Redis default `maxclients` is 10,000, shared across all CPs, queues, heartbeats, and cancels). Mitigation today: horizontal scaling (add CP replicas behind the load balancer). Future optimization path: a multiplexed XREAD reader that tails all active streams in one Redis command/connection and dispatches to per-run Go channels in-memory — same `EventBroker` interface, same handler code, 50x fewer Redis connections. Not implemented because current target scale (hundreds to low thousands of concurrent runs) is well within the goroutine-per-run model.
 
-## Security completion boundaries (unreleased)
+<a id="security-completion-boundaries-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds optional reviewer separation/quorum, policy and MCP schema
+## Security completion boundaries (v0.7.0)
+
+v0.7.0 adds optional reviewer separation/quorum, policy and MCP schema
 binding, durable action export, registered Vault database leases and execution
 pools. Published v0.6.1 artifacts do not implement these controls.
 

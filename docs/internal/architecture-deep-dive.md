@@ -44,7 +44,7 @@ The document is long on purpose. Brevity creates confusion. I would rather over-
 
 
 
-The v0.7.0 candidate (not published) adds opt-in managed MCP action evidence,
+v0.7.0 adds opt-in managed MCP action evidence,
 requiring SQL and required audit. See [the engineering record](connector-action-evidence.md)
 for the atomic intent/approval boundary, immutable run incarnations, late
 observations and independent retention. A recorded response is not proof of a
@@ -1479,7 +1479,7 @@ that exception; in best-effort mode a successfully audited break-glass use can
 skip normal Decide. See `internal/api/policy.go:checkConnectorPolicyEvaluation`
 and the detailed managed-call flow below.
 
-The v0.7.0 candidate (not published) also adds target-bound managed approvals and opt-in
+v0.7.0 also adds target-bound managed approvals and opt-in
 connector action evidence. Published v0.6.1 does not implement these additions.
 See [target-bound approvals](target-bound-approvals.md) and
 [connector action evidence](connector-action-evidence.md) for the exact contracts.

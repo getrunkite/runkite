@@ -1,6 +1,6 @@
 # Target-bound managed connector approvals
 
-Status: v0.7.0 candidate source (not published). This extends the existing managed MCP
+Status: v0.7.0. This extends the existing managed MCP
 approval contract on all three SQL backends. It applies with action capture on
 or off. It does not change standalone expiring `/governance/decide` approvals or
 add a framework runtime. See the [operator procedure](../ops-runbook.md#connector-target-revision-upgrade)
@@ -197,7 +197,7 @@ exactly-once effects or live-provider behavior.
 ## Subsequent approval and schema contracts
 
 The original v1 descriptor remains unchanged for existing configurations.
-Subsequent unreleased `mcp.pin_tools` and registered credential-binding options
+The v0.7.0 `mcp.pin_tools` and registered credential-binding options
 use a v2 descriptor, and managed approvals also require configured policy identity
 and optional observed MCP tool-contract identity. Target v1/v2 are exact versioned
 formats, not aliases. Schema discovery/recheck can reject advertised-contract

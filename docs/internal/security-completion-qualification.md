@@ -1,6 +1,6 @@
 # Security completion qualification
 
-Status: local v0.7.0 candidate (not published), qualified on 2026-11-14.
+Status: local implementation qualification for v0.7.0, measured on 2026-11-14.
 This records measured evidence and rollout requirements. It is not a claim that
 every configuration, provider or possible failure has been tested.
 
@@ -147,18 +147,18 @@ containers and network were absent. Final runtime/CNI cleanup remains confirmed.
 A local test record does not establish remote CI or package publication. Rebuild
 and repeat the relevant gates for the tagged release and its target platforms.
 
-Version metadata now targets v0.7.0 locally. This candidate is not tagged or
-published; v0.6.1 remains the published release. The image IDs above identify the
-actual tested artifacts before the final versioned release build. Rebuild and
-repeat the relevant artifact gates for the candidate/tag instead of treating old
-image or wheel identifiers as newly published v0.7.0 artifacts. No existing tag
-or published artifact is rewritten. New configuration is opt-in and the external
-bridge remains experimental, even though its bounded fixture now runs.
+The image IDs above identify the actual tested artifacts before the final
+versioned v0.7.0 release build. They are not identities of the published
+multi-platform images. Keep final artifact/publication verification separate
+instead of treating old image or wheel identifiers as release-registry proof.
+No existing tag or published artifact is rewritten. New configuration is opt-in
+and the external bridge remains experimental, even though its bounded fixture
+now runs. Follow the [release verification guide](../releasing.md) for tagged
+binary, package and image checks.
 
-Candidate Helm deployment requires matching locally built plane and runner
-images. Its `image.tag` and `runner.image.tag` defaults remain `latest`, which
-does not select an unpublished candidate. Override both deliberately and follow
-the [release preparation guide](../releasing.md).
+Helm deployment requires matching plane and runner artifacts. Its `image.tag`
+and `runner.image.tag` default to mutable `latest`; explicitly select `0.7.0`
+for this upgrade, or matching images you built from the same source.
 
 Before upgrade, verify a backup and stop or drain every writer. Upgrade through
 Postgres/SQLite schema 21 or MySQL schema 22, replace every HTTP/runner replica
@@ -186,3 +186,45 @@ CNI. A runtime policy digest does not attest the kernel or image. Revoking a
 database credential need not terminate every established session. Export is
 at least once and can reorder. Cancellation cannot undo committed side effects.
 These boundaries remain part of the product contract after release.
+
+## v0.7.0 publication verification (2026-11-14)
+
+The annotated `v0.7.0` tag points to
+`9d5cdc902ed59d7a85baaafd5bee530a4d750370`. The merged source passed
+[main CI](https://github.com/getrunkite/runkite/actions/runs/43570489823) and
+[Review HA](https://github.com/getrunkite/runkite/actions/runs/43570489696). The
+[release workflow](https://github.com/getrunkite/runkite/actions/runs/43576359123)
+built and published the versioned artifacts.
+
+- All four GitHub binary archives match the published SHA256 manifest and
+  expected Mach-O/ELF architecture headers. License, notice, README and
+  third-party notices match the tag. The native Darwin arm64 binary reports
+  `0.7.0`, commit `9d5cdc9`. Other platform binaries were inspected, not executed.
+- The three published OpenAPI files match the tagged source byte for byte.
+- Both PyPI distributions match registry SHA256 metadata. All 51 packaged runtime
+  Python/type-marker files match the tag in both distributions. Version,
+  Apache-2.0 metadata, optional SDK pins and all six console entrypoints match.
+  The wheel excludes tests; the source distribution retains its 47 ordinary
+  source tests while excluding adapter tests/live fixtures.
+- The public npm package is `runkite-runner@0.7.0`, with `latest` selecting it.
+  Its 63-file tarball is byte-identical to the separately built and inspected
+  tagged-source tarball (SHA256
+  `a7f9e641b128a25d17f5fe9a9845e8c22e188ddd5d3e952f10aca99dd96e53aa`).
+- All three public GHCR image indexes expose `linux/amd64` and `linux/arm64`.
+  Each `latest` index matches its `0.7.0` index. Both platform configs declare
+  Apache-2.0 and a non-root user. These are the released multi-platform indexes:
+
+- `ghcr.io/getrunkite/runkite:0.7.0`: `sha256:dd1af7926101a12f88cf4e63f9dbfdd3fef0895ebe1917229233c2f1790144af`
+- `ghcr.io/getrunkite/runkite-runner:0.7.0`: `sha256:098069b74464bed4db4e419da6d5b5f15eba8b19efafd0aaccab6cd98cf17191`
+- `ghcr.io/getrunkite/runkite-runner-ts:0.7.0`: `sha256:480568907df57b25ddbc8f3cd674fb3226734687df1ea615afcb9a475f9e93d5`
+
+The initial npm job used npm 10.9.9, which cannot perform trusted publishing,
+and both the OIDC attempt and token fallback returned 404. A maintainer signed
+in and approved a one-time npm 12.2.2 publication of the verified tagged tarball.
+No npm CI/OIDC provenance is claimed for that upload. The failed job was rerun
+after registry verification so its existing-version check could recognize the
+completed publication. The unchanged tag and successful artifacts were retained.
+The subsequent workflow change installs npm 12.2.2 explicitly for future tags.
+
+These publication checks do not add live-provider, all-platform execution,
+external-workload HA or long-running soak qualification to the earlier scope.

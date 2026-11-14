@@ -1,6 +1,6 @@
 # Credential-aware PostgreSQL MCP executor
 
-v0.7.0 candidate example (not published). This is an external server for Runkite's managed
+v0.7.0 example. This is an external server for Runkite's managed
 `vault_database` connector path. It is not a general database MCP server and is not
 embedded in the control-plane binary.
 

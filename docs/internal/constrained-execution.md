@@ -1,6 +1,6 @@
 # Execution pools and an external workload boundary
 
-Status: v0.7.0 candidate source (local, not published). This note distinguishes implemented
+Status: v0.7.0 source. This note distinguishes implemented
 fleet routing, a rendered deployment profile and an experimental external bridge.
 It does not declare OpenShell or a Kubernetes CNI qualified merely because their
 configuration exists. No runtime is embedded in the Go binary.

@@ -4,10 +4,18 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
-**Release target: v0.7.0.** This is a local release candidate, not a published
-release. The entries below describe the candidate source. Existing v0.6.1
-artifacts do not include these changes. Move this section to a dated v0.7.0
-release entry only after the corresponding artifacts are published.
+### Fixed
+
+- Install npm 12.2.2 explicitly in the release job. Node 22's bundled npm 10
+  cannot perform trusted publishing; the v0.7.0 attempt exposed this failure.
+  Existing tags and published artifacts remain unchanged.
+
+## [0.7.0] - 2026-11-14
+
+Coordinated security and operations release. Upgrade all SQL writers together
+using the [maintenance procedure](docs/ops-runbook.md#security-completion-upgrade).
+Governance helper packages remain checkout-only; the external workload bridge
+remains experimental.
 
 ### Image qualification
 
@@ -42,7 +50,7 @@ release entry only after the corresponding artifacts are published.
   usage/spend-settlement contract; zero recorded usage does not establish zero cost.
 - Add SQL migrations Postgres/SQLite 19/20/21 and MySQL 20/21/22, updated Admin
   navigation and contract tests, and end-to-end operator/engineering guidance.
-  All entries above are included in the unpublished v0.7.0 candidate.
+  These controls are opt-in and require matching deployment configuration.
 
 - Bind managed MCP approvals to a `target-v1-` connector configuration digest
   in both recorded and unrecorded paths. Pin request configuration through
@@ -72,8 +80,8 @@ release entry only after the corresponding artifacts are published.
 - Admin Connector actions list/detail, a Run Detail evidence panel, correlation
   IDs and an operator investigation guide. Preserve evidence across run pruning;
   optional independent retention removes only resolved records. Add SQL schema
-  migrations Postgres/SQLite 17 and MySQL 18. This is part of the unpublished
-  v0.7.0 candidate, not a change to previously published artifacts.
+  migrations Postgres/SQLite 17 and MySQL 18. These changes do not rewrite
+  previously published artifacts.
 
 ### Documentation
 

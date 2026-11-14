@@ -1,6 +1,6 @@
 # Dynamic database credential lifecycle
 
-Availability: v0.7.0 candidate source (not published). This document describes the new
+Availability: v0.7.0. This document describes the new
 credential lifecycle package and the managed connector integration qualified by
 the [bounded fixture record](security-completion-qualification.md).
 It does not describe a feature in the published v0.6.1 binaries.

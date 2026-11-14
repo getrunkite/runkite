@@ -55,7 +55,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
-          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
@@ -379,7 +379,7 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           <li>Your agent tries to call the gated tool (e.g. <code>deleteRecord</code>).</li>
           <li>Instead of running, the call is refused with JSON-RPC pending and shows up in <a href="admin-guide.html#11-pending-approval-queue">Admin → Pending</a> (connector, tool, reason, and the triggering display map on the <strong>Args</strong> column).</li>
           <li>A human clicks <strong>Approve</strong> or <strong>Deny</strong> in Admin (or your own tooling can call the same API).</li>
-          <li><strong>Approved</strong>: a one-shot permission enables the next matching connector call with the same tenant, agent and argument digest. A different payload does not consume it. <strong>Denied</strong>: the caller must not perform that write and decides how to continue. The caller must retry under the original active run/generation. Neither Admin action automatically executes the tool or resumes a run. The v0.7.0 candidate (not published) also binds this permission to the original stored run incarnation and configured target revision, as described below.</li>
+          <li><strong>Approved</strong>: a one-shot permission enables the next matching connector call with the same tenant, agent and argument digest. A different payload does not consume it. <strong>Denied</strong>: the caller must not perform that write and decides how to continue. The caller must retry under the original active run/generation. Neither Admin action automatically executes the tool or resumes a run. v0.7.0 also binds this permission to the original stored run incarnation and configured target revision, as described below.</li>
           <li>This is a one-time unlock, not a standing exception, the very next time the agent tries the same tool, it pauses again. If you want it to stop pausing permanently, remove the mandatory HITL rule instead.</li>
         </ol>
         <figure class="shot">
@@ -406,16 +406,16 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           ·
           <a href="./try.html">Try HITL path</a>
         </p>
-        <h2 id="target-bound-approvals">Target-bound approvals (unreleased)</h2>
-        <p>The v0.7.0 candidate (not published) binds managed approvals to a versioned SHA-256 <code>target_revision</code>. The descriptor covers the configured MCP endpoint, transport, auth identity/reference, scopes, tool filters and optional operator contract version. Resolved secret values are excluded, so ordinary credential rotation does not invalidate a review. Published v0.6.1 does not implement this binding.</p>
+        <h2 id="target-bound-approvals">Target-bound approvals (v0.7.0)</h2>
+        <p>v0.7.0 binds managed approvals to a versioned SHA-256 <code>target_revision</code>. The descriptor covers the configured MCP endpoint, transport, auth identity/reference, scopes, tool filters and optional operator contract version. Resolved secret values are excluded, so ordinary credential rotation does not invalidate a review. Published v0.6.1 does not implement this binding.</p>
         <p>Use the optional nonsecret <code>mcp.revision</code> when a remote contract changes without a configuration change. For example, add <code>revision: salesforce-contract-2</code> under the existing <code>mcp:</code> block. Keep this label identical across replicas. It is an operator assertion, not discovery or verification of a tool's schema or implementation. MCP URLs must use HTTP(S) without URL userinfo or credential-bearing query parameters; keep credentials in <code>auth</code> or <code>auth.secret_ref</code>.</p>
         <p>A request pins one configuration snapshot before policy evaluation and uses it for dispatch. Changed target configuration requires fresh submission and review; approval cannot be transferred to the new target by keeping the connector name. Admin and Review show the stored revision and reject missing legacy bindings. This applies with action capture on or off. Standalone expiring <code>/governance/decide</code> approvals retain their existing app-owned behavior.</p>
         <p class="note">Existing managed approvals receive no target backfill and require fresh review. Follow the <a href="ops.html#target-bound-approval-upgrade">maintenance and migration procedure</a> before deploying. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">engineering rationale</a> and <a href="connector-actions.html#target-revision">action evidence field guide</a>.</p>
 
-        <h2 id="connector-action-evidence">Managed connector action evidence (unreleased)</h2>
-        <p>The v0.7.0 candidate (not published) adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
+        <h2 id="connector-action-evidence">Managed connector action evidence (v0.7.0)</h2>
+        <p>v0.7.0 adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
 
-        <h2 id="policy-schema-credentials">Policy, schema and credential binding (unreleased)</h2>
+        <h2 id="policy-schema-credentials">Policy, schema and credential binding (v0.7.0)</h2>
         <p>Managed approvals now additionally bind the configured <code>policy-v1-</code> revision and optional actual MCP <code>tool-v1-</code> schema. <code>mcp.pin_tools: true</code> discovers the requested tool contract and rechecks it at dispatch. A configured <code>policy.webhook.revision</code> is an operator label for a remote PDP contract, not attestation. New pinning/credential contracts use target-v2; unchanged legacy descriptors preserve target-v1. Historical missing managed authority requires fresh review.</p>
         <p>The registered <code>vault_database</code> path releases short-lived PostgreSQL identities privately only to a trusted configured external MCP executor. Credentials do not enter the runner session, model arguments or UI. Ordinary bearer-only MCP servers need an adapter; schema identity does not prove implementation or effects. See <a href="security-completion.html">Security operations</a>.</p>
       </main>

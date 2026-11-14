@@ -47,8 +47,8 @@ unsupported.
 
 **Published packaging:** PyPI `0.6.1` includes this adapter, extra and CLI in
 `runkite-runner`, with an optional `agent-framework` extra pinned to
-`agent-framework-core==1.23.0`. The current checkout targets the v0.7.0 candidate,
-which is not published yet. To install that matching candidate, build the local
+`agent-framework-core==1.23.0`. The current checkout contains v0.7.0.
+To install the matching runner from source, build the local
 package in a clean environment from the repository root:
 
 ```bash

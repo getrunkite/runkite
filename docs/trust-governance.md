@@ -127,7 +127,7 @@ NetworkPolicy and the newer egress profile are both disabled by default. Its roo
 filesystem is writable by default.
 Those controls are useful but do not establish an arbitrary-code sandbox.
 
-The v0.7.0 candidate (not published) adds separately credentialed execution pools, an opt-in
+v0.7.0 adds separately credentialed execution pools, an opt-in
 Helm egress profile and an experimental external OpenShell 0.1.8 JSONL workload
 bridge. The trusted Runkite worker remains outside the workload, owning runner
 authentication, MCP authority, checkpoint CAS and launch receipts. Ordinary SDK
@@ -150,7 +150,7 @@ and limits for unreported workload calls.
 
 ## Required audit before access
 
-Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
+Availability: v0.7.0. Published v0.6.1 binaries do not
 implement this mode.
 
 The optional `policy.audit_required: true` setting requires a durable policy decision before managed admission, connector access or an in-process decision can allow or become pending. It requires auditing enabled and a SQL state backend. Startup rejects an incompatible configuration. The default remains best-effort auditing.
@@ -159,9 +159,11 @@ A required-audit outage blocks dispatch, including approved connector retries an
 
 Argument metadata recursively removes common password, token, secret and API-key aliases while preserving the original arguments for policy evaluation and the exact digest. Name-based filtering cannot find credentials embedded in arbitrary text. Avoid secret-bearing tool arguments and sensitive payload capture. A policy decision remains separate from evidence that a downstream operation executed.
 
-## Managed MCP action evidence (unreleased)
+<a id="managed-mcp-action-evidence-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds optional `policy.action_evidence` on SQL, requiring
+## Managed MCP action evidence (v0.7.0)
+
+v0.7.0 adds optional `policy.action_evidence` on SQL, requiring
 `policy.audit_required`. Each valid managed tool request gets its own identity.
 The original policy effect is retained separately from the final approved or
 break-glass authority. SQL managed approvals bind to the immutable original run
@@ -187,9 +189,11 @@ Optional [registered Vault database leases](internal/credential-lifecycle.md) an
 gate and SQL event transactions. Capture alone enables neither option; no second
 vault is introduced.
 
-## Scoped human review (unreleased)
+<a id="scoped-human-review-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds `/review-api` and `/admin/review/` with primary
+## Scoped human review (v0.7.0)
+
+v0.7.0 adds `/review-api` and `/admin/review/` with primary
 `governance:read` / `governance:approve` permissions. Scope comes from a verified
 identity and explicit tenant. Global Admin remains global. Reviewers cannot edit
 policy/grants, mint break-glass or read conversations. Read-only pending replies
@@ -278,7 +282,7 @@ re-evaluates the stored capped/redacted display map, so predicates must not rely
 on omitted secret fields. SQL stores provide durable one-shot consumption;
 Mongo cannot persist pending and fails closed.
 
-The v0.7.0 candidate (not published) also requires the immutable run incarnation
+v0.7.0 also requires the immutable run incarnation
 and configured connector target revision. The managed request keeps one target
 snapshot through dispatch, and both capture modes enforce the same approval
 match. Admin and Review refuse approval of a historical or changed target;
@@ -328,9 +332,11 @@ Example:
 
 Absent / empty `policy` preserves V1 open access after runner auth + run-binding.
 
-## Revision-bound review and lifecycle controls (unreleased)
+<a id="revision-bound-review-and-lifecycle-controls-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds `policy.approvals` for operations already held by policy.
+## Revision-bound review and lifecycle controls (v0.7.0)
+
+v0.7.0 adds `policy.approvals` for operations already held by policy.
 `required_approvals` ranges from one to five; `exclude_requester` prevents exact
 requester self-review. Reviewer identities are authenticated and compared exactly,
 with no case folding or user directory. Votes are transactional history; partial
@@ -360,5 +366,5 @@ revocation can remain unknown, requiring provider investigation.
 See [review design](internal/approval-authority-and-quorum.md),
 [export design](internal/action-delivery-outbox.md),
 [credential design](internal/credential-lifecycle.md), and
-[operations](ops-runbook.md#security-completion-upgrade). These are unreleased
-controls, not a guarantee of exactly-once external effects or arbitrary-code safety.
+[operations](ops-runbook.md#security-completion-upgrade). These v0.7.0
+controls are not a guarantee of exactly-once external effects or arbitrary-code safety.
