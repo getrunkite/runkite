@@ -738,6 +738,36 @@ which is for client/admin auth):
 
 ---
 
+### 11.4 Optional Verified Workload Identity
+
+A strict deployment MAY require externally issued mTLS workload identities in
+addition to fleet tokens. Runkite's strict profile requires one allowed SPIFFE
+URI SAN and a short-lived verified client certificate. The URI and SHA-256 SPKI
+fingerprint distinguish a holder within a fleet. Certificate CN and forwarded
+identity headers do not identify the holder. No protocol field supplies proof
+of possession; TLS supplies it.
+
+The optional assignment `workload_owner` contains `uri`, `key_sha256` and
+`not_after`. It is server-derived metadata. A strict runner MUST present the
+same original client credential on later gRPC and internal HTTPS requests.
+Every event, heartbeat and ordinary completion is checked against the owner.
+Cancel streams are scoped to the holder and expire. A different key cannot
+adopt work by guessing its run ID and generation.
+
+Strict owned Nack and reclaim produce a new generation before a new holder
+is bound. The original holder's expiry bounds that attempt, including an
+existing connection. Rotation requires drain/reclaim; a new certificate cannot
+extend the authority of the original assignment. Permanent authentication or
+owner denial MUST stop renewal and signal cooperative cancellation. A strict
+owned pre-execution status check MUST fail closed. This does not guarantee that
+arbitrary code stops or undo external effects.
+
+Runkite currently supports the strict profile with SQL state and inprocess or
+Redis queues. All control-plane replicas must enable it consistently after a
+drain. Legacy fleet-only deployments remain supported. See
+`docs/internal/workload-identity.md` in the Runkite repository for deployment
+and trust boundaries.
+
 ## 12. Observability
 
 ### 12.1 Trace Context Propagation

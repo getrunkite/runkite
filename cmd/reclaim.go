@@ -149,7 +149,7 @@ func finishPoisonPill(ctx context.Context, queue transport.JobQueue, pill transp
 	if err != nil || !accepted {
 		return false, err
 	}
-	return queue.Ack(ctx, pill.RunID, pill.Generation-1)
+	return queue.Ack(transport.TrustedQueueContext(ctx), pill.RunID, pill.Generation-1)
 }
 
 func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxAge time.Duration, maxRetries int, complete reclaimCompletion) {

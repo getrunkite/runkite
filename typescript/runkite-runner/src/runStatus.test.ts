@@ -61,6 +61,45 @@ test("shouldSkipRun returns true for 404", async () => {
   }
 });
 
+test("certificate-owned ordinary runner refuses denied or unknown pre-exec authority", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const [status, body, expected] of [
+      [403, {}, true],
+      [503, {}, true],
+      [200, {}, true],
+      [200, { status: "running" }, false],
+    ] as const) {
+      globalThis.fetch = (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
+      assert.equal(
+        await shouldSkipRun("https://cp", "run", {
+          runnerKind: "typescript-ai-sdk",
+          generation: 1,
+          requireAuthority: true,
+        }),
+        expected,
+      );
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("certificate-owned preflight refuses plaintext before fetch sees credentials", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    throw new Error("must not dispatch");
+  }) as typeof fetch;
+  try {
+    assert.equal(await shouldSkipRun("http://cp:2026", "run", { requireAuthority: true }), true);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("shouldSkipRun preserves the assignment tenant instead of querying default", async () => {
   const original = globalThis.fetch;
   let tenant: string | null = null;

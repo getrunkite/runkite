@@ -144,6 +144,9 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 	if len(cfg.Scopes) > 0 {
 		data.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
+	if err := applyExchangeContract(ctx, cfg, ssoToken, data); err != nil {
+		return nil, err
+	}
 
 	body, err := oauthTokenRequest(ctx, tokenURL, data)
 	if err != nil {
@@ -155,7 +158,12 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int    `json:"expires_in"`
 		IssuedToken  string `json:"issued_token_type"`
+		TokenType    string `json:"token_type"`
+		Scope        string `json:"scope"`
 		InstanceURL  string `json:"instance_url"`
+	}
+	if cfg.TokenExchange != nil && validateRawExchangeResponse(body) != nil {
+		return nil, errExchangeContract
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return nil, errors.New("parse token exchange response: invalid response")
@@ -163,6 +171,9 @@ func oauth2TokenExchange(ctx context.Context, cfg AuthConfig, ssoToken string) (
 
 	if tokenResp.AccessToken == "" {
 		return nil, fmt.Errorf("token exchange returned empty access_token")
+	}
+	if err := validateExchangeResponse(cfg, tokenResp.TokenType, tokenResp.IssuedToken, tokenResp.Scope, int64(tokenResp.ExpiresIn)); err != nil {
+		return nil, err
 	}
 
 	expiresIn := tokenResp.ExpiresIn

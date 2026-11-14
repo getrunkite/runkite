@@ -391,6 +391,7 @@ async function handleJobUnderTenant(
       runnerKind: opts.runnerKind,
       runnerToken: opts.runnerToken,
       generation,
+      requireAuthority: assignment.workload_owner !== undefined,
     }))
   ) {
     return undefined;

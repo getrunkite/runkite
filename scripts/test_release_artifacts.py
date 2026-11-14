@@ -1,0 +1,165 @@
+"""Offline release recovery contract. No registry credentials or writes."""
+
+import io
+import json
+import tarfile
+import tempfile
+import unittest
+import urllib.error
+from pathlib import Path
+from unittest.mock import patch
+
+import release_artifacts as release
+
+
+def archive(content=b"public runtime", *, modified_time=0):
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w:gz") as output:
+        entry = tarfile.TarInfo("package/index.js")
+        entry.size = len(content)
+        entry.mtime = modified_time
+        entry.mode = 0o644
+        output.addfile(entry, io.BytesIO(content))
+    return stream.getvalue()
+
+
+class RegistryRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.data = archive()
+        self.file = self.root / "runkite-governance-0.7.0.tgz"
+        self.file.write_bytes(self.data)
+        self.entry = release._record(self.file)
+        self.manifest = {
+            "format": 1,
+            "ecosystem": "npm",
+            "name": "runkite-governance",
+            "version": "0.7.0",
+            "artifacts": [self.entry],
+        }
+        self.npm = {
+            "name": "runkite-governance",
+            "version": "0.7.0",
+            "dist": {
+                "integrity": self.entry["integrity"],
+                "tarball": "https://registry.npmjs.org/runkite-governance/-/runkite-governance-0.7.0.tgz",
+            },
+        }
+
+    def fetch(self, data=None):
+        payload = self.data if data is None else data
+
+        def get(url, _limit, **_kwargs):
+            return json.dumps(self.npm).encode() if url.endswith("/0.7.0") else payload
+
+        return get
+
+    def test_matching_npm_requires_both_integrity_and_download(self):
+        self.assertEqual(release.inspect_registry(self.manifest, self.fetch()), [])
+        self.npm["dist"]["integrity"] = "sha512-wrong"
+        with self.assertRaisesRegex(release.ArtifactError, "integrity"):
+            release.inspect_registry(self.manifest, self.fetch())
+
+    def test_matching_metadata_does_not_hide_different_tarball(self):
+        with self.assertRaisesRegex(release.ArtifactError, "tarball"):
+            release.inspect_registry(self.manifest, self.fetch(archive(b"changed")))
+
+    def test_absent_is_only_an_explicit_metadata_not_found(self):
+        self.assertEqual(release.inspect_registry(self.manifest, lambda *args, **kwargs: None), [self.file.name])
+        for status in (401, 403, 404, 429, 500):
+            error = urllib.error.HTTPError(
+                "https://registry.npmjs.org/p/v", status, "private body", {}, io.BytesIO(b"never print")
+            )
+            with patch.object(release.urllib.request, "build_opener") as factory:
+                factory.return_value.open.side_effect = error
+                if status == 404:
+                    self.assertIsNone(release.public_get("https://registry.npmjs.org/p/v", 100, missing_ok=True))
+                else:
+                    with self.assertRaisesRegex(release.ArtifactError, f"HTTP {status}"):
+                        release.public_get("https://registry.npmjs.org/p/v", 100, missing_ok=True)
+
+    def test_existing_download_404_and_network_failure_are_not_absence(self):
+        with patch.object(release.urllib.request, "build_opener") as factory:
+            for failure in (
+                urllib.error.URLError("unavailable"),
+                urllib.error.HTTPError("https://registry.npmjs.org/p.tgz", 404, "missing", {}, io.BytesIO()),
+            ):
+                factory.return_value.open.side_effect = failure
+                with self.assertRaises(release.ArtifactError):
+                    release.public_get("https://registry.npmjs.org/p.tgz", 100)
+
+    def test_registry_cannot_redirect_download_to_another_host(self):
+        for url in (
+            "http://registry.npmjs.org/p.tgz",
+            "https://example.com/p.tgz",
+            "https://user:password@registry.npmjs.org/p.tgz",
+            "https://registry.npmjs.org/p.tgz?token=value",
+        ):
+            self.npm["dist"]["tarball"] = url
+            with self.assertRaisesRegex(release.ArtifactError, "URL"):
+                release.inspect_registry(self.manifest, self.fetch())
+
+    def test_invalid_identity_and_duplicate_json_fail_closed(self):
+        self.npm["name"] = "another-package"
+        with self.assertRaisesRegex(release.ArtifactError, "identity"):
+            release.inspect_registry(self.manifest, self.fetch())
+        with self.assertRaisesRegex(release.ArtifactError, "Duplicate"):
+            release.inspect_registry(self.manifest, lambda *args, **kwargs: b'{"name":"a","name":"b"}')
+
+    def test_changed_local_artifact_is_never_used_for_recovery(self):
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps(self.manifest))
+        self.file.write_bytes(archive(b"modified after build"))
+        with patch.object(release, "inspect_registry") as inspect:
+            with self.assertRaisesRegex(release.ArtifactError, "changed"):
+                release.check(manifest_path)
+            inspect.assert_not_called()
+
+    def test_pypi_checks_each_file_and_recovers_only_missing_distribution(self):
+        self.manifest["ecosystem"] = "pypi"
+        second = dict(self.entry, filename="runkite_governance-0.7.0.whl")
+        self.manifest["artifacts"].append(second)
+        remote = {
+            "info": {"name": "runkite_governance", "version": "0.7.0"},
+            "urls": [
+                {
+                    "filename": self.file.name,
+                    "url": "https://files.pythonhosted.org/p.tgz",
+                    "digests": {"sha256": release.sha256(self.data)},
+                }
+            ],
+        }
+
+        def get(url, _limit, **_kwargs):
+            return json.dumps(remote).encode() if url.endswith("/json") else self.data
+
+        self.assertEqual(release.inspect_registry(self.manifest, get), [second["filename"]])
+        remote["urls"][0]["digests"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(release.ArtifactError, "digest"):
+            release.inspect_registry(self.manifest, get)
+
+    def test_pypi_accepts_container_dates_but_never_changed_member_bytes(self):
+        self.manifest["ecosystem"] = "pypi"
+
+        def get_for(data):
+            remote = {
+                "info": {"name": "runkite-governance", "version": "0.7.0"},
+                "urls": [
+                    {
+                        "filename": self.file.name,
+                        "url": "https://files.pythonhosted.org/p.tgz",
+                        "digests": {"sha256": release.sha256(data)},
+                    }
+                ],
+            }
+            return lambda url, _limit, **_kwargs: json.dumps(remote).encode() if url.endswith("/json") else data
+
+        self.assertEqual(release.inspect_registry(self.manifest, get_for(archive(modified_time=123))), [])
+        with self.assertRaisesRegex(release.ArtifactError, "contents"):
+            release.inspect_registry(self.manifest, get_for(archive(b"different", modified_time=123)))
+
+
+if __name__ == "__main__":
+    unittest.main()

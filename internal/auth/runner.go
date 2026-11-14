@@ -34,9 +34,10 @@ import (
 // A missing header is treated as "default" for the allow check. Tenant lists
 // are per-kind, not per fleet token.
 type RunnerTokens struct {
-	pools   *execution.Catalog
-	tokens  map[string][]string            // runner_kind -> accepted tokens (allowlist)
-	tenants map[string]map[string]struct{} // runner_kind -> allowed tenant ids (absent/empty = unrestricted)
+	workloads *workloadPolicy
+	pools     *execution.Catalog
+	tokens    map[string][]string            // runner_kind -> accepted tokens (allowlist)
+	tenants   map[string]map[string]struct{} // runner_kind -> allowed tenant ids (absent/empty = unrestricted)
 }
 
 // EnvPrefix is the environment variable prefix for runner tokens, e.g.

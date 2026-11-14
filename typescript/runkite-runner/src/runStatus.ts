@@ -6,7 +6,7 @@
  */
 import { logger } from "./logger.js";
 import { tenantHeaders, runIdHeaders } from "./tenantCtx.js";
-import { httpDispatcher } from "./tls.js";
+import { httpDispatcher, requireWorkloadHTTPS } from "./tls.js";
 
 const SKIP_STATUSES = new Set(["interrupted", "success", "error", "timeout"]);
 
@@ -15,10 +15,10 @@ type FetchInit = RequestInit & { dispatcher?: unknown };
 export async function shouldSkipRun(
   httpAddress: string,
   runId: string,
-  opts?: { runnerKind?: string; runnerToken?: string; generation?: number },
+  opts?: { runnerKind?: string; runnerToken?: string; generation?: number; requireAuthority?: boolean },
 ): Promise<boolean> {
   const base = httpAddress.replace(/\/+$/, "");
-  const pool = opts?.runnerKind?.startsWith("pool-") ?? false;
+  const pool = opts?.requireAuthority === true || (opts?.runnerKind?.startsWith("pool-") ?? false);
   // The status route uses tenant-scoped storage even though it does not require
   // an active run binding. Preserve the assignment's current tenant here too.
   const headers: Record<string, string> = tenantHeaders();
@@ -31,6 +31,7 @@ export async function shouldSkipRun(
     headers["X-Runner-Token"] = opts.runnerToken;
   }
   try {
+    if (opts?.requireAuthority) requireWorkloadHTTPS(base);
     // Match Python's httpx timeout=5.0 -- undici's default headers/body
     // timeouts are ~300s, which would defeat fail-open on a stalled CP.
     const init: FetchInit = {

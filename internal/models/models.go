@@ -290,9 +290,10 @@ type RunManifest struct {
 
 // RunManifestPrincipal records who started the run (when auth is configured).
 type RunManifestPrincipal struct {
-	Identity         string   `json:"identity,omitempty"`
-	VerifiedIdentity bool     `json:"verified_identity,omitempty"`
-	Permissions      []string `json:"permissions,omitempty"`
+	Provenance       *IdentityProvenance `json:"identity_provenance,omitempty"`
+	Identity         string              `json:"identity,omitempty"`
+	VerifiedIdentity bool                `json:"verified_identity,omitempty"`
+	Permissions      []string            `json:"permissions,omitempty"`
 }
 
 // RunCreate is the body for POST /runs and POST /threads/{id}/runs.

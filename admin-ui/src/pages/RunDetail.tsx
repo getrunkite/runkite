@@ -8,6 +8,7 @@ import { streamSSE, type SseEvent } from "../api/sse";
 import { reconcileRun } from "../api/reconcile-run";
 import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
 import { eventPreview } from "../lib/eventPreview";
+import { identityEvidenceRows } from "../lib/identityEvidence";
 import { connectorActionRunReferenceMatches, connectorActionsHref } from "../lib/connectorActions";
 import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
@@ -16,6 +17,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { RunConnectorActions } from "../components/connector-action-evidence";
+import { IsolatedUsageRecord } from "../components/isolated-usage-record";
 import {
   Dialog,
   DialogContent,
@@ -277,6 +279,7 @@ export function RunDetail() {
       )}
 
       {manifest && <RunManifestCard manifest={manifest} cacheHit={run.data.metadata?.cache_hit === true} />}
+      <IsolatedUsageRecord output={run.data.output} />
 
       {showA2A && (
         <Card className="mb-4">
@@ -391,7 +394,7 @@ function RunManifestCard({ manifest: m, cacheHit = false }: { manifest: RunManif
             )}
           </CardTitle>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Frozen the moment this run was dispatched — what it was authorized to do, not today's live config.
+            Frozen when this run was dispatched. Records its authority at that time.
           </p>
         </div>
         <DocsLink href={supportPage("run-manifest.html")}>Docs: run manifest →</DocsLink>
@@ -450,6 +453,7 @@ function RunManifestCard({ manifest: m, cacheHit = false }: { manifest: RunManif
         <DetailRow label="Captured at" last>
           {formatTimestamp(m.captured_at)}
         </DetailRow>
+        {identityEvidenceRows({identity_provenance:m.principal?.identity_provenance}).map((row) => <DetailRow key={row.label} label={row.label}><span className="break-all font-mono text-xs">{row.value}</span></DetailRow>)}
         <details className="mt-3 text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Raw JSON</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-muted/50 p-3 font-mono">

@@ -169,9 +169,23 @@ func (d Driver) lockConnectorActionRun(ctx context.Context, tx Tx, a *models.Con
 	}
 	a.RunCreatedAt = created.Time
 	a.RunIncarnationID = incarnation
+	if capture {
+		var ownerMetadata map[string]interface{}
+		if json.Unmarshal(meta, &ownerMetadata) != nil {
+			return fmt.Errorf("invalid action workload metadata")
+		}
+		owner, err := state.StoredWorkloadOwner(ownerMetadata)
+		if err != nil {
+			return err
+		}
+		if owner != nil {
+			a.WorkloadIdentity = &models.WorkloadProvenance{URI: owner.URI, KeySHA256: owner.KeySHA256, NotAfter: owner.NotAfter}
+		}
+	}
 	var metadata struct {
 		Manifest *struct {
-			AgentVersion int `json:"agent_version"`
+			AgentVersion int                          `json:"agent_version"`
+			Principal    *models.RunManifestPrincipal `json:"principal"`
 		} `json:"run_manifest"`
 	}
 	if err := json.Unmarshal(meta, &metadata); err != nil {
@@ -179,6 +193,9 @@ func (d Driver) lockConnectorActionRun(ctx context.Context, tx Tx, a *models.Con
 	}
 	if metadata.Manifest != nil {
 		a.AgentVersion = metadata.Manifest.AgentVersion
+		if capture && metadata.Manifest.Principal != nil && metadata.Manifest.Principal.VerifiedIdentity && metadata.Manifest.Principal.Identity == a.Principal {
+			a.IdentityProvenance = models.CloneIdentityProvenance(metadata.Manifest.Principal.Provenance)
+		}
 	} else {
 		a.AgentVersion = 0
 	}
@@ -208,7 +225,7 @@ func actionEvent(a *models.ConnectorAction, kind, mutation string) *models.Conne
 	if kind == "observation_missing" {
 		observer = "runkite_reconciler"
 	}
-	return &models.ConnectorActionEvent{ActionID: a.ID, TenantID: a.TenantID, Sequence: a.Version, MutationID: mutation, Kind: kind, ObservedAt: a.UpdatedAt, Observer: observer, State: a.State, Decision: a.Decision, ReasonCode: a.ReasonCode, RuleID: a.RuleID, AuthorizationSource: a.AuthorizationSource, BreakGlassID: a.BreakGlassID, PendingActionID: a.PendingActionID, DispatchID: a.DispatchID, ResponseKind: a.ResponseKind, HTTPStatus: a.HTTPStatus, RPCErrorCode: a.RPCErrorCode, ResponseDigest: a.ResponseDigest, ResponseBytes: a.ResponseBytes}
+	return &models.ConnectorActionEvent{ActionID: a.ID, TenantID: a.TenantID, Sequence: a.Version, MutationID: mutation, Kind: kind, ObservedAt: a.UpdatedAt, Observer: observer, State: a.State, Decision: a.Decision, ReasonCode: a.ReasonCode, RuleID: a.RuleID, AuthorizationSource: a.AuthorizationSource, BreakGlassID: a.BreakGlassID, PendingActionID: a.PendingActionID, DispatchID: a.DispatchID, ResponseKind: a.ResponseKind, HTTPStatus: a.HTTPStatus, RPCErrorCode: a.RPCErrorCode, ResponseDigest: a.ResponseDigest, ResponseBytes: a.ResponseBytes, VaultIssueRequestID: a.VaultIssueRequestID}
 }
 func (d Driver) saveConnectorAction(ctx context.Context, tx Tx, a *models.ConnectorAction, kind, mutation, digest string, create bool) error {
 	raw, err := json.Marshal(a)
@@ -275,6 +292,9 @@ func (d Driver) CreateConnectorAction(ctx context.Context, input *models.Connect
 		}
 	}
 	// Caller data cannot seed state, response or dispatch authority.
+	a.IdentityProvenance = nil
+	a.WorkloadIdentity = nil
+	a.VaultIssueRequestID = ""
 	a.RunCreatedAt = time.Time{}
 	a.RunIncarnationID = ""
 	a.AgentVersion = 0
@@ -553,6 +573,9 @@ func (d Driver) PrepareConnectorActionDispatch(ctx context.Context, id string, v
 }
 
 func (d Driver) FinishConnectorAction(ctx context.Context, id string, version int64, dispatchID string, obs models.ConnectorActionObservation, mutation string) (*models.ConnectorAction, error) {
+	if obs.VaultIssueRequestID != "" && !actionUUID(obs.VaultIssueRequestID) {
+		return nil, fmt.Errorf("invalid Vault request correlation")
+	}
 	if obs.State != models.ConnectorActionNotDispatched && obs.State != models.ConnectorActionResponseObserved && obs.State != models.ConnectorActionOutcomeUnknown {
 		return nil, fmt.Errorf("invalid connector action observation")
 	}
@@ -580,6 +603,9 @@ func (d Driver) FinishConnectorAction(ctx context.Context, id string, version in
 	if replay, _, err := d.actionReplay(ctx, tx, a, mutation, digest); err != nil || replay {
 		return a, err
 	}
+	if obs.VaultIssueRequestID != "" && (a.CredentialRef == nil || dispatchID == "") {
+		return nil, actionConflict(id, "Vault correlation requires credential dispatch")
+	}
 	if dispatchID == "" {
 		if obs.State != models.ConnectorActionNotDispatched || a.DispatchID != "" || a.Version != version || (a.State != models.ConnectorActionReceived && a.State != models.ConnectorActionReady && a.State != models.ConnectorActionApprovalRequired) {
 			return nil, actionConflict(id, "action cannot be marked not dispatched")
@@ -604,6 +630,9 @@ func (d Driver) FinishConnectorAction(ctx context.Context, id string, version in
 	a.RPCErrorCode = obs.RPCErrorCode
 	a.ResponseDigest = obs.ResponseDigest
 	a.ResponseBytes = obs.ResponseBytes
+	if obs.VaultIssueRequestID != "" {
+		a.VaultIssueRequestID = obs.VaultIssueRequestID
+	}
 	a.Version++
 	a.UpdatedAt = time.Now().UTC().Truncate(time.Microsecond)
 	if err := d.saveConnectorAction(ctx, tx, a, "observation", mutation, digest, false); err != nil {

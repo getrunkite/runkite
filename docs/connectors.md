@@ -1,5 +1,60 @@
 # Connectors
 
+## Constrained delegated exchange and correlation (next release)
+
+The existing `oauth2_token_exchange` mode remains available. An optional
+`auth.token_exchange` contract adds registered targets and bounded responses:
+
+```json
+{
+  "auth": {
+    "type": "oauth2_token_exchange",
+    "token_url": "https://issuer.example.com/oauth2/token",
+    "client_id": "registered-connector-client",
+    "secret_ref": "file:/run/secrets/connector-client",
+    "scopes": ["files.read"],
+    "token_exchange": {
+      "audiences": ["files-api"],
+      "resources": ["https://files.example.com"],
+      "max_ttl_seconds": 300,
+      "actor_id": "registered-agent-service",
+      "actor_token_secret_ref": "file:/run/secrets/agent-assertion"
+    }
+  },
+  "mcp": {
+    "url": "https://files.example.com/mcp",
+    "correlation_headers": true
+  }
+}
+```
+
+The actor fields are optional together. Their values identify operator intent;
+the external issuer must validate the actor assertion and its authority. At
+least one audience/resource and explicit scopes are required. Maximum TTL
+defaults to 3600 seconds and cannot exceed 86400. Targets and scopes cannot come
+from tool arguments. The constrained path derives its subject from strict JWT
+admission with explicit token forwarding, and refuses replacement user tokens
+from worker bodies/headers. It does not accept arbitrary user extras as proof.
+
+The token endpoint requires HTTPS. A literal loopback HTTP exception needs
+`auth.allow_insecure_loopback: true` for development. Constrained secret files
+use the existing bounded private-file validator, and Vault KV references require
+a secure Vault address unless that explicit loopback exception is set. Secrets
+remain external and are resolved at use time.
+
+Duplicate/case-variant protected response fields, null/wrong-type scope,
+unbounded or missing expiry, non-bearer results and scope expansion are refused.
+The issuer/resource server still enforces actual token authority. No DPoP or
+arbitrary agent delegation chain is implied.
+
+These settings and `mcp.correlation_headers` participate in `target-v3-`
+approval fingerprints. Managed operations require fresh review when they
+change. Correlation headers contain only server-created public action/credential
+references and are opt-in for MCP. They are not credentials or authorization.
+Vault operations carry the corresponding references; safe provider request IDs
+are retained in lease metadata and final action exports when known. Follow the
+[external audit join and design rationale](internal/delegation-and-audit-correlation.md).
+
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
 Pre-authenticated OAuth/MCP sessions for runners. Configured in YAML, referenced from `langgraph.json`:

@@ -251,6 +251,25 @@ async def test_owner_cancel_cancels_active_heartbeat_rpc():
     check("owner cancellation closes active RPC", canceled.is_set())
 
 
+async def test_permanent_authority_denial_stops_work():
+    for code in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+        cancel_event = asyncio.Event()
+
+        class DeniedStub:
+            calls = 0
+
+            async def Heartbeat(self, request, metadata=None, *, denied_code=code):
+                self.calls += 1
+                raise grpc.aio.AioRpcError(
+                    denied_code, grpc.aio.Metadata(), grpc.aio.Metadata(), details="synthetic owner denial"
+                )
+
+        stub = DeniedStub()
+        await asyncio.wait_for(heartbeat_loop(stub, "owned", [], cancel_event=cancel_event, interval_s=0.001), 1)
+        check("permanent authority denial cancels work", cancel_event.is_set())
+        check("permanent authority denial is not retried", stub.calls == 1)
+
+
 async def main():
     await test_heartbeat_loop_calls_repeatedly_with_run_id()
     await test_heartbeat_loop_stops_cleanly_on_cancel()
@@ -262,6 +281,7 @@ async def main():
     await test_heartbeat_loop_superseded_without_cancel_event_does_not_raise()
     await test_hung_heartbeat_is_cancelled_and_loop_recovers()
     await test_owner_cancel_cancels_active_heartbeat_rpc()
+    await test_permanent_authority_denial_stops_work()
     print("\nAll checks passed.")
 
 

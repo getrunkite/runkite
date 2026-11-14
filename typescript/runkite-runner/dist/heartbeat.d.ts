@@ -34,7 +34,7 @@
  * executeRun's existing cooperative-cancellation check takes over
  * without this module needing its own separate stopping mechanism.
  */
-import type { Metadata } from "@grpc/grpc-js";
+import { type Metadata } from "@grpc/grpc-js";
 import type { RunnerServiceClient } from "./proto.js";
 export declare const DEFAULT_HEARTBEAT_INTERVAL_MS = 2000;
 export declare const DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS = 1000;

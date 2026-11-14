@@ -37,8 +37,9 @@
  * runner's config (RUNNER_TOKEN, RUNKITE_GRPC_URL, etc).
  */
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { credentials, type ChannelCredentials } from "@grpc/grpc-js";
-import { Agent } from "undici";
+import { Agent, type Dispatcher } from "undici";
 
 function readIfSet(path: string | undefined): Buffer | undefined {
   return path ? readFileSync(path) : undefined;
@@ -48,9 +49,45 @@ function isTruthyEnv(value: string | undefined): boolean {
   return /^(1|true|yes)$/i.test((value ?? "").trim());
 }
 
+export function requireWorkloadHTTPS(url: string): void {
+  let secure = false;
+  try {
+    secure = new URL(url).protocol === "https:";
+  } catch {
+    /* fixed safe error below */
+  }
+  if (!secure) throw new Error("configured client certificate requires HTTPS for control-plane requests");
+}
+
+/** Reject the current grpc-js IP SNI incompatibility before its polling loop. */
+export function validateGrpcTLSTarget(address: string, nodeVersion = process.versions.node): void {
+  if (Number(nodeVersion.split(".")[0]) < 26) return;
+  // These public resolver schemes contain literal IP addresses by definition.
+  let literalIP = /^(?:ipv4|ipv6):/.test(address);
+  const target = address.replace(/^dns:(?:\/\/[^/]*\/)?/, "");
+  const host = target.startsWith("[")
+    ? target.slice(1, target.indexOf("]"))
+    : isIP(target)
+      ? target
+      : target.replace(/:[0-9]+$/, "");
+  literalIP ||= isIP(host) !== 0;
+  if (literalIP) {
+    throw new Error(
+      "TypeScript gRPC TLS on Node.js 26 or newer requires a DNS endpoint with a matching certificate DNS SAN; current grpc-js sends unsupported IP SNI",
+    );
+  }
+}
+
+class HTTPSOnlyAgent extends Agent {
+  override dispatch(options: Agent.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+    requireWorkloadHTTPS(String(options.origin ?? ""));
+    return super.dispatch(options, handler);
+  }
+}
+
 /**
  * Returns TLS channel credentials for createRunnerClient, or undefined
- * if neither RUNKITE_TLS_CA_FILE nor RUNKITE_GRPC_TLS is set -- callers
+ * if no CA, client certificate or RUNKITE_GRPC_TLS is configured. Callers
  * should fall back to credentials.createInsecure() in that case,
  * preserving today's default plaintext behavior exactly.
  *
@@ -61,7 +98,10 @@ function isTruthyEnv(value: string | undefined): boolean {
  */
 export function grpcChannelCredentials(): ChannelCredentials | undefined {
   const caFile = process.env.RUNKITE_TLS_CA_FILE;
-  if (!caFile && !isTruthyEnv(process.env.RUNKITE_GRPC_TLS)) return undefined;
+  const certFile = process.env.RUNKITE_TLS_CLIENT_CERT_FILE;
+  const keyFile = process.env.RUNKITE_TLS_CLIENT_KEY_FILE;
+  if (Boolean(certFile) !== Boolean(keyFile)) throw new Error("gRPC mTLS requires both client certificate and key");
+  if (!caFile && !certFile && !isTruthyEnv(process.env.RUNKITE_GRPC_TLS)) return undefined;
   const rootCerts = readIfSet(caFile);
   const clientKey = readIfSet(process.env.RUNKITE_TLS_CLIENT_KEY_FILE);
   const clientCert = readIfSet(process.env.RUNKITE_TLS_CLIENT_CERT_FILE);
@@ -71,7 +111,8 @@ export function grpcChannelCredentials(): ChannelCredentials | undefined {
 /**
  * Returns an undici Agent configured for TLS verification/mTLS against
  * the control plane's HTTP API, to pass as `{ dispatcher }` on fetch()
- * calls -- or undefined if RUNKITE_TLS_CA_FILE is unset, in which case
+ * calls. Returns undefined when neither a custom CA nor client certificate is set;
+ * otherwise client material also works with system server trust. Default
  * callers should omit the dispatcher option entirely and let fetch use
  * its own default (system trust store), correct as-is for both a plain
  * http:// base URL (the CA is simply unused) and an https:// one with a
@@ -88,10 +129,14 @@ export function grpcChannelCredentials(): ChannelCredentials | undefined {
  */
 export function httpDispatcher(): Agent | undefined {
   const caFile = process.env.RUNKITE_TLS_CA_FILE;
-  if (!caFile) return undefined;
-  return new Agent({
+  const certFile = process.env.RUNKITE_TLS_CLIENT_CERT_FILE;
+  const keyFile = process.env.RUNKITE_TLS_CLIENT_KEY_FILE;
+  if (keyFile && !certFile) throw new Error("HTTP mTLS requires a client certificate for its key");
+  if (!caFile && !certFile) return undefined;
+  const ClientAgent = certFile ? HTTPSOnlyAgent : Agent;
+  return new ClientAgent({
     connect: {
-      ca: readFileSync(caFile),
+      ca: readIfSet(caFile),
       cert: readIfSet(process.env.RUNKITE_TLS_CLIENT_CERT_FILE),
       key: readIfSet(process.env.RUNKITE_TLS_CLIENT_KEY_FILE),
     },

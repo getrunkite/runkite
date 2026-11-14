@@ -248,6 +248,7 @@ jobs:
           python python/tests/test_run_status.py
           python -m unittest discover -s python/tests -p test_execution_pool.py
           python -m unittest discover -s python/tests -p test_isolated.py
+          python -m unittest discover -s python/tests -p test_isolated_usage.py
           python -m unittest discover -s python/tests -p test_isolated_fixture.py
           python -m unittest discover -s python/tests -p test_runner_image_qualification.py
           python python/tests/test_worker_concurrency.py
@@ -406,6 +407,15 @@ jobs:
           make test-governance-agent-framework
           ruff check examples/governance_agent_framework
           ruff format --check examples/governance_agent_framework
+
+      - name: Governance installed artifact contracts and release recovery checks
+        run: |
+          python scripts/test_release_artifacts.py -v
+          examples/governance_agent_framework/.venv/bin/python -m pip install -r python/requirements-build.txt
+          RUNKITE_GOVERNANCE_FRAMEWORK_PYTHON="$PWD/examples/governance_agent_framework/.venv/bin/python" \
+            examples/governance_agent_framework/.venv/bin/python python/tests/test_governance_package_artifacts.py -v
+          python scripts/release_artifacts.py build npm typescript/runkite-governance "$RUNNER_TEMP/governance-npm-artifacts"
+          node scripts/verify_governance_npm.mjs "$RUNNER_TEMP/governance-npm-artifacts/runkite-governance-$(cat VERSION).tgz"
 
       - name: TypeScript runner dist/ is in sync with src/
         # Unit tests above run against src/ directly via tsx, never touching

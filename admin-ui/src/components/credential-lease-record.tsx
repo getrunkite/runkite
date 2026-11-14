@@ -11,6 +11,8 @@ export function CredentialLeaseRecord({ record, review = false }: { record: Cred
     <p className="text-sm text-muted-foreground">Provider-confirmed lifecycle metadata. Credential values and protected cleanup handles are not displayed. Unknown states require investigation and do not prove revocation or non-issuance.</p>
     <dl className="space-y-3 text-sm">
       <EvidenceField label="Lease reference"><code className="text-xs">{record.lease_ref}</code></EvidenceField>
+      {record.vault_issue_request_id && <EvidenceField label="Vault issuance request ID"><code className="text-xs">{record.vault_issue_request_id}</code></EvidenceField>}
+      {record.vault_last_renew_request_id && <EvidenceField label="Vault latest renewal request ID"><code className="text-xs">{record.vault_last_renew_request_id}</code></EvidenceField>}
       <EvidenceField label="Tenant">{record.owner.tenant_id}</EvidenceField><EvidenceField label="Binding">{record.binding_id}</EvidenceField><EvidenceField label="Binding revision"><code className="text-xs">{record.binding_revision}</code></EvidenceField>
       <EvidenceField label="Action"><Link to={actionHref} className="font-mono text-xs text-primary hover:underline">{record.owner.action_id}</Link></EvidenceField>
       <EvidenceField label="Original run"><code className="text-xs">{record.owner.run_id}</code></EvidenceField><EvidenceField label="Run instance"><code className="text-xs">{record.owner.run_incarnation_id}</code></EvidenceField><EvidenceField label="Generation">{record.owner.generation}</EvidenceField><EvidenceField label="Trusted consumer">{record.owner.consumer_id}</EvidenceField>

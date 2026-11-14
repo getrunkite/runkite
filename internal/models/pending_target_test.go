@@ -12,7 +12,10 @@ func TestPendingTargetRevisionValidationAndNamespace(t *testing.T) {
 	if !ValidConnectorTargetRevision(a) || !ValidConnectorTargetRevision(b) || !ValidConnectorTargetRevision("target-v2-"+strings.Repeat("a", 64)) {
 		t.Fatal("valid target revision refused")
 	}
-	for _, value := range []string{"", "target-v1-" + strings.Repeat("A", 64), "target-v1-" + strings.Repeat("a", 63), a + "a", "target-v3-" + strings.Repeat("a", 64), "target-v1-" + strings.Repeat("g", 64)} {
+	if !ValidConnectorTargetRevision("target-v3-" + strings.Repeat("a", 64)) {
+		t.Fatal("constrained delegation target must be recognized")
+	}
+	for _, value := range []string{"", "target-v1-" + strings.Repeat("A", 64), "target-v1-" + strings.Repeat("a", 63), a + "a", "target-v4-" + strings.Repeat("a", 64), "target-v1-" + strings.Repeat("g", 64)} {
 		if ValidConnectorTargetRevision(value) {
 			t.Fatalf("invalid target revision accepted: %q", value)
 		}

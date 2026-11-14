@@ -313,13 +313,17 @@ they are not substitutes for a full application client.
 
 ### Local package builds
 
-The small helpers now include packaging metadata, compiled JavaScript and type
-declarations, plus a standalone Python wheel with no runtime dependencies.
-They remain unpublished until a maintainer releases them to npm and PyPI.
+The unreleased v0.8.0 source candidate prepares independent npm and PyPI
+distributions. The TypeScript build produces JavaScript and declarations; the
+Python base client has no runtime dependencies. Neither helper is a verified
+registry release. Published v0.7.0 runner packages do not include them. Install
+from a checkout until the first helper publication is verified.
 
 ```sh
 cd typescript/runkite-governance
 npm ci
+npm run build
+npm test
 npm pack
 cd ../..
 python -m pip install ./python/runkite_governance
@@ -327,6 +331,13 @@ python -m pip install ./python/runkite_governance
 
 Install the npm tarball in the application that owns the model loop. See each
 package README and the [AI SDK example](../examples/governance_ai_sdk/README.md).
+The import is `runkite-governance` in TypeScript and `runkite_governance` in
+Python. For the optional Microsoft middleware, install
+`'./python/runkite_governance[agent-framework]'` from the repository root.
+Use `make test-governance-ts` and `make test-governance-agent-framework` for
+the existing framework examples. The candidate's installed-artifact gates
+also exercise the actual npm tarball and Python wheel/sdist outside the
+checkout; source tests alone do not establish package publication.
 The default 60-second timeout covers decide, polling HTTP headers/bodies and
 waits. TypeScript composes a deadline with the caller's abort signal. Python
 bounds the caller wait and the number of blocking stdlib transport workers;
@@ -401,7 +412,16 @@ proof of execution.
 The experimental isolated profile is an explicit external JSONL workload
 contract, not a drop-in switch under an unchanged framework adapter. Existing
 SDKs may implement that workload protocol deliberately, keeping management
-credentials outside the child. This profile does not define model/token-usage
-reporting or spend settlement; zero recorded spend does not establish free
-execution. Native SDK usage reporting is separate. See [the isolated example](../examples/isolated_agent/README.md)
-and [boundaries](internal/constrained-execution.md).
+credentials outside the child. Published v0.7.0 did not define model/token-usage
+reporting or spend settlement for that profile.
+
+The unreleased v0.8.0 candidate adds versioned cumulative usage frames for the
+configured isolated profile on SQL. The plane durably acknowledges each report
+and settles the retained snapshot through managed completion, including
+cancellation. Missing or partial measurements remain explicitly unmetered;
+reported zero requires actual zero counters and a complete workload report.
+These are attributed workload claims, not provider-verified bills or hard
+budget enforcement inside a sandbox. Native SDK usage reporting is separate.
+See [the isolated example](../examples/isolated_agent/README.md),
+[workload ownership](internal/workload-identity.md) and
+[boundaries](internal/constrained-execution.md).

@@ -1,8 +1,11 @@
 import { type ChannelCredentials } from "@grpc/grpc-js";
 import { Agent } from "undici";
+export declare function requireWorkloadHTTPS(url: string): void;
+/** Reject the current grpc-js IP SNI incompatibility before its polling loop. */
+export declare function validateGrpcTLSTarget(address: string, nodeVersion?: string): void;
 /**
  * Returns TLS channel credentials for createRunnerClient, or undefined
- * if neither RUNKITE_TLS_CA_FILE nor RUNKITE_GRPC_TLS is set -- callers
+ * if no CA, client certificate or RUNKITE_GRPC_TLS is configured. Callers
  * should fall back to credentials.createInsecure() in that case,
  * preserving today's default plaintext behavior exactly.
  *
@@ -15,7 +18,8 @@ export declare function grpcChannelCredentials(): ChannelCredentials | undefined
 /**
  * Returns an undici Agent configured for TLS verification/mTLS against
  * the control plane's HTTP API, to pass as `{ dispatcher }` on fetch()
- * calls -- or undefined if RUNKITE_TLS_CA_FILE is unset, in which case
+ * calls. Returns undefined when neither a custom CA nor client certificate is set;
+ * otherwise client material also works with system server trust. Default
  * callers should omit the dispatcher option entirely and let fetch use
  * its own default (system trust store), correct as-is for both a plain
  * http:// base URL (the CA is simply unused) and an https:// one with a

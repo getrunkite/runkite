@@ -117,6 +117,14 @@ async def call_agent(
     user = configurable.get("langgraph_auth_user")
     if user is not None and hasattr(user, "to_dict"):
         on_behalf_of = user.to_dict()
+        if isinstance(on_behalf_of, dict):
+            # The plane inherits the authenticated assertion from its trusted
+            # parent assignment. Never echo that reserved capability as input.
+            on_behalf_of = {key: value for key, value in on_behalf_of.items() if key != "_runkite_delegated_jwt"}
+            if isinstance(on_behalf_of.get("extra"), dict):
+                on_behalf_of["extra"] = {
+                    key: value for key, value in on_behalf_of["extra"].items() if key != "_runkite_delegated_jwt"
+                }
         if on_behalf_of:
             body["on_behalf_of"] = on_behalf_of
 

@@ -9,13 +9,15 @@ import (
 	"strings"
 
 	"github.com/getrunkite/runkite/internal/execution"
+	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
 // AuthResult is the output of a successful authentication.
 type AuthResult struct {
-	Identity    string   `json:"identity"`
-	Permissions []string `json:"permissions,omitempty"`
+	Provenance  *models.IdentityProvenance `json:"identity_provenance,omitempty"`
+	Identity    string                     `json:"identity"`
+	Permissions []string                   `json:"permissions,omitempty"`
 	// TenantID scopes this caller's data for multi-tenancy.
 	// Empty means "no tenant claim configured" -- resolves to
 	// tenant.DefaultTenant, not an error; multi-tenancy is opt-in.
@@ -31,6 +33,9 @@ type AuthResult struct {
 	// identityMissing records provider compatibility placeholders which are
 	// not verified principals and cannot enter the scoped review surface.
 	identityMissing bool
+	// delegatedJWT is captured only from strict JWT authentication with explicit
+	// token forwarding. Extra and forwarded headers never establish this proof.
+	delegatedJWT string
 }
 
 // Provider is the interface all auth providers implement.
@@ -147,6 +152,20 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 					return
 				}
 			}
+			if runnerTokens.WorkloadIdentityEnabled() {
+				ctx, err := runnerTokens.AuthenticateWorkloadTLS(r.Context(), r.TLS, kind)
+				if err != nil {
+					writeDenied(w, http.StatusUnauthorized, "workload_identity_required", "verified workload identity required")
+					return
+				}
+				ctx, cancel := context.WithDeadline(ctx, WorkloadIdentityFromContext(ctx).NotAfter)
+				defer cancel()
+				r = r.WithContext(ctx)
+				if opts.Inflight == nil {
+					writeDenied(w, http.StatusServiceUnavailable, ReasonRunBindingLookupFailed, "workload identity requires active assignment lookup")
+					return
+				}
+			}
 			// Run-bound proxy paths: prove an active assignment and derive
 			// tenant/agent from it. Inflight nil → legacy tenant header
 			// (unit tests); production serve always wires the job queue.
@@ -160,13 +179,18 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 				writeDenied(w, http.StatusServiceUnavailable, ReasonRunBindingLookupFailed, "execution pool requires active assignment lookup")
 				return
 			}
-			if opts.Inflight != nil && (requiresRunBinding(path) || (poolKind && !poolSchema)) {
+			strictRun := runnerTokens.WorkloadIdentityEnabled() && strings.HasPrefix(path, "/internal/runs/")
+			if opts.Inflight != nil && (requiresRunBinding(path) || strictRun || (poolKind && !poolSchema)) {
 				ctx, ok := bindInternalRun(w, r, kind, runnerTokens, opts.Inflight)
 				if !ok {
 					return
 				}
 				if poolKind && !poolRunPathAllowed(r, RunBindingFromContext(ctx)) {
 					writeDenied(w, http.StatusForbidden, "execution_pool_denied", "route is not allowed for this execution pool")
+					return
+				}
+				if strictRun && !poolRunPathAllowed(r, RunBindingFromContext(ctx)) {
+					writeDenied(w, http.StatusForbidden, "workload_run_path_mismatch", "route does not match the bound workload assignment")
 					return
 				}
 				next.ServeHTTP(w, r.WithContext(ctx))

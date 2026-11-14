@@ -2,11 +2,18 @@
 
 A standard-library-only Python client for `POST /governance/decide` and `GET /governance/actions/{id}` on your self-hosted Runkite plane. It does not depend on the runner package or an agent framework.
 
-This distribution is prepared locally and has not been published by this change. Install from the checkout:
+The unreleased 0.8.0 source candidate prepares the distribution and coordinated
+release jobs. This does not publish it, and the published Runkite 0.7.0 release
+did not include this helper. Until its first registry publication is verified,
+install from a checkout:
 
 ```sh
 python -m pip install ./python/runkite_governance
 ```
+
+After the first verified publication, use `python -m pip install runkite-governance`.
+The runtime requires Python 3.11 or newer. It is separate from `runkite-runner`;
+installing a managed runner does not install this decision-only helper.
 
 ```python
 from runkite_governance import GovernanceClient
@@ -35,6 +42,10 @@ Install the pinned optional dependency from the checkout:
 python -m pip install './python/runkite_governance[agent-framework]'
 ```
 
+After registry publication is verified, the corresponding command is
+`python -m pip install 'runkite-governance[agent-framework]'`. The extra pins the
+tested framework core; model-provider packages remain application choices.
+
 Import `GovernanceFunctionMiddleware`, `GovernedFunction`,
 `GovernanceBlockedError` and `PendingInvocation` from
 `runkite_governance.agent_framework`. Register exact local `FunctionTool` objects,
@@ -46,7 +57,7 @@ pending stop the agent with a native `MiddlewareFailure`; an optional async
 
 The app owns pending continuation and execution idempotency. Rich Python types,
 coercing validators and provider-executed tools are outside this adapter's scope.
-See the [framework example](../../examples/governance_agent_framework/README.md)
+See the [framework example](https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework/README.md)
 for a durable application transaction, offline streaming and non-streaming tests,
 and supported argument constraints. Execution retains native mutable containers;
 the app must not mutate invocation arguments after authorization. Importing the

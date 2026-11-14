@@ -11,7 +11,7 @@ import { loadSync } from "@grpc/proto-loader";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { grpcChannelCredentials } from "./tls.js";
+import { grpcChannelCredentials, validateGrpcTLSTarget } from "./tls.js";
 // proto/runner.proto is the same file Go/Python load. Prefer a copy
 // shipped next to this package (npm install / packaged bin), then fall
 // back to the monorepo layout (src/ and dist/ are siblings under
@@ -46,7 +46,10 @@ const RunnerServiceCtor = proto.runkite.runner.v0.RunnerService;
  * runner's identical worker.py/generic_worker.py fallback.
  */
 export function createRunnerClient(grpcAddress) {
-    const creds = grpcChannelCredentials() ?? credentials.createInsecure();
+    const secureCredentials = grpcChannelCredentials();
+    if (secureCredentials)
+        validateGrpcTLSTarget(grpcAddress);
+    const creds = secureCredentials ?? credentials.createInsecure();
     return new RunnerServiceCtor(grpcAddress, creds, {
         // Matches cmd/serve.go's keepalive.ServerParameters and the Python
         // runner's grpc.keepalive_time_ms -- detects a dead/crashed control

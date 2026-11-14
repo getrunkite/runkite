@@ -32,4 +32,10 @@ Areas of particular interest for security review:
 - The Runner Protocol's trust model (`internal/bridge/`) -- runner-token validation, and the documented trade-offs of direct-mode DB access (see [`docs/runners.md`](docs/runners.md)).
 - Webhook signature verification and connector credential handling (`internal/hooks/`, `internal/connector/`).
 
-Known, already-documented limitations (coarse-grained authorization, single-control-plane-node crash recovery, etc.) are listed in [`docs/limitations.md`](docs/limitations.md) -- please check there first in case what you found is already a stated trade-off rather than a new bug.
+Current trust boundaries and backend-specific limits are listed in
+[`docs/limitations.md`](docs/limitations.md). The
+[assessment handoff](docs/security-assessment.md) describes reproducible
+adversarial cases and the evidence needed for independent review. Maintainer
+qualification includes bounded two-process scenarios; it does not establish
+every production deployment or a global security ranking. A failure to enforce
+a documented boundary is still a security issue and should be reported privately.

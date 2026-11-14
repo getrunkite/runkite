@@ -218,6 +218,7 @@ func forwardMCPRequestAuthorization(ctx context.Context, url, authorization stri
 		return nil, 0, safeConnectorRequestError(ctx, "build MCP request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	applyActionCorrelation(ctx, req.Header)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}

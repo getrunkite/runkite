@@ -1,0 +1,6 @@
+include LICENSE NOTICE README.md pyproject.toml __init__.py agent_framework.py py.typed
+global-exclude test_*.py e2e_*.py *.py[cod]
+prune tests
+prune build
+prune dist
+prune .venv

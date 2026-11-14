@@ -23,6 +23,9 @@ var (
 // resolved credential or an upstream implementation. Endpoint URLs must not
 // contain credentials. Revision is an operator's nonsecret contract version.
 func TargetRevisionForConfig(cfg ConnectorConfig) (string, error) {
+	if err := ValidateTokenExchangeConfig(cfg.Auth); err != nil {
+		return "", ErrTargetRevisionUnavailable
+	}
 	if cfg.MCP == nil {
 		return "", ErrTargetRevisionUnavailable
 	}
@@ -82,6 +85,19 @@ func TargetRevisionForConfig(cfg ConnectorConfig) (string, error) {
 			CredentialBinding, CredentialBindingRevision string
 		}{descriptor, cfg.MCP.PinTools, cfg.Auth.CredentialBinding, cfg.Auth.CredentialBindingRevision}
 	}
+	if cfg.Auth.TokenExchange != nil || cfg.MCP.CorrelationHeaders {
+		prefix = "target-v3-"
+		exchange := cloneExchangeConfig(cfg.Auth.TokenExchange)
+		if exchange != nil {
+			exchange.Audiences = targetSet(exchange.Audiences)
+			exchange.Resources = targetSet(exchange.Resources)
+		}
+		value = struct {
+			Base               any                  `json:"base"`
+			Exchange           *TokenExchangeConfig `json:"token_exchange"`
+			CorrelationHeaders bool                 `json:"correlation_headers"`
+		}{value, exchange, cfg.MCP.CorrelationHeaders}
+	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return "", ErrTargetRevisionUnavailable
@@ -128,6 +144,7 @@ type expectedTargetRevisionKey struct{}
 func snapshotConnectorConfig(cfg ConnectorConfig) ConnectorConfig {
 	copy := cfg
 	copy.Auth.Scopes = append([]string(nil), cfg.Auth.Scopes...)
+	copy.Auth.TokenExchange = cloneExchangeConfig(cfg.Auth.TokenExchange)
 	if cfg.MCP != nil {
 		mcp := *cfg.MCP
 		copy.MCP = &mcp

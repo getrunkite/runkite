@@ -28,7 +28,7 @@ export interface RunManifest {
    *  empty, = runner must refuse every tool not listed. */
   allowed_tools?: string[];
   policy_fail_closed: boolean;
-  principal?: { identity?: string; permissions?: string[] };
+  principal?: { identity?: string; permissions?: string[]; verified_identity?: boolean; identity_provenance?: IdentityProvenance };
   parent_run_id?: string;
   depth?: number;
 }
@@ -329,6 +329,10 @@ export interface AdminFinOpsView {
 
 /** Metadata-only evidence for a managed MCP tools/call request. */
 export interface AdminConnectorAction {
+  vault_issue_request_id?: string;
+  identity_provenance?: IdentityProvenance;
+  workload_identity?: WorkloadProvenance;
+  delegation_contract?: DelegationContract;
   export_sink_id?: string;
   action_id: string;
   tenant_id: string;
@@ -369,6 +373,7 @@ export interface AdminConnectorAction {
 }
 
 export interface AdminConnectorActionEvent {
+  vault_issue_request_id?: string;
   action_id: string;
   tenant_id: string;
   sequence: number;
@@ -400,6 +405,8 @@ export interface AdminConnectorActionDetail {
 
 /** Metadata only. Provider handles and credential values are never returned. */
 export interface CredentialLease {
+  vault_issue_request_id?: string;
+  vault_last_renew_request_id?: string;
   lease_ref: string;
   owner: { tenant_id: string; run_id: string; run_incarnation_id: string; generation: number; action_id: string; consumer_id: string };
   binding_id: string;
@@ -430,4 +437,28 @@ export interface ActionDelivery {
   last_reason_code?: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Authentication at admission, not a currently valid downstream credential. */
+export interface IdentityProvenance {
+  issuer: string;
+  subject: string;
+  audience: string;
+  expires_at: string;
+  issuer_asserted_actors?: { subject: string; issuer?: string }[];
+}
+
+export interface WorkloadProvenance {
+  uri: string;
+  key_sha256: string;
+  not_after: string;
+}
+
+/** Operator intent, not proof that the exchange or downstream action ran. */
+export interface DelegationContract {
+  audiences?: string[];
+  resources?: string[];
+  scopes: string[];
+  configured_actor?: string;
+  max_ttl_seconds: number;
 }

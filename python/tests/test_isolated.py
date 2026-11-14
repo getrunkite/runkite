@@ -1,6 +1,7 @@
 """Bridge invariants with fake runtime processes, not sandbox qualification."""
 
 import asyncio
+import copy
 import os
 import sys
 import tempfile
@@ -30,6 +31,23 @@ class Checkpoints:
         if self.fail_committed_result and "intent" not in decode_frame(value):
             self.fail_committed_result = False
             raise RuntimeError("lost commit acknowledgement")
+
+
+class UsageCheckpoints:
+    def __init__(self):
+        self.snapshots = {}
+        self.fail_ack = False
+
+    async def get(self, run_id):
+        return copy.deepcopy(self.snapshots.get(run_id))
+
+    async def report(self, run_id, report):
+        value = {**report, "source": "isolated_workload", "reported_generation": 1}
+        self.snapshots[run_id] = copy.deepcopy(value)
+        if self.fail_ack:
+            self.fail_ack = False
+            raise RuntimeError("lost usage acknowledgement")
+        return value
 
 
 class Runtime:
@@ -75,7 +93,9 @@ class IsolatedTests(unittest.IsolatedAsyncioTestCase):
     def adapter(self, runtime=None):
         client = Checkpoints()
         runtime = runtime or Runtime()
-        adapter = IsolatedAdapter("http://fixture", "pool-test", None, runtime=runtime, client=client)
+        adapter = IsolatedAdapter(
+            "http://fixture", "pool-test", None, runtime=runtime, client=client, usage_client=UsageCheckpoints()
+        )
         adapter.graphs = {"echo"}
         return adapter, runtime, client
 
@@ -120,6 +140,66 @@ class IsolatedTests(unittest.IsolatedAsyncioTestCase):
             await adapter.execute(self.assignment(), AsyncMock(), asyncio.Event())
         self.assertEqual(await adapter.execute(self.assignment(), AsyncMock(), asyncio.Event()), "success")
         self.assertEqual(len(runtime.starts), 1)
+
+    async def test_versioned_usage_receipt_replay_never_adds_counts_or_runs_work_twice(self):
+        script = """
+import json,sys
+sys.stdin.readline()
+for sequence,complete in [(1,False),(2,True)]:
+ print(json.dumps({'type':'usage','schema_version':1,'sequence':sequence,'status':'reported','complete':complete,'prompt_tokens':10,'completion_tokens':4,'model':'synthetic'}),flush=True)
+ assert json.loads(sys.stdin.readline())=={'type':'usage_ack','sequence':sequence}
+print(json.dumps({'type':'result','status':'success','state':1,'output':{'answer':'synthetic'}}),flush=True)
+"""
+        adapter, runtime, client = self.adapter(Runtime(script))
+        events = []
+        callback = AsyncMock(side_effect=lambda event: events.append(event))
+        assignment = self.assignment()
+        self.assertEqual(await adapter.execute(assignment, callback, asyncio.Event()), "success")
+        report = decode_frame(client.raw)["receipts"]["first"]["usage"]
+        self.assertEqual(report["prompt_tokens"], 10)
+        self.assertEqual(report["sequence"], 3)
+        assignment["generation"] = 2
+        self.assertEqual(await adapter.execute(assignment, callback, asyncio.Event()), "success")
+        self.assertEqual(len(runtime.starts), 1)
+        values = [event["data"]["usage"] for event in events if event["method"] == "values"]
+        self.assertEqual(len(values), 2)
+        self.assertEqual(values[0], values[1])
+        self.assertEqual(values[0]["reported_generation"], 1)
+
+    async def test_cancellation_preserves_acknowledged_partial_usage_and_stops_blocked_read(self):
+        script = """
+import json,sys,time
+sys.stdin.readline()
+print(json.dumps({'type':'usage','schema_version':1,'sequence':1,'status':'reported','complete':False,'prompt_tokens':7,'completion_tokens':3}),flush=True)
+sys.stdin.readline()
+time.sleep(60)
+"""
+        adapter, runtime, client = self.adapter(Runtime(script))
+        cancel = asyncio.Event()
+        task = asyncio.create_task(adapter.execute(self.assignment(), AsyncMock(), cancel))
+        async with asyncio.timeout(3):
+            while adapter.usage_client.snapshots.get("same-run-id", {}).get("sequence") != 2:
+                await asyncio.sleep(0.01)
+        cancel.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 3)
+        self.assertEqual(runtime.cleanups, runtime.starts)
+        self.assertIn("intent", decode_frame(client.raw))
+        snapshot = adapter.usage_client.snapshots["same-run-id"]
+        self.assertEqual((snapshot["prompt_tokens"], snapshot["completion_tokens"]), (7, 3))
+        self.assertFalse(snapshot["complete"])
+
+    async def test_output_usage_cannot_bypass_the_versioned_channel(self):
+        script = """
+import json,sys
+sys.stdin.readline()
+print(json.dumps({'type':'result','status':'success','state':None,'output':{'usage':{'prompt_tokens':999}}}),flush=True)
+"""
+        adapter, _runtime, client = self.adapter(Runtime(script))
+        with self.assertRaises(CompletionDeliveryError):
+            await adapter.execute(self.assignment(), AsyncMock(), asyncio.Event())
+        self.assertIn("intent", decode_frame(client.raw))
+        self.assertEqual(adapter.usage_client.snapshots["same-run-id"]["status"], "unknown")
 
     async def test_generated_sandbox_names_fit_runtime_limit_and_receipt_cleanup_binding(self):
         adapter, runtime, client = self.adapter()

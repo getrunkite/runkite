@@ -80,6 +80,7 @@ type RunBinding struct {
 	AgentID          string
 	ThreadID         string
 	User             *transport.UserContext
+	WorkloadIdentity *transport.WorkloadIdentity
 }
 
 type runBindingKey struct{}
@@ -100,6 +101,9 @@ func RunBindingFromContext(ctx context.Context) *RunBinding {
 // /internal/* routes (schema publish, run status, connector metadata) stay
 // runner-token-only because they can occur outside an assignment.
 func requiresRunBinding(path string) bool {
+	if strings.HasPrefix(path, "/internal/runs/") && strings.HasSuffix(path, "/usage") {
+		return true
+	}
 	if strings.TrimSuffix(path, "/") == "/internal/a2a/runs" {
 		return true
 	}
@@ -154,6 +158,12 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 			"run generation mismatch")
 		return nil, false
 	}
+	if tokens.WorkloadIdentityEnabled() || assignment.WorkloadOwner != nil {
+		if err := RequireWorkloadOwner(r.Context(), assignment.WorkloadOwner); err != nil {
+			writeDenied(w, http.StatusForbidden, "workload_owner_mismatch", "assignment workload owner mismatch or expired")
+			return nil, false
+		}
+	}
 
 	tenantID := assignment.TenantID
 	if tenantID == "" {
@@ -177,6 +187,7 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 		AgentID:          assignment.GraphID,
 		ThreadID:         assignment.ThreadID,
 		User:             assignment.User,
+		WorkloadIdentity: assignment.WorkloadOwner,
 	}
 	ctx := tenant.WithContext(r.Context(), tenantID)
 	ctx = WithRunBinding(ctx, binding)

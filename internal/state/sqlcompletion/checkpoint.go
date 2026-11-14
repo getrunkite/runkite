@@ -21,6 +21,9 @@ func (d Driver) LockRunCheckpoint(ctx context.Context, tx Tx, binding state.RunC
 	if err := state.CheckRunCheckpointBinding(&models.Run{ThreadID: threadID, Status: status, Metadata: metadata}, binding); err != nil {
 		return err
 	}
+	if err := state.CheckWorkloadOwner(ctx, metadata); err != nil {
+		return err
+	}
 	_, err = d.LockThread(ctx, tx, threadID)
 	return err
 }

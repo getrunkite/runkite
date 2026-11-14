@@ -315,6 +315,9 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 		{Version: 21, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx) }, Down: func(context.Context) error {
 			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
 		}},
+		{Version: 22, Name: "durable_run_usage", Up: s.upRunUsage, Down: func(context.Context) error {
+			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
+		}},
 	}
 }
 

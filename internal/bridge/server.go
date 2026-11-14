@@ -127,7 +127,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	// Client already gone while we were blocked in Dequeue — put the job
 	// back so a live runner can take it (zombie GetJob recovery).
 	if ctx.Err() != nil {
-		_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
+		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
 		return nil, ctx.Err()
 	}
 	// A backend routing/filter collision must not expose another kind's input
@@ -135,7 +135,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	if err := requireAssignmentAuthority(ctx, job); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if nackErr := s.queue.Nack(cleanupCtx, job.RunID, job.Generation); nackErr != nil {
+		if nackErr := s.queue.Nack(transport.TrustedQueueContext(cleanupCtx), job.RunID, job.Generation); nackErr != nil {
 			return nil, status.Error(codes.Unavailable, "failed to return unauthorized assignment")
 		}
 		return nil, err
@@ -144,7 +144,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	if s.attemptCallback != nil {
 		accepted, err := s.attemptCallback(ctx, job.RunID, job.Generation)
 		if err != nil {
-			_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
+			_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
 			return nil, status.Error(codes.Unavailable, "failed to persist dispatch attempt")
 		}
 		if !accepted {
@@ -158,7 +158,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 
 	data, err := json.Marshal(job)
 	if err != nil {
-		_ = s.queue.Nack(context.Background(), job.RunID, job.Generation)
+		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
 		return nil, err
 	}
 
@@ -168,6 +168,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	// transient pub/sub with no replay — a cancel arriving before the
 	// subscription is registered is silently lost.
 	runnerKind := req.RunnerKind
+	watcherKind := workloadWatcherKey(ctx, runnerKind)
 	runID := job.RunID
 
 	// watchCtx governs BOTH the cancel-watcher goroutine below AND
@@ -200,7 +201,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 			select {
 			case <-cancelCh:
 				slog.Info("cancel signal received for dispatched run", "run_id", runID)
-				s.notifyWatchers(runnerKind, runID)
+				s.notifyWatchers(watcherKind, runID)
 			case <-watchCtx.Done():
 				// Run completed normally; goroutine exits cleanly.
 			}
@@ -347,14 +348,26 @@ func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerServi
 	slog.Info("runner watching for cancels", "runner_kind", req.RunnerKind)
 
 	ch := make(chan string, 64)
-	s.addWatcher(req.RunnerKind, ch)
-	defer s.removeWatcher(req.RunnerKind, ch)
+	watcherKind := workloadWatcherKey(stream.Context(), req.RunnerKind)
+	s.addWatcher(watcherKind, ch)
+	defer s.removeWatcher(watcherKind, ch)
+	var expiry <-chan time.Time
+	if identity := auth.WorkloadIdentityFromContext(stream.Context()); identity != nil {
+		timer := time.NewTimer(time.Until(identity.NotAfter))
+		defer timer.Stop()
+		expiry = timer.C
+	}
 
 	for {
 		select {
 		case <-stream.Context().Done():
 			return nil
+		case <-expiry:
+			return status.Error(codes.Unauthenticated, "workload identity expired")
 		case runID := <-ch:
+			if err := requireRunnerKind(stream.Context(), req.RunnerKind); err != nil {
+				return err
+			}
 			if err := stream.Send(&pb.CancelSignal{RunId: runID}); err != nil {
 				slog.Error("failed to send cancel signal", "run_id", runID, "error", err)
 				return err
@@ -367,6 +380,12 @@ func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerServi
 // requireRunnerKind binds request fields to the identity authenticated by the
 // interceptor. An absent identity is the explicit local development mode.
 func requireRunnerKind(ctx context.Context, kind string) error {
+	if err := auth.RequireWorkloadAuthority(ctx); err != nil {
+		return status.Error(codes.Unauthenticated, "workload identity expired or retired")
+	}
+	if identity := auth.WorkloadIdentityFromContext(ctx); identity != nil && !identity.ValidAt(time.Now()) {
+		return status.Error(codes.Unauthenticated, "workload identity expired")
+	}
 	if execution.IsPoolKind(kind) && authenticatedRunner(ctx) == "" {
 		return status.Error(codes.PermissionDenied, "execution pool requires authenticated runner authority")
 	}
@@ -377,6 +396,12 @@ func requireRunnerKind(ctx context.Context, kind string) error {
 }
 
 func (s *Server) requireRunOwner(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+	if err := auth.RequireWorkloadAuthority(ctx); err != nil {
+		return nil, status.Error(codes.Unauthenticated, "workload identity expired or retired")
+	}
+	if identity := auth.WorkloadIdentityFromContext(ctx); identity != nil && !identity.ValidAt(time.Now()) {
+		return nil, status.Error(codes.Unauthenticated, "workload identity expired")
+	}
 	assignment, err := s.queue.LookupInflight(ctx, runID)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "failed to resolve run assignment")
@@ -396,5 +421,17 @@ func requireAssignmentAuthority(ctx context.Context, assignment *transport.RunAs
 	if tokens, ok := ctx.Value(runnerAuthorityKey{}).(*auth.RunnerTokens); ok && !tokens.AllowsAssignment(assignment.RunnerKind, assignment.TenantID, assignment.GraphID) {
 		return status.Error(codes.PermissionDenied, "assignment is not allowed for this runner authority")
 	}
+	if assignment.WorkloadOwner != nil || auth.WorkloadIdentityFromContext(ctx) != nil {
+		if err := auth.RequireWorkloadOwner(ctx, assignment.WorkloadOwner); err != nil {
+			return status.Error(codes.PermissionDenied, "assignment workload owner mismatch or expired")
+		}
+	}
 	return nil
+}
+
+func workloadWatcherKey(ctx context.Context, kind string) string {
+	if identity := auth.WorkloadIdentityFromContext(ctx); identity != nil {
+		return kind + "\x00" + identity.URI + "\x00" + identity.KeySHA256 + "\x00" + identity.NotAfter.UTC().Format(time.RFC3339Nano)
+	}
+	return kind
 }

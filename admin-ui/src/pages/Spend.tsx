@@ -19,7 +19,7 @@ const DOCS = {
 } as const;
 
 const USD_TIP =
-  "Estimate only — not a provider invoice. Dollars = tokens × finops.pricebook, or gateway cost_usd when the runner reports one.";
+  "Recorded estimate, not a provider invoice. Dollars use finops.pricebook or reported cost_usd. Unreported activity is excluded; isolated-workload measurements are self-reported.";
 
 const OPEN_HOLDS_TIP =
   "A hold is a provisional reservation placed the instant a run is created (finops.reservation), before the real token count is known — it counts toward today's USD/token caps so many runs starting at once can't all sneak in under the limit before any of them reports real usage. Released the moment the run finishes; a nonzero count here means that many runs are still in flight for this filter right now.";
@@ -282,7 +282,7 @@ export function Spend() {
           </li>
           <li>
             Control plane multiplies tokens by <code className="text-foreground">finops.pricebook</code> for that{" "}
-            <em>exact model id</em> — or uses gateway <code className="text-foreground">cost_usd</code> when present.
+            <em>exact model id</em>, or uses reported <code className="text-foreground">cost_usd</code> when present.
           </li>
           <li>
             Missing pricebook row → tokens still show, Est. USD stays <code className="text-foreground">$0</code>, and an
@@ -294,13 +294,14 @@ export function Spend() {
           <li>
             A reply came back but the runner found <em>no</em> token/cost data in any shape it recognizes (a brand-new
             provider, or a framework integration that has not adopted LangChain's standard{" "}
-            <code className="text-foreground">usage_metadata</code>) → an Unmetered reply alert fires instead of quietly
-            showing $0, so a genuinely unmetered agent is never mistaken for a free one.
+            <code className="text-foreground">usage_metadata</code>) raises an Unmetered reply alert.
+            A zero estimate alone does not establish that no model activity occurred.
           </li>
         </ol>
         <p className="mt-3 text-muted-foreground">
-          Cancellation can settle before final usage arrives, so canceled-run spend can be incomplete.
-          These estimates do not replace a provider invoice.
+          Cancellation settles the latest acknowledged durable isolated report. Partial or unavailable reports can omit
+          activity, and later reports cannot rewrite a terminal settlement. Isolated measurements are workload claims;
+          provider accounting and limits are required for trusted billing and enforcement.
         </p>
         <p className="mt-3 text-muted-foreground">
           Needs a SQL state backend (Postgres / MySQL / SQLite).{" "}
@@ -318,10 +319,9 @@ export function Spend() {
 
       {(unpriced.length > 0 || tokensButNoUsd) && (
         <div className="mb-4 rounded-sm border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <p className="font-medium text-foreground">Est. USD is $0 because pricing did not match</p>
+          <p className="font-medium text-foreground">{unpriced.length > 0 ? "Some recorded usage has no matching price" : "Tokens recorded without a positive USD estimate"}</p>
           <p className="mt-1 text-muted-foreground">
-            Tokens were recorded. This is not a rounding issue — the model id was missing from your pricebook (or no
-            gateway cost was reported).
+            {unpriced.length > 0 ? "Inspect the missing model rates below. Token totals can be present while USD remains incomplete." : "This can reflect tokens-only metering, an intentional zero rate or missing cost data. Inspect the pricing configuration before interpreting zero as free usage."}
           </p>
           {unpricedModels.length > 0 && (
             <p className="mt-2">

@@ -4,6 +4,8 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -188,6 +190,98 @@ class FixtureCleanupTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cleanup was not confirmed"):
                 case.cleanup()
         self.assertFalse(json.loads(output.read_text())["passed"])
+
+
+class GatewayTLSTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("openssl"), "owned certificate generation requires OpenSSL")
+    def test_private_certificates_and_cli_bundles_do_not_modify_user_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pki = root / "pki"
+            fixture.make_gateway_pki(pki)
+            context = ssl.create_default_context(cafile=str(pki / "ca.pem"))
+            context.load_cert_chain(str(pki / "client.pem"), str(pki / "client.key"))
+            env = fixture.gateway_tls_environment(
+                {"fixture": "preserved"}, root / "cli", "https://127.0.0.1:12345", pki
+            )
+            self.assertEqual(env["fixture"], "preserved")
+            self.assertEqual(env["XDG_CONFIG_HOME"], str(root / "cli"))
+            bundle = root / "cli/openshell/gateways/https___127.0.0.1_12345/mtls"
+            self.assertEqual((bundle / "tls.key").read_bytes(), (pki / "client.key").read_bytes())
+            self.assertEqual((bundle / "tls.key").stat().st_mode & 0o777, 0o600)
+            result = subprocess.run(
+                ["openssl", "verify", "-CAfile", str(pki / "ca.pem"), str(pki / "untrusted-client.pem")],
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_negative_probe_requires_rejection_and_authenticated_recovery(self):
+        cli = ["fixture-cli", "--gateway-endpoint", "https://127.0.0.1:12345"]
+        for accepted in (False, True):
+            with self.subTest(accepted=accepted):
+                report = {"passed": False, "cases": []}
+                with (
+                    patch.object(fixture, "wait_for_gateway") as ready,
+                    patch.object(fixture, "gateway_tls_environment", return_value={"synthetic": "negative"}),
+                    patch.object(
+                        fixture.subprocess, "run", return_value=subprocess.CompletedProcess([], 0 if accepted else 1)
+                    ),
+                ):
+                    if accepted:
+                        with self.assertRaisesRegex(RuntimeError, "accepted"):
+                            fixture.qualify_gateway_tls([], cli, {}, Path("owned"), Path("pki"), io.BytesIO(), report)
+                        self.assertFalse(report["passed"])
+                    else:
+                        fixture.qualify_gateway_tls([], cli, {}, Path("owned"), Path("pki"), io.BytesIO(), report)
+                        self.assertEqual(ready.call_count, 3)
+                        self.assertEqual(len(report["cases"]), 3)
+                        self.assertFalse(report["passed"], "preflight alone cannot establish outage recovery")
+
+    def test_outage_requires_request_failure_restart_and_verified_recovery(self):
+        for failure in ("nonzero", "timeout", "accepted", "recovery"):
+            with self.subTest(failure=failure):
+                commands = []
+                report = {"passed": False, "cases": []}
+
+                def execute(args, commands=commands, failure=failure, **_kwargs):
+                    commands.append(args)
+                    if "list" in args:
+                        if failure == "timeout":
+                            raise subprocess.TimeoutExpired(args, 15)
+                        return subprocess.CompletedProcess(args, 0 if failure == "accepted" else 1)
+                    return subprocess.CompletedProcess(args, 0)
+
+                with (
+                    patch.object(fixture.subprocess, "run", side_effect=execute),
+                    patch.object(
+                        fixture,
+                        "wait_for_gateway",
+                        side_effect=RuntimeError("recovery failed") if failure == "recovery" else None,
+                    ),
+                ):
+
+                    def call(report=report):
+                        return fixture.qualify_gateway_tls(
+                            ["compose"],
+                            ["cli", "--gateway-endpoint", "https://127.0.0.1:12345"],
+                            {},
+                            Path("owned"),
+                            Path("pki"),
+                            io.BytesIO(),
+                            report,
+                            outage=True,
+                        )
+
+                    if failure in {"accepted", "recovery"}:
+                        with self.assertRaises(RuntimeError):
+                            call()
+                        self.assertFalse(report["passed"])
+                    else:
+                        call()
+                        self.assertTrue(report["passed"])
+                self.assertTrue(
+                    any("up" in command for command in commands), "failed probe must still restart owned gateway"
+                )
 
 
 class WorkloadProbeTests(unittest.TestCase):

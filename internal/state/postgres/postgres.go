@@ -359,6 +359,9 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 		{Version: 21, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx, conn) }, Down: func(context.Context) error {
 			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
 		}},
+		{Version: 22, Name: "durable_run_usage", Up: func(ctx context.Context) error { return s.upRunUsage(ctx, conn) }, Down: func(context.Context) error {
+			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
+		}},
 	}
 }
 

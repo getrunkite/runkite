@@ -1,5 +1,28 @@
 # Auth
 
+## Strict admission identity (unreleased after v0.7.0)
+
+Set `auth.strict_identity: true` for a JWT deployment that requires configured
+`issuer`, `audience`, an explicit `sub` and a valid `exp`. JWKS retrieval requires
+HTTPS and refuses redirects. The development-only `allow_insecure_loopback`
+exception permits a literal loopback HTTP endpoint. It does not permit arbitrary
+cleartext IdPs. Existing JWT compatibility behavior remains when the profile is
+absent; app permissions and explicit tenant checks remain separate requirements.
+
+Strict authentication records bounded issuer/subject/audience/expiry provenance
+and up to four issuer-asserted actor entries. These describe authentication at
+admission, not a token valid forever or proof of actor key possession. Run
+manifests and action evidence contain this metadata without bearer values or
+arbitrary claims. A2A inherits it from the verified frozen parent.
+
+When constrained connector exchange is enabled, `forward_token: true` allows
+the actual authenticated JWT to become the run's private delegated assertion.
+That assertion is a typed server-owned field. Arbitrary extra claims, forwarded
+headers or runner-supplied user context cannot replace it. The trusted runner
+still receives that credential with its assignment, so token forwarding retains
+its explicit trust and exposure implications. See
+[delegation and correlation](internal/delegation-and-audit-correlation.md).
+
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
 Four providers, configured via `auth` in `langgraph.json`:
@@ -188,3 +211,31 @@ with its permitted work; this is not per-process attestation. The external
 OpenShell bridge keeps its fleet token outside the workload; ordinary in-process
 SDK adapters retain their existing trusted-worker boundary. See
 [pool and workload design](internal/constrained-execution.md).
+
+## Verified workload identity (unreleased after v0.7.0)
+
+`RUNKITE_WORKLOAD_IDENTITY=mtls` adds an individual holder to fleet authority.
+Set `RUNKITE_WORKLOAD_IDENTITIES_FILE` to JSON with an `identities` map from
+runner-kind/pool to exact SPIFFE URI SAN lists, an optional
+`denied_key_sha256` list, and optionally `RUNKITE_WORKLOAD_MAX_CERT_TTL` (default `1h`,
+bounded `1m` through `24h`). External issuance provides short-lived certificates
+and distinct keys. Runkite requires verified direct client TLS on both HTTP and
+gRPC, the existing kind token, and the allowed URI. It binds the URI, public-key
+fingerprint and certificate expiry to the assignment and durable SQL attempt.
+A fleet peer holding a different key cannot use another holder's assignment.
+Retire a compromised key by its SPKI fingerprint and replace/drain every replica
+with the updated file. Editing the file alone is not live revocation.
+
+The strict profile supports SQL state with Redis or inprocess queues. Other
+backends fail startup. It does not accept proxy identity headers, create an
+issuer, secure direct SQL connections or attest arbitrary code. The shared HTTP
+listener also requires client certificates from client/Admin callers. Drain
+work and upgrade every replica before enabling it. Certificate changes require
+drain/reclaim rather than extending an old binding. See the
+[configuration, threat boundary and recovery design](internal/workload-identity.md).
+
+Updated runner helpers refuse plaintext HTTP whenever a client certificate is
+configured, including outside this strict profile. If an older deployment used
+gRPC mTLS alongside plain HTTP proxies, enable HTTPS and update the runner's HTTP
+base URL before upgrading its client. CA-only configuration without a client
+certificate retains the existing HTTP compatibility behavior.

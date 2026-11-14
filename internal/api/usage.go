@@ -225,7 +225,8 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 		return nil
 	}
 	usage, model := extractRunUsageWithModel(run.Output)
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CostUSD == 0 && !usage.Unmetered {
+	isolated := usage.ReportingSource == models.RunUsageSourceIsolated && (usage.ReportingStatus == models.RunUsageReported || usage.ReportingStatus == models.RunUsageUnknown)
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CostUSD == 0 && !usage.Unmetered && !isolated {
 		return nil
 	}
 	var pb finops.Pricebook
@@ -233,6 +234,11 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 		pb = s.FinOps().Pricebook
 	}
 	usd := pb.EstimateUSD(model, usage.PromptTokens, usage.CompletionTokens, usage.CostUSD)
+	if isolated && usage.CostReported {
+		// An explicitly reported zero is distinct from an absent cost. The
+		// source still states this is self-reported, not provider verification.
+		usd = usage.CostUSD
+	}
 	if alerts && usage.CostUSD == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) &&
 		len(pb) > 0 && !pb.HasModel(model) {
 		// Pricebook is configured but this model id is missing — the
@@ -281,6 +287,13 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 		})
 	}
 	id := "usage-" + run.RunID
+	source := models.UsageSourceTerminalOutput
+	if isolated {
+		// Retained usage must not suppress a new run reusing the same public ID.
+		// This new path has no pre-upgrade isolated reports to charge twice.
+		id = "isolated-usage-" + run.IncarnationID
+		source = "isolated_" + usage.ReportingStatus
+	}
 	ev := &models.UsageEvent{
 		ID:          id,
 		TS:          run.UpdatedAt,
@@ -291,7 +304,7 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 		TokensIn:    usage.PromptTokens,
 		TokensOut:   usage.CompletionTokens,
 		USDEstimate: usd,
-		Source:      models.UsageSourceTerminalOutput,
+		Source:      source,
 	}
 	if err := store.WriteUsageEvent(ctx, ev); err != nil {
 		slog.Warn("usage event write failed", "run_id", run.RunID, "error", err)

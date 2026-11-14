@@ -53,7 +53,7 @@ func (s *Store) completeRunInTransaction(ctx context.Context, c *state.RunComple
 			return err
 		}
 		resolved := state.ResolveCompletion(run.Metadata, c)
-		c := resolved
+		c := state.WithoutDurableUsage(resolved)
 		result = state.CheckCompletion(run.Metadata, run.Status, c)
 		if !result.Applied {
 			return nil

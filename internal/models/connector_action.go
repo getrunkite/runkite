@@ -16,6 +16,10 @@ const (
 // ConnectorAction is metadata about one managed MCP tools/call request. A
 // response is evidence of that response, not proof of a business effect.
 type ConnectorAction struct {
+	VaultIssueRequestID string              `json:"vault_issue_request_id,omitempty"`
+	WorkloadIdentity    *WorkloadProvenance `json:"workload_identity,omitempty"`
+	IdentityProvenance  *IdentityProvenance `json:"identity_provenance,omitempty"`
+	DelegationContract  *DelegationContract `json:"delegation_contract,omitempty"`
 	// ExportSinkID pins the operator configured delivery destination identity.
 	ExportSinkID        string     `json:"export_sink_id,omitempty"`
 	ID                  string     `json:"action_id"`
@@ -70,18 +74,20 @@ type ConnectorActionDecision struct {
 
 // ConnectorActionObservation excludes arguments, payloads and provider text.
 type ConnectorActionObservation struct {
-	State          string `json:"state"`
-	ReasonCode     string `json:"reason_code,omitempty"`
-	ResponseKind   string `json:"response_kind,omitempty"`
-	HTTPStatus     *int   `json:"http_status,omitempty"`
-	RPCErrorCode   *int64 `json:"rpc_error_code,omitempty"`
-	ResponseDigest string `json:"response_digest,omitempty"`
-	ResponseBytes  *int64 `json:"response_bytes,omitempty"`
+	VaultIssueRequestID string `json:"vault_issue_request_id,omitempty"`
+	State               string `json:"state"`
+	ReasonCode          string `json:"reason_code,omitempty"`
+	ResponseKind        string `json:"response_kind,omitempty"`
+	HTTPStatus          *int   `json:"http_status,omitempty"`
+	RPCErrorCode        *int64 `json:"rpc_error_code,omitempty"`
+	ResponseDigest      string `json:"response_digest,omitempty"`
+	ResponseBytes       *int64 `json:"response_bytes,omitempty"`
 }
 
 // ConnectorActionEvent is an append-only versioned metadata snapshot. Its
 // mutation identity makes SQL persistence retryable without replaying a tool.
 type ConnectorActionEvent struct {
+	VaultIssueRequestID string    `json:"vault_issue_request_id,omitempty"`
 	ActionID            string    `json:"action_id"`
 	TenantID            string    `json:"tenant_id"`
 	Sequence            int64     `json:"sequence"`

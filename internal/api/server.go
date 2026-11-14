@@ -375,6 +375,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Internal APIs (for runners)
 	mux.HandleFunc("GET /internal/runs/{runID}/status", s.handleGetRunStatus)
+	mux.HandleFunc("GET /internal/runs/{runID}/usage", s.handleGetRunUsage)
+	mux.HandleFunc("POST /internal/runs/{runID}/usage", s.handleReportRunUsage)
 	mux.HandleFunc("PUT /internal/agents/{agentID}/schema", s.handleReportAgentSchema)
 
 	// Connector Registry (internal, for runners)
@@ -592,7 +594,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 			}
 		}
 		generation := state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
-		_, err = s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: generation, Status: models.RunStatus(statusStr), Error: errorMsg})
+		_, err = s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: runID, Generation: generation, Status: models.RunStatus(statusStr), Error: errorMsg})
 		if err != nil {
 			slog.Error("status callback: durable completion failed", "run_id", runID, "error", err)
 		}
@@ -865,6 +867,7 @@ func (s *Server) handleGetConnectorSession(w http.ResponseWriter, r *http.Reques
 		body.UserContext = nil
 	}
 
+	r = bindConnectorDelegation(r, s.connectors, name)
 	sess, err := s.connectors.GetSession(r.Context(), name, body.UserContext)
 	if err != nil {
 		if errors.Is(err, connector.ErrNotFound) {
@@ -971,6 +974,7 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	if raw := r.Header.Get("X-Runkite-User-Context"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &userCtx)
 	}
+	r = bindConnectorDelegation(r, s.connectors, name)
 
 	// Policy on tools/call only (other MCP methods stay transparent after
 	// the connector's own static tool filter inside ProxyMCPRequest).

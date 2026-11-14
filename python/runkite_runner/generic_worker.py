@@ -307,6 +307,7 @@ async def _handle_job(
             runner_token=runner_token,
             tenant_id=assignment.get("tenant_id") or "",
             generation=generation,
+            require_authority=assignment.get("workload_owner") is not None,
         ):
             return
 

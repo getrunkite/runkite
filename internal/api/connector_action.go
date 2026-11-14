@@ -22,9 +22,10 @@ import (
 const headerConnectorActionID = "X-Runkite-Connector-Action-Id"
 
 type recordedConnectorAction struct {
-	store   state.ProtectedActionStore
-	row     *models.ConnectorAction
-	receipt *state.ConnectorActionDispatch
+	vaultIssueRequestID string
+	store               state.ProtectedActionStore
+	row                 *models.ConnectorAction
+	receipt             *state.ConnectorActionDispatch
 }
 
 func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Request, registry *connector.Registry, name string, userCtx map[string]interface{}, rpc *connector.MCPRequest, targetRevision, toolRevision string) {
@@ -62,6 +63,11 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		Connector: name, Tool: rpc.Tool, Transport: transportMode, ArgsDigest: in.ArgsDigest,
 		TargetRevision: &targetRevision, PolicyRevision: &in.PolicyRevision,
 		ToolRevision: optionalRevision(toolRevision),
+	}
+	row.DelegationContract, err = registry.BoundDelegationContract(r.Context(), name)
+	if err != nil {
+		writeConnectorActionUnavailable(w, false)
+		return
 	}
 	credentialBinding, credentialRevision, err := registry.BoundCredentialBinding(r.Context(), name)
 	if err != nil {
@@ -178,6 +184,9 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		if err != nil || live == nil {
 			return connector.ErrMCPDispatchBlocked
 		}
+		if live.WorkloadOwner != nil && auth.RequireWorkloadOwner(ctx, live.WorkloadOwner) != nil {
+			return connector.ErrMCPDispatchBlocked
+		}
 		liveTenant := live.TenantID
 		if liveTenant == "" {
 			liveTenant = tenant.DefaultTenant
@@ -213,6 +222,11 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 	}
 	observed := connector.NewMCPActionTrace(authorize)
 	ctx := connector.WithMCPActionTrace(r.Context(), observed)
+	leaseRef := ""
+	if row.CredentialRef != nil {
+		leaseRef = *row.CredentialRef
+	}
+	ctx = connector.WithMCPActionCorrelation(ctx, id, leaseRef)
 	var result *connector.ProxyMCPResult
 	var forwardErr, credentialErr error
 	if credentialBinding == "" {
@@ -233,6 +247,9 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 			return forwardErr
 		})
 		credentialErr = lifecycleErr
+		if lease != nil {
+			action.vaultIssueRequestID = lease.IssueRequestID
+		}
 		if lifecycleErr != nil {
 			if observed.Snapshot().ResponseObserved && result != nil && forwardErr == nil {
 				// A failed cleanup acknowledgement cannot erase a response that
@@ -286,7 +303,8 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 
 func (a *recordedConnectorAction) finish(ctx context.Context, ob connector.MCPActionObservation) error {
 	observation := models.ConnectorActionObservation{
-		State: models.ConnectorActionNotDispatched, ReasonCode: ob.ReasonCode, ResponseKind: ob.ResponseKind,
+		VaultIssueRequestID: a.vaultIssueRequestID,
+		State:               models.ConnectorActionNotDispatched, ReasonCode: ob.ReasonCode, ResponseKind: ob.ResponseKind,
 		HTTPStatus: ob.HTTPStatus, RPCErrorCode: ob.RPCErrorCode, ResponseBytes: ob.ResponseBytes,
 	}
 	version, dispatchID := a.row.Version, ""

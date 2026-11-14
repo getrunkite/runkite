@@ -108,6 +108,7 @@ func (p *VaultProvider) request(ctx context.Context, method, path string, payloa
 		return nil, 0, &providerError{notSent: true}
 	}
 	req.Header.Set("X-Vault-Token", string(token))
+	addProviderCorrelation(ctx, req.Header)
 	if p.cfg.Namespace != "" {
 		req.Header.Set("X-Vault-Namespace", p.cfg.Namespace)
 	}
@@ -127,6 +128,7 @@ func (p *VaultProvider) request(ctx context.Context, method, path string, payloa
 }
 
 type vaultGrant struct {
+	RequestID     string `json:"request_id"`
 	LeaseID       string `json:"lease_id"`
 	LeaseDuration int64  `json:"lease_duration"`
 	Renewable     bool   `json:"renewable"`
@@ -154,7 +156,7 @@ func (p *VaultProvider) Issue(ctx context.Context) (Grant, error) {
 		return Grant{}, &providerError{}
 	}
 	ttl, valid := grantTTL(v.LeaseDuration)
-	g := Grant{Handle: v.LeaseID, TTL: ttl, Renewable: v.Renewable, Credential: UserPassword{v.Data.Username, v.Data.Password}}
+	g := Grant{Handle: v.LeaseID, TTL: ttl, Renewable: v.Renewable, Credential: UserPassword{v.Data.Username, v.Data.Password}, RequestID: safeVaultRequestID(v.RequestID)}
 	if !valid || v.Data.Username == "" || v.Data.Password == "" || len(v.Data.Username) > 4096 || len(v.Data.Password) > 16384 || strings.ContainsRune(v.Data.Username, 0) || strings.ContainsRune(v.Data.Password, 0) {
 		return g, &providerError{}
 	}
@@ -178,7 +180,7 @@ func (p *VaultProvider) Renew(ctx context.Context, handle string, increment time
 	if !valid {
 		return Grant{}, &providerError{}
 	}
-	return Grant{Handle: handle, TTL: ttl, Renewable: v.Renewable}, nil
+	return Grant{Handle: handle, TTL: ttl, Renewable: v.Renewable, RequestID: safeVaultRequestID(v.RequestID)}, nil
 }
 
 func (p *VaultProvider) Revoke(ctx context.Context, handle string) error {

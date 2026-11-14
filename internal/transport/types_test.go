@@ -44,6 +44,34 @@ func TestUserContext_WireFlattenExtra(t *testing.T) {
 	}
 }
 
+func TestUserContextDelegatedJWTIsReservedFromExtra(t *testing.T) {
+	for _, assertion := range []string{"", "original-strict-jwt"} {
+		u := transport.UserContext{Identity: "alice", DelegatedJWTAssertion: assertion, Extra: map[string]interface{}{transport.DelegatedJWTAssertionKey: "forged", "sso_token": "legacy"}}
+		raw, err := json.Marshal(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored transport.UserContext
+		if err := json.Unmarshal(raw, &restored); err != nil || restored.DelegatedJWTAssertion != assertion {
+			t.Fatal("Extra replaced the typed assertion during queue serialization", err)
+		}
+		if _, exists := restored.Extra[transport.DelegatedJWTAssertionKey]; exists || restored.Extra["sso_token"] != "legacy" {
+			t.Fatal("reserved assertion became a generic runtime claim, or legacy forwarding broke")
+		}
+	}
+	var nested transport.UserContext
+	if err := json.Unmarshal([]byte(`{"identity":"alice","extra":{"_runkite_delegated_jwt":"forged","sso_token":"legacy"}}`), &nested); err != nil || nested.DelegatedJWTAssertion != "" {
+		t.Fatal("nested Extra established a typed assertion", err)
+	}
+	if _, exists := nested.Extra[transport.DelegatedJWTAssertionKey]; exists {
+		t.Fatal("nested reserved claim survived")
+	}
+	nested.DelegatedJWTAssertion = "previous-user"
+	if err := json.Unmarshal([]byte(`{"identity":"bob"}`), &nested); err != nil || nested.DelegatedJWTAssertion != "" {
+		t.Fatal("reused decoder retained another user's assertion", err)
+	}
+}
+
 func TestUserContext_RoundTripFlatAndLegacyNested(t *testing.T) {
 	flat := []byte(`{"identity":"u1","is_authenticated":true,"email":"a@b.c","sso_token":"tok"}`)
 	var u transport.UserContext

@@ -583,7 +583,40 @@ kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
 qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
 providers. A failed fixture cleanup exits nonzero and preserves its private
 recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
-The experimental isolated protocol has no model/token-usage or spend-settlement
-contract. Do not infer free execution from zero recorded usage or rely on
-token/USD totals to limit unreported model calls. Keep provider accounting and
-limits at the external issuer; ordinary managed admission still applies.
+Published v0.7.0 has no supported isolated usage-reporting contract. Unreleased
+v0.8.0 source adds [durable cumulative reports](internal/isolated-usage.md). Upgrade the
+SQL store and every parent/plane together before using it. Acknowledged partial
+reports survive cancellation; sent but unacknowledged work remains uncertain.
+Unknown usage and an explicit reported zero are different states. Counters and
+costs are workload claims, even when the reporting worker has a verified identity.
+Keep provider accounting and quotas to bound unreported or dishonest usage.
+
+The new combined fixture is `scripts/test-isolated-ha.sh`. It owns disposable
+Postgres/Redis, two TLS planes and an external runtime, uses the installed runner
+wheel, and supports one to twenty bounded fault cycles. See the constrained
+execution note for its exact inputs and qualification limits. A fixture pass
+does not qualify an indefinite production soak or live-provider billing. This
+wrapper is an operator command, also available through the manually dispatched
+`identity-qualification.yml` workflow. It is not an automatic PR or release gate;
+workflow presence alone does not establish a successful hosted run.
+Its TLS scope includes both Runkite HTTP/gRPC surfaces and the disposable
+authenticated OpenShell gateway. The gateway's local CA/client bundle stays in
+private task-owned state. The old standalone fixture still defaults to loopback
+HTTP unless `--tls` is explicitly selected. Review the separate gateway TLS
+preflight/outage report as well as workload and cleanup evidence.
+
+### Runner HTTP TLS compatibility
+
+The 0.8.0 runner clients refuse plaintext HTTP whenever a client certificate is
+configured. This applies even when `RUNKITE_WORKLOAD_IDENTITY` is off. If an
+existing deployment uses mTLS for gRPC but a plaintext HTTP URL for checkpoints,
+connectors or status, enable HTTPS on that HTTP path and update the runner base
+URL before upgrading. A CA bundle without a client certificate does not enable
+this additional guard. Do not remove a required client certificate to restore
+plaintext connectivity.
+
+For the TypeScript runner on Node.js 26 or newer, configure a DNS gRPC endpoint
+whose server certificate contains the matching DNS SAN. The current gRPC client
+sets IP literals as SNI, which Node.js 26 rejects. The runner reports this
+configuration error before polling. HTTPS URLs with matching IP SANs are still
+supported. See the [runner requirements](runners.md).

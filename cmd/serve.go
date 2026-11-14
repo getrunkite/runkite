@@ -226,6 +226,10 @@ func startServer(opts serverOpts) {
 		slog.Error("invalid execution pool configuration", "error", err)
 		os.Exit(1)
 	}
+	if err := configureWorkloadIdentity(runnerTokens); err != nil {
+		slog.Error("invalid workload identity configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Cancelable, not context.Background(): every background loop below
 	// (queue-depth poller, stale-job reclaimer, cron scheduler, retention,
@@ -261,6 +265,10 @@ func startServer(opts serverOpts) {
 	// reuse it rather than opening a second connection pool.
 	rdb := initRedis(ctx)
 	queue, broker, cancelBus := initTransport(ctx, rdb)
+	if err := validateWorkloadIdentityBackends(runnerTokens, store, queue); err != nil {
+		slog.Error("unsupported workload identity backend", "error", err)
+		os.Exit(1)
+	}
 
 	// runkite_queue_depth is a gauge, not something incremented at call
 	// sites -- it must be polled periodically to reflect current state.
@@ -1313,16 +1321,18 @@ func initAuthProvider(configPath string) auth.Provider {
 
 	case "jwt":
 		p, err := auth.NewJWTProvider(auth.JWTConfig{
-			JWKSURL:            cfg.Auth.JWKSURL,
-			Issuer:             cfg.Auth.Issuer,
-			Audience:           cfg.Auth.Audience,
-			TenantClaim:        cfg.Auth.TenantClaim,
-			ExtraClaims:        cfg.Auth.ExtraClaims,
-			ForwardToken:       cfg.Auth.ForwardToken,
-			RawTokenField:      cfg.Auth.RawTokenField,
-			ClaimAliases:       cfg.Auth.ClaimAliases,
-			ForwardHeaders:     cfg.Auth.ForwardHeaders,
-			ScopeAsPermissions: cfg.Auth.ScopeAsPermissions,
+			StrictIdentity:        cfg.Auth.StrictIdentity,
+			AllowInsecureLoopback: cfg.Auth.AllowInsecureLoopback,
+			JWKSURL:               cfg.Auth.JWKSURL,
+			Issuer:                cfg.Auth.Issuer,
+			Audience:              cfg.Auth.Audience,
+			TenantClaim:           cfg.Auth.TenantClaim,
+			ExtraClaims:           cfg.Auth.ExtraClaims,
+			ForwardToken:          cfg.Auth.ForwardToken,
+			RawTokenField:         cfg.Auth.RawTokenField,
+			ClaimAliases:          cfg.Auth.ClaimAliases,
+			ForwardHeaders:        cfg.Auth.ForwardHeaders,
+			ScopeAsPermissions:    cfg.Auth.ScopeAsPermissions,
 		})
 		if err != nil {
 			slog.Error("failed to initialize JWT auth provider", "error", err)

@@ -3,8 +3,11 @@ when the effect is pending. The app executes the tool after allow.
 Runkite does not execute the tool and does not consume the approval
 on poll. This is not the deferred client SDK in docs/client-sdk.md.
 
-Stdlib only. Import with PYTHONPATH=python. Same behavior as
-typescript/runkite-governance.
+Stdlib only. Until the first registry publication is verified, install from
+the repository with ``python -m pip install ./python/runkite_governance``.
+The v0.8.0 source candidate prepares distribution; it does not publish it.
+The optional Microsoft middleware lives in ``runkite_governance.agent_framework``.
+The base client has the same decision boundary as typescript/runkite-governance.
 """
 
 from __future__ import annotations

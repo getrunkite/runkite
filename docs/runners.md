@@ -1,5 +1,15 @@
 # Runners
 
+The TypeScript runner's source candidate requires Node.js 22.19 or newer, matching
+its locked Undici HTTP client. On Node.js 26 or newer, configure a DNS gRPC
+endpoint with a matching certificate DNS SAN for TLS: the current
+`@grpc/grpc-js` sends literal IP addresses as SNI, which Node.js 26 rejects.
+Runkite reports this incompatibility at startup. HTTPS IP SAN verification is
+unaffected. Use matching plane/runner revisions when enabling
+the next-release strict workload identity profile. Its direct mTLS HTTP listener
+also requires a trusted client certificate for Admin/public API access; see the
+[public ingress boundary](internal/workload-identity.md#expiry-rotation-and-revocation).
+
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
 The v0.6.0 heartbeat update bounds each RPC to one second by default. A
@@ -425,11 +435,12 @@ checkpoints. The original SQL run-incarnation receipt binds launch state; an
 uncertain launch intent is not automatically launched again. The workload gets
 no runner token, assignment environment or provider cleanup handle.
 
-The experimental JSONL profile does not define model/token-usage reporting or
-spend settlement. Zero recorded spend is not proof of free execution. Existing
-managed admission checks apply, but unreported model calls cannot be charged
-against accurate token/USD totals. Use external provider accounting and limits;
-native SDK adapters' usage reporting is a separate capability.
+Published v0.7.0 has no workload usage-reporting contract. Source after v0.7.0
+adds [versioned cumulative reports](internal/isolated-usage.md), durable SQL
+acknowledgements, explicit unknown versus reported zero, and receipt/cancellation
+settlement. Reports remain workload claims. Zero recorded spend cannot establish
+free execution, and unreported calls cannot enforce a trustworthy provider-spend
+ceiling. Keep provider accounting and limits; native SDK usage remains separate.
 
 Disposable qualification has passed using an installed Python runner, real SQLite
 plane, pooled worker and OpenShell 0.1.8 with Landlock `hard_requirement`, including
@@ -440,3 +451,30 @@ Follow the [example](../examples/isolated_agent/README.md),
 [design and qualification record](internal/constrained-execution.md) and
 [operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1
 runner packages do not contain this new profile.
+
+## Certificate-bound workload ownership (unreleased after v0.7.0)
+
+The optional [verified workload identity profile](internal/workload-identity.md)
+uses an externally issued short-lived client certificate on both gRPC and
+internal HTTPS. `RUNKITE_TLS_CLIENT_CERT_FILE` and
+`RUNKITE_TLS_CLIENT_KEY_FILE` must identify the same holder for both transports.
+Use `RUNKITE_TLS_CA_FILE` for a private server CA; otherwise normal system server
+trust applies. A client pair enables secure gRPC even without a custom CA.
+No SDK-supplied worker ID or identity header becomes proof.
+Configured client certificates now require HTTPS on HTTP helpers as well, even
+without the strict profile. Upgrade older gRPC-only mTLS/plain-HTTP deployments
+to HTTPS proxies before updating their runner package.
+
+An owned assignment carries additive `workload_owner` metadata. Its exact URI,
+public key and expiry remain bound through event delivery, status, HTTP proxy
+calls and durable completion. A peer using the same fleet token with another
+key is refused. Owned retries advance generation; reclaim can then bind a fresh
+holder. Expired or rotated original credentials require drain/reclaim. Workers
+signal cooperative cancellation after permanent authorization failures, and
+certificate-owned pre-execution status checks fail closed.
+
+Use SQL plus Redis/inprocess and proxy checkpoints/storage for this profile.
+Direct SQL access remains outside its protection. Upgrade all plane replicas
+and runner clients together before enabling it. Existing fleet-only deployments
+retain their previous behavior. The profile neither issues certificates nor
+turns ordinary SDK workers into hostile-code sandboxes.

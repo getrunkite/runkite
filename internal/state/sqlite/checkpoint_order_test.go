@@ -137,13 +137,16 @@ func TestCheckpointUpgradeNormalizesLegacyHistoryWithoutChangingPayloads(t *test
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*),SUM(length(created_at)=30) FROM thread_checkpoints`).Scan(&total, &normalized); err != nil || total != 265 || normalized != total {
 		t.Fatalf("normalization incomplete: total=%d normalized=%d error=%v", total, normalized, err)
 	}
-	assertCheckpointOrder(t, s)
 	if err := s.Downgrade(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Init(ctx); err != nil {
 		t.Fatalf("normalized history cannot re-upgrade: %v", err)
 	}
+	// Current completion also reads the durable usage column. Exercise it only
+	// after the real full upgrade, while keeping the historical v17 rollback
+	// and normalization assertions above intact.
+	assertCheckpointOrder(t, s)
 }
 
 func TestCheckpointNormalizationRejectsInvalidHistoryAtomically(t *testing.T) {

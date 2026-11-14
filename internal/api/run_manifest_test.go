@@ -41,6 +41,28 @@ func TestBuildRunManifestDefaults(t *testing.T) {
 	}
 }
 
+func TestRunManifestIdentityProvenanceIsVerifiedBoundedAndCopied(t *testing.T) {
+	p := &models.IdentityProvenance{Issuer: "https://issuer.invalid", Subject: "alice", Audience: "runkite", ExpiresAt: time.Now().Add(time.Minute), Actors: []models.IdentityActor{{Subject: "agent-service"}}}
+	in := runManifestInput{user: &transport.UserContext{Identity: "alice"}, identityVerified: true, provenance: p}
+	m := buildRunManifest(in)
+	if m.Principal.Provenance == nil {
+		t.Fatal("verified provenance absent")
+	}
+	p.Actors[0].Subject = "mutated"
+	if m.Principal.Provenance.Actors[0].Subject != "agent-service" {
+		t.Fatal("manifest provenance was mutable")
+	}
+	in.identityVerified = false
+	if buildRunManifest(in).Principal.Provenance != nil {
+		t.Fatal("unverified provenance promoted")
+	}
+	in.identityVerified = true
+	in.user.Identity = "different"
+	if buildRunManifest(in).Principal.Provenance != nil {
+		t.Fatal("another subject borrowed provenance")
+	}
+}
+
 func TestBuildRunManifestFromAgentMetadata(t *testing.T) {
 	agent := &models.Agent{
 		AgentID: "sales-bot",

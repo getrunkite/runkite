@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/credentials"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
@@ -14,6 +15,8 @@ import (
 )
 
 func (s *Server) SetCredentialManager(m *credentials.Manager) { s.credentialManager = m }
+
+type operatorCredentialRenewKey struct{}
 
 // CheckCredentialOwner checks the durable action and current assignment. No
 // owner, provider path or raw lease handle is accepted from an HTTP body.
@@ -33,9 +36,25 @@ func (s *Server) CheckCredentialOwner(ctx context.Context, o credentials.Owner, 
 	if liveTenant != o.TenantID || live.Generation != o.Generation || live.RunIncarnationID != o.RunIncarnationID {
 		return credentials.ErrStaleOwner
 	}
+	operatorRenew, _ := ctx.Value(operatorCredentialRenewKey{}).(bool)
+	maintenanceCheck := operatorRenew || credentials.IsReconciliationCheck(ctx)
+	if live.WorkloadOwner != nil {
+		if !live.WorkloadOwner.ValidAt(time.Now()) || (!maintenanceCheck && auth.RequireWorkloadOwner(ctx, live.WorkloadOwner) != nil) {
+			return credentials.ErrStaleOwner
+		}
+	}
 	run, err := s.store.GetRun(ctx, o.RunID)
 	if err != nil || run.IncarnationID != o.RunIncarnationID || run.AgentID != live.GraphID || run.ThreadID != live.ThreadID {
 		return credentials.ErrStaleOwner
+	}
+	if !maintenanceCheck && state.CheckWorkloadOwner(ctx, run.Metadata) != nil {
+		return credentials.ErrStaleOwner
+	}
+	if maintenanceCheck {
+		owner, ownerErr := state.StoredWorkloadOwner(run.Metadata)
+		if ownerErr != nil || (owner == nil) != (live.WorkloadOwner == nil) || (owner != nil && (owner.URI != live.WorkloadOwner.URI || owner.KeySHA256 != live.WorkloadOwner.KeySHA256 || !owner.NotAfter.Equal(live.WorkloadOwner.NotAfter))) {
+			return credentials.ErrStaleOwner
+		}
 	}
 	if state.CheckRunCheckpointBinding(run, state.RunCheckpointBinding{RunID: o.RunID, Generation: o.Generation, ThreadID: live.ThreadID}) != nil {
 		return credentials.ErrStaleOwner
@@ -165,6 +184,9 @@ func (s *Server) handleAdminCredentialMutation(w http.ResponseWriter, r *http.Re
 	var result *credentials.Record
 	switch r.PathValue("operation") {
 	case "renew":
+		// This Admin-only operation renews the exact current owner's lease. It
+		// neither releases credentials nor extends the worker certificate.
+		ctx = context.WithValue(ctx, operatorCredentialRenewKey{}, true)
 		result, err = s.credentialManager.Renew(ctx, row.Owner, row.ID)
 	case "revoke":
 		result, err = s.credentialManager.Revoke(ctx, row.Owner, row.ID)

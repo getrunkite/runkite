@@ -227,12 +227,15 @@ func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw 
 				return nil, fmt.Errorf("parent identity does not match frozen manifest")
 			}
 			verified = manifest.Principal.VerifiedIdentity
+			principal.Provenance = models.CloneIdentityProvenance(manifest.Principal.Provenance)
 		} else if principal != nil {
 			return nil, fmt.Errorf("parent manifest has no delegated identity")
 		}
 	}
 	if !verified {
 		auth.MarkIdentityUnverified(principal)
+	} else if user != nil {
+		auth.InheritJWTAssertionFromTrustedParent(principal, user.DelegatedJWTAssertion)
 	}
 	if len(raw) == 0 {
 		return principal, nil
@@ -246,6 +249,8 @@ func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw 
 	}
 	for name, value := range fields {
 		switch name {
+		case transport.DelegatedJWTAssertionKey:
+			return nil, fmt.Errorf("on_behalf_of cannot supply a delegated assertion")
 		case "identity", "display_name":
 			var supplied string
 			want := principal.Identity
@@ -280,6 +285,9 @@ func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw 
 				return nil, fmt.Errorf("on_behalf_of claims are invalid")
 			}
 			for key, claim := range supplied {
+				if key == transport.DelegatedJWTAssertionKey {
+					return nil, fmt.Errorf("on_behalf_of cannot supply a delegated assertion")
+				}
 				if !sameA2AClaim(principal.Extra, key, claim) {
 					return nil, fmt.Errorf("on_behalf_of cannot replace parent identity or claims")
 				}
@@ -360,6 +368,15 @@ type RunUsage struct {
 	// for a provider/framework integration whose usage-reporting shape
 	// this codebase has never seen.
 	Unmetered bool `json:"unmetered,omitempty"`
+	// Isolated usage is explicitly a workload claim. Complete reports can
+	// contain zero; missing or partial measurements remain unmetered.
+	ReportingStatus    string                      `json:"reporting_status,omitempty"`
+	ReportingSource    string                      `json:"reporting_source,omitempty"`
+	Complete           *bool                       `json:"complete,omitempty"`
+	Sequence           int64                       `json:"sequence,omitempty"`
+	ReportedGeneration int64                       `json:"reported_generation,omitempty"`
+	CostReported       bool                        `json:"cost_reported,omitempty"`
+	ReportedWorkload   *transport.WorkloadIdentity `json:"reported_workload,omitempty"`
 }
 
 // RunCostDetail is one run's contribution to a RunCostSummary.
@@ -430,6 +447,7 @@ func (s *Server) handleGetRunCost(w http.ResponseWriter, r *http.Request) {
 		summary.Usage.CompletionTokens += usage.CompletionTokens
 		summary.Usage.TotalTokens += usage.TotalTokens
 		summary.Usage.CostUSD += usage.CostUSD
+		summary.Usage.Unmetered = summary.Usage.Unmetered || usage.Unmetered
 		summary.Runs = append(summary.Runs, RunCostDetail{RunID: rn.RunID, AgentID: rn.AgentID, Depth: rn.Depth, Usage: usage})
 	}
 

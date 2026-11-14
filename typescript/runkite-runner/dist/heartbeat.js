@@ -1,3 +1,40 @@
+/**
+ * Runner-side heartbeat loop.
+ * TypeScript mirror of the Python runner's heartbeat.py -- see that
+ * module's doc comment for the full rationale.
+ *
+ * Before this, the control plane only knew a job was alive up to its
+ * first StreamEvents message -- confirmed live at roughly 15ms after
+ * dequeue, via a Redis MONITOR trace. A runner crash any time after that
+ * left the run permanently stuck (queue=0, in-flight=0, no automatic
+ * recovery), because nothing was watching it for the rest of its
+ * execution.
+ *
+ * This closes that gap from the runner side: heartbeatLoop calls the
+ * control plane's Heartbeat RPC every intervalMs while a job is actively
+ * executing, extending the same in-flight lease Dequeue creates (see
+ * bridge/server.go's Heartbeat handler and transport.JobQueue.Renew) for
+ * the run's WHOLE duration, not just its first event. Started as its own
+ * background loop right after a job is dequeued (worker.ts's handleJob
+ * does this before streamEvents' first message even lands) and stopped
+ * once the job finishes -- a runner that crashes simply stops
+ * heartbeating, and the control plane's existing ReclaimStale reaper
+ * (cmd/serve.go) picks it up after its normal max-age, exactly as it
+ * already does for the dequeue-to-first-event window. No new reclaim
+ * mechanism, just a mechanism to keep resetting the clock.
+ *
+ * Also carries a fencing token (generation): this runner's transient
+ * connectivity blip might make it miss the reaper's
+ * max-age window, get reclaimed, and replaced by a second runner -- but
+ * if the blip was genuinely transient, THIS runner is still executing
+ * and doesn't know any of that happened yet. The next Heartbeat call
+ * after a reclaim gets back superseded=true, which is this runner's
+ * actionable signal to stop: onSuperseded fires (worker.ts wires it to
+ * the SAME cancelState a real WatchCancels cancel signal would set), so
+ * executeRun's existing cooperative-cancellation check takes over
+ * without this module needing its own separate stopping mechanism.
+ */
+import { status as grpcStatus } from "@grpc/grpc-js";
 import { logger } from "./logger.js";
 // Matches cmd/serve.go's reaper ticker cadence (2s) and the max-age (6s)
 // it reclaims stale jobs past -- see this module's doc comment: a live
@@ -57,7 +94,8 @@ export function startHeartbeatLoop(client, runId, metadata, options = {}) {
                             return;
                         if (err) {
                             logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
-                            finish(false);
+                            const code = "code" in err ? err.code : undefined;
+                            finish(code === grpcStatus.UNAUTHENTICATED || code === grpcStatus.PERMISSION_DENIED);
                         }
                         else {
                             finish(resp.superseded);

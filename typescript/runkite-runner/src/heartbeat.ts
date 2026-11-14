@@ -34,7 +34,7 @@
  * executeRun's existing cooperative-cancellation check takes over
  * without this module needing its own separate stopping mechanism.
  */
-import type { ClientUnaryCall, Metadata } from "@grpc/grpc-js";
+import { status as grpcStatus, type ClientUnaryCall, type Metadata } from "@grpc/grpc-js";
 import { logger } from "./logger.js";
 import type { RunnerServiceClient } from "./proto.js";
 
@@ -125,7 +125,8 @@ export function startHeartbeatLoop(
             if (settled || stopped) return;
             if (err) {
               logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
-              finish(false);
+              const code = "code" in err ? err.code : undefined;
+              finish(code === grpcStatus.UNAUTHENTICATED || code === grpcStatus.PERMISSION_DENIED);
             } else {
               finish(resp.superseded);
             }

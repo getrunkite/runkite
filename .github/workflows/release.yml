@@ -131,55 +131,101 @@ jobs:
           push: true
           tags: ${{ steps.ver.outputs.tags_ts }}
 
+
   pypi:
     runs-on: ubuntu-latest
     needs: [version-check, goreleaser]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: runkite-runner
+            directory: python
+            token_secret: PYPI_API_TOKEN
+          - package: runkite-governance
+            directory: python/runkite_governance
+            token_secret: PYPI_GOVERNANCE_API_TOKEN
     env:
-      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      PYPI_API_TOKEN: ${{ secrets[matrix.token_secret] }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: Build wheel
-        working-directory: python
+      - name: Install pinned build tools
+        run: python -m pip install -r python/requirements-build.txt
+      - name: Build distributions once
+        id: artifact
+        env:
+          PACKAGE_DIR: ${{ matrix.directory }}
+          ARTIFACT_DIR: ${{ runner.temp }}/pypi-${{ matrix.package }}
+        run: python scripts/release_artifacts.py build pypi "$PACKAGE_DIR" "$ARTIFACT_DIR"
+      - name: Verify installed governance distributions and Microsoft middleware
+        if: ${{ matrix.package == 'runkite-governance' }}
+        env:
+          RUNKITE_GOVERNANCE_PYTHON_ARTIFACTS: ${{ steps.artifact.outputs.artifact_dir }}
         run: |
-          python -m pip install -U pip build
-          python -m build
-      - name: Publish to PyPI
-        if: ${{ env.PYPI_API_TOKEN != '' }}
+          python -m pip install 'agent-framework-core==1.23.0'
+          python python/tests/test_governance_package_artifacts.py -v
+      - name: Check existing distributions and stage only missing files
+        id: registry
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+          PENDING_DIR: ${{ steps.artifact.outputs.artifact_dir }}/pending
+        run: python scripts/release_artifacts.py check "$MANIFEST" --pending-dir "$PENDING_DIR"
+      - name: Require publication credentials for missing distributions
+        if: ${{ steps.registry.outputs.pending == 'true' }}
+        env:
+          REQUIRED_SECRET: ${{ matrix.token_secret }}
+        run: |
+          if [ -z "$PYPI_API_TOKEN" ]; then
+            echo "Missing $REQUIRED_SECRET. Publication has not happened. Configure the project-scoped credential before retrying."
+            exit 1
+          fi
+      - name: Publish verified missing files to PyPI
+        if: ${{ steps.registry.outputs.pending == 'true' }}
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
-          packages-dir: python/dist/
+          packages-dir: ${{ steps.artifact.outputs.artifact_dir }}/pending/
           password: ${{ env.PYPI_API_TOKEN }}
-      - name: Skip notice
-        if: ${{ env.PYPI_API_TOKEN == '' }}
-        run: echo "PYPI_API_TOKEN not set — skipping PyPI publish (binaries/GHCR still released)."
+      - name: Verify actual PyPI publication
+        if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 30
+      - name: Retain intended distributions and integrity manifest
+        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pypi-${{ matrix.package }}-${{ github.ref_name }}
+          path: ${{ steps.artifact.outputs.artifact_dir }}
+          retention-days: 30
 
-  # Prefer npm Trusted Publishing (OIDC). Configure once on npmjs.com after the
-  # package exists: Package → Settings → Trusted Publisher → GitHub Actions
-  #   Organization: getrunkite
-  #   Repository:   runkite
-  #   Workflow:     release.yml
-  #   Allowed:      npm publish
-  # Falls back to NPM_TOKEN (granular + Bypass 2FA) if OIDC is not configured.
+  # Each package needs its own trusted publisher or project-scoped fallback.
+  # Existing versions count only after the intended immutable files match.
   npm:
     runs-on: ubuntu-latest
     needs: [version-check, goreleaser]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: runkite-runner
+            directory: typescript/runkite-runner
+            token_secret: NPM_TOKEN
+          - package: runkite-governance
+            directory: typescript/runkite-governance
+            token_secret: NPM_GOVERNANCE_TOKEN
     permissions:
       contents: read
       id-token: write
-    defaults:
-      run:
-        working-directory: typescript/runkite-runner
-    # secrets.* is not a valid context in step `if:` (job/step if only sees
-    # env/github/needs/vars/inputs/etc, not secrets) -- referencing it there
-    # fails the WHOLE workflow file's validation, not just this job. Mirror
-    # the pypi job above: lift the secret into env once, gate on that.
     env:
-      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+      NPM_TOKEN_SET: ${{ secrets[matrix.token_secret] != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
@@ -189,38 +235,74 @@ jobs:
           npm install --global npm@12.2.2
           node --version
           npm --version
-      - run: npm ci
-      - run: npm run build
-      # Node 22 bundles npm 10, which cannot perform trusted publishing.
-      # The supported client uses OIDC first. Keep the repository token out of
-      # that step and pass it only to the separate fallback when OIDC fails.
-      - name: Publish to npm (OIDC trusted publishing)
-        id: npm_oidc
-        continue-on-error: true
-        run: |
-          V="${GITHUB_REF_NAME#v}"
-          if npm view "runkite-runner@${V}" version >/dev/null 2>&1; then
-            echo "runkite-runner@${V} already on npm — skipping publish"
-            echo "skipped=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          npm publish --access public
-          echo "skipped=0" >> "$GITHUB_OUTPUT"
-      - name: Publish to npm (NPM_TOKEN fallback)
-        if: ${{ steps.npm_oidc.outcome == 'failure' && env.NPM_TOKEN_SET == 'true' }}
+      - name: Install locked package dependencies
+        working-directory: ${{ matrix.directory }}
+        run: npm ci
+      - name: Build and pack once without publication lifecycle scripts
+        id: artifact
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_DIR: ${{ matrix.directory }}
+          ARTIFACT_DIR: ${{ runner.temp }}/npm-${{ matrix.package }}
+        run: python scripts/release_artifacts.py build npm "$PACKAGE_DIR" "$ARTIFACT_DIR"
+      - name: Verify installed governance tarball and native AI SDK integration
+        if: ${{ matrix.package == 'runkite-governance' }}
+        env:
+          TARBALL: ${{ steps.artifact.outputs.artifact_path }}
         run: |
-          V="${GITHUB_REF_NAME#v}"
-          if npm view "runkite-runner@${V}" version >/dev/null 2>&1; then
-            echo "runkite-runner@${V} already on npm — skipping publish"
-            exit 0
-          fi
-          npm publish --access public
-      - name: Fail if npm not published
-        if: ${{ steps.npm_oidc.outcome == 'failure' && env.NPM_TOKEN_SET != 'true' }}
+          cd examples/governance_ai_sdk && npm ci && cd ../..
+          node scripts/verify_governance_npm.mjs "$TARBALL"
+      - name: Check intended immutable npm artifact
+        id: registry
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+        run: python scripts/release_artifacts.py check "$MANIFEST"
+      - name: Publish verified tarball using OIDC
+        id: npm_oidc
+        if: ${{ steps.registry.outputs.pending == 'true' }}
+        continue-on-error: true
+        env:
+          NODE_AUTH_TOKEN: ""
+          TARBALL: ${{ steps.artifact.outputs.artifact_path }}
         run: |
-          echo "OIDC npm publish failed and NPM_TOKEN is unset."
-          echo "Configure Trusted Publisher on npmjs.com for getrunkite/runkite release.yml,"
-          echo "or publish locally: cd typescript/runkite-runner && npm publish --access public"
-          exit 1
+          set -euo pipefail
+          npm publish "$TARBALL" --access public --ignore-scripts --registry https://registry.npmjs.org
+      - name: Reconcile possible lost npm publish acknowledgement
+        id: reconcile
+        if: ${{ steps.registry.outputs.pending == 'true' }}
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+        run: python scripts/release_artifacts.py check "$MANIFEST" --wait-seconds 5
+      - name: Publish verified tarball using scoped fallback
+        id: npm_fallback
+        if: ${{ steps.npm_oidc.outcome == 'failure' && steps.reconcile.outputs.pending == 'true' && env.NPM_TOKEN_SET == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets[matrix.token_secret] }}
+          TARBALL: ${{ steps.artifact.outputs.artifact_path }}
+        run: |
+          set -euo pipefail
+          npm publish "$TARBALL" --access public --ignore-scripts --registry https://registry.npmjs.org
+      - name: Verify actual npm publication
+        if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 30
+      - name: Record actual authentication path
+        if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
+        env:
+          INITIAL_STATE: ${{ steps.registry.outputs.state }}
+          OIDC_OUTCOME: ${{ steps.npm_oidc.outcome }}
+          FALLBACK_OUTCOME: ${{ steps.npm_fallback.outcome }}
+        run: |
+          {
+            printf 'Initial registry state: %s\n' "$INITIAL_STATE"
+            printf 'OIDC step outcome: %s\n' "$OIDC_OUTCOME"
+            printf 'Fallback step outcome: %s\n' "$FALLBACK_OUTCOME"
+            printf 'An existing matching version is recovery evidence, not a new OIDC publication.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain verified tarball and integrity manifest
+        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-${{ matrix.package }}-${{ github.ref_name }}
+          path: ${{ steps.artifact.outputs.artifact_dir }}
+          retention-days: 30

@@ -36,6 +36,15 @@ Public HTML walkthroughs live in [site/support](../site/support/), including the
 correction map; the [embedded governance design record](internal/embedded-governance-next-release.md)
 is historical and points to the implemented API.
 
+The next-release [identity and distribution milestone](internal/identity-and-distribution-plan.md)
+maps RFEs #45 through #52 to code, qualification and availability gates. Read
+[workload ownership](internal/workload-identity.md),
+[delegation and audit correlation](internal/delegation-and-audit-correlation.md),
+[isolated usage](internal/isolated-usage.md) and
+[governance package distribution](internal/governance-distribution.md) for the
+design rationale. The [assessment handoff](security-assessment.md) distinguishes
+automated qualification from pending independent review.
+
 The v0.6.0 [runtime hardening design record](internal/runtime-hardening.md)
 explains the failure cases, invariants, tests and upgrade requirements for current
 authorization, recovery, connectors and Admin changes. The follow-up
@@ -57,3 +66,5 @@ governance helpers are labeled separately from tagged runner packages.
 [AAIF Sandbox application materials](foundation/README.md) describe the project's
 intended users, current stewardship, dependency review scope and community
 roadmap. This is application preparation, not a foundation admission claim.
+
+- [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and pending external gates for the next release.
