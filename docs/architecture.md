@@ -228,9 +228,11 @@ Both modes read and write the exact same rows -- a value written by one Python r
 
 **TTL**: `RunkiteStore` sets `supports_ttl = True` and implements LangGraph's `BaseStore` TTL contract in full (real gap found live: a framework calling `store.aput(..., ttl=...)` used to hard-fail with `NotImplementedError: TTL is not supported by RunkiteStore`) -- `store.put(ns, key, value, ttl=<minutes>)` expires the item that many minutes after it was last accessed, `ttl=None` means no expiration, and reads (`get`/`search`) refresh the expiry by default (`refresh_ttl=False` opts out per-call). Backed by `ttl_minutes`/`expires_at` columns on `store_items`, supported identically across SQLite, Postgres, and MongoDB, and in both direct and proxy mode. Expired items read as absent (no special error) and are swept by a background job that runs regardless of the `retention` config below, since it's hygiene for an already-excluded-from-reads state, not a configurable retention policy. The TypeScript runner's `RunkiteStore` does not implement TTL -- not a gap, `@langchain/langgraph-checkpoint`'s `BaseStore` has no TTL concept in the JS ecosystem at all as of the installed version.
 
-## Unreleased security extensions after v0.6.1
+<a id="unreleased-security-extensions-after-v061"></a>
 
-These extensions belong to the v0.7.0 candidate, which is not published yet.
+## Security extensions in v0.7.0
+
+These extensions are included in v0.7.0 and remain opt-in.
 
 These reuse the existing SQL authority and transport boundaries: transactional
 reviewer quorum/history; exact managed target, configured policy and optional

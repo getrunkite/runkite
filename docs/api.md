@@ -239,9 +239,11 @@ Plane policy and SQL Admin governance are documented in full elsewhere — this 
 
 Laptop proof for the governance announce bar: `make smoke-governance`.
 
-### Managed connector action readers (unreleased)
+<a id="managed-connector-action-readers-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds SQL-only Admin readers:
+### Managed connector action readers (v0.7.0)
+
+v0.7.0 adds SQL-only Admin readers:
 `GET /admin-api/connector-actions` and
 `GET /admin-api/connector-actions/{actionID}`. Capture requires
 `policy.action_evidence` and required audit. The managed MCP response header
@@ -251,7 +253,9 @@ approval `action_id` semantics are unchanged. Lists return a bounded array and
 `events_truncated`. See [Admin API](admin.md), the generated Admin specification,
 and the [operator manual](../site/support/connector-actions.html).
 
-### Managed MCP target binding (unreleased)
+<a id="managed-mcp-target-binding-unreleased"></a>
+
+### Managed MCP target binding (v0.7.0)
 
 Managed connector tool calls pin their configured MCP target before policy and
 approval consumption. Pending actions and recorded attempts expose
@@ -277,7 +281,9 @@ readable but cannot authorize another operation without fresh review. See the
 [upgrade procedure](ops-runbook.md#connector-target-revision-upgrade) and
 [design rationale](internal/target-bound-approvals.md).
 
-### Tenant Review API (unreleased)
+<a id="tenant-review-api-unreleased"></a>
+
+### Tenant Review API (v0.7.0)
 
 `/review-api` is distinct from global `/admin-api`. Primary authentication must
 supply explicit identity, tenant and `governance:read` or `governance:approve`.
@@ -426,9 +432,11 @@ GET    /assistants/{id}            Alias for /agents/{id}
 GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 ```
 
-## Approval and security operations (unreleased)
+<a id="approval-and-security-operations-unreleased"></a>
 
-The v0.7.0 candidate (not published) extends pending-action responses with
+## Approval and security operations (v0.7.0)
+
+v0.7.0 extends pending-action responses with
 `requester_identity`, `required_approvals`, `exclude_requester`, `approval_count`,
 `approvals[]` (exact reviewer identity and `reviewed_at` on detail),
 `policy_revision` and optional `tool_revision`. A successful approve returns the

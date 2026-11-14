@@ -2,17 +2,15 @@
 
 Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
 
-**Candidate availability:** version metadata targets v0.7.0, but no v0.7.0 tag,
-registry package or image has been published. Build the plane and runners from
-the same candidate checkout. The chart's `image.tag` and `runner.image.tag`
-default to `latest`, which still selects the published release, not this local
-candidate. Override both with matching images you built and made available to
-your cluster. Do not combine candidate configuration or schema changes with
-older released writers. See [release preparation](releasing.md).
+**v0.7.0 deployment:** use matching plane and runner artifacts. The chart's
+`image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
+both to `0.7.0` for this upgrade, or select matching images built from the same
+source. Do not combine new configuration or schema changes with older released
+writers. See [release verification](releasing.md).
 
 ## Connector target revision upgrade
 
-**v0.7.0 candidate source (not published):** managed MCP approvals now require a
+**v0.7.0:** managed MCP approvals now require a
 configured target revision, with action capture on or off. This adds
 Postgres/SQLite schema 18 or MySQL schema 19, after the evidence migrations
 below. Published v0.6.1 binaries do not enforce this contract.
@@ -75,7 +73,7 @@ and the [engineering rationale](internal/target-bound-approvals.md).
 
 ## Connector action evidence upgrade
 
-**v0.7.0 candidate source (not published):** rebuild the control plane; published v0.6.1
+**v0.7.0:** rebuild the control plane; published v0.6.1
 binaries do not implement `policy.action_evidence`. Take a verified backup and
 stop control-plane writers before `runkite db upgrade`. This adds Postgres/SQLite
 schema 17 and MySQL schema 18, including action history and immutable run
@@ -137,7 +135,7 @@ mismatch explicitly.
 ## Tenant review upgrade
 
 The Review permissions/session slice adds no SQL migration by itself. The
-v0.7.0 candidate (not published) also includes the
+v0.7.0 also includes the
 [target-binding migration](#connector-target-revision-upgrade); apply the complete
 maintenance-window procedure before issuing reviewer credentials.
 Deploy matching new binaries to every serving replica before issuing
@@ -514,7 +512,7 @@ See [design and regression coverage](internal/action-authority-hardening.md), [A
 Read the [qualification record](internal/security-completion-qualification.md)
 for the exercised scenarios, final release gates and explicit limits.
 
-Availability: v0.7.0 candidate source (not published). This adds Postgres/SQLite migrations
+Availability: v0.7.0. This adds Postgres/SQLite migrations
 19 (review authority/history), 20 (action outbox), 21 (credential leases); MySQL
 uses 20, 21 and 22 respectively. Earlier target-bound migrations 18/19 still
 apply when upgrading older data. No historical identity, managed revision, vote,

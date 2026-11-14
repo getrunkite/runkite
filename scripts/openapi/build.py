@@ -2300,7 +2300,7 @@ def _write_spec(spec: dict, path: Path) -> int:
 
 
 def _add_security_completion(spec: dict) -> None:
-    """Unreleased approval authority and metadata lifecycle contracts."""
+    """Approval authority and metadata lifecycle contracts available from v0.7.0."""
     schemas = spec["components"]["schemas"]
     stamp = {"type": "string", "format": "date-time"}
     text = {"type": "string"}
@@ -2372,7 +2372,7 @@ def _add_review_spec(spec: dict) -> None:
     spec["info"]["description"] += (
         " The separate /review-api surface requires primary authentication, an explicit "
         "identity and tenant, and governance:read or governance:approve. It never grants "
-        "global Admin or conversation access. Unreleased source after v0.6.1."
+        "global Admin or conversation access. Available from v0.7.0."
     )
     spec["tags"].append({"name": "Review", "description": "Authenticated-tenant approval and metadata evidence."})
     schemes = spec["components"]["securitySchemes"]

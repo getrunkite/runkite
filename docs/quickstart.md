@@ -5,16 +5,15 @@ own SDK loop, use the [decision-only helper](client-sdk.md#embedded-governance-h
 instead; it does not create Threads/Runs. For managed Vercel AI SDK execution,
 the [managed AI SDK example](../examples/managed_ai_sdk/README.md) includes
 the runner factory and app-side UI stream bridge. That TypeScript backend ships
-from v0.5.8. Current v0.6.1 packages also include optional managed Microsoft,
+from v0.5.8. Current v0.7.0 packages also include optional managed Microsoft,
 OpenAI Agents, Pydantic AI and Google ADK Python profiles. Compare their install
 commands and execution boundaries in
 [client integration guidance](client-sdk.md#choose-who-owns-execution).
 
-The checkout's new security controls target the v0.7.0 candidate, which is not
-published yet. Registry installs below still select the published release.
-To exercise candidate features, build matching plane and runner artifacts from
-the same checkout and follow [release preparation](releasing.md); do not combine
-new schema/configuration with older released writers.
+v0.7.0 adds opt-in security controls. Use matching plane and runner artifacts
+and complete the [coordinated SQL upgrade](ops-runbook.md#security-completion-upgrade)
+before enabling them. Do not combine new schema/configuration with older
+released writers. See [release verification](releasing.md).
 
 End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
 

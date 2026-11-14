@@ -184,11 +184,16 @@ jobs:
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org
+      - name: Install the trusted-publishing npm client
+        run: |
+          npm install --global npm@12.2.2
+          node --version
+          npm --version
       - run: npm ci
       - run: npm run build
-      # OIDC trusted publishing must NOT see NODE_AUTH_TOKEN — if the secret is
-      # set, npm prefers the token and 2FA/WebAuthn packages fail with EOTP in CI.
-      # Fallback token path only when NPM_TOKEN is present AND OIDC publish fails.
+      # Node 22 bundles npm 10, which cannot perform trusted publishing.
+      # The supported client uses OIDC first. Keep the repository token out of
+      # that step and pass it only to the separate fallback when OIDC fails.
       - name: Publish to npm (OIDC trusted publishing)
         id: npm_oidc
         continue-on-error: true

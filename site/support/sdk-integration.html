@@ -55,7 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
-          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -90,9 +90,9 @@
           your caller needs. The frontend can remain in Next, Nuxt or another app.
         </p>
         <p class="note">
-          <strong>Availability checked 2026-11-08.</strong> The latest published tag is
-          <a href="https://github.com/getrunkite/runkite/releases/tag/v0.6.1">v0.6.1</a>,
-          the first Apache-2.0 release. Published v0.6.0 artifacts retain BUSL-1.1.
+          <strong>Release overview:</strong> <a href="https://github.com/getrunkite/runkite/releases/tag/v0.7.0">v0.7.0</a>
+          adds opt-in security controls around the existing runner paths.
+          v0.6.1 was the first Apache-2.0 release; published v0.6.0 artifacts retain BUSL-1.1.
           The decision API shipped in v0.5.3. The managed AI SDK runner ships in
           <code>runkite-runner</code> from v0.5.8 (optional peer <code>ai@7.0.155</code>).
           Repository helper guards and Microsoft function middleware remain unpublished
@@ -101,7 +101,7 @@
           before selecting a package version.
         </p>
         <p class="note">
-          <strong>Published Python profiles:</strong> the v0.6.1
+          <strong>Python profiles:</strong> the v0.7.0
           <code>runkite-runner</code> wheel includes managed Microsoft Agent Framework,
           OpenAI Agents SDK, Pydantic AI and Google ADK adapters, installed through
           optional extras with dedicated commands. The stock Python image keeps its
@@ -318,7 +318,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           <a href="frameworks.html">framework matrix</a> and
           <a href="limitations.html">limitations</a> before claiming feature parity.
         </p>
-        <h2 id="managed-python">Managed Python SDK profiles (v0.6.1)</h2>
+        <h2 id="managed-python">Managed Python SDK profiles (since v0.6.1)</h2>
         <p>
           Microsoft factories return a public <code>agent_framework.Agent</code> for
           <code>python-agent-framework</code>. OpenAI factories return a public
@@ -328,7 +328,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           it does not embed an SDK runtime or use a hosted agent-session service.
         </p>
         <p>
-          Install the published v0.6.1 profiles with
+          Install these profiles with
           <code>pip install 'runkite-runner[agent-framework]'</code> or
           <code>pip install 'runkite-runner[openai-agents]'</code> in a clean environment.
           Source installs from <code>./python</code> remain available for contributors.
@@ -391,7 +391,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           use offline native models with a real plane on SQLite/in-process and
           Postgres/Redis, not an external model provider or a multi-replica HA soak.
         </p>
-        <h2 id="managed-pydantic">Managed Pydantic AI (v0.6.1)</h2>
+        <h2 id="managed-pydantic">Managed Pydantic AI (since v0.6.1)</h2>
         <p>
           Native <code>pydantic_ai.Agent</code> factories run as
           <code>python-pydantic-ai</code> through the existing generic worker.
@@ -422,7 +422,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           See the <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_pydantic_ai">offline example</a>
           and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/pydantic_ai_adapter">adapter contract and tests</a>.
         </p>
-        <h2 id="managed-google-adk">Managed Google ADK (v0.6.1)</h2>
+        <h2 id="managed-google-adk">Managed Google ADK (since v0.6.1)</h2>
         <p>
           A fresh ordinary <code>LlmAgent</code> runs as <code>python-google-adk</code>
           through the Python worker. The public ADK runner keeps the model loop;
@@ -459,7 +459,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/google_adk_adapter">adapter contract and tests</a>
           for session scope, token accounting, telemetry privacy and installed-package checks.
         </p>
-        <h2 id="new-security-controls">New controls keep the SDK boundary (unreleased)</h2>
+        <h2 id="new-security-controls">New controls keep the SDK boundary (v0.7.0)</h2>
         <p>Current-source review quorum, policy/schema binding, evidence export and credential consumers extend gated managed execution. Existing SDK clients still create Threads/Runs through the public API; native tools outside a cooperating gate do not acquire connector enforcement. App-owned decisions still create no managed run or kill/spend controls. The separate experimental external JSONL workload is not a drop-in switch under an unchanged SDK. See <a href="security-completion.html">Security operations</a>.</p>
         <p>The experimental JSONL profile has no model/token-usage or spend-settlement contract. Zero recorded spend does not establish free execution; native SDK usage reporting is independent. Use external provider accounting and limits for unreported workload model calls.</p>
       </main>

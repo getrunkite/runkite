@@ -49,7 +49,7 @@ GET /admin-api/threads/{id}/runs            Runs on a thread (?limit=&cursor= or
 GET /admin-api/runs                         List runs (tenant_id visible; ?status=/?agent_id=/?thread_id=; ?limit=&cursor= or ?offset=; X-Next-Cursor). UI shows a `sim` badge when `metadata.simulation` is set.
 GET /admin-api/runs/{id}                    Run detail
 GET /admin-api/runs/{id}/stream             Live/replayed SSE event log for a run (same mechanics as the client-facing stream)
-GET /admin-api/connector-actions            Managed MCP attempt history (unreleased; SQL; ?tenant_id=&run_id=&agent_id=&connector=&state=; ?limit=&cursor= or ?offset=; X-Next-Cursor)
+GET /admin-api/connector-actions            Managed MCP attempt history (v0.7.0; SQL; ?tenant_id=&run_id=&agent_id=&connector=&state=; ?limit=&cursor= or ?offset=; X-Next-Cursor)
 GET /admin-api/connector-actions/{actionID}  Metadata action + ordered events + run_available (optional ?tenant_id=&run_id= selection; SQL)
 GET /admin-api/audit-events                 Policy decisions (SQL: Postgres/MySQL/SQLite; ?tenant_id=&decision=&action=&run_id=&agent_id=&connector=&tool=&since=&until= RFC3339; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
 GET /admin-api/policy-grants                Durable connector grants (SQL; overlays langgraph.json defaults; ?tenant_id=&agent_id=&connector=; ?limit=&cursor= or ?offset=; X-Next-Cursor). 501 on Mongo.
@@ -97,7 +97,9 @@ Manual dead-letter replay uses indexed ID lookup on built-in stores, including
 records older than the latest 1,000. Replay refuses redirects, succeeds only on
 2xx and remains unsigned. See [upgrade guidance](ops-runbook.md#hardening-upgrade).
 
-## Tenant Review workspace (unreleased)
+<a id="tenant-review-workspace-unreleased"></a>
+
+## Tenant Review workspace (v0.7.0)
 
 `/admin/review/` is a separate authenticated-tenant workspace. Primary identities
 with `governance:read` can inspect scoped approval metadata and connector action
@@ -153,9 +155,11 @@ signals cooperative runner work and cannot undo an external side effect.
 
 Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a SQL requirement.
 
-## Connector action history (unreleased)
+<a id="connector-action-history-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds `/admin/connector-actions`, action detail and a
+## Connector action history (v0.7.0)
+
+v0.7.0 adds `/admin/connector-actions`, action detail and a
 recent-actions panel in Run Detail. Enable `policy.action_evidence` with required
 SQL audit to capture managed MCP `tools/call`. Existing history remains readable
 when capture is disabled. Mongo returns `501`. Admin remains globally privileged;
@@ -172,9 +176,11 @@ a bounded window; manual Refresh remains available.
 See [Connector actions](../site/support/connector-actions.html) for the complete
 operator workflow, states, retry guidance and independent retention.
 
-## Target-bound approval review (unreleased)
+<a id="target-bound-approval-review-unreleased"></a>
 
-The v0.7.0 candidate (not published) displays the stored `target_revision` on managed
+## Target-bound approval review (v0.7.0)
+
+v0.7.0 displays the stored `target_revision` on managed
 approvals and recorded connector actions. This fingerprints the configured MCP
 target, including the optional nonsecret `mcp.revision` label. It does not verify
 remote tool code, schema or credential values. Missing or malformed managed
@@ -209,9 +215,11 @@ flowchart LR
   B --> G[Spend: watch usage, edit budgets live]
 ```
 
-## Approval, credential and delivery operations (unreleased)
+<a id="approval-credential-and-delivery-operations-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds approval detail with immutable requester, exact
+## Approval, credential and delivery operations (v0.7.0)
+
+v0.7.0 adds approval detail with immutable requester, exact
 reviewer history, quorum progress and policy/tool/target revisions. A successful
 partial review reports “Review recorded” and leaves the caller pending. Admin and
 Review block visibly unsupported historical bindings, while the server also

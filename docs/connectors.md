@@ -155,9 +155,11 @@ After a successful connector MCP `tools/call`, the plane can stash the original 
 - Token spend may drop if the runner then sends fewer bytes to the model. That effect is **inferred** from whatever the runner already reports. No percent, no invoice, no FinOps SLA. Shrink does not write `usage_events`.
 - **Audit sees the preview plus ref, not the original body.** Grants, pending, HITL, and kill stay fully audited. Operators who need the full MCP result on the audit path leave shrink off. Retrieve exists for the agent during TTL, not for after-the-fact forensics.
 
-### Target-bound managed approvals (unreleased)
+<a id="target-bound-managed-approvals-unreleased"></a>
 
-The v0.7.0 candidate (not published) binds SQL managed MCP approvals to a `target-v1-`
+### Target-bound managed approvals (v0.7.0)
+
+v0.7.0 binds SQL managed MCP approvals to a `target-v1-`
 revision as well as tenant, agent, run, generation, immutable run incarnation,
 connector, tool and exact argument digest. Published v0.6.1 does not implement
 this binding. It applies with `policy.action_evidence` either on or off; it is
@@ -219,9 +221,11 @@ using this source with retained approvals, and the
 [engineering rationale](internal/target-bound-approvals.md) for dispatch and
 storage invariants.
 
-### Managed tool attempt evidence (unreleased)
+<a id="managed-tool-attempt-evidence-unreleased"></a>
 
-The v0.7.0 candidate (not published) can record managed MCP `tools/call` with
+### Managed tool attempt evidence (v0.7.0)
+
+v0.7.0 can record managed MCP `tools/call` with
 `policy.action_evidence: true` and required SQL audit. Both JSON and streamable
 HTTP call the synchronous intent gate immediately before the protected request.
 Protocol initialization/discovery can happen earlier. Persisting intent and
@@ -238,7 +242,7 @@ configuration, retention and unknown-outcome investigation.
 
 ### Circuit breakers
 
-The v0.7.0 candidate (not published) counts an OAuth-backed MCP request once. Its half-open
+v0.7.0 counts an OAuth-backed MCP request once. Its half-open
 probe covers token preparation and the protected request, so refresh cannot
 reject its own probe or close it before the MCP result. A local evidence refusal
 does not count as a target failure. Standalone OAuth session minting retains its
@@ -296,9 +300,11 @@ OAuth acquisition errors expose HTTP status and recognized standard OAuth error 
 
 The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. The ordinary KV resolver does not add dynamic leases. The separately registered `vault_database` consumer path in current source now coordinates bounded issuance and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md). See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).
 
-## Managed policy and tool contracts (unreleased)
+<a id="managed-policy-and-tool-contracts-unreleased"></a>
 
-The v0.7.0 candidate (not published) extends target-bound approvals with the configured
+## Managed policy and tool contracts (v0.7.0)
+
+v0.7.0 extends target-bound approvals with the configured
 `policy-v1-` revision and optional `tool-v1-` schema revision. `policy.webhook.revision`
 represents operator-declared remote PDP changes, not verified remote execution.
 Both capture-on and capture-off dispatch require exact matching revisions.

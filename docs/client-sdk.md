@@ -383,9 +383,11 @@ as the TypeScript guard, with no managed run, run controls or spend caps.
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)
 - Control-plane + runner setup: [`README.md`](../README.md), [`docs/quickstart.md`](quickstart.md)
 
-## New security controls do not change SDK ownership (unreleased)
+<a id="new-security-controls-do-not-change-sdk-ownership-unreleased"></a>
 
-The v0.7.0 candidate (not published) adds managed policy/schema-bound approvals, optional
+## New security controls do not change SDK ownership (v0.7.0)
+
+v0.7.0 adds managed policy/schema-bound approvals, optional
 reviewer quorum and registered credential consumers. The normal Agent Protocol
 client still creates a thread/run and consumes its stream; the SDK model loop
 stays in its runner. Only tool requests using the managed connector gate receive

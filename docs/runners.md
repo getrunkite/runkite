@@ -406,9 +406,11 @@ PYTHONPATH=<repo>/python:<repo>/python/adapters \
 
 Live-verified end to end for all four: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex/AutoGen unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex/AutoGen's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, PR-CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal. Happy-path coverage for CrewAI/LlamaIndex/AutoGen (and LangChain/LangGraph/TS) across every state+transport cell is the nightly `make test-matrix` / Matrix workflow. CrewAI/LlamaIndex/AutoGen don't have the equivalent PR-CI e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
 
-## Separately credentialed execution pools (unreleased)
+<a id="separately-credentialed-execution-pools-unreleased"></a>
 
-The v0.7.0 candidate (not published) lets a graph file select an operator-registered
+## Separately credentialed execution pools (v0.7.0)
+
+v0.7.0 lets a graph file select an operator-registered
 `execution_pool` without replacing its SDK adapter. Pools specify the framework
 kind plus exact tenant and agent membership and use distinct plane-side
 `RUNNER_TOKEN_POOL_<NAME>` credentials. Workers select their pool using

@@ -3,7 +3,7 @@
   "info": {
     "title": "Runkite Admin API",
     "version": "0.1.0",
-    "description": "Cross-tenant administrative API for the Runkite control plane. Requires admin permission. The separate /review-api surface requires primary authentication, an explicit identity and tenant, and governance:read or governance:approve. It never grants global Admin or conversation access. Unreleased source after v0.6.1.",
+    "description": "Cross-tenant administrative API for the Runkite control plane. Requires admin permission. The separate /review-api surface requires primary authentication, an explicit identity and tenant, and governance:read or governance:approve. It never grants global Admin or conversation access. Available from v0.7.0.",
     "license": {
       "name": "Apache License, Version 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"

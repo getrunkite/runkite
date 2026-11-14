@@ -152,7 +152,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 
 ### Required policy audit
 
-Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
+Availability: v0.7.0. Published v0.6.1 binaries do not
 implement this setting; rebuild from source before relying on it.
 
 Set `"audit_required": true` inside the existing `policy` block to require durable decision writes before admission or connector access proceeds. `audit` defaults to true; combining required audit with `"audit": false` is invalid. Startup requires a SQL audit store (Postgres, MySQL or SQLite). Mongo cannot enable this mode.
@@ -161,7 +161,7 @@ Required audit is checked on every decision, including cache hits. If persistenc
 
 ### Managed connector action evidence
 
-v0.7.0 candidate source (not published): set `"action_evidence": true` in the existing
+v0.7.0: set `"action_evidence": true` in the existing
 `policy` block and also enable `"audit_required": true`. SQL is required
 (Postgres, MySQL or SQLite); auditing cannot be disabled. Both flags default off.
 Apply capture consistently to every serving replica after the
@@ -265,9 +265,11 @@ Requires a `vector_store` section in `langgraph.json` (`--config` / `LANGGRAPH_C
 
 Future pgvector schema changes are new numbered Up/Down steps -- not ad-hoc `ALTER` trails inside a single growing `Init`. Dimension changes are still not migrated (drop/recreate).
 
-## Approval authority and quorum (unreleased)
+<a id="approval-authority-and-quorum-unreleased"></a>
 
-Availability: v0.7.0 candidate (not published). The existing
+## Approval authority and quorum (v0.7.0)
+
+Availability: v0.7.0. The existing
 policy gate must already hold an operation; these requirements do not force
 otherwise allowed operations to become pending. For example:
 
@@ -298,7 +300,9 @@ into actual `tools/list` schema discovery and dispatch recheck, producing option
 Connectors using schema pinning or registered credential bindings use target-v2;
 unchanged legacy descriptors retain target-v1. See [connectors](connectors.md#managed-policy-and-tool-contracts-unreleased).
 
-## Durable action export (unreleased)
+<a id="durable-action-export-unreleased"></a>
+
+## Durable action export (v0.7.0)
 
 Configure one first-file `policy.action_export` destination alongside required
 audit and action evidence:
@@ -325,7 +329,9 @@ least once with a stable delivery ID, not exactly-once remote processing. This
 is distinct from best-effort `policy.siem` decision hooks. See
 [action delivery operations](../site/support/security-completion.html#evidence-delivery).
 
-## Registered Vault database credentials (unreleased)
+<a id="registered-vault-database-credentials-unreleased"></a>
+
+## Registered Vault database credentials (v0.7.0)
 
 Top-level, first-file `credential_leases` requires SQL, required audit and action
 evidence. This is a registration example with placeholder destinations and
@@ -356,7 +362,9 @@ provider bindings until their exact leases have confirmed cleanup. Actual
 provider TTL bounds the consumer callback; there is no automatic renewal loop.
 See [lease operations](../site/support/security-completion.html#credential-lifecycle).
 
-## Execution pools and external workloads (unreleased)
+<a id="execution-pools-and-external-workloads-unreleased"></a>
+
+## Execution pools and external workloads (v0.7.0)
 
 `execution_pools` maps a pool to an existing framework kind and explicit tenant
 and agent sets; a graph file selects `execution_pool`. The effective queue kind

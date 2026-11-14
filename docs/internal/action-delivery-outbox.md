@@ -1,6 +1,6 @@
 # Durable action evidence delivery
 
-These storage changes are in the v0.7.0 candidate (not published). The outbox extends
+These storage changes are in the v0.7.0. The outbox extends
 [connector action evidence](connector-action-evidence.md). It delivers metadata
 about an action that already exists; it never authorizes running a tool.
 
