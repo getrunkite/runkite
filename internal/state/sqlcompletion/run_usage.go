@@ -23,7 +23,7 @@ func (d Driver) loadRunUsage(ctx context.Context, tx Tx, id, tenantID string) (*
 	if err := json.Unmarshal(raw, &snapshot); err != nil {
 		return nil, err
 	}
-	if err := snapshot.RunUsageReport.Validate(); err != nil || snapshot.Source != models.RunUsageSourceIsolated {
+	if err := snapshot.Validate(); err != nil || snapshot.Source != models.RunUsageSourceIsolated {
 		return nil, &state.ErrConflict{Resource: "run_usage", ID: id, Reason: "invalid stored usage snapshot"}
 	}
 	return &snapshot, nil

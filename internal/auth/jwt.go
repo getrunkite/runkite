@@ -206,7 +206,7 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 		if expiryErr != nil || expiry == nil || actorsErr != nil {
 			return nil, &ErrUnauthorized{Message: "invalid JWT identity provenance"}
 		}
-		provenance = &models.IdentityProvenance{Issuer: p.issuer, Subject: identity, Audience: p.audience, ExpiresAt: expiry.Time.UTC(), Actors: actors}
+		provenance = &models.IdentityProvenance{Issuer: p.issuer, Subject: identity, Audience: p.audience, ExpiresAt: expiry.UTC(), Actors: actors}
 	}
 
 	var perms []string

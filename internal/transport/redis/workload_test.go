@@ -1,10 +1,11 @@
 package redistransport_test
 
 import (
+	"testing"
+
 	"github.com/getrunkite/runkite/internal/transport"
 	"github.com/getrunkite/runkite/internal/transport/conformance"
 	redistransport "github.com/getrunkite/runkite/internal/transport/redis"
-	"testing"
 )
 
 func TestWorkloadIdentityQueueCrossReplica(t *testing.T) {
