@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Agent, Dispatcher1Wrapper, type Dispatcher } from "undici";
 import { grpcChannelCredentials, httpDispatcher, validateGrpcTLSTarget } from "./tls.js";
 
 // Good enough for the CA-only path -- grpcChannelCredentials/
@@ -95,7 +96,8 @@ test("CA file alone enables both gRPC and HTTP TLS without a client cert", () =>
       assert.notEqual(grpcChannelCredentials(), undefined);
       const dispatcher = httpDispatcher();
       assert.notEqual(dispatcher, undefined);
-      assert.equal(dispatcher!.constructor.name, "Agent");
+      assert.ok(dispatcher instanceof Dispatcher1Wrapper);
+      void dispatcher.close();
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -149,7 +151,6 @@ test("mTLS enables secure channels using system server trust without a custom CA
           ),
         /requires HTTPS/,
       );
-      assert.deepEqual(dispatcher!.stats, {}, "plaintext refusal must not create a connection pool");
       void dispatcher?.close();
     });
     withEnv({ RUNKITE_TLS_CLIENT_KEY_FILE: key }, () => {
@@ -236,5 +237,92 @@ test("Node 26 gRPC TLS IP targets fail with an actionable DNS requirement", () =
     "dns://resolver.test/controlplane.example.com:50051",
   ]) {
     assert.doesNotThrow(() => validateGrpcTLSTarget(address, "26.11.0"));
+  }
+});
+
+test("TLS dispatcher adapts legacy fetch callbacks and preserves modern handlers", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "runkite-tls-handler-"));
+  const originalDispatch = Agent.prototype.dispatch;
+  let calls = 0;
+  let forwarded: Dispatcher.DispatchHandler | undefined;
+  const responseError = new Error("synthetic transport failure");
+  const controller: Dispatcher.DispatchController = {
+    aborted: false,
+    paused: false,
+    reason: null,
+    abort() {},
+    pause() {},
+    resume() {},
+  };
+  // Exercise the public dispatcher boundary without opening a network socket.
+  // These are the same callback contracts used by bundled fetch across majors.
+  Agent.prototype.dispatch = function (options, handler) {
+    calls++;
+    forwarded = handler;
+    handler.onRequestStart?.(controller, {});
+    if (options.path === "/error") handler.onResponseError?.(controller, responseError);
+    else {
+      handler.onResponseStart?.(controller, 200, { "content-type": "text/plain" }, "OK");
+      handler.onResponseData?.(controller, Buffer.from("synthetic response"));
+      handler.onResponseEnd?.(controller, {});
+    }
+    return true;
+  };
+  try {
+    const cert = path.join(dir, "client.pem");
+    const key = path.join(dir, "client.key");
+    writeFileSync(cert, DUMMY_CERT);
+    writeFileSync(key, DUMMY_KEY);
+    withEnv({ RUNKITE_TLS_CLIENT_CERT_FILE: cert, RUNKITE_TLS_CLIENT_KEY_FILE: key }, () => {
+      const dispatcher = httpDispatcher()!;
+      const observed: string[] = [];
+      const legacy = {
+        onConnect(abort: unknown) {
+          assert.equal(typeof abort, "function");
+          observed.push("connect");
+        },
+        onHeaders(status: number) {
+          assert.equal(status, 200);
+          observed.push("headers");
+        },
+        onData(chunk: Buffer) {
+          observed.push(chunk.toString());
+        },
+        onComplete() {
+          observed.push("complete");
+        },
+        onError(error: Error) {
+          assert.equal(error, responseError);
+          observed.push("error");
+        },
+      };
+      const legacyHandler = legacy as unknown as Dispatcher.DispatchHandler;
+      assert.throws(
+        () => dispatcher.dispatch({ origin: "http://127.0.0.1", path: "/", method: "GET" }, legacyHandler),
+        /requires HTTPS/,
+      );
+      assert.equal(calls, 0, "plaintext must not reach the underlying Agent");
+      dispatcher.dispatch({ origin: "https://fixture.invalid", path: "/", method: "GET" }, legacyHandler);
+      assert.notEqual(forwarded, legacy, "legacy callbacks require a real adapter");
+      assert.deepEqual(observed, ["connect", "headers", "synthetic response", "complete"]);
+      dispatcher.dispatch({ origin: "https://fixture.invalid", path: "/error", method: "GET" }, legacyHandler);
+      assert.deepEqual(observed.slice(-2), ["connect", "error"]);
+      const modern: Dispatcher.DispatchHandler = {
+        onRequestStart() {
+          observed.push("modern-connect");
+        },
+        onResponseEnd() {
+          observed.push("modern-complete");
+        },
+      };
+      dispatcher.dispatch({ origin: "https://fixture.invalid", path: "/", method: "GET" }, modern);
+      assert.equal(forwarded, modern, "modern handlers must pass through unchanged");
+      assert.deepEqual(observed.slice(-2), ["modern-connect", "modern-complete"]);
+      assert.equal(calls, 3);
+      void dispatcher.close();
+    });
+  } finally {
+    Agent.prototype.dispatch = originalDispatch;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

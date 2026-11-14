@@ -57,6 +57,9 @@ must enable HTTPS and update that URL before upgrading their runners.
 
 ### Fixed
 
+- Adapt the TypeScript runner's custom-CA and mTLS HTTP dispatcher to Node 22's
+  built-in fetch callback contract. HTTPS preflight and checkpoint requests
+  retain certificate verification and the client-certificate HTTPS requirement.
 - Load client certificates into Python HTTP SSL contexts and use them with
   system trust in both runners. Certificate-configured HTTP clients refuse
   plaintext requests before sending headers or bodies. Owned preflight fails

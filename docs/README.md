@@ -68,3 +68,4 @@ intended users, current stewardship, dependency review scope and community
 roadmap. This is application preparation, not a foundation admission claim.
 
 - [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and pending external gates for the next release.
+- [Node fetch and TLS compatibility](internal/node-fetch-tls-compatibility.md): the Node 22 dispatcher failure found by hosted qualification, its dependency adapter and regression coverage.

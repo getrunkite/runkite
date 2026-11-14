@@ -1,7 +1,13 @@
 # Runners
 
 The TypeScript runner's source candidate requires Node.js 22.19 or newer, matching
-its locked Undici HTTP client. On Node.js 26 or newer, configure a DNS gRPC
+its locked Undici HTTP client. Custom-CA and client-certificate HTTP calls use
+the installed client's compatibility adapter for Node's built-in fetch.
+An older build failing HTTPS with `UND_ERR_INVALID_ARG` and
+`invalid onRequestStart method` needs the runner compatibility fix, rather than
+weaker certificate checks. See the [transport design and regression](internal/node-fetch-tls-compatibility.md).
+
+On Node.js 26 or newer, configure a DNS gRPC
 endpoint with a matching certificate DNS SAN for TLS: the current
 `@grpc/grpc-js` sends literal IP addresses as SNI, which Node.js 26 rejects.
 Runkite reports this incompatibility at startup. HTTPS IP SAN verification is

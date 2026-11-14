@@ -1,5 +1,5 @@
 import { type ChannelCredentials } from "@grpc/grpc-js";
-import { Agent } from "undici";
+import { type Dispatcher } from "undici";
 export declare function requireWorkloadHTTPS(url: string): void;
 /** Reject the current grpc-js IP SNI incompatibility before its polling loop. */
 export declare function validateGrpcTLSTarget(address: string, nodeVersion?: string): void;
@@ -16,7 +16,7 @@ export declare function validateGrpcTLSTarget(address: string, nodeVersion?: str
  */
 export declare function grpcChannelCredentials(): ChannelCredentials | undefined;
 /**
- * Returns an undici Agent configured for TLS verification/mTLS against
+ * Returns an undici dispatcher configured for TLS verification/mTLS against
  * the control plane's HTTP API, to pass as `{ dispatcher }` on fetch()
  * calls. Returns undefined when neither a custom CA nor client certificate is set;
  * otherwise client material also works with system server trust. Default
@@ -32,9 +32,11 @@ export declare function grpcChannelCredentials(): ChannelCredentials | undefined
  * exported fetch) at every call site -- Node's built-in fetch honors
  * this same `dispatcher` option (it's undici under the hood) while
  * staying interceptable by tests that mock globalThis.fetch directly,
- * which importing undici's fetch export would silently stop being.
+ * which importing undici's fetch export would silently stop being. Undici's
+ * public Dispatcher1Wrapper adapts legacy built-in fetch callbacks (Node 22)
+ * to the installed Undici 8 handler contract without changing global state.
  */
-export declare function httpDispatcher(): Agent | undefined;
+export declare function httpDispatcher(): Dispatcher | undefined;
 /**
  * RequestInit widened with the `dispatcher` option -- the global fetch's
  * own TypeScript type doesn't declare it (a known Node.js typing gap;
@@ -45,5 +47,5 @@ export declare function httpDispatcher(): Agent | undefined;
  * through to the global `fetch()` type-checks without an `any` cast.
  */
 export type FetchInit = RequestInit & {
-    dispatcher?: Agent;
+    dispatcher?: Dispatcher;
 };

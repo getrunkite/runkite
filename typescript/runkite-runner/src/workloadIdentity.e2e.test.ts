@@ -95,6 +95,7 @@ test(
       profile: "packaged TypeScript AI SDK + SQLite/inprocess + direct mTLS",
       plane_mode: "dev",
       node: process.version,
+      bundled_undici: process.versions.undici ?? "unknown",
       cases: [],
     };
     const cases = report.cases as string[];

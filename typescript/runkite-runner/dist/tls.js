@@ -39,7 +39,7 @@
 import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import { credentials } from "@grpc/grpc-js";
-import { Agent } from "undici";
+import { Agent, Dispatcher1Wrapper } from "undici";
 function readIfSet(path) {
     return path ? readFileSync(path) : undefined;
 }
@@ -105,7 +105,7 @@ export function grpcChannelCredentials() {
     return credentials.createSsl(rootCerts ?? null, clientKey ?? null, clientCert ?? null);
 }
 /**
- * Returns an undici Agent configured for TLS verification/mTLS against
+ * Returns an undici dispatcher configured for TLS verification/mTLS against
  * the control plane's HTTP API, to pass as `{ dispatcher }` on fetch()
  * calls. Returns undefined when neither a custom CA nor client certificate is set;
  * otherwise client material also works with system server trust. Default
@@ -121,7 +121,9 @@ export function grpcChannelCredentials() {
  * exported fetch) at every call site -- Node's built-in fetch honors
  * this same `dispatcher` option (it's undici under the hood) while
  * staying interceptable by tests that mock globalThis.fetch directly,
- * which importing undici's fetch export would silently stop being.
+ * which importing undici's fetch export would silently stop being. Undici's
+ * public Dispatcher1Wrapper adapts legacy built-in fetch callbacks (Node 22)
+ * to the installed Undici 8 handler contract without changing global state.
  */
 export function httpDispatcher() {
     const caFile = process.env.RUNKITE_TLS_CA_FILE;
@@ -132,11 +134,11 @@ export function httpDispatcher() {
     if (!caFile && !certFile)
         return undefined;
     const ClientAgent = certFile ? HTTPSOnlyAgent : Agent;
-    return new ClientAgent({
+    return new Dispatcher1Wrapper(new ClientAgent({
         connect: {
             ca: readIfSet(caFile),
             cert: readIfSet(process.env.RUNKITE_TLS_CLIENT_CERT_FILE),
             key: readIfSet(process.env.RUNKITE_TLS_CLIENT_KEY_FILE),
         },
-    });
+    }));
 }
