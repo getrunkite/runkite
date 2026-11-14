@@ -87,7 +87,11 @@ the live backend run and eight managed-profile logs are retained alongside it.
 Local external-runtime reports are retained under
 `outputs/runkite-next/isolated-ha-tls-final/runtime/`: `managed-evidence.json`,
 `gateway-tls-evidence.json` and `runtime-cleanup.json`. Distribution evidence is
-under `outputs/runkite-security-review/final080-distributions/verification.json`.
+under `outputs/runkite-security-review/release-copy080-distributions/verification.json`.
+This final package set includes durable registry/source installation wording in
+the packaged READMEs. It supersedes the earlier `final080-distributions` set;
+runtime members are compared against that qualified set, and the changed helper
+archives pass their installed behavior checks again. No publication is implied.
 These workspace artifacts are separate from the repository. Reproduce them
 using the commands in [assessment](../security-assessment.md),
 [constrained execution](constrained-execution.md) and

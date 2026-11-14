@@ -103,6 +103,11 @@ When cutting an Apache-licensed release:
 
 - Keep `CHANGELOG.md` Unreleased items separate from published releases. Move
   an item only when its source and artifact are included in the new release.
+- Before the final artifact build, give package READMEs durable registry and
+  source-install instructions. Those READMEs ship inside immutable registry
+  artifacts. Avoid wording that would still call the package unreleased after
+  a successful upload. Promote website and SDK availability labels only after
+  the corresponding registry publication has been verified.
 - Check the README, `docs/client-sdk.md`, `docs/runners.md`, integration examples
   and `site/support/sdk-integration.html` for matching framework/package status.
 - Keep managed execution and app-owned Decide distinct in product, support and

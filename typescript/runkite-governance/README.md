@@ -2,10 +2,15 @@
 
 This small TypeScript helper calls a self-hosted Runkite plane for tool decisions. Your application keeps its model loop, conversation storage and tool execution. This is not the Agent Protocol client SDK.
 
-The unreleased 0.8.0 source candidate prepares the package and coordinated
-release jobs. This does not publish it, and the published Runkite 0.7.0 release
-did not include this helper. Until its first registry publication is verified,
-build and install from a checkout:
+This helper has its own distribution, separate from `runkite-runner`. The
+published Runkite 0.7.0 release did not include it. Use the registry command
+only for a version whose publication has been verified:
+
+```sh
+npm install runkite-governance
+```
+
+For source that has not been published, build and install from a checkout:
 
 ```sh
 cd typescript/runkite-governance
@@ -35,7 +40,6 @@ const decision = await governance.decide({
 });
 ```
 
-After the first verified publication, install with `npm install runkite-governance`.
 The runtime requires Node 22 or newer and has no runtime npm dependencies.
 This is a separate package from `runkite-runner`.
 

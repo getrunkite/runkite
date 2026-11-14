@@ -231,8 +231,10 @@ chosen adapter from a clone with its isolated dependencies. See
 
 The managed Vercel AI SDK runner is a TypeScript backend, not a Python CLI mode,
 and ships in the npm `runkite-runner` package from `v0.5.8`.
-Microsoft Agent Framework also has checkout-only function governance
-middleware in `python/runkite_governance`. That separate helper
+Microsoft Agent Framework also has function governance middleware in the
+separate `runkite-governance` distribution. For a verified registry release,
+install `runkite-governance[agent-framework]`; for unpublished source, install
+`./python/runkite_governance[agent-framework]` from a checkout. That helper
 keeps the model loop and pending continuation in the app and creates no Runkite
 thread or run. See the
 [SDK integration guide](https://getrunkite.com/support/sdk-integration.html).

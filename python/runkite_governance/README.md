@@ -2,18 +2,22 @@
 
 A standard-library-only Python client for `POST /governance/decide` and `GET /governance/actions/{id}` on your self-hosted Runkite plane. It does not depend on the runner package or an agent framework.
 
-The unreleased 0.8.0 source candidate prepares the distribution and coordinated
-release jobs. This does not publish it, and the published Runkite 0.7.0 release
-did not include this helper. Until its first registry publication is verified,
-install from a checkout:
+This helper has its own distribution, separate from `runkite-runner`. The
+published Runkite 0.7.0 release did not include it. Use the registry command
+only for a version whose publication has been verified:
+
+```sh
+python -m pip install runkite-governance
+```
+
+For source that has not been published, install from a checkout:
 
 ```sh
 python -m pip install ./python/runkite_governance
 ```
 
-After the first verified publication, use `python -m pip install runkite-governance`.
-The runtime requires Python 3.11 or newer. It is separate from `runkite-runner`;
-installing a managed runner does not install this decision-only helper.
+The runtime requires Python 3.11 or newer. Installing a managed runner does not
+install this decision-only helper.
 
 ```python
 from runkite_governance import GovernanceClient
@@ -36,15 +40,20 @@ Use a server-side key with `governance:decide`. Tenant identity comes from that 
 
 ## Optional Microsoft Agent Framework middleware
 
-Install the pinned optional dependency from the checkout:
+For a verified registry release, install the optional middleware with:
+
+```sh
+python -m pip install 'runkite-governance[agent-framework]'
+```
+
+For unpublished source, install the extra from a checkout:
 
 ```sh
 python -m pip install './python/runkite_governance[agent-framework]'
 ```
 
-After registry publication is verified, the corresponding command is
-`python -m pip install 'runkite-governance[agent-framework]'`. The extra pins the
-tested framework core; model-provider packages remain application choices.
+The extra pins the tested framework core; model-provider packages remain
+application choices.
 
 Import `GovernanceFunctionMiddleware`, `GovernedFunction`,
 `GovernanceBlockedError` and `PendingInvocation` from

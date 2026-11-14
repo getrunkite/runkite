@@ -87,6 +87,13 @@ SDK suites. Build tooling is pinned separately in
 `python/requirements-build.txt`. The runner and helper versions remain
 coordinated by `scripts/check-release-version.py`.
 
+Package READMEs give separate installation instructions for a verified registry
+release and for unpublished source. They avoid freezing temporary candidate
+availability into an immutable published artifact. The website and source
+handbook carry the observed publication status and are promoted only after
+registry verification. Changing an already published README payload would
+require a new package version, just like a runtime correction.
+
 The helper names, publishing account ownership, trusted-publisher configuration
 and project-scoped fallback credentials must be verified by the maintainer before
 a genuine release. The new helper jobs fail if publication remains necessary but
