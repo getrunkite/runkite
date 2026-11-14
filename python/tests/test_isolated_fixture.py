@@ -119,10 +119,25 @@ class FixtureCleanupTests(unittest.TestCase):
                 self.assertTrue(self.directory.exists())
 
     def test_main_cleanup_failure_overrides_success_without_erasing_prior_failure(self):
-        for child_status in (0, 7):
-            with self.subTest(child_status=child_status), tempfile.TemporaryDirectory() as directory:
+        for child_status, host, socket_gid in ((0, "Darwin", 0), (7, "Darwin", 20), (0, "Linux", 0), (7, "Linux", 118)):
+            with (
+                self.subTest(child_status=child_status, host=host, socket_gid=socket_gid),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 socket_file = Path(directory) / "fixture-socket"
                 socket_file.touch()
+                real_stat = os.stat
+
+                def fixture_stat(
+                    name, *args, real_stat=real_stat, socket_file=socket_file, socket_gid=socket_gid, **kwargs
+                ):
+                    result = real_stat(name, *args, **kwargs)
+                    if os.fspath(name) == str(socket_file):
+                        fields = list(result)
+                        fields[5] = socket_gid
+                        return os.stat_result(fields)
+                    return result
+
                 guard = Mock()
                 guard.wait.return_value = child_status
                 guard.poll.return_value = child_status
@@ -145,6 +160,13 @@ class FixtureCleanupTests(unittest.TestCase):
                 with (
                     patch.object(sys, "argv", argv),
                     patch.dict(os.environ, {"RUNKITE_TEST_ISOLATED": "1"}),
+                    patch.object(
+                        fixture,
+                        "local_docker_command",
+                        return_value=(["docker", "--host", "unix://" + str(socket_file)], str(socket_file)),
+                    ),
+                    patch.object(fixture.platform, "system", return_value=host),
+                    patch.object(fixture.os, "stat", side_effect=fixture_stat),
                     patch.object(fixture.socket, "socket", return_value=socket_context),
                     patch.object(fixture.subprocess, "run", side_effect=self.command),
                     patch.object(fixture.subprocess, "check_output", return_value="sha256:" + "a" * 64) as build_image,
@@ -165,12 +187,30 @@ class FixtureCleanupTests(unittest.TestCase):
                 runtime = retained[0].parent
                 compose = json.loads(retained[0].read_text())
                 gateway = compose["services"]["gateway"]
-                self.assertEqual(gateway["ports"], ["127.0.0.1:12345:8080"])
+                self.assertEqual(gateway["group_add"], ["0"] if socket_gid == 0 else ["0", str(socket_gid)])
                 config = (runtime / "gateway.toml").read_text()
-                self.assertIn('bind_address = "0.0.0.0:8080"', config)
-                self.assertIn('supervisor_network_mode = "bridge"', config)
-                self.assertIn('grpc_endpoint = "http://host.docker.internal:12345"', config)
+                metadata = json.loads((Path(directory) / "runtime-fixture.json").read_text())
+                self.assertEqual(metadata["host_platform"], host)
+                if host == "Darwin":
+                    self.assertEqual(gateway["command"], ["--bind-address", "0.0.0.0", "--port", "8080"])
+                    self.assertEqual(gateway["ports"], ["127.0.0.1:12345:8080"])
+                    self.assertNotIn("network_mode", gateway)
+                    self.assertIn('bind_address = "0.0.0.0:8080"', config)
+                    self.assertIn('supervisor_network_mode = "bridge"', config)
+                    self.assertIn('grpc_endpoint = "http://host.docker.internal:12345"', config)
+                    self.assertEqual(metadata["network_profile"], "darwin-bridge-loopback")
+                else:
+                    self.assertEqual(gateway["command"], ["--bind-address", "127.0.0.1", "--port", "12345"])
+                    self.assertEqual(gateway["network_mode"], "host")
+                    self.assertNotIn("ports", gateway)
+                    self.assertIn('bind_address = "127.0.0.1:12345"', config)
+                    self.assertNotIn("health_bind_address", config)
+                    self.assertNotIn("0.0.0.0", config)
+                    self.assertIn('supervisor_network_mode = "host"', config)
+                    self.assertIn('grpc_endpoint = "http://127.0.0.1:12345"', config)
+                    self.assertEqual(metadata["network_profile"], "linux-host-loopback")
                 build = next(call for call in build_image.call_args_list if "build" in call.args[0])
+                self.assertEqual(build.args[0][:3], ["docker", "--host", "unix://" + str(socket_file)])
                 self.assertEqual(Path(build.kwargs["env"]["BUILDX_CONFIG"]).resolve(), (runtime / "buildx").resolve())
 
     def test_managed_e2e_cleanup_failure_fails_unittest_after_writing_evidence(self):
@@ -190,6 +230,92 @@ class FixtureCleanupTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cleanup was not confirmed"):
                 case.cleanup()
         self.assertFalse(json.loads(output.read_text())["passed"])
+
+
+class FixtureNetworkTests(unittest.TestCase):
+    def test_ha_wrapper_rejects_remote_selection_before_invoking_docker(self):
+        with tempfile.TemporaryDirectory(prefix="rk-wrap-", dir="/tmp") as directory:
+            root = Path(directory)
+            commands = root / "bin"
+            commands.mkdir()
+            marker = root / "docker-invoked"
+            for command in ("docker", "uv", "openssl"):
+                executable = commands / command
+                executable.write_text("#!/bin/sh\nprintf invoked > '" + str(marker) + "'\nexit 97\n")
+                executable.chmod(0o700)
+            for name in ("plane", "cli", "runner.whl"):
+                artifact = root / name
+                artifact.write_text("#!/bin/sh\nexit 97\n")
+                artifact.chmod(0o700)
+            socket_file = root / "s"
+            socket_file.write_text("not a socket: remote selectors must fail before local socket lookup")
+            for selector, expected in (
+                ({"DOCKER_HOST": "tcp://remote.invalid:2375"}, "remote or conflicting"),
+                ({"DOCKER_CONTEXT": "remote-fixture"}, "named Docker context"),
+            ):
+                with self.subTest(selector=selector):
+                    environment = {
+                        "PATH": str(commands) + ":/usr/bin:/bin",
+                        "RUNKITE_TEST_BINARY": str(root / "plane"),
+                        "RUNKITE_TEST_RUNNER_WHEEL": str(root / "runner.whl"),
+                        "RUNKITE_TEST_ISOLATED_CLI": str(root / "cli"),
+                        "RUNKITE_TEST_DOCKER_SOCKET": str(socket_file),
+                        **selector,
+                    }
+                    result = subprocess.run(
+                        ["/bin/bash", str(ROOT / "scripts/test-isolated-ha.sh")],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn(expected, result.stderr)
+                    self.assertFalse(marker.exists(), "preflight must reject before any Docker command")
+
+    def test_tls_callbacks_preserve_verification_and_unsupported_hosts_fail(self):
+        linux = fixture.fixture_network("Linux", 12345, True)
+        self.assertEqual(linux["callback"], "https://127.0.0.1:12345")
+        self.assertEqual(linux["compose"], {"network_mode": "host"})
+        mac = fixture.fixture_network("Darwin", 12345, True)
+        self.assertEqual(mac["callback"], "https://host.docker.internal:12345")
+        self.assertEqual(mac["compose"]["ports"], ["127.0.0.1:12345:8080"])
+        with self.assertRaisesRegex(ValueError, "native Linux or macOS"):
+            fixture.fixture_network("Windows", 12345, True)
+
+    def test_local_daemon_is_explicit_and_remote_selectors_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.sock"
+            path.touch()
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(ValueError, "local Unix socket"):
+                    fixture.local_docker_command(str(path))
+            for selected in (
+                "tcp://remote.invalid:2375",
+                "ssh://remote.invalid",
+                "unix:///different/socket",
+                "unix://relative",
+            ):
+                with (
+                    self.subTest(selected=selected),
+                    patch.dict(os.environ, {"DOCKER_HOST": selected}, clear=True),
+                    patch.object(fixture.stat, "S_ISSOCK", return_value=True),
+                ):
+                    with self.assertRaisesRegex(ValueError, "remote or conflicting"):
+                        fixture.local_docker_command(str(path))
+            with (
+                patch.dict(os.environ, {"DOCKER_CONTEXT": "remote-fixture"}, clear=True),
+                patch.object(fixture.stat, "S_ISSOCK", return_value=True),
+            ):
+                with self.assertRaisesRegex(ValueError, "named Docker context"):
+                    fixture.local_docker_command(str(path))
+            with (
+                patch.dict(os.environ, {"DOCKER_HOST": "unix://" + str(path)}, clear=True),
+                patch.object(fixture.stat, "S_ISSOCK", return_value=True),
+            ):
+                command, mounted = fixture.local_docker_command(str(path))
+                self.assertEqual(command, ["docker", "--host", "unix://" + str(path.resolve())])
+                self.assertEqual(mounted, str(path.resolve()))
 
 
 class GatewayTLSTests(unittest.TestCase):

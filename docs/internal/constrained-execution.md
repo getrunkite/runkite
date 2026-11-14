@@ -337,6 +337,53 @@ before making that claim.
 Neither a bounded fixture nor a verified reporter proves provider billing,
 continuous certificate rotation, indefinite soak or arbitrary SDK containment.
 
+### Local engine networking
+
+Run the fixture on the host with its local Linux container engine. All owned
+Docker commands and the gateway's socket mount use the same explicitly selected
+Unix socket. TCP/SSH hosts, conflicting socket selectors, nondefault named
+contexts and unsupported host operating systems fail before creating runtime
+infrastructure. A Unix socket forwarded to another machine is unsupported; a
+pathname is not host attestation.
+
+Native Linux uses host networking for the trusted gateway and supervisor. Its
+gateway listener and supervisor callback both use `127.0.0.1` with the owned
+ephemeral port, and its separate health listener stays disabled. macOS retains
+the bridge supervisor and container gateway, with only a loopback published
+port. Both profiles pass explicit gateway bind-address and port arguments so
+an inherited image command cannot override the selected TOML listener.
+`runtime-fixture.json` records the host platform and network profile.
+The actual workload keeps the upstream `network=none` boundary and the example's
+Landlock `hard_requirement`. Neither TLS verification nor workload policy is
+relaxed by selecting the management network profile. The pinned
+[OpenShell Docker contract](https://docs.nvidia.com/openshell/v0.1.8/how-it-works/gateways/configuration#docker)
+documents these supervisor modes and the inability of native Linux bridge
+companions to reach a loopback-only host listener.
+
+The first hosted Linux run,
+[43633774499](https://github.com/getrunkite/runkite/actions/runs/43633774499),
+failed before workload execution: the bridge supervisor could not fetch policy
+through the loopback-only published gateway port. Its three gateway TLS
+preflight probes passed and owned cleanup was confirmed; the later gateway
+outage/restart probes and three requested workload cycles did not run. The
+Linux management-network correction therefore needs an actual hosted rerun.
+The corrected profile subsequently passed three bounded cycles in a Linux arm64
+orchestrator sharing OrbStack's Linux VM host network and local Docker socket.
+The installed parent, two real Postgres/Redis TLS planes and pinned external
+runtime passed the lifecycle cases, all five gateway TLS probes and confirmed
+cleanup. The managed evidence measured 46.452 seconds. The actual running
+gateway used the explicit `127.0.0.1` bind and owned ephemeral port. This is a
+local Linux VM result, not hosted Ubuntu amd64 qualification. Reports are under
+`outputs/runkite-next/linux-native-qualification-final/result/runtime/`, outside
+the repository. The earlier macOS result below remains evidence for its stated
+environment.
+
+A subsequent macOS regression of the corrected source passed one bounded cycle,
+all five gateway probes and confirmed cleanup, with 39.536 seconds in the
+managed evidence. Its `runtime-fixture.json` records `darwin-bridge-loopback`
+and a bridge supervisor. Reports are under
+`outputs/runkite-next/macos-fixture-regression/result/runtime/`.
+
 ### Current local evidence, November 14, 2026
 
 The combined candidate passed locally on macOS with OrbStack and external
