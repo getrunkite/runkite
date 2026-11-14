@@ -241,7 +241,7 @@ Laptop proof for the governance announce bar: `make smoke-governance`.
 
 ### Managed connector action readers (unreleased)
 
-The current source after v0.6.1 adds SQL-only Admin readers:
+The v0.7.0 candidate (not published) adds SQL-only Admin readers:
 `GET /admin-api/connector-actions` and
 `GET /admin-api/connector-actions/{actionID}`. Capture requires
 `policy.action_evidence` and required audit. The managed MCP response header
@@ -428,7 +428,7 @@ GET    /assistants/{id}/schemas    Alias for /agents/{id}/schemas
 
 ## Approval and security operations (unreleased)
 
-Current source after v0.6.1 extends pending-action responses with
+The v0.7.0 candidate (not published) extends pending-action responses with
 `requester_identity`, `required_approvals`, `exclude_requester`, `approval_count`,
 `approvals[]` (exact reviewer identity and `reviewed_at` on detail),
 `policy_revision` and optional `tool_revision`. A successful approve returns the

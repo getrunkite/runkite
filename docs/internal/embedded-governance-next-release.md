@@ -7,8 +7,9 @@
 >
 > Current implementation: `internal/api/governance_decide.go`,
 > `python/runkite_governance` and `typescript/runkite-governance`.
-> The helper guards/Microsoft middleware and managed AI SDK runner are separate
-> unreleased additions. See [client integration guidance](../client-sdk.md) and
+> The helper guards/Microsoft middleware remain checkout-only packages. The
+> managed AI SDK runner is included in published v0.6.1. New security controls
+> target the v0.7.0 candidate and are not published yet. See [client integration guidance](../client-sdk.md) and
 > [CHANGELOG](../../CHANGELOG.md#unreleased) for availability and boundaries.
 >
 > **One-line goal:** let an app that owns its own request/response loop (Vercel AI SDK,

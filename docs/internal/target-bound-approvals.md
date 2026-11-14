@@ -1,6 +1,6 @@
 # Target-bound managed connector approvals
 
-Status: unreleased source after v0.6.1. This extends the existing managed MCP
+Status: v0.7.0 candidate source (not published). This extends the existing managed MCP
 approval contract on all three SQL backends. It applies with action capture on
 or off. It does not change standalone expiring `/governance/decide` approvals or
 add a framework runtime. See the [operator procedure](../ops-runbook.md#connector-target-revision-upgrade)

@@ -31,7 +31,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 ## Managed connector action evidence (unreleased)
 
-Current source after v0.6.1 can opt into SQL managed MCP attempt history with
+The v0.7.0 candidate (not published) can opt into SQL managed MCP attempt history with
 `policy.action_evidence` and required audit. It does not cover local tools,
 standalone decisions, model calls or every MCP method. Every serving replica
 must enable it; additive migrations do not make older or flag-off writers record.
@@ -57,7 +57,7 @@ See the [operator guide](../site/support/connector-actions.html).
 
 ## Tenant Review boundaries (unreleased)
 
-Current source after v0.6.1 adds flat-tenant approval/evidence permissions in a
+The v0.7.0 candidate (not published) adds flat-tenant approval/evidence permissions in a
 separate Review workspace. This is not general per-resource RBAC or a user
 registry. Review needs verified primary identity, explicit tenant and a new role;
 empty/default-open permissions do not qualify. Global Admin remains global.
@@ -93,8 +93,8 @@ cannot gain that guard retroactively. See the
 
 ## Authority and secret-safety boundaries
 
-- Required policy audit is opt-in, SQL-only and available in unreleased source
-  after v0.6.1; it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
+- Required policy audit is opt-in, SQL-only and available in the v0.7.0 candidate
+  (not published); it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
 - A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. This does not provide isolated identities for workers sharing a runner kind, atomic queue/child-store authorization, or external token downscoping.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
 - Vault references still read KV values. That original hardening slice did not add lease issuance. Subsequent unreleased registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
@@ -302,7 +302,7 @@ Honest gaps, not hidden ones:
 
 ## Security completion boundaries (unreleased)
 
-Source after v0.6.1 adds optional reviewer separation/quorum, policy and MCP schema
+The v0.7.0 candidate (not published) adds optional reviewer separation/quorum, policy and MCP schema
 binding, durable action export, registered Vault database leases and execution
 pools. Published v0.6.1 artifacts do not implement these controls.
 

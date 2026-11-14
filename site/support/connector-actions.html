@@ -49,7 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a class="active" aria-current="page" href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
-          <a href="security-completion.html">Security operations (unreleased)</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -79,7 +79,7 @@
         <p class="kicker">Govern</p>
         <h1>Connector actions</h1>
         <p class="lede">Follow a managed MCP tool request from its policy decision to dispatch intent and the response Runkite could observe.</p>
-        <p class="note"><strong>Availability:</strong> unreleased source after v0.6.1. Rebuild the control plane from this source to use these settings and screens. Published v0.6.1 binaries do not implement them. Capture is off by default and requires Postgres, MySQL or SQLite.</p>
+        <p class="note"><strong>Availability:</strong> v0.7.0 candidate source (not published). Rebuild the control plane from this source to use these settings and screens. Published v0.6.1 binaries do not implement them. Capture is off by default and requires Postgres, MySQL or SQLite.</p>
 
         <h2 id="enable">Enable recording</h2>
         <p>Add these settings to the existing <code>policy</code> block in your control plane's first <code>langgraph.json</code>. Keep your current grants, predicates and approval rules.</p>
@@ -144,7 +144,7 @@
         <p><a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Engineering rationale and source map</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">Target-binding design</a> · <a href="grants.html">Grants and approval</a> · <a href="connectors.html">Connector setup</a> · <a href="admin-guide.html">Admin guide</a></p>
 
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
-        <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
+        <p>The v0.7.0 candidate (not published) adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
         <h2 id="lifecycle-and-export">Approval, credential and export references (unreleased)</h2>
         <p>Current source populates configured policy and optional observed tool-schema identities. A credential reference from the registered Vault database path links to metadata-only lifecycle detail; private cleanup handles are never returned. An export sink reference links Admin to durable event delivery. An export retry resends evidence only. See <a href="security-completion.html">review/quorum, lifecycle, export and upgrade contracts</a>.</p>

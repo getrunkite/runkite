@@ -7,9 +7,10 @@ Protocol and HTTP checkpoint surface.
 
 ## Install and run
 
-This profile is **unreleased**. The published PyPI `0.5.8` artifact does not
-include it. From the repository root, install the source package into a clean
-Python 3.11+ environment (shown with 3.12):
+Published PyPI `0.6.1` includes this profile through the `openai-agents` extra.
+The current checkout targets the v0.7.0 candidate, which is not published yet.
+To install that matching candidate from source, use a clean Python 3.11+
+environment from the repository root (shown with 3.12):
 
 ```bash
 python3.12 -m venv .venv-openai-agents
@@ -22,8 +23,8 @@ python3.12 -m venv .venv-openai-agents
 
 The extra pins `openai-agents==0.24.0`. The installed module alternative is
 `python -m openai_agents_adapter` with the same arguments. Neither entrypoint
-needs repository `PYTHONPATH`. Once a release contains this profile, the public
-install will be `pip install 'runkite-runner[openai-agents]'`. The ordinary
+needs repository `PYTHONPATH`. For the published release, use
+`pip install 'runkite-runner[openai-agents]'`. The ordinary
 `runkite-runner` command and stock Python image retain their LangGraph defaults.
 The stock image does not install this optional SDK.
 

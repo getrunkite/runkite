@@ -1,7 +1,8 @@
 # Dynamic database credential lifecycle
 
-Availability: unreleased source after v0.6.1. This document describes the new
-credential lifecycle package and the managed connector integration being qualified.
+Availability: v0.7.0 candidate source (not published). This document describes the new
+credential lifecycle package and the managed connector integration qualified by
+the [bounded fixture record](security-completion-qualification.md).
 It does not describe a feature in the published v0.6.1 binaries.
 
 ## The caller that needs it

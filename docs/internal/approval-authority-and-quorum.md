@@ -1,6 +1,6 @@
 # Approval authority, separation, and quorum
 
-This note describes unreleased storage changes after v0.6.1. It supplements
+This note describes v0.7.0 candidate storage changes (not published). It supplements
 [target-bound approvals](target-bound-approvals.md) and
 [tenant-scoped review](tenant-scoped-review.md).
 

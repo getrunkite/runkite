@@ -1,6 +1,6 @@
 # Security completion qualification
 
-Status: local release-candidate source after v0.6.1, qualified on 2026-11-14.
+Status: local v0.7.0 candidate (not published), qualified on 2026-11-14.
 This records measured evidence and rollout requirements. It is not a claim that
 every configuration, provider or possible failure has been tested.
 
@@ -121,7 +121,7 @@ fault-injection tests guard these reporting and cleanup paths without Docker.
 
 ## Release and operator gates
 
-All local release qualification gates passed. The three final Linux/arm64 images
+All recorded local security-implementation gates passed. The three final Linux/arm64 images
 built and passed Trivy 0.72.0 vulnerability scans with
 `--severity HIGH,CRITICAL --ignore-unfixed --scanners vuln`: zero fixable findings
 at those severities. This is not a claim of zero vulnerabilities at every
@@ -147,9 +147,18 @@ containers and network were absent. Final runtime/CNI cleanup remains confirmed.
 A local test record does not establish remote CI or package publication. Rebuild
 and repeat the relevant gates for the tagged release and its target platforms.
 
-The version remains v0.6.1 until the coordinated release cut. No existing tag or
-published artifact is rewritten. New configuration is opt-in and the external
+Version metadata now targets v0.7.0 locally. This candidate is not tagged or
+published; v0.6.1 remains the published release. The image IDs above identify the
+actual tested artifacts before the final versioned release build. Rebuild and
+repeat the relevant artifact gates for the candidate/tag instead of treating old
+image or wheel identifiers as newly published v0.7.0 artifacts. No existing tag
+or published artifact is rewritten. New configuration is opt-in and the external
 bridge remains experimental, even though its bounded fixture now runs.
+
+Candidate Helm deployment requires matching locally built plane and runner
+images. Its `image.tag` and `runner.image.tag` defaults remain `latest`, which
+does not select an unpublished candidate. Override both deliberately and follow
+the [release preparation guide](../releasing.md).
 
 Before upgrade, verify a backup and stop or drain every writer. Upgrade through
 Postgres/SQLite schema 21 or MySQL schema 22, replace every HTTP/runner replica

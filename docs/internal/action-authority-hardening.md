@@ -1,6 +1,6 @@
 # Parent authority and secret-safe policy decisions
 
-Availability: unreleased source after v0.6.1. This is the first security
+Availability: v0.7.0 candidate source (not published). This is the first security
 milestone. The later [connector action evidence record](connector-action-evidence.md)
 documents the implemented follow-up; published v0.6.1 binaries contain neither
 new opt-in setting.

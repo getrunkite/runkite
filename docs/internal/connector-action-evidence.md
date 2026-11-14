@@ -1,6 +1,6 @@
 # Managed connector action evidence
 
-Status: unreleased source after v0.6.1. This extends required policy audit with
+Status: v0.7.0 candidate source (not published). This extends required policy audit with
 opt-in evidence for managed MCP `tools/call` attempts. Released v0.6.1 binaries
 do not implement these settings or Admin routes. See the
 [operator manual](../../site/support/connector-actions.html) and

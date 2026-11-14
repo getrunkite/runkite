@@ -155,7 +155,7 @@ Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a S
 
 ## Connector action history (unreleased)
 
-Current source after v0.6.1 adds `/admin/connector-actions`, action detail and a
+The v0.7.0 candidate (not published) adds `/admin/connector-actions`, action detail and a
 recent-actions panel in Run Detail. Enable `policy.action_evidence` with required
 SQL audit to capture managed MCP `tools/call`. Existing history remains readable
 when capture is disabled. Mongo returns `501`. Admin remains globally privileged;
@@ -174,7 +174,7 @@ operator workflow, states, retry guidance and independent retention.
 
 ## Target-bound approval review (unreleased)
 
-Current source after v0.6.1 displays the stored `target_revision` on managed
+The v0.7.0 candidate (not published) displays the stored `target_revision` on managed
 approvals and recorded connector actions. This fingerprints the configured MCP
 target, including the optional nonsecret `mcp.revision` label. It does not verify
 remote tool code, schema or credential values. Missing or malformed managed
@@ -211,7 +211,7 @@ flowchart LR
 
 ## Approval, credential and delivery operations (unreleased)
 
-Current source after v0.6.1 adds approval detail with immutable requester, exact
+The v0.7.0 candidate (not published) adds approval detail with immutable requester, exact
 reviewer history, quorum progress and policy/tool/target revisions. A successful
 partial review reports “Review recorded” and leaves the caller pending. Admin and
 Review block visibly unsupported historical bindings, while the server also

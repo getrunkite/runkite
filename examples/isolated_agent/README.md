@@ -1,6 +1,6 @@
 # External isolated workload prototype
 
-Status: experimental local source. OpenShell remains an external product. The
+Status: experimental v0.7.0 candidate source (not published). OpenShell remains an external product. The
 JSONL bridge and fleet pools are separate controls. Neither a fake-runtime unit
 test nor Helm rendering establishes an enforced sandbox.
 

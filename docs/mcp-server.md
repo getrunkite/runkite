@@ -8,7 +8,7 @@ The reverse direction of Connectors: Connectors let a Runkite *agent* consume ex
 POST/GET/DELETE /mcp   Streamable HTTP MCP transport (session-based, per the 2025-03-26/2025-06-18/2025-11-25 spec revisions)
 ```
 
-The unreleased [connector action recorder](../site/support/connector-actions.html)
+The v0.7.0 candidate's [connector action recorder](../site/support/connector-actions.html)
 is for the other direction: managed agents calling configured external MCP tools
 through Runkite's connector proxy. It does not add an action-evidence record for
 every incoming `/mcp` invocation. An incoming invocation still creates a managed

@@ -6,8 +6,10 @@ reported usage. The SDK keeps its model loop and output validation in Python.
 
 ## Install and run
 
-This profile is **unreleased** and absent from the published PyPI `0.5.8`
-artifact. From the repository root, use a clean Python 3.11+ environment:
+Published PyPI `0.6.1` includes this profile through the `pydantic-ai` extra.
+The current checkout targets the v0.7.0 candidate, which is not published yet.
+To install that matching candidate from source, use a clean Python 3.11+
+environment from the repository root:
 
 ```bash
 python3.12 -m venv .venv-pydantic-ai

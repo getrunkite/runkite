@@ -385,7 +385,7 @@ as the TypeScript guard, with no managed run, run controls or spend caps.
 
 ## New security controls do not change SDK ownership (unreleased)
 
-Current source after v0.6.1 adds managed policy/schema-bound approvals, optional
+The v0.7.0 candidate (not published) adds managed policy/schema-bound approvals, optional
 reviewer quorum and registered credential consumers. The normal Agent Protocol
 client still creates a thread/run and consumes its stream; the SDK model loop
 stays in its runner. Only tool requests using the managed connector gate receive

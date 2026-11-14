@@ -49,7 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
-          <a class="active" aria-current="page" href="security-completion.html">Security operations (unreleased)</a>
+          <a class="active" aria-current="page" href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -78,8 +78,8 @@
 
         <p class="kicker">Govern</p>
         <h1>Security operations</h1>
-        <p class="lead">Current source after v0.6.1 adds opt-in review authority, evidence delivery and credential lifecycle controls around the existing connector gate.</p>
-        <p class="note">Unreleased source only. Published v0.6.1 binaries and runner packages do not contain these additions. Read the <a href="ops.html#security-completion-upgrade">upgrade procedure</a> before enabling them. No exactly-once external effects or universal sandbox compatibility is claimed.</p>
+        <p class="lead">The v0.7.0 candidate (not published) adds opt-in review authority, evidence delivery and credential lifecycle controls around the existing connector gate.</p>
+        <p class="note">v0.7.0 candidate source only, not published. Published v0.6.1 binaries and runner packages do not contain these additions. Read the <a href="ops.html#security-completion-upgrade">upgrade procedure</a> before enabling them. No exactly-once external effects or universal sandbox compatibility is claimed.</p>
 
         <h2 id="review-authority">Review the exact operation</h2>
         <p><code>policy.approvals.required_approvals</code> defaults to one and accepts one through five. <code>exclude_requester</code> excludes the exact immutable requester. Either strict option requires authenticated reviewer identities; exclusion also requires a known requester. Policy must first hold the operation. These options do not turn every allowed call into an approval.</p>

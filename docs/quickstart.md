@@ -10,6 +10,12 @@ OpenAI Agents, Pydantic AI and Google ADK Python profiles. Compare their install
 commands and execution boundaries in
 [client integration guidance](client-sdk.md#choose-who-owns-execution).
 
+The checkout's new security controls target the v0.7.0 candidate, which is not
+published yet. Registry installs below still select the published release.
+To exercise candidate features, build matching plane and runner artifacts from
+the same checkout and follow [release preparation](releasing.md); do not combine
+new schema/configuration with older released writers.
+
 End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
 
 ## Install (published artifacts)

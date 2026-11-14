@@ -127,7 +127,7 @@ NetworkPolicy and the newer egress profile are both disabled by default. Its roo
 filesystem is writable by default.
 Those controls are useful but do not establish an arbitrary-code sandbox.
 
-Current unreleased source adds separately credentialed execution pools, an opt-in
+The v0.7.0 candidate (not published) adds separately credentialed execution pools, an opt-in
 Helm egress profile and an experimental external OpenShell 0.1.8 JSONL workload
 bridge. The trusted Runkite worker remains outside the workload, owning runner
 authentication, MCP authority, checkpoint CAS and launch receipts. Ordinary SDK
@@ -150,7 +150,7 @@ and limits for unreported workload calls.
 
 ## Required audit before access
 
-Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
 implement this mode.
 
 The optional `policy.audit_required: true` setting requires a durable policy decision before managed admission, connector access or an in-process decision can allow or become pending. It requires auditing enabled and a SQL state backend. Startup rejects an incompatible configuration. The default remains best-effort auditing.
@@ -161,7 +161,7 @@ Argument metadata recursively removes common password, token, secret and API-key
 
 ## Managed MCP action evidence (unreleased)
 
-Current source after v0.6.1 adds optional `policy.action_evidence` on SQL, requiring
+The v0.7.0 candidate (not published) adds optional `policy.action_evidence` on SQL, requiring
 `policy.audit_required`. Each valid managed tool request gets its own identity.
 The original policy effect is retained separately from the final approved or
 break-glass authority. SQL managed approvals bind to the immutable original run
@@ -189,7 +189,7 @@ vault is introduced.
 
 ## Scoped human review (unreleased)
 
-Current source after v0.6.1 adds `/review-api` and `/admin/review/` with primary
+The v0.7.0 candidate (not published) adds `/review-api` and `/admin/review/` with primary
 `governance:read` / `governance:approve` permissions. Scope comes from a verified
 identity and explicit tenant. Global Admin remains global. Reviewers cannot edit
 policy/grants, mint break-glass or read conversations. Read-only pending replies
@@ -278,7 +278,7 @@ re-evaluates the stored capped/redacted display map, so predicates must not rely
 on omitted secret fields. SQL stores provide durable one-shot consumption;
 Mongo cannot persist pending and fails closed.
 
-Current unreleased source after v0.6.1 also requires the immutable run incarnation
+The v0.7.0 candidate (not published) also requires the immutable run incarnation
 and configured connector target revision. The managed request keeps one target
 snapshot through dispatch, and both capture modes enforce the same approval
 match. Admin and Review refuse approval of a historical or changed target;
@@ -330,7 +330,7 @@ Absent / empty `policy` preserves V1 open access after runner auth + run-binding
 
 ## Revision-bound review and lifecycle controls (unreleased)
 
-Source after v0.6.1 adds `policy.approvals` for operations already held by policy.
+The v0.7.0 candidate (not published) adds `policy.approvals` for operations already held by policy.
 `required_approvals` ranges from one to five; `exclude_requester` prevents exact
 requester self-review. Reviewer identities are authenticated and compared exactly,
 with no case folding or user directory. Votes are transactional history; partial

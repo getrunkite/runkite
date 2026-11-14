@@ -152,7 +152,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 
 ### Required policy audit
 
-Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
 implement this setting; rebuild from source before relying on it.
 
 Set `"audit_required": true` inside the existing `policy` block to require durable decision writes before admission or connector access proceeds. `audit` defaults to true; combining required audit with `"audit": false` is invalid. Startup requires a SQL audit store (Postgres, MySQL or SQLite). Mongo cannot enable this mode.
@@ -161,7 +161,7 @@ Required audit is checked on every decision, including cache hits. If persistenc
 
 ### Managed connector action evidence
 
-Unreleased source after v0.6.1: set `"action_evidence": true` in the existing
+v0.7.0 candidate source (not published): set `"action_evidence": true` in the existing
 `policy` block and also enable `"audit_required": true`. SQL is required
 (Postgres, MySQL or SQLite); auditing cannot be disabled. Both flags default off.
 Apply capture consistently to every serving replica after the
@@ -267,7 +267,7 @@ Future pgvector schema changes are new numbered Up/Down steps -- not ad-hoc `ALT
 
 ## Approval authority and quorum (unreleased)
 
-Availability: source after v0.6.1, not published v0.6.1 artifacts. The existing
+Availability: v0.7.0 candidate (not published). The existing
 policy gate must already hold an operation; these requirements do not force
 otherwise allowed operations to become pending. For example:
 

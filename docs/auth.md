@@ -135,7 +135,7 @@ Flat tenant scoping -- a full workspace/org/team hierarchy with isolated data wa
 
 ## Tenant review
 
-Unreleased source after v0.6.1 adds a separate `/review-api` surface and
+v0.7.0 candidate source (not published) adds a separate `/review-api` surface and
 `/admin/review/` workspace. Published v0.6.1 binaries do not implement them.
 `governance:read` permits own-tenant approval metadata and action evidence;
 `governance:approve` includes that read access, the existing capped/redacted
@@ -166,7 +166,7 @@ managed approval fresh-review rules still apply. See the
 
 ## Review separation, lease metadata and fleet pools (unreleased)
 
-Source after v0.6.1 keeps `governance:read` and `governance:approve` scoped to the
+The v0.7.0 candidate (not published) keeps `governance:read` and `governance:approve` scoped to the
 verified primary identity and explicit tenant. Review additionally reads owned
 credential lifecycle metadata; it receives no protected lease handles and cannot
 renew/revoke. Admin remains deployment-wide. Cookie mutation CSRF and the

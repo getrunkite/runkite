@@ -230,6 +230,8 @@ Both modes read and write the exact same rows -- a value written by one Python r
 
 ## Unreleased security extensions after v0.6.1
 
+These extensions belong to the v0.7.0 candidate, which is not published yet.
+
 These reuse the existing SQL authority and transport boundaries: transactional
 reviewer quorum/history; exact managed target, configured policy and optional
 observed MCP schema identity; metadata-only event outbox; externally issued Vault

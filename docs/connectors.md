@@ -157,7 +157,7 @@ After a successful connector MCP `tools/call`, the plane can stash the original 
 
 ### Target-bound managed approvals (unreleased)
 
-Current source after v0.6.1 binds SQL managed MCP approvals to a `target-v1-`
+The v0.7.0 candidate (not published) binds SQL managed MCP approvals to a `target-v1-`
 revision as well as tenant, agent, run, generation, immutable run incarnation,
 connector, tool and exact argument digest. Published v0.6.1 does not implement
 this binding. It applies with `policy.action_evidence` either on or off; it is
@@ -221,7 +221,7 @@ storage invariants.
 
 ### Managed tool attempt evidence (unreleased)
 
-Current source after v0.6.1 can record managed MCP `tools/call` with
+The v0.7.0 candidate (not published) can record managed MCP `tools/call` with
 `policy.action_evidence: true` and required SQL audit. Both JSON and streamable
 HTTP call the synchronous intent gate immediately before the protected request.
 Protocol initialization/discovery can happen earlier. Persisting intent and
@@ -238,7 +238,7 @@ configuration, retention and unknown-outcome investigation.
 
 ### Circuit breakers
 
-Current unreleased source counts an OAuth-backed MCP request once. Its half-open
+The v0.7.0 candidate (not published) counts an OAuth-backed MCP request once. Its half-open
 probe covers token preparation and the protected request, so refresh cannot
 reject its own probe or close it before the MCP result. A local evidence refusal
 does not count as a target failure. Standalone OAuth session minting retains its
@@ -298,7 +298,7 @@ The plane rereads a configured Vault token file during resolution. OAuth client-
 
 ## Managed policy and tool contracts (unreleased)
 
-Current source after v0.6.1 extends target-bound approvals with the configured
+The v0.7.0 candidate (not published) extends target-bound approvals with the configured
 `policy-v1-` revision and optional `tool-v1-` schema revision. `policy.webhook.revision`
 represents operator-declared remote PDP changes, not verified remote execution.
 Both capture-on and capture-off dispatch require exact matching revisions.

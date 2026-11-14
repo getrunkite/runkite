@@ -1,6 +1,6 @@
 # Tenant-scoped review and investigation
 
-Status: unreleased source after v0.6.1, built on the
+Status: v0.7.0 candidate source (not published), built on the
 [connector action evidence milestone](connector-action-evidence.md). Published
 v0.6.1 binaries do not implement these permissions, routes or sessions. The
 original permissions/session slice adds no SQL migration or identity directory. Current

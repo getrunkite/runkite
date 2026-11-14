@@ -55,7 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
-          <a href="security-completion.html">Security operations (unreleased)</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -381,7 +381,7 @@
         </p>
 
         <h2 id="target-bound-approval-upgrade">Target-bound approval upgrade (unreleased)</h2>
-        <p>Current source after v0.6.1 adds Postgres and SQLite migration <strong>18</strong> and MySQL Compatible migration <strong>19</strong> for configured target bindings. These migrations are irreversible. Published v0.6.1 binaries do not implement this feature. The change applies to managed connector approvals even when <code>policy.action_evidence</code> is off.</p>
+        <p>The v0.7.0 candidate (not published) adds Postgres and SQLite migration <strong>18</strong> and MySQL Compatible migration <strong>19</strong> for configured target bindings. These migrations are irreversible. Published v0.6.1 binaries do not implement this feature. The change applies to managed connector approvals even when <code>policy.action_evidence</code> is off.</p>
         <ol class="steps">
           <li>Take and verify a restorable database backup. Preserve the matching binary and configuration needed for a full restore.</li>
           <li>Stop every writer, including all control-plane replicas. Do not run a mixed-version fleet through this upgrade.</li>
@@ -392,10 +392,11 @@
         <p>Changing the configured target or nonsecret <code>mcp.revision</code> also requires fresh review. A <code>409</code> during approval can mean the target changed or is unavailable; inspect configuration and submit a new operation rather than editing an old approval. Reverting a binary is not a database downgrade. Recover from a failed rollout with the verified backup and its matching software. See <a href="connectors.html#target-bound-approvals">target-bound approvals</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">engineering record</a>.</p>
 
         <h2 id="connector-action-evidence">Managed connector action evidence (unreleased)</h2>
-        <p>Current source after v0.6.1 adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
+        <p>The v0.7.0 candidate (not published) adds opt-in SQL recording for managed MCP tool attempts, with required audit. Admin separates the policy decision, final authority, dispatch intent and response observation. Unknown outcomes may have executed; action IDs do not provide execution idempotency. See <a href="connector-actions.html">Connector actions</a> for setup, investigation, retention and upgrade guidance. Published v0.6.1 binaries do not implement this mode.</p>
 
         <h2 id="security-completion-upgrade">Security completion upgrade (unreleased)</h2>
-        <p>Source after v0.6.1 adds Postgres/SQLite migrations 19 (review authority/history), 20 (outbox), 21 (credential leases), and MySQL 20/21/22. Earlier target-bound migration 18/19 still applies from older builds. No historical requester, revision, vote or credential/export authority is guessed.</p>
+        <p class="note"><strong>Local v0.7.0 candidate, not published:</strong> build matching plane and runner images from the same checkout. The chart's <code>image.tag</code> and <code>runner.image.tag</code> default to <code>latest</code>, which still selects the published release. Override both with your matching candidate images before testing; do not mix new schema/configuration with older writers.</p>
+        <p>The v0.7.0 candidate (not published) adds Postgres/SQLite migrations 19 (review authority/history), 20 (outbox), 21 (credential leases), and MySQL 20/21/22. Earlier target-bound migration 18/19 still applies from older builds. No historical requester, revision, vote or credential/export authority is guessed.</p>
         <ol><li>Stop admission and drain every writer. Verify a restorable database backup and back up the retained private handle keyring separately.</li><li>Run <code>runkite db upgrade</code> with the new binary, then replace every plane replica and worker before traffic. No mixed-version rollout.</li><li>Resubmit historical managed approvals for fresh review. Changed standalone separation/quorum plans also require fresh review and obsolete polling is rejected.</li><li>Enable optional controls consistently and exercise deny, partial quorum, final quorum, own-tenant metadata and unknown-state recovery using synthetic operations.</li></ol>
         <p>These authority migrations refuse unsafe downgrade. Recovery requires a reviewed pre-upgrade backup plus explicit reconciliation of external effects and outstanding leases. The new startup guard does not make an old released writer safe. Never erase migration stamps or fill missing authority from today's config.</p>
         <p>Export retries resend evidence only; preserve stable delivery IDs and receiver deduplication. Retain removed destinations and their held queues deliberately. Keep old keyring entries and retired Vault provider bindings until exact old leases have confirmed cleanup. A lost issuance handle remains unknown, not revoked by estimated expiry. See <a href="security-completion.html">Security operations</a> for UI steps and investigation.</p>

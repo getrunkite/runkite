@@ -1,12 +1,53 @@
 # Releasing Runkite
 
 Version lives in [`VERSION`](../VERSION). Keep Python (`pyproject.toml` /
-`__version__`), npm (`package.json`), Helm `appVersion`, and the git tag
+`__version__`), npm (`package.json` and owned lockfile entries), Helm chart
+version and `appVersion`, and the git tag
 `v$VERSION` in sync. Public Runkite install commands normally stay unpinned
 (`pip install runkite-runner`, `npm install -g runkite-runner`, image `:latest`).
 Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
+
+## Prepared v0.7.0 candidate
+
+The current metadata targets v0.7.0. It is a local candidate, not a tag or a
+published release. Published v0.6.1 artifacts do not include the new security
+controls. The governance helpers remain checkout-only even though their local
+package versions match the candidate.
+
+The earlier qualification record covers the implementation before this metadata
+cut. Build and inspect the final versioned artifacts, run remote CI and verify
+publication before changing download badges or describing v0.7.0 as available.
+Keep the coordinated SQL upgrade instructions in the
+[operations runbook](ops-runbook.md#security-completion-upgrade) with the release
+notes. The candidate chart still defaults to `latest`, which identifies the
+published images until a new release succeeds. For candidate qualification, build
+matching images and explicitly set the control-plane and runner image tags.
+
+## Version consistency gate
+
+Run with Python 3.11 or newer:
+
+```bash
+python3 scripts/check-release-version.py
+python3 scripts/check-release-version.py --tag "v$(cat VERSION)"
+python3 python/tests/test_release_version.py -v
+```
+
+The first command checks the coordinated package and chart metadata against
+`VERSION`, including file-linked example lock entries. The second also checks
+the proposed tag. The release workflow requires this gate before any artifact
+publishing job. GoReleaser takes its version from the tag, while npm and Python
+builds take theirs from package metadata. Without this check, one tag could
+publish artifacts with different versions. Fix mismatches in source rather than
+republishing an old version.
+Private example/Admin versions, framework dependency pins and API/protocol
+schema versions are independent contracts and are not changed by this gate.
+
+`make build` normally identifies development builds with `git describe`. Use
+`make build VERSION="$(cat VERSION)"` when inspecting an explicitly versioned local
+candidate. This does not create a tag or publish an artifact.
 
 ## What a tag publishes
 
@@ -66,7 +107,8 @@ When cutting an Apache-licensed release:
 
 ## Maintainer checklist (cut a release)
 
-1. [ ] Bump `VERSION` and matching package/Helm fields; update `CHANGELOG.md`.
+1. [ ] Bump `VERSION` and matching package/Helm fields; update `CHANGELOG.md` and
+   run the version consistency gate, including the intended tag.
 2. [ ] Enrich `python/README.md` / `typescript/runkite-runner/README.md` if the PyPI/npm page should change (they ship with the next upload).
 3. [ ] CI green on `main`.
 4. [ ] Tag and push:

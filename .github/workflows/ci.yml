@@ -88,6 +88,11 @@ jobs:
       - name: Check public documentation links
         run: python3 scripts/check-doc-links.py
 
+      - name: Check coordinated release metadata
+        run: |
+          python3 -m unittest discover -s python/tests -p test_release_version.py
+          python3 scripts/check-release-version.py
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"

@@ -408,7 +408,7 @@ Live-verified end to end for all four: a real control plane, a real runner proce
 
 ## Separately credentialed execution pools (unreleased)
 
-Current source after v0.6.1 lets a graph file select an operator-registered
+The v0.7.0 candidate (not published) lets a graph file select an operator-registered
 `execution_pool` without replacing its SDK adapter. Pools specify the framework
 kind plus exact tenant and agent membership and use distinct plane-side
 `RUNNER_TOKEN_POOL_<NAME>` credentials. Workers select their pool using

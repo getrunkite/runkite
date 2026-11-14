@@ -45,13 +45,13 @@ See [trust and governance](docs/trust-governance.md), [connectors](docs/connecto
 and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
 the enforcement and deployment contracts.
 
-Current unreleased source after v0.6.1 adds optional [required policy audit](docs/configuration.md#required-policy-audit)
+The v0.7.0 candidate (not published) adds optional [required policy audit](docs/configuration.md#required-policy-audit)
 that blocks access when its SQL decision record cannot be saved. Agent delegation
 derives authority from the active parent assignment. See the
 [hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
-The current unreleased source also offers opt-in [connector action evidence](site/support/connector-actions.html):
+The candidate also offers opt-in [connector action evidence](site/support/connector-actions.html):
 record intent before managed MCP dispatch and inspect observed responses or
-unknown outcomes in Admin. The same unreleased source adds
+unknown outcomes in Admin. It also adds
 [tenant-scoped review](docs/auth.md#tenant-review): reviewers can inspect evidence
 or approve their own tenant's operations without global Admin access. These
 settings and permissions are not in published v0.6.1 binaries. Managed MCP
@@ -61,13 +61,16 @@ rotate without changing that binding.
 
 ### Security completion in current source (unreleased)
 
-Source after v0.6.1 adds three opt-in controls around existing managed connector
+The v0.7.0 candidate (not published) adds three opt-in controls around existing managed connector
 authority: [distinct-reviewer quorum and requester separation](docs/internal/approval-authority-and-quorum.md),
 [durable action evidence export](docs/internal/action-delivery-outbox.md), and
 [registered Vault database credential leases](docs/internal/credential-lifecycle.md).
 Managed approvals bind the current configured policy and optional observed MCP
 tool schema as well as arguments, target and run incarnation. Historical unbound
 approvals require fresh review. These settings are not in published v0.6.1 packages.
+Version metadata targets v0.7.0 locally. No v0.7.0 release or registry package is
+published yet; the download and install links below still describe v0.6.1.
+Candidate deployments need matching locally built plane and runner artifacts.
 
 [Execution pools and an experimental external OpenShell bridge](docs/internal/constrained-execution.md)
 add a separately credentialed fleet and explicit workload boundary. Existing SDK
