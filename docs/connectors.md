@@ -80,7 +80,14 @@ require fresh submission and review. See [upgrade guidance](ops-runbook.md#harde
 
 The `tools.allow`/`tools.deny` filter above is a real, enforced gate, not just an advisory hint. `GetSession`'s `mcp.url` points at this control plane's own MCP proxy (`POST /internal/connectors/{name}/mcp`), not the connector's raw downstream MCP server -- so a `tools/call` request passes through here first, where a denied tool is rejected with a JSON-RPC error and **never reaches the downstream server at all**. `tools/list` responses are filtered against the same allow/deny list using the downstream server's own real tool list -- correct even for a deny-only filter (no allow list), which can't be represented in a static preview without knowing the full tool universe the downstream server exposes. An empty/missing tool name is always rejected too, independent of the filter shape (never a legitimate request regardless of what's allowed or denied). In the default JSON transport, other JSON-RPC methods (`initialize`, `resources/*`, etc.) are forwarded transparently. The opt-in negotiated transport supports the methods listed below. The connector's existing circuit breaker (guarding token fetches) also guards the proxied MCP call.
 
-**Short-lived MCP session tokens:** for MCP connectors, `GetSession` also returns `session_token` with a **15-minute absolute** `expires_at` (capability lifetime, not the downstream OAuth TTL). Every `POST .../mcp` must send `X-Runkite-Connector-Session: <token>` in addition to runner auth + run-binding; the token is bound to `(run_id, generation, connector)`. Tokens live in Redis when `REDIS_URL` is set (`rk:conn:sess:*`), otherwise process-local memory. Missing/expired/mismatched tokens fail closed. Run pre-warm does **not** embed sessions in the assignment payload (queue-resident secrets / short-lived tokens) — helpers `get_connector_session` / `proxy_connector_mcp` (Python) and `getConnectorSession` / `proxyConnectorMcp` (TypeScript) mint at use time.
+**Short-lived MCP session tokens:** for MCP connectors, `GetSession` returns a
+`session_token` with a 15-minute absolute expiry, independent of downstream OAuth
+TTL. Every `POST .../mcp` sends `X-Runkite-Connector-Session: <token>` plus runner
+auth and run binding. The token matches tenant, agent, run, generation and
+connector. Tokens are shared in Redis when `REDIS_URL` is set (`rk:conn:sess:*`),
+otherwise process-local. Missing, expired or mismatched tokens fail closed.
+Pre-warm does not embed these short-lived capabilities or downstream credentials
+in the assignment. SDK connector helpers mint them at use time.
 
 **Non-MCP credentials:** `api_key` / `bearer` GetSession still returns raw `credentials.access_token`. `expires_at` is a **1-hour advisory remint hint** (not revocation of the underlying secret). OAuth connectors use the IdP's `expires_in` (default 1h). Pre-warm may call GetSession to warm OAuth caches and log early failures, but never embeds credentials into the assignment.
 
@@ -148,9 +155,73 @@ After a successful connector MCP `tools/call`, the plane can stash the original 
 - Token spend may drop if the runner then sends fewer bytes to the model. That effect is **inferred** from whatever the runner already reports. No percent, no invoice, no FinOps SLA. Shrink does not write `usage_events`.
 - **Audit sees the preview plus ref, not the original body.** Grants, pending, HITL, and kill stay fully audited. Operators who need the full MCP result on the audit path leave shrink off. Retrieve exists for the agent during TTL, not for after-the-fact forensics.
 
+### Target-bound managed approvals (unreleased)
+
+The v0.7.0 candidate (not published) binds SQL managed MCP approvals to a `target-v1-`
+revision as well as tenant, agent, run, generation, immutable run incarnation,
+connector, tool and exact argument digest. Published v0.6.1 does not implement
+this binding. It applies with `policy.action_evidence` either on or off; it is
+not another capture flag.
+
+A request snapshots its configured endpoint, transport, auth configuration and
+filter before policy or approval lookup, and uses that snapshot through dispatch.
+Admin and Review refuse approval when the current target differs from the row.
+An earlier approval cannot authorize a changed target. When the current policy
+still requires review, submit the operation again for a new pending row and
+fresh review. Approval still does not execute the tool, resume a framework or
+make an uncertain write safe to repeat.
+
+The digest covers the exact configured MCP URL, transport (omitted means `json`),
+optional `mcp.revision`, auth type, issuer/token endpoint, client ID, `secret_ref`
+locator, scopes and tool allow/deny sets. Set ordering and duplicates do not
+change the digest. Keep endpoint spelling and target configuration consistent
+across replicas. Credential values (`api_key`, `bearer_token`, `client_secret`
+and values resolved through a reference) are excluded. Rotating a value behind
+an unchanged reference keeps the binding; changing the reference, client ID or
+scopes changes it. Existing token-cache and provider-revocation rules still apply.
+
+Use nonsecret endpoint and locator fields. Put credentials in auth fields or
+`secret_ref`, never URL userinfo or query parameters. Nonempty MCP, OAuth issuer
+and token endpoint URLs must be HTTP(S), with no userinfo or recognized
+credential query fields. These checks are not an arbitrary-secret detector;
+operators remain responsible for other locator content. Failures use bounded
+errors without echoing URL text. Managed tool requests fail
+closed when the target descriptor is unavailable or invalid. A hash does not
+make secret-bearing configuration safe to publish.
+
+For a remote change that keeps the same URL, the operator can advance a contract
+label:
+
+```yaml
+mcp:
+  url: https://files-mcp.example/mcp
+  transport: streamable_http
+  revision: files-contract-2
+```
+
+`revision` is optional, nonsecret, at most 128 UTF-8 bytes and contains no control
+characters. Changing it invalidates earlier managed approvals. It is a manual
+label, not automatic schema discovery, a signed release identity or proof of the
+remote tool's implementation. Coordinate it with the upstream deployment;
+unchanged endpoint/label configuration cannot detect changed remote implementation.
+Optional `mcp.pin_tools` now detects the observed tool-contract changes described
+[below](#managed-policy-and-tool-contracts-unreleased); neither mechanism proves
+which remote code executed.
+
+Historical managed approvals without a target revision remain records but cannot
+be approved or consumed. Do not fill that column by guessing today's target.
+Standalone `/governance/decide` approvals retain their app-owned expiring contract
+and do not acquire a managed target binding. Connector session capabilities still
+identify the live run; they do not replace an exact tool approval.
+
+See the [upgrade procedure](ops-runbook.md#connector-target-revision-upgrade) before
+using this source with retained approvals, and the
+[engineering rationale](internal/target-bound-approvals.md) for dispatch and
+storage invariants.
+
 ### Managed tool attempt evidence (unreleased)
 
-Current source after v0.6.1 can record managed MCP `tools/call` with
+The v0.7.0 candidate (not published) can record managed MCP `tools/call` with
 `policy.action_evidence: true` and required SQL audit. Both JSON and streamable
 HTTP call the synchronous intent gate immediately before the protected request.
 Protocol initialization/discovery can happen earlier. Persisting intent and
@@ -160,14 +231,14 @@ the tool; a missing response after intent remains unknown and never causes repla
 Each request gets `X-Runkite-Connector-Action-Id`; approval IDs are separate.
 Admin records response metadata without raw arguments, bodies or credentials.
 HTTP/RPC errors and tool errors are distinct observations, not proof about a
-business effect. Original generation and run incarnation remain attached after
-reclaim or run pruning. Local tools and `/governance/decide` are outside this
+business effect. Original generation, run incarnation and configured target revision remain
+attached after reclaim or run pruning. Local tools and `/governance/decide` are outside this
 history. See [Connector actions](../site/support/connector-actions.html) for
 configuration, retention and unknown-outcome investigation.
 
 ### Circuit breakers
 
-Current unreleased source counts an OAuth-backed MCP request once. Its half-open
+The v0.7.0 candidate (not published) counts an OAuth-backed MCP request once. Its half-open
 probe covers token preparation and the protected request, so refresh cannot
 reject its own probe or close it before the MCP result. A local evidence refusal
 does not count as a target failure. Standalone OAuth session minting retains its
@@ -223,4 +294,31 @@ Custom routes go through the same client auth middleware as the Agent Protocol A
 
 OAuth acquisition errors expose HTTP status and recognized standard OAuth error codes, without provider descriptions, response bodies or raw endpoint URLs. Connector transport failures retain safe classifications such as cancellation, deadlines and connection errors. Custom `errors` mappings that relied on arbitrary body text must use the recognized safe codes instead. Tool responses remain upstream content; transport sanitization is not a general secret scanner.
 
-The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. This patch does not add dynamic Vault leases or provider-side revocation. See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).
+The plane rereads a configured Vault token file during resolution. OAuth client-credential access tokens retain their existing cache until the expiry buffer; external client-secret rotation does not revoke already-issued tokens. A Vault lookup failure still blocks resolution instead of silently using stale authority. The ordinary KV resolver does not add dynamic leases. The separately registered `vault_database` consumer path in current source now coordinates bounded issuance and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md). See [secrets support](../site/support/secrets.html#rotation-and-diagnostics) and the [engineering note](internal/action-authority-hardening.md).
+
+## Managed policy and tool contracts (unreleased)
+
+The v0.7.0 candidate (not published) extends target-bound approvals with the configured
+`policy-v1-` revision and optional `tool-v1-` schema revision. `policy.webhook.revision`
+represents operator-declared remote PDP changes, not verified remote execution.
+Both capture-on and capture-off dispatch require exact matching revisions.
+Historical approvals missing managed policy or target identity need new submission
+and review. Reusing the same arguments does not repair missing authority.
+
+Set `mcp.pin_tools: true` to discover the requested tool's actual MCP schema via
+`tools/list` and recheck it at dispatch. Discovery failure, a missing tool or a
+changed contract blocks the send rather than borrowing an old approval. Schema
+pinning does not prove remote implementation identity. Keep the separate optional
+`mcp.revision` label for operator-managed remote contract changes. New pinning or
+credential-binding options produce `target-v2-`; existing configurations retain
+the original `target-v1-` descriptor. Credential values remain outside both.
+
+`auth.type: vault_database` plus an operator-registered `credential_binding`
+provides a different path from KV `secret_ref`: a trusted external MCP executor
+receives a short-lived PostgreSQL username/password through private HTTP Basic.
+Initialization and schema listing acquire no database lease. Only an authorized
+managed tool dispatch may start issuance. Binding/provider revisions are immutable
+and included in target-v2. Keep retired providers registered for old cleanup.
+See [configuration](configuration.md#registered-vault-database-credentials-unreleased),
+the [separate executor example](../examples/vault_database_executor/README.md), and
+[lease lifecycle rationale](internal/credential-lifecycle.md).

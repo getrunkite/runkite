@@ -23,7 +23,7 @@ const pendingActionIDPrefix = "pending-v2-"
 
 func currentPendingBinding(a *models.PendingAction) bool {
 	return a != nil && a.ArgsDigest != "" && strings.HasPrefix(a.ID, pendingActionIDPrefix) &&
-		(a.ExpiresAt != nil || a.RunIncarnationID != "")
+		(a.ExpiresAt != nil || (a.RunIncarnationID != "" && models.ValidConnectorTargetRevision(a.TargetRevision) && models.ValidPolicyRevision(a.PolicyRevision) && models.ValidToolRevision(a.ToolRevision)))
 }
 
 // policyInputFromRequest builds a PolicyInput from run-binding (preferred)
@@ -56,6 +56,7 @@ func policyInputFromRequest(ctx context.Context, stage, connectorName, tool stri
 
 func (s *Server) policyInput(ctx context.Context, stage, connectorName, tool string) policy.PolicyInput {
 	in := policyInputFromRequest(ctx, stage, connectorName, tool)
+	in.PolicyRevision = s.policy.Revision()
 	// Pre-warm / createRun may not have AgentID on binding; callers that
 	// know the agent should set it on context via withPolicyAgent.
 	if v, ok := ctx.Value(policyAgentKey{}).(string); ok && in.AgentID == "" {
@@ -225,10 +226,13 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// tryConsumePendingCapability burns one approved pending_action for this
-// tools/call when the argument digest matches. Returns true when the call
-// should proceed without Decide.
-func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest string) bool {
+// tryConsumePendingCapability consumes one exact approved managed capability.
+// The caller must already have evaluated current policy and refused explicit
+// deny or required-audit failure. This helper does not bypass Decide.
+func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName, tool, argsDigest, targetRevision, policyRevision, toolRevision string) bool {
+	if !models.ValidConnectorTargetRevision(targetRevision) {
+		return false
+	}
 	store, ok := s.pendingActions()
 	if !ok {
 		return false
@@ -237,7 +241,7 @@ func (s *Server) tryConsumePendingCapability(ctx context.Context, connectorName,
 	if in.RunID == "" {
 		return false
 	}
-	id, err := store.ConsumeApprovedAction(ctx, in.TenantID, in.AgentID, in.RunID, in.Generation, connectorName, tool, argsDigest)
+	id, err := store.ConsumeApprovedAction(ctx, in.TenantID, in.AgentID, in.RunID, in.Generation, connectorName, tool, argsDigest, targetRevision, policyRevision, toolRevision)
 	if err != nil {
 		slog.Warn("policy: consume approved action failed", "error", err, "run_id", in.RunID)
 		return false
@@ -263,7 +267,10 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 	if err != nil {
 		return "", err
 	}
+	requirements := s.policy.ApprovalRequirements()
 	a := &models.PendingAction{
+		RequesterIdentity: in.Principal, RequiredApprovals: requirements.RequiredApprovals, ExcludeRequester: requirements.ExcludeRequester,
+
 		ID:         pendingActionIDPrefix + suffix,
 		RunID:      in.RunID,
 		Generation: in.Generation,
@@ -283,6 +290,15 @@ func (s *Server) persistPendingAction(ctx context.Context, in policy.PolicyInput
 		a.ReasonCode = policy.ReasonPolicyPending
 	}
 	if expiresAt == nil {
+		if !models.ValidConnectorTargetRevision(in.TargetRevision) {
+			return "", errString("managed pending action requires a verified connector target")
+		}
+		a.TargetRevision = in.TargetRevision
+		a.PolicyRevision = in.PolicyRevision
+		if a.PolicyRevision == "" {
+			a.PolicyRevision = s.policy.Revision()
+		}
+		a.ToolRevision = in.ToolRevision
 		if binding := auth.RunBindingFromContext(ctx); binding != nil {
 			run, err := s.store.GetRun(ctx, binding.RunID)
 			if err != nil {

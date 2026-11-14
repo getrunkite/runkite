@@ -300,6 +300,21 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 				return err
 			},
 		},
+		{Version: 18, Name: "pending_target_revision",
+			Up: func(ctx context.Context) error { return s.upPendingTargetRevision(ctx) },
+			Down: func(context.Context) error {
+				return fmt.Errorf("sqlite: target-bound approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+			},
+		},
+		{Version: 19, Name: "pending_review_authority", Up: func(ctx context.Context) error { return s.upPendingReviewAuthority(ctx) }, Down: func(context.Context) error {
+			return fmt.Errorf("sqlite: revision and quorum approvals cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 20, Name: "action_delivery_outbox", Up: func(ctx context.Context) error { return s.upActionDeliveries(ctx) }, Down: func(context.Context) error {
+			return fmt.Errorf("sqlite: action delivery outbox cannot be downgraded safely; restore a reviewed pre-upgrade backup instead")
+		}},
+		{Version: 21, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx) }, Down: func(context.Context) error {
+			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
+		}},
 	}
 }
 
@@ -310,7 +325,7 @@ func (s *SQLiteStore) baselineDown(ctx context.Context) error {
 		"connector_action_events", "connector_actions",
 		"terminal_hook_claims", "cron_claims", "cron_schedules", "run_cache",
 		"usage_holds", "usage_events", "finops_overlays",
-		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "pending_actions", "policy_grants", "audit_events",
+		"mandatory_hitl_rules", "break_glass_windows", "kill_switches", "action_deliveries", "pending_action_approvals", "pending_actions", "policy_grants", "audit_events",
 		"webhook_dead_letters", "store_items", "opaque_checkpoints", "thread_checkpoints", "runs",
 		"threads", "agent_schemas", "agent_versions", "agents",
 		"registry_entry_versions", "registry_entries",

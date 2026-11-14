@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/getrunkite/runkite/internal/auth"
+	"github.com/getrunkite/runkite/internal/execution"
 )
 
 // Runner auth is carried via gRPC metadata (not proto fields) so it applies
@@ -23,6 +24,7 @@ const (
 // against the configured RunnerTokens. In local mode (no tokens configured)
 // this always succeeds, a deliberate zero-friction default.
 type runnerIdentityKey struct{}
+type runnerAuthorityKey struct{}
 
 func authenticatedRunner(ctx context.Context) string {
 	kind, _ := ctx.Value(runnerIdentityKey{}).(string)
@@ -31,6 +33,9 @@ func authenticatedRunner(ctx context.Context) string {
 
 func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) (context.Context, error) {
 	if !rt.Enabled() {
+		if md, ok := metadata.FromIncomingContext(ctx); ok && execution.IsPoolKind(firstOrEmpty(md.Get(metaRunnerKind))) {
+			return nil, status.Error(codes.Unauthenticated, "execution pool requires configured credentials")
+		}
 		return ctx, nil
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -45,7 +50,8 @@ func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) (context.Con
 	if !rt.Validate(kind, token) {
 		return nil, status.Error(codes.Unauthenticated, "invalid runner token")
 	}
-	return context.WithValue(ctx, runnerIdentityKey{}, kind), nil
+	ctx = context.WithValue(ctx, runnerIdentityKey{}, kind)
+	return context.WithValue(ctx, runnerAuthorityKey{}, rt), nil
 }
 
 func firstOrEmpty(vals []string) string {

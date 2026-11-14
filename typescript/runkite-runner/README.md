@@ -35,12 +35,43 @@ runkite-runner \
 
 From a clone: `npm ci && npm run build` then `npx runkite-runner --config …`.
 
+Run `runkite-runner --help` (or `-h`) for options without loading an agent
+configuration or connecting to the plane. `--concurrency` and
+`RUNKITE_CONCURRENCY` accept positive decimal integers up to JavaScript's safe
+integer limit; the flag overrides the environment variable.
+
 | Variable | Purpose |
 |----------|---------|
 | `POSTGRES_DSN` | Direct-mode LangGraph.js checkpoints + store |
 | `RUNNER_TOKEN` | Authenticate to the control plane |
+| `RUNKITE_GRPC_URL` | gRPC address, overridden by `--grpc-address` |
+| `RUNKITE_HTTP_URL` | HTTP address for proxy calls and checkpoint persistence |
+| `RUNKITE_EXECUTION_POOL` | Registered execution pool, overridden by `--execution-pool` |
 | `RUNKITE_CONCURRENCY` | Concurrent jobs per process (default `1`) |
 | `OTEL_EXPORTER_OTLP_*` | Optional OpenTelemetry export |
+
+For a registered pool, keep the framework selection and set
+`--execution-pool NAME` (or `RUNKITE_EXECUTION_POOL=NAME`). The queue identity
+becomes `pool-NAME`; `RUNNER_TOKEN` must match that pool's credential on the plane.
+Set `RUNKITE_HTTP_URL` to the plane's HTTP endpoint and leave `POSTGRES_DSN`
+unset for proxy persistence. Pool workers reject control plane database and
+queue settings such as `REDIS_URL`; do not pass the plane's environment to the
+worker. A pool credential identifies a worker fleet, not an attested sandbox.
+
+For gRPC TLS with system trust, set `RUNKITE_GRPC_TLS=1`. Custom certificate
+trust uses `RUNKITE_TLS_CA_FILE`; mutual TLS additionally uses
+`RUNKITE_TLS_CLIENT_CERT_FILE` and `RUNKITE_TLS_CLIENT_KEY_FILE`. Use an HTTPS
+HTTP endpoint for encrypted proxy traffic.
+
+The TypeScript runner container is a runtime image. It installs production
+dependencies, including the pinned optional AI SDK through the managed example,
+and retains local `tsx` for loading `.ts` agents. It omits development compilers,
+global `npm` and `npx`. To add agent dependencies, install them with
+`npm ci --omit=dev` in a separate Node builder stage, then copy that agent's
+source, configuration and `node_modules` into a derived runner image. Match
+the runtime Node major version and target platform, especially for native
+dependencies. The repository package manifests and locks retain development
+tools for contributors.
 
 ## Features
 

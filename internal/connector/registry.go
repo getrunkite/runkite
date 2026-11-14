@@ -114,6 +114,15 @@ func (r *Registry) GetSession(ctx context.Context, name string, userCtx map[stri
 		return nil, err
 	}
 
+	if c.Config.Auth.Type == "vault_database" {
+		if c.Config.MCP == nil || c.Config.Auth.CredentialBinding == "" || c.Config.Auth.CredentialBindingRevision == "" {
+			return nil, ErrDatabaseCredentialsUnavailable
+		}
+		if _, err := mcpAuthorization(ctx, c, c.Config, nil, "tools/list"); err != nil {
+			return nil, err
+		}
+		return &SessionResponse{ExpiresAt: time.Now().Add(ConnectorSessionTTL).UTC().Format(time.RFC3339), MCP: &MCPSession{URL: "/internal/connectors/" + name + "/mcp", Tools: r.allowedTools(c)}}, nil
+	}
 	token, err := c.getToken(ctx, userCtx)
 	if err != nil {
 		return nil, fmt.Errorf("connector %s: %w", name, err)
@@ -194,6 +203,10 @@ func (c *Connector) getTokenWithBreaker(ctx context.Context, userCtx map[string]
 	// Copy auth so SecretRef materialization does not mutate the shared
 	// registry config (concurrent GetSession + expandAuthConfig race).
 	auth := c.Config.Auth
+	return c.getTokenForAuth(ctx, userCtx, manageBreaker, auth)
+}
+
+func (c *Connector) getTokenForAuth(ctx context.Context, userCtx map[string]interface{}, manageBreaker bool, auth AuthConfig) (*CachedToken, error) {
 	if err := materializeAuthSecret(ctx, &auth); err != nil {
 		return nil, err
 	}

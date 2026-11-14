@@ -75,6 +75,7 @@ func TestRequiredAuditBlocksMCPBeforeEffectsAndApprovalConsumption(t *testing.T)
 			pendingID := ""
 			if mode == "approved" {
 				in := s.policyInput(ctx, policy.StageToolCall, "fixture", "write")
+				in.TargetRevision = currentFixtureTargetRevision(t, s, "fixture")
 				in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict([]byte(`{"amount":1}`))
 				if err != nil {
 					t.Fatal(err)

@@ -46,6 +46,12 @@
         "name": "runkite_admin_session",
         "description": "Existing httpOnly Admin session. These read-only endpoints do not require a CSRF header."
       },
+      "AdminCSRF": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "Synchronizer token required for Admin-cookie mutations."
+      },
       "ReviewBearerAuth": {
         "type": "http",
         "scheme": "bearer",
@@ -194,7 +200,14 @@
             "format": "date-time"
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "run_manifest": {
+                "$ref": "#/components/schemas/RunManifest"
+              }
+            },
+            "additionalProperties": true,
+            "description": "Run metadata, including the server's frozen dispatch manifest when available. Other metadata keys remain application-defined."
           },
           "error": {
             "type": "string"
@@ -204,6 +217,88 @@
           }
         },
         "title": "AdminRunView"
+      },
+      "RunManifestPrincipal": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Frozen run principal. A nonempty identity alone is not proof that a primary authentication provider verified it.",
+        "properties": {
+          "identity": {
+            "type": "string"
+          },
+          "verified_identity": {
+            "type": "boolean",
+            "description": "True only when the server captured an explicit authenticated primary identity. Omitted or false is not sufficient for requester-exclusion authority."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RunManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Server-created dispatch authorization snapshot. This is not runtime attestation or a client-supplied authority override.",
+        "required": [
+          "schema_version",
+          "captured_at",
+          "tenant_id",
+          "agent_id",
+          "runner_kind",
+          "policy_fail_closed"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "requested_alias": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "integer"
+          },
+          "runner_kind": {
+            "type": "string"
+          },
+          "connector_needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policy_fail_closed": {
+            "type": "boolean"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/RunManifestPrincipal"
+          },
+          "parent_run_id": {
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+          },
+          "depth": {
+            "type": "integer"
+          }
+        }
       },
       "ConnectorAction": {
         "type": "object",
@@ -345,15 +440,21 @@
           },
           "policy_revision": {
             "type": "string",
-            "description": "Optional authoritative revision reference. Omitted when unavailable; absence does not establish revision pinning."
+            "pattern": "^policy-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
           },
           "target_revision": {
             "type": "string",
-            "description": "Optional target revision reference. Omitted when unavailable."
+            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
           },
           "tool_revision": {
             "type": "string",
-            "description": "Optional tool revision reference. Omitted when unavailable."
+            "pattern": "^(?:|tool-v1-[0-9a-f]{64})$",
+            "maxLength": 72,
+            "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."
           },
           "credential_ref": {
             "type": "string",
@@ -387,6 +488,11 @@
           "response_bytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "export_sink_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Immutable effective destination identity. Current HTTP exporter derives SHA-256(name, exact URL, envelope schema); endpoint and HMAC key are excluded from this response."
           }
         },
         "description": "Retained metadata for one managed MCP tools/call request. Excludes arguments, request/response bodies, provider diagnostics and secret material. Independent of ordinary run retention. Standalone governance decisions and local tools are outside this history."
@@ -875,6 +981,12 @@
             "type": "string",
             "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."
           },
+          "target_revision": {
+            "type": "string",
+            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
+          },
           "generation": {
             "type": "integer",
             "format": "int64"
@@ -929,9 +1041,62 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "policy_revision": {
+            "type": "string",
+            "pattern": "^policy-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
+          },
+          "tool_revision": {
+            "type": "string",
+            "pattern": "^(?:|tool-v1-[0-9a-f]{64})$",
+            "maxLength": 72,
+            "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."
+          },
+          "requester_identity": {
+            "type": "string",
+            "description": "Immutable durable managed-run principal or authenticated standalone requester."
+          },
+          "required_approvals": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 1
+          },
+          "exclude_requester": {
+            "type": "boolean"
+          },
+          "approval_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "approvals": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/PendingActionApproval"
+            },
+            "description": "Retained exact reviewer history on detail. Lists provide a derived approval_count."
           }
         },
-        "title": "PendingAction"
+        "title": "PendingAction",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "run_id",
+          "required_approvals",
+          "approval_count",
+          "generation",
+          "tenant_id",
+          "agent_id",
+          "connector",
+          "tool",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "Immutable held operation and quorum plan. Approve records one vote and may return pending until quorum. Historical managed missing revisions require fresh submission; standalone plan changes require fresh review. No tool executes during review."
       },
       "KillSwitch": {
         "type": "object",
@@ -1277,6 +1442,251 @@
         ],
         "title": "AdminFinOpsView"
       },
+      "PendingActionApproval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pending_action_id",
+          "reviewer_identity",
+          "reviewed_at"
+        ],
+        "properties": {
+          "pending_action_id": {
+            "type": "string"
+          },
+          "reviewer_identity": {
+            "type": "string",
+            "description": "Exact authenticated identity, without case normalization. Empty only in legacy default-one local mode."
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CredentialLeaseOwner": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tenant_id",
+          "run_id",
+          "run_incarnation_id",
+          "action_id",
+          "consumer_id",
+          "generation"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
+          },
+          "run_incarnation_id": {
+            "type": "string"
+          },
+          "action_id": {
+            "type": "string"
+          },
+          "consumer_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      },
+      "CredentialLease": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lease_ref": {
+            "type": "string",
+            "pattern": "^cred-[0-9a-f]{56}$",
+            "minLength": 61,
+            "maxLength": 61
+          },
+          "binding_id": {
+            "type": "string"
+          },
+          "binding_revision": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/CredentialLeaseOwner"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "issuance_intent",
+              "active",
+              "issuance_unknown",
+              "not_issued",
+              "renewal_intent",
+              "renewal_unknown",
+              "revocation_intent",
+              "revocation_unknown",
+              "revoked"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "granted_ttl_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "cleanup_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "operation_deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "use_started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "lease_ref",
+          "binding_id",
+          "binding_revision",
+          "owner",
+          "state",
+          "version",
+          "granted_ttl_seconds",
+          "renewable",
+          "cleanup_requested",
+          "created_at",
+          "updated_at",
+          "operation_deadline",
+          "expires_at"
+        ],
+        "description": "Metadata only. No database credential, workload token or protected/raw provider lease handle. Unknown states do not establish absence or revocation. Actual grant TTL bounds a consumer callback; no automatic renewal."
+      },
+      "ActionDeliveryPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "delivery_id",
+          "sink_id",
+          "action",
+          "event"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "const": "runkite.action-event.v1"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "sink_id": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ConnectorAction"
+          },
+          "event": {
+            "$ref": "#/components/schemas/ConnectorActionEvent"
+          }
+        },
+        "description": "Typed metadata envelope, bounded to 64 KiB in storage. At-least-once receivers deduplicate delivery_id and order by action/event sequence. Never a tool execution request."
+      },
+      "ActionDelivery": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sink_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "action_id": {
+            "type": "string"
+          },
+          "last_reason_code": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ActionDeliveryPayload"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "dead_letter"
+            ]
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claim_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "sink_id",
+          "tenant_id",
+          "action_id",
+          "sequence",
+          "payload",
+          "attempts",
+          "status",
+          "available_at",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "Retained action-event delivery metadata. Claim-token authority is private. Retrying a dead letter resends the same evidence ID and never executes or retries a tool."
+      },
       "ReviewSessionStatus": {
         "type": "object",
         "additionalProperties": false,
@@ -1341,6 +1751,12 @@
             "type": "string",
             "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."
           },
+          "target_revision": {
+            "type": "string",
+            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
+          },
           "generation": {
             "type": "integer",
             "format": "int64"
@@ -1392,14 +1808,52 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "policy_revision": {
+            "type": "string",
+            "pattern": "^policy-v1-[0-9a-f]{64}$",
+            "minLength": 74,
+            "maxLength": 74
+          },
+          "tool_revision": {
+            "type": "string",
+            "pattern": "^(?:|tool-v1-[0-9a-f]{64})$",
+            "maxLength": 72,
+            "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."
+          },
+          "requester_identity": {
+            "type": "string",
+            "description": "Immutable durable managed-run principal or authenticated standalone requester."
+          },
+          "required_approvals": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 1
+          },
+          "exclude_requester": {
+            "type": "boolean"
+          },
+          "approval_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "approvals": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/PendingActionApproval"
+            },
+            "description": "Retained exact reviewer history on detail. Lists provide a derived approval_count."
           }
         },
         "title": "PendingAction",
         "additionalProperties": false,
-        "description": "Scoped approval metadata. Free-form reason is excluded. Only an approver receives the existing capped/redacted args display. Read-only evidence permission receives no args.",
         "required": [
           "id",
           "run_id",
+          "required_approvals",
+          "approval_count",
           "generation",
           "tenant_id",
           "agent_id",
@@ -1408,7 +1862,8 @@
           "status",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "description": "Scoped approval metadata. Free-form reason is excluded. Only an approver receives the existing capped/redacted args display. Read-only evidence permission receives no args."
       },
       "ReviewConnectorActionDetail": {
         "type": "object",
@@ -3475,7 +3930,7 @@
           "Admin"
         ],
         "summary": "Approve Pending Action",
-        "description": "Re-evaluates policy with the stored args_digest and display map; hard deny refuses. Otherwise status becomes approved (one-shot capability for the next matching call, subject to current explicit deny). Legacy binding rows return 409 and require fresh submission/review.",
+        "description": "Record one exact authenticated reviewer vote after rechecking current policy and immutable operation/plan/revision bindings. HTTP 200 can return pending until quorum. Requester exclusion and distinct identities are enforced. Missing or obsolete managed authority and changed standalone review plans require fresh submission. This does not execute a tool.",
         "operationId": "admin_approve_pending_action",
         "parameters": [
           {
@@ -3489,7 +3944,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Approved",
+            "description": "Review recorded; inspect status and approval_count/required_approvals",
             "content": {
               "application/json": {
                 "schema": {
@@ -3499,7 +3954,7 @@
             }
           },
           "409": {
-            "description": "Not pending, or policy still denies",
+            "description": "Not pending, expired, policy denies, or managed argument/run/target binding is invalid or changed. Resubmit for fresh review; do not automatically replay tools.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5072,6 +5527,508 @@
         }
       }
     },
+    "/admin-api/action-deliveries": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin_list_action_deliveries",
+        "summary": "List selected tenant's action evidence deliveries",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "AdminSessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "delivered",
+                "dead_letter"
+              ]
+            }
+          },
+          {
+            "name": "sink_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded operation or metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActionDelivery"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."
+          },
+          "401": {
+            "description": "Admin authentication required."
+          },
+          "403": {
+            "description": "Admin authority or cookie CSRF required."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Required SQL capability or credential lifecycle configuration unavailable."
+          },
+          "503": {
+            "description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."
+          }
+        },
+        "description": "Bounded offset paging, without a cursor or stable-page guarantee during updates. Retained metadata and typed evidence payload; no claim tokens."
+      }
+    },
+    "/admin-api/action-deliveries/{id}/retry": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin_retry_action_delivery",
+        "summary": "Queue a dead-letter evidence delivery without retrying its tool",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "AdminSessionAuth": [],
+            "AdminCSRF": []
+          }
+        ],
+        "parameters": [
+          {
+            "description": "Stable evidence delivery ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded operation or metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "message"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "pending"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."
+          },
+          "401": {
+            "description": "Admin authentication required."
+          },
+          "403": {
+            "description": "Admin authority or cookie CSRF required."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Required SQL capability or credential lifecycle configuration unavailable."
+          },
+          "503": {
+            "description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."
+          }
+        },
+        "description": "Accepts an empty body or {} only. Tenant and authority cannot be supplied in the body. Inspect current metadata after an unconfirmed response; do not automatically replay effects. Only dead_letter can be queued; ID, payload and cumulative attempts are retained."
+      }
+    },
+    "/admin-api/credential-leases": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin_list_credential_leases",
+        "summary": "List at most 100 selected-tenant credential metadata records",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "AdminSessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded operation or metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "$ref": "#/components/schemas/CredentialLease"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."
+          },
+          "401": {
+            "description": "Admin authentication required."
+          },
+          "403": {
+            "description": "Admin authority or cookie CSRF required."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Required SQL capability or credential lifecycle configuration unavailable."
+          },
+          "503": {
+            "description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."
+          }
+        }
+      }
+    },
+    "/admin-api/credential-leases/{id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin_get_credential_lease",
+        "summary": "Read one selected-tenant lease lifecycle",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "AdminSessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "description": "Opaque lease_ref, never a provider cleanup handle.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded operation or metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLease"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."
+          },
+          "401": {
+            "description": "Admin authentication required."
+          },
+          "403": {
+            "description": "Admin authority or cookie CSRF required."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Required SQL capability or credential lifecycle configuration unavailable."
+          },
+          "503": {
+            "description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."
+          }
+        }
+      }
+    },
+    "/admin-api/credential-leases/{id}/{operation}": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin_mutate_credential_lease",
+        "summary": "Renew current-owner authority or request exact-lease revocation",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "AdminSessionAuth": [],
+            "AdminCSRF": []
+          }
+        ],
+        "parameters": [
+          {
+            "description": "Opaque lease_ref, never a provider cleanup handle.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "renew",
+                "revoke"
+              ]
+            }
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Explicit tenant. Admin authority remains deployment-wide; this route requires a selected tenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded operation or metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLease"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing explicit tenant, invalid filters/pagination or nonempty operation body."
+          },
+          "401": {
+            "description": "Admin authentication required."
+          },
+          "403": {
+            "description": "Admin authority or cookie CSRF required."
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Required SQL capability or credential lifecycle configuration unavailable."
+          },
+          "503": {
+            "description": "Credential metadata or lifecycle provider operation unavailable/unconfirmed."
+          }
+        },
+        "description": "Accepts an empty body or {} only. Tenant and authority cannot be supplied in the body. Inspect current metadata after an unconfirmed response; do not automatically replay effects. Uses only the stored original owner and registered provider. Renewal cannot extend an already released callback. Revocation does not undo completed business effects."
+      }
+    },
     "/review-api/pending-actions": {
       "get": {
         "tags": [
@@ -5384,7 +6341,7 @@
         ],
         "operationId": "review_approve_pending_action",
         "summary": "Approve an own-tenant pending action",
-        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval records one vote and can remain pending until quorum. Policy/tool revision drift and changed standalone review plans require fresh review. Approval does not execute the tool.",
         "security": [
           {
             "ReviewBearerAuth": []
@@ -5451,7 +6408,7 @@
         ],
         "operationId": "review_deny_pending_action",
         "summary": "Deny an own-tenant pending action",
-        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Approval does not execute the tool.",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable. Requires governance:approve. Accepts an empty body or {} only; authority and tenant cannot be supplied. Existing hard-deny, argument/incarnation, expiry and one-shot checks remain in force. Managed approval also checks the configured MCP target; invalid, legacy or changed bindings return 409 and require fresh submission/review. Standalone expiring decisions keep their own namespace. Approval records one vote and can remain pending until quorum. Policy/tool revision drift and changed standalone review plans require fresh review. Approval does not execute the tool.",
         "security": [
           {
             "ReviewBearerAuth": []
@@ -5573,6 +6530,130 @@
               "format": "uuid"
             },
             "name": "action_id",
+            "in": "path"
+          }
+        ]
+      }
+    },
+    "/review-api/credential-leases": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_list_credential_leases",
+        "summary": "Read at most 100 own-tenant lease metadata records",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "$ref": "#/components/schemas/CredentialLease"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        }
+      }
+    },
+    "/review-api/credential-leases/{id}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "review_get_credential_lease",
+        "summary": "Read own-tenant credential lifecycle metadata",
+        "description": "Tenant is fixed by verified primary identity. Request headers, filters and IDs cannot widen it. Responses are not cacheable.",
+        "security": [
+          {
+            "ReviewBearerAuth": []
+          },
+          {
+            "ReviewApiKeyAuth": []
+          },
+          {
+            "ReviewSessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLease"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter, cursor, limit or decision body."
+          },
+          "401": {
+            "description": "Invalid/missing credentials or expired review session."
+          },
+          "403": {
+            "description": "Missing review permission, explicit identity/tenant, CSRF or attempted tenant override."
+          },
+          "404": {
+            "description": "Resource missing or not in the authenticated tenant."
+          },
+          "409": {
+            "description": "Approval binding/status/expiry or current policy prevents the operation."
+          },
+          "501": {
+            "description": "Review evidence and approvals require SQL capability."
+          },
+          "503": {
+            "description": "Required authentication/session storage or durable audit unavailable."
+          }
+        },
+        "parameters": [
+          {
+            "description": "Opaque lease_ref, never a provider handle.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            },
+            "name": "id",
             "in": "path"
           }
         ]

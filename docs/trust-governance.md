@@ -115,9 +115,42 @@ Optional per-graph allowlist in `langgraph.json`:
 
 `runkite sim` drives the same connector policy path with `X-Runkite-Simulation`. FinOps holds and UTC-day run caps skip; concurrent admission, rate limits, kill, and HITL still apply. Not a sandbox. See [Fixture replay](sim.md).
 
+## Execution containment is an external boundary
+
+An operator running shell, browser or generated-code tools on untrusted input
+needs controls below an SDK callback. A tool can open a file or make a direct
+network request without calling a Runkite connector. Existing runner allowlists
+and connector approvals do not confine that process. The Helm chart already
+defaults to a non-root identity, disabled privilege escalation and dropped
+capabilities in `deploy/helm/runkite/values.yaml`. Its original optional ingress
+NetworkPolicy and the newer egress profile are both disabled by default. Its root
+filesystem is writable by default.
+Those controls are useful but do not establish an arbitrary-code sandbox.
+
+The v0.7.0 candidate (not published) adds separately credentialed execution pools, an opt-in
+Helm egress profile and an experimental external OpenShell 0.1.8 JSONL workload
+bridge. The trusted Runkite worker remains outside the workload, owning runner
+authentication, MCP authority, checkpoint CAS and launch receipts. Ordinary SDK
+adapters continue executing in their trusted worker process; selecting a pool
+alone does not hide that process's credential from its agent code.
+
+OpenShell supplies the external filesystem/process/network boundary. Runkite
+supplies managed admission and business-tool policy. Either denial remains a
+denial. The bridge requires an explicit compatible workload and immutable
+image/policy, and refuses automatic relaunch after an uncertain durable launch
+intent. A recorded configuration hash does not attest kernel or CNI enforcement.
+The initial chart NetworkPolicy is ingress-only; the new optional egress profile
+needs explicit allowed destinations and an enforcing CNI. See the implementation,
+fixture controls and qualification limits in
+[the constrained execution record](internal/constrained-execution.md).
+The experimental JSONL profile has no model/token-usage or spend-settlement
+contract. Zero recorded spend does not establish free execution, and existing
+native SDK usage reporting is not inherited. Use external provider accounting
+and limits for unreported workload calls.
+
 ## Required audit before access
 
-Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
 implement this mode.
 
 The optional `policy.audit_required: true` setting requires a durable policy decision before managed admission, connector access or an in-process decision can allow or become pending. It requires auditing enabled and a SQL state backend. Startup rejects an incompatible configuration. The default remains best-effort auditing.
@@ -128,7 +161,7 @@ Argument metadata recursively removes common password, token, secret and API-key
 
 ## Managed MCP action evidence (unreleased)
 
-Current source after v0.6.1 adds optional `policy.action_evidence` on SQL, requiring
+The v0.7.0 candidate (not published) adds optional `policy.action_evidence` on SQL, requiring
 `policy.audit_required`. Each valid managed tool request gets its own identity.
 The original policy effect is retained separately from the final approved or
 break-glass authority. SQL managed approvals bind to the immutable original run
@@ -144,12 +177,19 @@ success. A late response remains on the original generation. SQL persistence
 retries never replay a tool. Actions survive run pruning and have independent,
 opt-in resolved-record retention. Required audit by itself continues to record
 decisions only. See the [manual](../site/support/connector-actions.html) and
-[design rationale](internal/connector-action-evidence.md). No secret vault,
-revision-pinned approvals or reliable action-event export is added.
+[design rationale](internal/connector-action-evidence.md). Managed approvals now
+bind the [configured target revision](internal/target-bound-approvals.md) and
+[configured policy revision](internal/approval-authority-and-quorum.md).
+`mcp.pin_tools` optionally binds the observed advertised tool schema. These
+digests do not pin upstream implementation or attest a remote PDP's behavior.
+Optional [registered Vault database leases](internal/credential-lifecycle.md) and
+[durable action-event export](internal/action-delivery-outbox.md) reuse the same
+gate and SQL event transactions. Capture alone enables neither option; no second
+vault is introduced.
 
 ## Scoped human review (unreleased)
 
-Current source after v0.6.1 adds `/review-api` and `/admin/review/` with primary
+The v0.7.0 candidate (not published) adds `/review-api` and `/admin/review/` with primary
 `governance:read` / `governance:approve` permissions. Scope comes from a verified
 identity and explicit tenant. Global Admin remains global. Reviewers cannot edit
 policy/grants, mint break-glass or read conversations. Read-only pending replies
@@ -159,9 +199,13 @@ it does not execute the tool.
 
 Separate Review sessions have purpose checks, their own cookie/storage namespace,
 CSRF and at most 15 minutes absolute lifetime. There is no anonymous Review mode
-or automatic permission from client read/write. No new user directory, two-person
-review rule, revision pinning or instant IdP revocation is claimed. See
-[Tenant review](../site/support/tenant-review.html).
+or automatic permission from client read/write. Configured target revisions apply
+to managed approvals on both Review and Admin. Current source additionally offers
+[requester exclusion and distinct-reviewer quorum](internal/approval-authority-and-quorum.md),
+configured policy binding and optional advertised-tool-schema binding. The
+default remains one approval without requester exclusion. No new user directory,
+proof of independent humans, upstream implementation attestation or instant IdP
+revocation is claimed. See [Tenant review](../site/support/tenant-review.html).
 
 ## Governance durability (SQL backends)
 
@@ -191,7 +235,7 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 | Stage | Gate |
 |-------|------|
 | `POST .../session` | Grant must match `(tenant_id, agent_id, connector)`; MCP responses include a short-lived `session_token` |
-| `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(run_id, generation, connector)` (15m absolute TTL) |
+| `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(tenant_id, agent_id, run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny + argument digest / config predicates |
 
 Static grants evaluate in-process. Optional **argument predicates** (`policy.predicates` in `langgraph.json`) run after a matching grant and before the sync webhook: they inspect `tools/call` `params.arguments` and may `deny` or `pending`; they never `allow`. Missing `when.path` does not match (the call proceeds to webhook / allow). Numeric comparisons (`eq` / `neq` / `gt` / `gte` / `lt` / `lte`) preserve exact JSON decimal values, including configured thresholds, without binary-float conversion. This is connector MCP, pre-call only: it does not wrap in-graph tools, does not inspect tool responses, and is **not** `AuthorizeTool`. Config-only this release (restart the control plane; no Admin CRUD). Copy-paste and the operator path: [Grants & HITL](../site/support/grants.html#argument-predicates). An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny; first deny wins, and a static allow does **not** bypass the webhook. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
@@ -223,7 +267,27 @@ That registers a `policy_decision` webhook sink (HMAC + retries + dead letters) 
 
 **Admin grant CRUD:** `langgraph.json` `policy.grants` are immutable deployment defaults. Durable overlays live in SQL `policy_grants` and are mutated via `/admin-api/policy-grants` without redeploy — DB rows win on the same `(tenant_id, agent_id, connector)`. A second create for the same key with a different `id` returns `409`. An empty `"policy": {}` section still enables the engine (fail-closed) so deployments can be 100% Admin-managed. The writing replica hot-reloads immediately; every other control-plane replica converges via a 15s SQL fingerprint poll (same cadence as cron). Mongo returns `501`.
 
-**Connector HITL (`pending`):** a webhook or argument predicate can hold a connector call. Admin approves or denies the pending row; it does not run the tool or resume the framework. The caller retries the original active run/generation with the same tenant, agent, connector, tool and exact argument digest. A matching approval is consumed once. A changed payload does not consume it. Current explicit policy deny wins before consumption; another pending result can be bypassed by the approval. Pending decisions are not cached. Approval re-evaluates using the stored capped/redacted display map, so predicates must not rely on omitted secret fields. SQL stores provide durable one-shot consumption; Mongo cannot persist pending and fails closed.
+**Connector HITL (`pending`):** a webhook or argument predicate can hold a
+connector call. Admin approves or denies the row; it does not run the tool or
+resume the framework. The caller retries the original active run/generation
+with the same tenant, agent, connector, tool and exact argument digest. A
+matching approval is consumed once; a changed payload cannot consume it.
+Current explicit policy deny wins before consumption, while a matching approval
+can bypass another pending result. Pending decisions are not cached. Approval
+re-evaluates the stored capped/redacted display map, so predicates must not rely
+on omitted secret fields. SQL stores provide durable one-shot consumption;
+Mongo cannot persist pending and fails closed.
+
+The v0.7.0 candidate (not published) also requires the immutable run incarnation
+and configured connector target revision. The managed request keeps one target
+snapshot through dispatch, and both capture modes enforce the same approval
+match. Admin and Review refuse approval of a historical or changed target;
+resubmit for fresh review when policy requires it. Credential values can rotate
+without changing an otherwise unchanged descriptor. This is configuration
+identity, not upstream code or schema attestation. Standalone expiring decision
+approvals retain their existing contract. See
+[target-bound approvals](connectors.md#target-bound-managed-approvals-unreleased)
+and the [maintenance-window upgrade](ops-runbook.md#connector-target-revision-upgrade).
 
 **v0.6.0 approval upgrade:** policy arguments reject ambiguous JSON and preserve numeric value and submitted type. MCP requires object arguments; governance retains its documented null/omitted shorthand. New digests use a v2 namespace. Old hashes and legacy empty digests are not reused. Old pending/approved rows remain audit records, but Admin refuses new approval of them and app action polling returns `rejected` with `approval_binding_legacy`. Resubmit for fresh review; do not automatically replay uncertain external writes. Drain older replicas and follow [the rollout guide](ops-runbook.md#hardening-upgrade).
 
@@ -263,3 +327,38 @@ Example:
 ```
 
 Absent / empty `policy` preserves V1 open access after runner auth + run-binding.
+
+## Revision-bound review and lifecycle controls (unreleased)
+
+The v0.7.0 candidate (not published) adds `policy.approvals` for operations already held by policy.
+`required_approvals` ranges from one to five; `exclude_requester` prevents exact
+requester self-review. Reviewer identities are authenticated and compared exactly,
+with no case folding or user directory. Votes are transactional history; partial
+quorum remains pending and cannot dispatch. The immutable requester comes from
+the durable managed run principal or authenticated standalone caller. Managed
+requester exclusion requires the manifest's server-captured
+`principal.verified_identity: true`; legacy principals and fallback display names
+do not establish verified requester authority. A changed
+standalone separation/quorum plan requires fresh review and is rejected when
+polling an obsolete result. Standalone still creates no run and gains no managed
+kill, spend or break-glass controls.
+
+Managed review additionally binds current configured policy and optional observed
+MCP tool schema, alongside arguments, target, generation and incarnation. A manual
+PDP revision label does not attest remote policy execution; schema identity does
+not pin a remote implementation. Retained historical managed rows with missing
+revisions cannot authorize new effects.
+
+Action export inserts a durable metadata delivery in the same SQL transaction as
+each opted-in action event. Export retries send the same evidence ID over HTTP;
+they do not retry a tool. Registered Vault database bindings issue credentials
+only to a trusted configured consumer. Vault retains authentication, encryption
+and role/revocation authority. Runkite retains bounded lifecycle metadata and an
+encrypted cleanup handle, never a database username/password record. Issuance and
+revocation can remain unknown, requiring provider investigation.
+
+See [review design](internal/approval-authority-and-quorum.md),
+[export design](internal/action-delivery-outbox.md),
+[credential design](internal/credential-lifecycle.md), and
+[operations](ops-runbook.md#security-completion-upgrade). These are unreleased
+controls, not a guarantee of exactly-once external effects or arbitrary-code safety.

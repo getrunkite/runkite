@@ -382,3 +382,24 @@ as the TypeScript guard, with no managed run, run controls or spend caps.
 
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)
 - Control-plane + runner setup: [`README.md`](../README.md), [`docs/quickstart.md`](quickstart.md)
+
+## New security controls do not change SDK ownership (unreleased)
+
+The v0.7.0 candidate (not published) adds managed policy/schema-bound approvals, optional
+reviewer quorum and registered credential consumers. The normal Agent Protocol
+client still creates a thread/run and consumes its stream; the SDK model loop
+stays in its runner. Only tool requests using the managed connector gate receive
+these connector guarantees. A partial review remains pending until quorum.
+
+App-owned `POST /governance/decide` still creates no managed lifecycle. Its
+separation/quorum plan can require fresh review when changed, but this does not
+add managed kill, spend, cancellation or execution evidence. An allow is not
+proof of execution.
+
+The experimental isolated profile is an explicit external JSONL workload
+contract, not a drop-in switch under an unchanged framework adapter. Existing
+SDKs may implement that workload protocol deliberately, keeping management
+credentials outside the child. This profile does not define model/token-usage
+reporting or spend settlement; zero recorded spend does not establish free
+execution. Native SDK usage reporting is separate. See [the isolated example](../examples/isolated_agent/README.md)
+and [boundaries](internal/constrained-execution.md).

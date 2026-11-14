@@ -14,13 +14,15 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/execution"
 	"github.com/getrunkite/runkite/internal/jsonvalue"
 )
 
 // LangGraphConfig represents a parsed langgraph.json file.
 type LangGraphConfig struct {
-	Graphs       map[string]string `json:"graphs"`       // graph_id -> "path:symbol"
-	Dependencies []string          `json:"dependencies"` // relative paths
+	CredentialLeases *CredentialLeasesEntry `json:"credential_leases,omitempty"`
+	Graphs           map[string]string      `json:"graphs"`       // graph_id -> "path:symbol"
+	Dependencies     []string               `json:"dependencies"` // relative paths
 	// RunnerKind identifies which runner implementation should execute
 	// every graph declared in THIS file -- the Runner Protocol is
 	// language-agnostic, and a real deployment can mix runners, some
@@ -29,9 +31,11 @@ type LangGraphConfig struct {
 	// not per-graph like ConnectorNeeds/LLMCache below. Defaults to
 	// "python-langgraph" when omitted -- every langgraph.json written
 	// before this field existed keeps working unchanged.
-	RunnerKind string                    `json:"runner_kind,omitempty"`
-	Auth       *AuthEntry                `json:"auth,omitempty"`
-	Connectors map[string]ConnectorEntry `json:"connectors,omitempty"`
+	RunnerKind     string                    `json:"runner_kind,omitempty"`
+	ExecutionPool  string                    `json:"execution_pool,omitempty"`
+	ExecutionPools map[string]execution.Pool `json:"execution_pools,omitempty"`
+	Auth           *AuthEntry                `json:"auth,omitempty"`
+	Connectors     map[string]ConnectorEntry `json:"connectors,omitempty"`
 	// ConnectorNeeds declares, per graph_id, which registered connectors that
 	// agent needs pre-warmed sessions for (RunAssignment.connector_needs).
 	// Additive/optional -- absent means no pre-warm hints for that agent.
@@ -163,7 +167,9 @@ type PolicyEntry struct {
 	AuditRequired bool `json:"audit_required,omitempty"`
 	// ActionEvidence records managed MCP tool-call attempts before dispatch.
 	// Requires required audit and a SQL protected-action store.
-	ActionEvidence bool `json:"action_evidence,omitempty"`
+	ActionEvidence bool                 `json:"action_evidence,omitempty"`
+	Approvals      *PolicyApprovalEntry `json:"approvals,omitempty"`
+	ActionExport   *ActionExportEntry   `json:"action_export,omitempty"`
 	// RunEvents emits method "tool_auth" RunEvents on connector policy
 	// denials (session + tools/call). Default true when policy is configured.
 	RunEvents *bool `json:"run_events,omitempty"`
@@ -256,8 +262,15 @@ type PolicyToolFilter struct {
 // PolicyWebhookEntry is the sync policy webhook endpoint.
 type PolicyWebhookEntry struct {
 	URL       string `json:"url"`
+	Revision  string `json:"revision,omitempty"`
 	Secret    string `json:"secret,omitempty"`
 	TimeoutMS int    `json:"timeout_ms,omitempty"`
+}
+
+// PolicyApprovalEntry applies only to operations already held for review.
+type PolicyApprovalEntry struct {
+	RequiredApprovals int  `json:"required_approvals,omitempty"`
+	ExcludeRequester  bool `json:"exclude_requester,omitempty"`
 }
 
 // PolicySIEMEntry is an async HTTP sink for policy_decision events.
@@ -850,4 +863,32 @@ func FindLangGraphJSON(explicit string) []string {
 	found = append(found, matches...)
 
 	return found
+}
+
+// CredentialLeasesEntry registers external issuers, never credential values.
+type CredentialLeasesEntry struct {
+	KeyringFile string                   `json:"keyring_file"`
+	Bindings    []CredentialBindingEntry `json:"bindings"`
+}
+type CredentialBindingEntry struct {
+	ID                    string `json:"id"`
+	Address               string `json:"address"`
+	Namespace             string `json:"namespace,omitempty"`
+	TokenFile             string `json:"token_file"`
+	Mount                 string `json:"mount"`
+	Role                  string `json:"role"`
+	ConsumerID            string `json:"consumer_id"`
+	MaxTTLSeconds         int    `json:"max_ttl_seconds"`
+	RenewSeconds          int    `json:"renew_seconds"`
+	Retired               bool   `json:"retired,omitempty"`
+	AllowInsecureLoopback bool   `json:"allow_insecure_loopback,omitempty"`
+}
+
+// ActionExportEntry configures one durable action metadata destination.
+type ActionExportEntry struct {
+	Name                  string `json:"name"`
+	URL                   string `json:"url"`
+	SecretRef             string `json:"secret_ref,omitempty"`
+	AllowInsecureLoopback bool   `json:"allow_insecure_loopback,omitempty"`
+	MaxAttempts           int    `json:"max_attempts,omitempty"`
 }

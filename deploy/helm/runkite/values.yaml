@@ -107,6 +107,23 @@ networkPolicy:
   # (namespaceSelector / podSelector). Empty = allow ingress from any
   # peer in the cluster on HTTP/gRPC ports.
   ingressFrom: []
+  # Opt-in default-deny egress. Requires an enforcing CNI. DNS is restricted
+  # to the configured resolver pods; hostnames are not NetworkPolicy peers.
+  egress:
+    enabled: false
+    dns:
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    # Full NetworkPolicy egress entries. Include the exact DB/Redis, issuer,
+    # connector, webhook and collector destinations required by the plane.
+    controlPlaneRules: []
+    # Runner gets DNS and this release's plane HTTP/gRPC automatically.
+    # Add configured model/telemetry destinations here. No DB rule is added.
+    runnerRules: []
 
 nodeSelector: {}
 tolerations: []
@@ -156,14 +173,14 @@ config:
 # fields exist so `helm install --set` smoke tests stay one-shot.
 secrets:
   # Name of an existing Secret whose keys include POSTGRES_DSN, REDIS_URL,
-  # RUNNER_TOKEN_PYTHON_LANGGRAPH, RUNNER_TENANTS_PYTHON_LANGGRAPH,
+  # RUNNER_TOKEN_<KIND>, RUNNER_TENANTS_<KIND> (POOL_<NAME> for a named pool),
   # RUNNER_TOKEN, and (when using the default langgraphJson) RUNKITE_API_KEY.
   # When set, the chart does not create its own Secret.
   existingSecret: ""
   postgresDsn: ""
   redisUrl: ""
   # Presented by this chart's runner Deployment as RUNNER_TOKEN.
-  # Control plane gets RUNNER_TOKEN_PYTHON_LANGGRAPH = runnerTokenAllowlist
+  # Control plane gets RUNNER_TOKEN_<KIND> = runnerTokenAllowlist
   # when that is set, otherwise the same value as runnerToken.
   runnerToken: ""
   # Optional comma-separated allowlist for the control plane only
@@ -207,6 +224,13 @@ tls:
 # control-plane Service over cluster DNS for gRPC + HTTP.
 runner:
   enabled: true
+  kind: python-langgraph
+  # Named pool is also selected in langgraph.json execution_pool. Credentials
+  # remain fleet-level; use separate releases/deployments for separate pools.
+  executionPool: ""
+  # Proxy mode avoids handing the database credential to the runner.
+  proxyOnly: false
+  args: []
   replicaCount: 1
   image:
     repository: ghcr.io/getrunkite/runkite-runner

@@ -1,6 +1,8 @@
 package mysql_test
 
 import (
+	"context"
+	"database/sql"
 	"os"
 	"testing"
 
@@ -23,4 +25,14 @@ func TestPendingSecurityLive(t *testing.T) {
 	}
 	conformance.RunPendingSecurity(t, s)
 	conformance.RunPendingTenantScope(t, s)
+	conformance.RunPendingReviewSecurity(t, s)
+	mutationDB, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mutationDB.Close()
+	conformance.RunPendingTargetRevisionSecurity(t, s, func(ctx context.Context, id, revision, status string) error {
+		_, err := mutationDB.ExecContext(ctx, `UPDATE pending_actions SET target_revision=?,status=?,pending_key=NULL WHERE id=?`, revision, status, id)
+		return err
+	})
 }

@@ -49,6 +49,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a class="active" href="hitl-ops.html" aria-current="page">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -139,6 +140,8 @@
           · <a href="./kill.html">Kill &amp; break-glass</a>
         </p>
 
+        <h2 id="review-quorum">Requester separation and review quorum (unreleased)</h2>
+        <p>The v0.7.0 candidate (not published) supports <code>policy.approvals</code> with one to five distinct identities and optional requester exclusion. The operation must already be held by policy. Partial reviews return HTTP 200 but remain pending; inspect review progress/history and wait for approved status before submitting the matching operation. Managed policy/schema/target changes or a changed standalone review plan require fresh review. See <a href="security-completion.html#review-authority">authority rules</a> and <a href="ops.html#security-completion-upgrade">upgrade guidance</a>.</p>
       </main>
     </div>
     <script src="./docs.js?v=20261108-final" defer></script>

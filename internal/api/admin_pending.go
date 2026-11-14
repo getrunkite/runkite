@@ -21,7 +21,7 @@ type pendingActionStore interface {
 	SearchPendingActions(ctx context.Context, req *models.PendingActionSearchRequest) ([]*models.PendingAction, error)
 	SetPendingActionStatus(ctx context.Context, id, fromStatus, toStatus string) error
 	SetPendingActionApproved(ctx context.Context, id, decidedBy string) error
-	ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest string) (string, error)
+	ConsumeApprovedAction(ctx context.Context, tenantID, agentID, runID string, generation int64, connector, tool, argsDigest, targetRevision, policyRevision, toolRevision string) (string, error)
 	// ExpireGovernancePending denies embedded rows whose expires_at has
 	// passed. Connector rows (nil expires_at) stay pending.
 	ExpireGovernancePending(ctx context.Context, now time.Time) error
@@ -128,7 +128,7 @@ func writePendingDecisionError(w http.ResponseWriter, err error) {
 }
 
 func pendingActor(r *http.Request) string {
-	if result := auth.FromContext(r.Context()); result != nil {
+	if result := auth.FromContext(r.Context()); auth.HasVerifiedIdentity(result) {
 		return result.Identity
 	}
 	return ""
@@ -164,21 +164,59 @@ func (s *Server) approvePendingAction(ctx context.Context, id, actor string) (*m
 	if !s.policy.Enabled() {
 		return nil, &pendingDecisionError{http.StatusConflict, "policy engine is not enabled"}
 	}
+	if a.ExpiresAt == nil && !models.ValidConnectorTargetRevision(a.TargetRevision) {
+		return nil, &pendingDecisionError{http.StatusConflict, "legacy connector target binding; resubmit the operation for fresh approval"}
+	}
 	if !currentPendingBinding(a) {
 		return nil, &pendingDecisionError{http.StatusConflict, "legacy argument binding; resubmit the operation for fresh approval"}
+	}
+	if err := s.checkPendingRevisions(ctx, a); err != nil {
+		return nil, err
 	}
 	dec := s.policy.Decide(ctx, policy.PolicyInput{
 		Stage: policy.StageToolCall, TenantID: a.TenantID, AgentID: a.AgentID,
 		RunID: a.RunID, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool,
-		Args: a.Args, ArgsDigest: a.ArgsDigest, ArgsMeta: a.Args,
+		Args: a.Args, ArgsDigest: a.ArgsDigest, ArgsMeta: a.Args, TargetRevision: a.TargetRevision, PolicyRevision: a.PolicyRevision, ToolRevision: a.ToolRevision, Principal: a.RequesterIdentity,
 	})
 	if dec.Effect != policy.EffectAllow && dec.Effect != policy.EffectPending {
 		return nil, &pendingDecisionError{http.StatusConflict, "policy still denies this tool call; approve refused"}
+	}
+	// A webhook or audit write may have delayed the decision. Recheck before
+	// issuing authority; consumption still matches the exact pinned revision.
+	if err := s.checkPendingRevisions(ctx, a); err != nil {
+		return nil, err
 	}
 	if err := store.SetPendingActionApproved(ctx, id, actor); err != nil {
 		return nil, err
 	}
 	return store.GetPendingAction(ctx, id)
+}
+
+func (s *Server) checkPendingRevisions(ctx context.Context, a *models.PendingAction) error {
+	requirements := s.policy.ApprovalRequirements()
+	if a.RequiredApprovals != requirements.RequiredApprovals || a.ExcludeRequester != requirements.ExcludeRequester {
+		return &pendingDecisionError{http.StatusConflict, "approval requirements changed; resubmit for fresh review"}
+	}
+
+	if a.ExpiresAt == nil {
+		if !models.ValidPolicyRevision(a.PolicyRevision) || a.PolicyRevision != s.policy.Revision() {
+			return &pendingDecisionError{http.StatusConflict, "policy changed or legacy policy binding; resubmit for fresh review"}
+		}
+		if err := s.checkPendingToolRevision(ctx, a); err != nil {
+			return err
+		}
+	}
+
+	if a.ExpiresAt != nil {
+		return nil
+	}
+	if s.connectors != nil {
+		current, err := s.connectors.TargetRevision(a.Connector)
+		if err == nil && current == a.TargetRevision {
+			return nil
+		}
+	}
+	return &pendingDecisionError{http.StatusConflict, "connector target changed or is unavailable; resubmit the operation for fresh approval"}
 }
 
 func (s *Server) denyPendingAction(ctx context.Context, id string) (*models.PendingAction, error) {

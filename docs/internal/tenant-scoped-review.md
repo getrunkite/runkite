@@ -1,10 +1,11 @@
 # Tenant-scoped review and investigation
 
-Status: unreleased source after v0.6.1, built on the
+Status: v0.7.0 candidate source (not published), built on the
 [connector action evidence milestone](connector-action-evidence.md). Published
-v0.6.1 binaries do not implement these permissions, routes or sessions. This
-slice adds no SQL migration or identity directory. Earlier unreleased SQL
-migrations still apply when upgrading from a release.
+v0.6.1 binaries do not implement these permissions, routes or sessions. The
+original permissions/session slice adds no SQL migration or identity directory. Current
+source also includes [target-bound approvals](target-bound-approvals.md), whose
+migration and maintenance-window requirements apply when upgrading from a release.
 
 ## The caller we could not serve
 
@@ -67,7 +68,9 @@ context; there is no fallback when a scoped lookup fails.
 Admin and Review share the existing approval/denial business core. Review does
 not call a handler that changes its request to system context. The same current
 policy, hard-deny, required-audit, argument-digest, generation, run-incarnation,
-expiry and one-shot consumption rules continue to apply. Recording approval
+expiry and one-shot consumption rules continue to apply. Managed rows also bind
+the configured target revision. Review exposes that revision and refuses an old
+or changed target, using the same business core as global Admin. Recording approval
 does not execute a tool, resume a framework or make an uncertain effect safe to
 retry. Standalone expiring decisions remain app-owned and create no managed run.
 
@@ -121,10 +124,13 @@ issue least-privilege reviewer credentials. Do not mix old and new replicas whil
 relying on the new boundary. Keep a known working global Admin credential for
 bootstrap and recovery; reviewers cannot grant themselves that role.
 
-No SQL schema is added here. When upgrading from v0.6.1, first apply the previous
-security milestone's Postgres/SQLite 17 or MySQL 18 migration and its fresh-review
-requirements for historical unbound managed approvals. This change does not
-backfill old approval authority or infer a reviewer from unverified request data.
+The Review permission slice adds no SQL schema. Upgrading current source from
+v0.6.1 also applies Postgres/SQLite 18 or MySQL 19 for target-bound approvals,
+after the earlier evidence/run-incarnation migration. Follow the
+[target-binding upgrade](../ops-runbook.md#connector-target-revision-upgrade): stop all
+writers, take a verified backup, migrate and replace every replica before traffic.
+Historical managed approvals missing a target or run binding require fresh review;
+neither field is inferred from whichever configuration/run exists at upgrade time.
 
 ## Verification and limits
 
@@ -139,7 +145,57 @@ Frontend tests cover session validation, expiry, request bounds, stale-data
 suppression, fixed API base and role-limited mutations. Browser qualification uses
 synthetic evidence and credentials, with no live model/provider data.
 
+### Qualify the assembled multi-replica path
+
+The existing `scripts/smoke-multi.sh` and `bench/soak` cover multi-process managed
+execution and recovery. Their Compose profile deliberately has no client auth.
+The new permissions needed a separate test of authenticated `serve` processes,
+shared Redis sessions and atomic SQL authority across process boundaries.
+
+`make test-review-ha` runs `test/e2e/reviewha` through
+`scripts/test-review-ha.sh`. It creates a uniquely named disposable Postgres/Redis
+pair, starts two actual binaries and uses a deterministic MCP fixture. The
+fixture seeds an active run/attempt/queue assignment; it does not run an SDK,
+model or managed admission. Production middleware, configuration, session
+storage, proxy dispatch and the real action reconciler remain on the path.
+
+The checks cover cookies and connector capabilities crossing replicas,
+read/approve projections, tenant isolation, CSRF and Admin separation. Competing
+approval and approved-dispatch requests must have one winner. Both replicas
+must expose the same durable metadata without fixture credential, argument,
+RPC-ID or response-body sentinels. After a target accepts an operation, the test
+kills one process and waits for the surviving process's real reconciler to mark
+the unconfirmed intent unknown without replay. Restart preserves evidence and
+the Review session. Logout through the other peer invalidates that cookie.
+
+Use `RUNKITE_TEST_REVIEW_REPETITIONS=3 make test-review-ha` for bounded repetition
+(1 through 20). Each repetition includes a kill/reconcile/restart cycle, normally
+about one minute. The wrapper prints an output directory containing
+`review-ha-report.json`, sanitized process logs and fixture startup/cleanup logs.
+The `review-ha` CI job runs one cycle independently of the SDK matrix. Report or
+log persistence failures fail the test.
+
+The wrapper never consumes inherited database URLs or a repository `.env` and
+removes only its own Compose project. Each invocation generates a fresh database
+password and retains its configuration reference rather than its value.
+Direct test invocation refuses non-loopback
+database URLs, a database without the dedicated prefix, a pre-existing public
+schema or populated Redis. It never truncates or flushes shared infrastructure.
+Only database container mappings are loopback-bound. The current CLI uses
+`:port` HTTP/gRPC listeners, so run this test on a firewall-protected workstation
+or isolated CI worker. Random per-invocation fixture keys are not production
+credentials, and this harness is not itself a sandbox.
+
+This closes a reproducible two-process qualification gap. It does not establish
+database/Redis failover, long-duration or cloud soak results, live-provider
+compatibility, throughput capacity, or safety for hostile in-process agent code.
+
 This is not general per-resource RBAC or a per-user identity directory. Review
-is flat-tenant scoped. It adds no two-person/no-self-approval rule, target/tool
-revision pinning, dynamic Vault leases, reliable evidence export outbox or
-instant upstream identity revocation. Those need their own caller and contract.
+remains flat-tenant scoped. Current optional controls also provide
+[requester separation and reviewer quorum](approval-authority-and-quorum.md),
+[configured policy/optional schema binding](target-bound-approvals.md),
+[durable evidence export](action-delivery-outbox.md), and
+[registered Vault database leases](credential-lifecycle.md). Review can inspect
+owned lease metadata but cannot renew/revoke or inspect credential values. None
+of these controls proves remote implementation identity, instant external
+revocation, or exactly-once business effects.

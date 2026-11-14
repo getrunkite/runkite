@@ -124,7 +124,7 @@ func authenticateAdminCredential(adminProvider, provider Provider, credential st
 		if credential != "" {
 			return nil, &ErrUnauthorized{Message: "auth is not configured"}
 		}
-		return &AuthResult{Identity: "anonymous", Permissions: nil}, nil
+		return &AuthResult{Identity: "anonymous", Permissions: nil, identityMissing: true}, nil
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "/admin-api/session", nil)

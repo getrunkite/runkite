@@ -55,6 +55,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
@@ -186,6 +187,7 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
 
         <h2>Package and upgrade boundaries</h2>
         <p>Registry installs follow the <a href="https://github.com/getrunkite/runkite/releases/latest">latest tagged release</a>. The v0.6.1 packages use Apache-2.0 and include LangGraph defaults and the optional TypeScript AI SDK backend (<code>--framework ai-sdk</code>). The Python wheel also packages managed Microsoft, OpenAI Agents, Pydantic AI and Google ADK adapters: install the matching <a href="./sdk-integration.html#managed-python">optional extra and dedicated command</a>. The stock Python image does not install these optional SDKs. Governance helpers (<code>createGovernedExecute</code>, Microsoft function middleware) remain unpublished packages; install them from the repository. See <a href="./sdk-integration.html">the integration guide</a>.</p>
+        <p class="note">The new security controls target a local <strong>v0.7.0 candidate, not published yet</strong>. Registry commands still install the published release. Build matching candidate plane and runner artifacts to test these controls, and select matching image tags explicitly. See <a href="security-completion.html">candidate availability</a> and <a href="ops.html#security-completion-upgrade">upgrade requirements</a>.</p>
         <p>Custom or older runners must echo the assignment's exact generation on run-specific RPCs and bound HTTP calls. Generation <code>0</code> is not a wildcard for a later attempt. Runner tokens are bound to their kind. Upgrade and test custom runners with the plane before replacing production replicas.</p>
 
         <h2>What to expect</h2>

@@ -212,6 +212,7 @@ func (s *Server) checkA2AParentCurrent(ctx context.Context, parentID string) err
 // optional body only selects a literal subset of the parent's explicit grants.
 func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw json.RawMessage) (*auth.AuthResult, error) {
 	var principal *auth.AuthResult
+	verified := false
 	if user != nil && user.Identity != "" {
 		principal = &auth.AuthResult{Identity: user.Identity, Permissions: append([]string(nil), user.Permissions...), TenantID: parent.TenantID, DisplayName: user.DisplayName, Extra: user.Extra}
 	}
@@ -225,9 +226,13 @@ func a2aDelegatedPrincipal(user *transport.UserContext, parent *models.Run, raw 
 			if principal == nil || principal.Identity != manifest.Principal.Identity || !samePermissionSet(principal.Permissions, manifest.Principal.Permissions) {
 				return nil, fmt.Errorf("parent identity does not match frozen manifest")
 			}
+			verified = manifest.Principal.VerifiedIdentity
 		} else if principal != nil {
 			return nil, fmt.Errorf("parent manifest has no delegated identity")
 		}
+	}
+	if !verified {
+		auth.MarkIdentityUnverified(principal)
 	}
 	if len(raw) == 0 {
 		return principal, nil

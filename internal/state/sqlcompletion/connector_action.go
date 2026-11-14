@@ -220,7 +220,7 @@ func (d Driver) saveConnectorAction(ctx context.Context, tx Tx, a *models.Connec
 		deadline = d.actionTime(*a.DispatchDeadlineAt)
 	}
 	if create {
-		err = tx.Exec(ctx, d.query(`INSERT INTO connector_actions(id,tenant_id,run_id,generation,agent_id,connector,state,version,created_at,updated_at,dispatch_deadline_at,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`), a.ID, a.TenantID, a.RunID, a.Generation, a.AgentID, a.Connector, a.State, a.Version, d.actionTime(a.CreatedAt), d.actionTime(a.UpdatedAt), deadline, raw)
+		err = tx.Exec(ctx, d.query(`INSERT INTO connector_actions(id,tenant_id,run_id,generation,agent_id,connector,state,version,created_at,updated_at,dispatch_deadline_at,payload,export_sink_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`), a.ID, a.TenantID, a.RunID, a.Generation, a.AgentID, a.Connector, a.State, a.Version, d.actionTime(a.CreatedAt), d.actionTime(a.UpdatedAt), deadline, raw, a.ExportSinkID)
 	} else {
 		err = tx.Exec(ctx, d.query(`UPDATE connector_actions SET state=?,version=?,updated_at=?,dispatch_deadline_at=?,payload=? WHERE id=? AND tenant_id=?`), a.State, a.Version, d.actionTime(a.UpdatedAt), deadline, raw, a.ID, a.TenantID)
 	}
@@ -232,7 +232,10 @@ func (d Driver) saveConnectorAction(ctx context.Context, tx Tx, a *models.Connec
 	if err != nil {
 		return err
 	}
-	return tx.Exec(ctx, d.query(`INSERT INTO connector_action_events(tenant_id,action_id,sequence,mutation_id,mutation_digest,kind,observed_at,payload) VALUES(?,?,?,?,?,?,?,?)`), a.TenantID, a.ID, a.Version, mutation, digest, kind, d.actionTime(a.UpdatedAt), eventRaw)
+	if err := tx.Exec(ctx, d.query(`INSERT INTO connector_action_events(tenant_id,action_id,sequence,mutation_id,mutation_digest,kind,observed_at,payload) VALUES(?,?,?,?,?,?,?,?)`), a.TenantID, a.ID, a.Version, mutation, digest, kind, d.actionTime(a.UpdatedAt), eventRaw); err != nil {
+		return err
+	}
+	return d.appendActionDelivery(ctx, tx, a, event)
 }
 
 func (d Driver) CreateConnectorAction(ctx context.Context, input *models.ConnectorAction, mutation string) (*models.ConnectorAction, error) {
@@ -256,6 +259,15 @@ func (d Driver) CreateConnectorAction(ctx context.Context, input *models.Connect
 	}
 	if a.Transport != "json" && a.Transport != "streamable_http" {
 		return nil, fmt.Errorf("unsupported connector action transport")
+	}
+	if !validActionSinkID(a.ExportSinkID) {
+		return nil, fmt.Errorf("invalid action export sink identity")
+	}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) {
+		return nil, fmt.Errorf("connector action target binding required")
+	}
+	if a.PolicyRevision == nil || !models.ValidPolicyRevision(*a.PolicyRevision) || (a.ToolRevision != nil && !models.ValidToolRevision(*a.ToolRevision)) {
+		return nil, fmt.Errorf("connector action policy or tool binding required")
 	}
 	for _, v := range []*string{a.PolicyRevision, a.TargetRevision, a.ToolRevision, a.CredentialRef} {
 		if v != nil && !actionText(*v, 255) {
@@ -374,7 +386,9 @@ func (d Driver) RecordConnectorActionDecision(ctx context.Context, id string, ve
 	a.AuthorizationSource = dec.AuthorizationSource
 	a.BreakGlassID = dec.BreakGlassID
 	a.PendingActionID = dec.PendingActionID
-	a.PolicyRevision = dec.PolicyRevision
+	if dec.PolicyRevision != nil && (a.PolicyRevision == nil || *dec.PolicyRevision != *a.PolicyRevision) {
+		return nil, actionConflict(id, "policy revision changed")
+	}
 	a.State = models.ConnectorActionReady
 	if dec.AuthorizationSource != "break_glass" {
 		if dec.Effect == "deny" {
@@ -396,8 +410,15 @@ func (d Driver) RecordConnectorActionDecision(ctx context.Context, id string, ve
 }
 
 func (d Driver) peekActionApproval(ctx context.Context, tx Tx, a *models.ConnectorAction, id string, locked bool) (*models.PendingAction, error) {
-	q := `SELECT id,decided_by FROM pending_actions WHERE tenant_id=? AND agent_id=? AND run_id=? AND generation=? AND connector=? AND tool=? AND args_digest=? AND status=? AND expires_at IS NULL AND run_incarnation_id=?`
-	args := []interface{}{a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, models.PendingStatusApproved, a.RunIncarnationID}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) || a.PolicyRevision == nil || !models.ValidPolicyRevision(*a.PolicyRevision) || (a.ToolRevision != nil && !models.ValidToolRevision(*a.ToolRevision)) {
+		return nil, nil
+	}
+	toolRevision := ""
+	if a.ToolRevision != nil {
+		toolRevision = *a.ToolRevision
+	}
+	q := `SELECT id,decided_by,exclude_requester,requester_identity FROM pending_actions WHERE tenant_id=? AND agent_id=? AND run_id=? AND generation=? AND connector=? AND tool=? AND args_digest=? AND status=? AND expires_at IS NULL AND run_incarnation_id=? AND target_revision=? AND policy_revision=? AND tool_revision=? AND required_approvals BETWEEN 1 AND 5 AND (SELECT COUNT(*) FROM pending_action_approvals AS pa WHERE pa.pending_action_id=pending_actions.id AND pa.tenant_id=pending_actions.tenant_id)>=required_approvals`
+	args := []interface{}{a.TenantID, a.AgentID, a.RunID, a.Generation, a.Connector, a.Tool, a.ArgsDigest, models.PendingStatusApproved, a.RunIncarnationID, *a.TargetRevision, *a.PolicyRevision, toolRevision}
 	if id != "" {
 		q += ` AND id=?`
 		args = append(args, id)
@@ -406,15 +427,25 @@ func (d Driver) peekActionApproval(ctx context.Context, tx Tx, a *models.Connect
 	if locked {
 		q += d.lock()
 	}
-	var found, reviewer string
-	err := tx.Row(ctx, d.query(q), args...).Scan(&found, &reviewer)
+	var found, reviewer, requester string
+	var excludeRequester bool
+	err := tx.Row(ctx, d.query(q), args...).Scan(&found, &reviewer, &excludeRequester, &requester)
 	if isNoRows(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &models.PendingAction{ID: found, DecidedBy: reviewer, TenantID: a.TenantID, AgentID: a.AgentID, RunID: a.RunID, RunIncarnationID: a.RunIncarnationID, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusApproved}, nil
+	if excludeRequester {
+		incarnation, currentRequester, err := d.pendingRunAuthority(ctx, tx, a.TenantID, a.AgentID, a.RunID, locked, true)
+		if err != nil {
+			return nil, err
+		}
+		if requester != currentRequester || incarnation != a.RunIncarnationID {
+			return nil, actionConflict(a.ID, "requester provenance changed")
+		}
+	}
+	return &models.PendingAction{ID: found, DecidedBy: reviewer, TenantID: a.TenantID, AgentID: a.AgentID, RunID: a.RunID, RunIncarnationID: a.RunIncarnationID, TargetRevision: *a.TargetRevision, PolicyRevision: *a.PolicyRevision, ToolRevision: toolRevision, Generation: a.Generation, Connector: a.Connector, Tool: a.Tool, ArgsDigest: a.ArgsDigest, Status: models.PendingStatusApproved}, nil
 }
 func (d Driver) PeekApprovedConnectorAction(ctx context.Context, id string) (*models.PendingAction, error) {
 	tx, err := d.Begin(ctx)
@@ -473,6 +504,9 @@ func (d Driver) PrepareConnectorActionDispatch(ctx context.Context, id string, v
 			return nil, err
 		}
 		return &state.ConnectorActionDispatch{ActionID: a.ID, TenantID: a.TenantID, DispatchID: a.DispatchID, Version: seq}, nil
+	}
+	if a.TargetRevision == nil || !models.ValidConnectorTargetRevision(*a.TargetRevision) || a.PolicyRevision == nil || !models.ValidPolicyRevision(*a.PolicyRevision) || (a.ToolRevision != nil && !models.ValidToolRevision(*a.ToolRevision)) {
+		return nil, actionConflict(id, "connector target binding required")
 	}
 	if a.Version != version || (a.State != models.ConnectorActionReady && a.State != models.ConnectorActionApprovalRequired) {
 		return nil, actionConflict(id, "action is not ready for dispatch")

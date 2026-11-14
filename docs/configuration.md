@@ -152,7 +152,7 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 
 ### Required policy audit
 
-Availability: unreleased source after v0.6.1. Published v0.6.1 binaries do not
+Availability: v0.7.0 candidate source (not published). Published v0.6.1 binaries do not
 implement this setting; rebuild from source before relying on it.
 
 Set `"audit_required": true` inside the existing `policy` block to require durable decision writes before admission or connector access proceeds. `audit` defaults to true; combining required audit with `"audit": false` is invalid. Startup requires a SQL audit store (Postgres, MySQL or SQLite). Mongo cannot enable this mode.
@@ -161,7 +161,7 @@ Required audit is checked on every decision, including cache hits. If persistenc
 
 ### Managed connector action evidence
 
-Unreleased source after v0.6.1: set `"action_evidence": true` in the existing
+v0.7.0 candidate source (not published): set `"action_evidence": true` in the existing
 `policy` block and also enable `"audit_required": true`. SQL is required
 (Postgres, MySQL or SQLite); auditing cannot be disabled. Both flags default off.
 Apply capture consistently to every serving replica after the
@@ -264,3 +264,109 @@ Requires a `vector_store` section in `langgraph.json` (`--config` / `LANGGRAPH_C
 | `runkite vector downgrade` | Roll back one pgvector migration (baseline Down drops `vector_items`). Exits `1` for backends without a Down step, or when already at version 0. |
 
 Future pgvector schema changes are new numbered Up/Down steps -- not ad-hoc `ALTER` trails inside a single growing `Init`. Dimension changes are still not migrated (drop/recreate).
+
+## Approval authority and quorum (unreleased)
+
+Availability: v0.7.0 candidate (not published). The existing
+policy gate must already hold an operation; these requirements do not force
+otherwise allowed operations to become pending. For example:
+
+```json
+{
+  "policy": {
+    "audit_required": true,
+    "action_evidence": true,
+    "approvals": {"required_approvals": 2, "exclude_requester": true}
+  }
+}
+```
+
+`required_approvals` defaults to 1 and accepts 1 through 5. A quorum above one
+or requester exclusion requires distinct authenticated reviewer identities.
+Exclusion also requires a known immutable requester: the durable run principal
+for managed operations, the authenticated caller for standalone decisions.
+Partial reviews leave status `pending`; HTTP 200 does not mean quorum completed.
+The default-one local mode retains its existing empty-actor behavior. Identity
+providers must give one person a stable identity; Runkite does not merge accounts.
+
+Managed approvals bind `policy-v1-<sha256>` from the effective configured policy.
+Set `policy.webhook.revision` to a nonsecret operator-managed contract label when
+remote PDP rules change. This records declared policy identity, not attestation
+of remote code. Secret values are excluded. `mcp.pin_tools: true` opts a connector
+into actual `tools/list` schema discovery and dispatch recheck, producing optional
+`tool-v1-<sha256>` authority. It does not identify remote implementation.
+Connectors using schema pinning or registered credential bindings use target-v2;
+unchanged legacy descriptors retain target-v1. See [connectors](connectors.md#managed-policy-and-tool-contracts-unreleased).
+
+## Durable action export (unreleased)
+
+Configure one first-file `policy.action_export` destination alongside required
+audit and action evidence:
+
+```json
+{"policy":{"audit_required":true,"action_evidence":true,"action_export":{
+  "name":"security-events","url":"https://collector.example/runkite",
+  "secret_ref":"file:/private/runkite/export-hmac", "max_attempts":10
+}}}
+```
+
+`max_attempts` defaults to 10, with an upper bound of 100. HTTPS is required;
+`allow_insecure_loopback: true` permits HTTP only for literal-loopback tests.
+URLs cannot contain userinfo, query parameters or fragments. `secret_ref` resolves
+the HMAC signing key outside this configuration; rotating the key does not move
+a queue. The effective sink ID hashes the logical name, exact URL and envelope
+schema. Changing destination creates another sink ID, leaving its old queue
+held until the original destination is configured again.
+
+SQL inserts each metadata-only delivery with its action event before dispatch.
+An asynchronous worker uses the existing HMAC HTTP sender without hidden retries,
+then records acknowledgement or bounded retry/dead-letter state. Delivery is at
+least once with a stable delivery ID, not exactly-once remote processing. This
+is distinct from best-effort `policy.siem` decision hooks. See
+[action delivery operations](../site/support/security-completion.html#evidence-delivery).
+
+## Registered Vault database credentials (unreleased)
+
+Top-level, first-file `credential_leases` requires SQL, required audit and action
+evidence. This is a registration example with placeholder destinations and
+private mounted files, not a ready-to-run Vault deployment:
+
+```json
+{"credential_leases":{"keyring_file":"/private/runkite/handle-keyring.json",
+ "bindings":[{"id":"reporting-v1","address":"https://vault.example",
+ "token_file":"/private/runkite/vault-token","mount":"database",
+ "role":"report_reader","consumer_id":"reporting-mcp",
+ "max_ttl_seconds":300,"renew_seconds":60}]}}
+```
+
+Bindings also accept optional `namespace`, `retired` and test-only
+`allow_insecure_loopback`. Max TTL is 1 second through 24 hours; renewal increment
+must be positive and no greater than that ceiling. Vault must independently
+enforce its database role's maximum TTL, including lost issuance responses.
+`consumer_id` must identify a configured MCP connector whose auth is
+`{"type":"vault_database","credential_binding":"reporting-v1"}`. The trusted
+external executor accepts privately forwarded HTTP Basic database credentials.
+The agent does not receive a Vault path, role, username, password or lease handle.
+Ordinary bearer-only MCP servers require a credential-aware adapter.
+
+Relative token/keyring paths resolve from the first configuration file. Both
+files must be private process-owned regular files, mode 0600, without symlinks.
+Mount the same retained keyring on every replica. Keep old keys and retired
+provider bindings until their exact leases have confirmed cleanup. Actual
+provider TTL bounds the consumer callback; there is no automatic renewal loop.
+See [lease operations](../site/support/security-completion.html#credential-lifecycle).
+
+## Execution pools and external workloads (unreleased)
+
+`execution_pools` maps a pool to an existing framework kind and explicit tenant
+and agent sets; a graph file selects `execution_pool`. The effective queue kind
+is `pool-<name>`. Configure a distinct `RUNNER_TOKEN_POOL_<NAME>` on the plane
+and its matching worker `RUNNER_TOKEN`; broad framework or tenant tokens cannot
+widen pool membership. Python and TypeScript workers select the pool with
+`--execution-pool` or `RUNKITE_EXECUTION_POOL`.
+
+Optional Helm `networkPolicy.egress.enabled` requires proxy-only runners and
+operator-listed DNS/model/telemetry/backend destinations. An enforcing CNI is
+required. The separate experimental `python-isolated` profile uses an external
+OpenShell 0.1.8 supervisor and an explicit JSONL workload. It does not rehost an
+unchanged SDK adapter. See [the implementation and qualification boundaries](internal/constrained-execution.md).

@@ -38,6 +38,14 @@ def check(name, cond):
         raise SystemExit(1)
 
 
+async def wait_for_calls(predicate):
+    # Bound a real behavioral condition rather than require a loaded CI host
+    # to schedule several RPC tasks inside a fixed wall-clock sleep.
+    async with asyncio.timeout(3):
+        while not predicate():
+            await asyncio.sleep(0.005)
+
+
 class _FakeHeartbeatResponse:
     def __init__(self, superseded: bool = False):
         self.ok = True
@@ -95,19 +103,19 @@ class _SupersededAfterNStub:
 async def test_heartbeat_loop_calls_repeatedly_with_run_id():
     stub = _CountingStub()
     task = asyncio.create_task(heartbeat_loop(stub, "run-x", [], interval_s=0.05))
-    await asyncio.sleep(0.23)
+    await wait_for_calls(lambda: len(stub.calls) >= 3)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
 
-    check("at least 3 heartbeats sent in ~0.23s at 0.05s interval", len(stub.calls) >= 3)
+    check("at least 3 periodic heartbeats sent before cancellation", len(stub.calls) >= 3)
     check("every heartbeat carried the correct run_id", all(c == "run-x" for c in stub.calls))
 
 
 async def test_heartbeat_loop_stops_cleanly_on_cancel():
     stub = _CountingStub()
     task = asyncio.create_task(heartbeat_loop(stub, "run-y", [], interval_s=0.05))
-    await asyncio.sleep(0.12)
+    await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
@@ -122,7 +130,7 @@ async def test_heartbeat_loop_stops_cleanly_on_cancel():
 async def test_heartbeat_loop_survives_a_failed_rpc():
     stub = _FailingThenCountingStub()
     task = asyncio.create_task(heartbeat_loop(stub, "run-z", [], interval_s=0.05))
-    await asyncio.sleep(0.23)
+    await wait_for_calls(lambda: stub.calls >= 3)
     task.cancel()
     # If the failed RPC had propagated out of the loop instead of being
     # logged and swallowed, this await would raise something other than
@@ -136,7 +144,7 @@ async def test_heartbeat_loop_survives_a_failed_rpc():
 async def test_heartbeat_loop_sends_the_given_generation():
     stub = _CountingStub()
     task = asyncio.create_task(heartbeat_loop(stub, "run-gen", [], generation=7, interval_s=0.05))
-    await asyncio.sleep(0.12)
+    await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
@@ -148,7 +156,7 @@ async def test_heartbeat_loop_sends_the_given_generation():
 async def test_heartbeat_loop_defaults_generation_to_zero():
     stub = _CountingStub()
     task = asyncio.create_task(heartbeat_loop(stub, "run-default-gen", [], interval_s=0.05))
-    await asyncio.sleep(0.12)
+    await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
@@ -162,8 +170,7 @@ async def test_heartbeat_loop_stops_and_sets_cancel_event_on_superseded():
     task = asyncio.create_task(
         heartbeat_loop(stub, "run-superseded", [], generation=1, cancel_event=cancel_event, interval_s=0.05)
     )
-    # 2nd call (superseded=True) lands at ~0.1s; give it real margin.
-    await asyncio.sleep(0.3)
+    await asyncio.wait_for(asyncio.shield(task), 3)
 
     check("loop stopped itself (not left running) once superseded", task.done())
     check("cancel_event was set", cancel_event.is_set())
@@ -178,7 +185,7 @@ async def test_heartbeat_loop_does_not_touch_cancel_event_when_not_superseded():
     task = asyncio.create_task(
         heartbeat_loop(stub, "run-not-superseded", [], generation=1, cancel_event=cancel_event, interval_s=0.05)
     )
-    await asyncio.sleep(0.12)
+    await wait_for_calls(lambda: len(stub.calls) >= 2)
     check("cancel_event untouched while not superseded", not cancel_event.is_set())
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -191,7 +198,7 @@ async def test_heartbeat_loop_superseded_without_cancel_event_does_not_raise():
     was given."""
     stub = _SupersededAfterNStub(supersede_at_call=1)
     task = asyncio.create_task(heartbeat_loop(stub, "run-no-cancel-event", [], generation=1, interval_s=0.05))
-    await asyncio.sleep(0.2)
+    await asyncio.wait_for(asyncio.shield(task), 3)
     check("loop stopped cleanly with no cancel_event given", task.done())
     check("task raised nothing", task.exception() is None)
 

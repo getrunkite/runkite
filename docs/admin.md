@@ -155,7 +155,7 @@ Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a S
 
 ## Connector action history (unreleased)
 
-Current source after v0.6.1 adds `/admin/connector-actions`, action detail and a
+The v0.7.0 candidate (not published) adds `/admin/connector-actions`, action detail and a
 recent-actions panel in Run Detail. Enable `policy.action_evidence` with required
 SQL audit to capture managed MCP `tools/call`. Existing history remains readable
 when capture is disabled. Mongo returns `501`. Admin remains globally privileged;
@@ -171,6 +171,25 @@ a bounded window; manual Refresh remains available.
 
 See [Connector actions](../site/support/connector-actions.html) for the complete
 operator workflow, states, retry guidance and independent retention.
+
+## Target-bound approval review (unreleased)
+
+The v0.7.0 candidate (not published) displays the stored `target_revision` on managed
+approvals and recorded connector actions. This fingerprints the configured MCP
+target, including the optional nonsecret `mcp.revision` label. It does not verify
+remote tool code, schema or credential values. Missing or malformed managed
+bindings show **Fresh review required** and disable Approve; Deny remains
+available on pending rows. A well-formed displayed revision is historical
+evidence, not a claim that the current target still matches.
+
+The server checks the current target during approval and matches that revision
+again during consumption. A changed target returns HTTP 409 at approval, or
+creates a separate pending action on the next protected call. Submit the
+operation for fresh review; do not edit the old row or automatically retry a
+possibly executed tool. This binding applies even with evidence capture off.
+Standalone expiring app-owned decisions remain unchanged. Follow the
+[migration procedure](ops-runbook.md#connector-target-revision-upgrade) before
+deploying this source to existing SQL databases.
 
 ## Playground
 
@@ -189,3 +208,23 @@ flowchart LR
   B --> F[Try agent: exercise a registered agent]
   B --> G[Spend: watch usage, edit budgets live]
 ```
+
+## Approval, credential and delivery operations (unreleased)
+
+The v0.7.0 candidate (not published) adds approval detail with immutable requester, exact
+reviewer history, quorum progress and policy/tool/target revisions. A successful
+partial review reports “Review recorded” and leaves the caller pending. Admin and
+Review block visibly unsupported historical bindings, while the server also
+checks current policy and remote contracts. Read-only Review still omits arguments.
+
+Admin Credential leases requires an explicit tenant and shows lifecycle metadata
+without passwords, bootstrap tokens or raw provider handles. Detail permits
+current-owner renewal or exact-lease revocation, subject to server checks. Unknown
+states are not treated as confirmed cleanup. Review has an own-tenant read-only
+lease workspace; it grants no lifecycle mutation authority.
+
+Admin Evidence deliveries lists existing event exports by explicit tenant, sink
+and state. Offset paging is bounded and can shift during updates. A dead-letter
+retry queues the same delivery ID for its configured sink; it never executes or
+retries a tool. See [the operations guide](../site/support/security-completion.html)
+for setup, scope, capacity and incident response.

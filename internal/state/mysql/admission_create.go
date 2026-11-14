@@ -38,6 +38,8 @@ func (s *Store) CreateCachedRun(ctx context.Context, run *models.Run, caps *stat
 }
 
 func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
+	// The caller never supplies the durable insertion identity.
+	run.IncarnationID = ""
 	for _, raw := range []json.RawMessage{run.Input, run.Config} {
 		if err := s.validateApplicationJSON(ctx, raw); err != nil {
 			return err
@@ -132,7 +134,11 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	run.IncarnationID = incarnation
+	return nil
 }
 
 func mysqlGetLock(ctx context.Context, conn *sql.Conn, name string) error {

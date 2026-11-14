@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .tenant_ctx import tenant_id_headers
+from .tenant_ctx import run_id_headers, tenant_id_headers
 from .tls_utils import httpx_tls_kwargs
 
 logger = logging.getLogger("runkite.runner")
@@ -30,10 +30,15 @@ async def should_skip_run(
     runner_kind: str = "",
     runner_token: str = "",
     tenant_id: str = "",
+    generation: int | None = None,
 ) -> bool:
     """Return True when the assignment must be discarded without executing."""
     base = http_address.rstrip("/")
+    pool = runner_kind.startswith("pool-")
     headers: dict[str, str] = {}
+    if generation is not None:
+        headers.update(run_id_headers(run_id))
+        headers["X-Runkite-Generation"] = str(generation)
     # Runs are tenant-scoped; without this header GetRun resolves to
     # tenant "default" and a non-default assignment looks like a 404 miss
     # (then discarded forever until reclaim exhausts).
@@ -51,16 +56,17 @@ async def should_skip_run(
             return True
         if resp.status_code != 200:
             logger.warning(
-                "pre-exec status: run %s HTTP %s; proceeding (fail-open)",
+                "pre-exec status: run %s HTTP %s; pool refuses execution=%s",
                 run_id,
                 resp.status_code,
+                pool,
             )
-            return False
+            return pool
         status = (resp.json() or {}).get("status", "")
         if status in _SKIP_STATUSES:
             logger.info("pre-exec status: run %s is %s; discarding assignment", run_id, status)
             return True
-        return False
+        return pool and status not in {"pending", "running"}
     except Exception as e:
-        logger.warning("pre-exec status: run %s check failed (%s); proceeding (fail-open)", run_id, e)
-        return False
+        logger.warning("pre-exec status: run %s check failed (%s); pool refuses execution=%s", run_id, e, pool)
+        return pool

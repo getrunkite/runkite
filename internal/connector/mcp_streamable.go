@@ -16,7 +16,7 @@ import (
 // Each operation owns and closes its upstream session. No session or bearer
 // credential can be reused by another run, generation, tenant or CP replica.
 // The runner-facing response stays JSON even when upstream uses SSE.
-func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPRequest) ([]byte, int, error) {
+func forwardStreamableMCPAuthorization(ctx context.Context, endpoint, authorization string, req *MCPRequest) ([]byte, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	client := *httpClient
@@ -26,7 +26,11 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 	}
 	var oversized atomic.Bool
 	trace := actionTrace(ctx)
-	client.Transport = mcpAuthTransport{next: base, token: token, oversized: &oversized, scope: ctx, action: trace}
+	capture, _ := ctx.Value(rawToolCaptureKey{}).(*rawToolCapture)
+	if _, bound := ctx.Value(toolRevisionKey{}).(boundToolRevision); bound && capture == nil {
+		capture = newRawToolCapture()
+	}
+	client.Transport = mcpAuthTransport{next: base, authorization: authorization, oversized: &oversized, scope: ctx, action: trace, toolCapture: capture}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	upstream := mcp.NewClient(&mcp.Implementation{Name: "runkite-connector", Version: "0.5.7"},
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
@@ -67,6 +71,13 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 		var p mcp.ListToolsParams
 		if err = json.Unmarshal(params, &p); err == nil {
 			result, err = session.ListTools(ctx, &p)
+			if capture != nil && err == nil {
+				page, pageErr := capture.page(p.Cursor)
+				if pageErr != nil {
+					return nil, 0, ErrToolRevisionUnavailable
+				}
+				result = page.result
+			}
 		}
 	case "tools/call":
 		var p mcp.CallToolParams
@@ -79,7 +90,10 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 			// Negotiated protocol revisions can derive required HTTP parameter
 			// headers from the advertised schema. Populate the SDK's tool cache
 			// before calling, without retrying a tool after dispatch.
-			err = findUpstreamTool(ctx, session, p.Name)
+			err = findUpstreamTool(ctx, session, p.Name, capture)
+			if errors.Is(err, ErrToolRevisionUnavailable) || errors.Is(err, ErrToolRevisionChanged) {
+				return nil, 0, err
+			}
 			if err == nil {
 				if err := trace.beforeDispatch(ctx); err != nil {
 					return nil, 0, err
@@ -125,6 +139,9 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 	if oversized.Load() {
 		return nil, 0, ErrBodyTooLarge
 	}
+	if capture != nil && capture.failure() != nil {
+		return nil, 0, ErrToolRevisionUnavailable
+	}
 	response := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
 	if err != nil {
 		var rpcErr *jsonrpc.Error
@@ -145,7 +162,10 @@ func forwardStreamableMCP(ctx context.Context, endpoint, token string, req *MCPR
 	return body, http.StatusOK, err
 }
 
-func findUpstreamTool(ctx context.Context, session *mcp.ClientSession, name string) error {
+func findUpstreamTool(ctx context.Context, session *mcp.ClientSession, name string, capture *rawToolCapture) error {
+	if bound, ok := ctx.Value(toolRevisionKey{}).(boundToolRevision); ok {
+		return findExactUpstreamTool(ctx, session, name, bound, capture)
+	}
 	cursor := ""
 	seen := map[string]bool{}
 	for range 100 {
@@ -168,11 +188,13 @@ func findUpstreamTool(ctx context.Context, session *mcp.ClientSession, name stri
 }
 
 type mcpAuthTransport struct {
-	next      http.RoundTripper
-	token     string
-	oversized *atomic.Bool
-	scope     context.Context
-	action    *MCPActionTrace
+	next          http.RoundTripper
+	token         string
+	authorization string
+	oversized     *atomic.Bool
+	scope         context.Context
+	action        *MCPActionTrace
+	toolCapture   *rawToolCapture
 }
 
 func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -206,7 +228,9 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	cleanup := func() { stopScope(); cancel() }
 	r = r.Clone(requestCtx)
 	protected := t.action != nil && protectedMCPRequest(r)
-	if t.token != "" {
+	if t.authorization != "" {
+		r.Header.Set("Authorization", t.authorization)
+	} else if t.token != "" {
 		r.Header.Set("Authorization", "Bearer "+t.token)
 	}
 	response, err := t.next.RoundTrip(r)
@@ -234,6 +258,13 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		response.Body.Close()
 		cleanup()
 		return nil, ErrBodyTooLarge
+	}
+	if t.toolCapture != nil {
+		if _, err := t.toolCapture.capture(r, response); err != nil {
+			_ = response.Body.Close()
+			cleanup()
+			return nil, ErrToolRevisionUnavailable
+		}
 	}
 	var observed *MCPActionTrace
 	if protected {

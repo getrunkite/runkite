@@ -18,6 +18,7 @@ type runManifestInput struct {
 	agent            *models.Agent
 	policyFailClosed bool
 	user             *transport.UserContext
+	identityVerified bool
 	parentRunID      *string
 	depth            int
 }
@@ -41,8 +42,9 @@ func buildRunManifest(in runManifestInput) models.RunManifest {
 	var principal *models.RunManifestPrincipal
 	if in.user != nil && in.user.Identity != "" {
 		principal = &models.RunManifestPrincipal{
-			Identity:    in.user.Identity,
-			Permissions: append([]string(nil), in.user.Permissions...),
+			Identity:         in.user.Identity,
+			VerifiedIdentity: in.identityVerified,
+			Permissions:      append([]string(nil), in.user.Permissions...),
 		}
 	}
 

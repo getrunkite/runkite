@@ -18,6 +18,9 @@ import { Connectors } from "./pages/Connectors";
 import { Cron } from "./pages/Cron";
 import { Webhooks } from "./pages/Webhooks";
 import { PolicyGrants } from "./pages/PolicyGrants";
+import { CredentialLeases, CredentialLeaseDetail } from "./pages/CredentialLeases";
+import { ActionDeliveries } from "./pages/ActionDeliveries";
+import { PendingActionDetail } from "./pages/PendingActionDetail";
 import { PendingActions } from "./pages/PendingActions";
 import { KillSwitches } from "./pages/KillSwitches";
 import { BreakGlass } from "./pages/BreakGlass";
@@ -74,6 +77,10 @@ function Gate() {
         <Route path="grants" element={<PolicyGrants />} />
         <Route path="mandatory-hitl" element={<MandatoryHITL />} />
         <Route path="pending" element={<PendingActions />} />
+        <Route path="pending/:pendingId" element={<PendingActionDetail />} />
+        <Route path="credential-leases" element={<CredentialLeases />} />
+        <Route path="credential-leases/:leaseRef" element={<CredentialLeaseDetail />} />
+        <Route path="action-deliveries" element={<ActionDeliveries />} />
         <Route path="kill" element={<KillSwitches />} />
         <Route path="break-glass" element={<BreakGlass />} />
         <Route path="audit" element={<Audit />} />

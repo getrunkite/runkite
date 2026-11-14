@@ -12,6 +12,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/connector"
+	"github.com/getrunkite/runkite/internal/credentials"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
 	"github.com/getrunkite/runkite/internal/state"
@@ -26,8 +27,10 @@ type recordedConnectorAction struct {
 	receipt *state.ConnectorActionDispatch
 }
 
-func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Request, name string, userCtx map[string]interface{}, rpc *connector.MCPRequest) {
+func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Request, registry *connector.Registry, name string, userCtx map[string]interface{}, rpc *connector.MCPRequest, targetRevision, toolRevision string) {
 	in := s.policyInput(r.Context(), policy.StageToolCall, name, rpc.Tool)
+	in.TargetRevision = targetRevision
+	in.ToolRevision = toolRevision
 	var err error
 	in.Args, in.ArgsDigest, in.ArgsMeta, err = policy.BindArgsStrict(rpc.Arguments)
 	if err != nil {
@@ -47,20 +50,58 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 	id := uuid.NewString()
 	w.Header().Set(headerConnectorActionID, id)
 	in.ConnectorActionID = id
-	transportMode := "json"
-	if cfg, err := s.connectors.Get(name); err == nil && cfg.Config.MCP != nil && cfg.Config.MCP.Transport != "" {
-		transportMode = cfg.Config.MCP.Transport
+	transportMode := connector.BoundMCPTransport(r.Context())
+	if transportMode == "" || !models.ValidConnectorTargetRevision(targetRevision) {
+		writeConnectorActionUnavailable(w, false)
+		return
 	}
 	row := &models.ConnectorAction{
 		ID: id, TenantID: in.TenantID, RunID: in.RunID, ThreadID: binding.ThreadID,
+		RunIncarnationID: binding.RunIncarnationID, ExportSinkID: s.actionExportSinkID,
 		Generation: in.Generation, AgentID: in.AgentID, Principal: in.Principal,
 		Connector: name, Tool: rpc.Tool, Transport: transportMode, ArgsDigest: in.ArgsDigest,
+		TargetRevision: &targetRevision, PolicyRevision: &in.PolicyRevision,
+		ToolRevision: optionalRevision(toolRevision),
+	}
+	credentialBinding, credentialRevision, err := registry.BoundCredentialBinding(r.Context(), name)
+	if err != nil {
+		writeConnectorActionUnavailable(w, false)
+		return
+	}
+	var credentialOwner credentials.Owner
+	credentialManager := s.credentialManager
+	if credentialBinding != "" {
+		if credentialManager == nil || binding.RunIncarnationID == "" {
+			writeConnectorActionUnavailable(w, false)
+			return
+		}
+		run, runErr := s.store.GetRun(r.Context(), in.RunID)
+		if runErr != nil || run.IncarnationID != binding.RunIncarnationID {
+			writeConnectorActionUnavailable(w, false)
+			return
+		}
+		registered, managerErr := credentialManager.BindingRevision(credentialBinding)
+		if managerErr != nil || registered != credentialRevision {
+			writeConnectorActionUnavailable(w, false)
+			return
+		}
+		credentialOwner = credentials.Owner{TenantID: in.TenantID, RunID: in.RunID, RunIncarnationID: binding.RunIncarnationID, Generation: in.Generation, ActionID: id, ConsumerID: name}
+		ref, refErr := credentialManager.ReferenceFor(credentialOwner, credentialBinding)
+		if refErr != nil {
+			writeConnectorActionUnavailable(w, false)
+			return
+		}
+		row.CredentialRef = &ref
 	}
 	if span := trace.SpanFromContext(r.Context()).SpanContext(); span.IsValid() {
 		row.TraceID = span.TraceID().String()
 	}
 	row, err = store.CreateConnectorAction(r.Context(), row, uuid.NewString())
 	if err != nil {
+		writeConnectorActionUnavailable(w, false)
+		return
+	}
+	if binding.RunIncarnationID != "" && row.RunIncarnationID != binding.RunIncarnationID {
 		writeConnectorActionUnavailable(w, false)
 		return
 	}
@@ -101,7 +142,7 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 	}
 	action.row, err = store.RecordConnectorActionDecision(r.Context(), id, row.Version, models.ConnectorActionDecision{
 		Effect: evaluation.Original.Effect, ReasonCode: evaluation.Original.ReasonCode, RuleID: evaluation.Original.RuleID,
-		AuthorizationSource: recordedSource, PendingActionID: pendingID, BreakGlassID: evaluation.BreakGlassID,
+		PolicyRevision: &in.PolicyRevision, AuthorizationSource: recordedSource, PendingActionID: pendingID, BreakGlassID: evaluation.BreakGlassID,
 	}, uuid.NewString())
 	if err != nil {
 		writeConnectorActionUnavailable(w, false)
@@ -126,11 +167,11 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		_, _ = w.Write(result.Body)
 		return
 	}
-	observed := connector.NewMCPActionTrace(func(ctx context.Context) error {
+	authorize := func(ctx context.Context) error {
 		// Recheck the shared assignment after potentially slow preparation.
 		// SQL Prepare fences the stored attempt separately. Neither check can
 		// atomically commit an external service's effects.
-		if s.queue == nil {
+		if s.queue == nil || in.PolicyRevision == "" || in.PolicyRevision != s.policy.Revision() {
 			return connector.ErrMCPDispatchBlocked
 		}
 		live, err := s.queue.LookupInflight(ctx, in.RunID)
@@ -148,22 +189,78 @@ func (s *Server) handleRecordedConnectorAction(w http.ResponseWriter, r *http.Re
 		if live.Generation != in.Generation || liveTenant != in.TenantID || live.GraphID != in.AgentID || live.ThreadID != binding.ThreadID || livePrincipal != in.Principal {
 			return connector.ErrMCPDispatchBlocked
 		}
+		if binding.RunIncarnationID != "" && live.RunIncarnationID != binding.RunIncarnationID {
+			return connector.ErrMCPDispatchBlocked
+		}
+		if action.receipt != nil {
+			// This receipt is private to this HTTP request. It authorizes no
+			// replay and cannot be supplied through headers or a tool body.
+			if credentialBinding == "" || s.CheckCredentialOwner(ctx, credentialOwner, credentialBinding) != nil {
+				return connector.ErrMCPDispatchBlocked
+			}
+			current, currentErr := store.GetConnectorAction(ctx, id)
+			if currentErr != nil || current.State != models.ConnectorActionDispatchIntent || current.DispatchID != action.receipt.DispatchID || current.Version != action.receipt.Version || current.DispatchDeadlineAt == nil || !current.DispatchDeadlineAt.After(time.Now()) {
+				return connector.ErrMCPDispatchBlocked
+			}
+			return nil
+		}
 		receipt, err := store.PrepareConnectorActionDispatch(ctx, id, action.row.Version, pendingID, source, time.Now().UTC().Add(45*time.Second), uuid.NewString())
 		if err != nil || receipt == nil || !receipt.Applied {
 			return connector.ErrMCPDispatchBlocked
 		}
 		action.receipt = receipt
 		return nil
-	})
+	}
+	observed := connector.NewMCPActionTrace(authorize)
 	ctx := connector.WithMCPActionTrace(r.Context(), observed)
-	result, forwardErr := s.connectors.ProxyMCPRequest(ctx, name, userCtx, rpc.Body)
+	var result *connector.ProxyMCPResult
+	var forwardErr, credentialErr error
+	if credentialBinding == "" {
+		result, forwardErr = registry.ProxyMCPRequest(ctx, name, userCtx, rpc.Body)
+	} else if err := authorize(ctx); err != nil {
+		forwardErr = connector.ErrMCPDispatchBlocked
+	} else {
+		// Credential issuance is itself an external operation. Approval and
+		// action intent must commit before Vault is contacted.
+		lease, lifecycleErr := credentialManager.Execute(ctx, credentialOwner, credentialBinding, func(execCtx context.Context, value credentials.UserPassword) error {
+			username, password := value.Values()
+			privateCtx, err := connector.WithMCPDatabaseCredentials(execCtx, credentialBinding, credentialRevision, username, password)
+			if err != nil {
+				forwardErr = err
+				return err
+			}
+			result, forwardErr = registry.ProxyMCPRequest(privateCtx, name, userCtx, rpc.Body)
+			return forwardErr
+		})
+		credentialErr = lifecycleErr
+		if lifecycleErr != nil {
+			if observed.Snapshot().ResponseObserved && result != nil && forwardErr == nil {
+				// A failed cleanup acknowledgement cannot erase a response that
+				// was already observed or cause the tool to run a second time.
+				ref := ""
+				if lease != nil {
+					ref = lease.ID
+				}
+				slog.Warn("credential lifecycle requires investigation", "connector_action_id", id, "credential_ref", ref)
+			} else if forwardErr == nil {
+				forwardErr = connector.ErrDatabaseCredentialsUnavailable
+			}
+		}
+	}
 	ob := observed.Snapshot()
+	if credentialErr != nil && !ob.DispatchStarted {
+		ob.ReasonCode = "credential_phase_failed"
+	}
 	if err := action.finish(r.Context(), ob); err != nil {
 		slog.Warn("connector action observation persistence failed", "connector_action_id", id)
 		writeConnectorActionUnavailable(w, ob.DispatchStarted)
 		return
 	}
 	if forwardErr != nil {
+		if errors.Is(forwardErr, connector.ErrTargetRevisionChanged) {
+			writeError(w, http.StatusConflict, "connector target changed; protected tool was not dispatched")
+			return
+		}
 		if errors.Is(forwardErr, connector.ErrMCPDispatchBlocked) {
 			writeConnectorActionUnavailable(w, false)
 			return
@@ -224,4 +321,11 @@ func writeConnectorActionUnavailable(w http.ResponseWriter, mayHaveExecuted bool
 		message = "connector action evidence incomplete; the tool may have executed"
 	}
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": message, "reason_code": "connector_action_evidence_unavailable"})
+}
+
+func optionalRevision(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

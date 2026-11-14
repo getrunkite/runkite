@@ -18,9 +18,10 @@ import (
 // WebhookConfig is the sync policy webhook (WebhookGate-shaped, not
 // the async Dispatcher/Sink path).
 type WebhookConfig struct {
-	URL     string
-	Secret  string
-	Timeout time.Duration
+	URL      string
+	Revision string
+	Secret   string
+	Timeout  time.Duration
 }
 
 // Webhook POSTs a decision request and parses allow/deny.

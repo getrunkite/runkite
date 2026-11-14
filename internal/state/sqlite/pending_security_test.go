@@ -25,7 +25,7 @@ func TestPendingActionsScopeAndConcurrentDedup(t *testing.T) {
 	}
 	expiry := time.Now().UTC().Add(time.Hour)
 	makeRow := func(id, tenantID, agentID string, embedded bool) *models.PendingAction {
-		row := &models.PendingAction{ID: id, TenantID: tenantID, AgentID: agentID, RunID: "turn-1", Connector: "files", Tool: "upload", ArgsDigest: "same-digest"}
+		row := &models.PendingAction{TargetRevision: testPendingTargetRevision, PolicyRevision: testPendingPolicyRevision, ID: id, TenantID: tenantID, AgentID: agentID, RunID: "turn-1", Connector: "files", Tool: "upload", ArgsDigest: "same-digest"}
 		if embedded {
 			row.ExpiresAt = &expiry
 		}
@@ -80,7 +80,7 @@ func TestPendingActionsScopeAndConcurrentDedup(t *testing.T) {
 	if err := s.SetPendingActionApproved(ctx, sharedID, "ops"); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "tenant-a", "agent-a", "turn-1", 0, "files", "upload", "same-digest"); err != nil || id != "" {
+	if id, err := s.ConsumeApprovedAction(ctx, "tenant-a", "agent-a", "turn-1", 0, "files", "upload", "same-digest", testPendingTargetRevision, testPendingPolicyRevision, ""); err != nil || id != "" {
 		t.Fatalf("embedded approval consumed as connector: %q %v", id, err)
 	}
 	next := makeRow("next-request", "tenant-a", "agent-a", true)
@@ -94,11 +94,11 @@ func TestPendingActionsScopeAndConcurrentDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, scope := range [][2]string{{"tenant-b", "agent-a"}, {"tenant-a", "agent-b"}} {
-		if id, err := s.ConsumeApprovedAction(ctx, scope[0], scope[1], "turn-1", 0, "files", "upload", "same-digest"); err != nil || id != "" {
+		if id, err := s.ConsumeApprovedAction(ctx, scope[0], scope[1], "turn-1", 0, "files", "upload", "same-digest", testPendingTargetRevision, testPendingPolicyRevision, ""); err != nil || id != "" {
 			t.Fatalf("other scope consumed connector: %q %v", id, err)
 		}
 	}
-	if id, err := s.ConsumeApprovedAction(ctx, "tenant-a", "agent-a", "turn-1", 0, "files", "upload", "same-digest"); err != nil || id != "connector" {
+	if id, err := s.ConsumeApprovedAction(ctx, "tenant-a", "agent-a", "turn-1", 0, "files", "upload", "same-digest", testPendingTargetRevision, testPendingPolicyRevision, ""); err != nil || id != "connector" {
 		t.Fatalf("matching consume: %q %v", id, err)
 	}
 }
@@ -120,7 +120,7 @@ func TestPendingApprovalDeadlineIsAtomic(t *testing.T) {
 		expires *time.Time
 		denied  bool
 	}{{"expired", &past, true}, {"future", &future, false}, {"connector", nil, false}} {
-		a := &models.PendingAction{ID: tc.id, TenantID: "acme", AgentID: "agent", RunID: tc.id, Connector: "files", Tool: "upload", ExpiresAt: tc.expires}
+		a := &models.PendingAction{TargetRevision: testPendingTargetRevision, PolicyRevision: testPendingPolicyRevision, ID: tc.id, TenantID: "acme", AgentID: "agent", RunID: tc.id, Connector: "files", Tool: "upload", ExpiresAt: tc.expires}
 		if err := s.CreatePendingAction(ctx, a); err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +152,7 @@ func TestPendingDedupLegacyRowsRemainUsable(t *testing.T) {
 	if err := s.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
-	a := &models.PendingAction{ID: "legacy", TenantID: "acme", AgentID: "agent", RunID: "turn", Connector: "files", Tool: "upload"}
+	a := &models.PendingAction{TargetRevision: testPendingTargetRevision, PolicyRevision: testPendingPolicyRevision, ID: "legacy", TenantID: "acme", AgentID: "agent", RunID: "turn", Connector: "files", Tool: "upload"}
 	if err := s.CreatePendingAction(ctx, a); err != nil {
 		t.Fatal(err)
 	}

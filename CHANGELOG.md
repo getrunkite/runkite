@@ -4,7 +4,57 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+**Release target: v0.7.0.** This is a local release candidate, not a published
+release. The entries below describe the candidate source. Existing v0.6.1
+artifacts do not include these changes. Move this section to a dated v0.7.0
+release entry only after the corresponding artifacts are published.
+
+### Image qualification
+
+- Install only production dependencies in the TypeScript runner image, preserve
+  its locked optional AI SDK and local TypeScript loader, and remove global
+  npm/npx and unused development compilers. Custom agent dependencies are built
+  in a separate Node stage. Add offline native LangGraph/AI SDK image checks and
+  extend CI image builds, smoke checks and vulnerability scans to all three
+  images. Final local Linux/arm64 scans report no fixable HIGH/CRITICAL findings;
+  see the [qualification record](docs/internal/security-completion-qualification.md).
+
 ### Added
+
+- Add optional requester exclusion and one-to-five distinct-reviewer quorum with
+  transactional review history. Bind managed approvals to configured policy and
+  optional actual MCP tool-schema revisions; retain target-v1 descriptors and use
+  target-v2 for new opt-in contracts. Historical managed bindings require fresh review.
+- Add a durable action-event HTTP outbox with stable delivery IDs, HMAC signing,
+  leased claims, bounded retry and dead letters. Destination identity prevents
+  rerouting old queues. Delivery retries resend evidence, never tools.
+- Add registered Vault database credential lifecycle for trusted external MCP
+  consumers, private encrypted cleanup handles, actual-TTL callback bounds,
+  manual Admin renew/revoke, metadata-only tenant Review and cleanup reconciliation.
+- Add separately credentialed execution pools, proxy-only Helm egress profiles
+  and an experimental external OpenShell JSONL workload bridge. Qualify the
+  installed Python runner with a real SQLite plane, pooled worker and OpenShell
+  0.1.8, including Landlock hard requirements, parent restart, committed-receipt
+  reclaim, uncertain-intent refusal, cancellation and confirmed runtime cleanup.
+  Separately qualify 10 chart egress cases on kind 0.33.0/Kubernetes 1.37.0 with
+  default kindnet. No unchanged SDK, live-provider or multi-replica external
+  workload qualification is claimed. The experimental JSONL profile has no model
+  usage/spend-settlement contract; zero recorded usage does not establish zero cost.
+- Add SQL migrations Postgres/SQLite 19/20/21 and MySQL 20/21/22, updated Admin
+  navigation and contract tests, and end-to-end operator/engineering guidance.
+  All entries above are included in the unpublished v0.7.0 candidate.
+
+- Bind managed MCP approvals to a `target-v1-` connector configuration digest
+  in both recorded and unrecorded paths. Pin request configuration through
+  dispatch; require fresh review after a target change. Add optional nonsecret
+  `mcp.revision` for operator-managed remote contract changes. Resolved credential
+  values stay outside the digest. The target descriptor alone does not identify
+  remote schema or implementation; optional actual schema binding is separate.
+
+- Add reproducible two-process Review/action-evidence qualification on disposable
+  Postgres/Redis, with cross-replica auth/approval races, process-loss recovery,
+  bounded repetition and a separate CI job. Use synthetic assignments and MCP
+  effects without model/provider calls.
 
 - Add a separate tenant Review workspace/API with explicit primary identity,
   tenant and `governance:read` / `governance:approve`. Keep global Admin unchanged.
@@ -22,10 +72,22 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 - Admin Connector actions list/detail, a Run Detail evidence panel, correlation
   IDs and an operator investigation guide. Preserve evidence across run pruning;
   optional independent retention removes only resolved records. Add SQL schema
-  migrations Postgres/SQLite 17 and MySQL 18. This is unreleased source after
-  v0.6.1, not a change to previously published artifacts.
+  migrations Postgres/SQLite 17 and MySQL 18. This is part of the unpublished
+  v0.7.0 candidate, not a change to previously published artifacts.
 
 ### Documentation
+
+- Correct the engineering guide's managed approval and audit narratives: current
+  policy still runs on retry, consumed approvals remain history, required-audit
+  failures block exceptional authority, and target/run bindings require an exact
+  match. Explain the recorded and capture-off dispatch paths, shared runner-token
+  limits and cancellation's external-effect boundary. Runtime behavior is unchanged.
+
+- Distinguish implemented reviewer permissions from operator rollout requirements.
+  Document reproducible HA qualification, the external execution-containment
+  boundary and the external OpenShell workload contract. Correct the support guide's
+  best-effort versus required-audit guarantees; distinguish actual disposable
+  runtime/CNI evidence from unit tests, rendered policy and unqualified deployments.
 
 - Use consistent homepage link cues and keyboard feedback. Add section links to
   Engineering articles and connect public guides to the client walkthrough and
@@ -49,6 +111,23 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   FinOps JSON sample and qualify MCP versus non-MCP credential boundaries.
 
 ### Fixed
+
+- Reject a release tag when it disagrees with coordinated Python, npm or Helm
+  metadata before any publication job runs. Check owned lockfile versions in CI
+  as well, including file-linked examples. API/protocol versions and framework
+  dependency pins retain their independent version contracts.
+- Make TypeScript runner `--help` and `-h` exit successfully before reading
+  agent configuration or starting worker setup. Reject malformed, nonpositive
+  and unsafe concurrency values instead of accepting a numeric prefix.
+- Refresh Debian runner image packages during builds to include current vendor
+  security updates.
+
+- Add Postgres/SQLite schema 18 and MySQL schema 19 for target-bound approvals,
+  without assigning a target to historical managed rows. Those rows need fresh
+  review. Downgrade refuses this security migration; restore a reviewed backup
+  for rollback. Stop/drain all writers, back up, upgrade and replace every replica
+  before traffic. Reject a newer-than-supported schema at startup in current
+  source; this cannot protect already-released older binaries.
 
 - Preserve completion history when terminal run IDs are deleted and reused;
   use bounded opaque checkpoint IDs on SQL and Mongo. Fix SQLite fractional

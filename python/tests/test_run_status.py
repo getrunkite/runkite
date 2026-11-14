@@ -30,6 +30,16 @@ def _patch_get(status_code: int, body: dict | None = None):
 
 
 class TestShouldSkipRun(unittest.TestCase):
+    def test_pool_status_is_bound_and_fails_closed(self):
+        for status in (403, 503, 200):
+            with _patch_get(status, {}) as factory:
+                self.assertTrue(
+                    _run(should_skip_run("http://cp:2026", "run-1", runner_kind="pool-finance", generation=3))
+                )
+                headers = factory.return_value.get.call_args.kwargs["headers"]
+                self.assertEqual(headers["X-Runkite-Run-Id"], "run-1")
+                self.assertEqual(headers["X-Runkite-Generation"], "3")
+
     def test_skip_interrupted(self):
         with _patch_get(200, {"status": "interrupted"}):
             self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1")))

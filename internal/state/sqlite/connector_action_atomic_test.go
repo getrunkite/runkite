@@ -34,7 +34,9 @@ func TestConnectorActionEventFailureRollsBackApprovalAndSummary(t *testing.T) {
 	if _, err := s.BeginRunAttempt(ctx, "run", 1); err != nil {
 		t.Fatal(err)
 	}
-	a, err := s.CreateConnectorAction(ctx, &models.ConnectorAction{ID: uuid.NewString(), TenantID: "acme", RunID: "run", ThreadID: "thread", Generation: 1, AgentID: "agent", Connector: "fixture", Tool: "write", ArgsDigest: strings.Repeat("a", 64)}, uuid.NewString())
+	revision := testPendingTargetRevision
+	policyRevision := testPendingPolicyRevision
+	a, err := s.CreateConnectorAction(ctx, &models.ConnectorAction{TargetRevision: &revision, PolicyRevision: &policyRevision, ID: uuid.NewString(), TenantID: "acme", RunID: "run", ThreadID: "thread", Generation: 1, AgentID: "agent", Connector: "fixture", Tool: "write", ArgsDigest: strings.Repeat("a", 64)}, uuid.NewString())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +57,7 @@ func TestConnectorActionEventFailureRollsBackApprovalAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &models.PendingAction{ID: "pending-v2-" + uuid.NewString(), TenantID: "acme", RunID: "run", Generation: 1, AgentID: "agent", Connector: "fixture", Tool: "write", ArgsDigest: a.ArgsDigest, Status: models.PendingStatusPending}
+	p := &models.PendingAction{TargetRevision: testPendingTargetRevision, PolicyRevision: testPendingPolicyRevision, ID: "pending-v2-" + uuid.NewString(), TenantID: "acme", RunID: "run", Generation: 1, AgentID: "agent", Connector: "fixture", Tool: "write", ArgsDigest: a.ArgsDigest, Status: models.PendingStatusPending}
 	if err := s.CreatePendingAction(ctx, p); err != nil {
 		t.Fatal(err)
 	}

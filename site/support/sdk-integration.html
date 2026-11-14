@@ -55,6 +55,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -458,6 +459,9 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           and <a href="https://github.com/getrunkite/runkite/tree/main/python/adapters/google_adk_adapter">adapter contract and tests</a>
           for session scope, token accounting, telemetry privacy and installed-package checks.
         </p>
+        <h2 id="new-security-controls">New controls keep the SDK boundary (unreleased)</h2>
+        <p>Current-source review quorum, policy/schema binding, evidence export and credential consumers extend gated managed execution. Existing SDK clients still create Threads/Runs through the public API; native tools outside a cooperating gate do not acquire connector enforcement. App-owned decisions still create no managed run or kill/spend controls. The separate experimental external JSONL workload is not a drop-in switch under an unchanged SDK. See <a href="security-completion.html">Security operations</a>.</p>
+        <p>The experimental JSONL profile has no model/token-usage or spend-settlement contract. Zero recorded spend does not establish free execution; native SDK usage reporting is independent. Use external provider accounting and limits for unreported workload model calls.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

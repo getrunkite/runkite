@@ -5,7 +5,7 @@
  * transport errors -- WatchCancels remains the primary cancel path.
  */
 import { logger } from "./logger.js";
-import { tenantHeaders } from "./tenantCtx.js";
+import { tenantHeaders, runIdHeaders } from "./tenantCtx.js";
 import { httpDispatcher } from "./tls.js";
 
 const SKIP_STATUSES = new Set(["interrupted", "success", "error", "timeout"]);
@@ -15,12 +15,17 @@ type FetchInit = RequestInit & { dispatcher?: unknown };
 export async function shouldSkipRun(
   httpAddress: string,
   runId: string,
-  opts?: { runnerKind?: string; runnerToken?: string },
+  opts?: { runnerKind?: string; runnerToken?: string; generation?: number },
 ): Promise<boolean> {
   const base = httpAddress.replace(/\/+$/, "");
+  const pool = opts?.runnerKind?.startsWith("pool-") ?? false;
   // The status route uses tenant-scoped storage even though it does not require
   // an active run binding. Preserve the assignment's current tenant here too.
   const headers: Record<string, string> = tenantHeaders();
+  if (opts?.generation !== undefined) {
+    Object.assign(headers, runIdHeaders(runId));
+    headers["X-Runkite-Generation"] = String(opts.generation);
+  }
   if (opts?.runnerToken) {
     headers["X-Runner-Kind"] = opts.runnerKind || "typescript-langgraphjs";
     headers["X-Runner-Token"] = opts.runnerToken;
@@ -40,8 +45,8 @@ export async function shouldSkipRun(
       return true;
     }
     if (!resp.ok) {
-      logger.warn(`pre-exec status: run ${runId} HTTP ${resp.status}; proceeding (fail-open)`);
-      return false;
+      logger.warn(`pre-exec status: run ${runId} HTTP ${resp.status}; pool refuses execution=${pool}`);
+      return pool;
     }
     const body = (await resp.json()) as { status?: string };
     const status = body.status ?? "";
@@ -49,9 +54,9 @@ export async function shouldSkipRun(
       logger.info(`pre-exec status: run ${runId} is ${status}; discarding assignment`);
       return true;
     }
-    return false;
+    return pool && status !== "pending" && status !== "running";
   } catch (err) {
-    logger.warn(`pre-exec status: run ${runId} check failed (${err}); proceeding (fail-open)`);
-    return false;
+    logger.warn(`pre-exec status: run ${runId} check failed (${err}); pool refuses execution=${pool}`);
+    return pool;
   }
 }

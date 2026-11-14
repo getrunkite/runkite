@@ -105,12 +105,25 @@ func (w *WebhookSink) Handle(ctx context.Context, event Event) {
 	}
 }
 
+// DeliverOnce sends one evidence delivery without in-memory retries. Durable
+// callers own retry/acknowledgement and preserve the same delivery ID.
+func (w *WebhookSink) DeliverOnce(ctx context.Context, payload []byte, id string) error {
+	return w.deliverWithID(ctx, payload, id)
+}
+
 func (w *WebhookSink) deliver(ctx context.Context, payload []byte) error {
+	return w.deliverWithID(ctx, payload, "")
+}
+
+func (w *WebhookSink) deliverWithID(ctx context.Context, payload []byte, id string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.cfg.URL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if id != "" {
+		req.Header.Set("X-Runkite-Delivery-Id", id)
+	}
 	if w.cfg.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(w.cfg.Secret))
 		mac.Write(payload)

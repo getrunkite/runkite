@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"testing"
 
 	"github.com/getrunkite/runkite/internal/state/conformance"
@@ -17,4 +18,9 @@ func TestPendingSecurityConformance(t *testing.T) {
 	}
 	conformance.RunPendingSecurity(t, s)
 	conformance.RunPendingTenantScope(t, s)
+	conformance.RunPendingReviewSecurity(t, s)
+	conformance.RunPendingTargetRevisionSecurity(t, s, func(ctx context.Context, id, revision, status string) error {
+		_, err := s.db.ExecContext(ctx, `UPDATE pending_actions SET target_revision=?,status=?,pending_key=NULL WHERE id=?`, revision, status, id)
+		return err
+	})
 }

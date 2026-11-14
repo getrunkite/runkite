@@ -26,6 +26,7 @@ from .cancellation import PendingCancels, record_cancel_signal, register_run, un
 from .checkpoint import CheckpointerManager, resolve_checkpoint_http_url
 from .completion import CompletionDeliveryError, finish_run
 from .custom_app import load_asgi_app, serve_custom_app
+from .execution_pool import pool_runner_kind, validate_pool_environment
 from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify_graph_export
 from .heartbeat import heartbeat_loop
 from .logging_config import setup_logging
@@ -647,6 +648,7 @@ async def run_worker(
     connection pools (see checkpoint.py/store.py) so concurrent jobs' DB
     I/O doesn't serialize on a single shared connection.
     """
+    validate_pool_environment(runner_kind)
     tracing_shutdown = init_tracing()
 
     adapter = LangGraphAdapter()
@@ -949,6 +951,7 @@ async def _run_assigned_job(
         run_id,
         runner_kind=runner_kind,
         runner_token=runner_token,
+        generation=generation,
         tenant_id=assignment.get("tenant_id") or "",
     ):
         return None
@@ -1125,7 +1128,9 @@ def main():
         default=int(os.environ.get("RUNKITE_CONCURRENCY", "1")),
         help="Max concurrent in-flight jobs per runner process (env: RUNKITE_CONCURRENCY, default: 1)",
     )
+    parser.add_argument("--execution-pool", default=os.environ.get("RUNKITE_EXECUTION_POOL"))
     args = parser.parse_args()
+    args.runner_kind = pool_runner_kind(args.runner_kind, args.execution_pool)
 
     setup_logging()
 

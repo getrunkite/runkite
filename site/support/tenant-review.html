@@ -49,6 +49,7 @@
           <a href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a class="active" aria-current="page" href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -78,7 +79,8 @@
         <p class="kicker">Govern</p>
         <h1>Tenant review</h1>
         <p class="lede">Give a reviewer access to their team's operations without making them a deployment-wide administrator.</p>
-        <p class="note"><strong>Availability:</strong> unreleased source after v0.6.1. Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+        <p class="note"><strong>Availability:</strong> v0.7.0 candidate source (not published). Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+        <p>Reviewer permissions are implemented in that source. Upgrading every HTTP replica is a rollout requirement: old binaries cannot recognize the new role strings. API-key/JWT/webhook providers already default to strict permissions unless explicitly overridden; the Helm example also sets them to true.</p>
 
         <h2 id="scope">Start with the right access</h2>
         <p>Global Admin remains the place for deployment-wide operations. A tenant reviewer uses the separate <code>/admin/review/</code> workspace. Its API takes the tenant from verified authentication, not an editable filter, URL or request header.</p>
@@ -110,7 +112,7 @@
   }
 }</pre>
         <p>With JWT or webhook auth, map those permission strings and the actual verified identity/tenant through your existing provider. A missing JWT subject or webhook user identity cannot use a compatibility placeholder to obtain review access. Empty permissions never grant Review, even when compatibility <code>strict_permissions: false</code> is configured.</p>
-        <p class="note"><strong>Upgrade every replica before issuing these permissions.</strong> Old binaries do not implement the boundary and may filter unknown role strings differently. Use strict permissions and activate reviewer grants only after the fleet is upgraded. This slice adds no SQL migration, but the preceding unreleased security migrations and legacy approval fresh-review requirements still apply. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tenant-review-upgrade">upgrade procedure</a>.</p>
+        <p class="note"><strong>Upgrade every replica before issuing these permissions.</strong> Old binaries do not implement the boundary and may filter unknown role strings differently. Use strict permissions and activate reviewer grants only after the fleet is upgraded. Review sessions add no schema migration of their own, but the v0.7.0 candidate source (not published) includes security and target-binding migrations. Follow the <a href="ops.html#target-bound-approval-upgrade">target-binding maintenance procedure</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tenant-review-upgrade">Review upgrade procedure</a> first.</p>
 
         <h2 id="use">Review an operation</h2>
         <ol class="steps">
@@ -121,6 +123,7 @@
           <li>Use Evidence for managed connector attempts. A response is not business success. Investigate unknown outcomes in the downstream service before retrying.</li>
         </ol>
         <p>Standalone app-owned decisions can appear in Approvals without a managed run. Their operation IDs do not imply a conversation exists. Review offers no conversation endpoint or run-detail navigation. Action evidence requires <code>policy.action_evidence</code> with required audit; approval review can be used independently on existing SQL pending actions.</p>
+        <p>Managed rows show their stored <strong>target revision</strong>. An approval belongs to that configured connector target as well as the original run and arguments, even when action capture is off. Missing or unsupported managed target bindings require fresh submission and review; Approve is disabled and Deny remains available. A changed current target returns <code>409</code>. The display cannot confirm configuration across replicas or prove a remote tool implementation. Standalone expiring decisions remain app-owned and require no connector target. See <a href="connectors.html#target-bound-approvals">target-bound approvals</a>.</p>
 
         <h2 id="sessions">Sessions and sign-out</h2>
         <p>Review sessions have a fixed maximum lifetime of 15 minutes. Activity does not extend it. Expiry clears the workspace and requires fresh login. Roles are captured at login; changing an IdP grant does not instantly revoke an existing cookie. Logout or fixed expiry ends that session.</p>
@@ -135,7 +138,12 @@
           <li><strong>409:</strong> current policy, expiry, status or approval binding prevents approval. A prior approval is not a permanent policy exception.</li>
           <li><strong>501:</strong> use a SQL state backend, or implement the optional isolated Review-session capability if you supply a custom session store.</li>
         </ul>
-        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Two-person/no-self-approval rules and revision-pinned tool approvals are not part of this slice.</p>
+        <p>Keep bootstrap global Admin access for recovery and role configuration. Reviewers cannot assign themselves roles or edit policy. Subsequent unreleased <a href="security-completion.html#review-authority">review quorum and requester exclusion</a> are now available, with configured policy and optional advertised-schema binding. Neither proves remote implementation. Review also reads own-tenant lease metadata but cannot renew/revoke.</p>
+
+        <h2 id="qualification">Test the multi-replica boundary locally</h2>
+        <p>From a source checkout with Go, Docker and Compose, run <code>make test-review-ha</code>. It creates disposable Postgres/Redis services and starts two real control-plane processes with strict authentication and a synthetic MCP target. It checks cross-replica sessions, tenant/role isolation, competing approval and dispatch, process loss, retained evidence and logout. It uses no paid model or cloud account.</p>
+        <p>For bounded repetition, run <code>RUNKITE_TEST_REVIEW_REPETITIONS=3 make test-review-ha</code> (1 through 20). Each cycle normally takes about a minute. The printed output directory contains a JSON report and sanitized process/fixture logs. Each database uses a generated per-run password; retained configuration contains its reference. The wrapper removes only its own infrastructure and ignores inherited database URLs and repository <code>.env</code> settings.</p>
+        <p>Use an isolated CI worker or firewall-protected workstation. Only database mappings are loopback-bound; the current CLI's HTTP/gRPC listeners can accept connections on other interfaces. This finite test does not qualify live model providers, database failover, arbitrary-code sandboxing or a long cloud soak.</p>
 
         <h2 id="reference">API and engineering</h2>
         <p>Review uses <code>/review-api/session</code>, <code>/review-api/pending-actions</code> (list, detail, approve and deny), and <code>/review-api/connector-actions</code> (list and metadata detail). Lists are bounded to 100 records per page and use <code>X-Next-Cursor</code>. Detail and mutations stay tenant scoped. There is no general Audit, Threads, Runs, grant or secret-management API here.</p>

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 
+from runkite_runner.execution_pool import pool_runner_kind
 from runkite_runner.generic_worker import run_worker
 from runkite_runner.logging_config import setup_logging
 
@@ -15,7 +16,9 @@ def main() -> None:
     parser.add_argument("--http-address", default=os.environ.get("RUNKITE_HTTP_URL", "http://localhost:2026"))
     parser.add_argument("--runner-kind", default="python-google-adk")
     parser.add_argument("--concurrency", type=int, default=int(os.environ.get("RUNKITE_CONCURRENCY", "1")))
+    parser.add_argument("--execution-pool", default=os.environ.get("RUNKITE_EXECUTION_POOL"))
     args = parser.parse_args()
+    args.runner_kind = pool_runner_kind(args.runner_kind, args.execution_pool)
     setup_logging()
     adapter = GoogleAdkAdapter()
     adapter.configure(

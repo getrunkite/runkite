@@ -2,14 +2,86 @@
 
 Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
 
+**Candidate availability:** version metadata targets v0.7.0, but no v0.7.0 tag,
+registry package or image has been published. Build the plane and runners from
+the same candidate checkout. The chart's `image.tag` and `runner.image.tag`
+default to `latest`, which still selects the published release, not this local
+candidate. Override both with matching images you built and made available to
+your cluster. Do not combine candidate configuration or schema changes with
+older released writers. See [release preparation](releasing.md).
+
+## Connector target revision upgrade
+
+**v0.7.0 candidate source (not published):** managed MCP approvals now require a
+configured target revision, with action capture on or off. This adds
+Postgres/SQLite schema 18 or MySQL schema 19, after the evidence migrations
+below. Published v0.6.1 binaries do not enforce this contract.
+
+Treat this as a maintenance-window upgrade:
+
+1. Inventory pending, approved and uncertain connector operations. Establish
+   whether an external write occurred before considering a retry. An old
+   approval is not execution evidence.
+2. Drain incoming traffic and dispatch. Finish or explicitly investigate active
+   protected calls, then stop every control-plane replica and other database
+   writer. Cron, background jobs and older binaries must not continue writing.
+3. Take a verified backup and confirm its restore procedure. Retain the matching
+   nonsecret connector configuration. Keep credentials in their existing secret
+   system rather than copying them into an upgrade artifact.
+4. Check all MCP URLs, OAuth issuer/token URLs and other descriptor fields for
+   embedded credentials. Use final HTTP(S) URLs, separate auth fields or
+   `secret_ref`, consistent target configuration, and an optional nonsecret
+   `mcp.revision` label when coordinating a remote contract change.
+5. With all writers stopped, run `runkite db upgrade` using the reviewed new
+   binary and the deployment's configured database environment. Apply every
+   pending migration; the earlier MySQL identity and evidence requirements still
+   apply. If upgrade fails, keep writers stopped while repairing and retrying.
+6. Replace every replica with the same new build before restoring traffic.
+   Confirm readiness and the intended target descriptor on every replica.
+   Do not use a mixed-version rollout or send traffic to an older binary against
+   this schema. Current source rejects a newer-than-supported schema, but that
+   check cannot protect already-released older binaries.
+7. Qualify a synthetic MCP operation: hold it, inspect its target revision,
+   approve it, and verify one matching dispatch. Change the fixture target or
+   manual label and verify that the old approval cannot authorize it. Repeat
+   with action capture off if that is the production setting.
+8. Resume traffic after these checks. Historical managed rows with an empty
+   target revision remain history and require fresh submission/review. Do not
+   fill their revision from today's configuration. Standalone expiring decision
+   approvals are unchanged.
+
+Admin or Review returns `409` when an old managed row has no current target
+binding, or its connector target changed or is unavailable. Check the current
+configuration on the serving replica. If policy still requires approval, issue a
+new request on the valid active run/generation and obtain fresh review. Preserve
+old rows for investigation. Never replay an uncertain external write simply to
+clear a stale approval.
+
+`db downgrade` refuses this security migration. Rollback requires a reviewed
+pre-upgrade backup, stopped writers and matching binaries/configuration. Reconcile
+any external effects and post-backup records before restoring traffic. Dropping
+the column or editing migration stamps discards the authority boundary.
+
+Custom Go pending stores must accept `targetRevision` after `argsDigest` in
+`ConsumeApprovedAction` and, where implemented, `FindOpenPendingAction` before
+its `embedded` argument. Managed `PendingAction` creation requires a valid
+`TargetRevision`; new recorded actions require a valid target pointer too.
+Obtain it from the trusted registry snapshot. Do not accept a caller's claimed
+revision or silently fall back to the old tuple. Standalone expiring rows leave
+it empty. HTTP clients and the public Runner Protocol need no new parameter.
+
+See [connector configuration](connectors.md#target-bound-managed-approvals-unreleased)
+and the [engineering rationale](internal/target-bound-approvals.md).
+
 ## Connector action evidence upgrade
 
-**Unreleased source after v0.6.1:** rebuild the control plane; published v0.6.1
+**v0.7.0 candidate source (not published):** rebuild the control plane; published v0.6.1
 binaries do not implement `policy.action_evidence`. Take a verified backup and
 stop control-plane writers before `runkite db upgrade`. This adds Postgres/SQLite
 schema 17 and MySQL schema 18, including action history and immutable run
-incarnations. On MySQL, upgrade also includes the earlier identity-collation
-requirements below. Existing rows are not reconstructed into tool histories.
+incarnations. The later [target-binding upgrade](#connector-target-revision-upgrade)
+also applies to current source. On MySQL, upgrade also includes the earlier
+identity-collation requirements below. Existing rows are not reconstructed into tool histories.
 
 Managed connector approvals now carry the original stored run's immutable
 incarnation, even when action capture is off. Historical managed approvals
@@ -64,8 +136,10 @@ mismatch explicitly.
 
 ## Tenant review upgrade
 
-This slice is unreleased source after v0.6.1 and adds no SQL migration. Complete
-the preceding security migrations first when upgrading from a released binary.
+The Review permissions/session slice adds no SQL migration by itself. The
+v0.7.0 candidate (not published) also includes the
+[target-binding migration](#connector-target-revision-upgrade); apply the complete
+maintenance-window procedure before issuing reviewer credentials.
 Deploy matching new binaries to every serving replica before issuing
 `governance:read` / `governance:approve` grants. Old JWT permission filtering does
 not understand these strings. Do not rely on mixed-version/default-open behavior
@@ -89,6 +163,21 @@ remain denied. The [operator guide](../site/support/tenant-review.html) covers
 login, fixed expiry, 403/404/409/501 and recovery. The
 [engineering note](internal/tenant-scoped-review.md) records scope, session
 purpose, SQL predicates and regression rationale.
+
+The replica upgrade is an operator rollout step, not a missing permission
+implementation. Configured API-key/JWT/webhook providers already default to
+strict permissions unless explicitly overridden, and the Helm example sets it
+to true. A new binary cannot teach an older replica the new role vocabulary.
+
+For a disposable local qualification, run `make test-review-ha`. It starts two
+real strict-auth control planes sharing its own Postgres/Redis pair, then checks
+cross-replica sessions, tenant isolation, approval/dispatch races and process-loss
+reconciliation. Use `RUNKITE_TEST_REVIEW_REPETITIONS=3` for bounded repetition.
+The target uses synthetic credentials and MCP effects, makes no model-provider
+calls, prints its evidence directory and cleans up its own infrastructure.
+Use an isolated CI worker or firewall-protected workstation: database mappings
+are loopback-only, but the CLI's HTTP/gRPC listeners follow their existing
+all-interface binding. This is a finite qualification, not a long cloud soak.
 
 ## Hardening upgrade
 
@@ -419,3 +508,84 @@ Enable `policy.audit_required: true` only after checking durable SQL audit avail
 OAuth endpoint errors retain status and recognized standard OAuth codes, but omit arbitrary provider bodies. Custom connector error mappings that matched descriptive body text must use the supported safe codes. Token files are reread on resolution; existing OAuth access tokens can remain cached until expiry. Rotating a client secret does not revoke those tokens. Vault lookup failure does not silently enable a stale-secret fallback.
 
 See [design and regression coverage](internal/action-authority-hardening.md), [A2A upgrade guidance](a2a.md#upgrade-and-troubleshooting), and [required audit configuration](configuration.md#required-policy-audit).
+
+## Security completion upgrade
+
+Read the [qualification record](internal/security-completion-qualification.md)
+for the exercised scenarios, final release gates and explicit limits.
+
+Availability: v0.7.0 candidate source (not published). This adds Postgres/SQLite migrations
+19 (review authority/history), 20 (action outbox), 21 (credential leases); MySQL
+uses 20, 21 and 22 respectively. Earlier target-bound migrations 18/19 still
+apply when upgrading older data. No historical identity, managed revision, vote,
+lease or export delivery is guessed or backfilled into authority.
+
+1. Stop admission and drain every control-plane/runner writer. Verify a restorable
+   database backup and separately back up the private retained handle keyring.
+2. Run `runkite db upgrade` with the new binary. Replace all replicas and workers
+   before resuming traffic. Do not mix older writers with the new authority fields.
+3. Resubmit historical managed approvals for fresh review. Inspect standalone
+   pending operations after changing their separation/quorum plan; obsolete plans
+   cannot be approved or polled as current authority.
+4. Configure optional controls consistently across replicas, then test denied,
+   pending, partial quorum and final quorum with synthetic operations. Confirm
+   metadata pages through Admin and an own-tenant read-only Review identity.
+
+These security migrations refuse unsafe downgrade. Recovery requires a reviewed
+pre-upgrade backup and explicit reconciliation of external effects and outstanding
+leases. The new binary's newer-schema guard cannot protect an old released binary
+that does not understand that guard. Do not erase migration stamps or guess
+missing authority fields.
+
+### Review and export incidents
+
+A successful review request can leave an operation `pending`: inspect
+`approval_count/required_approvals` and retained exact reviewer history. Never
+tell the caller to continue before status is approved. Self/duplicate review,
+missing requester, revision drift, expiry and current deny remain server gates.
+
+Open Admin Evidence deliveries, select an explicit tenant and inspect sink ID,
+action/event sequence, attempts, worker claim and last fixed reason code. The
+outbox survives action/run pruning. A failed collector does not trigger tool
+replay. Retry only a dead-letter delivery, using its existing ID. The receiver
+must deduplicate. Removing/changing a destination leaves its prior queue held;
+restore the exact prior name/URL/schema contract to deliver that queue. Preserve
+capacity and define manual delivered-record retention instead of deleting
+unresolved rows to hide an outage.
+
+### Credential incidents and rotation
+
+Open Admin Credential leases with an explicit tenant. Review users can read their
+own tenant's metadata but cannot renew or revoke. `active` records actual granted
+TTL; `revoked` requires provider confirmation. Unknown issuance, renewal or
+revocation is not evidence of absence. Investigate Vault audit and database state
+without repeating issuance or a tool. Provider-side role `max_ttl` is essential
+when a lost response also lost the cleanup handle.
+
+Private token/keyring files must be process-owned regular 0600 files, not symlinks.
+Rotate the external token through its existing issuer. Keep historical decryption
+keys and retired provider bindings on every replica until exact old leases have
+confirmed cleanup. Renewal requires current action/owner authority and never
+extends an already released callback's deadline. Revocation can clean an exact
+old lease after cancel/reclaim/run pruning; it does not revoke a replacement's
+lease or undo completed work. The bounded reconciler does not issue credentials
+or retry tools. See [the lifecycle record](internal/credential-lifecycle.md).
+
+### Pool and external workload rollout
+
+Use distinct pool credentials and exact tenant/agent membership, proxy-only
+workers and operator-specified egress destinations. Test on an isolated disposable
+cluster with an enforcing CNI before claiming egress protection. The experimental
+OpenShell profile requires a compatible JSONL workload, external pinned runtime
+and policy. A retained launch intent without a committed receipt is uncertain:
+inspect the owned sandbox/effects and cleanup before explicitly starting fresh
+work. Local qualification passed with an installed Python runner, real SQLite
+plane and OpenShell 0.1.8, and separately with kind 0.33.0/Kubernetes 1.37.0 default
+kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
+qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
+providers. A failed fixture cleanup exits nonzero and preserves its private
+recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
+The experimental isolated protocol has no model/token-usage or spend-settlement
+contract. Do not infer free execution from zero recorded usage or rely on
+token/USD totals to limit unreported model calls. Keep provider accounting and
+limits at the external issuer; ordinary managed admission still applies.

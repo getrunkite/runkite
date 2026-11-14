@@ -16,6 +16,8 @@ const (
 // ConnectorAction is metadata about one managed MCP tools/call request. A
 // response is evidence of that response, not proof of a business effect.
 type ConnectorAction struct {
+	// ExportSinkID pins the operator configured delivery destination identity.
+	ExportSinkID        string     `json:"export_sink_id,omitempty"`
 	ID                  string     `json:"action_id"`
 	TenantID            string     `json:"tenant_id"`
 	RunID               string     `json:"run_id"`

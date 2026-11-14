@@ -37,6 +37,8 @@ func (s *SQLiteStore) CreateCachedRun(ctx context.Context, run *models.Run, caps
 }
 
 func (s *SQLiteStore) createRun(ctx context.Context, run *models.Run, caps *state.RunAdmissionCaps, claim bool, afterInsert func(sqlcompletion.Tx) error) error {
+	// The caller never supplies the durable insertion identity.
+	run.IncarnationID = ""
 
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -111,6 +113,13 @@ func (s *SQLiteStore) createRun(ctx context.Context, run *models.Run, caps *stat
 	if err != nil {
 		return err
 	}
+	var incarnation string
+	if err := conn.QueryRowContext(ctx, `SELECT incarnation_id FROM runs WHERE run_id=? AND tenant_id=?`, run.RunID, tid).Scan(&incarnation); err != nil {
+		return err
+	}
+	if incarnation == "" {
+		return fmt.Errorf("run insertion identity missing")
+	}
 	if afterInsert != nil {
 		if err := afterInsert(locked); err != nil {
 			return err
@@ -120,5 +129,6 @@ func (s *SQLiteStore) createRun(ctx context.Context, run *models.Run, caps *stat
 		return err
 	}
 	committed = true
+	run.IncarnationID = incarnation
 	return nil
 }

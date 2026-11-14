@@ -49,6 +49,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -77,7 +78,7 @@
 
         <p class="kicker">Govern</p>
         <h1>Run manifest</h1>
-        <p class="lede">Every run freezes a snapshot of exactly what it was authorized to do the instant it was created, not whatever your config says right now. That snapshot is stored on the run record (<code>metadata.run_manifest</code>) and, when the run is actually dispatched to a runner, copied onto the queued job too. Admin can pull it up for any run, forever.</p>
+        <p class="lede">Every run freezes a snapshot of exactly what it was authorized to do the instant it was created, not whatever your config says right now. That snapshot is stored on the run record (<code>metadata.run_manifest</code>) and, when the run is actually dispatched to a runner, copied onto the queued job too. Admin can inspect it while the run is retained.</p>
 
         <div class="guide-grid">
           <section>
@@ -112,7 +113,7 @@
   "connector_needs": ["salesforce"],
   "allowed_tools": ["lookup_account"],
   "policy_fail_closed": true,
-  "principal": { "identity": "alice", "permissions": ["runs:create"] },
+  "principal": { "identity": "alice", "verified_identity": true, "permissions": ["runs:create"] },
   "parent_run_id": null,
   "depth": 0
 }</pre>
@@ -121,6 +122,7 @@
           <li><strong><code>allowed_tools</code></strong>: absent means no in-graph tool allowlist was configured (unrestricted); present, including an empty list, means the runner was told to refuse every tool call not on it.</li>
           <li><strong><code>policy_fail_closed</code></strong>: whether the connector <code>policy</code> section was configured for this dispatch (<code>true</code> = a policy engine was active; it does not mean every call was denied). Specific allow/deny/pending decisions are still <a href="./grants.html">Grants &amp; HITL</a> and <a href="./policy.html">PDP / Cedar</a>: see Audit for the decision log.</li>
           <li><strong><code>principal</code></strong>: omitted entirely when no auth provider is configured (open local/dev mode), not a blank record.</li>
+          <li><strong><code>principal.verified_identity</code> (unreleased):</strong> true only when the server captured an explicit authenticated primary identity. Current requester-exclusion approvals require this marker on the durable managed principal. A legacy identity string or fallback display name is insufficient; clients cannot set the marker as authority.</li>
         </ul>
 
         <h2>In the product</h2>
@@ -132,7 +134,7 @@
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Automatic, no config.</strong> Every run gets one in metadata, there's nothing to turn on, and nothing changes about how you write an agent. LLM cache hits get a manifest too (no runner dispatch, so nothing is copied onto a <code>RunAssignment</code>).</li>
-          <li><strong>A record, not a gate.</strong> This is v1: it captures intent, it does not evaluate sequences of calls or block anything on its own. Reasoning about a <em>sequence</em> of tool calls in flight and denying a suspicious one before it runs is a different, heavier control than a per-run snapshot. Runkite's existing fail-closed grants, mandatory HITL, and break-glass are the enforcement layer; the manifest is what you check afterward to see what any of them were actually working with.</li>
+          <li><strong>A snapshot, with separate enforcement.</strong> The manifest records dispatch intent and does not evaluate call sequences. Existing grants, mandatory HITL and break-glass enforce connector authority. The v0.7.0 candidate requester-exclusion approvals also read the durable manifest's verified principal rather than trusting a caller-supplied requester. Neither the manifest nor its hash attests workload or provider behavior.</li>
           <li><strong>Lives in existing storage.</strong> No new database column or migration, it rides inside the <code>metadata</code> JSON column every run already has, so it works on every state backend the same way.</li>
           <li><strong>API-visible from day one.</strong> <code>GET /admin-api/runs/{id}</code> has always returned it (it's just a key in <code>metadata</code>); the Admin UI card in this release is what makes it visible without reading raw JSON.</li>
         </ul>

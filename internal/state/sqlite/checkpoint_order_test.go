@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state/migrate"
 	"github.com/getrunkite/runkite/internal/state/sqlcompletion"
 )
 
@@ -19,14 +20,18 @@ var checkpointOrderFixtures = []struct{ id, timestamp string }{
 	{"long", "2020-01-02T10:00:00.123456789Z"},
 }
 
-func checkpointOrderStore(t *testing.T) *SQLiteStore {
+func checkpointOrderStore(t *testing.T, historical ...int) *SQLiteStore {
 	t.Helper()
 	s, err := New(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	if err := s.Init(context.Background()); err != nil {
+	migrations := s.migrations()
+	if len(historical) > 0 {
+		migrations = migrations[:historical[0]]
+	}
+	if err := migrate.Upgrade(context.Background(), migrate.NewSQL(s.db, migrate.SQLite), migrations, nil); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -105,11 +110,8 @@ func TestCheckpointNewWritesPreserveNanosecondOrder(t *testing.T) {
 }
 
 func TestCheckpointUpgradeNormalizesLegacyHistoryWithoutChangingPayloads(t *testing.T) {
-	s := checkpointOrderStore(t)
+	s := checkpointOrderStore(t, 16)
 	ctx := context.Background()
-	if err := s.Downgrade(ctx); err != nil {
-		t.Fatal(err)
-	}
 	for _, fixture := range checkpointOrderFixtures {
 		insertLegacyCheckpoint(t, s, fixture.id, fixture.timestamp)
 	}
@@ -118,7 +120,7 @@ func TestCheckpointUpgradeNormalizesLegacyHistoryWithoutChangingPayloads(t *test
 	for i := range 260 {
 		insertLegacyCheckpoint(t, s, fmt.Sprintf("batch-%03d", i), time.Date(2019, 1, 1, 0, 0, 0, i, time.UTC).Format(time.RFC3339Nano))
 	}
-	if err := s.Init(ctx); err != nil {
+	if err := migrate.Upgrade(ctx, migrate.NewSQL(s.db, migrate.SQLite), s.migrations()[:17], nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, fixture := range checkpointOrderFixtures {

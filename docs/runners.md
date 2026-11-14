@@ -176,6 +176,15 @@ Dockerized via `Dockerfile.runner-ts` (same zero-build-step pattern as `Dockerfi
 docker compose -f docker-compose.ts.yml up --build
 ```
 
+The TypeScript image installs only production dependencies and keeps local
+`tsx` for runtime `.ts` loading. Its pinned AI SDK remains available through
+the managed example's production dependency. Development compilers and global
+`npm`/`npx` are absent. Custom agents should install dependencies with
+`npm ci --omit=dev` in a separate Node builder stage, then copy their source,
+configuration and `node_modules` into a derived runner image. Match the runtime
+Node major version and target platform for native dependencies. Contributor
+package manifests and locks are unchanged.
+
 Kept separate rather than merged into the main compose file because a single control-plane instance's `LANGGRAPH_CONFIG` binds to one `runner_kind` at a time (see `internal/config/loader.go`'s `RunnerKind` field) -- mixing Python and TS agents in one deployment means auto-discovering multiple `langgraph.json` files (leaving `LANGGRAPH_CONFIG` unset), not something this demo needed to prove the image itself works.
 
 Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).
@@ -396,3 +405,36 @@ PYTHONPATH=<repo>/python:<repo>/python/adapters \
 ```
 
 Live-verified end to end for all four: a real control plane, a real runner process for each framework, a real `POST /threads/{id}/runs` request through to a real thread-values response containing that framework's actual output. `make test-adapters` runs the CrewAI/LlamaIndex/AutoGen unit tests once their venvs exist (`test_generic_worker.py`/`test_langchain_adapter.py` cover the shared loop and plain LangChain respectively, and run in CI/`make test-python` alongside the rest of the Python suite -- CrewAI/LlamaIndex/AutoGen's isolated-venv tests run in a dedicated CI step instead, for the same shared-venv-isolation reason above). Plain LangChain additionally has automated, PR-CI-gated end-to-end coverage (`test/e2e/adapters/`, part of `make test-e2e`) -- a real control plane dispatching to a real `langchain_adapter` runner subprocess over real gRPC, including cancellation via a real `WatchCancels` signal. Happy-path coverage for CrewAI/LlamaIndex/AutoGen (and LangChain/LangGraph/TS) across every state+transport cell is the nightly `make test-matrix` / Matrix workflow. CrewAI/LlamaIndex/AutoGen don't have the equivalent PR-CI e2e tier yet (their isolated venvs make it more setup than LangChain's shared one) -- live-verified manually during development, same as before, just not CI-gated.
+
+## Separately credentialed execution pools (unreleased)
+
+The v0.7.0 candidate (not published) lets a graph file select an operator-registered
+`execution_pool` without replacing its SDK adapter. Pools specify the framework
+kind plus exact tenant and agent membership and use distinct plane-side
+`RUNNER_TOKEN_POOL_<NAME>` credentials. Workers select their pool using
+`--execution-pool` or `RUNKITE_EXECUTION_POOL` and its matching `RUNNER_TOKEN`.
+The plane refuses misroutes before input; pooled preflight status failure is
+closed. A pool does not isolate arbitrary code inside an ordinary SDK worker.
+
+A separate experimental Python `python-isolated` profile keeps its trusted
+worker outside an external OpenShell 0.1.8 workload. Use the explicit JSONL
+input/state/events/tool/result contract, immutable image/policy and proxy
+checkpoints. The original SQL run-incarnation receipt binds launch state; an
+uncertain launch intent is not automatically launched again. The workload gets
+no runner token, assignment environment or provider cleanup handle.
+
+The experimental JSONL profile does not define model/token-usage reporting or
+spend settlement. Zero recorded spend is not proof of free execution. Existing
+managed admission checks apply, but unreported model calls cannot be charged
+against accurate token/USD totals. Use external provider accounting and limits;
+native SDK adapters' usage reporting is a separate capability.
+
+Disposable qualification has passed using an installed Python runner, real SQLite
+plane, pooled worker and OpenShell 0.1.8 with Landlock `hard_requirement`, including
+state/reclaim/cancel and confirmed cleanup. The chart's egress rules separately
+passed on kind 0.33.0/Kubernetes 1.37.0 with default kindnet. This does not make
+existing SDK adapters automatically compatible or qualify another deployment.
+Follow the [example](../examples/isolated_agent/README.md),
+[design and qualification record](internal/constrained-execution.md) and
+[operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1
+runner packages do not contain this new profile.

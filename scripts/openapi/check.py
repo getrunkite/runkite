@@ -137,6 +137,49 @@ def _check_model_contract(spec: dict) -> list[str]:
     return problems
 
 
+def _check_run_manifest_contract(spec: dict, run_model: str = "Run") -> list[str]:
+    """Keep the authenticated principal marker visible in actual response metadata."""
+    source = (REPO_ROOT / "internal/models/models.go").read_text()
+    schemas = spec.get("components", {}).get("schemas", {})
+    problems = []
+    for model in ("RunManifest", "RunManifestPrincipal"):
+        match = re.search(r"^type " + model + r" struct \{\n(.*?)^\}", source, re.M | re.S)
+        if not match:
+            problems.append(f"cannot find Go model {model}")
+            continue
+        tags = re.findall(r'`json:"([^"`]+)"', match.group(1))
+        expected = {tag.split(",", 1)[0] for tag in tags} - {"-"}
+        expected_required = {tag.split(",", 1)[0] for tag in tags if "omitempty" not in tag.split(",")[1:]} - {"-"}
+        schema = schemas.get(model, {})
+        fields, required = _schema_shape(spec, schema)
+        if fields != expected:
+            problems.append(f"{model} fields differ from Go model")
+        if required != expected_required:
+            problems.append(f"{model} required fields differ from Go model")
+        if schema.get("additionalProperties") is not False:
+            problems.append(f"{model} must exclude undeclared authority fields")
+    verified = schemas.get("RunManifestPrincipal", {}).get("properties", {}).get("verified_identity", {})
+    if verified.get("type") != "boolean":
+        problems.append("RunManifestPrincipal verified_identity must remain an optional boolean")
+    principal = schemas.get("RunManifest", {}).get("properties", {}).get("principal", {})
+    if principal.get("$ref") != "#/components/schemas/RunManifestPrincipal":
+        problems.append("RunManifest principal must use the typed principal contract")
+
+    def response_metadata(schema: dict, seen: frozenset[str] = frozenset()) -> list[dict]:
+        result = [schema["properties"]["metadata"]] if "metadata" in schema.get("properties", {}) else []
+        ref = schema.get("$ref", "")
+        if ref.startswith("#/components/schemas/") and ref not in seen:
+            result.extend(response_metadata(schemas.get(ref.rsplit("/", 1)[-1], {}), seen | {ref}))
+        for part in schema.get("allOf", []):
+            result.extend(response_metadata(part, seen))
+        return result
+
+    metadata = response_metadata(schemas.get(run_model, {}))
+    if not any(item.get("properties", {}).get("run_manifest", {}).get("$ref") == "#/components/schemas/RunManifest" for item in metadata):
+        problems.append(f"{run_model} response metadata must expose the typed RunManifest")
+    return problems
+
+
 def _check_connector_action_contract(spec: dict) -> list[str]:
     """Check metadata response coverage against Go tags, including required fields."""
     root = REPO_ROOT
@@ -230,6 +273,84 @@ def _check_review_contract(spec: dict) -> list[str]:
     return problems
 
 
+
+def _check_security_completion_contract(spec: dict) -> list[str]:
+    """Keep new credential/export responses metadata-only and source aligned."""
+    schemas = spec.get("components", {}).get("schemas", {})
+    problems = []
+    contracts = (
+        ("PendingAction", "PendingAction", "internal/models/pending.go"),
+        ("PendingActionApproval", "PendingActionApproval", "internal/models/pending.go"),
+        ("Owner", "CredentialLeaseOwner", "internal/credentials/types.go"),
+        ("Record", "CredentialLease", "internal/credentials/types.go"),
+        ("ActionDelivery", "ActionDelivery", "internal/state/action_delivery.go"),
+        ("ActionDeliveryPayload", "ActionDeliveryPayload", "internal/state/action_delivery.go"),
+    )
+    for model, name, filename in contracts:
+        source = (REPO_ROOT / filename).read_text()
+        match = re.search(r"^type " + model + r" struct \{\n(.*?)^\}", source, re.M | re.S)
+        if not match:
+            problems.append(f"cannot find security model {model}")
+            continue
+        tags = re.findall(r'`json:"([^"`]+)"', match.group(1))
+        wire = {tag.split(",", 1)[0] for tag in tags} - {"-"}
+        expected_required = {tag.split(",", 1)[0] for tag in tags if "omitempty" not in tag.split(",")[1:]} - {"-"}
+        schema = schemas.get(name, {})
+        fields, required = _schema_shape(spec, schema)
+        if fields != wire:
+            problems.append(f"{name} fields differ from Go security model")
+        if required != expected_required:
+            problems.append(f"{name} required fields differ from Go security model")
+        if schema.get("additionalProperties") is not False:
+            problems.append(f"{name} must exclude undeclared security fields")
+        forbidden = fields & {"protected_handle", "claim_token", "password", "username", "handle", "token", "credentials", "provider_error", "authorization"}
+        for field in sorted(forbidden):
+            problems.append(f"{name} exposes forbidden secret/authority field {field}")
+    expected_refs = {("ActionDelivery", "payload"): "ActionDeliveryPayload", ("ActionDeliveryPayload", "action"): "ConnectorAction", ("ActionDeliveryPayload", "event"): "ConnectorActionEvent", ("CredentialLease", "owner"): "CredentialLeaseOwner"}
+    for (name, field), target in expected_refs.items():
+        if schemas.get(name, {}).get("properties", {}).get(field) != {"$ref": f"#/components/schemas/{target}"}:
+            problems.append(f"{name}.{field} must use bounded typed {target} metadata")
+    for name in ("ConnectorAction", "PendingAction", "ReviewPendingAction"):
+        props = schemas.get(name, {}).get("properties", {})
+        if props.get("target_revision", {}).get("pattern") != "^target-v[12]-[0-9a-f]{64}$":
+            problems.append(f"{name} target revision must preserve v1 and accept only supported v2")
+        if props.get("policy_revision", {}).get("pattern") != "^policy-v1-[0-9a-f]{64}$":
+            problems.append(f"{name} policy revision must bind the configured v1 policy")
+        if props.get("tool_revision", {}).get("pattern") != "^(?:|tool-v1-[0-9a-f]{64})$":
+            problems.append(f"{name} tool revision must be optional exact v1 schema identity")
+    for name in ("PendingAction", "ReviewPendingAction"):
+        props = schemas.get(name, {}).get("properties", {})
+        quorum = props.get("required_approvals", {})
+        if quorum.get("minimum") != 1 or quorum.get("maximum") != 5:
+            problems.append(f"{name} quorum must remain bounded one through five")
+    lease_source = (REPO_ROOT / "internal/credentials/types.go").read_text()
+    states = set(re.findall(r'State\w+\s+State\s*=\s*"([^"\n]+)"', lease_source))
+    if set(schemas.get("CredentialLease", {}).get("properties", {}).get("state", {}).get("enum", [])) != states:
+        problems.append("CredentialLease lifecycle states differ from Go constants")
+    delivery_states = {"pending", "delivered", "dead_letter"}
+    if set(schemas.get("ActionDelivery", {}).get("properties", {}).get("status", {}).get("enum", [])) != delivery_states:
+        problems.append("ActionDelivery states differ from Go constants")
+    for path, methods in spec.get("paths", {}).items():
+        is_admin = path.startswith(("/admin-api/action-deliveries", "/admin-api/credential-leases"))
+        is_review_lease = path.startswith("/review-api/credential-leases")
+        for method, operation in methods.items():
+            if method not in {"get", "post", "put", "delete", "patch"}:
+                continue
+            if is_review_lease and method != "get":
+                problems.append(f"{method.upper()} {path} must not grant Review lifecycle mutation")
+            if not is_admin:
+                continue
+            if not any(p.get("in") == "query" and p.get("name") == "tenant_id" and p.get("required") is True for p in operation.get("parameters", [])):
+                problems.append(f"{method.upper()} {path} requires an explicit tenant parameter")
+            for requirement in operation.get("security", []):
+                if method != "get" and "AdminSessionAuth" in requirement and "AdminCSRF" not in requirement:
+                    problems.append(f"{method.upper()} {path} Admin cookie mutation missing CSRF")
+    query = spec.get("paths", {}).get("/admin-api/action-deliveries", {}).get("get", {}).get("parameters", [])
+    bounds = {p.get("name"): p.get("schema", {}) for p in query}
+    if bounds.get("limit", {}).get("maximum") != 100 or bounds.get("offset", {}).get("maximum") != 10000:
+        problems.append("Action delivery pagination must remain bounded")
+    return problems
+
 def main() -> None:
     public = _load_spec("openapi.json")
     admin = _load_spec("openapi-admin.json")
@@ -272,8 +393,11 @@ def main() -> None:
     ):
         integrity.extend(_check_spec_integrity(name, spec))
     integrity.extend(_check_model_contract(public))
+    integrity.extend(_check_run_manifest_contract(public))
+    integrity.extend(_check_run_manifest_contract(admin, "AdminRunView"))
     integrity.extend(_check_connector_action_contract(admin))
     integrity.extend(_check_review_contract(admin))
+    integrity.extend(_check_security_completion_contract(admin))
 
     if missing or integrity:
         if missing:

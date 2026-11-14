@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/pagecursor"
@@ -32,7 +33,22 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 
-	if err := s.Init(ctx); err != nil {
+	// Explicitly build v17 so the historical downgrade coverage remains
+	// meaningful after the irreversible target-binding migration.
+	historicalUpgrade := func(reset bool) error {
+		return s.withSchemaLock(tenant.SystemContext(ctx), func(ctx context.Context, conn *pgxpool.Conn) error {
+			if reset {
+				if err := s.dropSchemaLocked(ctx, conn); err != nil {
+					return err
+				}
+				if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS schema_migrations`); err != nil {
+					return err
+				}
+			}
+			return migrate.Upgrade(ctx, migrate.NewPgx(conn), s.migrations(conn)[:17], nil)
+		})
+	}
+	if err := historicalUpgrade(true); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	bk := migrate.NewPgx(s.pool)
@@ -225,7 +241,7 @@ func TestAuditEvents_WriteAndMigrateV2(t *testing.T) {
 	if tableExists(t, ctx, s, "audit_events") {
 		t.Fatal("audit_events still present after v2 Down")
 	}
-	if err := s.Init(ctx); err != nil {
+	if err := historicalUpgrade(false); err != nil {
 		t.Fatalf("re-Init after Downgrade: %v", err)
 	}
 	cur, _ = bk.Current(ctx)

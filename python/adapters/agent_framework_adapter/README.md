@@ -13,7 +13,7 @@ reclaim safeguards.
 - Agent factories, text streaming, ordinary local tools
 - Durable `AgentSession` across runner restarts
 - Cancellation, usage metering, tenant isolation via the generic worker
-- Native local-tool `allowed_tools` checks before execution (unreleased)
+- Native local-tool `allowed_tools` checks before execution
 - CAS receipt recovery for the same `run_id`
 - Offline example under [`examples/managed_agent_framework`](../../../examples/managed_agent_framework)
 
@@ -22,7 +22,9 @@ input or caller-supplied assistant/tool history. Native approval requests and
 resume commands fail explicitly rather than becoming successful runs. Native
 background continuation and replacement text updates are also unsupported.
 
-## Local tool restrictions (unreleased)
+<a id="local-tool-restrictions-unreleased"></a>
+
+## Local tool restrictions
 
 The runner enforces the control plane's dispatched per-graph `allowed_tools`
 snapshot through native function middleware. Omit the graph entry to leave local
@@ -43,11 +45,11 @@ unsupported.
 
 ## Setup
 
-**Unreleased packaging:** this adapter is included in the source-built
-`runkite-runner` wheel and sdist, with an optional `agent-framework` extra pinned
-to `agent-framework-core==1.23.0`. The published PyPI `0.5.8` artifact does not
-contain this adapter, extra or CLI. From the repository root, install the local
-package into a clean environment:
+**Published packaging:** PyPI `0.6.1` includes this adapter, extra and CLI in
+`runkite-runner`, with an optional `agent-framework` extra pinned to
+`agent-framework-core==1.23.0`. The current checkout targets the v0.7.0 candidate,
+which is not published yet. To install that matching candidate, build the local
+package in a clean environment from the repository root:
 
 ```bash
 python3.12 -m venv .venv-agent-framework
@@ -56,8 +58,8 @@ python3.12 -m venv .venv-agent-framework
 
 This builds and installs the runner wheel, including `agent_framework_adapter`.
 No `PYTHONPATH` is needed to run it. Python 3.11+ is supported; this example uses
-3.12. After a release containing this change is published, the equivalent PyPI
-install will be `pip install 'runkite-runner[agent-framework]'`.
+3.12. For the published release, use
+`pip install 'runkite-runner[agent-framework]'`.
 
 ## Run
 

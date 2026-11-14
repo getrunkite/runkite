@@ -227,3 +227,19 @@ The unified KV store (`/store/*`) is also usable directly from agent code, not j
 Both modes read and write the exact same rows -- a value written by one Python runner in direct mode is immediately visible to another runner in proxy mode, and to any HTTP client. Verified end-to-end: a direct-mode runner increments a cross-thread counter via `store.put`, the runner is killed, a fresh proxy-mode runner picks up the next run and reads/increments the same counter through HTTP.
 
 **TTL**: `RunkiteStore` sets `supports_ttl = True` and implements LangGraph's `BaseStore` TTL contract in full (real gap found live: a framework calling `store.aput(..., ttl=...)` used to hard-fail with `NotImplementedError: TTL is not supported by RunkiteStore`) -- `store.put(ns, key, value, ttl=<minutes>)` expires the item that many minutes after it was last accessed, `ttl=None` means no expiration, and reads (`get`/`search`) refresh the expiry by default (`refresh_ttl=False` opts out per-call). Backed by `ttl_minutes`/`expires_at` columns on `store_items`, supported identically across SQLite, Postgres, and MongoDB, and in both direct and proxy mode. Expired items read as absent (no special error) and are swept by a background job that runs regardless of the `retention` config below, since it's hygiene for an already-excluded-from-reads state, not a configurable retention policy. The TypeScript runner's `RunkiteStore` does not implement TTL -- not a gap, `@langchain/langgraph-checkpoint`'s `BaseStore` has no TTL concept in the JS ecosystem at all as of the installed version.
+
+## Unreleased security extensions after v0.6.1
+
+These extensions belong to the v0.7.0 candidate, which is not published yet.
+
+These reuse the existing SQL authority and transport boundaries: transactional
+reviewer quorum/history; exact managed target, configured policy and optional
+observed MCP schema identity; metadata-only event outbox; externally issued Vault
+database leases for registered trusted consumers; and independently credentialed
+fleet pools. The external OpenShell JSONL adapter remains experimental. It adds
+an explicit workload process boundary instead of moving arbitrary existing SDK
+loops into the Go binary. No new global proxy, vault or policy engine is added.
+
+Read the [operator contracts](../site/support/security-completion.html) and
+[engineering catalog](../site/support/engineering.html#security-completion) before
+enabling them. Published v0.6.1 artifacts do not contain these extensions.

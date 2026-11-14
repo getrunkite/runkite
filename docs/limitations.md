@@ -31,7 +31,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 
 ## Managed connector action evidence (unreleased)
 
-Current source after v0.6.1 can opt into SQL managed MCP attempt history with
+The v0.7.0 candidate (not published) can opt into SQL managed MCP attempt history with
 `policy.action_evidence` and required audit. It does not cover local tools,
 standalone decisions, model calls or every MCP method. Every serving replica
 must enable it; additive migrations do not make older or flag-off writers record.
@@ -42,16 +42,22 @@ cancel is not proof that a target committed or rolled back its business effect.
 Unknown outcomes are preserved and never trigger automatic tool replay.
 
 New action tables contain metadata only; existing run streams, checkpoints and
-policy audit have their own data/retention rules. No tool/target/policy revision
-pinning, credential leasing, tamper-evident archive or reliable lifecycle export
-is claimed. Run pruning does not remove action history. Resolved-record retention
+policy audit have their own data/retention rules. Managed approvals bind to a
+configured target revision and configured policy revision, including when capture
+is off. Optional `mcp.pin_tools` also binds the advertised tool schema; none of
+these digests pins upstream implementation. Optional
+[registered database credential leases](internal/credential-lifecycle.md) and a
+[durable action-event outbox](internal/action-delivery-outbox.md) are available
+in current source. They are not enabled merely by turning on action capture.
+Tamper-evident external archives remain an operator responsibility. Run pruning
+does not remove action history. Resolved-record retention
 is separate and leaves pending/unknown attempts, including earlier pending
 requests whose approval a later attempt consumed. Storage can therefore grow.
 See the [operator guide](../site/support/connector-actions.html).
 
 ## Tenant Review boundaries (unreleased)
 
-Current source after v0.6.1 adds flat-tenant approval/evidence permissions in a
+The v0.7.0 candidate (not published) adds flat-tenant approval/evidence permissions in a
 separate Review workspace. This is not general per-resource RBAC or a user
 registry. Review needs verified primary identity, explicit tenant and a new role;
 empty/default-open permissions do not qualify. Global Admin remains global.
@@ -60,17 +66,38 @@ No conversation or general Audit API is exposed to reviewers.
 Review cookies contain login-time authority for at most 15 minutes absolute;
 activity cannot extend it. IdP changes are not instant revocation of an issued
 cookie. Admin/Review sessions and logout are independent. Reviewer approval
-retains existing exact argument/run/generation/incarnation/expiry rules but adds
-no no-self-approval or tool/target revision pinning. Upgrade all replicas before
-issuing roles. See [setup and limitations](../site/support/tenant-review.html).
+retains exact argument/run/generation/incarnation/expiry rules and adds configured
+target, configured policy and optional advertised-schema matching for managed
+connector approvals. Default-one approval permits self-review unless the operator
+enables [requester exclusion and/or reviewer quorum](internal/approval-authority-and-quorum.md).
+Those options count exact authenticated identities, not independently verified
+people. They do not pin upstream code. Upgrade all replicas before issuing roles.
+See [setup and limitations](../site/support/tenant-review.html).
+
+## Configured target binding (unreleased)
+
+Target revisions describe configured MCP endpoint/transport, nonsecret auth
+locators, scopes, tool filters and an optional operator `mcp.revision` label.
+Credential values are excluded; reference changes and credential value rotation
+are different operations. An unchanged URL and label cannot reveal that a remote
+server changed its schema or behavior. Discovery alone does not prove which code
+executes, and the manual label is not an attestation or remote rollback control.
+
+Managed target binding is enforced with or without action capture. Standalone
+`/governance/decide` does not gain a managed run or target. New SQL migrations
+Postgres/SQLite 18 and MySQL 19 leave historical managed target bindings empty;
+those approvals need fresh review. Stop all writers and replace every replica
+before traffic. Current source rejects a newer schema, but old released binaries
+cannot gain that guard retroactively. See the
+[upgrade procedure](ops-runbook.md#connector-target-revision-upgrade).
 
 ## Authority and secret-safety boundaries
 
-- Required policy audit is opt-in, SQL-only and available in unreleased source
-  after v0.6.1; it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
+- Required policy audit is opt-in, SQL-only and available in the v0.7.0 candidate
+  (not published); it is absent from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
 - A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. This does not provide isolated identities for workers sharing a runner kind, atomic queue/child-store authorization, or external token downscoping.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
-- Vault references still read KV values. Dynamic lease issuance, renewal, cleanup reconciliation and provider-confirmed revocation are not implemented by this hardening patch.
+- Vault references still read KV values. That original hardening slice did not add lease issuance. Subsequent unreleased registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
 
 ## Deep dive
 
@@ -220,7 +247,7 @@ Honest gaps, not hidden ones:
   transaction, but interrupted upgrades resume and stamp only after foreign-key
   restoration. Downgrade refuses unsafe merging, and overwritten identities
   cannot be reconstructed. See [upgrade procedure](ops-runbook.md#hardening-upgrade).
-- **State-store and pgvector schemas use numbered up/down migrations; Qdrant/Weaviate/Pinecone stay create-if-missing.** `runkite db upgrade` / `serve` apply state versions via `schema_migrations`. pgvector uses a separate `vector_schema_migrations` table (same Postgres DB must not share version rows with state) via `Init` / `runkite vector upgrade`. `db downgrade` / `vector downgrade` each roll back one step -- baseline (v1) Down is destructive (CLI warns). Pre-versioned databases run baseline Up then stamp v1. Cloud vector backends have no DDL trail.
+- **State-store and pgvector schemas use numbered up/down migrations; Qdrant/Weaviate/Pinecone stay create-if-missing.** `runkite db upgrade` / `serve` apply state versions via `schema_migrations`. pgvector uses a separate `vector_schema_migrations` table (same Postgres DB must not share version rows with state) via `Init` / `runkite vector upgrade`. `db downgrade` / `vector downgrade` each request one rollback step. Security migrations can refuse an unsafe downgrade; target-bound approval migration Postgres/SQLite 18 or MySQL 19 requires a reviewed backup for rollback. Baseline (v1) Down is destructive (CLI warns). Pre-versioned databases run baseline Up then stamp v1. Cloud vector backends have no DDL trail.
 - **Runner OTel creates a per-job `runkite.run` child span under the control plane's `traceparent` when `OTEL_EXPORTER_OTLP_*` is set** (same env contract as the control plane; no-op otherwise). Python LangGraph / plain-LangChain, TypeScript LangGraph.js, CrewAI (event bus), and LlamaIndex (instrumentation handler) auto-attach thin listeners that open `runkite.llm` / `runkite.tool` children under that span (metadata only -- no prompts/completions). AutoGen nests its own GenAI `invoke_agent` / `execute_tool` spans under `runkite.run` when OTel is on, but does not emit `runkite.llm` / `runkite.tool` (no LLM callback surface without wrapping `ChatCompletionClient`).
 - **Direct Postgres LangGraph is default-tenant-only (v0.6.0).** Every non-default tenant fails before factory/state access, since even a delimiter-safe new named key can read legacy default-tenant history. Use HTTP proxy mode for named LangGraph tenants and explicitly resolve prior native state. Default direct thread IDs without `:` retain history. Fresh memory permits named tenants under its delimiter guard: no colon in named tenant IDs or default thread IDs, and no outer whitespace/ASCII controls in tenant IDs. Default cron threads need proxy mode. Proxy supports all tenants and imports no native history automatically; there is no ownership marker or blank fallback. Managed opaque SDK profiles are unaffected. See [upgrade guidance](ops-runbook.md#follow-up-identity-and-completion-upgrade).
 - **Proxy-mode writes use GET-modify-PUT with CAS.** An in-process `asyncio.Lock` per blob serializes parallel LangGraph tasks in one runner. Across replicas, PUTs send `If-Match` (ETag/version) and retry on `412` so concurrent `aput` / `aput_writes` merge instead of silently dropping channels. HITL interrupt→resume and mid-superstep pending writes are full-fidelity (same as direct mode for LangGraph); `aput_writes` without `checkpoint_id` raises rather than no-op. LangGraph Pregel calls `aput_writes` for a *new* checkpoint id *before* `aput`, so a missing blob is normal: both `aput_writes` and `aput` create via `If-None-Match: *` (create-only); if a concurrent peer already won, `412` retries as GET+merge instead of clobbering (so an unconditional `aput` cannot wipe an `aput_writes` shell). Weak/malformed `If-Match` is rejected with `400` (not treated as absent). Checkpoint id `latest` is reserved (`400`; conflicts with `GET .../latest`). `alist(filter=...)` raises `NotImplementedError` (metadata filter is not applied to opaque blobs). `aget_tuple` without an id uses `GET .../latest?ns=` (one round-trip). Opaque list endpoints soft-cap at ~1000 rows (no cursor yet) — deep history / many subgraph ns keys can truncate; `/latest` covers the resume hot path.
@@ -272,3 +299,45 @@ Honest gaps, not hidden ones:
 - **Admin UI write actions**: cancel-run and delete-thread reuse the exact client-facing handlers under system context (`POST /admin-api/runs/{runID}/cancel`, `DELETE /admin-api/threads/{threadID}`); webhook redelivery (`POST /admin-api/webhooks/dead-letters/{id}/redeliver`) is genuinely new, since the client-facing API has no equivalent. Known limitation: `WebhookDeadLetter` doesn't persist the original signing secret, so a redelivery is sent unsigned -- a receiver enforcing `X-Runkite-Signature` will reject it. Redelivery also doesn't remove the entry from the dead-letter list on success (it stays as an audit record, not a mutation of stored state) -- the response's `delivered` field is the UI's only success signal.
 - **Retention's `checkpoints_keep_last` only covers proxy-mode checkpoints.** See the Retention section above -- direct-mode Python+Postgres deployments use LangGraph's own `AsyncPostgresSaver` tables, which this feature doesn't touch.
 - **SSE event streaming is goroutine-per-run, each holding a Redis connection.** Every `broker.Subscribe(runID)` spawns one goroutine running a blocking `XREAD` loop against the run's Redis Stream (`rk:events:{run_id}`). Go goroutines are cheap (~2-4 KB each), but each one occupies a Redis connection from go-redis's pool for the duration of the SSE stream. At ~3,000-5,000 concurrent SSE connections per CP, the Redis connection pool becomes the bottleneck (Redis default `maxclients` is 10,000, shared across all CPs, queues, heartbeats, and cancels). Mitigation today: horizontal scaling (add CP replicas behind the load balancer). Future optimization path: a multiplexed XREAD reader that tails all active streams in one Redis command/connection and dispatches to per-run Go channels in-memory — same `EventBroker` interface, same handler code, 50x fewer Redis connections. Not implemented because current target scale (hundreds to low thousands of concurrent runs) is well within the goroutine-per-run model.
+
+## Security completion boundaries (unreleased)
+
+The v0.7.0 candidate (not published) adds optional reviewer separation/quorum, policy and MCP schema
+binding, durable action export, registered Vault database leases and execution
+pools. Published v0.6.1 artifacts do not implement these controls.
+
+- Quorum counts exact authenticated identities, not independently verified humans.
+  Default-one local approval can still lack an actor; strict quorum or requester
+  exclusion cannot. Existing policy must first hold the operation.
+- Configured policy hashing cannot attest changes behind an unchanged PDP label.
+  MCP schema pinning cannot establish remote code identity or transactional tool
+  effects. Cross-system authority checks and sends are not one atomic transaction.
+- Evidence export is at least once and may arrive out of order. Receiver-side
+  deduplication uses delivery ID. Changing destination holds the former sink's
+  queue; dead-letter retry resends evidence only. Delivered rows require explicit
+  operator retention/capacity planning.
+- Dynamic credentials are limited to registered Vault database roles and trusted
+  credential-aware consumers. KV `secret_ref` remains KV lookup. No arbitrary
+  secret issuance, user OAuth-token vault, automatic callback renewal, workload
+  identity bootstrap or universal MCP credential compatibility is added. A lost
+  issuance response may leave an unrecoverable handle and an unknown lease.
+  Confirmed revocation does not undo a query or terminate every existing session.
+- Pools isolate fleet routing and credentials, not hostile code inside one worker.
+  Helm egress manifests need an enforcing CNI. The external OpenShell JSONL bridge
+  remains experimental, with explicit immutable image/policy and durable uncertain
+  launch handling. A disposable SQLite plane/installed pooled worker/OpenShell
+  0.1.8 lifecycle qualification and a separate kind 0.33.0/Kubernetes 1.37.0
+  default-kindnet egress qualification have passed. These do not qualify a
+  different runtime/kernel/CNI, cloud metadata service, hostile workloads sharing
+  one worker, external multi-replica workload or live model/provider. Existing SDK
+  adapters do not become sandboxed merely by selecting a pool. See the
+  [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
+- The experimental isolated JSONL profile has no supported model/token-usage
+  frame or spend-settlement contract. Zero recorded spend does not mean the
+  workload made no model calls or incurred no cost. Managed admission checks
+  still apply, but token/USD caps cannot account for unreported workload usage.
+  Use external provider accounting and limits. Native SDK usage reporting is a
+  separate adapter capability and is not inherited by this profile.
+
+See [support operations](../site/support/security-completion.html) and
+[upgrade constraints](ops-runbook.md#security-completion-upgrade).

@@ -45,16 +45,49 @@ See [trust and governance](docs/trust-governance.md), [connectors](docs/connecto
 and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
 the enforcement and deployment contracts.
 
-Current unreleased source after v0.6.1 adds optional [required policy audit](docs/configuration.md#required-policy-audit)
-blocks access when its SQL decision record cannot be saved. Agent delegation
+The v0.7.0 candidate (not published) adds optional [required policy audit](docs/configuration.md#required-policy-audit)
+that blocks access when its SQL decision record cannot be saved. Agent delegation
 derives authority from the active parent assignment. See the
 [hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
-The current unreleased source also offers opt-in [connector action evidence](site/support/connector-actions.html):
+The candidate also offers opt-in [connector action evidence](site/support/connector-actions.html):
 record intent before managed MCP dispatch and inspect observed responses or
-unknown outcomes in Admin. The same unreleased source adds
+unknown outcomes in Admin. It also adds
 [tenant-scoped review](docs/auth.md#tenant-review): reviewers can inspect evidence
 or approve their own tenant's operations without global Admin access. These
-settings and permissions are not in published v0.6.1 binaries.
+settings and permissions are not in published v0.6.1 binaries. Managed MCP
+approvals also [bind to the configured connector target](docs/connectors.md#target-bound-managed-approvals-unreleased),
+so a changed target cannot consume an earlier approval. Credential values can
+rotate without changing that binding.
+
+### Security completion in current source (unreleased)
+
+The v0.7.0 candidate (not published) adds three opt-in controls around existing managed connector
+authority: [distinct-reviewer quorum and requester separation](docs/internal/approval-authority-and-quorum.md),
+[durable action evidence export](docs/internal/action-delivery-outbox.md), and
+[registered Vault database credential leases](docs/internal/credential-lifecycle.md).
+Managed approvals bind the current configured policy and optional observed MCP
+tool schema as well as arguments, target and run incarnation. Historical unbound
+approvals require fresh review. These settings are not in published v0.6.1 packages.
+Version metadata targets v0.7.0 locally. No v0.7.0 release or registry package is
+published yet; the download and install links below still describe v0.6.1.
+Candidate deployments need matching locally built plane and runner artifacts.
+
+[Execution pools and an experimental external OpenShell bridge](docs/internal/constrained-execution.md)
+add a separately credentialed fleet and explicit workload boundary. Existing SDK
+workers are not automatically sandboxed; the bridge requires its JSONL workload
+contract. Rendered network policy and configuration hashes do not prove runtime
+or CNI enforcement. Disposable qualification has passed with an installed Python
+runner, a real SQLite plane and OpenShell 0.1.8, plus a separate enforcing-CNI
+profile. The [qualification record](docs/internal/constrained-execution.md#verification-and-remaining-qualification)
+states the tested cases and remaining limits. Start with the [security operations guide](site/support/security-completion.html)
+and [upgrade procedure](docs/ops-runbook.md#security-completion-upgrade).
+
+The [release qualification record](docs/internal/security-completion-qualification.md)
+collects the tested backends, installed SDK profiles, failure cases and release
+gates for this source cut.
+The experimental JSONL profile does not yet report model/token usage or settle
+model spend. A zero in Admin is not proof of free execution; existing SDK usage
+reporting is a separate capability.
 
 ## Choose an integration path
 

@@ -16,7 +16,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	pb "github.com/getrunkite/runkite/internal/bridge/runnerpb"
+	"github.com/getrunkite/runkite/internal/execution"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -130,7 +132,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	}
 	// A backend routing/filter collision must not expose another kind's input
 	// or advance its durable attempt. Local mode has no authenticated identity.
-	if err := requireRunnerKind(ctx, job.RunnerKind); err != nil {
+	if err := requireAssignmentAuthority(ctx, job); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if nackErr := s.queue.Nack(cleanupCtx, job.RunID, job.Generation); nackErr != nil {
@@ -365,6 +367,9 @@ func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerServi
 // requireRunnerKind binds request fields to the identity authenticated by the
 // interceptor. An absent identity is the explicit local development mode.
 func requireRunnerKind(ctx context.Context, kind string) error {
+	if execution.IsPoolKind(kind) && authenticatedRunner(ctx) == "" {
+		return status.Error(codes.PermissionDenied, "execution pool requires authenticated runner authority")
+	}
 	if authenticated := authenticatedRunner(ctx); authenticated != "" && authenticated != kind {
 		return status.Error(codes.PermissionDenied, "runner kind does not match authenticated identity")
 	}
@@ -377,9 +382,19 @@ func (s *Server) requireRunOwner(ctx context.Context, runID string) (*transport.
 		return nil, status.Error(codes.Unavailable, "failed to resolve run assignment")
 	}
 	if assignment != nil {
-		if err := requireRunnerKind(ctx, assignment.RunnerKind); err != nil {
+		if err := requireAssignmentAuthority(ctx, assignment); err != nil {
 			return nil, err
 		}
 	}
 	return assignment, nil
+}
+
+func requireAssignmentAuthority(ctx context.Context, assignment *transport.RunAssignment) error {
+	if err := requireRunnerKind(ctx, assignment.RunnerKind); err != nil {
+		return err
+	}
+	if tokens, ok := ctx.Value(runnerAuthorityKey{}).(*auth.RunnerTokens); ok && !tokens.AllowsAssignment(assignment.RunnerKind, assignment.TenantID, assignment.GraphID) {
+		return status.Error(codes.PermissionDenied, "assignment is not allowed for this runner authority")
+	}
+	return nil
 }

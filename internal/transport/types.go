@@ -13,17 +13,20 @@ import (
 // RunAssignment is a job dispatched from the control plane to a runner.
 // Fields match runner-protocol/schemas/run_assignment.json.
 type RunAssignment struct {
-	RunID          string          `json:"run_id"`
-	ThreadID       string          `json:"thread_id"`
-	RunnerKind     string          `json:"runner_kind"`
-	GraphID        string          `json:"graph_id"`
-	Input          json.RawMessage `json:"input"`
-	Config         json.RawMessage `json:"config,omitempty"`
-	CheckpointRef  *string         `json:"checkpoint_ref"`
-	ResumeCommand  json.RawMessage `json:"resume_command"`
-	StreamModes    []string        `json:"stream_modes"`
-	ConnectorNeeds []string        `json:"connector_needs"`
-	TraceContext   *TraceContext   `json:"trace_context,omitempty"`
+	RunID string `json:"run_id"`
+	// RunIncarnationID is the immutable stored run identity when supplied by
+	// a compatible durable store. Isolated execution requires it for receipts.
+	RunIncarnationID string          `json:"run_incarnation_id,omitempty"`
+	ThreadID         string          `json:"thread_id"`
+	RunnerKind       string          `json:"runner_kind"`
+	GraphID          string          `json:"graph_id"`
+	Input            json.RawMessage `json:"input"`
+	Config           json.RawMessage `json:"config,omitempty"`
+	CheckpointRef    *string         `json:"checkpoint_ref"`
+	ResumeCommand    json.RawMessage `json:"resume_command"`
+	StreamModes      []string        `json:"stream_modes"`
+	ConnectorNeeds   []string        `json:"connector_needs"`
+	TraceContext     *TraceContext   `json:"trace_context,omitempty"`
 	// User carries the identity that authenticated this run's HTTP
 	// request, if any. Framework-specific runners may map this onto
 	// their own runtime identity object (e.g. LangGraph's

@@ -119,6 +119,16 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 		Overlays:       overlays,
 		ForceEnable:    true,
 	}
+	if p.Approvals != nil {
+		count := p.Approvals.RequiredApprovals
+		if count == 0 {
+			count = 1
+		}
+		if count < 1 || count > 5 {
+			return nil, false, fmt.Errorf("policy.approvals.required_approvals must be between 1 and 5")
+		}
+		pcfg.ApprovalRequirements = policy.ApprovalRequirements{RequiredApprovals: count, ExcludeRequester: p.Approvals.ExcludeRequester}
+	}
 	if p.CacheTTLMS > 0 {
 		pcfg.CacheTTL = time.Duration(p.CacheTTLMS) * time.Millisecond
 	}
@@ -163,8 +173,9 @@ func initPolicy(configPath string, store state.Store, dispatcher *hooks.Dispatch
 	}
 	if hasWebhook {
 		wc := &policy.WebhookConfig{
-			URL:    p.Webhook.URL,
-			Secret: p.Webhook.Secret,
+			URL:      p.Webhook.URL,
+			Revision: p.Webhook.Revision,
+			Secret:   p.Webhook.Secret,
 		}
 		if p.Webhook.TimeoutMS > 0 {
 			wc.Timeout = time.Duration(p.Webhook.TimeoutMS) * time.Millisecond

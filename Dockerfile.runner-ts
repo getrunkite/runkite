@@ -1,4 +1,4 @@
-# TypeScript runner for Runkite — executes LangGraph.js agents and streams
+# TypeScript runner for Runkite. Executes LangGraph.js agents and streams
 # events back to the control plane via gRPC. Mirrors Dockerfile.runner's
 # structure (Python runner): no separate compile step for user agent code,
 # since tsx (esbuild-based) loads a user's graph.ts directly at runtime,
@@ -10,21 +10,33 @@ FROM node:22-slim
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 
-RUN groupadd --gid 65532 runkite && \
+# Refresh vendor security fixes which can postdate the base image build.
+RUN apt-get update && apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 65532 runkite && \
     useradd --uid 65532 --gid 65532 --create-home --home-dir /home/runkite runkite
 
 COPY typescript/runkite-runner/package.json typescript/runkite-runner/package-lock.json ./typescript/runkite-runner/
-RUN cd typescript/runkite-runner && npm ci
+RUN cd typescript/runkite-runner && npm ci --omit=dev
 
 COPY typescript/runkite-runner/ ./typescript/runkite-runner/
 COPY typescript/runkite-runner/LICENSE typescript/runkite-runner/NOTICE /usr/local/share/licenses/runkite-runner/
 COPY examples/ ./examples/
 # Agent graphs resolve npm deps from their own directory (see
 # examples/echo_agent_ts/package.json), not from the runner's node_modules.
-RUN cd examples/echo_agent_ts && npm ci
-RUN cd examples/managed_ai_sdk && npm ci
+RUN cd examples/echo_agent_ts && npm ci --omit=dev
+RUN cd examples/managed_ai_sdk && npm ci --omit=dev
+# The runner declares AI SDK as both an optional peer and a development
+# dependency. Its production install omits that copy; share the example's
+# explicitly locked production dependency so both import paths remain usable.
+RUN ln -s /app/examples/managed_ai_sdk/node_modules/ai \
+      /app/typescript/runkite-runner/node_modules/ai
 
-RUN chown -R runkite:runkite /app /home/runkite
+# This is an execution image, not a package-install or compilation environment.
+# Local tsx is a production dependency and continues loading agents at runtime.
+RUN rm -rf /usr/local/lib/node_modules/npm && \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx && \
+    chown -R runkite:runkite /app /home/runkite
 
 WORKDIR /app/typescript/runkite-runner
 ENV HOME=/home/runkite

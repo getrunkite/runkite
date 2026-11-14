@@ -188,6 +188,11 @@ test-e2e:
 	REDIS_URL="redis://localhost:6380" \
 		go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
+# Disposable Postgres + Redis, two real plane processes, synthetic identities.
+.PHONY: test-review-ha
+test-review-ha:
+	bash scripts/test-review-ha.sh
+
 # Cross-framework × backend test matrix: every framework runner
 # (python-langgraph, typescript-langgraphjs, python-langchain/-crewai/
 # -llamaindex/-autogen) against every backend combination
@@ -253,6 +258,10 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_adapter_checkpoints.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_cancel_race.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_run_status.py && \
+		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_execution_pool.py && \
+		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_isolated.py && \
+		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_isolated_fixture.py && \
+		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_runner_image_qualification.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_usage_accumulate.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py && \
@@ -294,6 +303,10 @@ test-python:
 		PYTHONPATH=python python3 python/tests/test_adapter_checkpoints.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_cancel_race.py && \
 		PYTHONPATH=python python3 python/tests/test_run_status.py && \
+		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_execution_pool.py && \
+		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_isolated.py && \
+		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_isolated_fixture.py && \
+		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_runner_image_qualification.py && \
 		PYTHONPATH=python python3 python/tests/test_usage_accumulate.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py && \

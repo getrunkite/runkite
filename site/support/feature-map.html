@@ -49,6 +49,7 @@
           <a  href="grants.html">Grants &amp; HITL</a>
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (0.7.0 candidate)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -98,6 +99,9 @@
               <tr><td>No key editor</td><td><a href="./credentials.html">Credentials</a> · <a href="./runner-auth.html">Runner auth</a> · <a href="./multi-tenant.html">Multi-tenant</a></td><td>No Admin CRUD for keys</td></tr>
               <tr><td>Observability</td><td><a href="./security.html">Trace and data boundaries</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md#distributed-tracing-opentelemetry">Telemetry setup</a></td><td>OTLP trace export, Prometheus metrics and stdout logs are separate paths. No automatic full prompt/completion capture.</td></tr>
               <tr><td>Deployment</td><td><a href="./production.html">Production day-0</a> · <a href="./migrate-agents.html">Migrate</a></td><td>Enterprise path</td></tr>
+              <tr><td>Pending detail and Review approvals (unreleased)</td><td><a href="security-completion.html#review-authority">Review authority</a></td><td>Requester, quorum, exact history and revisions; partial review remains pending</td></tr>
+              <tr><td>Credential leases (unreleased)</td><td><a href="security-completion.html#credential-lifecycle">Credential lifecycle</a></td><td>Admin tenant selection and manual lifecycle controls; own-tenant Review reads metadata only</td></tr>
+              <tr><td>Evidence deliveries (unreleased)</td><td><a href="security-completion.html#evidence-delivery">Durable action export</a></td><td>Tenant/sink/status filters and evidence-only dead-letter retry</td></tr>
             </tbody>
           </table>
         </div>
@@ -118,11 +122,13 @@
         <p class="note">Empty states in Admin deep-link into this handbook via GitHub Pages.</p>
 
         <h2 id="managed-connector-evidence">Connector action evidence (unreleased)</h2>
-        <p>Current source after v0.6.1 adds an opt-in SQL trail for managed MCP tool attempts. Review the original policy decision, final approval or break-glass authority, dispatch intent and observed response in Admin. A response is not proof of a business effect; an unknown outcome may have executed. This records metadata and adds no credential vault or secret leases. See <a href="connector-actions.html">Connector actions</a> for configuration, fresh-review requirements, investigation and retention.</p>
+        <p>The v0.7.0 candidate (not published) adds an opt-in SQL trail for managed MCP tool attempts. Review the original policy decision, final approval or break-glass authority, dispatch intent and observed response in Admin. A response is not proof of a business effect; an unknown outcome may have executed. Capture itself records metadata; the separate <a href="security-completion.html#credential-lifecycle">registered database lease path</a> coordinates an external issuer without adding a second vault. See <a href="connector-actions.html">Connector actions</a> for configuration, fresh-review requirements, investigation and retention.</p>
 
         <h2 id="tenant-review">Tenant Review workspace (unreleased)</h2>
-        <p>Current source after v0.6.1 adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
+        <p>The v0.7.0 candidate (not published) adds primary <code>governance:read</code> and <code>governance:approve</code> roles for a verified tenant. Reviewers use a separate workspace and API; they gain no global Admin or conversation access. Read-only metadata excludes argument displays, while approvers keep the existing redacted review view. See <a href="tenant-review.html">Tenant review</a> for setup, absolute session expiry, API scope and rollout.</p>
 
+        <h2 id="security-completion">Security completion (unreleased)</h2>
+        <p>The v0.7.0 candidate (not published) adds reviewer quorum/separation, configured policy and optional MCP schema binding, durable evidence export, registered Vault database leases, and separately credentialed execution pools. Admin exposes approval history, credential metadata and evidence delivery operations. Runtime containment remains an explicitly qualified external boundary. Follow <a href="security-completion.html">Security operations</a> and <a href="ops.html#security-completion-upgrade">the combined upgrade</a>.</p>
       </main>
     </div>
     <script src="./docs.js?v=20261108-final" defer></script>

@@ -6,8 +6,10 @@ SDK retains its model loop in the Python worker.
 
 ## Install
 
-This source profile is **unreleased** and absent from published PyPI `0.5.8`.
-From the repository root, use a clean Python 3.11+ environment:
+Published PyPI `0.6.1` includes this profile through the `google-adk` extra.
+The current checkout targets the v0.7.0 candidate, which is not published yet.
+To install that matching candidate from source, use a clean Python 3.11+
+environment from the repository root:
 
 ```bash
 python3.12 -m venv .venv-google-adk
@@ -21,8 +23,8 @@ python3.12 -m venv .venv-google-adk
 The extra pins `google-adk==2.13.0`. The installed module alternative is
 `python -m google_adk_adapter`; no source `PYTHONPATH` is required. The ordinary
 CLI and stock image retain LangGraph defaults; the image does not install this
-optional SDK. After a release includes the profile, its public installation
-will be `pip install 'runkite-runner[google-adk]'`.
+optional SDK. For the published release, use
+`pip install 'runkite-runner[google-adk]'`.
 
 Load the same config in the plane, including `runner_kind: python-google-adk`.
 For authentication, use `RUNNER_TOKEN` in the worker and matching

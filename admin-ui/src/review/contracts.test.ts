@@ -26,14 +26,27 @@ test("list filters never accept tenant selection and scope changes discard old c
 
 test("permission controls preserve legacy review and expiry boundaries", () => {
   const identity = { identity: "reader", tenant_id: "a", can_read: true, can_approve: false, expires_at: "2030-01-01T00:00:00Z" } as ReviewIdentity;
-  const action = { id: "pending-v2-test", tenant_id: "a", status: "pending", args_digest: "digest", run_incarnation_id: "opaque-db-proof" } as ReviewPendingAction;
+  const action = { id: "pending-v2-test", tenant_id: "a", status: "pending", args_digest: "digest", run_incarnation_id: "opaque-db-proof", target_revision: `target-v1-${"a".repeat(64)}`, policy_revision: `policy-v1-${"a".repeat(64)}` } as ReviewPendingAction;
   assert.equal(reviewPendingControls(identity, action).showActions, false);
   const approver = { ...identity, can_approve: true };
   assert.deepEqual(reviewPendingControls(approver, action), { showActions: true, expired: false, approveBlocked: null, denyBlocked: false });
   const legacy = reviewPendingControls(approver, { ...action, run_incarnation_id: undefined });
   assert.match(legacy.approveBlocked!, /fresh review/); assert.equal(legacy.denyBlocked, false);
-  assert.equal(reviewPendingControls(approver, { ...action, run_incarnation_id: undefined, expires_at: "2030-01-01T00:00:00Z" }).approveBlocked, null);
+  const unboundTarget = reviewPendingControls(approver, { ...action, target_revision: undefined });
+  assert.match(unboundTarget.approveBlocked!, /connector target revision/); assert.equal(unboundTarget.denyBlocked, false);
+  assert.equal(reviewPendingControls(approver, { ...action, run_incarnation_id: undefined, target_revision: undefined, expires_at: "2030-01-01T00:00:00Z" }).approveBlocked, null);
   const expired = reviewPendingControls(approver, { ...action, expires_at: "2020-01-01T00:00:00Z" });
   assert.equal(expired.expired, true); assert.equal(expired.denyBlocked, true);
   assert.equal(reviewPendingControls(approver, { ...action, tenant_id: "foreign" }).showActions, false);
+});
+
+test("separation and existing exact-identity votes block duplicate approval without hiding denial", () => {
+  const identity = { identity: "reviewer", tenant_id: "a", can_read: true, can_approve: true, expires_at: "2030-01-01T00:00:00Z" } as ReviewIdentity;
+  const action = { id: "pending-v2-test", tenant_id: "a", status: "pending", args_digest: "digest", run_incarnation_id: "proof", target_revision: `target-v2-${"a".repeat(64)}`, policy_revision: `policy-v1-${"a".repeat(64)}`, required_approvals: 2, approval_count: 1, requester_identity: "requester", exclude_requester: true } as ReviewPendingAction;
+  assert.equal(reviewPendingControls(identity, action).approveBlocked, null);
+  assert.match(reviewPendingControls({ ...identity, identity: "requester" }, action).approveBlocked!, /requester cannot approve/);
+  const already = { ...action, approvals: [{ pending_action_id: action.id, reviewer_identity: "reviewer", reviewed_at: "2026-01-01" }] };
+  assert.match(reviewPendingControls(identity, already).approveBlocked!, /already recorded/);
+  assert.equal(reviewPendingControls(identity, already).denyBlocked, false);
+  assert.equal(reviewPendingControls({ ...identity, identity: "Reviewer" }, already).approveBlocked, null);
 });

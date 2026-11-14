@@ -187,10 +187,24 @@ export interface AdminPolicyGrant {
 }
 
 /** Connector HITL row from GET /admin-api/pending-actions. */
+export interface PendingActionApproval {
+  pending_action_id: string;
+  reviewer_identity: string;
+  reviewed_at: string;
+}
+
 export interface AdminPendingAction {
   id: string;
   run_id: string;
   run_incarnation_id?: string;
+  target_revision?: string;
+  policy_revision?: string;
+  tool_revision?: string;
+  requester_identity?: string;
+  required_approvals?: number;
+  approval_count?: number;
+  exclude_requester?: boolean;
+  approvals?: PendingActionApproval[];
   generation: number;
   tenant_id: string;
   agent_id: string;
@@ -315,6 +329,7 @@ export interface AdminFinOpsView {
 
 /** Metadata-only evidence for a managed MCP tools/call request. */
 export interface AdminConnectorAction {
+  export_sink_id?: string;
   action_id: string;
   tenant_id: string;
   run_id: string;
@@ -381,4 +396,38 @@ export interface AdminConnectorActionDetail {
   events: AdminConnectorActionEvent[];
   run_available: boolean;
   events_truncated?: boolean;
+}
+
+/** Metadata only. Provider handles and credential values are never returned. */
+export interface CredentialLease {
+  lease_ref: string;
+  owner: { tenant_id: string; run_id: string; run_incarnation_id: string; generation: number; action_id: string; consumer_id: string };
+  binding_id: string;
+  binding_revision: string;
+  state: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  operation_deadline: string;
+  expires_at: string;
+  granted_ttl_seconds: number;
+  renewable: boolean;
+  use_started_at?: string;
+  cleanup_requested: boolean;
+  reason_code?: string;
+}
+
+export interface ActionDelivery {
+  id: string;
+  sink_id: string;
+  tenant_id: string;
+  action_id: string;
+  sequence: number;
+  attempts: number;
+  status: string;
+  available_at: string;
+  claim_until?: string | null;
+  last_reason_code?: string;
+  created_at: string;
+  updated_at: string;
 }

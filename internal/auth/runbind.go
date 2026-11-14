@@ -73,12 +73,13 @@ type InflightLookup interface {
 // /internal/* call. Tenant/agent/thread come from the assignment, not
 // from runner-supplied headers.
 type RunBinding struct {
-	RunID      string
-	Generation int64
-	TenantID   string
-	AgentID    string
-	ThreadID   string
-	User       *transport.UserContext
+	RunID            string
+	RunIncarnationID string
+	Generation       int64
+	TenantID         string
+	AgentID          string
+	ThreadID         string
+	User             *transport.UserContext
 }
 
 type runBindingKey struct{}
@@ -163,14 +164,19 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 			"tenant not allowed for this runner kind")
 		return nil, false
 	}
+	if !tokens.AllowsAssignment(kind, tenantID, assignment.GraphID) {
+		writeDenied(w, http.StatusForbidden, "execution_pool_denied", "assignment is not allowed for this execution pool")
+		return nil, false
+	}
 
 	binding := &RunBinding{
-		RunID:      runID,
-		Generation: assignment.Generation,
-		TenantID:   tenantID,
-		AgentID:    assignment.GraphID,
-		ThreadID:   assignment.ThreadID,
-		User:       assignment.User,
+		RunID:            runID,
+		RunIncarnationID: assignment.RunIncarnationID,
+		Generation:       assignment.Generation,
+		TenantID:         tenantID,
+		AgentID:          assignment.GraphID,
+		ThreadID:         assignment.ThreadID,
+		User:             assignment.User,
 	}
 	ctx := tenant.WithContext(r.Context(), tenantID)
 	ctx = WithRunBinding(ctx, binding)

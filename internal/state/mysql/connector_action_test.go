@@ -30,6 +30,8 @@ func TestConnectorActionConformance(t *testing.T) {
 		t.Fatal(err)
 	}
 	conformance.RunConnectorActions(t, s)
+	conformance.RunActionDeliveries(t, s)
+	conformance.RunInsertionIdentity(t, s)
 }
 
 func TestRunIncarnationCreationPaths(t *testing.T) {
@@ -75,8 +77,11 @@ func TestRunIncarnationCreationPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := uuid.Parse(stored.IncarnationID); err != nil || stored.IncarnationID == run.IncarnationID || seen[stored.IncarnationID] {
+			if _, err := uuid.Parse(stored.IncarnationID); err != nil || stored.IncarnationID == "untrusted-reused-id" || seen[stored.IncarnationID] {
 				t.Fatalf("incarnation was not freshly generated: %q", stored.IncarnationID)
+			}
+			if method != "cached" && stored.IncarnationID != run.IncarnationID {
+				t.Fatal("insertion receipt differs from the committed identity")
 			}
 			seen[stored.IncarnationID] = true
 		})
