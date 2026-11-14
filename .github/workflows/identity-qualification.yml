@@ -178,7 +178,8 @@ jobs:
           export RUNKITE_TEST_ISOLATED_CLI="$QUALIFICATION_OUTPUT/cli/openshell"
           export RUNKITE_TEST_ISOLATED_REPETITIONS="$QUALIFICATION_REPETITIONS"
           export RUNKITE_TEST_ISOLATED_HA_OUTPUT="$QUALIFICATION_OUTPUT/ha"
-          export RUNKITE_TEST_ISOLATED_PYTHON="$(command -v python3)"
+          RUNKITE_TEST_ISOLATED_PYTHON="$(command -v python3)"
+          export RUNKITE_TEST_ISOLATED_PYTHON
           timeout --signal=TERM --kill-after=120s 1800 bash scripts/test-isolated-ha.sh
 
       - name: Require measured success and confirmed cleanup
