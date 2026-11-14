@@ -100,9 +100,17 @@ certificate or recovery directories.
 
 ## Pending external gates
 
-A prepared workflow is not evidence of hosted execution. Record actual GitHub
-CI and manual qualification run URLs after the candidate is pushed. First
-npm/PyPI helper publication, registry authorization and a genuine OIDC publish
+The milestone merged through [PR #64](https://github.com/getrunkite/runkite/pull/64),
+whose final PR CI passed. The
+[main CI](https://github.com/getrunkite/runkite/actions/runs/43627518912), Pages,
+Review HA and the protocol mirror also passed on the merge commit. The first hosted
+[manual identity run](https://github.com/getrunkite/runkite/actions/runs/43627959919)
+failed the Node 22 packaged HTTP preflight and did not reach external-runtime
+HA. The [compatibility correction](node-fetch-tls-compatibility.md) has separate
+local Node 22/26 evidence; repeat hosted qualification after that fix is merged.
+An ordinary green CI run does not replace this separate qualification.
+
+First npm/PyPI helper publication, registry authorization and a genuine OIDC publish
 remain unverified. Explicit registry 404 responses establish absence at the
 check time, not name reservation or permission to publish.
 

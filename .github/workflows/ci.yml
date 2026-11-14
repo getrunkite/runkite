@@ -545,3 +545,81 @@ jobs:
             --ignore-unfixed \
             --exit-code 1 \
             runkite:ci
+
+  # Qualify both supported Node lines with the actual installed package.
+  # A source-only suite missed a built-in fetch/Undici dispatcher mismatch.
+  packaged-mtls:
+    name: Packaged mTLS (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.19.0", "26.11.0"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: typescript/runkite-runner/package-lock.json
+
+      - name: Build the actual control-plane binary
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runkite-packaged-mtls"
+          go build -trimpath -o "$RUNNER_TEMP/runkite-packaged-mtls/runkite" ./cmd
+
+      - name: Install locked dependencies and build the runner package
+        working-directory: typescript/runkite-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Test packaged strict mTLS without an optional skip
+        working-directory: typescript/runkite-runner
+        timeout-minutes: 5
+        shell: bash
+        env:
+          RUNKITE_TEST_WORKLOAD_BINARY: ${{ runner.temp }}/runkite-packaged-mtls/runkite
+          RUNKITE_TEST_WORKLOAD_OUTPUT: ${{ runner.temp }}/runkite-packaged-mtls/result.json
+          EXPECTED_NODE_VERSION: ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          test -x "$RUNKITE_TEST_WORKLOAD_BINARY"
+          node --import tsx --test src/workloadIdentity.e2e.test.ts
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFile } from "node:fs/promises";
+          const report = JSON.parse(await readFile(process.env.RUNKITE_TEST_WORKLOAD_OUTPUT, "utf8"));
+          assert.equal(process.version, "v" + process.env.EXPECTED_NODE_VERSION);
+          assert.equal(report.node, process.version);
+          assert.equal(report.passed, true, "Packaged strict mTLS did not pass.");
+          assert.equal(report.cases?.length, 4, "All four real package cases must execute.");
+          NODE
+
+      - name: Retain only synthetic qualification reports and process logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packaged-mtls-node-${{ matrix.node }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/runkite-packaged-mtls/result.json
+            ${{ runner.temp }}/runkite-packaged-mtls/result.json.plane.log
+            ${{ runner.temp }}/runkite-packaged-mtls/result.json.runner.log
+          if-no-files-found: error
+          retention-days: 7
