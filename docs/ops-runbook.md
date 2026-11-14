@@ -1,12 +1,41 @@
 # Ops runbook (Supported profile)
 
-Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
+The **Supported** production profile uses **Postgres + Redis**, client auth and runner tokens. The linked guides explain the architecture and individual controls.
 
 **v0.7.0 deployment:** use matching plane and runner artifacts. The chart's
 `image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
 both to `0.7.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
+
+## Identity and distribution candidate
+
+**Unreleased 0.8.0 source:** the following steps evaluate the
+[eight-RFE milestone](internal/identity-and-distribution-plan.md), not published
+v0.7.0 artifacts. Keep matching plane and runner builds from one reviewed source
+revision. Read the [executed qualification and remaining gates](internal/identity-distribution-qualification.md).
+
+1. Verify a backup and drain runners and all SQL writers. Apply `runkite db
+   upgrade` with the candidate binary. Usage snapshots add Postgres/SQLite
+   migration 22 or MySQL migration 23. Replace every writer before traffic;
+   mixed old/new writers are unsupported.
+2. Before upgrading certificate-configured runners, enable HTTPS on their
+   HTTP checkpoint, status and connector paths. This guard applies with the new
+   identity profile off too. See [HTTP TLS compatibility](#runner-http-tls-compatibility).
+3. Enable strict workload ownership only after replacing every HTTP/gRPC
+   replica and runner. Use SQL state, Redis/inprocess queues, verified direct
+   mTLS and the complete operator URI allowlist. NATS, Kafka and Mongo are
+   refused for this profile. The shared HTTP listener also requires trusted
+   certificates for direct Admin/API clients. Follow [identity deployment,
+   rotation and retirement](auth.md).
+4. For constrained delegation, require both `strict_identity: true` and
+   `forward_token: true` at JWT admission plus the registered connector exchange
+   contract. Obtain fresh admission for legacy sessions/runs that only hold
+   extra token fields. See [delegation and correlation](internal/delegation-and-audit-correlation.md).
+5. Retain unresolved credential cleanup handles, historical decryption keys
+   and provider bindings. Exercise cancellation and report acknowledgement on
+   the intended runtime. Unknown or partial [isolated usage](internal/isolated-usage.md)
+   is not free usage or a provider-verified bill.
 
 ## Connector target revision upgrade
 

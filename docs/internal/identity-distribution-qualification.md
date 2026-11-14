@@ -7,16 +7,19 @@ independent assessment or a promise that every deployment is safe.
 
 ## Executed checks
 
-- The full Linux Go race run exercised `./internal/...` and `./cmd/...`, with
-  disposable Postgres and Redis. It found a synthetic SQL timestamp test driver
-  that did not recognize the new usage-snapshot read. The driver was corrected;
-  the affected `internal/state/sqlcompletion` package then passed under Linux
-  `-race`. The other packages passed the original full run. A failed aggregate
-  invocation is not recorded as a green invocation.
-- Separate live MySQL, Mongo and SQL completion package suites passed on the
-  final production source. Strict JWT/JWKS transport, same-fleet certificate
-  rejection, workload queue capture, connector delegation and credential
-  reconciliation also passed focused real-network regressions.
+- The final full default Linux Go race run passed `./internal/...` and
+  `./cmd/...` with Go 1.26.11. Separate live Postgres, Redis, MySQL and Mongo
+  packages also passed under Linux race, and live MySQL/Mongo/SQL completion
+  suites passed on the host. Optional external services were not silently
+  treated as exercised by the default run.
+- Qualification caught two test-harness defects: a SQL timestamp test driver
+  missing the new snapshot read, and a gRPC tracing test reading its exporter
+  before server finalization. The driver now models that read; the tracing
+  test waits for graceful handler cleanup. That test passed 20 consecutive
+  focused runs before the final full default race pass. Neither fix weakens a
+  production check or extends an arbitrary timeout. Strict JWT/JWKS transport,
+  same-fleet certificate rejection, queue capture, connector delegation and
+  credential reconciliation passed focused real-network regressions.
 - The TypeScript runner suite passed 299 tests with the actual local binary
   enabled, including managed AI SDK lifecycle and receipt recovery. The
   maintainer identity regression entrypoint also passed end to end; its ordinary
@@ -28,6 +31,11 @@ independent assessment or a promise that every deployment is safe.
   turns preserved durable history over HTTPS. This was one SQLite/inprocess
   development plane, not a TypeScript HA test. Its report is
   `outputs/runkite-next/typescript-workload.json`.
+- All eight installed Python managed profiles passed: Microsoft Agent
+  Framework, OpenAI Agents, Pydantic AI and Google ADK on SQLite and on
+  Postgres/Redis, each including native chat transport and lifecycle scenarios.
+  The shared managed chat bridge passed 116 tests and its TypeScript check.
+  Fixtures used real SDK APIs with scripted models and fictional prices.
 - Admin passed 81 unit tests and its production build. Browser checks used the
   actual built bundle with read-only, clearly marked synthetic fixtures for
   issuer and worker identity, constrained exchange, Vault request references,
@@ -74,7 +82,9 @@ now fails promptly with a DNS endpoint diagnostic instead of polling forever;
 its passing fixture uses a real matching DNS SAN. No certificate-validation
 bypass or dependency patch was introduced.
 
-Local reports are retained under
+The final default race log is `outputs/runkite-next/full-default-final-race.log`;
+the live backend run and eight managed-profile logs are retained alongside it.
+Local external-runtime reports are retained under
 `outputs/runkite-next/isolated-ha-tls-final/runtime/`: `managed-evidence.json`,
 `gateway-tls-evidence.json` and `runtime-cleanup.json`. Distribution evidence is
 under `outputs/runkite-security-review/final080-distributions/verification.json`.
