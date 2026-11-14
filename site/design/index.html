@@ -52,9 +52,11 @@
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md">Atomic results and identities <span class="engineering-nav-kind">Markdown ↗</span></a>
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">Local HA recovery validation <span class="engineering-nav-kind">Markdown ↗</span></a>
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/action-authority-hardening.md">Delegated authority and required audit <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Connector action evidence (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">Tenant-scoped review (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">Target-bound approvals (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Connector action evidence <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">Tenant-scoped review <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">Target-bound approvals <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/identity-and-distribution-plan.md">Identity and distribution RFEs <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="../support/security-identity.html">Identity and usage preview</a>
             <p class="engineering-nav-group">Build and operate</p>
             <a href="../support/sdk-integration.html">SDK integration contracts</a>
             <a href="../support/ops.html">Upgrade and recovery guide</a>
@@ -80,9 +82,11 @@
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md">Atomic results and identities <span class="engineering-nav-kind">Markdown ↗</span></a>
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/ha-recovery-validation.md">Local HA recovery validation <span class="engineering-nav-kind">Markdown ↗</span></a>
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/action-authority-hardening.md">Delegated authority and required audit <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Connector action evidence (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">Tenant-scoped review (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
-            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">Target-bound approvals (unreleased) <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">Connector action evidence <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">Tenant-scoped review <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">Target-bound approvals <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/identity-and-distribution-plan.md">Identity and distribution RFEs <span class="engineering-nav-kind">Markdown ↗</span></a>
+            <a href="../support/security-identity.html">Identity and usage preview</a>
             <p class="engineering-nav-group">Build and operate</p>
             <a href="../support/sdk-integration.html">SDK integration contracts</a>
             <a href="../support/ops.html">Upgrade and recovery guide</a>
@@ -146,16 +150,36 @@
           <p>Derive child authority from the parent, require durable decisions and keep provider diagnostics free of credentials.</p>
         </li>
         <li>
-          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">12 · Managed connector action evidence (unreleased, Markdown)</a>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/connector-action-evidence.md">12 · Managed connector action evidence (v0.7.0, Markdown)</a>
           <p>Commit intent with approval consumption before a tool send. Preserve original run identity, correct retained checkpoint ordering and distinguish response observations from unknown business effects.</p>
         </li>
         <li>
-          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">13 · Tenant-scoped review (unreleased, Markdown)</a>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tenant-scoped-review.md">13 · Tenant-scoped review (v0.7.0, Markdown)</a>
           <p>Give a tenant reviewer scoped approval or evidence access with separate session authority, without global Admin rights.</p>
         </li>
         <li>
-          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">14 · Target-bound approvals (unreleased, Markdown)</a>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">14 · Target-bound approvals (v0.7.0, Markdown)</a>
           <p>Bind approval to the configured connector target and pin that snapshot through dispatch. Explain fresh review, secret-value exclusions, remote implementation limits and the SQL upgrade.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/identity-and-distribution-plan.md">15 · Identity and distribution RFEs (next release, Markdown)</a>
+          <p>Track all eight follow-ups, their callers, acceptance gates and public availability.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/workload-identity.md">16 · Workload ownership (next release, Markdown)</a>
+          <p>Bind an attempt to an external certificate without introducing a certificate authority. Explain expiry, retirement and recovery.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/delegation-and-audit-correlation.md">17 · Delegation and audit correlation (next release, Markdown)</a>
+          <p>Keep issuer assertions, configured actor intent, authenticated workers and Vault request references distinct.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/isolated-usage.md">18 · Isolated usage settlement (next release, Markdown)</a>
+          <p>Commit cumulative reports before acknowledgement and retain unknown, partial and reported-zero meaning through recovery.</p>
+        </li>
+        <li>
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/security-assessment.md">19 · Assessment and qualification handoff (Markdown)</a>
+          <p>Reproduce maintainer regressions and distinguish bounded fixture evidence from independent assessment.</p>
         </li>
       </ul>
 

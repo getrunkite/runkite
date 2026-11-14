@@ -111,7 +111,7 @@ func (s *Server) replayRunEvents(
 				return false, nil
 			}
 			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{
-				RunID: runID, Generation: event.Generation, Status: terminal, Error: data.Message,
+				TrustedSystem: true, RunID: runID, Generation: event.Generation, Status: terminal, Error: data.Message,
 			})
 			if err != nil {
 				return false, err

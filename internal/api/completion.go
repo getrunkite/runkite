@@ -73,7 +73,7 @@ func (s *Server) recoverDeliveredCompletion(ctx context.Context, run *models.Run
 		if event.Method == "end" {
 			status = data.Status
 		}
-		return s.CompleteRun(ctx, &state.RunCompletion{RunID: run.RunID, Generation: generation, Status: status, Error: data.Message})
+		return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: status, Error: data.Message})
 	}
 	return false, nil
 }
@@ -116,12 +116,13 @@ func (s *Server) CompleteReclaimedRun(ctx context.Context, pill transport.Poison
 	// A queue claim may have outlived its GetJob process before dispatch was
 	// recorded. Only the trusted reaper can bind that retained lease here.
 	if current != generation || !attempted {
-		accepted, err := s.store.BeginRunAttempt(tenant.SystemContext(ctx), pill.RunID, generation)
+		recovery := state.WithTrustedAttemptRecovery(transport.WithWorkloadIdentity(tenant.SystemContext(ctx), assignment.WorkloadOwner))
+		accepted, err := s.store.BeginRunAttempt(recovery, pill.RunID, generation)
 		if err != nil || !accepted {
 			return false, err
 		}
 	}
-	return s.CompleteRun(ctx, &state.RunCompletion{RunID: pill.RunID, Generation: generation, Status: models.RunStatusError, Error: errorMsg})
+	return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: pill.RunID, Generation: generation, Status: models.RunStatusError, Error: errorMsg})
 }
 
 // CompleteRun is retryable after either an RPC failure or a lost response. The
@@ -136,6 +137,9 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
 	run, err := s.store.GetRun(tenant.SystemContext(ctx), c.RunID)
 	if err != nil {
+		return state.CompletionResult{}, err
+	}
+	if err := state.CheckRunCompletionOwner(ctx, run.Metadata, c); err != nil {
 		return state.CompletionResult{}, err
 	}
 	if c.RunnerKind != "" {
@@ -292,7 +296,7 @@ func (s *Server) completeObservedRun(ctx context.Context, run *models.Run, termi
 		return nil, err
 	}
 	if terminal != "" && !state.TerminalRunStatus(latest.Status) {
-		if _, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
+		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
 			return nil, err
 		}
 		return s.store.GetRun(ctx, run.RunID)
@@ -335,7 +339,7 @@ func (s *Server) awaitDurableCompletion(ctx context.Context, run *models.Run) (*
 			if event.Method == "end" {
 				terminal = data.Status
 			}
-			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
+			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
 			if err != nil {
 				return nil, err
 			}

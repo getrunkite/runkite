@@ -602,12 +602,14 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		policyFailClosed: s.policy != nil,
 		user:             userContextFromAuth(ctx),
 		identityVerified: auth.HasVerifiedIdentity(auth.FromContext(ctx)),
+		provenance:       provenanceFromAuth(ctx),
 		parentRunID:      req.ParentRunID,
 		depth:            depth,
 	})
 	// Dispatch fences are server-owned even when clients supply run metadata.
 	delete(run.Metadata, state.AttemptGenerationKey)
 	delete(run.Metadata, state.CompletionGenerationKey)
+	delete(run.Metadata, state.WorkloadOwnerKey)
 	run.Metadata["run_manifest"] = runManifestToMetadata(manifest)
 	if sim {
 		run.Metadata["simulation"] = true
@@ -936,6 +938,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 		policyFailClosed: s.policy != nil,
 		user:             userContextFromAuth(ctx),
 		identityVerified: auth.HasVerifiedIdentity(auth.FromContext(ctx)),
+		provenance:       provenanceFromAuth(ctx),
 	})
 	metadata := map[string]interface{}{
 		"cache_hit":    true,
@@ -1035,11 +1038,12 @@ func userContextFromAuth(ctx context.Context) *transport.UserContext {
 		return nil
 	}
 	return &transport.UserContext{
-		Identity:        result.Identity,
-		DisplayName:     result.DisplayName,
-		IsAuthenticated: true,
-		Permissions:     result.Permissions,
-		Extra:           result.Extra,
+		Identity:              result.Identity,
+		DisplayName:           result.DisplayName,
+		IsAuthenticated:       true,
+		Permissions:           result.Permissions,
+		Extra:                 result.Extra,
+		DelegatedJWTAssertion: auth.DelegatedJWTAssertion(result),
 	}
 }
 
@@ -1884,7 +1888,7 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 
 	// Commit cancellation before removing its recoverable lease. The transaction
 	// targets the current attempt, while refusing to overwrite a terminal winner.
-	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
 	if completionErr != nil {
 		if accepted {
 			// The interruption committed, but usage/hold/hook finalization can

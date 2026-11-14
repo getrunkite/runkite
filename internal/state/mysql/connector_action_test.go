@@ -32,6 +32,7 @@ func TestConnectorActionConformance(t *testing.T) {
 	conformance.RunConnectorActions(t, s)
 	conformance.RunActionDeliveries(t, s)
 	conformance.RunInsertionIdentity(t, s)
+	conformance.RunUsageSnapshots(t, s)
 }
 
 func TestRunIncarnationCreationPaths(t *testing.T) {

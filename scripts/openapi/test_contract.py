@@ -149,7 +149,7 @@ class SecurityCompletionContractTests(unittest.TestCase):
         self.assertTrue(any("bounded typed" in p for p in _check_security_completion_contract(self.spec)))
 
     def test_future_or_missing_revisions_cannot_be_documented_as_supported(self):
-        self.spec["components"]["schemas"]["PendingAction"]["properties"]["target_revision"]["pattern"] = "^target-v[123]-[0-9a-f]{64}$"
+        self.spec["components"]["schemas"]["PendingAction"]["properties"]["target_revision"]["pattern"] = "^target-v[1234]-[0-9a-f]{64}$"
         del self.spec["components"]["schemas"]["ConnectorAction"]["properties"]["policy_revision"]
         problems = _check_security_completion_contract(self.spec)
         self.assertTrue(any("target revision" in p for p in problems))

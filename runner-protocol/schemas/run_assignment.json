@@ -22,6 +22,17 @@
       "minLength": 1,
       "description": "Immutable durable run-row identity, distinct from a reusable client run_id. Preserved on reclaim. Optional for legacy workers; isolated execution requires it and binds durable receipts to this value."
     },
+    "workload_owner": {
+      "type": "object",
+      "description": "Optional server-derived verified mTLS holder for strict workload identity. Metadata only, never a bearer credential or accepted identity header. The original certificate binding expires and rotation requires drain/reclaim.",
+      "required": ["uri", "key_sha256", "not_after"],
+      "additionalProperties": false,
+      "properties": {
+        "uri": { "type": "string", "maxLength": 2048, "pattern": "^spiffe://" },
+        "key_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "not_after": { "type": "string", "format": "date-time" }
+      }
+    },
     "runner_kind": {
       "type": "string",
       "minLength": 1,

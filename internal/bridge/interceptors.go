@@ -5,7 +5,9 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/getrunkite/runkite/internal/auth"
@@ -51,7 +53,23 @@ func authenticateRunner(ctx context.Context, rt *auth.RunnerTokens) (context.Con
 		return nil, status.Error(codes.Unauthenticated, "invalid runner token")
 	}
 	ctx = context.WithValue(ctx, runnerIdentityKey{}, kind)
-	return context.WithValue(ctx, runnerAuthorityKey{}, rt), nil
+	ctx = context.WithValue(ctx, runnerAuthorityKey{}, rt)
+	if rt.WorkloadIdentityEnabled() {
+		p, ok := peer.FromContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "verified workload identity required")
+		}
+		info, ok := p.AuthInfo.(credentials.TLSInfo)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "verified workload identity required")
+		}
+		var err error
+		ctx, err = rt.AuthenticateWorkloadTLS(ctx, &info.State, kind)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "verified workload identity required")
+		}
+	}
+	return ctx, nil
 }
 
 func firstOrEmpty(vals []string) string {
@@ -67,6 +85,11 @@ func UnaryAuthInterceptor(rt *auth.RunnerTokens) grpc.UnaryServerInterceptor {
 		authenticated, err := authenticateRunner(ctx, rt)
 		if err != nil {
 			return nil, err
+		}
+		if identity := auth.WorkloadIdentityFromContext(authenticated); identity != nil {
+			var cancel context.CancelFunc
+			authenticated, cancel = context.WithDeadline(authenticated, identity.NotAfter)
+			defer cancel()
 		}
 		return handler(authenticated, req)
 	}

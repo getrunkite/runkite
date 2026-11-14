@@ -8,6 +8,8 @@ Same Runner Protocol as the [Python package on PyPI](https://pypi.org/project/ru
 connect over gRPC, load graphs from `langgraph.json`, stream events and cancels,
 optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 
+Requires Node.js 22.19 or newer, matching the locked Undici HTTP client.
+
 | | |
 |---|---|
 | **Install** | `npm install -g runkite-runner` |
@@ -62,6 +64,12 @@ For gRPC TLS with system trust, set `RUNKITE_GRPC_TLS=1`. Custom certificate
 trust uses `RUNKITE_TLS_CA_FILE`; mutual TLS additionally uses
 `RUNKITE_TLS_CLIENT_CERT_FILE` and `RUNKITE_TLS_CLIENT_KEY_FILE`. Use an HTTPS
 HTTP endpoint for encrypted proxy traffic.
+On Node.js 26 or newer, use a DNS gRPC address such as
+`controlplane.example.com:50051` with a matching certificate DNS SAN. The
+current `@grpc/grpc-js` sends IP literals as SNI, which Node.js 26 rejects.
+TLS IP targets fail at startup with a diagnostic; certificate verification is
+never disabled or redirected to an unrelated DNS name. HTTPS IP addresses with
+a matching IP SAN are unaffected.
 
 The TypeScript runner container is a runtime image. It installs production
 dependencies, including the pinned optional AI SDK through the managed example,

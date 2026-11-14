@@ -14,8 +14,9 @@ cannot make a checkout-only adapter part of an older registry artifact.
 ## v0.7.0 release verification
 
 The coordinated source metadata and tag identify v0.7.0. Earlier v0.6.1 artifacts
-do not include the new security controls. Governance helpers remain checkout-only
-even though their local package versions match the release.
+do not include the new security controls. Governance helpers were not published with that release. The subsequent
+helper-distribution work prepares them for the next coordinated release; it does
+not retroactively add them to 0.7.0.
 
 A tag starts publication; it does not prove every destination succeeded. Verify
 the Release workflow's version check, GoReleaser, Docker, PyPI and npm job
@@ -65,13 +66,17 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
 |----------|-------------|----------|
 | `runkite` binaries + checksums + OpenAPI JSON | GitHub Release | `GITHUB_TOKEN` (automatic) |
 | Control-plane + runner images (`:<version>` and `:latest`) | `ghcr.io/getrunkite/*` | `packages: write` (automatic) |
-| `runkite-runner` wheel | PyPI | repo secret **`PYPI_API_TOKEN`** |
-| `runkite-runner` npm package | npmjs.com | **Trusted Publisher (OIDC)** preferred; else **`NPM_TOKEN`** |
+| `runkite-runner` wheel and sdist | PyPI | **`PYPI_API_TOKEN`** |
+| `runkite-governance` wheel and sdist | PyPI | **`PYPI_GOVERNANCE_API_TOKEN`** |
+| `runkite-runner` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_TOKEN`** |
+| `runkite-governance` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_GOVERNANCE_TOKEN`** |
 
-This workflow does not publish `runkite-governance` to npm or PyPI. Its packaging
-metadata, local wheel/tarball checks and optional Microsoft middleware do not
-change that. Do not describe those helpers as published without a separate,
-verified maintainer publication.
+The governance rows describe the newly prepared workflow, not an already
+verified registry release. Published 0.7.0 used the earlier runner-only workflow.
+Before a new tag, complete each helper's registry ownership and authentication
+setup below. A missing publishing credential is now a failed job when files
+remain unpublished, rather than a green optional skip. Do not advertise a helper
+until its actual registry distributions have passed verification.
 
 ## Apache-2.0 transition
 
@@ -90,13 +95,19 @@ When cutting an Apache-licensed release:
   files and identify Apache-2.0 in their OCI license metadata.
 - Call out the license transition in the release notes, then align the site,
   README and package documentation with the artifacts actually published.
-- Keep governance helper packaging checks separate from publication. This
-  transition does not add those helpers to the release workflow.
+- Keep governance helper qualification separate from publication. Registry
+  availability changes only after the coordinated helper jobs actually publish
+  and verify the new distributions.
 
 ## Documentation and embedded UI release checks
 
 - Keep `CHANGELOG.md` Unreleased items separate from published releases. Move
   an item only when its source and artifact are included in the new release.
+- Before the final artifact build, give package READMEs durable registry and
+  source-install instructions. Those READMEs ship inside immutable registry
+  artifacts. Avoid wording that would still call the package unreleased after
+  a successful upload. Promote website and SDK availability labels only after
+  the corresponding registry publication has been verified.
 - Check the README, `docs/client-sdk.md`, `docs/runners.md`, integration examples
   and `site/support/sdk-integration.html` for matching framework/package status.
 - Keep managed execution and app-owned Decide distinct in product, support and
@@ -133,9 +144,22 @@ When cutting an Apache-licensed release:
 
 ### PyPI
 
-Repo secret `PYPI_API_TOKEN` (project-scoped token for `runkite-runner` after first upload is ideal).
+Verify ownership of both `runkite-runner` and the independent
+`runkite-governance` project. Configure project-scoped repository secrets
+`PYPI_API_TOKEN` and `PYPI_GOVERNANCE_API_TOKEN` respectively. An existing
+runner-scoped token does not authorize the helper. A new project may need a
+maintainer-controlled first upload before a project-scoped token can be created.
+That is an external account setup gate, not something package metadata can
+authorize. Never put credentials in source or chat.
 
-### npm — Trusted Publisher (preferred)
+The workflow builds once with pinned `python/requirements-build.txt` tools,
+verifies installed helper behavior and checks each existing distribution against
+the intended file contents. It stages and publishes only missing files. Container
+timestamps may differ on rebuild, but every regular file and executable bit must
+match. A registry/auth failure or content mismatch stops recovery. Publication
+requires both the wheel and source distribution to be present and verified.
+
+### npm Trusted Publisher (preferred)
 
 The workflow installs npm 12.2.2 explicitly before building and publishing.
 Node 22 can supply npm 10, which does not implement trusted publishing. npm
@@ -145,23 +169,62 @@ changing the publishing runner. See the [npm trusted-publishing contract](https:
 
 Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 
-1. https://www.npmjs.com/package/runkite-runner → **Settings** → **Trusted Publisher**
+1. For each package, open its npm **Settings**, then **Trusted Publisher**.
+   Configure `runkite-runner` and `runkite-governance` independently.
 2. GitHub Actions: org `getrunkite`, repo `runkite`, workflow filename `release.yml`, allow `npm publish`
 3. Future tags publish via OIDC (`id-token: write` in the Release workflow)
 
 **First-ever publish** (or emergency): on your laptop, `npm login` then
 `npm publish --access public` and complete the browser / passkey prompt.
 
-**Fallback:** granular token with **Bypass 2FA** → secret `NPM_TOKEN` (often still hits `EOTP` for new packages; prefer Trusted Publisher).
+**Fallback:** use a package-scoped granular token with **Bypass 2FA**. The runner
+uses `NPM_TOKEN`; the helper uses `NPM_GOVERNANCE_TOKEN`. Package ownership,
+first-publication authorization and trusted-publisher configuration require the
+maintainer's registry account. They are not established by this code change.
 
 If a tag already published its binaries or other packages before npm failed,
 preserve the tag and successful artifacts. Confirm whether the exact npm version
-exists before retrying. A maintainer can build the exact tagged source with a
-supported CLI, sign in using the personal publishing account and publish the
-verified tarball. Then rerun only the failed npm job; its existing-version check
-can recognize the completed publication. Editing the workflow on `main` does not
+exists and matches before retrying. A maintainer can retrieve the retained
+verified tarball and manifest, sign in using the personal publishing account and
+publish that exact tarball with `npm publish ./package.tgz --access public
+--ignore-scripts`. Do not rebuild through a publication hook. Then rerun only the
+failed npm job; its public lookup checks both SHA512 integrity and the downloaded
+tarball's SHA256 before recognizing a matching version. Only explicit metadata
+HTTP 404 means absent. Authentication failures, network errors, malformed
+responses and mismatches stop the job. A lost acknowledgement is reconciled
+before the scoped token fallback is attempted. The workflow summary records the
+actual OIDC and fallback step outcomes. An already existing matching version does
+not qualify as a new OIDC publication. Editing the workflow on `main` does not
 change an old tag's workflow. Do not move the tag or overwrite release assets to
 repair an authentication failure.
+
+### Local helper artifact and recovery checks
+
+Use Python 3.12 with the pinned build tools, the tested optional Microsoft core,
+Node 22 or newer, and the existing locked example dependencies:
+
+```sh
+python -m pip install -r python/requirements-build.txt 'agent-framework-core==1.23.0'
+python scripts/test_release_artifacts.py -v
+python python/tests/test_governance_package_artifacts.py -v
+cd typescript/runkite-governance && npm ci && cd ../..
+cd examples/governance_ai_sdk && npm ci && cd ../..
+python scripts/release_artifacts.py build npm typescript/runkite-governance /tmp/runkite-governance-npm
+node scripts/verify_governance_npm.mjs /tmp/runkite-governance-npm/runkite-governance-$(cat VERSION).tgz
+```
+
+The output directory must be new or empty. These commands build, install locally
+and test; they do not publish. HTTP fixtures listen on loopback. An environment
+that prohibits listening cannot qualify those behavior cases and must rerun them
+where loopback is permitted. Package source is copied before building Python, so
+no checkout build output can satisfy the installed consumer checks.
+
+The release workflow retains intended tarballs/distributions and `manifest.json`
+for 30 days. Preserve those files when recovering a partial publication. Do not
+rerun successful GoReleaser jobs just to repair a package upload or replace
+existing release assets. A source mismatch needs a new version and tag. See the
+[engineering contract](internal/governance-distribution.md) for archive comparison,
+first-publication gates and the decision-only boundary.
 
 ### GHCR
 

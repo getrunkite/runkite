@@ -5033,6 +5033,36 @@
           },
           "cost_usd": {
             "type": "number"
+          },
+          "unmetered": {
+            "type": "boolean"
+          },
+          "reporting_status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "reported"
+            ]
+          },
+          "reporting_source": {
+            "type": "string",
+            "const": "isolated_workload"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "cost_reported": {
+            "type": "boolean"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "reported_generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reported_workload": {
+            "$ref": "#/components/schemas/WorkloadProvenance"
           }
         },
         "title": "RunUsage"
@@ -5174,6 +5204,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "identity_provenance": {
+            "$ref": "#/components/schemas/IdentityProvenance"
           }
         }
       },
@@ -5238,6 +5271,124 @@
             "type": "integer"
           }
         }
+      },
+      "IdentityProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "subject",
+          "audience",
+          "expires_at"
+        ],
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "audience": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuer_asserted_actors": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subject"
+              ],
+              "properties": {
+                "subject": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "issuer": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            }
+          }
+        },
+        "description": "Bounded claims captured after strict admission JWT validation. Actor entries are assertions by that issuer, not proof of actor key possession. No bearer values or arbitrary claims."
+      },
+      "WorkloadProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "uri",
+          "key_sha256",
+          "not_after"
+        ],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "key_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "not_after": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Public facts from the verified certificate bound to this dispatch. Not accepted from client headers or JSON."
+      },
+      "DelegationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scopes",
+          "max_ttl_seconds"
+        ],
+        "properties": {
+          "audiences": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 32
+          },
+          "configured_actor": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "max_ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          }
+        },
+        "description": "Registered exchange intent. Does not establish that an exchange or downstream operation ran, or that the configured actor possessed a key."
       }
     },
     "responses": {

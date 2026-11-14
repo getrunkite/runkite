@@ -102,6 +102,9 @@ func (d Driver) BeginRunAttempt(ctx context.Context, runID string, generation in
 	if state.TerminalRunStatus(st) || state.MetadataGeneration(meta, state.AttemptGenerationKey) > generation {
 		return false, nil
 	}
+	if err := state.BindAttemptWorkload(ctx, meta, generation); err != nil {
+		return false, err
+	}
 	meta[state.AttemptGenerationKey] = generation
 	raw, err := json.Marshal(meta)
 	if err != nil {
@@ -140,9 +143,29 @@ func (d Driver) CompleteRunInTx(ctx context.Context, tx Tx, c *state.RunCompleti
 		return state.CompletionResult{}, err
 	}
 	c = state.ResolveCompletion(meta, c)
+	if err := state.CheckRunCompletionOwner(ctx, meta, c); err != nil {
+		return state.CompletionResult{}, err
+	}
 	result := state.CheckCompletion(meta, st, c)
 	if !result.Applied {
 		return result, nil
+	}
+	// Snapshot reports and completion serialize on this run lock. Prefer the
+	// durable snapshot over broker progress or arbitrary output.usage content.
+	usage, err := d.loadRunUsage(ctx, tx, c.RunID, tid)
+	if err != nil {
+		return state.CompletionResult{}, err
+	}
+	if usage != nil {
+		copy := *c
+		copy.Values = make(map[string]interface{}, len(c.Values)+1)
+		for key, value := range c.Values {
+			copy.Values[key] = value
+		}
+		copy.Values["usage"] = usage.OutputUsage()
+		c = &copy
+	} else {
+		c = state.WithoutDurableUsage(c)
 	}
 	now := time.Now().UTC()
 	meta[state.CompletionGenerationKey] = c.Generation

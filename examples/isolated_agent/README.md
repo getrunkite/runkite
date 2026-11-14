@@ -1,10 +1,11 @@
 # External isolated workload prototype
 
-Status: experimental v0.7.0. OpenShell remains an external product. The
+Status: experimental in current v0.8.0 source, not yet tagged or published.
+The profile first shipped in v0.7.0. OpenShell remains an external product. The
 JSONL bridge and fleet pools are separate controls. Neither a fake-runtime unit
 test nor Helm rendering establishes an enforced sandbox.
 
-Disposable qualification has passed using an installed Python runner, real
+The v0.7.0 disposable qualification passed using an installed Python runner, real
 SQLite plane, pooled worker and external OpenShell 0.1.8 with Landlock
 `hard_requirement`. This covers the explicit fixture workload, parent restart,
 receipt reclaim, uncertain-intent refusal, cancellation and confirmed cleanup.
@@ -71,11 +72,13 @@ The workload emits bounded JSON lines: incremental `event` frames, optional
 through the parent's existing run-bound MCP proxy. Deny and pending responses
 remain denies or holds; no automatic approval or polling is added.
 
-This experimental workload protocol has no model/token-usage reporting or
-spend-settlement contract. The offline example intentionally makes no model call,
-but a different workload could incur unreported cost. Zero recorded spend does
-not prove free execution. Use external provider accounting and limits; native
-SDK adapters' usage reporting is independent of this bridge.
+Published v0.7.0 has no supported workload usage-reporting contract. Unreleased
+v0.8.0 source supports [versioned cumulative reports](../../docs/internal/isolated-usage.md)
+with durable acknowledgement and receipt/cancellation settlement. This offline
+example reports an explicit zero; `usage_fixture` values are synthetic test
+measurements only. A different workload must report its own measurements and
+wait for `usage_ack`. Unknown and partial usage stay marked as such. Claims are
+not provider-verified billing or a hard spend cap against a hostile workload.
 
 State and incarnation-bound receipts use the plane's SQL opaque checkpoint CAS.
 A committed result can replay after delivery failure without starting the

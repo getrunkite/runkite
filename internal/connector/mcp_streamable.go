@@ -227,6 +227,9 @@ func (t mcpAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	cleanup := func() { stopScope(); cancel() }
 	r = r.Clone(requestCtx)
+	if t.scope != nil {
+		applyActionCorrelation(t.scope, r.Header)
+	}
 	protected := t.action != nil && protectedMCPRequest(r)
 	if t.authorization != "" {
 		r.Header.Set("Authorization", t.authorization)

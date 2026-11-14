@@ -24,6 +24,7 @@ from .completion import CompletionDeliveryError
 from .connectors import proxy_connector_mcp
 from .execution_pool import pool_runner_kind
 from .generic_worker import make_event_factory, run_worker
+from .isolated_usage import RunUsageClient, UsageSession
 from .logging_config import setup_logging
 from .opaque_checkpoint import OpaqueCheckpointClient
 
@@ -237,9 +238,19 @@ class OpenShellRuntime:
 
 
 class IsolatedAdapter:
-    def __init__(self, http_address: str, runner_kind: str, runner_token: str | None, *, runtime=None, client=None):
+    def __init__(
+        self,
+        http_address: str,
+        runner_kind: str,
+        runner_token: str | None,
+        *,
+        runtime=None,
+        client=None,
+        usage_client=None,
+    ):
         self.http_address, self.runner_kind, self.runner_token = http_address, runner_kind, runner_token
         self.runtime, self.client = runtime, client
+        self.usage_client = usage_client
 
     async def load_config(self, path: str) -> None:
         config = decode_frame(Path(path).read_bytes())
@@ -288,12 +299,14 @@ class IsolatedAdapter:
             runner_kind=self.runner_kind,
             runner_token=self.runner_token,
         )
+        usage_client = self.usage_client or RunUsageClient(self.http_address, self.runner_kind, self.runner_token)
         run_id, thread_id = assignment["run_id"], assignment["thread_id"]
         make_event = make_event_factory(run_id)
         proc = None
         name = "rk-" + uuid.uuid4().hex[:16]
         launched = False
         cleaned = False
+        usage = UsageSession(usage_client, run_id)
 
         async def cleanup():
             nonlocal cleaned
@@ -323,6 +336,7 @@ class IsolatedAdapter:
             )
             if state.get("version") != 1 or state.get("descriptor") != self.runtime.descriptor:
                 raise CompletionDeliveryError("isolated state belongs to a different workload descriptor")
+            await usage.start()
             receipt = state["receipts"].get(incarnation)
             if receipt:
                 if (
@@ -334,13 +348,19 @@ class IsolatedAdapter:
                 name = receipt["sandbox"]
                 launched = True
                 await cleanup()
-                await event_callback(make_event("values", receipt["output"]))
-                await event_callback(make_event("error" if receipt["status"] == "error" else "end", {}))
+                if receipt.get("usage") is not None and receipt["usage"] != usage.report():
+                    raise CompletionDeliveryError("isolated receipt and durable usage disagree")
+                await event_callback(make_event("values", usage.output(receipt["output"], legacy=True)))
+                await event_callback(
+                    make_event("error" if receipt["status"] == "error" else "end", {"status": receipt["status"]})
+                )
                 return receipt["status"]
             if state.get("intent"):
                 raise CompletionDeliveryError(
                     "isolated launch outcome requires reconciliation; execution was not retried"
                 )
+            if usage.report() != {"schema_version": 1, "sequence": 1, "status": "unknown", "complete": False}:
+                raise CompletionDeliveryError("usage exists without a matching execution receipt or intent")
             if len(state["receipts"]) >= MAX_RECEIPTS:
                 raise CompletionDeliveryError("isolated receipt capacity reached; start a new thread")
             if cancel_event.is_set():
@@ -367,7 +387,19 @@ class IsolatedAdapter:
             while True:
                 if cancel_event.is_set():
                     raise asyncio.CancelledError
-                raw_frame = await proc.stdout.readline()
+                read_task = asyncio.create_task(proc.stdout.readline())
+                cancel_wait = asyncio.create_task(cancel_event.wait())
+                try:
+                    done, _ = await asyncio.wait({read_task, cancel_wait}, return_when=asyncio.FIRST_COMPLETED)
+                    if cancel_wait in done:
+                        raise asyncio.CancelledError
+                    raw_frame = read_task.result()
+                finally:
+                    for task in (read_task, cancel_wait):
+                        if not task.done():
+                            task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await task
                 received_bytes += len(raw_frame)
                 received_frames += 1
                 if received_bytes > MAX_RUN_BYTES or received_frames > 10000:
@@ -385,7 +417,13 @@ class IsolatedAdapter:
                         {"source": "workload", "event": frame["data"]} if frame["method"] == "custom" else frame["data"]
                     )
                     await event_callback(make_event(frame["method"], data))
+                elif kind == "usage":
+                    sequence = await usage.receive(frame)
+                    proc.stdin.write(encode_frame({"type": "usage_ack", "sequence": sequence}))
+                    await proc.stdin.drain()
                 elif kind == "tool_call" and set(frame) == {"type", "id", "connector", "tool", "arguments"}:
+                    if usage.snapshot["complete"]:
+                        raise ValueError("tool request after final usage report")
                     call_id = frame["id"]
                     if not isinstance(call_id, str) or not call_id or len(call_id) > 128 or call_id in used_calls:
                         raise ValueError("invalid or reused bridge call ID")
@@ -433,11 +471,15 @@ class IsolatedAdapter:
                 "status": result["status"],
                 "output": result["output"],
                 "sandbox": name,
+                "usage": usage.report(),
             }
+            output = usage.output(result["output"])
             await client.put_cas(thread_id, encode_frame(state), etag=etag)
             await cleanup()
-            await event_callback(make_event("values", result["output"]))
-            await event_callback(make_event("error" if result["status"] == "error" else "end", {}))
+            await event_callback(make_event("values", output))
+            await event_callback(
+                make_event("error" if result["status"] == "error" else "end", {"status": result["status"]})
+            )
             return result["status"]
         except asyncio.CancelledError:
             raise
@@ -458,6 +500,8 @@ class IsolatedAdapter:
                     await cleanup()
             if self.client is None:
                 await client.aclose()
+            if self.usage_client is None:
+                await usage_client.aclose()
 
 
 def main() -> None:

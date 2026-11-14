@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Metadata } from "@grpc/grpc-js";
+import { Metadata, status as grpcStatus } from "@grpc/grpc-js";
 import { startHeartbeatLoop } from "./heartbeat.js";
 import type { RunnerServiceClient, HeartbeatRequest, HeartbeatResponse } from "./proto.js";
 
@@ -31,6 +31,41 @@ function fakeClient(
     },
   } as unknown as RunnerServiceClient;
 }
+
+test("permanent authentication and owner denials cancel work without retrying", async () => {
+  for (const code of [grpcStatus.UNAUTHENTICATED, grpcStatus.PERMISSION_DENIED]) {
+    let calls = 0;
+    let cancellations = 0;
+    let resolveCancelled!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      resolveCancelled = resolve;
+    });
+    const client = fakeClient(() => {
+      calls++;
+      return Object.assign(new Error("synthetic authority denial"), { code });
+    });
+    const handle = startHeartbeatLoop(client, "owned", new Metadata(), {
+      intervalMs: 1,
+      onSuperseded: () => {
+        cancellations++;
+        resolveCancelled();
+      },
+    });
+    try {
+      await Promise.race([
+        cancelled,
+        sleep(1000).then(() => {
+          throw new Error("authority denial did not cancel work");
+        }),
+      ]);
+      await sleep(20);
+      assert.equal(calls, 1);
+      assert.equal(cancellations, 1);
+    } finally {
+      handle.stop();
+    }
+  }
+});
 
 test("startHeartbeatLoop calls heartbeat repeatedly with the correct runId", async () => {
   const calls: string[] = [];

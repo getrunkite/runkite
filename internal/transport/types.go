@@ -16,17 +16,18 @@ type RunAssignment struct {
 	RunID string `json:"run_id"`
 	// RunIncarnationID is the immutable stored run identity when supplied by
 	// a compatible durable store. Isolated execution requires it for receipts.
-	RunIncarnationID string          `json:"run_incarnation_id,omitempty"`
-	ThreadID         string          `json:"thread_id"`
-	RunnerKind       string          `json:"runner_kind"`
-	GraphID          string          `json:"graph_id"`
-	Input            json.RawMessage `json:"input"`
-	Config           json.RawMessage `json:"config,omitempty"`
-	CheckpointRef    *string         `json:"checkpoint_ref"`
-	ResumeCommand    json.RawMessage `json:"resume_command"`
-	StreamModes      []string        `json:"stream_modes"`
-	ConnectorNeeds   []string        `json:"connector_needs"`
-	TraceContext     *TraceContext   `json:"trace_context,omitempty"`
+	RunIncarnationID string            `json:"run_incarnation_id,omitempty"`
+	WorkloadOwner    *WorkloadIdentity `json:"workload_owner,omitempty"`
+	ThreadID         string            `json:"thread_id"`
+	RunnerKind       string            `json:"runner_kind"`
+	GraphID          string            `json:"graph_id"`
+	Input            json.RawMessage   `json:"input"`
+	Config           json.RawMessage   `json:"config,omitempty"`
+	CheckpointRef    *string           `json:"checkpoint_ref"`
+	ResumeCommand    json.RawMessage   `json:"resume_command"`
+	StreamModes      []string          `json:"stream_modes"`
+	ConnectorNeeds   []string          `json:"connector_needs"`
+	TraceContext     *TraceContext     `json:"trace_context,omitempty"`
 	// User carries the identity that authenticated this run's HTTP
 	// request, if any. Framework-specific runners may map this onto
 	// their own runtime identity object (e.g. LangGraph's
@@ -96,7 +97,12 @@ type UserContext struct {
 	IsAuthenticated bool
 	Permissions     []string
 	Extra           map[string]interface{}
+	// DelegatedJWTAssertion is a server-owned original strict JWT. It travels
+	// only in trusted assignments, never in a run manifest or public evidence.
+	DelegatedJWTAssertion string
 }
+
+const DelegatedJWTAssertionKey = "_runkite_delegated_jwt"
 
 // MarshalJSON flattens Extra into the top-level user object.
 func (u UserContext) MarshalJSON() ([]byte, error) {
@@ -110,7 +116,13 @@ func (u UserContext) MarshalJSON() ([]byte, error) {
 	if len(u.Permissions) > 0 {
 		m["permissions"] = u.Permissions
 	}
+	if u.DelegatedJWTAssertion != "" {
+		m[DelegatedJWTAssertionKey] = u.DelegatedJWTAssertion
+	}
 	for k, v := range u.Extra {
+		if k == DelegatedJWTAssertionKey {
+			continue
+		}
 		if _, exists := m[k]; !exists {
 			m[k] = v
 		}
@@ -124,6 +136,10 @@ func (u *UserContext) UnmarshalJSON(data []byte) error {
 	var m map[string]interface{}
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
+	}
+	*u = UserContext{}
+	if v, ok := m[DelegatedJWTAssertionKey].(string); ok {
+		u.DelegatedJWTAssertion = v
 	}
 	if v, ok := m["identity"].(string); ok {
 		u.Identity = v
@@ -149,10 +165,14 @@ func (u *UserContext) UnmarshalJSON(data []byte) error {
 	reserved := map[string]bool{
 		"identity": true, "display_name": true,
 		"is_authenticated": true, "permissions": true, "extra": true,
+		DelegatedJWTAssertionKey: true,
 	}
 	extra := make(map[string]interface{})
 	if nested, ok := m["extra"].(map[string]interface{}); ok {
 		for k, v := range nested {
+			if k == DelegatedJWTAssertionKey {
+				continue
+			}
 			extra[k] = v
 		}
 	}

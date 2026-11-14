@@ -1,6 +1,6 @@
 # Execution pools and an external workload boundary
 
-Status: v0.7.0 source. This note distinguishes implemented
+Status: current v0.8.0 source, not yet tagged or published. This note distinguishes implemented
 fleet routing, a rendered deployment profile and an experimental external bridge.
 It does not declare OpenShell or a Kubernetes CNI qualified merely because their
 configuration exists. No runtime is embedded in the Go binary.
@@ -14,7 +14,7 @@ trusted worker's runner credential. Pool routing serves the first caller. The
 external process bridge is a prototype for the second.
 
 Shared kind tokens, exact generations, tool approvals and tenant-scoped HTTP
-handlers already exist. They did not determine which same-framework fleet
+handlers already exist. In the original kind-token profile, they did not determine which same-framework fleet
 receives input, nor prevent in-process code from reading the worker environment.
 Those are distinct boundaries and must not be represented as one feature.
 
@@ -155,13 +155,13 @@ output floods are refused. Configured `allowed_tools` also restricts bridge tool
 requests; it does not govern arbitrary local computation in the child. A pending
 MCP response remains a hold; the bridge does not approve, poll or replay it.
 
-This experimental JSONL protocol has no model/token-usage frame or supported
-spend-settlement contract. It does not extract provider usage from arbitrary
-workload output. A zero recorded in Admin is not evidence that no model call or
-cost occurred. Managed admission still applies, but token/USD caps cannot account
-for unreported workload usage. Use external provider accounting and limits.
-Existing native SDK adapters' usage reporting is independent and is not
-inherited by an explicit JSONL workload.
+Published v0.7.0 has no supported workload usage frame. Source after v0.7.0 adds
+the [versioned cumulative reporting contract](isolated-usage.md), distinguishing
+unknown from reported zero and settling the latest acknowledged SQL snapshot
+through cancellation and reclaim. These are attributed workload claims, not
+provider-verified billing or hard-cap enforcement against a hostile workload.
+Unreported work remains unknown. Existing native SDK usage reporting remains
+independent; use provider accounting and limits for an authoritative ceiling.
 
 The runtime supplies filesystem/process/network restrictions. Runkite supplies
 business-tool policy and managed authority. Either side's denial remains a denial.
@@ -240,7 +240,7 @@ permission denial, a visible socket and an unexpected visible file; denial alone
 does not prove the host socket was absent. Empty destination arguments do not
 produce a network-containment claim.
 
-The installed-wheel managed qualification also passed five lifecycle cases using
+The v0.7.0 installed-wheel managed qualification passed five lifecycle cases using
 a real SQLite plane, independently credentialed pooled worker and external
 OpenShell 0.1.8 gateway. The workload required Landlock `hard_requirement`. Its
 forbidden-file control was first readable outside the runtime; inside, the
@@ -275,3 +275,97 @@ external-workload multi-replica behavior, every runtime/kernel/CNI combination,
 cloud metadata service or live model/provider. Repeat the relevant qualification
 on the intended deployment. Keep each unpassed property explicit rather than
 inferring it from a configuration hash, rendered policy or this bounded run.
+
+## Combined HA, TLS and durable usage qualification
+
+The unreleased v0.8.0 source adds `scripts/test-isolated-ha.sh`. It starts dedicated
+Postgres/Redis containers with dynamic loopback mappings and a fresh fixture
+password, two actual TLS-enabled planes, a locally issued mTLS worker identity,
+an installed parent wheel and an external OpenShell 0.1.8 runtime. It does not
+reuse an application database or restart the Docker engine. The HA wrapper
+requires the runtime fixture's `--tls` mode: an authenticated TLS gateway,
+task-local CA/client certificates, verified supervisor callback TLS and no
+unauthenticated-user setting. The older standalone fixture retains its explicit
+loopback HTTP default for historical checks. No fixture qualifies an external
+identity service or production PKI lifecycle.
+
+Prepare the binary, runner wheel and checksum-verified runtime CLI locally, then
+run from the repository root:
+
+```bash
+RUNKITE_TEST_BINARY=/absolute/path/to/runkite \
+RUNKITE_TEST_RUNNER_WHEEL=/absolute/path/to/runkite_runner.whl \
+RUNKITE_TEST_ISOLATED_CLI=/absolute/path/to/openshell \
+RUNKITE_TEST_ISOLATED_REPETITIONS=1 \
+RUNKITE_TEST_ISOLATED_HA_OUTPUT=/absolute/path/to/owned-evidence \
+bash scripts/test-isolated-ha.sh
+```
+
+Docker Compose, Python, OpenSSL and `uv` must be available. Optional
+`RUNKITE_TEST_ISOLATED_PYTHON` selects the test interpreter and
+`RUNKITE_TEST_DOCKER_SOCKET` names the accessible local socket. The socket belongs
+to the external runtime fixture, never to the workload. Repetitions are bounded
+from one to twenty. The script prints the evidence directory and fails if owned
+runtime or database cleanup cannot be confirmed.
+
+In addition to the lifecycle cases above, this fixture checks exact worker
+ownership across two replicas, rejects a different pool member and a rotated
+key, kills the reporting replica after a committed partial report, cancels on
+the survivor, restarts the first replica and checks that the existing usage
+ledger settles the acknowledged counts once. Counts are explicitly synthetic.
+It exercises receipt recovery under a replacement worker without repeating the
+tool effect. Gateway preflight verifies successful authenticated access and
+rejection of an untrusted server CA or client certificate. After the managed
+cases, it stops the gateway, checks that management requests fail, restarts it
+and requires verified access to recover. No failed request is retried over
+plaintext. These transport probes do not claim a long-lived certificate rollover
+or uninterrupted workload execution during gateway loss.
+
+Its JSON report records each completed case, elapsed seconds and
+bounded repetitions. Preserve the failed run's private recovery directory for
+cleanup, but do not publish its private certificates or environment.
+
+The manually dispatched
+[`identity-qualification.yml`](../../.github/workflows/identity-qualification.yml)
+workflow invokes this harness on native Linux amd64 and requires measured
+workload, TLS and cleanup success. It is not an automatic pull-request or
+release gate, and adding the workflow does not establish a successful hosted
+run. Existing isolated unit and structural CI checks do not exercise this
+combined deployment. Record and review an actual `managed-evidence.json` and
+`runtime-cleanup.json` and `gateway-tls-evidence.json` from the target environment
+before making that claim.
+Neither a bounded fixture nor a verified reporter proves provider billing,
+continuous certificate rotation, indefinite soak or arbitrary SDK containment.
+
+### Current local evidence, November 14, 2026
+
+The combined candidate passed locally on macOS with OrbStack and external
+OpenShell 0.1.8. It used two actual Postgres/Redis planes, direct HTTP/gRPC mTLS,
+the installed candidate runner wheel and the authenticated TLS gateway fixture.
+The managed test recorded **three bounded fault cycles in 45.568 seconds**.
+This is a short qualification run, not a long-duration or production soak.
+
+In each cycle, the fixture acknowledged synthetic cumulative usage of seven
+prompt and three completion tokens, rejected a different worker and a rotated
+key, killed the reporting plane, cancelled through the survivor, restarted the
+first plane and verified one settlement of those counts. Earlier lifecycle
+cases in the same run checked committed receipt replay under a replacement
+worker without repeating the tool, uncertain launch refusal, managed visibility,
+streaming and SQL conversation continuity. Original usage generation and worker
+provenance survived receipt replay. The report also records the installed
+consumer's actual dependency versions.
+
+All five gateway transport probes passed: authorized access, rejection of an
+untrusted server CA, rejection of an untrusted client certificate, management
+failure during a stopped gateway and verified recovery after restart. Runtime
+and infrastructure cleanup were confirmed. Local evidence is under
+`outputs/runkite-next/isolated-ha-tls-final/runtime/` in the review workspace:
+`managed-evidence.json` has `passed: true` and `bounded_repetitions: 3`,
+`runtime-fixture.json` records `gateway_tls: true` and `client_auth: "mtls"`,
+`gateway-tls-evidence.json` has `passed: true`, and `runtime-cleanup.json` has
+`confirmed: true` with no reason codes. These workspace artifacts are not
+bundled production evidence or a successful hosted-workflow run.
+
+Native Linux hosted execution of the manual workflow, longer soak, external
+PKI/rotation, production gateway HA and live-provider accounting remain separate
+qualification tasks. The profile stays experimental.

@@ -2,11 +2,22 @@
 
 A standard-library-only Python client for `POST /governance/decide` and `GET /governance/actions/{id}` on your self-hosted Runkite plane. It does not depend on the runner package or an agent framework.
 
-This distribution is prepared locally and has not been published by this change. Install from the checkout:
+This helper has its own distribution, separate from `runkite-runner`. The
+published Runkite 0.7.0 release did not include it. Use the registry command
+only for a version whose publication has been verified:
+
+```sh
+python -m pip install runkite-governance
+```
+
+For source that has not been published, install from a checkout:
 
 ```sh
 python -m pip install ./python/runkite_governance
 ```
+
+The runtime requires Python 3.11 or newer. Installing a managed runner does not
+install this decision-only helper.
 
 ```python
 from runkite_governance import GovernanceClient
@@ -29,11 +40,20 @@ Use a server-side key with `governance:decide`. Tenant identity comes from that 
 
 ## Optional Microsoft Agent Framework middleware
 
-Install the pinned optional dependency from the checkout:
+For a verified registry release, install the optional middleware with:
+
+```sh
+python -m pip install 'runkite-governance[agent-framework]'
+```
+
+For unpublished source, install the extra from a checkout:
 
 ```sh
 python -m pip install './python/runkite_governance[agent-framework]'
 ```
+
+The extra pins the tested framework core; model-provider packages remain
+application choices.
 
 Import `GovernanceFunctionMiddleware`, `GovernedFunction`,
 `GovernanceBlockedError` and `PendingInvocation` from
@@ -46,7 +66,7 @@ pending stop the agent with a native `MiddlewareFailure`; an optional async
 
 The app owns pending continuation and execution idempotency. Rich Python types,
 coercing validators and provider-executed tools are outside this adapter's scope.
-See the [framework example](../../examples/governance_agent_framework/README.md)
+See the [framework example](https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework/README.md)
 for a durable application transaction, offline streaming and non-streaming tests,
 and supported argument constraints. Execution retains native mutable containers;
 the app must not mutate invocation arguments after authorization. Importing the

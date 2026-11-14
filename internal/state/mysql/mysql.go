@@ -409,6 +409,9 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 		{Version: 22, Name: "credential_lifecycle", Up: func(ctx context.Context) error { return s.upCredentialLeases(ctx, db) }, Down: func(context.Context) error {
 			return fmt.Errorf("credential lifecycle cannot be downgraded safely; restore a reviewed backup and reconcile outstanding leases")
 		}},
+		{Version: 23, Name: "durable_run_usage", Up: func(ctx context.Context) error { return s.upRunUsage(ctx, db) }, Down: func(context.Context) error {
+			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
+		}},
 	}
 }
 

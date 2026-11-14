@@ -49,6 +49,28 @@ def network_reachable(url):
 def main():
     request = json.loads(sys.stdin.readline())
     payload = request.get("input") or {}
+    usage_sequence = 0
+
+    def report_usage(values, complete):
+        nonlocal usage_sequence
+        usage_sequence += 1
+        report = {
+            "type": "usage",
+            "schema_version": 1,
+            "sequence": usage_sequence,
+            "status": "reported",
+            "complete": complete,
+            **values,
+        }
+        print(json.dumps(report), flush=True)
+        acknowledgement = json.loads(sys.stdin.readline())
+        if acknowledgement != {"type": "usage_ack", "sequence": usage_sequence}:
+            raise RuntimeError("usage was not durably acknowledged")
+
+    # The workload is offline. Nonzero values are an explicitly synthetic
+    # fault-injection fixture for the reporting protocol, never provider usage.
+    if payload.get("usage_fixture"):
+        report_usage(payload["usage_fixture"], False)
     if payload.get("tool"):
         print(
             json.dumps(
@@ -94,6 +116,7 @@ def main():
         "network_probes": probes,
         "tool_response": tool_response,
     }
+    report_usage(payload.get("usage_fixture") or {"prompt_tokens": 0, "completion_tokens": 0}, True)
     print(json.dumps({"type": "result", "status": "success", "state": turn, "output": output}), flush=True)
 
 

@@ -97,6 +97,39 @@ const inflightDataKey = "rk:inflight:data"
 // that ever increments it (via HINCRBY, atomic).
 const inflightGenKey = "rk:inflight:generation"
 
+// Keep certificate ownership separate from arbitrary assignment JSON. This
+// preserves input bytes while making capture and mutation fences atomic.
+const inflightOwnerKey = "rk:inflight:workload-owner"
+const trustedQueueActor = "!runkite:control-plane-recovery"
+
+func (q *Queue) SupportsWorkloadIdentity() bool { return true }
+
+func workloadArgument(ctx context.Context) (string, error) {
+	identity := transport.WorkloadIdentityFromContext(ctx)
+	if identity == nil {
+		return "", nil
+	}
+	if !identity.ValidAt(time.Now()) {
+		return "", fmt.Errorf("workload identity expired")
+	}
+	raw, err := json.Marshal(identity)
+	return string(raw), err
+}
+
+func workloadMutationArgument(ctx context.Context) (string, error) {
+	if transport.IsTrustedQueueContext(ctx) {
+		return trustedQueueActor, nil
+	}
+	return workloadArgument(ctx)
+}
+
+func workloadExpiry(ctx context.Context) int64 {
+	if identity := transport.WorkloadIdentityFromContext(ctx); identity != nil {
+		return identity.NotAfter.UnixMilli()
+	}
+	return 0
+}
+
 // inflightPendingKey is the staging list for Dequeue's atomic claim:
 // BLMOVE moves a job here from rk:queue:{kind} in one Redis command so
 // a crash can never leave the job neither on the ready queue nor in
@@ -175,10 +208,18 @@ local data_key = KEYS[2]
 local zset_key = KEYS[3]
 local gen_key = KEYS[4]
 local canceled_key = KEYS[5]
+local owner_key = KEYS[6]
 local payload = ARGV[1]
 local score = ARGV[2]
 local now_ms = tonumber(ARGV[3])
 local canceled_ttl_ms = tonumber(ARGV[4])
+local owner = ARGV[5]
+if owner ~= '' then
+  local clock = redis.call('TIME')
+  if tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000) >= tonumber(ARGV[6]) then
+    return {0, '', 0}
+  end
+end
 
 local ok, job = pcall(cjson.decode, payload)
 if not ok or type(job) ~= 'table' or not job.run_id then
@@ -192,6 +233,12 @@ local removed = redis.call('LREM', pending, 1, payload)
 if removed == 0 then
   if redis.call('HEXISTS', data_key, run_id) == 1 then
     local current = tonumber(redis.call('HGET', gen_key, run_id)) or gen
+    if owner ~= '' then
+      if current ~= gen or redis.call('HGET', data_key, run_id) ~= payload or redis.call('HEXISTS', owner_key, run_id) == 1 then
+        return {0, run_id, current}
+      end
+      redis.call('HSET', owner_key, run_id, owner)
+    end
     return {1, run_id, current}
   end
   return {0, run_id, 0}
@@ -209,6 +256,11 @@ end
 redis.call('HSET', data_key, run_id, payload)
 redis.call('ZADD', zset_key, score, run_id)
 redis.call('HSET', gen_key, run_id, gen)
+if owner ~= '' then
+  redis.call('HSET', owner_key, run_id, owner)
+else
+  redis.call('HDEL', owner_key, run_id)
+end
 return {1, run_id, gen}
 `
 
@@ -226,6 +278,7 @@ local data_key = KEYS[2]
 local zset_key = KEYS[3]
 local gen_key = KEYS[4]
 local canceled_key = KEYS[5]
+local owner_key = KEYS[6]
 local score = ARGV[1]
 local now_ms = tonumber(ARGV[2])
 local canceled_ttl_ms = tonumber(ARGV[3])
@@ -254,6 +307,7 @@ while true do
       redis.call('HSET', data_key, job.run_id, payload)
       redis.call('ZADD', zset_key, score, job.run_id)
       redis.call('HSET', gen_key, job.run_id, gen)
+      redis.call('HDEL', owner_key, job.run_id)
       promoted = promoted + 1
     end
   end
@@ -314,6 +368,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			// Canceled or already drained-and-discarded -- try again.
 			continue
 		}
+		job.WorkloadOwner = transport.WorkloadIdentityFromContext(ctx)
 		return &job, nil
 	}
 }
@@ -321,10 +376,14 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 // promotePending runs promoteScript. Returns 1 if the job is now in
 // durable inflight tracking, 0 if discarded (canceled / gone).
 func (q *Queue) promotePending(ctx context.Context, payload string) (int64, error) {
+	owner, err := workloadArgument(ctx)
+	if err != nil {
+		return 0, err
+	}
 	now := nowMillis()
 	result, err := q.rdb.Eval(ctx, promoteScript,
-		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
-		payload, now, now, canceledMemberTTL.Milliseconds(),
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey, inflightOwnerKey},
+		payload, now, now, canceledMemberTTL.Milliseconds(), owner, workloadExpiry(ctx),
 	).Slice()
 	if err != nil {
 		return 0, err
@@ -343,7 +402,7 @@ func (q *Queue) promotePending(ctx context.Context, payload string) (int64, erro
 func (q *Queue) drainPending(ctx context.Context) (int, error) {
 	now := nowMillis()
 	result, err := q.rdb.Eval(ctx, drainPendingScript,
-		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
+		[]string{inflightPendingKey, inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey, inflightOwnerKey},
 		now, now, canceledMemberTTL.Milliseconds(),
 	).Result()
 	if err != nil {
@@ -398,6 +457,15 @@ local zset_key = KEYS[2]
 local gen_key = KEYS[3]
 local run_id = ARGV[1]
 local generation = tonumber(ARGV[2])
+local owner_key = KEYS[4]
+if ARGV[3] ~= '!runkite:control-plane-recovery' then
+  local actual_owner = redis.call('HGET', owner_key, run_id) or ''
+  if actual_owner ~= ARGV[3] then return 0 end
+end
+if ARGV[3] ~= '' and ARGV[3] ~= '!runkite:control-plane-recovery' then
+  local clock = redis.call('TIME')
+  if tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000) >= tonumber(ARGV[4]) then return 0 end
+end
 
 if redis.call('HEXISTS', data_key, run_id) == 0 then
     return 0
@@ -406,15 +474,20 @@ end
 redis.call('HDEL', data_key, run_id)
 redis.call('ZREM', zset_key, run_id)
 redis.call('HDEL', gen_key, run_id)
+redis.call('HDEL', owner_key, run_id)
 return 1
 `
 
 // Ack acknowledges successful processing of a job, fenced by generation
 // -- see transport.JobQueue's Ack doc comment for the full rationale.
 func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+	owner, err := workloadMutationArgument(ctx)
+	if err != nil {
+		return false, err
+	}
 	result, err := q.rdb.Eval(ctx, ackScript,
-		[]string{inflightDataKey, inflightZSetKey, inflightGenKey},
-		runID, generation,
+		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, inflightOwnerKey},
+		runID, generation, owner, workloadExpiry(ctx),
 	).Result()
 	if err != nil {
 		return false, err
@@ -439,6 +512,15 @@ local gen_key = KEYS[3]
 local run_id = ARGV[1]
 local score = ARGV[2]
 local generation = tonumber(ARGV[3])
+local owner_key = KEYS[4]
+if ARGV[4] ~= '!runkite:control-plane-recovery' then
+  local actual_owner = redis.call('HGET', owner_key, run_id) or ''
+  if actual_owner ~= ARGV[4] then return 0 end
+end
+if ARGV[4] ~= '' and ARGV[4] ~= '!runkite:control-plane-recovery' then
+  local clock = redis.call('TIME')
+  if tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000) >= tonumber(ARGV[5]) then return 0 end
+end
 
 if redis.call('HEXISTS', data_key, run_id) == 0 then
     return 0
@@ -451,9 +533,13 @@ return 1
 // Renew extends an in-flight job's lease -- see transport.JobQueue's
 // Renew doc comment for the heartbeat mechanism and fencing this backs.
 func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
+	owner, err := workloadMutationArgument(ctx)
+	if err != nil {
+		return false, err
+	}
 	result, err := q.rdb.Eval(ctx, renewScript,
-		[]string{inflightDataKey, inflightZSetKey, inflightGenKey},
-		runID, nowMillis(), generation,
+		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, inflightOwnerKey},
+		runID, nowMillis(), generation, owner, workloadExpiry(ctx),
 	).Result()
 	if err != nil {
 		return false, err
@@ -464,16 +550,25 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 
 // LookupInflight returns the currently tracked assignment for runID.
 func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.RunAssignment, error) {
-	data, err := q.rdb.HGet(ctx, inflightDataKey, runID).Result()
-	if err == redis.Nil {
+	parts, err := q.rdb.Eval(ctx, `local data = redis.call('HGET', KEYS[1], ARGV[1]); if not data then return {} end; return {data, redis.call('HGET', KEYS[2], ARGV[1]) or ''}`, []string{inflightDataKey, inflightOwnerKey}, runID).StringSlice()
+	if err == nil && len(parts) == 0 {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	var job transport.RunAssignment
-	if err := json.Unmarshal([]byte(data), &job); err != nil {
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid in-flight assignment lookup")
+	}
+	if err := json.Unmarshal([]byte(parts[0]), &job); err != nil {
 		return nil, err
+	}
+	job.WorkloadOwner = nil
+	if parts[1] != "" {
+		if err := json.Unmarshal([]byte(parts[1]), &job.WorkloadOwner); err != nil {
+			return nil, fmt.Errorf("invalid workload owner")
+		}
 	}
 	return &job, nil
 }
@@ -486,8 +581,17 @@ local data_key = KEYS[1]
 local zset_key = KEYS[2]
 local gen_key = KEYS[3]
 local canceled_key = KEYS[4]
+local owner_key = KEYS[5]
 local run_id = ARGV[1]
 local generation = tonumber(ARGV[2])
+if ARGV[5] ~= '!runkite:control-plane-recovery' then
+  local actual_owner = redis.call('HGET', owner_key, run_id) or ''
+  if actual_owner ~= ARGV[5] then return 0 end
+end
+if ARGV[5] ~= '' and ARGV[5] ~= '!runkite:control-plane-recovery' then
+  local clock = redis.call('TIME')
+  if tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000) >= tonumber(ARGV[6]) then return 0 end
+end
 local data = redis.call('HGET', data_key, run_id)
 if not data then return 0 end
 ` + checkGenerationScript + `
@@ -497,6 +601,9 @@ if not ok or type(job) ~= 'table' or type(job.runner_kind) ~= 'string' then
 end
 local canceled_at = redis.call('ZSCORE', canceled_key, run_id)
 if not canceled_at or tonumber(canceled_at) < tonumber(ARGV[3]) then
+    if redis.call('HEXISTS', owner_key, run_id) == 1 then
+      data = data:gsub('}$', ',"generation":' .. (generation + 1) .. '}')
+    end
     -- Write first: if LPUSH fails (for example a wrong-type queue key), the
     -- in-flight assignment is still retained for retry rather than lost.
     redis.call('LPUSH', ARGV[4] .. job.runner_kind, data)
@@ -504,13 +611,18 @@ end
 redis.call('HDEL', data_key, run_id)
 redis.call('ZREM', zset_key, run_id)
 redis.call('HDEL', gen_key, run_id)
+redis.call('HDEL', owner_key, run_id)
 return 1
 `
 
 func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+	owner, err := workloadMutationArgument(ctx)
+	if err != nil {
+		return err
+	}
 	return q.rdb.Eval(ctx, nackScript,
-		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey},
-		runID, generation, nowMillis()-canceledMemberTTL.Milliseconds(), queueKey(""),
+		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey, inflightOwnerKey},
+		runID, generation, nowMillis()-canceledMemberTTL.Milliseconds(), queueKey(""), owner, workloadExpiry(ctx),
 	).Err()
 }
 
@@ -521,6 +633,7 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 		pipe.HDel(ctx, inflightDataKey, runID)
 		pipe.ZRem(ctx, inflightZSetKey, runID)
 		pipe.HDel(ctx, inflightGenKey, runID)
+		pipe.HDel(ctx, inflightOwnerKey, runID)
 		pipe.ZAdd(ctx, canceledZSetKey, redis.Z{Score: float64(now), Member: runID})
 		// Opportunistic trim so the zset cannot grow without bound.
 		pipe.ZRemRangeByScore(ctx, canceledZSetKey, "-inf", fmt.Sprintf("%d", cutoff))
@@ -564,6 +677,7 @@ local zset_key = KEYS[1]
 local data_key = KEYS[2]
 local canceled_key = KEYS[3]
 local gen_key = KEYS[4]
+local owner_key = KEYS[5]
 local cutoff = ARGV[1]
 local now_ms = tonumber(ARGV[2])
 local canceled_ttl_ms = tonumber(ARGV[3])
@@ -578,6 +692,7 @@ for _, run_id in ipairs(stale_ids) do
     if not job_json then
         redis.call('ZREM', zset_key, run_id)
         redis.call('HDEL', gen_key, run_id)
+        redis.call('HDEL', owner_key, run_id)
     else
         local cscore = redis.call('ZSCORE', canceled_key, run_id)
         local is_canceled = false
@@ -592,6 +707,7 @@ for _, run_id in ipairs(stale_ids) do
             redis.call('ZREM', zset_key, run_id)
             redis.call('HDEL', data_key, run_id)
             redis.call('HDEL', gen_key, run_id)
+            redis.call('HDEL', owner_key, run_id)
         else
             -- Validate before removing any recoverable payload. Legacy records
             -- without a generation index use only the top-level numeric field,
@@ -637,6 +753,7 @@ for _, run_id in ipairs(stale_ids) do
                 redis.call('HINCRBY', gen_key, run_id, 1)
                 redis.call('ZREM', zset_key, run_id)
                 redis.call('HDEL', data_key, run_id)
+                redis.call('HDEL', owner_key, run_id)
                 reclaimed = reclaimed + 1
             end
         end
@@ -667,7 +784,7 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 	now := nowMillis()
 	cutoff := now - maxAge.Milliseconds()
 	result, err := q.rdb.Eval(ctx, reclaimStaleScript,
-		[]string{inflightZSetKey, inflightDataKey, canceledZSetKey, inflightGenKey},
+		[]string{inflightZSetKey, inflightDataKey, canceledZSetKey, inflightGenKey, inflightOwnerKey},
 		cutoff, now, canceledMemberTTL.Milliseconds(), maxRetries,
 	).Result()
 	if err != nil {

@@ -25,7 +25,8 @@ test("standalone decision approvals remain unbound to managed runs", () => {
 test("managed target bindings require the exact supported lowercase digest shape", () => {
   assert.equal(validManagedTargetRevision(target), true);
   assert.equal(validManagedTargetRevision(`target-v2-${"a".repeat(64)}`), true);
-  for (const target_revision of [undefined, "", "a".repeat(64), `target-v3-${"a".repeat(64)}`, `target-v1-${"A".repeat(64)}`, `target-v1-${"a".repeat(63)}`, `target-v1-${"a".repeat(65)}`, `${target}\n`, `${target}\r`, ` ${target}`]) {
+  assert.equal(validManagedTargetRevision(`target-v3-${"a".repeat(64)}`), true);
+  for (const target_revision of [undefined, "", "a".repeat(64), `target-v4-${"a".repeat(64)}`, `target-v1-${"A".repeat(64)}`, `target-v1-${"a".repeat(63)}`, `target-v1-${"a".repeat(65)}`, `${target}\n`, `${target}\r`, ` ${target}`]) {
     assert.equal(validManagedTargetRevision(target_revision), false);
     assert.match(pendingApprovalBlockReason({ ...current, run_incarnation_id: "original-run", target_revision })!, /connector target revision.*fresh review/);
   }

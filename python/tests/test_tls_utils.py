@@ -22,9 +22,11 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import tempfile
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -81,9 +83,12 @@ def test_ca_file_alone_enables_tls_without_client_cert():
         creds = tls_utils.grpc_channel_credentials()
         check("grpc_channel_credentials() returns something when CA is set", creds is not None)
 
-        kwargs = tls_utils.httpx_tls_kwargs()
-        check("httpx_tls_kwargs() sets verify to the CA path", kwargs.get("verify") == ca.name)
-        check("httpx_tls_kwargs() has no cert without a client cert/key", "cert" not in kwargs)
+        context = MagicMock()
+        with patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=context) as create:
+            kwargs = tls_utils.httpx_tls_kwargs()
+        create.assert_called_once_with(cafile=ca.name)
+        check("httpx_tls_kwargs() supplies the prepared verification context", kwargs == {"verify": context})
+        context.load_cert_chain.assert_not_called()
 
 
 def test_client_cert_and_key_together_enable_mtls():
@@ -103,10 +108,14 @@ def test_client_cert_and_key_together_enable_mtls():
         creds = tls_utils.grpc_channel_credentials()
         check("grpc_channel_credentials() returns something with mTLS configured", creds is not None)
 
-        kwargs = tls_utils.httpx_tls_kwargs()
+        context = MagicMock()
+        with patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=context) as create:
+            kwargs = tls_utils.httpx_tls_kwargs()
+        create.assert_called_once_with(cafile=ca.name)
+        context.load_cert_chain.assert_called_once_with(cert.name, keyfile=key.name)
         check(
-            "httpx_tls_kwargs() sets cert to a (cert, key) tuple for mTLS",
-            kwargs.get("cert") == (cert.name, key.name),
+            "httpx gets a context with the client chain already loaded",
+            kwargs.get("verify") is context and "cert" not in kwargs,
         )
 
 
@@ -129,8 +138,95 @@ def test_client_cert_without_key_is_not_used_for_httpx_tuple_form():
         os.environ["RUNKITE_TLS_CA_FILE"] = ca.name
         os.environ["RUNKITE_TLS_CLIENT_CERT_FILE"] = cert.name
 
-        kwargs = tls_utils.httpx_tls_kwargs()
-        check("httpx_tls_kwargs() falls back to a bare cert string without a key", kwargs.get("cert") == cert.name)
+        context = MagicMock()
+        with patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=context):
+            kwargs = tls_utils.httpx_tls_kwargs()
+        context.load_cert_chain.assert_called_once_with(cert.name, keyfile=None)
+        check("combined certificate PEM is loaded in the context", kwargs.get("verify") is context)
+
+
+def test_mtls_with_system_server_trust_and_incomplete_pair():
+    with (
+        _EnvSandbox(),
+        tempfile.NamedTemporaryFile(suffix=".pem") as cert,
+        tempfile.NamedTemporaryFile(suffix=".pem") as key,
+    ):
+        for f in (cert, key):
+            f.write(_FAKE_PEM)
+            f.flush()
+        os.environ["RUNKITE_TLS_CLIENT_CERT_FILE"] = cert.name
+        os.environ["RUNKITE_TLS_CLIENT_KEY_FILE"] = key.name
+        check(
+            "client certificate enables secure gRPC with system roots", tls_utils.grpc_channel_credentials() is not None
+        )
+        context = MagicMock()
+        with patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=context) as create:
+            kwargs = tls_utils.httpx_tls_kwargs()
+        create.assert_called_once_with(cafile=None)
+        context.load_cert_chain.assert_called_once_with(cert.name, keyfile=key.name)
+        check("client certificate works without a custom CA on HTTPS", kwargs.get("verify") is context)
+        del os.environ["RUNKITE_TLS_CLIENT_CERT_FILE"]
+        for helper in (tls_utils.grpc_channel_credentials, tls_utils.httpx_tls_kwargs):
+            try:
+                helper()
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("orphan client key silently accepted")
+
+
+def test_http_context_load_failure_is_not_downgraded():
+    with _EnvSandbox():
+        os.environ["RUNKITE_TLS_CLIENT_CERT_FILE"] = "synthetic-client.pem"
+        os.environ["RUNKITE_TLS_CLIENT_KEY_FILE"] = "synthetic-client-key.pem"
+        context = MagicMock()
+        context.load_cert_chain.side_effect = ValueError("synthetic bad key pair")
+        with patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=context):
+            try:
+                tls_utils.httpx_tls_kwargs()
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("mTLS failure silently downgraded to no client certificate")
+
+
+def test_client_certificate_never_sends_headers_or_body_to_plaintext_transport():
+    import httpx
+
+    async def exercise(kwargs):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs) as client:
+            for path in (
+                "/internal/runs/run/status",
+                "/internal/checkpoints/thread/state",
+                "/internal/runs/run/usage",
+                "/internal/connectors/tool/session",
+                "/internal/connectors/tool/mcp",
+                "/internal/store/items",
+            ):
+                try:
+                    await client.post(
+                        "http://127.0.0.1:2026" + path,
+                        headers={"X-Runner-Token": "synthetic"},
+                        content=b"synthetic private body",
+                    )
+                except ValueError as error:
+                    check("plaintext mTLS rejection has safe fixed text", "requires HTTPS" in str(error))
+                else:
+                    raise AssertionError("configured mTLS client sent plaintext")
+            check("no headers or body reached the plaintext transport", seen == [])
+            response = await client.get("https://controlplane.test/internal/runs/run/status")
+            check("HTTPS still reaches the configured transport", response.status_code == 200 and len(seen) == 1)
+
+    with _EnvSandbox(), patch("runkite_runner.tls_utils.ssl.create_default_context", return_value=MagicMock()):
+        os.environ["RUNKITE_TLS_CLIENT_CERT_FILE"] = "synthetic.pem"
+        os.environ["RUNKITE_TLS_CLIENT_KEY_FILE"] = "synthetic-key.pem"
+        asyncio.run(exercise(tls_utils.httpx_tls_kwargs()))
 
 
 def test_grpc_tls_flag_alone_enables_system_trust_grpc_without_affecting_http():
@@ -164,6 +260,9 @@ def main():
     test_ca_file_alone_enables_tls_without_client_cert()
     test_client_cert_and_key_together_enable_mtls()
     test_client_cert_without_key_is_not_used_for_httpx_tuple_form()
+    test_mtls_with_system_server_trust_and_incomplete_pair()
+    test_http_context_load_failure_is_not_downgraded()
+    test_client_certificate_never_sends_headers_or_body_to_plaintext_transport()
     test_grpc_tls_flag_alone_enables_system_trust_grpc_without_affecting_http()
     test_grpc_tls_flag_accepts_common_truthy_spellings_and_rejects_others()
     print("\nAll checks passed.")

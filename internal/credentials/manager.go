@@ -177,7 +177,7 @@ func (m *Manager) Execute(ctx context.Context, o Owner, bindingID string, consum
 	if !created {
 		return r, ErrAlreadyIssued
 	}
-	g, issueErr := b.Provider.Issue(ctx)
+	g, issueErr := b.Provider.Issue(withProviderCorrelation(ctx, o, r.ID))
 	if g.Handle == "" {
 		n := clone(r)
 		n.State = StateIssuanceUnknown
@@ -196,12 +196,13 @@ func (m *Manager) Execute(ctx context.Context, o Owner, bindingID string, consum
 	protected, err := m.keys.seal(r, g.Handle)
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), operationTimeout)
-		_ = b.Provider.Revoke(cleanupCtx, g.Handle)
+		_ = b.Provider.Revoke(withProviderCorrelation(cleanupCtx, o, r.ID), g.Handle)
 		cancel()
 		return r, ErrUnavailable
 	}
 	n := clone(r)
 	n.ProtectedHandle = protected
+	n.IssueRequestID = safeVaultRequestID(g.RequestID)
 	n.State = StateActive
 	n.GrantedTTLSeconds = int64(g.TTL / time.Second)
 	n.ExpiresAt = started.Add(g.TTL)
@@ -220,6 +221,7 @@ func (m *Manager) Execute(ctx context.Context, o Owner, bindingID string, consum
 		// already marked it unknown. Never activate or use this credential.
 		if actual, e := m.getDetached(o.TenantID, n.ID); e == nil && actual.Owner == o && actual.ProtectedHandle == "" {
 			actual.ProtectedHandle = protected
+			actual.IssueRequestID = safeVaultRequestID(g.RequestID)
 			actual.CleanupRequested = true
 			actual.State = StateRevocationUnknown
 			actual.ReasonCode = "issuance_commit_unconfirmed"
@@ -231,7 +233,7 @@ func (m *Manager) Execute(ctx context.Context, o Owner, bindingID string, consum
 			_, _ = m.cleanupDetached(o, n.ID)
 		} else {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), operationTimeout)
-			_ = b.Provider.Revoke(cleanupCtx, g.Handle)
+			_ = b.Provider.Revoke(withProviderCorrelation(cleanupCtx, o, r.ID), g.Handle)
 			cancel()
 		}
 		return r, ErrIssuanceUnknown
@@ -345,7 +347,7 @@ func (m *Manager) Renew(ctx context.Context, o Owner, id string) (*Record, error
 		return r, ErrStaleOwner
 	}
 	started := m.now()
-	g, renewErr := b.Provider.Renew(ctx, handle, b.RenewIncrement)
+	g, renewErr := b.Provider.Renew(withProviderCorrelation(ctx, o, r.ID), handle, b.RenewIncrement)
 	// Preserve a concurrently queued cleanup request. No second renewal is
 	// attempted even if the provider acknowledgement or SQL write was lost.
 	for range 4 {
@@ -364,6 +366,7 @@ func (m *Manager) Renew(ctx context.Context, o Owner, id string) (*Record, error
 		} else {
 			n.State = StateActive
 			n.GrantedTTLSeconds = int64(g.TTL / time.Second)
+			n.LastRenewRequestID = safeVaultRequestID(g.RequestID)
 			n.ExpiresAt = started.Add(g.TTL)
 			n.Renewable = g.Renewable
 			if g.TTL < time.Second || g.TTL > b.MaxTTL {
@@ -431,7 +434,7 @@ func (m *Manager) Revoke(ctx context.Context, o Owner, id string) (*Record, erro
 		if err != nil {
 			continue
 		}
-		revokeErr := b.Provider.Revoke(ctx, handle)
+		revokeErr := b.Provider.Revoke(withProviderCorrelation(ctx, o, r.ID), handle)
 		n = clone(r)
 		if revokeErr != nil {
 			n.State = StateRevocationUnknown
@@ -488,7 +491,7 @@ func (m *Manager) Reconcile(ctx context.Context, limit int) (int, error) {
 		if r.ProtectedHandle == "" {
 			continue
 		}
-		if r.State == StateActive && !r.CleanupRequested && r.ExpiresAt.After(m.now()) && m.check(ctx, r.Owner, r.BindingID) == nil {
+		if r.State == StateActive && !r.CleanupRequested && r.ExpiresAt.After(m.now()) && m.check(context.WithValue(ctx, reconciliationCheckKey{}, true), r.Owner, r.BindingID) == nil {
 			// Rotate a bounded scan past still-active rows so an older active
 			// lease cannot indefinitely hide a newer abandoned lease.
 			if _, err := m.save(ctx, clone(r)); err != nil {
@@ -508,7 +511,7 @@ func (m *Manager) Reconcile(ctx context.Context, limit int) (int, error) {
 			failed = true
 			continue
 		}
-		status, err := b.Provider.Lookup(ctx, handle)
+		status, err := b.Provider.Lookup(withProviderCorrelation(ctx, r.Owner, r.ID), handle)
 		if err != nil {
 			_, _ = m.save(ctx, clone(r))
 			failed = true

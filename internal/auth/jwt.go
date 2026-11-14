@@ -1,9 +1,17 @@
 package auth
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/getrunkite/runkite/internal/models"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
@@ -11,9 +19,14 @@ import (
 
 // JWTConfig configures the JWT auth provider.
 type JWTConfig struct {
-	JWKSURL  string `json:"jwks_url"`
-	Issuer   string `json:"issuer,omitempty"`
-	Audience string `json:"audience,omitempty"`
+	// StrictIdentity requires configured issuer/audience and exp/sub claims.
+	// It also captures bounded nonsecret issuer-asserted delegation provenance.
+	StrictIdentity bool `json:"strict_identity,omitempty"`
+	// Test/development escape restricted to a literal loopback JWKS endpoint.
+	AllowInsecureLoopback bool   `json:"allow_insecure_loopback,omitempty"`
+	JWKSURL               string `json:"jwks_url"`
+	Issuer                string `json:"issuer,omitempty"`
+	Audience              string `json:"audience,omitempty"`
 	// TenantClaim is the JWT claim name to read the caller's tenant ID
 	// from, for multi-tenancy. Defaults to "tenant_id" if
 	// unset. A token missing this claim resolves to tenant.DefaultTenant,
@@ -78,6 +91,7 @@ type JWTConfig struct {
 
 // JWTProvider validates JWTs against a JWKS endpoint.
 type JWTProvider struct {
+	strictIdentity     bool
 	jwks               keyfunc.Keyfunc
 	issuer             string
 	audience           string
@@ -93,7 +107,20 @@ type JWTProvider struct {
 // NewJWTProvider creates a JWT provider that fetches keys from a JWKS URL.
 // The keyfunc library handles caching and automatic refresh.
 func NewJWTProvider(cfg JWTConfig) (*JWTProvider, error) {
-	k, err := keyfunc.NewDefault([]string{cfg.JWKSURL})
+	if cfg.StrictIdentity && (!identityClaimText(cfg.Issuer) || !identityClaimText(cfg.Audience)) {
+		return nil, fmt.Errorf("strict JWT identity requires a bounded issuer and audience")
+	}
+	var k keyfunc.Keyfunc
+	var err error
+	if cfg.StrictIdentity {
+		if !strictJWKSURLAllowed(cfg.JWKSURL, cfg.AllowInsecureLoopback) {
+			return nil, fmt.Errorf("strict JWT identity requires an HTTPS JWKS endpoint")
+		}
+		allowInitialFetchFailure := false
+		k, err = keyfunc.NewDefaultOverrideCtx(context.Background(), []string{cfg.JWKSURL}, keyfunc.Override{Client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, NoErrorReturnFirstHTTPReq: &allowInitialFetchFailure})
+	} else {
+		k, err = keyfunc.NewDefault([]string{cfg.JWKSURL})
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS from %s: %w", cfg.JWKSURL, err)
 	}
@@ -108,6 +135,7 @@ func NewJWTProvider(cfg JWTConfig) (*JWTProvider, error) {
 	}
 
 	return &JWTProvider{
+		strictIdentity:     cfg.StrictIdentity,
 		jwks:               k,
 		issuer:             cfg.Issuer,
 		audience:           cfg.Audience,
@@ -121,6 +149,18 @@ func NewJWTProvider(cfg JWTConfig) (*JWTProvider, error) {
 	}, nil
 }
 
+func strictJWKSURLAllowed(raw string, allowLoopback bool) bool {
+	u, e := url.Parse(raw)
+	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return allowLoopback && u.Scheme == "http" && (u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback()))
+}
+
 func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 	tokenStr := extractBearerToken(r)
 	if tokenStr == "" {
@@ -129,6 +169,9 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 
 	parserOpts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}),
+	}
+	if p.strictIdentity {
+		parserOpts = append(parserOpts, jwt.WithExpirationRequired())
 	}
 	if p.issuer != "" {
 		parserOpts = append(parserOpts, jwt.WithIssuer(p.issuer))
@@ -152,6 +195,18 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 	if sub, _ := claims["sub"].(string); sub != "" {
 		identity = sub
 		identityMissing = false
+	}
+	var provenance *models.IdentityProvenance
+	if p.strictIdentity {
+		if identityMissing || !identityClaimText(identity) {
+			return nil, &ErrUnauthorized{Message: "strict JWT identity requires a bounded subject"}
+		}
+		expiry, expiryErr := claims.GetExpirationTime()
+		actors, actorsErr := jwtActorChain(claims["act"])
+		if expiryErr != nil || expiry == nil || actorsErr != nil {
+			return nil, &ErrUnauthorized{Message: "invalid JWT identity provenance"}
+		}
+		provenance = &models.IdentityProvenance{Issuer: p.issuer, Subject: identity, Audience: p.audience, ExpiresAt: expiry.UTC(), Actors: actors}
 	}
 
 	var perms []string
@@ -213,14 +268,49 @@ func (p *JWTProvider) Authenticate(r *http.Request) (*AuthResult, error) {
 		}
 	}
 
-	return &AuthResult{
+	result := &AuthResult{
+		Provenance:      provenance,
 		Identity:        identity,
 		Permissions:     perms,
 		TenantID:        tenantID,
 		DisplayName:     displayName,
 		Extra:           extra,
 		identityMissing: identityMissing,
-	}, nil
+	}
+	if p.strictIdentity && p.forwardToken {
+		result.delegatedJWT = tokenStr
+	}
+	return result, nil
+}
+
+func identityClaimText(s string) bool {
+	return s != "" && len(s) <= 1024 && utf8.ValidString(s) && strings.TrimSpace(s) == s && !strings.ContainsFunc(s, unicode.IsControl)
+}
+
+// jwtActorChain reads only RFC 8693 act.sub/iss and nested act. Other signed
+// claims remain outside durable metadata. Bound depth and size before capture.
+func jwtActorChain(value any) ([]models.IdentityActor, error) {
+	var result []models.IdentityActor
+	for value != nil {
+		actor, ok := value.(map[string]interface{})
+		if !ok || len(result) == 4 {
+			return nil, fmt.Errorf("invalid actor chain")
+		}
+		subject, _ := actor["sub"].(string)
+		issuer := ""
+		if raw, present := actor["iss"]; present {
+			issuer, ok = raw.(string)
+			if !ok || !identityClaimText(issuer) {
+				return nil, fmt.Errorf("invalid actor issuer")
+			}
+		}
+		if !identityClaimText(subject) {
+			return nil, fmt.Errorf("invalid actor subject")
+		}
+		result = append(result, models.IdentityActor{Subject: subject, Issuer: issuer})
+		value = actor["act"]
+	}
+	return result, nil
 }
 
 func extractBearerToken(r *http.Request) string {

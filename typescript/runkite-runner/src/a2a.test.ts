@@ -89,6 +89,34 @@ test("callAgent omits on_behalf_of when config has no authenticated user", async
   }
 });
 
+test("callAgent does not echo the reserved parent assertion or mutate runtime user", async () => {
+  const mock = mockFetchOnce(200, { run_id: "child", status: "pending" });
+  const user = {
+    identity: "alice",
+    _runkite_delegated_jwt: "original",
+    sso_token: "legacy",
+    extra: { _runkite_delegated_jwt: "nested", email: "alice@example.com" },
+  };
+  try {
+    await callAgent(
+      { configurable: { run_id: "parent", generation: 1, langgraph_auth_user: { toDict: () => user } } },
+      "child",
+      {},
+      { wait: false },
+    );
+    const body = JSON.parse(mock.calls[0].init.body as string);
+    assert.deepEqual(body.on_behalf_of, {
+      identity: "alice",
+      sso_token: "legacy",
+      extra: { email: "alice@example.com" },
+    });
+    assert.equal(user._runkite_delegated_jwt, "original");
+    assert.equal(user.extra._runkite_delegated_jwt, "nested");
+  } finally {
+    mock.restore();
+  }
+});
+
 test("callAgent omits on_behalf_of when langgraph_auth_user has no toDict method", async () => {
   const mock = mockFetchOnce(200, { run_id: "child-run", generation: 3 });
   try {

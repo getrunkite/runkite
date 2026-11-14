@@ -2305,7 +2305,7 @@ def _add_security_completion(spec: dict) -> None:
     stamp = {"type": "string", "format": "date-time"}
     text = {"type": "string"}
     revision = lambda prefix: {"type": "string", "pattern": f"^{prefix}-[0-9a-f]{{64}}$", "minLength": len(prefix) + 65, "maxLength": len(prefix) + 65}
-    target = revision("target-v[12]")
+    target = revision("target-v[123]")
     target.update(minLength=74, maxLength=74)
     policy = revision("policy-v1")
     tool = {"type": "string", "pattern": "^(?:|tool-v1-[0-9a-f]{64})$", "maxLength": 72, "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."}
@@ -2461,8 +2461,102 @@ def _add_review_spec(spec: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Identity and usage follow-up contracts
 # ---------------------------------------------------------------------------
+
+
+def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
+    schemas = spec.setdefault("components", {}).setdefault("schemas", {})
+    text = {"type": "string", "maxLength": 1024}
+    stamp = {"type": "string", "format": "date-time"}
+    schemas["IdentityProvenance"] = {
+        "type": "object", "additionalProperties": False,
+        "required": ["issuer", "subject", "audience", "expires_at"],
+        "properties": {
+            "issuer": text, "subject": text, "audience": text,
+            "expires_at": stamp,
+            "issuer_asserted_actors": {"type": "array", "maxItems": 4, "items": {
+                "type": "object", "additionalProperties": False, "required": ["subject"],
+                "properties": {"subject": text, "issuer": text},
+            }},
+        },
+        "description": "Bounded claims captured after strict admission JWT validation. Actor entries are assertions by that issuer, not proof of actor key possession. No bearer values or arbitrary claims.",
+    }
+    schemas["WorkloadProvenance"] = {
+        "type": "object", "additionalProperties": False,
+        "required": ["uri", "key_sha256", "not_after"],
+        "properties": {"uri": text, "key_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "not_after": stamp},
+        "description": "Public facts from the verified certificate bound to this dispatch. Not accepted from client headers or JSON.",
+    }
+    schemas["DelegationContract"] = {
+        "type": "object", "additionalProperties": False,
+        "required": ["scopes", "max_ttl_seconds"],
+        "properties": {
+            "audiences": {"type": "array", "items": text, "maxItems": 16},
+            "resources": {"type": "array", "items": text, "maxItems": 16},
+            "scopes": {"type": "array", "items": text, "maxItems": 32},
+            "configured_actor": text,
+            "max_ttl_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        },
+        "description": "Registered exchange intent. Does not establish that an exchange or downstream operation ran, or that the configured actor possessed a key.",
+    }
+    if "RunManifestPrincipal" in schemas:
+        schemas["RunManifestPrincipal"]["properties"]["identity_provenance"] = _ref("IdentityProvenance")
+    if "ConnectorAction" in schemas:
+        schemas["ConnectorAction"]["properties"].update({
+            "identity_provenance": _ref("IdentityProvenance"),
+            "workload_identity": _ref("WorkloadProvenance"),
+            "delegation_contract": _ref("DelegationContract"),
+            "vault_issue_request_id": {"type": "string", "format": "uuid"},
+        })
+        schemas["ConnectorActionEvent"]["properties"]["vault_issue_request_id"] = {"type": "string", "format": "uuid"}
+    if "CredentialLease" in schemas:
+        schemas["CredentialLease"]["properties"].update({
+            "vault_issue_request_id": {"type": "string", "format": "uuid"},
+            "vault_last_renew_request_id": {"type": "string", "format": "uuid"},
+        })
+    if "RunUsage" in schemas:
+        schemas["RunUsage"]["properties"].update({
+            "unmetered": {"type": "boolean"},
+            "reporting_status": {"type": "string", "enum": ["unknown", "reported"]},
+            "reporting_source": {"type": "string", "const": "isolated_workload"},
+            "complete": {"type": "boolean"}, "cost_reported": {"type": "boolean"},
+            "sequence": {"type": "integer"}, "reported_generation": {"type": "integer", "format": "int64"},
+            "reported_workload": _ref("WorkloadProvenance"),
+        })
+    if not internal:
+        return
+    report = {
+        "schema_version": {"type": "integer", "const": 1},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "status": {"type": "string", "enum": ["unknown", "reported"]},
+        "complete": {"type": "boolean"},
+        "prompt_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "completion_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "cost_usd": {"type": "number", "minimum": 0, "maximum": 1e12},
+        "model": {"type": "string", "maxLength": 256},
+    }
+    required = ["schema_version", "sequence", "status", "complete"]
+    unknown = {"type": "object", "additionalProperties": False, "required": required,
+               "properties": {key: copy.deepcopy(report[key]) for key in required}}
+    unknown["properties"]["status"] = {"const": "unknown"}
+    unknown["properties"]["complete"] = {"const": False}
+    reported = {"type": "object", "additionalProperties": False,
+                "required": required + ["prompt_tokens", "completion_tokens"], "properties": copy.deepcopy(report)}
+    reported["properties"]["status"] = {"const": "reported"}
+    schemas["RunUsageReport"] = {"oneOf": [unknown, reported], "description": "Cumulative self-reported usage for one logical isolated execution, including across reclaim. Sequence reuse requires identical content. Counters and known cost cannot regress. A final report cannot be extended. Total tokens must fit the supported integer range. Not provider-verified billing."}
+    snapshots = copy.deepcopy([unknown, reported])
+    for branch in snapshots:
+        branch["required"] = branch["required"] + ["source", "reported_generation", "reported_at"]
+        branch["properties"].update({"source": {"const": "isolated_workload"}, "reported_generation": {"type": "integer", "format": "int64"}, "reported_at": stamp, "workload_owner": _ref("WorkloadProvenance")})
+    schemas["RunUsageSnapshot"] = {"oneOf": snapshots}
+    response = {"type": "object", "required": ["snapshot"], "properties": {"snapshot": {"oneOf": [_ref("RunUsageSnapshot"), {"type": "null"}]}}}
+    auth_description = "Requires the exact active tenant/run incarnation/generation and, when enabled, the verified workload owner. SQL only. The body cannot select tenant, source, generation or authority. Latest acknowledged durable report is settled on completion/cancel; later reports are rejected."
+    common = {"tags": ["Runner"], "parameters": [_path_param("run_id", "Exact bound run ID", fmt="")], "description": auth_description}
+    spec["paths"]["/internal/runs/{run_id}/usage"] = {
+        "get": {**copy.deepcopy(common), "summary": "Read current cumulative usage snapshot", "operationId": "get_run_usage_snapshot", "responses": {**_json_response("200", "Current snapshot or null", response), "403": {"description": "Run or workload authority refused"}, "501": {"description": "Supported SQL store required"}}},
+        "post": {**copy.deepcopy(common), "summary": "Commit a cumulative isolated usage report", "operationId": "report_run_usage", "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("RunUsageReport")}}}, "responses": {**_json_response("200", "Durable snapshot and idempotent applied flag", {"type": "object", "required": ["snapshot", "applied"], "properties": {"snapshot": _ref("RunUsageSnapshot"), "applied": {"type": "boolean"}}}), "400": {"description": "Malformed, ambiguous or contradictory report"}, "403": {"description": "Run or workload authority refused"}, "409": {"description": "Sequence conflict, regressed report or completed run"}, "501": {"description": "Supported SQL store required"}}},
+    }
 
 
 def main() -> None:
@@ -2471,6 +2565,10 @@ def main() -> None:
     _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()
+    # Additive schemas are included in every surface that can reference them.
+    _add_identity_and_usage(public)
+    _add_identity_and_usage(admin)
+    _add_identity_and_usage(internal, internal=True)
 
     n_pub = _write_spec(public, SPEC_DIR / "openapi.json")
     n_admin = _write_spec(admin, SPEC_DIR / "openapi-admin.json")

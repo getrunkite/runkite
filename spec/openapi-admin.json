@@ -235,6 +235,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "identity_provenance": {
+            "$ref": "#/components/schemas/IdentityProvenance"
           }
         }
       },
@@ -446,7 +449,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "pattern": "^target-v[123]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },
@@ -493,6 +496,19 @@
             "type": "string",
             "maxLength": 64,
             "description": "Immutable effective destination identity. Current HTTP exporter derives SHA-256(name, exact URL, envelope schema); endpoint and HMAC key are excluded from this response."
+          },
+          "identity_provenance": {
+            "$ref": "#/components/schemas/IdentityProvenance"
+          },
+          "workload_identity": {
+            "$ref": "#/components/schemas/WorkloadProvenance"
+          },
+          "delegation_contract": {
+            "$ref": "#/components/schemas/DelegationContract"
+          },
+          "vault_issue_request_id": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "description": "Retained metadata for one managed MCP tools/call request. Excludes arguments, request/response bodies, provider diagnostics and secret material. Independent of ordinary run retention. Standalone governance decisions and local tools are outside this history."
@@ -605,6 +621,10 @@
           "response_bytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "vault_issue_request_id": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "description": "Append-only, sequence-ordered metadata snapshot. Recording a response does not prove the intended business effect succeeded."
@@ -983,7 +1003,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "pattern": "^target-v[123]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },
@@ -1568,6 +1588,14 @@
           "use_started_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "vault_issue_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vault_last_renew_request_id": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -1753,7 +1781,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[12]-[0-9a-f]{64}$",
+            "pattern": "^target-v[123]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },
@@ -1887,6 +1915,124 @@
           }
         },
         "description": "Metadata only. No conversation payload or privileged run-navigation capability. At most 200 ordered events, with explicit truncation."
+      },
+      "IdentityProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "subject",
+          "audience",
+          "expires_at"
+        ],
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "audience": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuer_asserted_actors": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subject"
+              ],
+              "properties": {
+                "subject": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "issuer": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            }
+          }
+        },
+        "description": "Bounded claims captured after strict admission JWT validation. Actor entries are assertions by that issuer, not proof of actor key possession. No bearer values or arbitrary claims."
+      },
+      "WorkloadProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "uri",
+          "key_sha256",
+          "not_after"
+        ],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "key_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "not_after": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Public facts from the verified certificate bound to this dispatch. Not accepted from client headers or JSON."
+      },
+      "DelegationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scopes",
+          "max_ttl_seconds"
+        ],
+        "properties": {
+          "audiences": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 32
+          },
+          "configured_actor": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "max_ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          }
+        },
+        "description": "Registered exchange intent. Does not establish that an exchange or downstream operation ran, or that the configured actor possessed a key."
       }
     }
   },

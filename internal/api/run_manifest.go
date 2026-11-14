@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/transport"
 )
@@ -11,6 +13,7 @@ import (
 const runManifestSchemaVersion = 1
 
 type runManifestInput struct {
+	provenance       *models.IdentityProvenance
 	capturedAt       time.Time
 	tenantID         string
 	agentID          string
@@ -46,6 +49,9 @@ func buildRunManifest(in runManifestInput) models.RunManifest {
 			VerifiedIdentity: in.identityVerified,
 			Permissions:      append([]string(nil), in.user.Permissions...),
 		}
+		if in.identityVerified && in.provenance != nil && in.provenance.Subject == in.user.Identity {
+			principal.Provenance = models.CloneIdentityProvenance(in.provenance)
+		}
 	}
 
 	return models.RunManifest{
@@ -63,6 +69,14 @@ func buildRunManifest(in runManifestInput) models.RunManifest {
 		ParentRunID:      in.parentRunID,
 		Depth:            in.depth,
 	}
+}
+
+func provenanceFromAuth(ctx context.Context) *models.IdentityProvenance {
+	result := auth.FromContext(ctx)
+	if !auth.HasVerifiedIdentity(result) {
+		return nil
+	}
+	return models.CloneIdentityProvenance(result.Provenance)
 }
 
 func runManifestToMetadata(m models.RunManifest) map[string]interface{} {

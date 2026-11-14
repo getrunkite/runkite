@@ -26,7 +26,7 @@ SUPERVISOR = (
 )
 
 
-def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=False):
+def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=False, environment=None):
     """Confirm owned runtime cleanup before discarding private recovery data."""
     errors = []
     runtime_empty = False
@@ -35,7 +35,11 @@ def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=
     while time.monotonic() < deadline:
         try:
             result = subprocess.run(
-                [*cli, "sandbox", "list", "--output", "json"], capture_output=True, text=True, timeout=15
+                [*cli, "sandbox", "list", "--output", "json"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env=environment,
             )
             if result.returncode != 0:
                 errors.append("runtime_list_failed")
@@ -54,7 +58,9 @@ def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=
                     errors.append("runtime_record_outside_fixture_shape")
                     continue
                 if name not in requested:
-                    deleted = subprocess.run([*cli, "sandbox", "delete", name], stdout=log, stderr=log, timeout=20)
+                    deleted = subprocess.run(
+                        [*cli, "sandbox", "delete", name], stdout=log, stderr=log, timeout=20, env=environment
+                    )
                     if deleted.returncode != 0:
                         errors.append("runtime_delete_failed")
                     requested.add(name)
@@ -88,11 +94,154 @@ def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=
     return {"confirmed": confirmed, "reason_codes": sorted(set(errors))}
 
 
+def make_gateway_pki(directory):
+    """Issue disposable certificates without touching user trust or CLI state."""
+    directory.mkdir(mode=0o700)
+
+    def openssl(*args):
+        result = subprocess.run(["openssl", *args], cwd=directory, capture_output=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError("owned gateway fixture certificate generation failed")
+
+    for ca in ("ca", "untrusted-ca"):
+        (directory / (ca + ".conf")).write_text(
+            "[req]\ndistinguished_name=dn\nx509_extensions=ca\nprompt=no\n[dn]\nCN=Runkite fixture "
+            + ca
+            + "\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n"
+        )
+        openssl(
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            ca + ".key",
+            "-out",
+            ca + ".pem",
+            "-days",
+            "1",
+            "-config",
+            ca + ".conf",
+        )
+    for name, ca, extension in (
+        (
+            "server",
+            "ca",
+            "extendedKeyUsage=serverAuth\nsubjectAltName=IP:127.0.0.1,DNS:localhost,DNS:host.docker.internal,DNS:host.openshell.internal\n",
+        ),
+        ("client", "ca", "extendedKeyUsage=clientAuth\n"),
+        ("untrusted-client", "untrusted-ca", "extendedKeyUsage=clientAuth\n"),
+    ):
+        (directory / (name + ".conf")).write_text(
+            "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n" + extension
+        )
+        (directory / (name + "-request.conf")).write_text(
+            "[req]\ndistinguished_name=dn\nprompt=no\n[dn]\nCN=Runkite gateway fixture " + name + "\n"
+        )
+        openssl(
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            name + ".key",
+            "-out",
+            name + ".csr",
+            "-config",
+            name + "-request.conf",
+        )
+        openssl(
+            "x509",
+            "-req",
+            "-in",
+            name + ".csr",
+            "-CA",
+            ca + ".pem",
+            "-CAkey",
+            ca + ".key",
+            "-CAcreateserial",
+            "-out",
+            name + ".pem",
+            "-days",
+            "1",
+            "-extfile",
+            name + ".conf",
+        )
+        openssl("verify", "-CAfile", ca + ".pem", name + ".pem")
+    for key in directory.glob("*.key"):
+        key.chmod(0o600)
+
+
+def gateway_tls_environment(environment, config, endpoint, pki, *, ca="ca", client="client"):
+    # The pinned CLI resolves a direct endpoint's TLS bundle under the sanitized
+    # gateway name. This is task-local XDG state, never the user's CLI registry.
+    name = re.sub(r"[^a-zA-Z0-9._-]", "_", endpoint)
+    bundle = config / "openshell" / "gateways" / name / "mtls"
+    bundle.mkdir(parents=True, mode=0o700)
+    for source, target in ((ca + ".pem", "ca.crt"), (client + ".pem", "tls.crt"), (client + ".key", "tls.key")):
+        shutil.copyfile(pki / source, bundle / target)
+        (bundle / target).chmod(0o600)
+    return {**environment, "XDG_CONFIG_HOME": str(config)}
+
+
+def wait_for_gateway(cli, environment, *, timeout=90):
+    deadline = time.monotonic() + timeout
+    while True:
+        result = subprocess.run(
+            [*cli, "sandbox", "list", "--output", "json"], env=environment, capture_output=True, timeout=10
+        )
+        if result.returncode == 0:
+            return
+        if time.monotonic() > deadline:
+            raise RuntimeError("disposable OpenShell gateway did not become ready")
+        time.sleep(0.5)
+
+
+def qualify_gateway_tls(base, cli, environment, directory, pki, log, report, *, outage=False):
+    if not outage:
+        wait_for_gateway(cli, environment)
+        report["cases"].append("authorized pinned CLI verifies gateway and authenticates with owned client certificate")
+        for label, ca, client in (
+            ("untrusted_server_ca", "untrusted-ca", "client"),
+            ("untrusted_client_certificate", "ca", "untrusted-client"),
+        ):
+            rejected = gateway_tls_environment(environment, directory / label, cli[2], pki, ca=ca, client=client)
+            result = subprocess.run(
+                [*cli, "sandbox", "list", "--output", "json"], env=rejected, capture_output=True, timeout=15
+            )
+            if result.returncode == 0:
+                raise RuntimeError("gateway TLS fixture accepted " + label)
+            report["cases"].append(label + " rejected without disabling verification")
+            wait_for_gateway(cli, environment, timeout=15)
+        return
+    subprocess.run([*base, "stop", "gateway"], check=True, stdout=log, stderr=log, timeout=45)
+    try:
+        try:
+            result = subprocess.run(
+                [*cli, "sandbox", "list", "--output", "json"], env=environment, capture_output=True, timeout=15
+            )
+            if result.returncode == 0:
+                raise RuntimeError("stopped gateway unexpectedly accepted a TLS request")
+        except subprocess.TimeoutExpired:
+            pass
+        report["cases"].append("gateway outage rejects management requests instead of downgrading to plaintext")
+    finally:
+        subprocess.run([*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=90)
+    wait_for_gateway(cli, environment)
+    report["cases"].append("authorized TLS management recovers after bounded gateway restart")
+    report["passed"] = True
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--docker-socket", default="/var/run/docker.sock")
+    parser.add_argument(
+        "--tls", action="store_true", help="qualify an authenticated TLS gateway using disposable local certificates"
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if os.environ.get("RUNKITE_TEST_ISOLATED") != "1":
@@ -108,7 +257,29 @@ def main():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    endpoint = f"http://127.0.0.1:{port}"
+    endpoint = f"{'https' if args.tls else 'http'}://127.0.0.1:{port}"
+    pki = data / "gateway-pki"
+    if args.tls:
+        make_gateway_pki(pki)
+    gateway_security = (
+        f'''disable_tls = false
+enable_loopback_service_http = false
+guest_tls_ca = "{pki}/ca.pem"
+[openshell.gateway.tls]
+cert_path = "{pki}/server.pem"
+key_path = "{pki}/server.key"
+client_ca_path = "{pki}/ca.pem"
+[openshell.gateway.mtls_auth]
+enabled = true
+[openshell.gateway.auth]
+allow_unauthenticated_users = false
+'''
+        if args.tls
+        else """disable_tls = true
+[openshell.gateway.auth]
+allow_unauthenticated_users = true
+"""
+    )
     config = directory / "gateway.toml"
     config.write_text(f'''[openshell]
 version = 2
@@ -116,10 +287,8 @@ version = 2
 bind_address = "0.0.0.0:8080"
 health_bind_address = "0.0.0.0:8081"
 compute_driver = "docker"
-disable_tls = true
 log_level = "info"
-[openshell.gateway.auth]
-allow_unauthenticated_users = true
+{gateway_security}
 [openshell.gateway.gateway_jwt]
 signing_key_path = "{data}/tls/jwt/signing.pem"
 public_key_path = "{data}/tls/jwt/public.pem"
@@ -127,7 +296,7 @@ kid_path = "{data}/tls/jwt/kid"
 gateway_id = "{identity}"
 [openshell.drivers.docker]
 supervisor_network_mode = "bridge"
-grpc_endpoint = "http://host.docker.internal:{port}"
+grpc_endpoint = "{"https" if args.tls else "http"}://host.docker.internal:{port}"
 sandbox_runtime_image = "{SANDBOX}"
 supervisor_image = "{SUPERVISOR}"
 image_pull_policy = "if_not_present"
@@ -157,6 +326,7 @@ app_armor_profile = "Unconfined"
                         "group_add": ["0", str(os.stat(args.docker_socket).st_gid)],
                         "command": [],
                         "ports": [f"127.0.0.1:{port}:8080"],
+                        "extra_hosts": ["host.docker.internal:host-gateway"],
                         "volumes": [
                             f"{args.docker_socket}:/var/run/docker.sock",
                             f"{data}:{data}",
@@ -182,6 +352,13 @@ app_armor_profile = "Unconfined"
         "XDG_DATA_HOME": str(directory / "cli-data"),
         "XDG_STATE_HOME": str(directory / "cli-state"),
     }
+    if args.tls:
+        cli_environment = gateway_tls_environment(cli_environment, directory / "cli-config", endpoint, pki)
+    tls_report = {
+        "passed": False,
+        "scope": "disposable gateway authenticated TLS, no external PKI or rotation",
+        "cases": [],
+    }
     status = 1
     guard = None
     interrupted = None
@@ -197,16 +374,9 @@ app_armor_profile = "Unconfined"
     try:
         subprocess.run([*base, "run", "--rm", "init"], check=True, stdout=log, stderr=log, timeout=120)
         subprocess.run([*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=120)
-        deadline = time.monotonic() + 90
-        while True:
-            result = subprocess.run(
-                [*cli, "sandbox", "list", "--output", "json"], env=cli_environment, capture_output=True, timeout=10
-            )
-            if result.returncode == 0:
-                break
-            if time.monotonic() > deadline:
-                raise RuntimeError("disposable OpenShell gateway did not become ready")
-            time.sleep(0.5)
+        wait_for_gateway(cli, cli_environment)
+        if args.tls:
+            qualify_gateway_tls(base, cli, cli_environment, directory, pki, log, tls_report)
         image = (
             subprocess.check_output(
                 ["docker", "build", "-q", str(root / "examples/isolated_agent")],
@@ -240,9 +410,21 @@ app_armor_profile = "Unconfined"
             "RUNKITE_TEST_ISOLATED_GATEWAY": endpoint,
             "RUNKITE_TEST_ISOLATED_IMAGE": image,
             "RUNKITE_TEST_ISOLATED_OUTPUT": str(output / "managed-evidence.json"),
+            "RUNKITE_TEST_ISOLATED_GATEWAY_TLS": "1" if args.tls else "0",
         }
         (output / "runtime-fixture.json").write_text(
-            json.dumps({"gateway": endpoint, "image": image, "release": "0.1.8", "project": identity}, indent=2) + "\n"
+            json.dumps(
+                {
+                    "gateway": endpoint,
+                    "gateway_tls": args.tls,
+                    "client_auth": "mtls" if args.tls else "none",
+                    "image": image,
+                    "release": "0.1.8",
+                    "project": identity,
+                },
+                indent=2,
+            )
+            + "\n"
         )
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
         if not command:
@@ -260,6 +442,8 @@ app_armor_profile = "Unconfined"
             env=environment,
         )
         status = guard.wait()
+        if args.tls and status == 0:
+            qualify_gateway_tls(base, cli, cli_environment, directory, pki, log, tls_report, outage=True)
     except KeyboardInterrupt:
         status = 128 + (interrupted or signal.SIGINT)
     finally:
@@ -277,13 +461,18 @@ app_armor_profile = "Unconfined"
         # A zero child exit cannot hide failed fixture cleanup. Keep private
         # recovery metadata if either workload or infrastructure state is unknown.
         try:
-            cleanup = cleanup_fixture(base, cli, log, directory, preserve_recovery=not supervisor_stopped)
+            cleanup = cleanup_fixture(
+                base, cli, log, directory, preserve_recovery=not supervisor_stopped, environment=cli_environment
+            )
             if not supervisor_stopped:
                 cleanup["confirmed"] = False
                 cleanup["reason_codes"].append("fixture_supervisor_stop_unconfirmed")
         finally:
             log.close()
         (output / "runtime-cleanup.json").write_text(json.dumps(cleanup, indent=2) + "\n")
+        if args.tls:
+            tls_report["passed"] = tls_report["passed"] and cleanup["confirmed"]
+            (output / "gateway-tls-evidence.json").write_text(json.dumps(tls_report, indent=2) + "\n")
         if not cleanup["confirmed"]:
             if status == 0:
                 status = 1

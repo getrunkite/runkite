@@ -33,9 +33,12 @@ type CircuitBreakerConfig struct {
 
 // AuthConfig describes how to authenticate with the external service.
 type AuthConfig struct {
-	AllowInsecureLoopback     bool   `json:"allow_insecure_loopback,omitempty" yaml:"allow_insecure_loopback,omitempty"`
-	CredentialBinding         string `json:"credential_binding,omitempty" yaml:"credential_binding,omitempty"`
-	CredentialBindingRevision string `json:"-" yaml:"-"`
+	// TokenExchange opts into constrained RFC 8693 exchange. The issuer still
+	// validates subject/actor tokens and enforces target resource policy.
+	TokenExchange             *TokenExchangeConfig `json:"token_exchange,omitempty" yaml:"token_exchange,omitempty"`
+	AllowInsecureLoopback     bool                 `json:"allow_insecure_loopback,omitempty" yaml:"allow_insecure_loopback,omitempty"`
+	CredentialBinding         string               `json:"credential_binding,omitempty" yaml:"credential_binding,omitempty"`
+	CredentialBindingRevision string               `json:"-" yaml:"-"`
 
 	Type         string   `json:"type" yaml:"type"` // oauth2_token_exchange, oauth2_client_credentials, api_key, bearer
 	Issuer       string   `json:"issuer,omitempty" yaml:"issuer,omitempty"`
@@ -54,7 +57,8 @@ type AuthConfig struct {
 
 // MCPConfig points to an MCP server endpoint.
 type MCPConfig struct {
-	PinTools bool `json:"pin_tools,omitempty" yaml:"pin_tools,omitempty"`
+	CorrelationHeaders bool `json:"correlation_headers,omitempty" yaml:"correlation_headers,omitempty"`
+	PinTools           bool `json:"pin_tools,omitempty" yaml:"pin_tools,omitempty"`
 
 	URL string `json:"url" yaml:"url"`
 	// Revision is a nonsecret operator contract version for changes not visible

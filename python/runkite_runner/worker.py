@@ -953,6 +953,7 @@ async def _run_assigned_job(
         runner_token=runner_token,
         generation=generation,
         tenant_id=assignment.get("tenant_id") or "",
+        require_authority=assignment.get("workload_owner") is not None,
     ):
         return None
 

@@ -312,8 +312,8 @@ def _check_security_completion_contract(spec: dict) -> list[str]:
             problems.append(f"{name}.{field} must use bounded typed {target} metadata")
     for name in ("ConnectorAction", "PendingAction", "ReviewPendingAction"):
         props = schemas.get(name, {}).get("properties", {})
-        if props.get("target_revision", {}).get("pattern") != "^target-v[12]-[0-9a-f]{64}$":
-            problems.append(f"{name} target revision must preserve v1 and accept only supported v2")
+        if props.get("target_revision", {}).get("pattern") != "^target-v[123]-[0-9a-f]{64}$":
+            problems.append(f"{name} target revision must accept exactly supported v1/v2/v3")
         if props.get("policy_revision", {}).get("pattern") != "^policy-v1-[0-9a-f]{64}$":
             problems.append(f"{name} policy revision must bind the configured v1 policy")
         if props.get("tool_revision", {}).get("pattern") != "^(?:|tool-v1-[0-9a-f]{64})$":

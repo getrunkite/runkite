@@ -34,6 +34,8 @@ func (tx *checkpointTimeTx) Row(_ context.Context, query string, _ ...interface{
 		case strings.Contains(query, "SELECT values_json FROM threads"):
 			tx.threadLocked = true
 			*dest[0].(*[]byte) = []byte(`{"prior":true}`)
+		case strings.Contains(query, "SELECT usage_snapshot FROM runs"):
+			*dest[0].(*[]byte) = nil
 		case strings.Contains(query, "FROM thread_checkpoints"):
 			if !tx.threadLocked || len(dest) != 2 {
 				return fmt.Errorf("parent timestamp must be read under the merge lock")

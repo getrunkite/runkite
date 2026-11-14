@@ -59,6 +59,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (next)</a>
           <a  href="sim.html">Fixture replay</a>
           <a href="hitl-ops.html">HITL ops</a>
           <a href="policy.html">PDP / Cedar</a>
@@ -137,6 +138,17 @@
             <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/target-bound-approvals.md">14 · Target-bound approvals (v0.7.0, Markdown)</a>: Bind managed approval authority to a configured connector target, pin the request snapshot through dispatch and require fresh review after changes. Covers secret-value exclusions, remote implementation limits, SQL migrations and regression proofs.
           </li>
         </ul>
+
+        <h2 id="identity-distribution">Identity and distribution (next release)</h2>
+        <p>The <a href="security-identity.html">operator preview</a> follows the
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/identity-and-distribution-plan.md">eight-RFE plan</a>.
+          Read the design records for
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/workload-identity.md">workload ownership</a>,
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/delegation-and-audit-correlation.md">delegation and audit correlation</a>,
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/isolated-usage.md">isolated usage</a>, and
+          <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/governance-distribution.md">package distribution</a>.
+          The <a href="https://github.com/getrunkite/runkite/blob/main/docs/security-assessment.md">assessment handoff</a>
+          separates automated qualification from outstanding independent review.</p>
 
         <p class="note">
           The earlier notes open in the engineering-notes layout; the recent

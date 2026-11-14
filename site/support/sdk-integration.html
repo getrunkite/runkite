@@ -56,6 +56,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (next)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -96,7 +97,8 @@
           The decision API shipped in v0.5.3. The managed AI SDK runner ships in
           <code>runkite-runner</code> from v0.5.8 (optional peer <code>ai@7.0.155</code>).
           Repository helper guards and Microsoft function middleware remain unpublished
-          as <code>runkite-governance</code> packages. See
+          as <code>runkite-governance</code> packages. The unreleased v0.8.0 source
+          candidate prepares and tests their distributions; it is not a registry release. See
           <a href="https://github.com/getrunkite/runkite/blob/main/CHANGELOG.md">CHANGELOG</a>
           before selecting a package version.
         </p>
@@ -191,8 +193,34 @@
           tools, tested with <code>agent-framework-core==1.23.0</code>. It is not a
           Microsoft managed runner and creates no Admin run.
         </p>
+        <h3>Install the decision helpers from source</h3>
+        <p>
+          Until the first helper registry publication is verified, build the npm
+          tarball locally or install the Python source directory. Installing
+          <code>runkite-runner</code> does not install either helper.
+        </p>
+        <pre class="mono-block"># From the repository root
+cd typescript/runkite-governance
+npm ci
+npm run build
+npm test
+npm pack
+cd ../..
+python -m pip install ./python/runkite_governance
+# Optional local Microsoft function middleware
+python -m pip install './python/runkite_governance[agent-framework]'</pre>
+        <p>
+          Install the resulting local tarball in your server application and import
+          <code>createGovernedExecute</code> from <code>runkite-governance</code>.
+          Python imports use <code>runkite_governance</code>. Run
+          <code>make test-governance-ts</code> or
+          <code>make test-governance-agent-framework</code> for the framework examples.
+          The candidate also verifies installed artifacts outside the checkout;
+          passing those checks does not publish a package.
+        </p>
         <ul>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/typescript/runkite-governance">TypeScript helper source and usage</a></li>
+          <li><a href="https://github.com/getrunkite/runkite/tree/main/python/runkite_governance">Python helper source and usage</a></li>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_ai_sdk">App-owned AI SDK example</a></li>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework">Microsoft function-middleware example</a></li>
         </ul>
@@ -461,7 +489,7 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
         </p>
         <h2 id="new-security-controls">New controls keep the SDK boundary (v0.7.0)</h2>
         <p>Current-source review quorum, policy/schema binding, evidence export and credential consumers extend gated managed execution. Existing SDK clients still create Threads/Runs through the public API; native tools outside a cooperating gate do not acquire connector enforcement. App-owned decisions still create no managed run or kill/spend controls. The separate experimental external JSONL workload is not a drop-in switch under an unchanged SDK. See <a href="security-completion.html">Security operations</a>.</p>
-        <p>The experimental JSONL profile has no model/token-usage or spend-settlement contract. Zero recorded spend does not establish free execution; native SDK usage reporting is independent. Use external provider accounting and limits for unreported workload model calls.</p>
+        <p>Published v0.7.0 has no JSONL model/token-usage or spend-settlement contract. The unreleased v0.8.0 candidate adds cumulative usage reports for the configured isolated profile on SQL, with durable acknowledgement and terminal settlement. Missing or partial measurements remain unmetered; complete zero reports stay distinct from unknown. These are attributed workload claims, not provider-verified bills or hard limits inside the sandbox. Native SDK usage remains independent; keep external provider accounting and limits.</p>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

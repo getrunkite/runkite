@@ -85,9 +85,14 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 				q.mu.Unlock()
 				continue // skip canceled job, keep waiting
 			}
+			job.WorkloadOwner = transport.WorkloadIdentityFromContext(ctx)
 			q.inflight[job.RunID] = &inflightEntry{job: job, dequeuedAt: time.Now()}
 			q.mu.Unlock()
 			assignment := *job
+			if job.WorkloadOwner != nil {
+				owner := *job.WorkloadOwner
+				assignment.WorkloadOwner = &owner
+			}
 			return &assignment, nil
 		case <-timer.C:
 			return nil, nil
@@ -95,6 +100,19 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			return nil, ctx.Err()
 		}
 	}
+}
+
+func (q *Queue) SupportsWorkloadIdentity() bool { return true }
+
+func workloadMatches(ctx context.Context, entry *inflightEntry) bool {
+	if transport.IsTrustedQueueContext(ctx) {
+		return true
+	}
+	actor := transport.WorkloadIdentityFromContext(ctx)
+	if entry.job.WorkloadOwner == nil && actor == nil {
+		return true
+	}
+	return transport.MatchesWorkload(entry.job.WorkloadOwner, actor, time.Now())
 }
 
 // generationMatches requires the exact dispatch generation for Ack, Renew and Nack.
@@ -111,7 +129,7 @@ func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) {
+	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
 		return false, nil
 	}
 	delete(q.inflight, runID)
@@ -127,7 +145,7 @@ func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) {
+	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
 		return false, nil
 	}
 	entry.dequeuedAt = time.Now()
@@ -143,6 +161,10 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 		return nil, nil
 	}
 	cp := *entry.job
+	if entry.job.WorkloadOwner != nil {
+		owner := *entry.job.WorkloadOwner
+		cp.WorkloadOwner = &owner
+	}
 	return &cp, nil
 }
 
@@ -151,10 +173,15 @@ func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) {
+	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
 		return nil
 	}
-	if err := q.enqueueReadyLocked(ctx, entry.job); err != nil {
+	assignment := *entry.job
+	if assignment.WorkloadOwner != nil {
+		assignment.Generation++
+		assignment.WorkloadOwner = nil
+	}
+	if err := q.enqueueReadyLocked(ctx, &assignment); err != nil {
 		return err
 	}
 	delete(q.inflight, runID)

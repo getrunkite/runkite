@@ -126,6 +126,43 @@ async def test_no_user_in_config_omits_on_behalf_of():
     check("on_behalf_of omitted when no authenticated user in config", "on_behalf_of" not in captured["body"])
 
 
+async def test_reserved_parent_assertion_is_not_echoed():
+    captured = {}
+
+    def handler(request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    import runkite_runner.a2a as a2a_module
+
+    data = {
+        "identity": "alice",
+        "_runkite_delegated_jwt": "original",
+        "sso_token": "legacy",
+        "extra": {"_runkite_delegated_jwt": "nested", "email": "alice@example.com"},
+    }
+    original_client = httpx.AsyncClient
+    a2a_module.httpx.AsyncClient = lambda *a, **kw: original_client(*a, transport=httpx.MockTransport(handler), **kw)
+    try:
+        await call_agent(
+            {"configurable": {"run_id": "parent", "generation": 1, "langgraph_auth_user": _FakeUser(data)}},
+            "child",
+            {},
+            wait=False,
+        )
+    finally:
+        a2a_module.httpx.AsyncClient = original_client
+    check(
+        "reserved assertion is omitted from delegation input",
+        captured["on_behalf_of"]
+        == {"identity": "alice", "sso_token": "legacy", "extra": {"email": "alice@example.com"}},
+    )
+    check(
+        "runtime user was not mutated",
+        data["_runkite_delegated_jwt"] == "original" and data["extra"]["_runkite_delegated_jwt"] == "nested",
+    )
+
+
 async def test_error_response_raises_a2a_error():
     status = 400
 
@@ -193,6 +230,7 @@ def main():
     asyncio.run(test_missing_run_id_raises())
     asyncio.run(test_builds_correct_request_body_and_headers())
     asyncio.run(test_no_user_in_config_omits_on_behalf_of())
+    asyncio.run(test_reserved_parent_assertion_is_not_echoed())
     asyncio.run(test_error_response_raises_a2a_error())
     asyncio.run(test_generation_and_active_parent_binding())
     print("\nAll checks passed.")

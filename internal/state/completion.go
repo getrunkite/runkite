@@ -22,6 +22,9 @@ const (
 func NewCompletionCheckpointID() string { return "completion:" + uuid.NewString() }
 
 type RunCompletion struct {
+	// TrustedSystem is set only by internal cancellation, timeout, retained
+	// event recovery and reaper paths. Missing worker proof is never a bypass.
+	TrustedSystem bool `json:"-"`
 	// RunnerKind is the authenticated bridge identity; ReplayOnly permits only
 	// acknowledgement of an already committed result after the lease is gone.
 	// CancelCurrentAttempt is for trusted control-plane cancellation/timeout only.

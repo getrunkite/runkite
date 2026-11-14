@@ -91,6 +91,21 @@ The experimental JSONL profile does not yet report model/token usage or settle
 model spend. A zero in Admin is not proof of free execution; existing SDK usage
 reporting is a separate capability.
 
+### Next release: identity and distribution
+
+Current development adds an opt-in authenticated-workload ownership profile,
+constrained delegated token exchange, external audit correlation and explicit
+isolated-workload usage reports. Admin displays admission and worker identity,
+Vault request IDs and unavailable/partial usage separately. These additions are
+not in v0.7.0 artifacts. Governance helpers have installed-artifact tests and
+publication jobs prepared; that is not a registry publication claim.
+
+Follow the [eight tracked RFEs](docs/internal/identity-and-distribution-plan.md),
+[identity and usage guide](site/support/security-identity.html) and
+[adversarial assessment handoff](docs/security-assessment.md). The external
+runtime bridge remains experimental. Maintainer qualification is not an
+independent assessment or a security ranking.
+
 ## Choose an integration path
 
 | | Runkite owns execution | Your app owns execution |

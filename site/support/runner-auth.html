@@ -50,6 +50,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (next)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -138,6 +139,11 @@ export RUNNER_TOKEN="tok_b"</pre>
 
         <h2 id="execution-pools">Separately credentialed execution pools (v0.7.0)</h2>
         <p>Operator-defined <code>execution_pools</code> select an exact framework kind, tenant set and agent set. Each uses a distinct <code>RUNNER_TOKEN_POOL_&lt;NAME&gt;</code>; a worker selects <code>--execution-pool</code> or <code>RUNKITE_EXECUTION_POOL</code> with its matching token. Broader framework/tenant credentials do not widen pool authority. A pool is trusted fleet routing, not hostile-code isolation. See <a href="security-completion.html#execution-boundary">the external workload boundary</a>.</p>
+        <h2 id="workload-identity">Verified workload holders (unreleased after v0.7.0)</h2>
+        <p>Optional <code>RUNKITE_WORKLOAD_IDENTITY=mtls</code> binds a verified external certificate's URI SAN, public key and expiry to each assignment. The existing fleet token still applies. An operator allowlist maps exact SPIFFE URIs to runner kinds or pools; sharing a service URI does not let a peer with a different key use the active assignment.</p>
+        <p>TypeScript gRPC TLS on Node.js 26 or newer requires a DNS endpoint with a matching certificate DNS SAN. The current gRPC client sends IP literals as SNI, which Node.js 26 rejects. Runkite reports that configuration error before polling; HTTPS IP addresses with matching IP SANs are unaffected.</p>
+        <p>Both direct HTTP and gRPC listeners must verify client certificates. SQL state with Redis or inprocess queues is supported; other backends fail startup. Certificate-owned runs use proxy storage and checkpoints. Direct SQL and forwarded identity headers are outside this boundary. Because the current HTTP listener is shared, client and Admin callers also need accepted certificates.</p>
+        <p>Drain and replace every replica before enabling this profile. Use short-lived certificates, distinct keys and the same credential on both runner transports. Drain/reclaim before rotating the original certificate. The optional <code>denied_key_sha256</code> list retires one key after every replica is replaced/drained with the updated file; editing it alone is not live revocation. Expiry and permanent owner denials stop renewal and signal cooperative cancellation; they do not isolate arbitrary code or undo effects. Read the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/workload-identity.md">configuration and engineering design</a>.</p>
       </main>
     </div>
     <script src="./docs.js?v=20261108-final" defer></script>

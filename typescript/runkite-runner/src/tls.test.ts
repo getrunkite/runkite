@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { grpcChannelCredentials, httpDispatcher } from "./tls.js";
+import { grpcChannelCredentials, httpDispatcher, validateGrpcTLSTarget } from "./tls.js";
 
 // Good enough for the CA-only path -- grpcChannelCredentials/
 // httpDispatcher just need a readable, PEM-shaped file to exercise the
@@ -124,6 +124,46 @@ test("client cert + key together enable mTLS for both gRPC and HTTP", () => {
   }
 });
 
+test("mTLS enables secure channels using system server trust without a custom CA", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "runkite-tls-system-"));
+  try {
+    const cert = path.join(dir, "client.pem");
+    const key = path.join(dir, "client-key.pem");
+    writeFileSync(cert, DUMMY_CERT);
+    writeFileSync(key, DUMMY_KEY);
+    withEnv({ RUNKITE_TLS_CLIENT_CERT_FILE: cert, RUNKITE_TLS_CLIENT_KEY_FILE: key }, () => {
+      assert.notEqual(grpcChannelCredentials(), undefined);
+      const dispatcher = httpDispatcher();
+      assert.notEqual(dispatcher, undefined);
+      assert.throws(
+        () =>
+          dispatcher!.dispatch(
+            {
+              origin: "http://127.0.0.1:2026",
+              path: "/internal/checkpoints/thread/state",
+              method: "POST",
+              headers: { "X-Runner-Token": "synthetic" },
+              body: "synthetic private body",
+            },
+            {},
+          ),
+        /requires HTTPS/,
+      );
+      assert.deepEqual(dispatcher!.stats, {}, "plaintext refusal must not create a connection pool");
+      void dispatcher?.close();
+    });
+    withEnv({ RUNKITE_TLS_CLIENT_KEY_FILE: key }, () => {
+      assert.throws(() => grpcChannelCredentials(), /both client certificate and key/);
+      assert.throws(() => httpDispatcher(), /requires a client certificate/);
+    });
+    withEnv({ RUNKITE_TLS_CLIENT_CERT_FILE: cert }, () => {
+      assert.throws(() => grpcChannelCredentials(), /both client certificate and key/);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("missing CA file throws instead of silently disabling TLS", () => {
   withEnv({ RUNKITE_TLS_CA_FILE: "/nonexistent/path/ca.pem" }, () => {
     assert.throws(() => grpcChannelCredentials());
@@ -169,5 +209,32 @@ test("RUNKITE_TLS_CA_FILE set takes precedence over RUNKITE_GRPC_TLS (no conflic
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Node 26 gRPC TLS IP targets fail with an actionable DNS requirement", () => {
+  for (const address of [
+    "127.0.0.1:50051",
+    "127.0.0.1",
+    "[::1]:50051",
+    "::1",
+    "dns:///127.0.0.1:50051",
+    "dns://resolver.test/127.0.0.1:50051",
+    "ipv4:127.0.0.1:50051",
+    "ipv6:[::1]:50051",
+  ]) {
+    assert.throws(
+      () => validateGrpcTLSTarget(address, "26.11.0"),
+      /requires a DNS endpoint with a matching certificate DNS SAN/,
+    );
+    assert.doesNotThrow(() => validateGrpcTLSTarget(address, "22.19.0"));
+  }
+  for (const address of [
+    "localhost:50051",
+    "controlplane.example.com:50051",
+    "dns:///controlplane.example.com:50051",
+    "dns://resolver.test/controlplane.example.com:50051",
+  ]) {
+    assert.doesNotThrow(() => validateGrpcTLSTarget(address, "26.11.0"));
   }
 });

@@ -10,7 +10,7 @@ cancel path; a brief CP blip must not drop every job.
 from __future__ import annotations
 
 import logging
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -31,10 +31,14 @@ async def should_skip_run(
     runner_token: str = "",
     tenant_id: str = "",
     generation: int | None = None,
+    require_authority: bool = False,
 ) -> bool:
     """Return True when the assignment must be discarded without executing."""
     base = http_address.rstrip("/")
-    pool = runner_kind.startswith("pool-")
+    pool = require_authority or runner_kind.startswith("pool-")
+    if require_authority and urlsplit(base).scheme != "https":
+        logger.warning("certificate-owned assignment refuses a non-HTTPS control-plane URL")
+        return True
     headers: dict[str, str] = {}
     if generation is not None:
         headers.update(run_id_headers(run_id))

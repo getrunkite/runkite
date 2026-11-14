@@ -103,5 +103,9 @@ async def heartbeat_loop(
             logger.warning("Heartbeat RPC timed out for run %s", run_id)
         except grpc.aio.AioRpcError as e:
             logger.warning(f"Heartbeat RPC failed for run {run_id}: {e.code()} {e.details()}")
+            if e.code() in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+                if cancel_event is not None:
+                    cancel_event.set()
+                return
         except Exception:
             logger.exception(f"Unexpected heartbeat error for run {run_id}")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -78,6 +79,7 @@ type MCPSession struct {
 func NewRegistry(configs map[string]ConnectorConfig) *Registry {
 	r := &Registry{connectors: make(map[string]*Connector, len(configs))}
 	for name, cfg := range configs {
+		cfg = snapshotConnectorConfig(cfg)
 		expandAuthConfig(&cfg.Auth)
 		r.connectors[name] = &Connector{Name: name, Config: cfg, breaker: NewCircuitBreaker(cfg.CircuitBreaker)}
 	}
@@ -207,6 +209,31 @@ func (c *Connector) getTokenWithBreaker(ctx context.Context, userCtx map[string]
 }
 
 func (c *Connector) getTokenForAuth(ctx context.Context, userCtx map[string]interface{}, manageBreaker bool, auth AuthConfig) (*CachedToken, error) {
+	if err := ValidateTokenExchangeConfig(auth); err != nil {
+		return nil, err
+	}
+	var constrainedSubject string
+	if auth.TokenExchange != nil {
+		var err error
+		constrainedSubject, err = constrainedSubjectToken(ctx, userCtx)
+		if err != nil {
+			return nil, err
+		}
+		if auth.SecretRef != "" {
+			if auth.ClientSecret != "" {
+				return nil, errExchangeContract
+			}
+			value, err := resolveExchangeSecret(ctx, auth.SecretRef, auth.AllowInsecureLoopback)
+			if err != nil {
+				return nil, errExchangeContract
+			}
+			if value == "" || len(value) > 16384 || strings.ContainsAny(value, "\r\n\x00") {
+				return nil, errExchangeContract
+			}
+			auth.ClientSecret = value
+			auth.SecretRef = ""
+		}
+	}
 	if err := materializeAuthSecret(ctx, &auth); err != nil {
 		return nil, err
 	}
@@ -229,6 +256,9 @@ func (c *Connector) getTokenForAuth(ctx context.Context, userCtx map[string]inte
 
 	case "oauth2_token_exchange":
 		ssoToken, _ := userCtx["sso_token"].(string)
+		if auth.TokenExchange != nil {
+			ssoToken = constrainedSubject
+		}
 		if ssoToken == "" {
 			return nil, errors.New("sso_token required for token_exchange")
 		}

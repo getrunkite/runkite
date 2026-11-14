@@ -608,11 +608,13 @@ type AdmissionLimitRule struct {
 
 // AuthEntry is the "auth" section of langgraph.json.
 type AuthEntry struct {
-	Type        string `json:"type"` // none, api_key, jwt, webhook
-	JWKSURL     string `json:"jwks_url,omitempty"`
-	Issuer      string `json:"issuer,omitempty"`
-	Audience    string `json:"audience,omitempty"`
-	TenantClaim string `json:"tenant_claim,omitempty"` // JWT only; default "tenant_id"
+	AllowInsecureLoopback bool   `json:"allow_insecure_loopback,omitempty"`
+	StrictIdentity        bool   `json:"strict_identity,omitempty"`
+	Type                  string `json:"type"` // none, api_key, jwt, webhook
+	JWKSURL               string `json:"jwks_url,omitempty"`
+	Issuer                string `json:"issuer,omitempty"`
+	Audience              string `json:"audience,omitempty"`
+	TenantClaim           string `json:"tenant_claim,omitempty"` // JWT only; default "tenant_id"
 	// ExtraClaims/ForwardToken/RawTokenField are JWT-only -- see
 	// auth.JWTConfig's doc comments for the full rationale (Factory
 	// Graph runtime.user needing more than identity/permissions/
@@ -706,6 +708,11 @@ func LoadConnectorConfigs(entries map[string]ConnectorEntry, configDir string) (
 			}
 		} else {
 			return nil, fmt.Errorf("connector %s: must have auth or config_ref", name)
+		}
+	}
+	for name, cfg := range result {
+		if err := connector.ValidateTokenExchangeConfig(cfg.Auth); err != nil {
+			return nil, fmt.Errorf("connector %s: %w", name, err)
 		}
 	}
 	return result, nil

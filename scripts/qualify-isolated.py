@@ -31,6 +31,18 @@ class FixtureCheckpoints:
         self.version += 1
 
 
+class FixtureUsage:
+    def __init__(self):
+        self.value = None
+
+    async def get(self, _run):
+        return self.value
+
+    async def report(self, _run, value):
+        self.value = {**value, "source": "isolated_workload", "reported_generation": 1}
+        return self.value
+
+
 class ObservedRuntime(OpenShellRuntime):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -50,7 +62,10 @@ async def qualify(args):
     )
     await runtime.verify()
     client = FixtureCheckpoints()
-    adapter = IsolatedAdapter("http://fixture.invalid", "pool-fixture", None, runtime=runtime, client=client)
+    usage = FixtureUsage()
+    adapter = IsolatedAdapter(
+        "http://fixture.invalid", "pool-fixture", None, runtime=runtime, client=client, usage_client=usage
+    )
     adapter.graphs = {"isolated_echo"}
     events = []
 
@@ -92,6 +107,7 @@ async def qualify(args):
         if len(runtime.started) != 1:
             raise AssertionError("receipt replay started a second workload")
         assignment["run_incarnation_id"] = "fixture-replacement"
+        usage.value = None  # A recreated SQL run has a fresh private snapshot.
         await adapter.execute(assignment, event, asyncio.Event())
         if (
             len(runtime.started) != 2

@@ -4,7 +4,69 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+Preparing the coordinated 0.8.0 source candidate. No v0.8.0 publication is
+claimed. [RFEs #45 through #52](docs/internal/identity-and-distribution-plan.md)
+track code, qualification and external gates separately.
+
+### Added
+
+- [RFE #49](https://github.com/getrunkite/runkite/issues/49): opt-in externally
+  issued mTLS workload identities, exact URI-to-kind/pool mapping and public-key
+  retirement. Queue capture and SQL commit bind one holder to each generation;
+  same-fleet peers cannot borrow it. In-process/Redis plus SQL only. Certificate
+  rotation drains/reclaims attempts; key retirement requires all replicas to
+  load the new configuration. Runkite does not issue identities or attest code.
+- [RFE #50](https://github.com/getrunkite/runkite/issues/50): strict admission JWT
+  provenance and constrained existing RFC 8693 exchange. Audiences, resources,
+  scopes, actor references and TTL limits are operator-owned and revision-bound.
+  A typed assertion preserves the actual authenticated JWT; worker user context
+  cannot replace it. Actor assertions and configured intent remain distinct
+  from proof of key possession.
+- [RFE #51](https://github.com/getrunkite/runkite/issues/51): metadata correlation
+  across action export, workload identity, Vault request UUIDs and optional
+  downstream MCP headers. Admin/Review show those facts without credentials.
+  Background lease liveness checks remain separate from worker-use authority.
+- [RFE #46](https://github.com/getrunkite/runkite/issues/46): versioned cumulative
+  isolated usage reports with durable SQL acknowledgement, original reporter
+  attribution and one terminal settlement. Unknown, partial and declared-zero
+  measurements stay distinct. Workload claims are not provider-verified billing.
+- [RFEs #45 and #48](docs/internal/governance-distribution.md): governance helper
+  installed-artifact checks and coordinated npm/PyPI release jobs, plus immutable
+  publication recovery. Registry errors and mismatching existing artifacts fail
+  closed. Helpers remain unpublished until their first actual publication is
+  verified; a prepared job is not proof that OIDC has published a release.
+- [RFEs #47 and #52](docs/security-assessment.md): reproducible adversarial and
+  combined external-runtime HA/TLS qualification tools, an explicit manual CI
+  gate and an independent-review handoff. The external bridge remains
+  experimental. Actual bounded-run evidence and outstanding external assessment
+  are recorded separately from the implementation.
+
+### Upgrade
+
+Drain all writers, verify a backup, run the SQL upgrade and deploy matching plane
+and runner revisions before enabling the new profiles. Postgres/SQLite add
+migration 22 and MySQL adds migration 23 for private usage snapshots. Do not run
+mixed old/new writers. Older runs/sessions with only legacy extra token fields
+need fresh strict JWT admission for constrained exchange. Preserve unresolved
+credential cleanup configuration and evidence export destinations.
+
+Runner HTTP clients now refuse plaintext whenever a client certificate is
+configured, including deployments without the new workload identity profile.
+Deployments using gRPC mTLS with a plaintext HTTP checkpoint or connector URL
+must enable HTTPS and update that URL before upgrading their runners.
+
 ### Fixed
+
+- Load client certificates into Python HTTP SSL contexts and use them with
+  system trust in both runners. Certificate-configured HTTP clients refuse
+  plaintext requests before sending headers or bodies. Owned preflight fails
+  closed on unavailable or mismatching authority.
+- Align the TypeScript runner's Node minimum with its locked HTTP client:
+  Node.js 22.19 or newer.
+- Fail promptly with an actionable DNS endpoint diagnostic for gRPC TLS IP
+  literals on Node.js 26 or newer. The current gRPC client sends IP literals
+  as SNI, which that Node version rejects. Certificate verification stays on;
+  use a DNS endpoint with a matching certificate DNS SAN.
 
 - Install npm 12.2.2 explicitly in the release job. Node 22's bundled npm 10
   cannot perform trusted publishing; the v0.7.0 attempt exposed this failure.

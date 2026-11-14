@@ -55,22 +55,24 @@ const (
 // Record is safe for metadata views. ProtectedHandle is internal encrypted
 // cleanup material and must never appear in JSON, logs or public DTOs.
 type Record struct {
-	ID                string     `json:"lease_ref"`
-	Owner             Owner      `json:"owner"`
-	BindingID         string     `json:"binding_id"`
-	BindingRevision   string     `json:"binding_revision"`
-	State             State      `json:"state"`
-	Version           int64      `json:"version"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	OperationDeadline time.Time  `json:"operation_deadline"`
-	ExpiresAt         time.Time  `json:"expires_at"`
-	GrantedTTLSeconds int64      `json:"granted_ttl_seconds"`
-	Renewable         bool       `json:"renewable"`
-	UseStartedAt      *time.Time `json:"use_started_at,omitempty"`
-	CleanupRequested  bool       `json:"cleanup_requested"`
-	ReasonCode        string     `json:"reason_code,omitempty"`
-	ProtectedHandle   string     `json:"-"`
+	IssueRequestID     string     `json:"vault_issue_request_id,omitempty"`
+	LastRenewRequestID string     `json:"vault_last_renew_request_id,omitempty"`
+	ID                 string     `json:"lease_ref"`
+	Owner              Owner      `json:"owner"`
+	BindingID          string     `json:"binding_id"`
+	BindingRevision    string     `json:"binding_revision"`
+	State              State      `json:"state"`
+	Version            int64      `json:"version"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	OperationDeadline  time.Time  `json:"operation_deadline"`
+	ExpiresAt          time.Time  `json:"expires_at"`
+	GrantedTTLSeconds  int64      `json:"granted_ttl_seconds"`
+	Renewable          bool       `json:"renewable"`
+	UseStartedAt       *time.Time `json:"use_started_at,omitempty"`
+	CleanupRequested   bool       `json:"cleanup_requested"`
+	ReasonCode         string     `json:"reason_code,omitempty"`
+	ProtectedHandle    string     `json:"-"`
 }
 
 func (r Record) String() string   { b, _ := json.Marshal(r); return string(b) }
@@ -110,6 +112,7 @@ func (UserPassword) MarshalJSON() ([]byte, error) { return []byte(`{}`), nil }
 func (u UserPassword) Values() (string, string)   { return u.username, u.password }
 
 type Grant struct {
+	RequestID  string
 	Handle     string
 	TTL        time.Duration
 	Renewable  bool

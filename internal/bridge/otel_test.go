@@ -64,6 +64,11 @@ func TestGRPCOtel_GetJobEmitsServerSpan(t *testing.T) {
 		t.Fatalf("GetJob: %v", err)
 	}
 
+	// The client can receive its response before the server invokes stats.End.
+	// Wait for handler cleanup, which ends and synchronously exports the span,
+	// before inspecting the exporter. This is a lifecycle barrier, not a delay.
+	grpcServer.GracefulStop()
+
 	spans := exp.GetSpans()
 	var found bool
 	for _, s := range spans {

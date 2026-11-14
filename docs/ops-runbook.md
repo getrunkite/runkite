@@ -1,12 +1,41 @@
 # Ops runbook (Supported profile)
 
-Thin operator guide for the **Supported** production shape: **Postgres + Redis**, client auth, runner tokens. Not a second architecture doc — deep detail lives in the linked pages.
+The **Supported** production profile uses **Postgres + Redis**, client auth and runner tokens. The linked guides explain the architecture and individual controls.
 
 **v0.7.0 deployment:** use matching plane and runner artifacts. The chart's
 `image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
 both to `0.7.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
+
+## Identity and distribution candidate
+
+**Unreleased 0.8.0 source:** the following steps evaluate the
+[eight-RFE milestone](internal/identity-and-distribution-plan.md), not published
+v0.7.0 artifacts. Keep matching plane and runner builds from one reviewed source
+revision. Read the [executed qualification and remaining gates](internal/identity-distribution-qualification.md).
+
+1. Verify a backup and drain runners and all SQL writers. Apply `runkite db
+   upgrade` with the candidate binary. Usage snapshots add Postgres/SQLite
+   migration 22 or MySQL migration 23. Replace every writer before traffic;
+   mixed old/new writers are unsupported.
+2. Before upgrading certificate-configured runners, enable HTTPS on their
+   HTTP checkpoint, status and connector paths. This guard applies with the new
+   identity profile off too. See [HTTP TLS compatibility](#runner-http-tls-compatibility).
+3. Enable strict workload ownership only after replacing every HTTP/gRPC
+   replica and runner. Use SQL state, Redis/inprocess queues, verified direct
+   mTLS and the complete operator URI allowlist. NATS, Kafka and Mongo are
+   refused for this profile. The shared HTTP listener also requires trusted
+   certificates for direct Admin/API clients. Follow [identity deployment,
+   rotation and retirement](auth.md).
+4. For constrained delegation, require both `strict_identity: true` and
+   `forward_token: true` at JWT admission plus the registered connector exchange
+   contract. Obtain fresh admission for legacy sessions/runs that only hold
+   extra token fields. See [delegation and correlation](internal/delegation-and-audit-correlation.md).
+5. Retain unresolved credential cleanup handles, historical decryption keys
+   and provider bindings. Exercise cancellation and report acknowledgement on
+   the intended runtime. Unknown or partial [isolated usage](internal/isolated-usage.md)
+   is not free usage or a provider-verified bill.
 
 ## Connector target revision upgrade
 
@@ -583,7 +612,40 @@ kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
 qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
 providers. A failed fixture cleanup exits nonzero and preserves its private
 recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
-The experimental isolated protocol has no model/token-usage or spend-settlement
-contract. Do not infer free execution from zero recorded usage or rely on
-token/USD totals to limit unreported model calls. Keep provider accounting and
-limits at the external issuer; ordinary managed admission still applies.
+Published v0.7.0 has no supported isolated usage-reporting contract. Unreleased
+v0.8.0 source adds [durable cumulative reports](internal/isolated-usage.md). Upgrade the
+SQL store and every parent/plane together before using it. Acknowledged partial
+reports survive cancellation; sent but unacknowledged work remains uncertain.
+Unknown usage and an explicit reported zero are different states. Counters and
+costs are workload claims, even when the reporting worker has a verified identity.
+Keep provider accounting and quotas to bound unreported or dishonest usage.
+
+The new combined fixture is `scripts/test-isolated-ha.sh`. It owns disposable
+Postgres/Redis, two TLS planes and an external runtime, uses the installed runner
+wheel, and supports one to twenty bounded fault cycles. See the constrained
+execution note for its exact inputs and qualification limits. A fixture pass
+does not qualify an indefinite production soak or live-provider billing. This
+wrapper is an operator command, also available through the manually dispatched
+`identity-qualification.yml` workflow. It is not an automatic PR or release gate;
+workflow presence alone does not establish a successful hosted run.
+Its TLS scope includes both Runkite HTTP/gRPC surfaces and the disposable
+authenticated OpenShell gateway. The gateway's local CA/client bundle stays in
+private task-owned state. The old standalone fixture still defaults to loopback
+HTTP unless `--tls` is explicitly selected. Review the separate gateway TLS
+preflight/outage report as well as workload and cleanup evidence.
+
+### Runner HTTP TLS compatibility
+
+The 0.8.0 runner clients refuse plaintext HTTP whenever a client certificate is
+configured. This applies even when `RUNKITE_WORKLOAD_IDENTITY` is off. If an
+existing deployment uses mTLS for gRPC but a plaintext HTTP URL for checkpoints,
+connectors or status, enable HTTPS on that HTTP path and update the runner base
+URL before upgrading. A CA bundle without a client certificate does not enable
+this additional guard. Do not remove a required client certificate to restore
+plaintext connectivity.
+
+For the TypeScript runner on Node.js 26 or newer, configure a DNS gRPC endpoint
+whose server certificate contains the matching DNS SAN. The current gRPC client
+sets IP literals as SNI, which Node.js 26 rejects. The runner reports this
+configuration error before polling. HTTPS URLs with matching IP SANs are still
+supported. See the [runner requirements](runners.md).

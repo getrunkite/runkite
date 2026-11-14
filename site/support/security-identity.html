@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Identity, delegation and usage · Runkite Docs</title>
+    <meta name="description" content="Verified workload ownership, constrained delegation, external audit correlation and honest isolated usage." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a class="active" aria-current="page" href="security-identity.html">Identity and usage (next)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Govern and operate</p>
+        <h1>Identity, delegation and usage</h1>
+        <p class="lead">Connect an agent operation to its requesting identity, authenticated worker and external credential audit.</p>
+        <p class="note"><strong>Next release preview:</strong> these additions follow v0.7.0 and are not in its published artifacts. Build matching current plane and runner source for evaluation. Governance helper publication and independent external assessment remain separately verified gates.</p>
+        <p><strong>Maintenance upgrade:</strong> back up, drain all runners and writers, apply Postgres/SQLite migration 22 or MySQL migration 23, and replace every replica before enabling strict ownership. Mixed old/new writers are unsupported. Follow the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">operator upgrade guide</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/isolated-usage.md">usage design and rollout</a>.</p>
+
+        <h2 id="which-identity">Four identities with different responsibilities</h2>
+        <p>The requesting user, configured agent, worker holding an attempt and downstream delegated actor are distinct. Runkite keeps their evidence separate. Your identity provider issues identities, Vault issues secrets, and Runkite binds governed operations to current authority.</p>
+        <p>Strict admission JWT validation requires issuer, audience, expiry and subject. It records bounded issuer-asserted actor context. A historical admission record does not prove a credential is still valid or that an actor possessed a key.</p>
+
+        <h2 id="workload">Bind the worker to its assignment</h2>
+        <p><strong>Runner upgrade:</strong> when a client certificate is configured, runner HTTP calls require HTTPS, even with the new workload profile off. Update plaintext checkpoint, connector and status URLs before upgrading those runners.</p>
+        <p>The opt-in mTLS workload profile uses an externally issued client certificate, an exact URI-to-kind or pool allowlist, and its public-key fingerprint. Another holder of the same fleet token cannot renew, report events or complete that worker's owned attempt.</p>
+        <p>Deploy direct verified TLS on both plane listeners, matching client certificate settings for gRPC and HTTP, SQL state and a supported in-process or Redis queue. NATS and Kafka are refused in this strict profile. Certificate rotation drains or reclaims existing attempts. Retiring a public key requires updating the operator file and replacing all HTTP/gRPC replicas; no immediate external-CA revocation or hostile-code attestation is claimed.</p>
+        <p><a href="runner-auth.html#workload-identity">Workload setup and rotation</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/workload-identity.md">Design and trust boundary</a></p>
+        <p>The strict listener requires trusted client certificates for direct Admin/API access too. Public ingress can use its own upstream certificate and forward public routes only, while internal runner routes stay private. Forwarded identity headers are not worker proof. Read the deployment boundary before enabling the profile.</p>
+
+        <h2 id="delegation">Constrain existing token exchange</h2>
+        <p>Constrained exchange requires JWT admission with both <code>strict_identity: true</code> and <code>forward_token: true</code>, plus the registered connector contract. Existing sessions with only legacy token fields need fresh admission.</p>
+        <p>Runkite already supports RFC 8693 token exchange. An optional registered contract adds audiences, resources, explicit scopes, a maximum TTL and an external actor assertion reference. The constrained path derives the subject assertion from the trusted run assignment and refuses a worker's replacement user token.</p>
+        <p>The issuer and resource server still validate and enforce actual token authority. These are bearer exchanges; they do not establish DPoP or a universal cryptographic delegation chain. Ordinary deployments keep existing behavior unless they enable the new contract.</p>
+
+        <h2 id="correlation">Follow one operation across systems</h2>
+        <p>Admin and tenant Review display recorded admission and worker identity alongside the action's policy, target, approval and dispatch evidence. Credential metadata includes safe Vault issuance and latest renewal request IDs when known. Final action exports retain the issuance ID.</p>
+        <p>Operator-enabled MCP correlation headers can carry the public action and credential references to a participating downstream service. The same references reach Vault operations. Join those facts in your existing collector or SIEM, preserving credential redaction and event deduplication.</p>
+        <p>A Vault request establishes a Vault interaction; a proxy response establishes an observed response. Business success requires resource-side evidence. Calls outside Runkite's paths need external observation.</p>
+        <p><a href="connector-actions.html">Inspect connector actions</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/delegation-and-audit-correlation.md">Configuration, rationale and audit join</a></p>
+
+        <h2 id="usage">Keep unknown usage different from zero</h2>
+        <p>The experimental external JSONL workload contract gains cumulative, sequenced usage reports. The trusted worker acknowledges a report after durable SQL commit. Completion or cancellation settles the latest acknowledged snapshot, and receipt replay preserves its original submitting worker.</p>
+        <p>Admin Run Detail distinguishes unavailable usage, partial reports and workload-declared completion. A reported zero is retained explicitly. Missing USD remains unreported. These measurements are workload claims, so provider accounting and limits remain necessary for trusted billing or hostile-workload hard caps.</p>
+
+        <h2 id="assessment">Evaluate the actual deployment</h2>
+        <p>Maintainer tests and bounded disposable HA/TLS scenarios are reproducible evidence for their stated cases. They are not an independent security assessment, every-provider qualification or a global security ranking. The external runtime bridge remains experimental.</p>
+        <p><a href="https://github.com/getrunkite/runkite/blob/main/docs/security-assessment.md">Adversarial assessment handoff</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/identity-and-distribution-plan.md">RFEs and qualification plan</a> · <a href="security-completion.html">Published v0.7.0 controls</a></p>
+      </main>
+    </div>
+      <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

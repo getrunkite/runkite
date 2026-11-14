@@ -95,7 +95,16 @@ export async function callAgent(
   // method, not necessarily this package's own RunnerUser class.
   const user = configurable.langgraph_auth_user;
   if (user && typeof user.toDict === "function") {
-    const onBehalfOf = user.toDict();
+    let onBehalfOf = user.toDict();
+    if (onBehalfOf && typeof onBehalfOf === "object" && !Array.isArray(onBehalfOf)) {
+      // Only the plane's trusted parent assignment carries this assertion.
+      onBehalfOf = { ...onBehalfOf };
+      delete onBehalfOf._runkite_delegated_jwt;
+      if (onBehalfOf.extra && typeof onBehalfOf.extra === "object" && !Array.isArray(onBehalfOf.extra)) {
+        onBehalfOf.extra = { ...onBehalfOf.extra };
+        delete onBehalfOf.extra._runkite_delegated_jwt;
+      }
+    }
     if (onBehalfOf && Object.keys(onBehalfOf).length > 0) {
       body.on_behalf_of = onBehalfOf;
     }

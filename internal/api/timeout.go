@@ -39,7 +39,7 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 	var failures []error
 	for _, run := range runs {
 		result, completionErr := s.completeRunResult(ctx, &state.RunCompletion{
-			RunID: run.RunID, Status: models.RunStatusTimeout, Error: errMsg, CancelCurrentAttempt: true,
+			TrustedSystem: true, RunID: run.RunID, Status: models.RunStatusTimeout, Error: errMsg, CancelCurrentAttempt: true,
 		})
 		if result.Applied {
 			n++

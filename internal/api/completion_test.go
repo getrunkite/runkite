@@ -59,7 +59,7 @@ func completionEvent(gen, seq int64, method, data string) *pb.RunEventProto {
 	raw, _ := json.Marshal(&transport.RunEvent{EventID: method, Seq: seq, Method: method, Data: json.RawMessage(data)})
 	return &pb.RunEventProto{RunId: "run", Generation: gen, EventJson: string(raw)}
 }
-func completionFixture(t *testing.T) (*sqlite.SQLiteStore, *inprocess.Queue, *inprocess.Broker, *inprocess.CancelBus) {
+func completionFixture(t *testing.T, runMetadata ...map[string]interface{}) (*sqlite.SQLiteStore, *inprocess.Queue, *inprocess.Broker, *inprocess.CancelBus) {
 	t.Helper()
 	ctx := context.Background()
 	store, err := sqlite.New("")
@@ -74,7 +74,11 @@ func completionFixture(t *testing.T) (*sqlite.SQLiteStore, *inprocess.Queue, *in
 	if err := store.CreateThread(ctx, &models.Thread{ThreadID: "thread", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+	metadata := map[string]interface{}{}
+	if len(runMetadata) > 0 {
+		metadata = runMetadata[0]
+	}
+	if err := store.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: metadata, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	q := inprocess.NewQueue()

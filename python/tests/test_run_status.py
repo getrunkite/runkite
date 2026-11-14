@@ -30,6 +30,28 @@ def _patch_get(status_code: int, body: dict | None = None):
 
 
 class TestShouldSkipRun(unittest.TestCase):
+    def test_owned_assignment_refuses_plaintext_before_creating_http_client(self):
+        with patch("runkite_runner.run_status.httpx.AsyncClient") as factory:
+            self.assertTrue(_run(should_skip_run("http://cp:2026", "run", require_authority=True)))
+        factory.assert_not_called()
+
+    def test_certificate_owned_ordinary_kind_fails_closed(self):
+        for status, body, skipped in (
+            (403, {}, True),
+            (503, {}, True),
+            (200, {}, True),
+            (200, {"status": "running"}, False),
+        ):
+            with self.subTest(status=status, body=body), _patch_get(status, body):
+                self.assertEqual(
+                    _run(
+                        should_skip_run(
+                            "https://cp", "run", runner_kind="python-langgraph", generation=1, require_authority=True
+                        )
+                    ),
+                    skipped,
+                )
+
     def test_pool_status_is_bound_and_fails_closed(self):
         for status in (403, 503, 200):
             with _patch_get(status, {}) as factory:

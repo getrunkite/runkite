@@ -239,6 +239,317 @@
           }
         },
         "title": "ErrorResponse"
+      },
+      "IdentityProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "subject",
+          "audience",
+          "expires_at"
+        ],
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "audience": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuer_asserted_actors": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subject"
+              ],
+              "properties": {
+                "subject": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "issuer": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            }
+          }
+        },
+        "description": "Bounded claims captured after strict admission JWT validation. Actor entries are assertions by that issuer, not proof of actor key possession. No bearer values or arbitrary claims."
+      },
+      "WorkloadProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "uri",
+          "key_sha256",
+          "not_after"
+        ],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "key_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "not_after": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Public facts from the verified certificate bound to this dispatch. Not accepted from client headers or JSON."
+      },
+      "DelegationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scopes",
+          "max_ttl_seconds"
+        ],
+        "properties": {
+          "audiences": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 16
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 32
+          },
+          "configured_actor": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "max_ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          }
+        },
+        "description": "Registered exchange intent. Does not establish that an exchange or downstream operation ran, or that the configured actor possessed a key."
+      },
+      "RunUsageReport": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "sequence",
+              "status",
+              "complete"
+            ],
+            "properties": {
+              "schema_version": {
+                "type": "integer",
+                "const": 1
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "status": {
+                "const": "unknown"
+              },
+              "complete": {
+                "const": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "sequence",
+              "status",
+              "complete",
+              "prompt_tokens",
+              "completion_tokens"
+            ],
+            "properties": {
+              "schema_version": {
+                "type": "integer",
+                "const": 1
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "status": {
+                "const": "reported"
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "prompt_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "completion_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cost_usd": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "model": {
+                "type": "string",
+                "maxLength": 256
+              }
+            }
+          }
+        ],
+        "description": "Cumulative self-reported usage for one logical isolated execution, including across reclaim. Sequence reuse requires identical content. Counters and known cost cannot regress. A final report cannot be extended. Total tokens must fit the supported integer range. Not provider-verified billing."
+      },
+      "RunUsageSnapshot": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "sequence",
+              "status",
+              "complete",
+              "source",
+              "reported_generation",
+              "reported_at"
+            ],
+            "properties": {
+              "schema_version": {
+                "type": "integer",
+                "const": 1
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "status": {
+                "const": "unknown"
+              },
+              "complete": {
+                "const": false
+              },
+              "source": {
+                "const": "isolated_workload"
+              },
+              "reported_generation": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "reported_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "workload_owner": {
+                "$ref": "#/components/schemas/WorkloadProvenance"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "sequence",
+              "status",
+              "complete",
+              "prompt_tokens",
+              "completion_tokens",
+              "source",
+              "reported_generation",
+              "reported_at"
+            ],
+            "properties": {
+              "schema_version": {
+                "type": "integer",
+                "const": 1
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "status": {
+                "const": "reported"
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "prompt_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "completion_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cost_usd": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "model": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "source": {
+                "const": "isolated_workload"
+              },
+              "reported_generation": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "reported_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "workload_owner": {
+                "$ref": "#/components/schemas/WorkloadProvenance"
+              }
+            }
+          }
+        ]
       }
     }
   },
@@ -1261,6 +1572,127 @@
           },
           "404": {
             "description": "Not found"
+          }
+        }
+      }
+    },
+    "/internal/runs/{run_id}/usage": {
+      "get": {
+        "tags": [
+          "Runner"
+        ],
+        "parameters": [
+          {
+            "description": "Exact bound run ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "description": "Requires the exact active tenant/run incarnation/generation and, when enabled, the verified workload owner. SQL only. The body cannot select tenant, source, generation or authority. Latest acknowledged durable report is settled on completion/cancel; later reports are rejected.",
+        "summary": "Read current cumulative usage snapshot",
+        "operationId": "get_run_usage_snapshot",
+        "responses": {
+          "200": {
+            "description": "Current snapshot or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "snapshot"
+                  ],
+                  "properties": {
+                    "snapshot": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/RunUsageSnapshot"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Run or workload authority refused"
+          },
+          "501": {
+            "description": "Supported SQL store required"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "parameters": [
+          {
+            "description": "Exact bound run ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            },
+            "name": "run_id",
+            "in": "path"
+          }
+        ],
+        "description": "Requires the exact active tenant/run incarnation/generation and, when enabled, the verified workload owner. SQL only. The body cannot select tenant, source, generation or authority. Latest acknowledged durable report is settled on completion/cancel; later reports are rejected.",
+        "summary": "Commit a cumulative isolated usage report",
+        "operationId": "report_run_usage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunUsageReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Durable snapshot and idempotent applied flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "snapshot",
+                    "applied"
+                  ],
+                  "properties": {
+                    "snapshot": {
+                      "$ref": "#/components/schemas/RunUsageSnapshot"
+                    },
+                    "applied": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed, ambiguous or contradictory report"
+          },
+          "403": {
+            "description": "Run or workload authority refused"
+          },
+          "409": {
+            "description": "Sequence conflict, regressed report or completed run"
+          },
+          "501": {
+            "description": "Supported SQL store required"
           }
         }
       }

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { identityEvidenceRows } from "../lib/identityEvidence";
 import type { AdminConnectorAction, AdminConnectorActionEvent } from "../api/types";
 import { ConnectorActionBadge } from "./connector-action-evidence";
 import { formatTimestamp, StatusBadge } from "./common";
@@ -49,6 +50,7 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
             <dl className="space-y-3 text-sm">
               <EvidenceField label="Tenant">{action.tenant_id}</EvidenceField>
               <EvidenceField label="Principal">{action.principal || "No principal recorded"}</EvidenceField>
+              {identityEvidenceRows(action).map((row) => <EvidenceField key={row.label} label={row.label}>{row.value}</EvidenceField>)}
               <EvidenceField label="Agent">
                 {action.agent_id}{" "}
                 <span className="text-muted-foreground">
@@ -159,6 +161,7 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
               <EvidenceField label="Trace ID">
                 <code className="text-xs">{action.trace_id || "Not recorded"}</code>
               </EvidenceField>
+              {action.vault_issue_request_id && <EvidenceField label="Vault issuance request ID"><code className="text-xs">{action.vault_issue_request_id}</code></EvidenceField>}
               <EvidenceField label="Policy revision">{action.policy_revision || "Not recorded"}</EvidenceField>
               <EvidenceField label="Target revision">{action.target_revision || "Not recorded"}</EvidenceField>
               <EvidenceField label="Tool revision">{action.tool_revision || "Not recorded"}</EvidenceField>
