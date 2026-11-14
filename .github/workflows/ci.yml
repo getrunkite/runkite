@@ -244,6 +244,7 @@ jobs:
           python -m unittest discover -s python/tests -p test_execution_pool.py
           python -m unittest discover -s python/tests -p test_isolated.py
           python -m unittest discover -s python/tests -p test_isolated_fixture.py
+          python -m unittest discover -s python/tests -p test_runner_image_qualification.py
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py
@@ -488,11 +489,37 @@ jobs:
   # 2026 trivy-action supply-chain incident -- avoid floating @master.
   image-scan:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: control-plane
+            dockerfile: Dockerfile
+          - image: python-runner
+            dockerfile: Dockerfile.runner
+          - image: typescript-runner
+            dockerfile: Dockerfile.runner-ts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Build control-plane image
-        run: docker build -t runkite:ci -f Dockerfile .
+      - name: Build ${{ matrix.image }} image
+        run: docker build -t runkite:ci -f "${{ matrix.dockerfile }}" .
+
+      - name: Smoke control-plane image
+        if: matrix.image == 'control-plane'
+        run: docker run --rm runkite:ci version
+
+      - name: Smoke Python runner image
+        if: matrix.image == 'python-runner'
+        run: |
+          docker run --rm --entrypoint sh runkite:ci -c \
+            'test "$(id -u)" = 65532 && runkite-runner --help && runkite-runner-isolated --help'
+
+      - name: Qualify TypeScript runtime image
+        if: matrix.image == 'typescript-runner'
+        env:
+          RUNKITE_TEST_RUNNER_IMAGE: "1"
+        run: python3 scripts/qualify-runner-image.py --image runkite:ci --output runner-image-qualification.json
 
       - name: Trivy vulnerability scan
         run: |

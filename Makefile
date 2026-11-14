@@ -261,6 +261,7 @@ test-python:
 		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_execution_pool.py && \
 		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_isolated.py && \
 		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_isolated_fixture.py && \
+		PYTHONPATH=python python/.venv/bin/python -m unittest discover -s python/tests -p test_runner_image_qualification.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_usage_accumulate.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python/.venv/bin/python python/tests/test_tool_call_hook.py && \
@@ -305,6 +306,7 @@ test-python:
 		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_execution_pool.py && \
 		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_isolated.py && \
 		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_isolated_fixture.py && \
+		PYTHONPATH=python python3 -m unittest discover -s python/tests -p test_runner_image_qualification.py && \
 		PYTHONPATH=python python3 python/tests/test_usage_accumulate.py && \
 		PYTHONPATH=python python3 python/tests/test_worker_concurrency.py && \
 		PYTHONPATH=python python3 python/tests/test_tool_call_hook.py && \

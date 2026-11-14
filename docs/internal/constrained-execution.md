@@ -262,10 +262,12 @@ The five recorded cases cover:
    runtime investigation handle.
 
 The local reports are
-`outputs/runkite-security-review/isolated-qualification-6/managed-evidence.json`
+`outputs/runkite-security-review/isolated-qualification-final/managed-evidence.json`
 (`passed: true`) and its `runtime-cleanup.json` (`confirmed: true`). The disposable
 Helm egress qualification is separate and described above. These are actual
 runtime observations, not fake-runtime unit results or a visual fixture.
+The gateway was a disposable loopback fixture. This does not qualify a
+production gateway's TLS, certificate rotation or external identity setup.
 
 The external bridge remains experimental and opt-in. This run does not qualify
 an unchanged arbitrary SDK, mutually hostile code in a shared trusted worker,

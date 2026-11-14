@@ -63,6 +63,16 @@ trust uses `RUNKITE_TLS_CA_FILE`; mutual TLS additionally uses
 `RUNKITE_TLS_CLIENT_CERT_FILE` and `RUNKITE_TLS_CLIENT_KEY_FILE`. Use an HTTPS
 HTTP endpoint for encrypted proxy traffic.
 
+The TypeScript runner container is a runtime image. It installs production
+dependencies, including the pinned optional AI SDK through the managed example,
+and retains local `tsx` for loading `.ts` agents. It omits development compilers,
+global `npm` and `npx`. To add agent dependencies, install them with
+`npm ci --omit=dev` in a separate Node builder stage, then copy that agent's
+source, configuration and `node_modules` into a derived runner image. Match
+the runtime Node major version and target platform, especially for native
+dependencies. The repository package manifests and locks retain development
+tools for contributors.
+
 ## Features
 
 - Dynamic `.ts` graph loading via `tsx` (no separate build step for agent code)

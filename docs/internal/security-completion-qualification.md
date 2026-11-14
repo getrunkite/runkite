@@ -43,6 +43,14 @@ and [second advisory record](https://security-tracker.debian.org/tracker/CVE-202
 The compiled TypeScript CLI also gained config-free help and strict concurrency
 validation after a real image smoke test exposed the missing help behavior.
 
+The TypeScript image scan additionally found vulnerable packages in global npm
+and native development compilers. They are unnecessary for agent execution.
+Production-only installs now retain local `tsx` and share the example's locked
+AI SDK dependency, while global npm/npx and development compilers are absent.
+Custom agent dependencies belong in a matching Node builder stage. Contributor
+package manifests and locks are unchanged. CI now builds, exercises and scans
+all three images instead of scanning only the control plane.
+
 ## Qualified behavior
 
 - The complete Go suite passed with the Linux race detector. Live Postgres,
@@ -99,14 +107,45 @@ contract gates. Managed fixtures install fresh consumers; they must not silently
 resolve adapters from an old checkout. The Python isolated tests use unittest
 discovery so a successful command cannot mean that zero tests were collected.
 
+For the built TypeScript image, run the offline native probe explicitly:
+
+```sh
+RUNKITE_TEST_RUNNER_IMAGE=1 python3 scripts/qualify-runner-image.py \
+  --image your-built-runner-image --output runner-image-qualification.json
+```
+
+It resolves an existing local image to its immutable ID, never pulls implicitly,
+and removes only its uniquely named test container. A failed or uncertain cleanup
+fails the command and its evidence, even if native execution passed. Four
+fault-injection tests guard these reporting and cleanup paths without Docker.
+
 ## Release and operator gates
 
-The three container builds completed locally. The initial control-plane scan
-passed the CI policy of no fixable HIGH/CRITICAL findings. After the runner
-vendor-package refresh, the local Docker engine became unresponsive before the
-final runner-image scans and TypeScript image help smoke could start. Those
-final image checks are pending, not passing, and must complete before publishing.
-A local test record also does not establish remote CI or package publication.
+All local release qualification gates passed. The three final Linux/arm64 images
+built and passed Trivy 0.72.0 vulnerability scans with
+`--severity HIGH,CRITICAL --ignore-unfixed --scanners vuln`: zero fixable findings
+at those severities. This is not a claim of zero vulnerabilities at every
+severity or complete secret scanning. Repeating the CI command with its default
+vulnerability and secret scanners also passed for all three images, with no
+reported HIGH/CRITICAL secret findings. The exact tested local image IDs are:
+
+- Control plane: `sha256:7cfffa9544c3f58fa0552dbc93a7268c5ebb94de8a356dc605bbe4be3b5d9958`.
+- Python runner: `sha256:949ddbc9d237ca6b7de2247287d4ba66c7deec0a27886dcb971f8c3a62a8b7f4`.
+- TypeScript runner: `sha256:49bfb30a25dfff0115f36bdc055ebb9ade3c7bbe64a497e42b1f8dfb02576df7`.
+
+Control-plane version and non-root Python runner help checks passed. The final
+TypeScript image ran with networking disabled and a read-only root filesystem:
+non-root identity, absent npm/npx and development compilers, local TypeScript
+loading, config-free help, native LangGraph echo and a two-step AI SDK model/tool
+stream with usage all passed. This is an offline dependency-pruning regression,
+separate from the managed control-plane qualification above.
+
+Docker was responding again when the approved recovery was attempted, so no
+restart was necessary. Owned SQL fixtures were removed, and the initial runtime
+recovery directory's generated keys were removed after confirming that its
+containers and network were absent. Final runtime/CNI cleanup remains confirmed.
+A local test record does not establish remote CI or package publication. Rebuild
+and repeat the relevant gates for the tagged release and its target platforms.
 
 The version remains v0.6.1 until the coordinated release cut. No existing tag or
 published artifact is rewritten. New configuration is opt-in and the external

@@ -176,6 +176,15 @@ Dockerized via `Dockerfile.runner-ts` (same zero-build-step pattern as `Dockerfi
 docker compose -f docker-compose.ts.yml up --build
 ```
 
+The TypeScript image installs only production dependencies and keeps local
+`tsx` for runtime `.ts` loading. Its pinned AI SDK remains available through
+the managed example's production dependency. Development compilers and global
+`npm`/`npx` are absent. Custom agents should install dependencies with
+`npm ci --omit=dev` in a separate Node builder stage, then copy their source,
+configuration and `node_modules` into a derived runner image. Match the runtime
+Node major version and target platform for native dependencies. Contributor
+package manifests and locks are unchanged.
+
 Kept separate rather than merged into the main compose file because a single control-plane instance's `LANGGRAPH_CONFIG` binds to one `runner_kind` at a time (see `internal/config/loader.go`'s `RunnerKind` field) -- mixing Python and TS agents in one deployment means auto-discovering multiple `langgraph.json` files (leaving `LANGGRAPH_CONFIG` unset), not something this demo needed to prove the image itself works.
 
 Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).

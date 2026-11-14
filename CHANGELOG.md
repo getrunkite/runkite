@@ -4,6 +4,16 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Image qualification
+
+- Install only production dependencies in the TypeScript runner image, preserve
+  its locked optional AI SDK and local TypeScript loader, and remove global
+  npm/npx and unused development compilers. Custom agent dependencies are built
+  in a separate Node stage. Add offline native LangGraph/AI SDK image checks and
+  extend CI image builds, smoke checks and vulnerability scans to all three
+  images. Final local Linux/arm64 scans report no fixable HIGH/CRITICAL findings;
+  see the [qualification record](docs/internal/security-completion-qualification.md).
+
 ### Added
 
 - Add optional requester exclusion and one-to-five distinct-reviewer quorum with
