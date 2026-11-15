@@ -51,6 +51,19 @@ released, update these labels together with the changelog and package install
 guidance. Keep public install commands unpinned unless an API
 compatibility example specifically requires a tested SDK version.
 
+The homepage's `#packages` catalog groups published artifacts by their role:
+the Go control plane, managed Python/Node runners and server-side decision
+helpers. The Install page's `#packages` table lists the binary release, four
+registry distributions and three container images. Keep direct registry links,
+image names and those role boundaries aligned with the Release workflow and
+package manifests. This grouping lets visitors choose a deployment and an
+execution boundary without mistaking the list for eight required installs.
+JavaScript and TypeScript share the npm governance helper; a managed Node
+runner does not depend on it. Go is needed for source builds, not for a
+downloaded control-plane binary. Framework extras belong to their package;
+the chart and examples remain source assets. The hero's package shortcut
+should reach this catalog without changing the existing walkthrough entry.
+
 The product is self-host only. The offline public demo is not a hosted
 control-plane offering. Keep model-loop ownership explicit: managed runners
 produce Threads/Runs; app-owned decisions do not. Claims about approvals, kill,
@@ -133,10 +146,11 @@ obscure linked section headings.
 
 Keep runtime ownership explicit when editing the page: managed executions create
 Threads and Runs; app-owned tool decisions do not. Connector policy requires the
-connector gate, and the bridge and governance helpers remain repository code.
+connector gate. The managed UI bridge remains a checkout example, while the
+decision helpers are independently published on npm and PyPI from v0.8.0.
 Current source uses Apache-2.0 and may be described as open source. Keep the
-product self-host only. The homepage links to the published v0.6.1 release,
-the first Apache-2.0 release. Published v0.6.0 retains its shipped BUSL-1.1 terms;
+product self-host only. The homepage links to the latest verified release.
+v0.6.1 was the first Apache-2.0 release. Published v0.6.0 retains its shipped BUSL-1.1 terms;
 changing the source license does not update old registry artifacts or tags.
 The footer links to the current Apache-2.0 license. Keep the historical
 distinction in licensing and release documentation. Published framework rows

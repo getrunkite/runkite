@@ -91,6 +91,26 @@
           allowlists, TLS and your normal operational controls.
         </p>
 
+        <h2 id="packages">Choose the component you need</h2>
+        <p>Runkite publishes one control-plane binary, two Python packages, two npm packages and three container images. Start with a control plane, then choose runners or decision helpers for your application. Binary and container forms are deployment alternatives.</p>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Published Runkite packages">
+          <table class="matrix">
+            <thead><tr><th scope="col">Role</th><th scope="col">Published artifact</th><th scope="col">Use it for</th></tr></thead>
+            <tbody>
+              <tr><td>Go plane</td><td><a href="https://github.com/getrunkite/runkite/releases/latest"><code>runkite</code> Go binaries</a></td><td>API, policy gates and embedded Admin. Prebuilt Linux/macOS binaries do not require Go; source builds do.</td></tr>
+              <tr><td>Plane image</td><td><a href="https://github.com/getrunkite/runkite/pkgs/container/runkite"><code>ghcr.io/getrunkite/runkite</code></a></td><td>The same control-plane role, packaged for containers.</td></tr>
+              <tr><td>Python runner</td><td><a href="https://pypi.org/project/runkite-runner/">PyPI: <code>runkite-runner</code></a></td><td>Execute managed assignments in Python. LangGraph is the default; documented SDK profiles use optional extras.</td></tr>
+              <tr><td>Node.js runner</td><td><a href="https://www.npmjs.com/package/runkite-runner">npm: <code>runkite-runner</code></a></td><td>Execute managed assignments with LangGraph.js or the optional AI SDK backend and its dependencies.</td></tr>
+              <tr><td>Python image</td><td><a href="https://github.com/getrunkite/runkite/pkgs/container/runkite-runner"><code>ghcr.io/getrunkite/runkite-runner</code></a></td><td>Containerized Python worker with the LangGraph default. The stock image does not install the four optional managed Python SDKs.</td></tr>
+              <tr><td>Node.js image</td><td><a href="https://github.com/getrunkite/runkite/pkgs/container/runkite-runner-ts"><code>ghcr.io/getrunkite/runkite-runner-ts</code></a></td><td>Containerized TypeScript/JavaScript worker for the documented managed profiles.</td></tr>
+              <tr><td>Python helper</td><td><a href="https://pypi.org/project/runkite-governance/">PyPI: <code>runkite-governance</code></a></td><td>Request tool decisions from an app-owned Python loop. Optional Microsoft function middleware is an extra of this same package.</td></tr>
+              <tr><td>JS/TS helper</td><td><a href="https://www.npmjs.com/package/runkite-governance">npm: <code>runkite-governance</code></a></td><td>Request tool decisions from your server-side Node app. Ships JavaScript and TypeScript declarations.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Choose the execution boundary:</strong> managed agents use a runner; apps that keep their own loop can use a decision helper. The helpers are independent of the runner packages. A Node runner does not require the JavaScript governance helper. Both paths connect to your self-hosted control plane; an app-owned decision creates no managed Thread or Run.</p>
+        <p>The <a href="https://github.com/getrunkite/runkite/tree/main/deploy/helm/runkite">Helm chart</a> is installed from the repository, not a published chart registry. Framework extras are options on the Python package, not additional PyPI projects. The managed chat UI bridge and runnable examples remain checkout assets. OpenAPI specifications are attached to <a href="https://github.com/getrunkite/runkite/releases/latest">GitHub Releases</a>. See <a href="sdk-integration.html">SDK integration contracts</a> for framework dependencies and capabilities. The Go binary is the server, not a separate Go client SDK.</p>
+
         <h2>Option 1: laptop demo (5 minutes, not for anything real)</h2>
         <pre class="mono-block">git clone https://github.com/getrunkite/runkite.git && cd runkite
 docker compose -f docker-compose.dev.yml up -d --build</pre>

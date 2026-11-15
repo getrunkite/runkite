@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261108h" />
+    <link rel="stylesheet" href="./landing.css?v=20261115-packages" />
     <link rel="stylesheet" href="./execution-flow.css?v=20261108-playback" />
     <script src="./landing.js?v=20261108-playback" defer></script>
     <script src="./execution-flow.js?v=20261108-playback" defer></script>
@@ -53,7 +53,10 @@
               <a class="btn btn-ghost" href="#demo">Explore the demo <span aria-hidden="true">↓</span></a>
             </div>
             <p class="hero-footnote">Agent Protocol clients. LangGraph and other framework runners. One Go control plane.</p>
-            <a class="hero-flow-link" href="#execution">See how Runkite works <span aria-hidden="true">↓</span></a>
+            <div class="hero-shortcuts">
+              <a class="hero-flow-link" href="#execution">See how Runkite works <span aria-hidden="true">↓</span></a>
+              <a class="hero-flow-link" href="#packages">Packages and downloads <span aria-hidden="true">↓</span></a>
+            </div>
           </div>
           <figure class="product-preview">
             <div class="preview-chrome"><span class="window-mark" aria-hidden="true">RK</span><span>Runkite Admin</span><span class="preview-caption">Demo data</span></div>
@@ -253,6 +256,51 @@
             </article>
           </div>
           <p class="integration-note">The AI SDK UI bridge includes Next and Nuxt route recipes for managed TypeScript and Python agents and remains a checkout example. The separate <code>runkite-governance</code> decision helpers are published on npm and PyPI starting with v0.8.0. They govern app-owned tool decisions without creating managed runs.</p>
+        </div>
+      </section>
+
+      <section class="section packages" id="packages" aria-labelledby="packages-title">
+        <div class="wrap">
+          <div class="section-heading">
+            <p class="eyebrow">Published packages</p>
+            <h2 id="packages-title">Install the pieces you need.</h2>
+            <p>Start with the control plane. Add a runner for managed execution, or a decision helper when your app keeps its own loop. These are separate components, not a list of packages everyone must install.</p>
+          </div>
+          <div class="package-grid">
+            <article class="package-card">
+              <p class="package-kind">01 / Control plane</p>
+              <h3>The API and Admin UI.</h3>
+              <p class="package-purpose">Run the Go control plane as a compiled binary or container. Go is needed only when building from source.</p>
+              <ul class="package-options">
+                <li><span class="package-format">Go</span><a class="package-link" href="https://github.com/getrunkite/runkite/releases/latest" aria-label="Download Runkite control-plane binaries"><code>runkite</code> <span aria-hidden="true">↗</span></a></li>
+                <li><span class="package-format">Image</span><a class="package-link" href="https://github.com/getrunkite/runkite/pkgs/container/runkite" aria-label="Runkite control-plane image on GHCR"><code>ghcr.io/getrunkite/runkite</code> <span aria-hidden="true">↗</span></a></li>
+              </ul>
+              <a class="inline-link" href="./support/install.html">Control-plane setup <span aria-hidden="true">→</span></a>
+            </article>
+            <article class="package-card">
+              <p class="package-kind">02 / Managed execution</p>
+              <h3>A worker for your agents.</h3>
+              <p class="package-purpose">Run a separate Python or Node.js worker for agents dispatched through Runkite Threads and Runs. Choose the language and framework your agent uses.</p>
+              <ul class="package-options">
+                <li><span class="package-format">PyPI</span><a class="package-link" href="https://pypi.org/project/runkite-runner/" aria-label="Python runkite-runner package on PyPI"><code>runkite-runner</code> <span aria-hidden="true">↗</span></a></li>
+                <li><span class="package-format">npm</span><a class="package-link" href="https://www.npmjs.com/package/runkite-runner" aria-label="Node.js runkite-runner package on npm"><code>runkite-runner</code> <span aria-hidden="true">↗</span></a></li>
+                <li><span class="package-format">Python</span><a class="package-link" href="https://github.com/getrunkite/runkite/pkgs/container/runkite-runner" aria-label="Python runner image on GHCR"><code>ghcr.io/getrunkite/runkite-runner</code> <span aria-hidden="true">↗</span></a></li>
+                <li><span class="package-format">Node</span><a class="package-link" href="https://github.com/getrunkite/runkite/pkgs/container/runkite-runner-ts" aria-label="Node.js runner image on GHCR"><code>ghcr.io/getrunkite/runkite-runner-ts</code> <span aria-hidden="true">↗</span></a></li>
+              </ul>
+              <a class="inline-link" href="./support/frameworks.html">Frameworks and dependencies <span aria-hidden="true">→</span></a>
+            </article>
+            <article class="package-card">
+              <p class="package-kind">03 / App-owned execution</p>
+              <h3>Decisions inside your app.</h3>
+              <p class="package-purpose">Use a server-side Python or JavaScript/TypeScript helper to ask allow, deny or pending before a tool call. Your app keeps its loop and executes the tool. This path creates no Runkite Thread or Run.</p>
+              <ul class="package-options">
+                <li><span class="package-format">PyPI</span><a class="package-link" href="https://pypi.org/project/runkite-governance/" aria-label="Python runkite-governance package on PyPI"><code>runkite-governance</code> <span aria-hidden="true">↗</span></a></li>
+                <li><span class="package-format">npm</span><a class="package-link" href="https://www.npmjs.com/package/runkite-governance" aria-label="JavaScript and TypeScript runkite-governance package on npm"><code>runkite-governance</code> <span aria-hidden="true">↗</span></a></li>
+              </ul>
+              <a class="inline-link" href="./support/sdk-integration.html#app-owned">Decision-helper guide <span aria-hidden="true">→</span></a>
+            </article>
+          </div>
+          <p class="package-note">A managed Node.js runner uses <code>runkite-runner</code>; it does not require <code>runkite-governance</code>. Install the helper in an app that requests tool decisions itself. Framework extras, the source Helm chart and checkout examples are explained in the <a href="./support/install.html#packages">complete installation map</a>.</p>
         </div>
       </section>
 

@@ -148,6 +148,10 @@ from a verified registry release and from a checkout. The app executes after
 allow and owns pending continuation.
 A decision is not proof of execution, and its `run_id` is an operation correlation
 value rather than execution idempotency.
+The managed Node.js runner does not require the governance helper. See
+[packages and downloads](https://getrunkite.com/#packages) or the
+[complete installation map](site/support/install.html#packages) for binary,
+registry and container choices.
 
 ### Bring your framework
 
