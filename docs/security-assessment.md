@@ -167,10 +167,13 @@ Never point this at production, a shared developer database or a shared Redis
 database. The script validates loopback endpoints and requires an explicit
 operator acknowledgement; those checks cannot prove that infrastructure is
 actually disposable.
+Set `RUNKITE_TEST_IDENTITY_POSTGRES_DSN` to the connection string for that
+isolated database before running the live phase.
 
 ```sh
 export RUNKITE_TEST_IDENTITY_DISPOSABLE=1
-export RUNKITE_TEST_IDENTITY_POSTGRES_DSN='postgres://fixture:fixture@127.0.0.1:15432/runkite_identity_review?sslmode=disable'
+: "${RUNKITE_TEST_IDENTITY_POSTGRES_DSN:?Set the isolated Postgres DSN first}"
+export RUNKITE_TEST_IDENTITY_POSTGRES_DSN
 export RUNKITE_TEST_IDENTITY_REDIS_URL='redis://127.0.0.1:16379/0'
 scripts/test-identity-security.sh --live
 ```
