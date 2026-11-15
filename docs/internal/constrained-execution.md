@@ -366,7 +366,8 @@ failed before workload execution: the bridge supervisor could not fetch policy
 through the loopback-only published gateway port. Its three gateway TLS
 preflight probes passed and owned cleanup was confirmed; the later gateway
 outage/restart probes and three requested workload cycles did not run. The
-Linux management-network correction therefore needs an actual hosted rerun.
+Linux management-network correction was subsequently verified by the hosted
+rerun recorded below.
 The corrected profile subsequently passed three bounded cycles in a Linux arm64
 orchestrator sharing OrbStack's Linux VM host network and local Docker socket.
 The installed parent, two real Postgres/Redis TLS planes and pinned external
@@ -383,6 +384,26 @@ all five gateway probes and confirmed cleanup, with 39.536 seconds in the
 managed evidence. Its `runtime-fixture.json` records `darwin-bridge-loopback`
 and a bridge supervisor. Reports are under
 `outputs/runkite-next/macos-fixture-regression/result/runtime/`.
+
+### Hosted Linux evidence, November 15, 2026
+
+[Run 43684701615](https://github.com/getrunkite/runkite/actions/runs/43684701615)
+passed on revision `96051cc5b9f88bd4bf9285a227ed4a357d0ea889` with the
+corrected management profile. Its native x86_64 host recorded kernel
+`7.0.0-1014-aws`, Docker Engine 28.0.4 and Landlock ABI 8. All three requested
+fault cycles passed against two real Postgres/Redis TLS planes and the installed
+0.8.0 parent wheel, with 33.325 seconds in the managed evidence. All five
+external-gateway TLS probes passed and cleanup was confirmed. The runtime report
+records `linux-host-loopback`, authenticated TLS and the host-network supervisor;
+workload network isolation and the Landlock requirement stayed enabled.
+
+The same workflow separately passed all four packaged TypeScript direct-mTLS
+cases on Node 22.19.0. That is a SQLite/inprocess profile, not TypeScript HA.
+Its safe artifact `identity-qualification-43684701615-1` includes the exact
+source revision, installed dependency inventory and JSON evidence. Workspace
+copies are under `outputs/runkite-next/hosted-pr66-qualification/`, outside the
+repository. This closes bounded hosted qualification, not production soak or
+independent assessment.
 
 ### Current local evidence, November 14, 2026
 
@@ -413,6 +434,5 @@ and infrastructure cleanup were confirmed. Local evidence is under
 `confirmed: true` with no reason codes. These workspace artifacts are not
 bundled production evidence or a successful hosted-workflow run.
 
-Native Linux hosted execution of the manual workflow, longer soak, external
-PKI/rotation, production gateway HA and live-provider accounting remain separate
-qualification tasks. The profile stays experimental.
+Longer soak, external PKI/rotation, production gateway HA and live-provider
+accounting remain separate qualification tasks. The profile stays experimental.

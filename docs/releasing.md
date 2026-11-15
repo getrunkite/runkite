@@ -67,7 +67,7 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
 | `runkite` binaries + checksums + OpenAPI JSON | GitHub Release | `GITHUB_TOKEN` (automatic) |
 | Control-plane + runner images (`:<version>` and `:latest`) | `ghcr.io/getrunkite/*` | `packages: write` (automatic) |
 | `runkite-runner` wheel and sdist | PyPI | **`PYPI_API_TOKEN`** |
-| `runkite-governance` wheel and sdist | PyPI | **`PYPI_GOVERNANCE_API_TOKEN`** |
+| `runkite-governance` wheel and sdist | PyPI | PyPI Trusted Publisher, initially a pending publisher |
 | `runkite-runner` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_TOKEN`** |
 | `runkite-governance` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_GOVERNANCE_TOKEN`** |
 
@@ -144,13 +144,32 @@ When cutting an Apache-licensed release:
 
 ### PyPI
 
-Verify ownership of both `runkite-runner` and the independent
-`runkite-governance` project. Configure project-scoped repository secrets
-`PYPI_API_TOKEN` and `PYPI_GOVERNANCE_API_TOKEN` respectively. An existing
-runner-scoped token does not authorize the helper. A new project may need a
-maintainer-controlled first upload before a project-scoped token can be created.
-That is an external account setup gate, not something package metadata can
-authorize. Never put credentials in source or chat.
+Keep the existing `runkite-runner` project-scoped `PYPI_API_TOKEN` repository
+secret. Its credential check and password-based publish step apply only to
+missing runner distributions. The independent governance helper uses OIDC,
+without a password or an account-wide API token.
+
+For the first `runkite-governance` upload, the maintainer must register a
+[pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+under the personal PyPI account's **Publishing** settings:
+
+- PyPI project name: `runkite-governance`.
+- GitHub owner: `getrunkite`.
+- Repository: `runkite`.
+- Workflow filename: `release.yml`.
+- Environment: leave empty. The current `pypi` job has no GitHub environment.
+
+The job grants only `contents: read` and `id-token: write` and uses the pinned
+PyPA publish action with no password for governance. If a GitHub environment is
+introduced later, configure the same environment on the PyPI publisher before
+publishing. See [PyPI's publishing contract](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
+
+A pending publisher does not create a project or reserve its name. Its first
+successful upload creates the project and converts it to a normal publisher;
+another account taking the name first invalidates that setup. Registration and
+workflow preparation do not prove a successful OIDC publication or helper
+availability. Verify the actual uploaded files before changing those claims.
+Never put credentials in source or chat.
 
 The workflow builds once with pinned `python/requirements-build.txt` tools,
 verifies installed helper behavior and checks each existing distribution against
@@ -158,6 +177,10 @@ the intended file contents. It stages and publishes only missing files. Containe
 timestamps may differ on rebuild, but every regular file and executable bit must
 match. A registry/auth failure or content mismatch stops recovery. Publication
 requires both the wheel and source distribution to be present and verified.
+The job summary records the selected publish step outcomes and the separate
+artifact verification outcome. A matching version found before upload is
+recovery evidence, not a new OIDC publication. An OIDC or registry failure fails
+the job; there is no helper API-token fallback.
 
 ### npm Trusted Publisher (preferred)
 
