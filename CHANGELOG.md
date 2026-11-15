@@ -57,6 +57,12 @@ must enable HTTPS and update that URL before upgrading their runners.
 
 ### Fixed
 
+- Correct the external-runtime qualification fixture on native Linux: bind the
+  trusted gateway and supervisor callback to the same host-loopback port, pin
+  all owned infrastructure to one local Docker socket, and override inherited
+  image bind flags explicitly. Workload network isolation, Landlock requirements
+  and mTLS verification stay enabled. Reject remote Docker selectors before
+  creating fixture infrastructure.
 - Adapt the TypeScript runner's custom-CA and mTLS HTTP dispatcher to Node 22's
   built-in fetch callback contract. HTTPS preflight and checkpoint requests
   retain certificate verification and the client-certificate HTTPS requirement.

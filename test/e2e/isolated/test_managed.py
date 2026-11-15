@@ -531,7 +531,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
             self.base + f"/threads/{thread}/runs/{first}/stream", headers={"Authorization": "Bearer " + self.api_key}
         )
         self.assertEqual(stream.status_code, 200)
-        self.assertIn("messages/partial", stream.text)
+        if "messages/partial" not in stream.text:
+            durable = self.final(thread, first)
+            self.fail(
+                "first workload produced no incremental event: "
+                + json.dumps({"status": durable["status"], "error": durable.get("error")})
+            )
         self.assertNotIn(self.runner_token, stream.text)
         self.assertNotIn(self.downstream_secret, stream.text)
         output = self.final(thread, first)["output"]

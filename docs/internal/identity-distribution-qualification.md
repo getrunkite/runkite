@@ -106,8 +106,25 @@ whose final PR CI passed. The
 Review HA and the protocol mirror also passed on the merge commit. The first hosted
 [manual identity run](https://github.com/getrunkite/runkite/actions/runs/43627959919)
 failed the Node 22 packaged HTTP preflight and did not reach external-runtime
-HA. The [compatibility correction](node-fetch-tls-compatibility.md) has separate
-local Node 22/26 evidence; repeat hosted qualification after that fix is merged.
+HA. The [compatibility correction](node-fetch-tls-compatibility.md) merged in
+[PR #65](https://github.com/getrunkite/runkite/pull/65). Its final PR and
+[main CI](https://github.com/getrunkite/runkite/actions/runs/43633285942) passed,
+including mandatory packaged mTLS jobs on Node 22.19.0 and 26.11.0. Main Review
+HA and Pages also passed.
+
+The next [hosted run](https://github.com/getrunkite/runkite/actions/runs/43633774499)
+passed the TypeScript mTLS stage, then failed before executing the isolated
+Python workload: its bridge supervisor could not reach the loopback-published
+gateway on native Linux. Three gateway TLS preflight probes passed and cleanup
+was confirmed. The later outage/restart probes and requested workload cycles did
+not complete. The correction uses native host networking only for the trusted
+Linux management companions, explicitly overrides the gateway image's bind
+flags, and keeps the workload's network and Landlock policy unchanged. See
+[local engine networking](constrained-execution.md#local-engine-networking).
+The corrected fixture passed three bounded cycles on a local Linux arm64 VM
+engine, all five gateway TLS probes and confirmed cleanup; the running gateway
+bind was checked directly. This is separate from hosted Ubuntu amd64 evidence.
+An actual hosted rerun must pass before this gate can be marked complete.
 An ordinary green CI run does not replace this separate qualification.
 
 First npm/PyPI helper publication, registry authorization and a genuine OIDC publish

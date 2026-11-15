@@ -174,8 +174,22 @@ Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 2. GitHub Actions: org `getrunkite`, repo `runkite`, workflow filename `release.yml`, allow `npm publish`
 3. Future tags publish via OIDC (`id-token: write` in the Release workflow)
 
-**First-ever publish** (or emergency): on your laptop, `npm login` then
-`npm publish --access public` and complete the browser / passkey prompt.
+**First-ever publish** (or emergency) may require interactive authentication
+through the maintainer's personal npm account. Obtain the exact intended,
+verified tarball and its manifest from the coordinated release build first.
+Confirm its checksum matches the manifest, then sign in with `npm login` and
+publish that explicit artifact:
+
+```sh
+npm publish /absolute/path/to/verified-package.tgz --access public --ignore-scripts --registry https://registry.npmjs.org
+```
+
+Complete the browser or passkey prompt if requested. Do not use bare
+`npm publish` from a checkout, rebuild during publication or substitute another
+tarball for the intended version. Verify the registry artifact against the same
+manifest after upload before marking it available. A login or configured secret
+does not prove package-creation authority, helper ownership or a working Trusted
+Publisher.
 
 **Fallback:** use a package-scoped granular token with **Bypass 2FA**. The runner
 uses `NPM_TOKEN`; the helper uses `NPM_GOVERNANCE_TOKEN`. Package ownership,

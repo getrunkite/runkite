@@ -538,6 +538,20 @@ jobs:
 
       - name: Trivy vulnerability scan
         run: |
+          set -euo pipefail
+          # Docker Hub can return 502 while pulling the pinned scanner.
+          # Retry the pull only. A real vulnerability finding still fails once.
+          for attempt in 1 2 3; do
+            if docker pull aquasec/trivy:0.72.0; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "trivy image pull failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            echo "trivy image pull failed (attempt ${attempt}); retrying" >&2
+            sleep $((attempt * 10))
+          done
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.72.0 image \

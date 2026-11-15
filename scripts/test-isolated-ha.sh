@@ -20,13 +20,26 @@ for key in RUNKITE_TEST_BINARY RUNKITE_TEST_RUNNER_WHEEL RUNKITE_TEST_ISOLATED_C
   fi
   resolved="$(cd "$(dirname "${!key}")" && pwd)/$(basename "${!key}")"
   printf -v "$key" '%s' "$resolved"
-  export "$key"
+  export "${key?}"
 done
 if [[ ! -x "$RUNKITE_TEST_BINARY" || ! -x "$RUNKITE_TEST_ISOLATED_CLI" ]]; then
   echo "The prepared binary and runtime CLI must be executable" >&2
   exit 2
 fi
-docker compose version >/dev/null
+docker_socket="$(python3 - "$repo_root/scripts/start-isolated-fixture.py" "${RUNKITE_TEST_DOCKER_SOCKET:-/var/run/docker.sock}" <<'PY'
+import runpy
+import sys
+
+try:
+    _, selected = runpy.run_path(sys.argv[1])["local_docker_command"](sys.argv[2])
+except ValueError as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(2) from error
+print(selected)
+PY
+)"
+docker=(docker --host "unix://$docker_socket")
+"${docker[@]}" compose version >/dev/null
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/runkite-isolated-ha.XXXXXX")"
 if [[ -n "${RUNKITE_TEST_ISOLATED_HA_OUTPUT:-}" ]]; then
@@ -39,7 +52,7 @@ suffix="$(basename "$scratch" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')
 project="runkite-isolated-ha-$$-$suffix"
 database="runkite_isolated_ha_$$_$suffix"
 override="$scratch/override.yml"
-compose=(docker compose --env-file /dev/null --project-name "$project" -f "$repo_root/docker-compose.test.yml" -f "$override")
+compose=("${docker[@]}" compose --env-file /dev/null --project-name "$project" -f "$repo_root/docker-compose.test.yml" -f "$override")
 started=0
 fixture_pid=""
 
@@ -64,7 +77,7 @@ cleanup() {
   echo "Isolated HA qualification evidence: $output"
   exit "$status"
 }
-trap cleanup EXIT
+trap 'cleanup' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -121,7 +134,7 @@ RUNKITE_TEST_ISOLATED_REDIS_URL="redis://127.0.0.1:$redis_port/0" \
 RUNKITE_TEST_ISOLATED_REPETITIONS="$repetitions" \
   "$python_command" scripts/start-isolated-fixture.py \
     --cli "$RUNKITE_TEST_ISOLATED_CLI" --output-dir "$output/runtime" \
-    --docker-socket "${RUNKITE_TEST_DOCKER_SOCKET:-/var/run/docker.sock}" --tls -- \
+    --docker-socket "$docker_socket" --tls -- \
     "$python_command" -m unittest discover -s test/e2e/isolated -p test_managed.py -v &
 fixture_pid=$!
 test_status=0

@@ -219,6 +219,17 @@ workflow is not evidence that its GitHub runner has passed. Record the actual
 run URL, source revision, versions, elapsed time, faults and retained outputs
 when it is first executed.
 
+Run local qualification against the local Unix Docker socket selected by
+`RUNKITE_TEST_DOCKER_SOCKET` (default `/var/run/docker.sock`). The wrapper pins
+both backends and runtime infrastructure to that endpoint and rejects remote
+hosts, conflicting `DOCKER_HOST` values and nondefault `DOCKER_CONTEXT` values
+before creating containers. Native Linux management uses a loopback-bound
+gateway and host-network supervisor; macOS keeps the bridge management profile.
+The workload's isolated network policy is the same in both. See
+[the platform rationale and failure evidence](internal/constrained-execution.md#local-engine-networking)
+when diagnosing a supervisor that cannot reach its gateway. Do not fix that
+failure by disabling TLS or exposing the gateway on every host interface.
+
 The job has a 45-minute bound and does not cancel an older run on the same ref.
 An inner timeout leaves time for owned cleanup and artifact collection. Safe
 JSON/text evidence is retained for seven days with an `always()` upload step;

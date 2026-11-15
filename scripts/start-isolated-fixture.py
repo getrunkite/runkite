@@ -8,10 +8,12 @@ digests and task-local data. This never installs services or registers a CLI.
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,59 @@ SANDBOX = "ghcr.io/nvidia/openshell/sandbox@sha256:f0fe7dbf18d833acb5da99c405231
 SUPERVISOR = (
     "ghcr.io/nvidia/openshell/supervisor@sha256:deadeacfdba6d12ca27e538d0002696369d4de5a4fcad075ab503495503af9d1"
 )
+
+
+def local_docker_command(socket_name):
+    """Pin all owned infrastructure to the same local Unix daemon socket."""
+    selected = os.environ.get("DOCKER_HOST", "")
+    if selected and not selected.startswith("unix://"):
+        raise ValueError("remote or conflicting Docker hosts are unsupported by the local runtime fixture")
+    if os.environ.get("DOCKER_CONTEXT", "") not in {"", "default"}:
+        raise ValueError("set the explicit local Docker socket instead of a named Docker context for this fixture")
+    socket_path = Path(socket_name)
+    if not socket_path.is_absolute():
+        raise ValueError("fixture Docker socket must be an absolute local Unix path")
+    try:
+        socket_path = socket_path.resolve(strict=True)
+        if not stat.S_ISSOCK(socket_path.stat().st_mode):
+            raise ValueError("fixture Docker socket must be a local Unix socket")
+    except OSError as error:
+        raise ValueError("fixture Docker socket is unavailable") from error
+    if selected and (not Path(selected[7:]).is_absolute() or Path(selected[7:]).resolve() != socket_path):
+        raise ValueError("remote or conflicting Docker hosts are unsupported by the local runtime fixture")
+    return ["docker", "--host", "unix://" + str(socket_path)], str(socket_path)
+
+
+def fixture_network(host, port, tls):
+    """Keep management loopback-only in each supported local engine topology."""
+    scheme = "https" if tls else "http"
+    if host == "Linux":
+        # Linux bridge containers cannot reach a host-published port bound only
+        # to 127.0.0.1. Trusted management companions share native host networking;
+        # the actual workload still uses the upstream network=none boundary.
+        return {
+            "profile": "linux-host-loopback",
+            "bind": f"127.0.0.1:{port}",
+            "health": "",
+            "supervisor_mode": "host",
+            "callback": f"{scheme}://127.0.0.1:{port}",
+            "command": ["--bind-address", "127.0.0.1", "--port", str(port)],
+            "compose": {"network_mode": "host"},
+        }
+    if host == "Darwin":
+        return {
+            "profile": "darwin-bridge-loopback",
+            "bind": "0.0.0.0:8080",
+            "health": 'health_bind_address = "0.0.0.0:8081"',
+            "supervisor_mode": "bridge",
+            "callback": f"{scheme}://host.docker.internal:{port}",
+            "command": ["--bind-address", "0.0.0.0", "--port", "8080"],
+            "compose": {
+                "ports": [f"127.0.0.1:{port}:8080"],
+                "extra_hosts": ["host.docker.internal:host-gateway"],
+            },
+        }
+    raise ValueError("the local runtime fixture supports native Linux or macOS engines only")
 
 
 def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=False, environment=None):
@@ -246,6 +301,12 @@ def main():
     args = parser.parse_args()
     if os.environ.get("RUNKITE_TEST_ISOLATED") != "1":
         parser.error("explicit RUNKITE_TEST_ISOLATED=1 required")
+    try:
+        docker, args.docker_socket = local_docker_command(args.docker_socket)
+        host = platform.system()
+        fixture_network(host, 1, args.tls)
+    except ValueError as error:
+        parser.error(str(error))
     root = Path(__file__).resolve().parents[1]
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -257,6 +318,7 @@ def main():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
+    network = fixture_network(host, port, args.tls)
     endpoint = f"{'https' if args.tls else 'http'}://127.0.0.1:{port}"
     pki = data / "gateway-pki"
     if args.tls:
@@ -284,8 +346,8 @@ allow_unauthenticated_users = true
     config.write_text(f'''[openshell]
 version = 2
 [openshell.gateway]
-bind_address = "0.0.0.0:8080"
-health_bind_address = "0.0.0.0:8081"
+bind_address = "{network["bind"]}"
+{network["health"]}
 compute_driver = "docker"
 log_level = "info"
 {gateway_security}
@@ -295,8 +357,8 @@ public_key_path = "{data}/tls/jwt/public.pem"
 kid_path = "{data}/tls/jwt/kid"
 gateway_id = "{identity}"
 [openshell.drivers.docker]
-supervisor_network_mode = "bridge"
-grpc_endpoint = "{"https" if args.tls else "http"}://host.docker.internal:{port}"
+supervisor_network_mode = "{network["supervisor_mode"]}"
+grpc_endpoint = "{network["callback"]}"
 sandbox_runtime_image = "{SANDBOX}"
 supervisor_image = "{SUPERVISOR}"
 image_pull_policy = "if_not_present"
@@ -323,10 +385,9 @@ app_armor_profile = "Unconfined"
                     "gateway": {
                         "image": GATEWAY,
                         "user": fixture_user,
-                        "group_add": ["0", str(os.stat(args.docker_socket).st_gid)],
-                        "command": [],
-                        "ports": [f"127.0.0.1:{port}:8080"],
-                        "extra_hosts": ["host.docker.internal:host-gateway"],
+                        "group_add": list(dict.fromkeys(["0", str(os.stat(args.docker_socket).st_gid)])),
+                        "command": network["command"],
+                        **network["compose"],
                         "volumes": [
                             f"{args.docker_socket}:/var/run/docker.sock",
                             f"{data}:{data}",
@@ -344,7 +405,7 @@ app_armor_profile = "Unconfined"
             }
         )
     )
-    base = ["docker", "compose", "--env-file", "/dev/null", "--project-name", identity, "-f", str(compose)]
+    base = [*docker, "compose", "--env-file", "/dev/null", "--project-name", identity, "-f", str(compose)]
     cli = [str(Path(args.cli).resolve()), "--gateway-endpoint", endpoint]
     cli_environment = {
         **os.environ,
@@ -379,7 +440,7 @@ app_armor_profile = "Unconfined"
             qualify_gateway_tls(base, cli, cli_environment, directory, pki, log, tls_report)
         image = (
             subprocess.check_output(
-                ["docker", "build", "-q", str(root / "examples/isolated_agent")],
+                [*docker, "build", "-q", str(root / "examples/isolated_agent")],
                 cwd=root,
                 env={**os.environ, "BUILDX_CONFIG": str(directory / "buildx")},
                 timeout=240,
@@ -392,7 +453,7 @@ app_armor_profile = "Unconfined"
         # without the external runtime, so a later denied read is meaningful.
         subprocess.run(
             [
-                "docker",
+                *docker,
                 "run",
                 "--rm",
                 "--entrypoint",
@@ -421,6 +482,9 @@ app_armor_profile = "Unconfined"
                     "image": image,
                     "release": "0.1.8",
                     "project": identity,
+                    "host_platform": host,
+                    "network_profile": network["profile"],
+                    "supervisor_network_mode": network["supervisor_mode"],
                 },
                 indent=2,
             )
