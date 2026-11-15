@@ -62,4 +62,10 @@ Undici 6.21.2. Reports are retained as
 `outputs/runkite-next/node26-mtls-fixed.json`; the archive manifest is in
 `outputs/runkite-next/node22-fix-artifact-final/`. These task-local artifacts
 are separate from the repository. No model provider was called. The initial
-hosted failure remains a failure until the follow-up commit is qualified there.
+hosted attempt remains a recorded failure. The correction subsequently passed
+both mandatory packaged CI jobs after PR #65, and the separate
+[hosted identity run](https://github.com/getrunkite/runkite/actions/runs/43684701615)
+passed on revision `96051cc5b9f88bd4bf9285a227ed4a357d0ea889`. Its packaged
+TypeScript report records Node 22.19.0, bundled Undici 6.21.2 and all four
+direct-mTLS cases. The combined Python HA/runtime evidence in that run has its
+own profile and does not establish TypeScript HA.

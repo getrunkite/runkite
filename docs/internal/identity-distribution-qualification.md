@@ -1,7 +1,7 @@
 # Identity and distribution qualification
 
 Status: maintainer qualification of the untagged 0.8.0 source candidate on
-2026-11-14. Published v0.7.0 is unchanged. This record accompanies
+2026-11-15. Published v0.7.0 is unchanged. This record accompanies
 [RFEs #45 through #52](identity-and-distribution-plan.md); it is not an
 independent assessment or a promise that every deployment is safe.
 
@@ -98,7 +98,7 @@ using the commands in [assessment](../security-assessment.md),
 [distribution](governance-distribution.md). Do not upload the fixture's private
 certificate or recovery directories.
 
-## Pending external gates
+## Hosted qualification
 
 The milestone merged through [PR #64](https://github.com/getrunkite/runkite/pull/64),
 whose final PR CI passed. The
@@ -124,8 +124,30 @@ flags, and keeps the workload's network and Landlock policy unchanged. See
 The corrected fixture passed three bounded cycles on a local Linux arm64 VM
 engine, all five gateway TLS probes and confirmed cleanup; the running gateway
 bind was checked directly. This is separate from hosted Ubuntu amd64 evidence.
-An actual hosted rerun must pass before this gate can be marked complete.
-An ordinary green CI run does not replace this separate qualification.
+The separate hosted gate then passed in
+[run 43684701615](https://github.com/getrunkite/runkite/actions/runs/43684701615)
+on merged revision `96051cc5b9f88bd4bf9285a227ed4a357d0ea889` after
+[PR #66](https://github.com/getrunkite/runkite/pull/66). Its retained
+`build/source.json` identifies version 0.8.0, native Linux x86_64 and all three
+requested repetitions. The host recorded kernel `7.0.0-1014-aws`, Docker Engine
+28.0.4 and Landlock ABI 8.
+
+The installed Python parent and external OpenShell 0.1.8 completed all three
+bounded failover cycles against two actual TLS planes sharing Postgres/Redis.
+The managed evidence records 33.325 seconds. All five gateway TLS probes passed,
+including failed requests during outage and verified recovery after restart;
+owned cleanup was confirmed. The separate packaged TypeScript profile passed
+all four direct-mTLS cases on Node 22.19.0, including same-URI/different-key peer
+rejection and two durable managed turns. That TypeScript profile remains
+SQLite/inprocess, not TypeScript HA.
+
+The safe workflow artifact is `identity-qualification-43684701615-1`. Its
+source, installed dependency inventory and JSON reports are retained locally
+under `outputs/runkite-next/hosted-pr66-qualification/`, outside the repository.
+This closes the bounded hosted-qualification gate. It is neither a registry
+publication nor an independent assessment or long-duration production soak.
+
+## Pending publication and external assessment
 
 First npm/PyPI helper publication, registry authorization and a genuine OIDC publish
 remain unverified. Explicit registry 404 responses establish absence at the
