@@ -117,7 +117,8 @@
           <a href="#managed-pydantic">Pydantic AI</a>,
           <a href="#managed-google-adk">Google ADK</a>,
           <a href="#managed-ui">managed chat and reconnect</a> or
-          <a href="#app-owned">app-owned tool decisions</a>.
+          <a href="#app-owned">app-owned tool decisions</a>, including
+          <a href="#governance-setup">administrator and application setup</a>.
         </p>
 
         <h2>Choose the execution boundary</h2>
@@ -198,6 +199,10 @@
           The separate <code>runkite-governance</code> packages are first published
           on npm and PyPI in v0.8.0. Install only the helper your app uses.
           Installing <code>runkite-runner</code> does not install either helper.
+          The Python base client uses only the standard library and needs Python
+          3.11 or newer; Microsoft middleware is optional. The npm package ships
+          ESM JavaScript and TypeScript declarations for Node.js 22 or newer, with
+          no runtime dependencies. Neither helper is restricted to one framework.
         </p>
         <pre class="mono-block"># TypeScript server application
 npm install runkite-governance
@@ -220,6 +225,77 @@ python -m pip install 'runkite-governance[agent-framework]'</pre>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_ai_sdk">App-owned AI SDK example</a></li>
           <li><a href="https://github.com/getrunkite/runkite/tree/main/examples/governance_agent_framework">Microsoft function-middleware example</a></li>
         </ul>
+
+        <h3 id="governance-setup">Administrator and application setup</h3>
+        <p>Installing a helper adds a client library. The administrator still configures the self-hosted plane, and the app developer still connects the decision to the tool executor. The <a href="https://github.com/getrunkite/runkite/blob/main/docs/app-owned-governance.md">complete operator handbook</a> includes both language probes, rollout guidance and a validation procedure.</p>
+        <h4>1. Prepare the plane and separate credentials</h4>
+        <p>Use Postgres, MySQL or SQLite for pending approvals, durable audit and Admin overlays. Merge the snippets below into your existing full configuration, preserving storage, runner authentication, global operator access and <code>graphs</code>. The loader still requires graphs even though this app does not dispatch one. No runner needs to execute Decide requests, and no MCP connector or managed agent registration is required for these logical policy names. Use HTTPS outside loopback development.</p>
+        <p>The credential strings below are placeholders. Provision real credentials through your existing deployment process. The app key belongs only in its server environment; reviewer credentials are separate.</p>
+        <pre class="mono-block">{
+  "auth": {
+    "type": "api_key",
+    "strict_permissions": true,
+    "keys": {
+      "replace-with-app-api-key": {
+        "name": "notes-backend",
+        "tenant_id": "default",
+        "permissions": ["governance:decide"]
+      },
+      "replace-with-reviewer-api-key": {
+        "name": "notes-reviewer",
+        "tenant_id": "default",
+        "permissions": ["governance:approve"]
+      }
+    }
+  }
+}</pre>
+        <p>The app permission covers Decide and action polling. The authenticated credential selects the tenant; a body <code>tenant_id</code> is only an assertion. That permission does not bind the key to one agent/tool name within its tenant, so choose identities and authorization-relevant arguments in trusted server code. JWT/webhook deployments map the same explicit permissions and verified identities through primary auth.</p>
+        <p>The reviewer signs in to <code>/admin/review</code> for that tenant's approvals. <code>governance:read</code> is the metadata-only alternative. Keep the operator's separate <code>admin</code> credential for global Admin, Grants and Audit. <code>auth.admin_keys</code> alone is not an app Decide credential. For reviewer roles, upgrade all HTTP replicas first. See <a href="admin-login.html">Admin login</a> and <a href="tenant-review.html">Tenant review</a>.</p>
+        <h4>2. Grant a tool and choose its review rule</h4>
+        <p>This example allows the logical <code>notes-app</code> / <code>workspace</code> / <code>createNote</code> tuple, then holds it for human review. Required audit makes a decision-persistence failure deny execution.</p>
+        <pre class="mono-block">{
+  "policy": {
+    "default_effect": "deny",
+    "audit": true,
+    "audit_required": true,
+    "grants": [{
+      "id": "notes-create",
+      "tenant_id": "default",
+      "agent_id": "notes-app",
+      "connector": "workspace",
+      "tools": { "allow": ["createNote"] }
+    }],
+    "mandatory_hitl": [{
+      "id": "notes-review",
+      "tenant_id": "default",
+      "agent_id": "notes-app",
+      "connector": "workspace",
+      "tools": ["createNote"]
+    }]
+  }
+}</pre>
+        <p>An absent <code>policy</code> section makes Decide return HTTP <code>409</code>. An empty <code>"policy": {}</code> enables it and denies unmatched calls until grants exist. You can manage grants and mandatory HITL in Admin on SQL instead. The writing replica reloads immediately; siblings poll within about 15 seconds. Config changes require a restart. A HITL rule holds an otherwise allowed call; it cannot override a deny. Argument predicates can selectively deny or hold app-owned decisions too. See <a href="grants.html#argument-predicates">Grants and HITL</a>.</p>
+        <h4>3. Connect the application</h4>
+        <p>Install its helper using the commands above. Supply <code>RUNKITE_HTTP_URL</code> and <code>RUNKITE_API_KEY</code> in the app server environment and pass their values to the client. The clients do not discover a deployment automatically. Python uses <code>GovernanceClient</code> from <code>runkite_governance</code>; JavaScript uses <code>createGovernanceClient</code> from <code>runkite-governance</code>.</p>
+        <p>The <a href="https://github.com/getrunkite/runkite/blob/main/docs/app-owned-governance.md#4-install-only-the-helper-your-app-needs">Python and JavaScript probes</a> submit the same tool arguments without executing a tool or calling a model. With the example policy, expect <code>effect: pending</code> and an action ID. Python returns <code>action_id</code>; JavaScript returns <code>actionId</code>. Check the effect even on HTTP <code>200</code>, which can also carry a policy deny. Exceptions, timeouts and an unavailable plane must stop execution.</p>
+        <p>For the real tool, put Decide before execution or use <code>createGovernedExecute</code> for supported Node executors. The Python base client does not automatically wrap functions; Microsoft middleware is an optional adapter. Keep pending proposals in the app, including a stable operation ID, the returned action ID and the exact original arguments. The app must authenticate its later continuation requests.</p>
+        <h4>4. Review and continue the saved operation</h4>
+        <p>Open <strong>Admin &gt; Pending</strong> with the operator credential, or <strong>Review &gt; Approvals</strong> at <code>/admin/review</code> with the tenant reviewer. Find the returned action ID, review its requester and arguments, then approve or deny. If quorum is configured, a successful vote may still leave the action pending. Give each reviewer a distinct verified identity when using quorum or requester exclusion.</p>
+        <p>The app polls <code>governance.action(saved_action_id)</code> in Python or <code>await governance.action(savedActionId)</code> in JavaScript. Execute the saved operation only when <code>status</code> is <code>approved</code>. Pending remains held; rejected or consumed must not execute. Proposals still awaiting review expire after 24 hours. Already-approved operations can keep polling as approved after that timestamp, so enforce any execution deadline in the app's saved operation. Approval does not call the app, execute its tool or resume its model loop.</p>
+        <p>Polling does not consume approval. Use an application transaction, downstream idempotency key or existing outbox to prevent repeated side effects. Return promptly for human review and continue through a later app request, rather than holding a serverless request open. The helper's <code>resolve()</code> is a bounded-wait option.</p>
+        <h4>5. Inspect the right records and diagnose failures</h4>
+        <p>Held decisions appear in Pending and the tenant's Review workspace. With SQL audit enabled, policy decisions appear in <strong>Admin &gt; Audit</strong>, correlated by the submitted operation <code>run_id</code>. This path does not populate Threads, Runs, Spend, managed manifests or managed connector-action evidence. Keep execution results in the app's own log. A decision records permission, not proof of execution.</p>
+        <p>The helper sends the tool identity and arguments you supply, not the rest of a chat automatically. The plane evaluates those full arguments. SQL audit and pending records retain decision metadata, the argument digest and a capped, redacted argument display that can still contain application content. Apply your access, backup and retention rules to those records; the exact executable proposal remains the app's responsibility.</p>
+        <ul>
+          <li><strong>401:</strong> check the app credential and primary auth provider.</li>
+          <li><strong>403:</strong> check <code>governance:decide</code>, tenant and any verified-requester requirement. Inspect HTTP <code>200</code> policy denials using their <code>effect</code> and reason code too.</li>
+          <li><strong>409:</strong> enable the plane's <code>policy</code> section.</li>
+          <li><strong>400:</strong> check strict JSON, exact names and a nonempty operation <code>run_id</code> when pending.</li>
+          <li><strong>501:</strong> pending needs SQL. Required audit refuses an unsupported backend at startup.</li>
+          <li><strong>No pending row:</strong> a policy deny creates no approval request. Inspect Audit and the exact grant tuple.</li>
+          <li><strong>Approved but nothing ran:</strong> check the app's saved action ID, quorum, expiry and continuation route. Admin does not execute app-owned tools.</li>
+        </ul>
+        <p class="note">The app keeps its tool credentials and execution safety. Decision helpers provide no run kill switch, break-glass, run spend cap, process sandbox or downstream secret injection. Calls that skip Decide are outside this gate. For managed operational records and controls, choose a runner and its documented connector path.</p>
 
         <h2 id="managed-langgraph">Managed LangGraph and LangGraph.js</h2>
         <p>

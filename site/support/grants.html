@@ -86,7 +86,8 @@
             <h2>What it is</h2>
             <p>
               <strong>Grants</strong> are durable allow rules (tenant/agent/connector). <strong>Predicates</strong>
-              deny or pending a connector <code>tools/call</code> from argument values (config-only; never allow).
+              deny or hold a tool call from argument values at the connector MCP
+              gate or app-owned <code>/governance/decide</code> (config-only; never allow).
               <strong>Mandatory HITL</strong>
               forces matching tool calls to pending even when a grant would allow. <strong>Pending</strong> is the operator queue to approve or deny.
             </p>
@@ -102,11 +103,19 @@
         <p>
           The same policy engine also serves app-owned <code>/governance/decide</code>
           requests. That path creates no managed run and the app owns execution,
-          continuation and idempotency. See <a href="sdk-integration.html">SDK integrations</a>.
+          continuation and idempotency. The independently published Python and
+          JavaScript/TypeScript <code>runkite-governance</code> helpers use that same
+          boundary. See <a href="sdk-integration.html#governance-setup">app-owned
+          governance setup</a> for the app credential, policy configuration, approval
+          workflow and Admin visibility.
         </p>
         <h2>How to implement</h2>
         <ol class="steps">
-          <li>Define connector policy / grants (config defaults + Admin overlays on SQL).</li>
+          <li>Enable the policy engine with a <code>policy</code> section, then define
+            connector grants (config defaults + Admin overlays on SQL). An empty
+            <code>"policy": {}</code> enables default deny; omitting the section does
+            not enable governance. <code>/governance/decide</code> returns HTTP
+            <code>409</code> when the engine is disabled.</li>
           <li>For argument gates (amount, destination), add <code>policy.predicates</code> in the first <code>langgraph.json</code>: not the Grants form. Restart the control plane.</li>
           <li>Add mandatory HITL rules for high-risk tools (Admin or config).</li>
           <li>Drive a connector MCP <code>tools/call</code> that matches. Over-threshold → JSON-RPC <code>-32000</code> pending; under-threshold reaches the connector.</li>
@@ -185,8 +194,13 @@ curl -sf -N -X POST "$BASE/threads/$THREAD/runs/stream" \
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Deny</strong>: tool never reaches the downstream connector (grant, predicate, or webhook).</li>
-          <li><strong>Pending</strong>: operator must act; approve is one-shot for the next matching call with the same argument digest. The Pending queue shows the triggering display map.</li>
+          <li><strong>Deny</strong>: the MCP gate does not forward the call to the
+            downstream connector. An app-owned helper returns deny, and the app must
+            refuse execution.</li>
+          <li><strong>Pending</strong>: operator review is required. Connector approval
+            permits one matching retry under its original run/generation. App-owned
+            approvals are polled and require the app's own idempotency. The Pending
+            queue shows the triggering display map.</li>
           <li><strong>Audit</strong>: decisions are queryable on SQL backends (including <code>args_digest</code> on connector <code>tools/call</code>).</li>
           <li><strong>Admin walkthrough</strong>: see <a href="admin-guide.html#9-grants-policy-grants">Admin UI guide → Grants</a>, <a href="admin-guide.html#10-mandatory-hitl">Mandatory HITL</a>, and <a href="admin-guide.html#11-pending-approval-queue">Pending</a> for a step-by-step of each screen.</li>
         </ul>

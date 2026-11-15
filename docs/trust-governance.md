@@ -8,7 +8,15 @@ This page documents the trust boundary and what is (and is not) enforced today. 
 
 **Admin UI (SQL):** `/admin/grants`, `/admin/mandatory-hitl`, `/admin/pending`, `/admin/kill`, `/admin/break-glass`, `/admin/audit`. See [Admin UI](admin.md#governance-pages-sql-backends).
 
-**In-process tool decide:** `POST /governance/decide` answers one tool call for an app that keeps its own model loop. It does not create a thread or a run, so Admin Threads and Runs stay empty for that app. Grants, mandatory HITL, the pending queue, and audit apply. Kill switches, break-glass, and spend caps do not. The app executes the tool after allow, or after the pending row is approved.
+**In-process tool decide:** `POST /governance/decide` answers one tool call for an app that keeps its own model loop. It does not create a thread or a run, so Admin Threads and Runs stay empty for that app. Grants, argument predicates, mandatory HITL, the pending queue, and configured audit apply. Kill switches, break-glass, and spend caps do not. The app executes the tool after allow, or after the pending row is approved.
+
+The independent Python and JavaScript/TypeScript `runkite-governance` packages
+bring that decision boundary into an existing application. They do not require a
+runner or an MCP connector. Operators configure primary app authentication, SQL
+approval storage and matching policy names on the plane; the app supplies trusted
+identities and retains execution responsibility. Follow the
+[app-owned governance walkthrough](app-owned-governance.md) for setup, Admin and
+Review steps, verification and troubleshooting.
 
 ## Trust boundary
 
@@ -242,7 +250,24 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 | `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(tenant_id, agent_id, run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny + argument digest / config predicates |
 
-Static grants evaluate in-process. Optional **argument predicates** (`policy.predicates` in `langgraph.json`) run after a matching grant and before the sync webhook: they inspect `tools/call` `params.arguments` and may `deny` or `pending`; they never `allow`. Missing `when.path` does not match (the call proceeds to webhook / allow). Numeric comparisons (`eq` / `neq` / `gt` / `gte` / `lt` / `lte`) preserve exact JSON decimal values, including configured thresholds, without binary-float conversion. This is connector MCP, pre-call only: it does not wrap in-graph tools, does not inspect tool responses, and is **not** `AuthorizeTool`. Config-only this release (restart the control plane; no Admin CRUD). Copy-paste and the operator path: [Grants & HITL](../site/support/grants.html#argument-predicates). An optional sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny; first deny wins, and a static allow does **not** bypass the webhook. Policy denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` + `reason_code` on session. **Denials do not trip the connector circuit breaker.**
+Static grants evaluate in-process. Optional **argument predicates**
+(`policy.predicates` in `langgraph.json`) run after grant evaluation and before
+the sync webhook. They inspect MCP `tools/call` `params.arguments`, or `args`
+submitted to app-owned `POST /governance/decide`, and may `deny` or `pending`;
+they never `allow`. Missing `when.path` does not match (the call proceeds to
+webhook / allow). Numeric comparisons (`eq` / `neq` / `gt` / `gte` / `lt` / `lte`)
+preserve exact JSON decimal values, including configured thresholds, without
+binary-float conversion. Both gates evaluate before the cooperating caller's
+tool execution. Neither automatically wraps in-graph tools or inspects tool
+responses, and this is **not** `AuthorizeTool`. Predicates are config-only this
+release (restart the control plane; no Admin CRUD). Copy-paste and the operator
+path: [Grants & HITL](../site/support/grants.html#argument-predicates). An optional
+sync webhook (HMAC, same shape as `preflight_hooks`) can add an external deny;
+first deny wins, and a static allow does **not** bypass the webhook. Policy
+denials use JSON-RPC `-32000` with `data.reason_code` on MCP, or HTTP `403` +
+`reason_code` on session. App-owned Decide returns HTTP `200` with
+`effect: deny`; transport success does not grant execution. **Denials do not trip
+the connector circuit breaker.**
 
 When grants and a webhook are both configured, grants act as a first-pass allowlist: a request with no matching grant is denied immediately and the webhook is never called. Predicates are not consulted on a grant deny either. `default_effect: allow` is only honored when there is **no** webhook (grants-only setups). With a webhook and no grants, the webhook decides; `default_effect` is the fallback if nothing else returns.
 
@@ -330,7 +355,10 @@ Example:
 }
 ```
 
-Absent / empty `policy` preserves V1 open access after runner auth + run-binding.
+An absent `policy` section preserves legacy connector access after runner auth
+and run-binding; app-owned Decide returns HTTP 409 because the engine is
+disabled. An empty `"policy": {}` enables the engine and denies unmatched calls
+until grants are configured.
 
 <a id="revision-bound-review-and-lifecycle-controls-unreleased"></a>
 

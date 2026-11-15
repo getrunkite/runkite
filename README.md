@@ -152,6 +152,8 @@ The managed Node.js runner does not require the governance helper. See
 [packages and downloads](https://getrunkite.com/#packages) or the
 [complete installation map](site/support/install.html#packages) for binary,
 registry and container choices.
+For helper deployments, the [app-owned governance guide](docs/app-owned-governance.md)
+walks through administrator configuration, application integration and review.
 
 ### Bring your framework
 

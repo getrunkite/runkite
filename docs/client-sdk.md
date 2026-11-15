@@ -309,6 +309,12 @@ they are not substitutes for a full application client.
 
 ## Embedded governance helper
 
+For the administrator and application setup in one place, follow
+[App-owned tool governance](app-owned-governance.md). It covers separate app and
+reviewer credentials, SQL storage, exact grants, pending review, both language
+clients, execution ownership and troubleshooting. Installing a helper alone does
+not configure the plane's policy or wrap an application's tools.
+
 [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs. Both helpers are published independently as `runkite-governance` from v0.8.0. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Pass an `AbortSignal` (TypeScript) or a `threading.Event` (Python) and the poll stops when the caller aborts.
 
 ### Install decision helpers (v0.8.0)

@@ -2,9 +2,15 @@
 
 A standard-library-only Python client for `POST /governance/decide` and `GET /governance/actions/{id}` on your self-hosted Runkite plane. It does not depend on the runner package or an agent framework.
 
-This helper has its own distribution, separate from `runkite-runner`. The
-published Runkite 0.7.0 release did not include it. Use the registry command
-only for a version whose publication has been verified:
+Use this helper when an existing Python service keeps its agent loop and needs
+an allow, deny or pending answer before a tool call. It works with ordinary
+application code; Microsoft function middleware is an optional integration, not
+a requirement. A managed `runkite-runner` instead executes assignments
+dispatched by the control plane and does not require this helper.
+
+This helper has its own distribution, separate from `runkite-runner`, first
+published in Runkite v0.8.0. Published v0.7.0 did not include it. Install a
+verified registry release with:
 
 ```sh
 python -m pip install runkite-governance
@@ -19,10 +25,26 @@ python -m pip install ./python/runkite_governance
 The runtime requires Python 3.11 or newer. Installing a managed runner does not
 install this decision-only helper.
 
+## Configure the plane and application
+
+The administrator configures authentication, tenant-scoped grants, optional
+human approval and durable SQL review storage on the control plane. The
+application installs this helper and supplies its plane URL and server-side API
+key. Follow the [operator and application setup guide](https://getrunkite.com/support/sdk-integration.html#governance-setup)
+or the [repository handbook](https://github.com/getrunkite/runkite/blob/main/docs/app-owned-governance.md)
+for the complete setup, Admin review flow and troubleshooting.
+
+Import the same module after a registry or checkout installation:
+
 ```python
+import os
 from runkite_governance import GovernanceClient
 
-governance = GovernanceClient("http://localhost:2026", api_key="server-side-key", timeout_ms=10_000)
+governance = GovernanceClient(
+    os.environ["RUNKITE_HTTP_URL"],
+    api_key=os.environ["RUNKITE_API_KEY"],
+    timeout_ms=10_000,
+)
 decision = governance.decide(
     agent_id="notes-app",
     connector="workspace",
@@ -33,6 +55,13 @@ decision = governance.decide(
 ```
 
 Your application executes after `allow`, refuses after `deny`, and persists the action ID and exact original arguments after `pending`. On a later application request, use `governance.action(action_id)` and execute only after `approved`. Rejected or consumed actions must not execute. Implement idempotency in the application's database: GET does not consume approval.
+
+If `decide`, `action` or `resolve` raises, stop the operation without executing
+the tool. HTTP/protocol and deadline failures can raise `GovernanceError`;
+network failures can also propagate standard-library transport exceptions.
+Do not treat an exception, an unavailable plane or a timeout as allow. Handle
+the failure at the application's request boundary and retain any saved pending
+operation for an explicit later continuation.
 
 `resolve(...)` performs a bounded wait and returns an allow/deny outcome. Its deadline covers the initial decision and every poll. `decide` and `action` accept `timeout_ms` and a `threading.Event` as `cancelled`. Cancellation stops the caller promptly. Blocking standard-library I/O unwinds separately with a socket timeout and response-chunk checks; a bounded shared worker pool prevents unlimited abandoned resolver/socket threads. Do not hold a serverless request open for long operator approval.
 

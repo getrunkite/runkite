@@ -1,10 +1,16 @@
 # Runkite governance helper
 
-This small TypeScript helper calls a self-hosted Runkite plane for tool decisions. Your application keeps its model loop, conversation storage and tool execution. This is not the Agent Protocol client SDK.
+This small JavaScript/TypeScript helper calls a self-hosted Runkite plane for tool decisions. Your application keeps its model loop, conversation storage and tool execution. This is not the Agent Protocol client SDK.
 
-This helper has its own distribution, separate from `runkite-runner`. The
-published Runkite 0.7.0 release did not include it. Use the registry command
-only for a version whose publication has been verified:
+Use this helper when an existing Node application needs an allow, deny or
+pending answer before its own tool executes. It ships compiled JavaScript and
+TypeScript declarations, so plain JavaScript applications use the same package.
+A managed `runkite-runner` instead executes assignments dispatched by the
+control plane and does not require this helper.
+
+This helper has its own distribution, separate from `runkite-runner`, first
+published in Runkite v0.8.0. Published v0.7.0 did not include it. Install a
+verified registry release with:
 
 ```sh
 npm install runkite-governance
@@ -20,13 +26,28 @@ npm test
 npm pack
 ```
 
-Install the resulting local tarball in your application, then import the package:
+For the checkout path, install the resulting local tarball in your application.
 
-```typescript
+## Configure the plane and application
+
+The administrator configures authentication, tenant-scoped grants, optional
+human approval and durable SQL review storage on the control plane. The
+application installs this helper and supplies its plane URL and server-side API
+key. Follow the [operator and application setup guide](https://getrunkite.com/support/sdk-integration.html#governance-setup)
+or the [repository handbook](https://github.com/getrunkite/runkite/blob/main/docs/app-owned-governance.md)
+for the complete setup, Admin review flow and troubleshooting.
+
+After either registry or tarball installation, import the package in your
+server-side JavaScript or TypeScript code:
+
+```javascript
 import { createGovernanceClient } from "runkite-governance";
 
+const baseUrl = process.env.RUNKITE_HTTP_URL;
+if (!baseUrl) throw new Error("Set RUNKITE_HTTP_URL in the server process");
+
 const governance = createGovernanceClient({
-  baseUrl: process.env.RUNKITE_HTTP_URL!,
+  baseUrl,
   apiKey: process.env.RUNKITE_API_KEY,
   timeoutMs: 10_000,
 });
@@ -44,6 +65,13 @@ The runtime requires Node 22 or newer and has no runtime npm dependencies.
 This is a separate package from `runkite-runner`.
 
 `allow` means the trusted application may execute the exact arguments it submitted. `deny` means it must not execute them. For `pending`, persist the returned `actionId` and the original arguments in the application's own database. On a later request, call `governance.action(actionId)` and continue only when its status is `approved`. Rejected or consumed actions must not execute. Do not replace the original arguments on continuation.
+
+If `decide`, `action` or `resolve` rejects, stop the operation without executing
+the tool. HTTP/protocol and deadline failures can raise `GovernanceError`;
+fetch and cancellation failures can propagate other error types. Do not treat
+an exception, an unavailable plane or a timeout as allow. Handle the failure at
+the application's request boundary and retain any saved pending operation for
+an explicit later continuation.
 
 `resolve(call, { signal, timeoutMs })` is convenient for a bounded wait in a long-lived backend. Its total deadline includes the initial decision and all HTTP/polling. `decide` and `action` also have a client timeout, and accept an AbortSignal. Do not hold a serverless HTTP request open for a lengthy operator approval. See `examples/governance_ai_sdk` for an app-owned continuation and idempotent execution example.
 

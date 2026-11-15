@@ -6,6 +6,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Consolidate app-owned governance setup for administrators and application
+  developers, including the independent Python/npm helpers, separate credentials,
+  SQL grants and review, pending continuation and Admin visibility. Correct the
+  documentation that limited argument predicates to connector calls; the same
+  predicates also apply to submitted app-owned decisions. This documentation
+  update changes no runtime or published v0.8.0 artifact.
 - Correct package publication tooling after the immutable v0.8.0 tag for npm
   12's package-keyed `pack --json` response. A manual, package-only recovery
   controller builds npm artifacts from the original tag and verifies the

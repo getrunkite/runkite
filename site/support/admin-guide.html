@@ -421,7 +421,10 @@
           <strong>What it's for:</strong> the allowlist that decides which agent can use which
           connector, and which specific tools on that connector. Without a grant, a connector
           call is denied by default, this is a safety default, not a bug you need to work
-          around by disabling something.
+          around by disabling something. This default applies when the policy engine is
+          enabled with its default deny behavior. An omitted <code>policy</code> section
+          does not enable governance; <code>"policy": {}</code> enables it and denies
+          unmatched calls until grants are configured.
         </p>
         <p>
           <strong>What you'll see:</strong> a table of grants, each one says "agent X may use
@@ -437,10 +440,19 @@
           <li>Save. The change takes effect on the replica you're talking to immediately, and on every other control-plane replica within about 15 seconds (they poll for changes, there's no manual "sync" step).</li>
         </ol>
         <p>Edit or delete a grant the same way, from the same table.</p>
+        <p>For an app using either <code>runkite-governance</code> helper, match the
+          tenant from its primary credential and the server-owned agent, connector
+          and tool names sent by that app. These names do not require a managed agent
+          or MCP connector registration. The app key needs
+          <code>governance:decide</code>; it is separate from an Admin login or runner
+          token. Follow the <a href="sdk-integration.html#governance-setup">app-owned
+          governance operator walkthrough</a> before connecting the helper.</p>
         <p>
           <strong>Argument predicates are not this screen.</strong> Amount / destination gates live in
           <code>langgraph.json</code> as <code>policy.predicates</code> (config-only; restart the control plane).
-          They run after a matching grant and before the sync webhook, on connector MCP <code>tools/call</code> only.
+          They run after grant evaluation and before the sync webhook for both
+          connector MCP <code>tools/call</code> and app-owned
+          <code>POST /governance/decide</code> requests.
           Copy the example on <a href="grants.html#argument-predicates">Grants &amp; HITL → argument predicates</a>.
           For pending, open <a href="#11-pending-approval-queue">Pending</a> and hover the <strong>Args</strong> column to review its capped, redacted display map. Approval binds the submitted arguments' digest, not that display map. A plain deny creates no pending row; inspect its decision in <a href="#14-audit">Audit</a>.
         </p>

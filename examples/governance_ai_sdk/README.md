@@ -18,11 +18,18 @@ application job with a clear status instead.
 
 For a pending decision, the server persists and returns the plane's `actionId` immediately. An operator resolves that action in Runkite Admin. A later application request continues the exact stored operation. It never holds an HTTP request open while waiting for operator approval.
 
+For administrator setup, API-key permissions, policy configuration and the
+review flow, use the [operator and application setup guide](https://getrunkite.com/support/sdk-integration.html#governance-setup)
+or the [repository handbook](../../docs/app-owned-governance.md).
+
 This example uses pinned `ai@7.0.155` and `@ai-sdk/openai@4.0.104` public `generateText`, `tool`, `jsonSchema` and `createOpenAI` APIs. It does not use the SDK's chat-user approval flags as a substitute for operator approval.
 
 ## Run
 
-Use Node 22.13 or newer and a running self-hosted Runkite plane with a SQL backend. Build the local helper first; neither governance helper was published by this change:
+Use Node 22.13 or newer and a running self-hosted Runkite plane with a SQL backend.
+The independent `runkite-governance` npm and PyPI packages were first published
+in v0.8.0. This checkout example uses the local helper through its file
+dependency, so build that helper first:
 
 ```sh
 cd typescript/runkite-governance
@@ -63,6 +70,10 @@ Add a matching grant and mandatory HITL rule to your existing Runkite configurat
 ```
 
 `workspace` is a logical policy name; it does not require an MCP connector. `notes-app` need not be registered as a runner agent. Merge this policy with your real configuration and use your key's tenant. Removing the HITL rule exercises immediate allow. A missing matching grant exercises deny when policy is configured.
+
+An authentication failure, unavailable plane, malformed response, cancellation
+or deadline failure must stop the tool call. This example does not turn a failed
+decision request into allow or fall back to ungoverned execution.
 
 Submit a turn with a stable application idempotency key:
 

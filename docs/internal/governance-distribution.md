@@ -24,6 +24,23 @@ approval/resume, streaming tool execution or a sandbox. The Microsoft middleware
 retains native mutable execution containers and its documented application
 cooperation requirement.
 
+## Operator handoff
+
+The package is installed in the application backend, while authentication and
+policy are configured on the existing self-hosted plane. Keeping those steps
+separate avoids mistaking an installed helper for enabled governance. Python and
+Node applications use the same decision API and policy engine; they need
+language-specific clients, not separate control planes.
+
+The [operator walkthrough](../app-owned-governance.md) ties primary
+`governance:decide` credentials, SQL pending/audit storage, logical policy names,
+Admin grants and approval continuation into one procedure. The app credential is
+not a runner token or an independent `auth.admin_keys` entry. A logical
+agent/connector name does not require managed registration. Operators review
+submitted decisions in Pending/Audit, not Threads/Runs or managed connector
+execution evidence. The app remains responsible for saved arguments, ownership
+checks and idempotent execution after approval.
+
 ## Package contract
 
 - `typescript/runkite-governance` is an independent ESM package with exported
