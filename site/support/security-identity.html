@@ -50,7 +50,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
-          <a class="active" aria-current="page" href="security-identity.html">Identity and usage (next)</a>
+          <a class="active" aria-current="page" href="security-identity.html">Identity and usage (v0.8.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -80,7 +80,7 @@
         <p class="kicker">Govern and operate</p>
         <h1>Identity, delegation and usage</h1>
         <p class="lead">Connect an agent operation to its requesting identity, authenticated worker and external credential audit.</p>
-        <p class="note"><strong>Next release preview:</strong> these additions follow v0.7.0 and are not in its published artifacts. Build matching current plane and runner source for evaluation. Governance helper publication and independent external assessment remain separately verified gates.</p>
+        <p class="note"><strong>Available in v0.8.0:</strong> use matching plane and runner artifacts for these opt-in controls. They are not included in published v0.7.0 artifacts. The separate <code>runkite-governance</code> helpers are first published on npm and PyPI in v0.8.0. Independent external assessment remains pending.</p>
         <p><strong>Maintenance upgrade:</strong> back up, drain all runners and writers, apply Postgres/SQLite migration 22 or MySQL migration 23, and replace every replica before enabling strict ownership. Mixed old/new writers are unsupported. Follow the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md">operator upgrade guide</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/isolated-usage.md">usage design and rollout</a>.</p>
 
         <h2 id="which-identity">Four identities with different responsibilities</h2>

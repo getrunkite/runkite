@@ -1,8 +1,9 @@
 # Identity and distribution milestone
 
-This record tracks the eight agreed follow-ups after v0.7.0. It is an
-implementation and qualification plan, not a claim that all external gates
-have passed. Each RFE includes its caller, existing implementation, acceptance
+This record tracks the v0.8.0 identity and distribution milestone following
+v0.7.0. It separates implementation, qualification and publication from
+external gates; it does not claim that independent assessment or production
+soak has passed. Each RFE includes its caller, existing implementation, acceptance
 criteria, boundaries and linked engineering record.
 
 ## Work order and traceability
@@ -14,8 +15,8 @@ criteria, boundaries and linked engineering record.
 2. [RFE #48: immutable publication recovery](https://github.com/getrunkite/runkite/issues/48).
    Build once, validate existing registry artifacts before accepting a rerun,
    distinguish an explicit missing version from a failed registry lookup, and
-   record actual trusted-publishing outcomes. A future genuine publication is
-   needed to establish live OIDC evidence.
+   record actual trusted-publishing outcomes. Only an observed genuine OIDC
+   publication establishes live OIDC evidence.
 3. [RFE #46: isolated usage](https://github.com/getrunkite/runkite/issues/46).
    Define explicit unknown, reported zero, partial and complete reports. Commit
    cumulative snapshots through the existing SQL completion boundary; retain

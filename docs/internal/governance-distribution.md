@@ -1,11 +1,11 @@
 # Governance helper distribution and release recovery
 
-This implements the packaging and release preparation tracked in
+Availability: v0.8.0. The packaging and immutable recovery contracts tracked in
 [#45](https://github.com/getrunkite/runkite/issues/45) and
-[#48](https://github.com/getrunkite/runkite/issues/48). It does not publish a
-package, introduce a new model loop, or change the decision API. Published
-Runkite 0.7.0 artifacts did not include these helper distributions. Keep that
-availability distinction until a subsequent registry publication is verified.
+[#48](https://github.com/getrunkite/runkite/issues/48) distribute the existing
+helpers without introducing a model loop or changing the decision API.
+Published Runkite 0.7.0 artifacts did not include these independent npm/PyPI
+distributions. Registry publication and live OIDC evidence remain distinct.
 
 ## Caller and boundary
 

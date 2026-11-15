@@ -340,17 +340,19 @@ pools. Published v0.6.1 artifacts do not implement these controls.
   one worker, external multi-replica workload or live model/provider. Existing SDK
   adapters do not become sandboxed merely by selecting a pool. See the
   [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
-- Published v0.7.0 has no supported isolated usage frame. Current v0.8.0 source
-  adds the bounded reporting contract below. Neither version can infer absent
+- Published v0.7.0 has no supported isolated usage frame. v0.8.0 adds the bounded
+  reporting contract below. Neither version can infer absent
   provider charges from zero recorded spend.
 
 See [support operations](../site/support/security-completion.html) and
 [upgrade constraints](ops-runbook.md#security-completion-upgrade).
 
-## Identity and isolated usage boundaries (v0.8.0 source)
+<a id="identity-and-isolated-usage-boundaries-v080-source"></a>
 
-This version is prepared locally and is not yet tagged or published. Optional
-strict mTLS ownership distinguishes workers by verified URI, public-key hash and
+## Identity and isolated usage boundaries (v0.8.0)
+
+v0.8.0 adds optional strict mTLS ownership that distinguishes workers by verified
+URI, public-key hash and
 certificate expiry. It requires compatible SQL state, an in-process or Redis
 queue and direct verified TLS on both runner surfaces. A fleet token remains
 required. This proves possession of the configured credential, not hardware

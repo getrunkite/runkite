@@ -4,9 +4,24 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
-Preparing the coordinated 0.8.0 source candidate. No v0.8.0 publication is
-claimed. [RFEs #45 through #52](docs/internal/identity-and-distribution-plan.md)
-track code, qualification and external gates separately.
+### Fixed
+
+- Correct package publication tooling after the immutable v0.8.0 tag for npm
+  12's package-keyed `pack --json` response. A manual, package-only recovery
+  controller builds npm artifacts from the original tag and verifies the
+  original retained PyPI distributions without uploading them again. The
+  source and artifact checks still fail closed. This changes release
+  orchestration after the tag, separately from v0.8.0 runtime code, binaries,
+  container images and already-published packages. See the
+  [recovery procedure](docs/releasing.md#recover-an-existing-release-without-moving-its-tag).
+
+## [0.8.0](https://github.com/getrunkite/runkite/releases/tag/v0.8.0) - 2026-11-15
+
+Coordinated identity and distribution release, including the first independent
+TypeScript and Python governance helper packages.
+[RFEs #45 through #52](docs/internal/identity-and-distribution-plan.md) track
+implementation, qualification and external gates separately. Publication does
+not establish independent assessment or a particular publishing-authentication path.
 
 ### Added
 
@@ -33,8 +48,9 @@ track code, qualification and external gates separately.
 - [RFEs #45 and #48](docs/internal/governance-distribution.md): governance helper
   installed-artifact checks and coordinated npm/PyPI release jobs, plus immutable
   publication recovery. Registry errors and mismatching existing artifacts fail
-  closed. Helpers remain unpublished until their first actual publication is
-  verified; a prepared job is not proof that OIDC has published a release.
+  closed. Both governance helpers first ship as independent npm/PyPI packages
+  in v0.8.0. Registry verification remains distinct from evidence of a genuine
+  OIDC publication.
 - [RFEs #47 and #52](docs/security-assessment.md): reproducible adversarial and
   combined external-runtime HA/TLS qualification tools, an explicit manual CI
   gate and an independent-review handoff. The external bridge remains

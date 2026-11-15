@@ -87,7 +87,7 @@ and [upgrade procedure](docs/ops-runbook.md#security-completion-upgrade).
 The [v0.7.0 qualification record](docs/internal/security-completion-qualification.md)
 collects that release's tested backends, installed SDK profiles, failure cases
 and gates. Its JSONL profile did not report model/token usage or settle model
-spend. The v0.8.0 source adds durably acknowledged cumulative usage reports for
+spend. v0.8.0 adds durably acknowledged cumulative usage reports for
 the configured isolated profile on SQL, with terminal settlement including
 cancellation. Partial reports settle only acknowledged usage; missing
 measurements stay unknown, and a complete reported zero remains distinct.
@@ -95,20 +95,23 @@ These are workload claims, not
 provider-verified bills or hard limits inside a sandbox. Native SDK usage
 reporting remains a separate capability.
 
-### Identity and distribution in v0.8.0 source
+<a id="identity-and-distribution-in-v080-source"></a>
 
-The v0.8.0 source includes an opt-in authenticated-workload ownership profile,
+### Identity and distribution in v0.8.0
+
+v0.8.0 includes an opt-in authenticated-workload ownership profile,
 constrained delegated token exchange, external audit correlation and explicit
 isolated-workload usage reports. Admin displays admission and worker identity,
 Vault request IDs and unavailable/partial usage separately. These additions are
-not in v0.7.0 artifacts. The TypeScript and Python governance helpers have
-independent distributions and installed-artifact tests. Check
-[Releases](https://github.com/getrunkite/runkite/releases),
+not in v0.7.0 artifacts. The TypeScript and Python governance helpers first ship
+as independent `runkite-governance` packages in v0.8.0, with installed-artifact
+tests and verified public downloads. See the
+[v0.8.0 release](https://github.com/getrunkite/runkite/releases/tag/v0.8.0),
 [npm](https://www.npmjs.com/package/runkite-governance) and
-[PyPI](https://pypi.org/project/runkite-governance/) for actual published
-availability; source and package version metadata alone do not establish it.
+[PyPI](https://pypi.org/project/runkite-governance/).
 
-Follow the [eight tracked RFEs](docs/internal/identity-and-distribution-plan.md),
+Follow the [coordinated upgrade](docs/ops-runbook.md#identity-and-distribution-upgrade-v080),
+[eight tracked RFEs](docs/internal/identity-and-distribution-plan.md),
 [identity and usage guide](site/support/security-identity.html) and
 [adversarial assessment handoff](docs/security-assessment.md). The external
 runtime bridge remains experimental. Maintainer qualification is not an
@@ -148,7 +151,7 @@ value rather than execution idempotency.
 
 ### Bring your framework
 
-The v0.8.0 runner source retains these profiles from v0.7.0. Check the runner
+The v0.8.0 runners retain these profiles from v0.7.0. Check the runner
 registry links above for published versions, and deploy matching plane and runner
 artifacts. Each profile supports its documented subset of native features.
 

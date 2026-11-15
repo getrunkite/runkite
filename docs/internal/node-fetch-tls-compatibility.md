@@ -1,6 +1,6 @@
 # Built-in fetch and the TypeScript TLS dispatcher
 
-Status: correction to the untagged 0.8.0 candidate, following the first hosted
+Availability: v0.8.0. The correction followed the first hosted
 identity qualification on the merged eight-RFE milestone. This extends the
 qualification for [RFE #49](https://github.com/getrunkite/runkite/issues/49) and
 [RFE #47](https://github.com/getrunkite/runkite/issues/47).

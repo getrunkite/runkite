@@ -33,7 +33,7 @@ continuation, exact saved arguments and execution idempotency.
 
 Terminology matters: framework SDKs execute agents; Agent Protocol clients call
 the plane; the published `runkite-runner` packages execute assignments; the
-unpublished governance helpers only request decisions. There is no general
+independent governance helpers only request decisions. There is no general
 first-party Runkite client SDK yet. The public
 [integration guide](../site/support/sdk-integration.html) compares the paths.
 
@@ -147,7 +147,7 @@ the dedicated `runkite-runner-agent-framework` entrypoint. The installed module
 is `python -m agent_framework_adapter`; no `PYTHONPATH` is required. This packaging
 is included in the published PyPI `0.6.1` artifact. Install with
 `pip install 'runkite-runner[agent-framework]'` or the local source package shown
-in the example. This is a runner profile, separate from the unpublished
+in the example. This is a runner profile, separate from the independent
 governance helper's extra.
 
 It uses public Agent streaming and session APIs, stores native session history in
@@ -309,15 +309,21 @@ they are not substitutes for a full application client.
 
 ## Embedded governance helper
 
-[`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs, and they are not published. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Pass an `AbortSignal` (TypeScript) or a `threading.Event` (Python) and the poll stops when the caller aborts.
+[`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) call `POST /governance/decide` and `GET /governance/actions/{action_id}`. They are not the SDK above. They do not create threads or runs. Both helpers are published independently as `runkite-governance` from v0.8.0. The app still executes the tool after `allow`. `resolve()` polls until the pending row is approved (returned as allow) or rejected or consumed (returned as deny). Default wait is 60 seconds. Pass an `AbortSignal` (TypeScript) or a `threading.Event` (Python) and the poll stops when the caller aborts.
 
-### Local package builds
+### Install decision helpers (v0.8.0)
 
-The unreleased v0.8.0 source candidate prepares independent npm and PyPI
-distributions. The TypeScript build produces JavaScript and declarations; the
-Python base client has no runtime dependencies. Neither helper is a verified
-registry release. Published v0.7.0 runner packages do not include them. Install
-from a checkout until the first helper publication is verified.
+The independent npm and PyPI distributions first ship in v0.8.0. The TypeScript
+package includes JavaScript and declarations; the Python base client has no
+runtime dependencies. Installing `runkite-runner` does not install either
+helper, and published v0.7.0 runner packages did not include them.
+
+```sh
+npm install runkite-governance
+python -m pip install runkite-governance
+```
+
+For a source checkout, build or install locally:
 
 ```sh
 cd typescript/runkite-governance
@@ -333,9 +339,10 @@ Install the npm tarball in the application that owns the model loop. See each
 package README and the [AI SDK example](../examples/governance_ai_sdk/README.md).
 The import is `runkite-governance` in TypeScript and `runkite_governance` in
 Python. For the optional Microsoft middleware, install
-`'./python/runkite_governance[agent-framework]'` from the repository root.
+`'runkite-governance[agent-framework]'`, or
+`'./python/runkite_governance[agent-framework]'` when using a checkout.
 Use `make test-governance-ts` and `make test-governance-agent-framework` for
-the existing framework examples. The candidate's installed-artifact gates
+the existing framework examples. The installed-artifact gates
 also exercise the actual npm tarball and Python wheel/sdist outside the
 checkout; source tests alone do not establish package publication.
 The default 60-second timeout covers decide, polling HTTP headers/bodies and
@@ -365,7 +372,7 @@ The AI SDK example also tests ordinary guarded tools inside `streamText`,
 including text chunks, allow/deny/pending results, policy failure and cancellation.
 Streaming chat output does not require streaming tool executors.
 
-`createGovernedExecute` lives in the unpublished `runkite-governance` package,
+`createGovernedExecute` lives in the independent `runkite-governance` package,
 not in published `runkite-runner`. Its `runId` is a stable application operation
 identifier. Neither the helper nor the decision endpoint deduplicates tool
 effects, creates managed runs, or proves an allowed tool actually executed.
@@ -378,7 +385,7 @@ framework core. `runkite_governance.agent_framework` exports
 executes only after allow, and stops the agent with a native middleware failure
 on deny, pending or policy failure. The base client remains dependency-free.
 
-This middleware ships in the unpublished Python `runkite_governance` package
+This middleware ships in the Python `runkite-governance` distribution from v0.8.0
 (extra `agent-framework`, pinned to `agent-framework-core==1.23.0`). It does not
 create Admin Threads/Runs by itself.
 
@@ -415,11 +422,12 @@ SDKs may implement that workload protocol deliberately, keeping management
 credentials outside the child. Published v0.7.0 did not define model/token-usage
 reporting or spend settlement for that profile.
 
-The unreleased v0.8.0 candidate adds versioned cumulative usage frames for the
+v0.8.0 adds versioned cumulative usage frames for the
 configured isolated profile on SQL. The plane durably acknowledges each report
 and settles the retained snapshot through managed completion, including
-cancellation. Missing or partial measurements remain explicitly unmetered;
-reported zero requires actual zero counters and a complete workload report.
+cancellation. Partial reports settle acknowledged usage and leave coverage
+incomplete. Missing reports remain unknown; reported zero requires actual zero
+counters and a complete workload report.
 These are attributed workload claims, not provider-verified bills or hard
 budget enforcement inside a sandbox. Native SDK usage reporting is separate.
 See [the isolated example](../examples/isolated_agent/README.md),

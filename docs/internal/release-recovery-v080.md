@@ -1,13 +1,13 @@
 # v0.8.0 package recovery
 
-Status: forward recovery preparation and partial publication verified on
-November 15, 2026. The original
+Status: publication verified on November 15, 2026. The original
 [Release run 43695507859](https://github.com/getrunkite/runkite/actions/runs/43695507859)
 completed its Docker job successfully, and the Go release assets were separately
 verified. Both Python packages are public and match their original retained
 distributions. All six published image variants passed runtime checks and the
-configured vulnerability gate. The npm recovery has not been published. See
-the [artifact qualification checkpoint](identity-distribution-qualification.md#actual-partial-publication)
+configured vulnerability gate. Both npm packages now pass public integrity and
+content checks against the exact retained recovery tarballs. See the
+[artifact qualification checkpoint](identity-distribution-qualification.md#verified-v080-publication)
 for executed checks, evidence and remaining publication gates. This record extends
 [RFE #45, governance helper distribution](https://github.com/getrunkite/runkite/issues/45)
 and [RFE #48, immutable publication recovery](https://github.com/getrunkite/runkite/issues/48).
@@ -95,7 +95,39 @@ repositories or incomplete job evidence. They use synthetic metadata and no
 publishing credentials. The workflow also checks each built or downloaded
 manifest against the requested package and release version before proceeding.
 
-Keep the original failed package job outcomes in the record. Record the actual
-manual recovery run, artifact hashes and registry verification separately when
-it succeeds. Prepared workflows, passing local tests and verified Go/container
-publication do not establish that the npm recovery has completed.
+## Completed recovery
+
+[PR #68](https://github.com/getrunkite/runkite/pull/68) merged the controller at
+`6c39349b83ca93f1324970ec8cccef9aff2ebca1`, with all ten PR checks and main CI
+passing. [Recovery 43701397992](https://github.com/getrunkite/runkite/actions/runs/43701397992)
+validated the immutable source and both PyPI packages. Its npm builds and
+installed-helper checks passed, but CI authorization did not permit upload.
+Both intended tarballs and their original manifests/source receipts were
+retained. The maintainer then published those exact files through the personal
+`sharanharsoor` npm session, with publication hooks disabled:
+
+- `runkite-runner-0.8.0.tgz`, SHA256
+  `3e8a0caf1bf9ceb818cef9630cafb96ad3ee0dcdf33503fb417265bf558cbce3`.
+- `runkite-governance-0.8.0.tgz`, SHA256
+  `19c2c3ed69d2c181883603b228fce72e45fe219baf1b8bc070d9b3f7421b6a96`.
+
+After npm acknowledged the uploads, version metadata became visible before
+the standard tarball URLs. Actual download responses were cached HTTP 404s
+with `Cache-Control: public, max-age=300`. Uploading again was not the remedy.
+The verifier continued to fail closed; after the standard download URLs became
+available, both public tarballs passed SHA512 integrity, SHA256 and member
+checks against the retained manifests. An uncached diagnostic request did not
+replace the standard-URL verification gate.
+
+A fresh [verification run 43702484102](https://github.com/getrunkite/runkite/actions/runs/43702484102)
+passed source validation and all four package-verification jobs. It recognized
+matching existing npm contents and verified original PyPI files without
+uploading. The first recovery's intended artifacts and failed authentication
+outcomes remain intact. The successful run does not prove npm OIDC publication;
+the actual npm path was personal interactive authentication. The original PyPI
+helper upload did exercise its Trusted Publisher.
+
+Future npm automation still needs package-specific authorization before its
+next genuine publication. Configure it close to that release because a new
+unused npm Trusted Publisher expires after two days. No dummy version or
+replacement of an existing artifact is justified to validate that setup.

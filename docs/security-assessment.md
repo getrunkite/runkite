@@ -1,7 +1,8 @@
 # Security assessment and independent reviewer handoff
 
-Status: preparation for [RFE #52](https://github.com/getrunkite/runkite/issues/52),
-unreleased source after v0.7.0. Independent assessment remains **pending**.
+Status: v0.8.0 reviewer handoff for
+[RFE #52](https://github.com/getrunkite/runkite/issues/52).
+Independent assessment remains **pending**.
 Maintainer tests, automated scans and a second engineering agent's review do not
 constitute an independent security assessment or certification.
 
@@ -20,8 +21,8 @@ Protected assets include tenant conversations/checkpoints, runner assignments,
 tool authority and approvals, credential lifecycle handles, action evidence,
 usage records and export delivery state.
 
-This review should include both published v0.7.0 behavior and the explicitly
-unreleased changes below. Record the exact revision and local changes used for
+This review should include both published v0.7.0 and v0.8.0 behavior. Record the
+exact revision and local changes used for
 each result. Do not project a result from one version or backend onto another.
 
 - [RFE #45](https://github.com/getrunkite/runkite/issues/45): installed governance
@@ -201,7 +202,7 @@ hashes, and invokes `scripts/test-isolated-ha.sh` on native Linux amd64. It uses
 Docker-owned disposable Postgres/Redis, two real Runkite mTLS replicas, an
 installed parent worker and the external OpenShell profile. The external
 gateway must also provide measured mTLS evidence; plaintext fallback is refused.
-The candidate remains unreleased until a separate publication is observed.
+Qualification alone does not establish a release or registry publication.
 
 The CLI is pinned to the official OpenShell v0.1.8 Linux archive and its
 [published SHA-256](https://github.com/NVIDIA/OpenShell/releases/expanded_assets/v0.1.8).
@@ -271,7 +272,7 @@ shows **Synthetic UI fixture, no agent execution**. This is layout evidence,
 not API, authentication, runtime or backend qualification.
 
 ```sh
-# Build the current candidate's actual frontend first.
+# Build the actual frontend for the revision under review first.
 cd admin-ui && npm run build && cd ..
 python3 scripts/preview-security-ui.py --port 8786
 ```

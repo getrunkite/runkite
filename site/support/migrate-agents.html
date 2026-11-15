@@ -50,7 +50,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
-          <a href="security-identity.html">Identity and usage (next)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -80,7 +80,7 @@
         <p class="kicker">Build</p>
         <h1>Migrate existing agents</h1>
         <p class="lede">Choose which process owns execution. A managed runner moves the model loop behind Runkite dispatch. A tool-decision integration keeps the loop in your app.</p>
-        <p class="note">Start with <a href="./sdk-integration.html">SDK integration paths</a>. The managed AI SDK backend ships in v0.5.8 <code>runkite-runner</code>; the governance helpers remain unpublished packages.</p>
+        <p class="note">Start with <a href="./sdk-integration.html">SDK integration paths</a>. The managed AI SDK backend ships in v0.5.8 <code>runkite-runner</code>; the separate <code>runkite-governance</code> helpers are published on npm and PyPI starting with v0.8.0.</p>
 
         <div class="guide-grid">
           <section>
@@ -99,7 +99,7 @@
         </div>
 
         <h2>For a Vercel AI SDK app</h2>
-        <p>To keep execution in Next/Nuxt, wrap selected local tools with the unpublished <code>createGovernedExecute</code> helper. The app persists pending operations and executes after approval; Admin Threads/Runs, kill switches, break-glass and spend caps do not cover these decision-only calls.</p>
+        <p>To keep execution in Next/Nuxt, wrap selected local tools with <code>createGovernedExecute</code> from the separate <code>runkite-governance</code> npm package (v0.8.0+). The app persists pending operations and executes after approval; Admin Threads/Runs, kill switches, break-glass and spend caps do not cover these decision-only calls.</p>
         <p>For managed execution, the AI SDK runner loads a per-run settings factory and starts turns through Runkite Threads/Runs. Keep UI authentication and chat-to-thread ownership in the app, and use the example's <code>useChat</code> bridge. This changes the request path; it does not transparently wrap an unchanged app-owned loop. Native approval/resume and unfinished-turn restoration are not included.</p>
 
         <h2>How to implement managed runners</h2>

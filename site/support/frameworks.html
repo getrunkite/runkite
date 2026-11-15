@@ -50,7 +50,7 @@
           <a href="connector-actions.html">Connector actions</a>
           <a href="tenant-review.html">Tenant review</a>
           <a href="security-completion.html">Security operations (v0.7.0)</a>
-          <a href="security-identity.html">Identity and usage (next)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
           <a  href="sim.html">Fixture replay</a>
           <a  href="hitl-ops.html">HITL ops</a>
           <a  href="policy.html">PDP / Cedar</a>
@@ -79,14 +79,14 @@
 
         <p class="kicker">Build</p>
         <h1>Framework matrix</h1>
-        <p class="lede">One control plane, several execution adapters. Compare what is installed from a registry, what requires a checkout, and what remains an unpublished helper package.</p>
+        <p class="lede">One control plane, several execution adapters. Compare what is installed from a registry, what requires a checkout, and which decision helpers are installed separately.</p>
         <p class="note">For an app that keeps its own model loop, use the separate <a href="./sdk-integration.html">tool-decision path</a>. That path does not create managed Threads or Runs.</p>
 
         <div class="guide-grid">
           <section>
             <h2>What it is</h2>
             <p>
-              v0.7.0 runner packages include LangGraph, LangGraph.js and the optional TypeScript AI SDK backend. The Python wheel also includes Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK adapters through optional SDK extras. CrewAI, LlamaIndex, AutoGen and plain LangChain remain checkout-only adapters under <code>python/adapters/</code>.
+              v0.8.0 runner packages include LangGraph, LangGraph.js and the optional TypeScript AI SDK backend. The Python wheel also includes Microsoft Agent Framework, OpenAI Agents SDK, Pydantic AI and Google ADK adapters through optional SDK extras. CrewAI, LlamaIndex, AutoGen and plain LangChain remain checkout-only adapters under <code>python/adapters/</code>.
             </p>
           </section>
           <section>
@@ -136,7 +136,7 @@
           <li><strong>Managed OpenAI Agents SDK (v0.6.1)</strong>: published wheels include <code>python-openai-agents</code>, the optional <code>openai-agents</code> extra (SDK <code>openai-agents==0.24.0</code>) and <code>runkite-runner-openai-agents</code> command. Initial support is text, local function tools, native history and committed-turn recovery. Native approval/resume, handoffs, hosted/MCP tools and structured final output are unsupported. The stock image does not install these optional dependencies.</li>
           <li><strong>Managed Pydantic AI (v0.6.1)</strong>: published wheels include <code>python-pydantic-ai</code>, the optional <code>pydantic-ai</code> extra pinned to <code>pydantic-ai-slim==2.63.0</code> and <code>runkite-runner-pydantic-ai</code>. The native SDK validates final structured JSON; Runkite preserves successful conversations and CAS receipts while recording only the current run's usage. Provider packages are application choices. Native deferred approvals, output functions, multimodal input and extra workflow engines are unsupported. See the <a href="sdk-integration.html#managed-pydantic">installation boundary</a>.</li>
           <li><strong>Managed Google ADK (v0.6.1)</strong>: published wheels include <code>python-google-adk</code>, the optional <code>google-adk==2.13.0</code> SDK dependency and <code>runkite-runner-google-adk</code>. Initial support is one text <code>LlmAgent</code>, ordinary local tools, native session-local state and CAS receipt recovery. Shared app/user state, workflows, delegation, native confirmation/resume, memory/artifacts, structured output and live audio are unsupported. See the <a href="sdk-integration.html#managed-google-adk">installation boundary</a>.</li>
-          <li><strong>App-owned helpers</strong>: TypeScript <code>createGovernedExecute</code> and optional Python Microsoft <code>GovernanceFunctionMiddleware</code> guard tool calls through the decision API. Helpers remain unpublished packages. Ordinary guarded tools work inside streamed chat; async-iterable tool outputs are unsupported. Microsoft middleware is not a managed Microsoft runner.</li>
+          <li><strong>App-owned helpers</strong>: TypeScript <code>createGovernedExecute</code> and optional Python Microsoft <code>GovernanceFunctionMiddleware</code> guard tool calls through the decision API. The separate <code>runkite-governance</code> packages are published on npm and PyPI starting with v0.8.0. Ordinary guarded tools work inside streamed chat; async-iterable tool outputs are unsupported. Microsoft middleware is not a managed Microsoft runner.</li>
         </ul>
         <p>Read <a href="./sdk-integration.html">SDK integration paths</a> before choosing a migration. The new AI SDK proof uses a real plane on SQLite/in-process and Postgres/Redis, including runner restart and crash-after-commit recovery; it is not a multi-replica HA soak.</p>
 

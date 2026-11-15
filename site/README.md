@@ -43,11 +43,12 @@ website does not provide Agent Protocol APIs, SSE/WebSocket execution or the
 runner's gRPC service. A future backend can be connected without replacing
 every published Admin link; the hosting runbook describes the boundary.
 
-The SDK integration guide separates the released decision API, unpublished
-in-repository helpers, and the managed AI SDK backend (v0.5.8+). A checkout
-feature must not be advertised as available in an existing npm/PyPI install.
-When a feature is released, update these labels together with the changelog and
-package install guidance. Keep public install commands unpinned unless an API
+The SDK integration guide separates the released decision API, the separately
+published decision helpers (v0.8.0+), and the managed AI SDK backend (v0.5.8+).
+The managed UI bridge remains a checkout example. A checkout feature must not
+be advertised as available in an existing npm/PyPI install. When a feature is
+released, update these labels together with the changelog and package install
+guidance. Keep public install commands unpinned unless an API
 compatibility example specifically requires a tested SDK version.
 
 The product is self-host only. The offline public demo is not a hosted

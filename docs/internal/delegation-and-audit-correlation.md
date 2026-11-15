@@ -1,8 +1,8 @@
 # Constrained delegation and external audit correlation
 
 Tracks [RFE #50](https://github.com/getrunkite/runkite/issues/50) and
-[RFE #51](https://github.com/getrunkite/runkite/issues/51). These are next-release
-additions after v0.7.0, not retroactive claims about that release.
+[RFE #51](https://github.com/getrunkite/runkite/issues/51). Availability: v0.8.0.
+These additions are not retroactive claims about v0.7.0.
 
 ## Why extend the existing boundary
 

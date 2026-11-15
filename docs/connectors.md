@@ -1,6 +1,8 @@
 # Connectors
 
-## Constrained delegated exchange and correlation (next release)
+<a id="constrained-delegated-exchange-and-correlation-next-release"></a>
+
+## Constrained delegated exchange and correlation (v0.8.0)
 
 The existing `oauth2_token_exchange` mode remains available. An optional
 `auth.token_exchange` contract adds registered targets and bounded responses:

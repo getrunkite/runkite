@@ -9,14 +9,40 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
+## v0.8.0 release verification
+
+v0.8.0 distributes the identity and usage controls, matching runner packages,
+and the first independent npm/PyPI `runkite-governance` packages. Follow the
+[coordinated upgrade](ops-runbook.md#identity-and-distribution-upgrade-v080).
+Actual artifact verification and the observed publishing-authentication path
+are separate evidence; an existing matching package does not prove a fresh
+OIDC publication. Keep independent assessment and production-soak status in the
+[qualification record](internal/identity-distribution-qualification.md).
+
+The immutable `v0.8.0` runtime source is commit
+`c63b8203123f6b7d032b0b5aca59abe9227fd973`. The package-only recovery controller
+was corrected after that tag. It uses the original source for npm packages and
+verifies the original retained PyPI files without uploading them again. Go
+release and container publication remain outside that recovery path. Track the
+post-tag controller fixes separately from the tagged runtime in `CHANGELOG.md`
+and retain both source and controller commits in each recovery receipt. See the
+[recovery procedure](#recover-an-existing-release-without-moving-its-tag).
+
+The [completed publication record](internal/release-recovery-v080.md#completed-recovery)
+identifies the actual authentication paths: both npm packages used the
+maintainer's personal session, the PyPI helper used its Trusted Publisher, and
+the PyPI runner used its project token. The final matching-existing recovery
+checks did not exercise npm OIDC. Validate package-specific authority before
+the next genuine automated npm publication.
+
 <a id="prepared-v070-candidate"></a>
 
 ## v0.7.0 release verification
 
 The coordinated source metadata and tag identify v0.7.0. Earlier v0.6.1 artifacts
 do not include the new security controls. Governance helpers were not published with that release. The subsequent
-helper-distribution work prepares them for the next coordinated release; it does
-not retroactively add them to 0.7.0.
+helper-distribution work first ships them in v0.8.0; it does not retroactively
+add them to 0.7.0.
 
 A tag starts publication; it does not prove every destination succeeded. Verify
 the Release workflow's version check, GoReleaser, Docker, PyPI and npm job
@@ -71,12 +97,12 @@ Pushing `v*` runs [`.github/workflows/release.yml`](../.github/workflows/release
 | `runkite-runner` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_TOKEN`** |
 | `runkite-governance` npm package | npmjs.com | Package Trusted Publisher; else **`NPM_GOVERNANCE_TOKEN`** |
 
-The governance rows describe the newly prepared workflow, not an already
-verified registry release. Published 0.7.0 used the earlier runner-only workflow.
-Before a new tag, complete each helper's registry ownership and authentication
-setup below. A missing publishing credential is now a failed job when files
-remain unpublished, rather than a green optional skip. Do not advertise a helper
-until its actual registry distributions have passed verification.
+The governance distributions first ship in v0.8.0. Published 0.7.0 used the
+earlier runner-only workflow. Before each new tag, verify each package's
+registry ownership and authentication setup below. A missing publishing
+credential fails the job when files remain unpublished, rather than becoming a
+green optional skip. Advertise only versions whose actual registry distributions
+have passed verification.
 
 ## Recover an existing release without moving its tag
 
@@ -92,6 +118,10 @@ Go publication checks succeeded.
 The manual inputs are `recovery_tag` and `source_run_id`. They identify the
 existing release and its original retained artifacts, rather than a new version.
 The controller accepts stable `vMAJOR.MINOR.PATCH` tags.
+After personal publication of a retained tarball, dispatch a fresh recovery
+with the same original `source_run_id`. Its new run ID keeps earlier artifacts
+and outcomes intact. Do not substitute a manual recovery run as the source;
+the guard requires the original tag-push Release run.
 For the first v0.8.0 package recovery, after merging and checking the corrected
 controller on `main`:
 

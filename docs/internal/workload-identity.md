@@ -1,6 +1,6 @@
 # Verified workload identity and assignment ownership
 
-Availability: unreleased after v0.7.0. This is an opt-in strict deployment
+Availability: v0.8.0. This is an opt-in strict deployment
 profile. Existing kind tokens and execution pools keep their compatibility
 behavior unless the profile is enabled.
 

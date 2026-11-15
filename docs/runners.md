@@ -1,6 +1,6 @@
 # Runners
 
-The TypeScript runner's source candidate requires Node.js 22.19 or newer, matching
+The v0.8.0 TypeScript runner requires Node.js 22.19 or newer, matching
 its locked Undici HTTP client. Custom-CA and client-certificate HTTP calls use
 the installed client's compatibility adapter for Node's built-in fetch.
 An older build failing HTTPS with `UND_ERR_INVALID_ARG` and
@@ -12,7 +12,7 @@ endpoint with a matching certificate DNS SAN for TLS: the current
 `@grpc/grpc-js` sends literal IP addresses as SNI, which Node.js 26 rejects.
 Runkite reports this incompatibility at startup. HTTPS IP SAN verification is
 unaffected. Use matching plane/runner revisions when enabling
-the next-release strict workload identity profile. Its direct mTLS HTTP listener
+the v0.8.0 strict workload identity profile. Its direct mTLS HTTP listener
 also requires a trusted client certificate for Admin/public API access; see the
 [public ingress boundary](internal/workload-identity.md#expiry-rotation-and-revocation).
 
@@ -95,7 +95,7 @@ are installed some other way, e.g. `uv pip install -e python/`); TypeScript's
 `npx tsx src/cli.ts` needs `npm ci` in `typescript/runkite-runner/` first.
 CrewAI, LlamaIndex, AutoGen and plain LangChain adapters under `python/adapters/`
 remain checkout-only. Use `PYTHONPATH` as below after installing each adapter's
-own dependencies. Current v0.6.1 Python packages also provide the optional
+own dependencies. Python packages from v0.6.1 also provide the optional
 `agent-framework`, `openai-agents`, `pydantic-ai` and `google-adk` install profiles
 described below. Each has its own command and documented native-feature subset.
 
@@ -441,7 +441,7 @@ checkpoints. The original SQL run-incarnation receipt binds launch state; an
 uncertain launch intent is not automatically launched again. The workload gets
 no runner token, assignment environment or provider cleanup handle.
 
-Published v0.7.0 has no workload usage-reporting contract. Source after v0.7.0
+Published v0.7.0 has no workload usage-reporting contract. v0.8.0
 adds [versioned cumulative reports](internal/isolated-usage.md), durable SQL
 acknowledgements, explicit unknown versus reported zero, and receipt/cancellation
 settlement. Reports remain workload claims. Zero recorded spend cannot establish
@@ -458,7 +458,9 @@ Follow the [example](../examples/isolated_agent/README.md),
 [operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1
 runner packages do not contain this new profile.
 
-## Certificate-bound workload ownership (unreleased after v0.7.0)
+<a id="certificate-bound-workload-ownership-unreleased-after-v070"></a>
+
+## Certificate-bound workload ownership (v0.8.0)
 
 The optional [verified workload identity profile](internal/workload-identity.md)
 uses an externally issued short-lived client certificate on both gRPC and

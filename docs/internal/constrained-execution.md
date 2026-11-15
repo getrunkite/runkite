@@ -1,6 +1,6 @@
 # Execution pools and an external workload boundary
 
-Status: current v0.8.0 source, not yet tagged or published. This note distinguishes implemented
+Availability: v0.8.0. This note distinguishes implemented
 fleet routing, a rendered deployment profile and an experimental external bridge.
 It does not declare OpenShell or a Kubernetes CNI qualified merely because their
 configuration exists. No runtime is embedded in the Go binary.
@@ -278,7 +278,7 @@ inferring it from a configuration hash, rendered policy or this bounded run.
 
 ## Combined HA, TLS and durable usage qualification
 
-The unreleased v0.8.0 source adds `scripts/test-isolated-ha.sh`. It starts dedicated
+v0.8.0 includes `scripts/test-isolated-ha.sh`. It starts dedicated
 Postgres/Redis containers with dynamic loopback mappings and a fresh fixture
 password, two actual TLS-enabled planes, a locally issued mTLS worker identity,
 an installed parent wheel and an external OpenShell 0.1.8 runtime. It does not

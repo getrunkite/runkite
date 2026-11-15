@@ -1,6 +1,8 @@
 # Auth
 
-## Strict admission identity (unreleased after v0.7.0)
+<a id="strict-admission-identity-unreleased-after-v070"></a>
+
+## Strict admission identity (v0.8.0)
 
 Set `auth.strict_identity: true` for a JWT deployment that requires configured
 `issuer`, `audience`, an explicit `sub` and a valid `exp`. JWKS retrieval requires
@@ -212,7 +214,9 @@ OpenShell bridge keeps its fleet token outside the workload; ordinary in-process
 SDK adapters retain their existing trusted-worker boundary. See
 [pool and workload design](internal/constrained-execution.md).
 
-## Verified workload identity (unreleased after v0.7.0)
+<a id="verified-workload-identity-unreleased-after-v070"></a>
+
+## Verified workload identity (v0.8.0)
 
 `RUNKITE_WORKLOAD_IDENTITY=mtls` adds an individual holder to fleet authority.
 Set `RUNKITE_WORKLOAD_IDENTITIES_FILE` to JSON with an `identities` map from

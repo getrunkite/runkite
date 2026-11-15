@@ -2,21 +2,23 @@
 
 The **Supported** production profile uses **Postgres + Redis**, client auth and runner tokens. The linked guides explain the architecture and individual controls.
 
-**v0.7.0 deployment:** use matching plane and runner artifacts. The chart's
+**v0.8.0 deployment:** use matching plane and runner artifacts. The chart's
 `image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
-both to `0.7.0` for this upgrade, or select matching images built from the same
+both to `0.8.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
 
-## Identity and distribution candidate
+<a id="identity-and-distribution-candidate"></a>
 
-**Unreleased 0.8.0 source:** the following steps evaluate the
-[eight-RFE milestone](internal/identity-and-distribution-plan.md), not published
-v0.7.0 artifacts. Keep matching plane and runner builds from one reviewed source
-revision. Read the [executed qualification and remaining gates](internal/identity-distribution-qualification.md).
+## Identity and distribution upgrade (v0.8.0)
+
+**v0.8.0:** the following steps deploy the
+[eight-RFE milestone](internal/identity-and-distribution-plan.md). These additions
+are not in v0.7.0 artifacts. Keep matching plane and runner versions or builds
+from one reviewed source revision. Read the [executed qualification and remaining gates](internal/identity-distribution-qualification.md).
 
 1. Verify a backup and drain runners and all SQL writers. Apply `runkite db
-   upgrade` with the candidate binary. Usage snapshots add Postgres/SQLite
+   upgrade` with the v0.8.0 binary. Usage snapshots add Postgres/SQLite
    migration 22 or MySQL migration 23. Replace every writer before traffic;
    mixed old/new writers are unsupported.
 2. Before upgrading certificate-configured runners, enable HTTPS on their
@@ -612,8 +614,8 @@ kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
 qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
 providers. A failed fixture cleanup exits nonzero and preserves its private
 recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
-Published v0.7.0 has no supported isolated usage-reporting contract. Unreleased
-v0.8.0 source adds [durable cumulative reports](internal/isolated-usage.md). Upgrade the
+Published v0.7.0 has no supported isolated usage-reporting contract.
+v0.8.0 adds [durable cumulative reports](internal/isolated-usage.md). Upgrade the
 SQL store and every parent/plane together before using it. Acknowledged partial
 reports survive cancellation; sent but unacknowledged work remains uncertain.
 Unknown usage and an explicit reported zero are different states. Counters and

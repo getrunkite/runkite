@@ -36,7 +36,7 @@ Public HTML walkthroughs live in [site/support](../site/support/), including the
 correction map; the [embedded governance design record](internal/embedded-governance-next-release.md)
 is historical and points to the implemented API.
 
-The next-release [identity and distribution milestone](internal/identity-and-distribution-plan.md)
+The v0.8.0 [identity and distribution milestone](internal/identity-and-distribution-plan.md)
 maps RFEs #45 through #52 to code, qualification and availability gates. Read
 [workload ownership](internal/workload-identity.md),
 [delegation and audit correlation](internal/delegation-and-audit-correlation.md),
@@ -60,13 +60,13 @@ current-source licensing, the unchanged terms of published v0.6.0 artifacts,
 third-party notices and the packaging checks required for the next release.
 
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
-README or packaging metadata. Checkout-only adapters and unpublished
-governance helpers are labeled separately from tagged runner packages.
+README or packaging metadata. Checkout-only adapters, independent governance
+helpers and managed runner packages have separate installation contracts.
 
 [AAIF Sandbox application materials](foundation/README.md) describe the project's
 intended users, current stewardship, dependency review scope and community
 roadmap. This is application preparation, not a foundation admission claim.
 
-- [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and pending external gates for the next release.
+- [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and remaining external gates for v0.8.0.
 - [Node fetch and TLS compatibility](internal/node-fetch-tls-compatibility.md): the Node 22 dispatcher failure found by hosted qualification, its dependency adapter and regression coverage.
 - [v0.8.0 package recovery](internal/release-recovery-v080.md): release-client assumptions, public-index visibility and immutable source/controller recovery.

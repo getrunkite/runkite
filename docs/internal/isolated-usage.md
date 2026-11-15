@@ -1,7 +1,7 @@
 # Isolated workload usage and durable settlement
 
-Status: implemented in unreleased v0.8.0 source, not a change to published v0.7.0
-artifacts. The external JSONL profile remains experimental. This contract
+Availability: v0.8.0, not a change to published v0.7.0 artifacts. The external
+JSONL profile remains experimental. This contract
 records claims from a configured workload; it does not verify a provider bill.
 
 ## The caller and the boundary

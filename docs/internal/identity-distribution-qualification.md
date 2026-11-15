@@ -147,7 +147,9 @@ under `outputs/runkite-next/hosted-pr66-qualification/`, outside the repository.
 This closes the bounded hosted-qualification gate. It is neither a registry
 publication nor an independent assessment or long-duration production soak.
 
-## Actual partial publication
+<a id="actual-partial-publication"></a>
+
+## Verified v0.8.0 publication
 
 The immutable `v0.8.0` tag points to
 `c63b8203123f6b7d032b0b5aca59abe9227fd973`. The original
@@ -170,6 +172,11 @@ Actual public artifacts were checked on November 15, 2026:
   checker. The governance helper's original upload used its Trusted Publisher;
   the runner used its project token. This establishes a genuine helper OIDC
   publication, not an OIDC claim inferred from an existing matching version.
+- Both npm packages, `runkite-runner` and `runkite-governance`, passed public
+  SHA512 integrity, downloaded SHA256 and archive-content checks against the
+  exact intended tarballs retained by the first package recovery. Both were
+  published through the maintainer's personal npm session, after interactive
+  account verification. This is not evidence of npm OIDC publication.
 - All three public GHCR indexes resolved to exactly Linux amd64 and arm64
   runnable variants. All six variants passed offline version, UID 65532 and
   license/notice checks. Both TypeScript variants passed all nine native image
@@ -190,16 +197,29 @@ removed. The final artifact evidence is retained outside the repository under
 `outputs/runkite-next/v080-go-cross-platform-runtime/` and
 `outputs/runkite-next/v080-ghcr-verified/archive-scans-20261115T093103Z-9e5fef77/`.
 
+[PR #68](https://github.com/getrunkite/runkite/pull/68) merged the corrected
+controller at `6c39349b83ca93f1324970ec8cccef9aff2ebca1`. Its ten PR checks and
+[main CI](https://github.com/getrunkite/runkite/actions/runs/43701077721)
+passed, including the actual npm 12 build/pack and installed-helper checks.
+The [first package recovery](https://github.com/getrunkite/runkite/actions/runs/43701397992)
+validated source and both Python packages, then failed npm authorization. Its
+retained npm tarballs were the exact files used for personal publication.
+The [final package verification](https://github.com/getrunkite/runkite/actions/runs/43702484102)
+passed all five active jobs: source validation, both npm checks and both PyPI
+checks. Publishing jobs were skipped when immutable registry contents already
+matched. Go, container and PyPI upload jobs remained outside manual recovery.
+
 <a id="pending-publication-and-external-assessment"></a>
+<a id="pending-npm-publication-and-external-assessment"></a>
 
-## Pending npm publication and external assessment
+## Remaining external qualification
 
-Both npm `0.8.0` version lookups still returned explicit metadata 404 responses
-at this checkpoint. The manual package recovery controller remains
-undispatched. Its hosted checks, actual npm publication and final availability
-updates remain required. A 404 establishes absence at the check time, not name
-reservation or permission to publish. The original failed Release run does not
-become green merely because its successful artifacts were separately verified.
+Before a future automated npm publication, configure and validate each
+package's publishing authority when a genuine new version is ready. The
+successful matching-existing checks above did not exercise npm OIDC or repair
+the failed CI upload authorization. Keep the original failed Release and
+recovery runs as historical outcomes; the successful final verification is
+separate evidence.
 
 Independent reviewer findings, external identity-provider/Vault deployment
 qualification, production PKI rotation, hostile-code attestation, live-provider
