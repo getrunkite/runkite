@@ -69,3 +69,4 @@ roadmap. This is application preparation, not a foundation admission claim.
 
 - [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and pending external gates for the next release.
 - [Node fetch and TLS compatibility](internal/node-fetch-tls-compatibility.md): the Node 22 dispatcher failure found by hosted qualification, its dependency adapter and regression coverage.
+- [v0.8.0 package recovery](internal/release-recovery-v080.md): release-client assumptions, public-index visibility and immutable source/controller recovery.

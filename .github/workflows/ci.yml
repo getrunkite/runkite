@@ -447,6 +447,57 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: go test ./test/e2e/ ./test/e2e/adapters/... -v -timeout 120s -count=1
 
+  # Exercise the actual release client before tagging, without publication authority.
+  publish-tools:
+    name: Publication tool contracts (npm 12)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Install the release npm client
+        run: |
+          npm install --global npm@12.2.2
+          node --version
+          npm --version
+      - name: Test artifact parsing and immutable recovery guards
+        run: |
+          python scripts/test_release_artifacts.py -v
+          python scripts/test_prepare_release_recovery.py -v
+      - name: Install locked runner dependencies
+        working-directory: typescript/runkite-runner
+        run: npm ci
+      - name: Build and pack runner with the release pipeline
+        id: runner_artifact
+        env:
+          PACKAGE_DIR: typescript/runkite-runner
+          ARTIFACT_DIR: ${{ runner.temp }}/publish-tools-runkite-runner
+        run: python scripts/release_artifacts.py build npm "$PACKAGE_DIR" "$ARTIFACT_DIR"
+      - name: Install locked governance dependencies
+        working-directory: typescript/runkite-governance
+        run: npm ci
+      - name: Build and pack governance with the release pipeline
+        id: governance_artifact
+        env:
+          PACKAGE_DIR: typescript/runkite-governance
+          ARTIFACT_DIR: ${{ runner.temp }}/publish-tools-runkite-governance
+        run: python scripts/release_artifacts.py build npm "$PACKAGE_DIR" "$ARTIFACT_DIR"
+      - name: Install locked offline AI SDK fixture dependencies
+        working-directory: examples/governance_ai_sdk
+        run: npm ci
+      - name: Verify the installed governance tarball and native AI SDK behavior
+        env:
+          TARBALL: ${{ steps.governance_artifact.outputs.artifact_path }}
+        run: node scripts/verify_governance_npm.mjs "$TARBALL"
+
   # Cheap chart render only — no kind/cluster. Catches values-supported /
   # values-tls overlays and tls.validate fail-closed paths breaking template.
   helm-template:

@@ -10,6 +10,16 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      recovery_tag:
+        description: Existing immutable release tag to recover
+        required: true
+        type: string
+      source_run_id:
+        description: Original Release run containing the retained distributions
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -22,6 +32,7 @@ concurrency:
 
 jobs:
   version-check:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,6 +49,7 @@ jobs:
           python3 scripts/check-release-version.py --tag "$RELEASE_TAG"
 
   goreleaser:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     needs: [version-check]
     steps:
@@ -61,6 +73,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     needs: [version-check]
     steps:
@@ -133,6 +146,7 @@ jobs:
 
 
   pypi:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     needs: [version-check, goreleaser]
     permissions:
@@ -199,7 +213,7 @@ jobs:
         if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
         env:
           MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
-        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 30
+        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 300
       - name: Record actual PyPI authentication path
         if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
         env:
@@ -223,11 +237,121 @@ jobs:
           path: ${{ steps.artifact.outputs.artifact_dir }}
           retention-days: 30
 
+  # A manual recovery uses this controller's fixes with the original tag's
+  # package source and retained PyPI files. It never recreates Go/image assets.
+  recovery-source:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      version: ${{ steps.source.outputs.version }}
+      source_revision: ${{ steps.source.outputs.source_revision }}
+      source_run_id: ${{ steps.source.outputs.source_run_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Validate immutable source tag and original release evidence
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RECOVERY_TAG: ${{ inputs.recovery_tag }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: python scripts/prepare_release_recovery.py --tag "$RECOVERY_TAG" --source-run-id "$SOURCE_RUN_ID"
+      - name: Check out the validated package source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.source.outputs.source_revision }}
+          path: _release-source
+          persist-credentials: false
+      - name: Verify the original source's coordinated release version
+        env:
+          RECOVERY_TAG: ${{ steps.source.outputs.tag }}
+        run: python _release-source/scripts/check-release-version.py --tag "$RECOVERY_TAG"
+
+  pypi-recovery-verify:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    needs: [recovery-source]
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [runkite-runner, runkite-governance]
+    env:
+      RECOVERY_TAG: ${{ needs.recovery-source.outputs.tag }}
+      RECOVERY_VERSION: ${{ needs.recovery-source.outputs.version }}
+      SOURCE_RUN_ID: ${{ needs.recovery-source.outputs.source_run_id }}
+      ARTIFACT_DIR: ${{ github.workspace }}/_release-artifacts/pypi-${{ matrix.package }}
+      PACKAGE_NAME: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Download only the original retained PyPI distributions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh run download "$SOURCE_RUN_ID" --repo getrunkite/runkite \
+            --name "pypi-$PACKAGE_NAME-$RECOVERY_TAG" --dir "$ARTIFACT_DIR"
+      - name: Validate retained artifact identity
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          from prepare_release_recovery import validate_intended_manifest
+          validate_intended_manifest(
+              Path(os.environ["ARTIFACT_DIR"]) / "manifest.json",
+              os.environ["PACKAGE_NAME"], os.environ["RECOVERY_VERSION"], "pypi",
+          )
+          PY
+      - name: Record the read-only recovery identity
+        env:
+          SOURCE_REVISION: ${{ needs.recovery-source.outputs.source_revision }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          Path(os.environ["ARTIFACT_DIR"], "source.json").write_text(json.dumps({
+              "tag": os.environ["RECOVERY_TAG"],
+              "source_run_id": os.environ["SOURCE_RUN_ID"],
+              "source_revision": os.environ["SOURCE_REVISION"],
+              "controller_revision": os.environ["GITHUB_SHA"],
+              "operation": "pypi_verify_only",
+          }, indent=2) + "\n")
+          PY
+      - name: Verify original distributions against actual PyPI downloads without publishing
+        run: python scripts/release_artifacts.py check "$ARTIFACT_DIR/manifest.json" --require-present --wait-seconds 300
+      - name: Retain original distributions and verification identity
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pypi-recovery-${{ matrix.package }}-${{ needs.recovery-source.outputs.tag }}-${{ github.run_id }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+
   # Each package needs its own trusted publisher or project-scoped fallback.
   # Existing versions count only after the intended immutable files match.
   npm:
+    if: ${{ always() && !cancelled() && ((github.event_name == 'push' && needs.version-check.result == 'success' && needs.goreleaser.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.recovery-source.result == 'success')) }}
     runs-on: ubuntu-latest
-    needs: [version-check, goreleaser]
+    needs: [version-check, goreleaser, recovery-source]
     strategy:
       fail-fast: false
       matrix:
@@ -243,8 +367,22 @@ jobs:
       id-token: write
     env:
       NPM_TOKEN_SET: ${{ secrets[matrix.token_secret] != '' }}
+      SOURCE_ROOT: ${{ github.event_name == 'workflow_dispatch' && '_release-source' || '.' }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && needs.recovery-source.outputs.tag || github.ref_name }}
+      RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && needs.recovery-source.outputs.version || '' }}
+      SOURCE_REVISION: ${{ github.event_name == 'workflow_dispatch' && needs.recovery-source.outputs.source_revision || github.sha }}
+      SOURCE_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && needs.recovery-source.outputs.source_run_id || github.run_id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Check out the validated original npm source for manual recovery
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.recovery-source.outputs.source_revision }}
+          path: _release-source
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
@@ -258,21 +396,43 @@ jobs:
           node --version
           npm --version
       - name: Install locked package dependencies
-        working-directory: ${{ matrix.directory }}
+        working-directory: ${{ env.SOURCE_ROOT }}/${{ matrix.directory }}
         run: npm ci
       - name: Build and pack once without publication lifecycle scripts
         id: artifact
         env:
-          PACKAGE_DIR: ${{ matrix.directory }}
+          PACKAGE_DIR: ${{ env.SOURCE_ROOT }}/${{ matrix.directory }}
           ARTIFACT_DIR: ${{ runner.temp }}/npm-${{ matrix.package }}
         run: python scripts/release_artifacts.py build npm "$PACKAGE_DIR" "$ARTIFACT_DIR"
+      - name: Bind the npm artifact to the intended tag and source
+        env:
+          MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
+          PACKAGE_NAME: ${{ matrix.package }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["MANIFEST"])
+          import sys
+          sys.path.insert(0, "scripts")
+          from prepare_release_recovery import validate_intended_manifest
+          validate_intended_manifest(path, os.environ["PACKAGE_NAME"], os.environ["RELEASE_TAG"][1:], "npm")
+          Path(path.parent, "source.json").write_text(json.dumps({
+              "tag": os.environ["RELEASE_TAG"],
+              "source_run_id": os.environ["SOURCE_RUN_ID"],
+              "source_revision": os.environ["SOURCE_REVISION"],
+              "controller_revision": os.environ["GITHUB_SHA"],
+              "operation": "npm_publish_or_verify",
+          }, indent=2) + "\n")
+          PY
       - name: Verify installed governance tarball and native AI SDK integration
         if: ${{ matrix.package == 'runkite-governance' }}
         env:
           TARBALL: ${{ steps.artifact.outputs.artifact_path }}
         run: |
-          cd examples/governance_ai_sdk && npm ci && cd ../..
-          node scripts/verify_governance_npm.mjs "$TARBALL"
+          (cd "$SOURCE_ROOT/examples/governance_ai_sdk" && npm ci)
+          node "$SOURCE_ROOT/scripts/verify_governance_npm.mjs" "$TARBALL"
       - name: Check intended immutable npm artifact
         id: registry
         env:
@@ -325,6 +485,6 @@ jobs:
         if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: npm-${{ matrix.package }}-${{ github.ref_name }}
+          name: npm-${{ matrix.package }}-${{ env.RELEASE_TAG }}-${{ github.run_id }}
           path: ${{ steps.artifact.outputs.artifact_dir }}
           retention-days: 30
