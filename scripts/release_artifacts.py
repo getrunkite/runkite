@@ -32,6 +32,7 @@ MAX_METADATA = 8 * 1024 * 1024
 MAX_ARCHIVE = 64 * 1024 * 1024
 MAX_UNPACKED = 256 * 1024 * 1024
 MAX_MEMBERS = 10000
+MAX_WAIT_SECONDS = 300
 
 
 class ArtifactError(Exception):
@@ -124,6 +125,31 @@ def _run(command, cwd=None, env=None):
     subprocess.run(command, cwd=cwd, env=env, check=True, timeout=180)
 
 
+def _npm_pack_filename(packed, name, version):
+    records = _json(packed)
+    if isinstance(records, list) and len(records) == 1:
+        record = records[0]
+    elif isinstance(records, dict) and set(records) == {name}:
+        # npm 12 keys its JSON result by package name; older clients use a list.
+        record = records[name]
+    else:
+        raise ArtifactError("npm pack metadata differs from project")
+    if not isinstance(record, dict) or record.get("name") != name or record.get("version") != version:
+        raise ArtifactError("npm pack metadata differs from project")
+    filename = record.get("filename")
+    if (
+        not isinstance(filename, str)
+        or not filename
+        or filename in {".", ".."}
+        or Path(filename).name != filename
+        or "\\" in filename
+        or any(ord(character) < 32 or ord(character) == 127 for character in filename)
+        or not filename.endswith(".tgz")
+    ):
+        raise ArtifactError("Invalid npm artifact filename")
+    return filename
+
+
 def build(ecosystem, directory, output):
     directory, output = directory.resolve(), output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -138,12 +164,7 @@ def build(ecosystem, directory, output):
             cwd=directory,
             timeout=60,
         )
-        records = _json(packed)
-        if len(records) != 1 or records[0]["name"] != name or records[0]["version"] != version:
-            raise ArtifactError("npm pack metadata differs from project")
-        filename = records[0]["filename"]
-        if Path(filename).name != filename:
-            raise ArtifactError("Invalid npm artifact filename")
+        filename = _npm_pack_filename(packed, name, version)
         paths = [output / filename]
     else:
         project = tomllib.loads((directory / "pyproject.toml").read_text())["project"]
@@ -186,7 +207,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def public_get(url, limit, *, missing_ok=False):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
     request = urllib.request.Request(
-        url, headers={"Accept": "application/json", "User-Agent": "runkite-release-check/1"}
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "runkite-release-check/1",
+            # Ask caches to revalidate. Intermediaries can still return stale data.
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
     )
     try:
         with opener.open(request, timeout=30) as response:
@@ -286,6 +314,8 @@ def inspect_registry(manifest, get=public_get):
 
 
 def check(manifest_path, *, pending_dir=None, require_present=False, wait_seconds=0):
+    if not isinstance(wait_seconds, int) or not 0 <= wait_seconds <= MAX_WAIT_SECONDS:
+        raise ArtifactError(f"Registry wait must be between 0 and {MAX_WAIT_SECONDS} seconds")
     manifest = _json(manifest_path.read_bytes())
     for entry in manifest["artifacts"]:
         filename = entry["filename"]
@@ -327,7 +357,9 @@ def main():
     check_command.add_argument("manifest", type=Path)
     check_command.add_argument("--pending-dir", type=Path)
     check_command.add_argument("--require-present", action="store_true")
-    check_command.add_argument("--wait-seconds", type=int, default=0, choices=range(0, 31), metavar="0..30")
+    check_command.add_argument(
+        "--wait-seconds", type=int, default=0, choices=range(0, MAX_WAIT_SECONDS + 1), metavar="0..300"
+    )
     args = parser.parse_args()
     try:
         if args.command == "build":

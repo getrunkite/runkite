@@ -78,6 +78,66 @@ setup below. A missing publishing credential is now a failed job when files
 remain unpublished, rather than a green optional skip. Do not advertise a helper
 until its actual registry distributions have passed verification.
 
+## Recover an existing release without moving its tag
+
+Use the manual **Release** workflow from a reviewed `main` controller when an
+existing release needs a workflow correction. Rerunning an old tag reuses that
+tag's workflow and scripts, so it cannot pick up a later packaging fix.
+The controller validates the existing tag, the original Release run and its
+successful version-check/GoReleaser jobs, and the published GitHub Release.
+It then checks the original source's coordinated version at that exact commit.
+A failed overall release run is acceptable only when those required source and
+Go publication checks succeeded.
+
+The manual inputs are `recovery_tag` and `source_run_id`. They identify the
+existing release and its original retained artifacts, rather than a new version.
+The controller accepts stable `vMAJOR.MINOR.PATCH` tags.
+For the first v0.8.0 package recovery, after merging and checking the corrected
+controller on `main`:
+
+```sh
+gh workflow run release.yml --repo getrunkite/runkite --ref main \
+  -f recovery_tag=v0.8.0 -f source_run_id=43695507859
+```
+
+This dispatch is authorized to publish missing npm packages. It keeps Go
+releases, version tags and container publication outside the recovery path.
+The package jobs use two different recovery contracts:
+
+- **PyPI is verify-only.** Download the original `pypi-<package>-<tag>` artifacts
+  from the validated source run, validate each manifest's package/version and
+  compare the retained wheel and source distribution against actual public
+  downloads. The recovery job has no upload credential or OIDC permission. A
+  missing retained artifact, missing public file or content mismatch fails the
+  job. Do not replace that evidence with a rebuild.
+- **npm uses the original source.** Check out the validated tag commit in a
+  separate directory and run its locked dependencies, package builds and helper
+  integration tests. Use the corrected controller's artifact checker to build
+  and pack once, then assert package identity and version before any upload.
+  Existing matching tarballs are verified; missing ones use the same OIDC and
+  scoped fallback sequence as a normal release. Retain the exact tarball,
+  integrity manifest and `source.json`, including both source and controller
+  commits. Publication hooks remain disabled.
+
+The original [v0.8.0 Release run](https://github.com/getrunkite/runkite/actions/runs/43695507859)
+uploaded both PyPI packages successfully: the runner used its project token and
+the helper used OIDC. All four distribution uploads returned HTTP 200. The
+following public-index checks still reported both files missing at their
+30-second bound. A later verification must match the original retained
+manifests; do not repeat those uploads merely because the job is red.
+The two npm jobs stopped before publication because npm 12's `pack --json`
+returns a package-keyed object while the original checker expected an array.
+The corrected controller accepts the supported JSON shapes and retains the
+same immutable package-source checks.
+
+PyPI post-upload visibility checks now wait up to 300 seconds for explicit
+metadata absence or missing files, while asking intermediaries to revalidate.
+Authentication/network errors, malformed responses and content mismatches still
+fail immediately. The longer bound does not turn a successful upload response
+into proof of public availability. Inspect every recovery job and its retained
+receipts before announcing registry installation commands. A matching existing
+package is verification evidence, not another OIDC publication.
+
 ## Apache-2.0 transition
 
 Current source and v0.6.1+ artifacts use Apache-2.0. Published v0.6.0 artifacts retain their shipped
@@ -197,6 +257,14 @@ Passkey / WebAuthn accounts cannot use `--otp=` in CI. After the package exists:
 2. GitHub Actions: org `getrunkite`, repo `runkite`, workflow filename `release.yml`, allow `npm publish`
 3. Future tags publish via OIDC (`id-token: write` in the Release workflow)
 
+Create each connection when a genuine package publication is ready. npm's
+[trusted-publisher expiry rule](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)
+requires a newly added configuration to complete its first successful publish
+within two days. Otherwise it expires; delete and recreate the connection
+before the next genuine publish. Verifying an already matching registry version
+does not exercise OIDC or validate a new connection. Do not publish dummy
+versions to satisfy this setup requirement.
+
 **First-ever publish** (or emergency) may require interactive authentication
 through the maintainer's personal npm account. Obtain the exact intended,
 verified tarball and its manifest from the coordinated release build first.
@@ -224,9 +292,12 @@ preserve the tag and successful artifacts. Confirm whether the exact npm version
 exists and matches before retrying. A maintainer can retrieve the retained
 verified tarball and manifest, sign in using the personal publishing account and
 publish that exact tarball with `npm publish ./package.tgz --access public
---ignore-scripts`. Do not rebuild through a publication hook. Then rerun only the
-failed npm job; its public lookup checks both SHA512 integrity and the downloaded
-tarball's SHA256 before recognizing a matching version. Only explicit metadata
+--ignore-scripts`. Do not rebuild through a publication hook. If the old tag's
+workflow remains valid, rerun only the failed npm job. If its packaging code
+needs correction, use the [manual recovery controller](#recover-an-existing-release-without-moving-its-tag)
+against the existing tag and source run instead. Its public lookup checks both
+SHA512 integrity and the downloaded tarball's SHA256 before recognizing a
+matching version. Only explicit metadata
 HTTP 404 means absent. Authentication failures, network errors, malformed
 responses and mismatches stop the job. A lost acknowledgement is reconciled
 before the scoped token fallback is attempted. The workflow summary records the

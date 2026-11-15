@@ -23,6 +23,75 @@ def archive(content=b"public runtime", *, modified_time=0):
     return stream.getvalue()
 
 
+class NpmPackMetadataTests(unittest.TestCase):
+    def setUp(self):
+        self.record = {"name": "runkite-governance", "version": "0.8.0", "filename": "runkite-governance-0.8.0.tgz"}
+
+    def test_build_accepts_legacy_list_and_npm12_keyed_result(self):
+        for shape in ([self.record], {self.record["name"]: self.record}):
+            with self.subTest(shape=type(shape).__name__), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source, output = root / "source", root / "artifacts"
+                source.mkdir()
+                (source / "package.json").write_text(
+                    json.dumps(
+                        {"name": self.record["name"], "version": self.record["version"], "license": "Apache-2.0"}
+                    )
+                )
+
+                def pack(command, packed_shape=shape, **_kwargs):
+                    self.assertEqual(command[:4], ["npm", "pack", "--ignore-scripts", "--json"])
+                    (Path(command[-1]) / self.record["filename"]).write_bytes(archive())
+                    return json.dumps(packed_shape).encode()
+
+                with patch.object(release, "_run"), patch.object(release.subprocess, "check_output", side_effect=pack):
+                    manifest = release.build("npm", source, output)
+                self.assertEqual(manifest["name"], self.record["name"])
+                self.assertEqual(manifest["version"], "0.8.0")
+                self.assertEqual(manifest["artifacts"][0]["filename"], self.record["filename"])
+                self.assertEqual(json.loads((output / "manifest.json").read_text()), manifest)
+
+    def test_pack_rejects_malformed_multiple_and_wrong_identity(self):
+        shapes = [
+            [],
+            [self.record, self.record],
+            {},
+            {"other-package": self.record},
+            {self.record["name"]: self.record, "other-package": self.record},
+            [None],
+            {self.record["name"]: []},
+            [dict(self.record, name="other-package")],
+            {self.record["name"]: dict(self.record, version="0.9.0")},
+            "unexpected text",
+            None,
+        ]
+        for shape in shapes:
+            with self.subTest(shape=shape), self.assertRaisesRegex(release.ArtifactError, "metadata"):
+                release._npm_pack_filename(json.dumps(shape).encode(), self.record["name"], self.record["version"])
+
+    def test_pack_rejects_paths_and_invalid_filenames_in_both_formats(self):
+        for filename in (
+            "../package.tgz",
+            "/tmp/package.tgz",
+            "dir/package.tgz",
+            "dir\\package.tgz",
+            "",
+            ".",
+            "..",
+            None,
+            42,
+            "bad\nname.tgz",
+            "package.zip",
+        ):
+            record = dict(self.record, filename=filename)
+            for shape in ([record], {record["name"]: record}):
+                with (
+                    self.subTest(filename=filename, shape=type(shape).__name__),
+                    self.assertRaisesRegex(release.ArtifactError, "filename"),
+                ):
+                    release._npm_pack_filename(json.dumps(shape).encode(), record["name"], record["version"])
+
+
 class RegistryRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -116,6 +185,74 @@ class RegistryRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(release.ArtifactError, "changed"):
                 release.check(manifest_path)
             inspect.assert_not_called()
+
+    def test_public_requests_ask_for_cache_revalidation(self):
+        with patch.object(release.urllib.request, "build_opener") as factory:
+            response = factory.return_value.open.return_value.__enter__.return_value
+            response.status = 200
+            response.read.return_value = b"{}"
+            self.assertEqual(release.public_get("https://registry.npmjs.org/package/0.8.0", 100), b"{}")
+            request = factory.return_value.open.call_args.args[0]
+        self.assertEqual(request.get_header("Cache-control"), "no-cache")
+        self.assertEqual(request.get_header("Pragma"), "no-cache")
+
+    def test_check_polls_explicit_missing_until_matching_version_is_visible(self):
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps(self.manifest))
+        with (
+            patch.object(release, "inspect_registry", side_effect=[[self.file.name], []]) as inspect,
+            patch.object(release.time, "monotonic", return_value=0),
+            patch.object(release.time, "sleep") as sleep,
+            patch.object(release, "_outputs"),
+        ):
+            result = release.check(manifest_path, require_present=True, wait_seconds=300)
+        self.assertEqual(result["state"], "already_matching")
+        self.assertEqual(inspect.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_check_does_not_poll_uncertain_or_mismatching_registry_failures(self):
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps(self.manifest))
+        for message in ("Public registry connection failed", "npm registry tarball differs from intended artifact"):
+            with (
+                self.subTest(message=message),
+                patch.object(release, "inspect_registry", side_effect=release.ArtifactError(message)) as inspect,
+                patch.object(release.time, "sleep") as sleep,
+                self.assertRaisesRegex(release.ArtifactError, message),
+            ):
+                release.check(manifest_path, require_present=True, wait_seconds=300)
+            inspect.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_check_default_does_not_wait_and_explicit_wait_is_bounded(self):
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps(self.manifest))
+        with (
+            patch.object(release, "inspect_registry", return_value=[self.file.name]) as inspect,
+            patch.object(release.time, "sleep") as sleep,
+            patch.object(release, "_outputs"),
+        ):
+            self.assertEqual(release.check(manifest_path)["state"], "needs_publish")
+        inspect.assert_called_once()
+        sleep.assert_not_called()
+        clock = [0]
+
+        def advance(seconds):
+            clock[0] += seconds
+
+        with (
+            patch.object(release, "inspect_registry", return_value=[self.file.name]) as inspect,
+            patch.object(release.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(release.time, "sleep", side_effect=advance),
+            patch.object(release, "_outputs"),
+            self.assertRaisesRegex(release.ArtifactError, "remain unpublished"),
+        ):
+            release.check(manifest_path, require_present=True, wait_seconds=3)
+        self.assertEqual(clock[0], 3)
+        self.assertEqual(inspect.call_count, 4)
+        for invalid in (-1, 301, 0.5):
+            with self.subTest(wait_seconds=invalid), self.assertRaisesRegex(release.ArtifactError, "Registry wait"):
+                release.check(manifest_path, wait_seconds=invalid)
 
     def test_pypi_checks_each_file_and_recovers_only_missing_distribution(self):
         self.manifest["ecosystem"] = "pypi"
