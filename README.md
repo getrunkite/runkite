@@ -45,7 +45,7 @@ See [trust and governance](docs/trust-governance.md), [connectors](docs/connecto
 and the [backend support tiers](docs/architecture.md#backend-support-tiers) for
 the enforcement and deployment contracts.
 
-v0.7.0 adds optional [required policy audit](docs/configuration.md#required-policy-audit)
+v0.7.0 introduced optional [required policy audit](docs/configuration.md#required-policy-audit)
 that blocks access when its SQL decision record cannot be saved. Agent delegation
 derives authority from the active parent assignment. See the
 [hardening design and upgrade notes](docs/internal/action-authority-hardening.md).
@@ -61,16 +61,16 @@ rotate without changing that binding.
 
 <a id="security-completion-in-current-source-unreleased"></a>
 
-### Security completion in current source (v0.7.0)
+### Security controls introduced in v0.7.0
 
-v0.7.0 adds three opt-in controls around existing managed connector
+v0.7.0 introduced three opt-in controls around existing managed connector
 authority: [distinct-reviewer quorum and requester separation](docs/internal/approval-authority-and-quorum.md),
 [durable action evidence export](docs/internal/action-delivery-outbox.md), and
 [registered Vault database credential leases](docs/internal/credential-lifecycle.md).
 Managed approvals bind the current configured policy and optional observed MCP
 tool schema as well as arguments, target and run incarnation. Historical unbound
 approvals require fresh review. These settings are not in published v0.6.1 packages.
-Deploy matching v0.7.0 plane and runner artifacts. Follow the coordinated SQL
+Deploy matching plane and runner versions. Follow the coordinated SQL
 upgrade before enabling new controls; do not mix older writers with the new
 authority fields.
 
@@ -84,21 +84,29 @@ profile. The [qualification record](docs/internal/constrained-execution.md#verif
 states the tested cases and remaining limits. Start with the [security operations guide](site/support/security-completion.html)
 and [upgrade procedure](docs/ops-runbook.md#security-completion-upgrade).
 
-The [release qualification record](docs/internal/security-completion-qualification.md)
-collects the tested backends, installed SDK profiles, failure cases and release
-gates for this source cut.
-The experimental JSONL profile does not yet report model/token usage or settle
-model spend. A zero in Admin is not proof of free execution; existing SDK usage
-reporting is a separate capability.
+The [v0.7.0 qualification record](docs/internal/security-completion-qualification.md)
+collects that release's tested backends, installed SDK profiles, failure cases
+and gates. Its JSONL profile did not report model/token usage or settle model
+spend. The v0.8.0 source adds durably acknowledged cumulative usage reports for
+the configured isolated profile on SQL, with terminal settlement including
+cancellation. Partial reports settle only acknowledged usage; missing
+measurements stay unknown, and a complete reported zero remains distinct.
+These are workload claims, not
+provider-verified bills or hard limits inside a sandbox. Native SDK usage
+reporting remains a separate capability.
 
-### Next release: identity and distribution
+### Identity and distribution in v0.8.0 source
 
-Current development adds an opt-in authenticated-workload ownership profile,
+The v0.8.0 source includes an opt-in authenticated-workload ownership profile,
 constrained delegated token exchange, external audit correlation and explicit
 isolated-workload usage reports. Admin displays admission and worker identity,
 Vault request IDs and unavailable/partial usage separately. These additions are
-not in v0.7.0 artifacts. Governance helpers have installed-artifact tests and
-publication jobs prepared; that is not a registry publication claim.
+not in v0.7.0 artifacts. The TypeScript and Python governance helpers have
+independent distributions and installed-artifact tests. Check
+[Releases](https://github.com/getrunkite/runkite/releases),
+[npm](https://www.npmjs.com/package/runkite-governance) and
+[PyPI](https://pypi.org/project/runkite-governance/) for actual published
+availability; source and package version metadata alone do not establish it.
 
 Follow the [eight tracked RFEs](docs/internal/identity-and-distribution-plan.md),
 [identity and usage guide](site/support/security-identity.html) and
@@ -130,15 +138,19 @@ your application.
 
 For app-owned execution, [AI SDK tool helpers](examples/governance_ai_sdk/README.md)
 and [Microsoft function middleware](examples/governance_agent_framework/README.md)
-use the in-repository `runkite-governance` helpers. These helpers are not published
-npm or PyPI packages. The app executes after allow and owns pending continuation.
+use the independent `runkite-governance` helpers, separate from the runner
+packages. Their [TypeScript](typescript/runkite-governance/README.md) and
+[Python](python/runkite_governance/README.md) guides distinguish installation
+from a verified registry release and from a checkout. The app executes after
+allow and owns pending continuation.
 A decision is not proof of execution, and its `run_id` is an operation correlation
 value rather than execution idempotency.
 
 ### Bring your framework
 
-The v0.7.0 runner packages (Apache-2.0) include these profiles. Each supports its documented
-subset of the framework's native features.
+The v0.8.0 runner source retains these profiles from v0.7.0. Check the runner
+registry links above for published versions, and deploy matching plane and runner
+artifacts. Each profile supports its documented subset of native features.
 
 | Managed framework | Install or select | Runnable example |
 |---|---|---|
