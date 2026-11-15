@@ -1,9 +1,14 @@
 # v0.8.0 package recovery
 
-Status: forward recovery preparation on November 15, 2026. The original
+Status: forward recovery preparation and partial publication verified on
+November 15, 2026. The original
 [Release run 43695507859](https://github.com/getrunkite/runkite/actions/runs/43695507859)
 completed its Docker job successfully, and the Go release assets were separately
-verified. The npm recovery has not been published. This record extends
+verified. Both Python packages are public and match their original retained
+distributions. All six published image variants passed runtime checks and the
+configured vulnerability gate. The npm recovery has not been published. See
+the [artifact qualification checkpoint](identity-distribution-qualification.md#actual-partial-publication)
+for executed checks, evidence and remaining publication gates. This record extends
 [RFE #45, governance helper distribution](https://github.com/getrunkite/runkite/issues/45)
 and [RFE #48, immutable publication recovery](https://github.com/getrunkite/runkite/issues/48).
 See the [operator procedure](../releasing.md#recover-an-existing-release-without-moving-its-tag)

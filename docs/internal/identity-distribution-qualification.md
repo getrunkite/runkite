@@ -147,11 +147,59 @@ under `outputs/runkite-next/hosted-pr66-qualification/`, outside the repository.
 This closes the bounded hosted-qualification gate. It is neither a registry
 publication nor an independent assessment or long-duration production soak.
 
-## Pending publication and external assessment
+## Actual partial publication
 
-First npm/PyPI helper publication, registry authorization and a genuine OIDC publish
-remain unverified. Explicit registry 404 responses establish absence at the
-check time, not name reservation or permission to publish.
+The immutable `v0.8.0` tag points to
+`c63b8203123f6b7d032b0b5aca59abe9227fd973`. The original
+[Release run](https://github.com/getrunkite/runkite/actions/runs/43695507859)
+passed version-check, GoReleaser and Docker publication. Its two npm jobs failed
+before publication, and both PyPI jobs uploaded successfully before failing
+their public-index visibility checks. Preserve those original outcomes. See
+[package recovery](release-recovery-v080.md) for the failure analysis and the
+separate recovery controller.
+
+Actual public artifacts were checked on November 15, 2026:
+
+- All four Go archives passed checksum, architecture, packaged license/notice
+  and source-file checks. All four downloaded binaries executed their version
+  command and reported `0.8.0` at `c63b820`. The three downloaded OpenAPI files
+  matched the tagged source.
+- Both PyPI projects, `runkite-runner` and `runkite-governance`, exposed their
+  wheel and source distribution. All four public SHA256 digests matched the
+  original retained files, and public downloads passed the immutable artifact
+  checker. The governance helper's original upload used its Trusted Publisher;
+  the runner used its project token. This establishes a genuine helper OIDC
+  publication, not an OIDC claim inferred from an existing matching version.
+- All three public GHCR indexes resolved to exactly Linux amd64 and arm64
+  runnable variants. All six variants passed offline version, UID 65532 and
+  license/notice checks. Both TypeScript variants passed all nine native image
+  qualification cases, including offline LangGraph and AI SDK execution.
+- All six published image variants passed Trivy 0.72.0 with the database
+  updated at `2026-11-15T07:02:44Z`: no fixable High or Critical findings.
+  This gate excludes unfixed findings and lower severities. One report came
+  from the remote digest scan; the other five used archives of the exact
+  pulled digests, with manifest, configuration and layer hashes verified.
+
+The first scan harness exhausted its bounded temporary workspace during
+database download. A later remote attempt completed one scan, then was
+cancelled before switching the remaining targets to verified archives. Prior
+attempt logs remain linked from the final evidence; none is rewritten as a
+passing attempt. All owned probe containers and temporary image archives were
+removed. The final artifact evidence is retained outside the repository under
+`outputs/runkite-next/verified-go-v080/`,
+`outputs/runkite-next/v080-go-cross-platform-runtime/` and
+`outputs/runkite-next/v080-ghcr-verified/archive-scans-20261115T093103Z-9e5fef77/`.
+
+<a id="pending-publication-and-external-assessment"></a>
+
+## Pending npm publication and external assessment
+
+Both npm `0.8.0` version lookups still returned explicit metadata 404 responses
+at this checkpoint. The manual package recovery controller remains
+undispatched. Its hosted checks, actual npm publication and final availability
+updates remain required. A 404 establishes absence at the check time, not name
+reservation or permission to publish. The original failed Release run does not
+become green merely because its successful artifacts were separately verified.
 
 Independent reviewer findings, external identity-provider/Vault deployment
 qualification, production PKI rotation, hostile-code attestation, live-provider
