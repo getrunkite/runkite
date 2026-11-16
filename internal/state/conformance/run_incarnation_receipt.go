@@ -27,6 +27,19 @@ func RunInsertionIdentity(t *testing.T, store state.Store) {
 	if err := store.CreateThread(ctx, thread); err != nil {
 		t.Fatal(err)
 	}
+	assertListedIdentity := func(t *testing.T, runID, incarnation string) {
+		t.Helper()
+		rows, err := store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: thread.ThreadID, Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range rows {
+			if row.RunID == runID && row.IncarnationID == incarnation {
+				return
+			}
+		}
+		t.Fatal("run history omitted or changed the retained row's incarnation")
+	}
 	for _, method := range []string{"create", "admitted"} {
 		t.Run(method, func(t *testing.T) {
 			row := &models.Run{RunID: uuid.NewString(), ThreadID: thread.ThreadID, AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now, IncarnationID: "untrusted-caller-identity"}
@@ -47,6 +60,7 @@ func RunInsertionIdentity(t *testing.T, store state.Store) {
 			if err != nil || durable.IncarnationID != original {
 				t.Fatalf("receipt differs from durable row: %+v %v", durable, err)
 			}
+			assertListedIdentity(t, row.RunID, original)
 			raw, err := json.Marshal(row)
 			if err != nil {
 				t.Fatal(err)
@@ -68,6 +82,7 @@ func RunInsertionIdentity(t *testing.T, store state.Store) {
 			if err != nil || durable.IncarnationID != row.IncarnationID {
 				t.Fatal("replacement receipt differs from stored run")
 			}
+			assertListedIdentity(t, row.RunID, row.IncarnationID)
 			// A waiter admitted against the deleted row cannot complete its
 			// replacement, even when every public ID and generation matches.
 			completion := &state.RunCompletion{TrustedSystem: true, RunID: row.RunID, ExpectedIncarnationID: original, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "retained"}}

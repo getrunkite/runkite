@@ -2161,7 +2161,7 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs`
 	var args []interface{}
 	var where []string
 
@@ -2230,7 +2230,7 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		var r models.Run
 		var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 		var createdStr, updatedStr string
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		r.ParentRunID = nullStringToPtr(parentRunIDStr)
@@ -2251,6 +2251,9 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		r.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 		r.AssistantID = r.AgentID // SDK compat
 		runs = append(runs, &r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return runs, nil
 }

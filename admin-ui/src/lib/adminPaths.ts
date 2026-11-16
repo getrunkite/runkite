@@ -1,3 +1,5 @@
+import { connectorActionRunHref } from "./connectorActions.ts";
+
 /** Build Admin API paths and exact UI record links. */
 export function adminTenantQuery(tenantId?: string): string {
   if (tenantId === undefined) return "";
@@ -38,8 +40,42 @@ export function adminRunPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}`;
 }
 
-export function adminThreadPath(threadId: string): string {
-  return `/threads/${encodeURIComponent(threadId)}`;
+/** Retained-reference views can inspect a guarded snapshot, but bare-ID live
+ * operations cannot promise to target that same stored row after replacement.
+ */
+export function adminRunViewPaths(runId: string, expectedTenant: string | null, expectedIncarnation: string | null) {
+  const base = adminRunPath(runId);
+  const retained = expectedTenant !== null || expectedIncarnation !== null;
+  const query = new URLSearchParams();
+  if (expectedTenant !== null) query.set("expected_tenant_id", expectedTenant);
+  if (expectedIncarnation !== null) query.set("expected_incarnation_id", expectedIncarnation);
+  return {
+    retained,
+    detail: retained ? `${base}?${query}` : base,
+    stream: retained ? null : `${base}/stream`,
+    cancel: retained ? null : `${base}/cancel`,
+  };
+}
+
+/** Reuse Run Detail's existing exact retained-record guard for history links. */
+export function adminRetainedRunHref(run: { run_id: string; tenant_id: string; incarnation_id?: string }): string | null {
+  return connectorActionRunHref({
+    run_id: run.run_id,
+    tenant_id: run.tenant_id,
+    run_incarnation_id: run.incarnation_id ?? "",
+  }, true);
+}
+
+export function adminCronRowId(schedule: { tenant_id?: string; name: string }): string {
+  return JSON.stringify([schedule.tenant_id ?? "default", schedule.name]);
+}
+
+export function adminThreadPath(threadId: string, tenantId?: string): string {
+  return `/threads/${encodeURIComponent(threadId)}${adminTenantQuery(tenantId)}`;
+}
+
+export function adminThreadRunsPath(threadId: string, tenantId?: string): string {
+  return `/threads/${encodeURIComponent(threadId)}/runs${adminTenantQuery(tenantId)}`;
 }
 
 /** UI route to the immutable approval record, independent of a reused run ID. */

@@ -845,6 +845,9 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "tenant_id": {
+            "type": "string"
           }
         },
         "title": "CronSchedule"
@@ -1468,6 +1471,72 @@
           "has_overlay"
         ],
         "title": "AdminFinOpsView"
+      },
+      "AdminCronHistoryView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          {
+            "type": "object",
+            "required": [
+              "thread_id",
+              "thread_available",
+              "history_status"
+            ],
+            "properties": {
+              "thread_id": {
+                "type": "string",
+                "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'."
+              },
+              "thread_available": {
+                "type": "boolean"
+              },
+              "history_status": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "empty",
+                  "unavailable"
+                ]
+              },
+              "latest_run": {
+                "type": "object",
+                "required": [
+                  "run_id",
+                  "agent_id",
+                  "status",
+                  "created_at",
+                  "updated_at"
+                ],
+                "properties": {
+                  "run_id": {
+                    "type": "string",
+                    "description": "Custom string identifier; new run/thread IDs must not be '.' or '..'. New run IDs also reject control characters and leading/trailing whitespace; Unicode is supported."
+                  },
+                  "incarnation_id": {
+                    "type": "string",
+                    "description": "Retained SQL insertion identity. Only link to a result when this reference is available."
+                  },
+                  "agent_id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "PendingActionApproval": {
         "type": "object",
@@ -2857,6 +2926,15 @@
             },
             "name": "thread_id",
             "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact tenant selection without trimming. Empty selects default; omission preserves global Admin behavior."
           }
         ],
         "responses": {
@@ -2898,6 +2976,15 @@
             },
             "name": "thread_id",
             "in": "path"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact tenant selection without trimming. Empty selects default; omission preserves global Admin behavior."
           }
         ],
         "responses": {
@@ -2964,6 +3051,15 @@
               "type": "string"
             },
             "description": "Opaque keyset resume token from a prior X-Next-Cursor response (mutually exclusive with offset)."
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact tenant selection without trimming. Empty selects default; omission preserves global Admin behavior."
           }
         ],
         "responses": {
@@ -3169,6 +3265,7 @@
           "Admin"
         ],
         "summary": "Get Run (admin)",
+        "description": "Optional exact retained-record selectors must be supplied together. The same fetched row must match before any run payload is returned. These selectors are identity preconditions, not authorization. Retained-reference UI views are read-only; bare-ID stream/cancel operations are unavailable there.",
         "operationId": "admin_get_run",
         "parameters": [
           {
@@ -3180,6 +3277,23 @@
             },
             "name": "run_id",
             "in": "path"
+          },
+          {
+            "name": "expected_tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expected_incarnation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -3193,8 +3307,28 @@
               }
             }
           },
+          "400": {
+            "description": "Incomplete or duplicate retained reference selectors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -5198,15 +5332,37 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CronSchedule"
-                  }
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CronSchedule"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminCronHistoryView"
+                      }
+                    }
+                  ]
                 }
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "include_history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "description": "Definitions only by default. Literal include_history=true adds each schedule's exact-tenant thread availability and latest retained run metadata. This is not a fire ledger and does not record skips or failures before run creation."
       }
     },
     "/admin-api/usage/summary": {

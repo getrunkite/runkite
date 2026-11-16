@@ -142,6 +142,10 @@ export interface AdminCronSchedule {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  thread_id: string;
+  thread_available: boolean;
+  history_status: "available" | "empty" | "unavailable";
+  latest_run?: Pick<AdminRun, "run_id" | "incarnation_id" | "agent_id" | "status" | "created_at" | "updated_at">;
 }
 
 export interface AdminWebhookDeadLetter {

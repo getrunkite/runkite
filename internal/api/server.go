@@ -515,14 +515,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /admin-api/break-glass/{id}", s.handleAdminDeleteBreakGlass)
 	mux.HandleFunc("GET /admin-api/connectors", withSystemContext(s.handleListConnectors))
 	mux.HandleFunc("GET /admin-api/connectors/{name}", withSystemContext(s.handleGetConnector))
-	mux.HandleFunc("GET /admin-api/cron", withSystemContext(s.handleListCronSchedules))
+	mux.HandleFunc("GET /admin-api/cron", s.handleAdminListCronSchedules)
 	mux.HandleFunc("GET /admin-api/webhooks/dead-letters", withSystemContext(s.handleListWebhookDeadLetters))
 	// Write actions -- the admin UI otherwise has none of its own;
 	// cancel/delete reuse the exact client-facing handlers, scoped to every
 	// tenant the same way every other /admin-api/* route already is;
 	// redeliver is genuinely new (client-facing API has no equivalent).
 	mux.HandleFunc("POST /admin-api/runs/{runID}/cancel", withSystemContext(s.handleCancelRun))
-	mux.HandleFunc("DELETE /admin-api/threads/{threadID}", withSystemContext(s.handleDeleteThread))
+	mux.HandleFunc("DELETE /admin-api/threads/{threadID}", s.handleAdminDeleteThread)
 	mux.HandleFunc("POST /admin-api/webhooks/dead-letters/{id}/redeliver", withSystemContext(s.handleRedeliverWebhook))
 
 	// Admin UI -- the built React dashboard, embedded into the binary
