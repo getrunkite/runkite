@@ -28,12 +28,13 @@ The first-party Go fixture is [internal/api/promptfoo_qualification_test.go](../
 
 The baseline retains tenant `read`/`write` authority and does not require run
 reference headers, preserving the published REST compatibility check. A separate
-`TestNativePromptfooScopedManagedRuns` is prepared behind both
+`TestNativePromptfooScopedManagedRuns` runs behind both
 `RUNKITE_PROMPTFOO_QUALIFY=1` and `RUNKITE_PROMPTFOO_SCOPED_SOURCE=1`. It uses only
 `agents:pfoo-fixture:run` and `agents:pfoo-fixture:observe`; no provider behavior
-or runtime permission code changes. This branch may predate scoped observation.
-The extra profile is pending native qualification on the matching integrated
-security checkout, and the prior broad receipt does not qualify it.
+or runtime permission code changes. Both native profiles passed on the integrated
+source on 2026-11-16 with promptfoo 0.125.1 and Node 26.11.0. Each produced four
+distinct runs and threads with four reference-pinned waits. The scoped profile
+also passed all six denial probes. These are separate qualification receipts.
 
 The source profile requires every native result to report acquired reference
 evidence and all four waits to send the saved expected reference and receive the
@@ -46,7 +47,7 @@ separate. The dedicated workflow requires both profiles on the integrated
 checkout. Its strict 8 KiB receipt validator rejects duplicate or unexpected
 keys, wrong field types, invalid numeric constants, and incorrect counts or
 profile markers. It uploads both summaries only after both validate. The scoped
-native gate still needs to pass after integration before advertising that result.
+native gate must pass on each tested integration before advertising that result.
 
 Both profiles create fresh threads through the existing single run-create
 request with `if_not_exists: create`. The fixture seeds no thread and permits no

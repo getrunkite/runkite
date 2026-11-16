@@ -62,8 +62,8 @@ RUNKITE_PROMPTFOO_QUALIFY=1 RUNKITE_PROMPTFOO_SCOPED_SOURCE=1 CGO_ENABLED=0 go t
 ```
 
 The broad baseline remains the published-compatibility gate. The separate scoped
-profile is prepared for native qualification after security integration; its
-success is not claimed by the existing baseline receipt. It repeats the same four
+profile passed separately on the integrated source on 2026-11-16 using promptfoo
+0.125.1 and Node 26.11.0. It repeats the same four
 CLI evaluations with narrow credentials, requires four saved-reference waits,
 and checks that unrelated public and Admin operations receive 403. An explicit
 request to run it against an older checkout must fail rather than broaden the
