@@ -66,3 +66,10 @@ Focused regressions use SQLite, real request middleware and synthetic credential
 with no external provider calls. Full socket and live qualification are performed
 by the integrating maintainer. This change does not claim that arbitrary local
 tool bodies enforce connector policy or that cancellation undoes prior effects.
+
+The Ubuntu race gate retains the entire auth, policy and API suites. Its first
+five-minute API attempt reached test 445 of 525 while actively initializing a
+fresh SQLite fixture, without a race report. The package budget is ten minutes,
+matching ordinary Go test defaults, with verbose timing and a bounded twenty-minute
+job. This is a qualification-harness budget, not a change to runtime deadlines.
+Require the hosted gate to pass before merging; reaching the budget is not a pass.
