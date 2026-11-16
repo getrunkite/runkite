@@ -24,7 +24,7 @@ permissions:
 jobs:
   race-regressions:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       CGO_ENABLED: "1"
     steps:
@@ -42,4 +42,6 @@ jobs:
       - name: Full auth, policy and API race suites
         # Default suites use local fixtures. Live/provider qualification remains
         # opt-in; this workflow supplies no provider credentials or test data.
-        run: go test -race ./internal/auth ./internal/policy ./internal/api -count=1 -timeout=300s
+        # Match the normal Go test package budget. Race-instrumented pure-Go
+        # SQLite migrations across the full API suite exceed five minutes.
+        run: go test -race ./internal/auth ./internal/policy ./internal/api -count=1 -timeout=600s -v
