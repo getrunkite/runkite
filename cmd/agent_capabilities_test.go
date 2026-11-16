@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -74,7 +75,7 @@ func TestBootstrapAgentCapabilitiesPreservesHistoryAndStableVersions(t *testing.
 		Description: fmt.Sprintf("Graph loaded from %s (./agent.py:graph)", path),
 		Metadata:    map[string]interface{}{"source": path, "symbol": "graph", "runner_kind": "python-langgraph"},
 		Capabilities: map[string]interface{}{
-			"vendor":          map[string]interface{}{"nested": []interface{}{false, nil, "opaque"}},
+			"vendor":          map[string]interface{}{"nested": []interface{}{false, nil, "opaque", json.Number("9007199254740993"), json.Number("1.0000000000000001")}},
 			"runkite_profile": map[string]interface{}{"vendor/extra": map[string]interface{}{"enabled": false}, "native_resume": "stale"},
 		},
 	}

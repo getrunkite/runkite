@@ -100,6 +100,15 @@ export const api = {
       headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
+  /** Explicit raw JSON path for forms that must retain opaque numeric tokens. */
+  putRawJSON: <T>(path: string, body: string) => {
+    JSON.parse(body); // Validate, then send the original string without re-encoding.
+    return requestData<T>(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+  },
   del: <T>(path: string) => requestData<T>(path, { method: "DELETE" }),
 };
 

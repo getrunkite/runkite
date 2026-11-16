@@ -9,7 +9,8 @@ export interface EntryForm {
   tags: string;
   source_type: string;
   source_ref: string;
-  metadata?: AdminRegistryEntry["metadata"];
+  // undefined is a new form; null means an older replica omitted the raw field.
+  metadata_json?: string | null;
 }
 
 export const emptyForm = (): EntryForm => ({
@@ -33,16 +34,16 @@ export function formFromEntry(e: AdminRegistryEntry): EntryForm {
     tags: (e.tags ?? []).join(", "),
     source_type: e.source_type,
     source_ref: e.source_ref,
-    ...(e.metadata !== undefined ? { metadata: e.metadata } : {}),
+    metadata_json: e.metadata_json ?? null,
   };
 }
 
-export function bodyFromForm(f: EntryForm): Omit<AdminRegistryEntry, "tenant_id" | "version" | "created_at" | "updated_at"> {
+export function jsonBodyFromForm(f: EntryForm): string {
   const tags = f.tags
     .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  return {
+  const body = {
     name: f.name.trim(),
     display_name: f.display_name.trim() || undefined,
     description: f.description.trim() || undefined,
@@ -50,7 +51,22 @@ export function bodyFromForm(f: EntryForm): Omit<AdminRegistryEntry, "tenant_id"
     tags: tags.length ? tags : undefined,
     source_type: f.source_type.trim(),
     source_ref: f.source_ref.trim(),
-    // The form does not edit metadata, but PUT replaces the entry.
-    ...(f.metadata !== undefined ? { metadata: f.metadata } : {}),
   };
+  const encoded = JSON.stringify(body);
+  if (f.metadata_json === undefined) return encoded;
+  if (f.metadata_json === null) {
+    throw new Error("Reload this entry from an updated server before saving its metadata.");
+  }
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(f.metadata_json);
+  } catch {
+    throw new Error("Reload this entry before saving: stored metadata JSON is unavailable.");
+  }
+  if (metadata !== null && (typeof metadata !== "object" || Array.isArray(metadata))) {
+    throw new Error("Reload this entry before saving: stored metadata must be an object or null.");
+  }
+  // Validation above never becomes serialization. The parsed object may contain
+  // rounded numbers; splice only the original fragment at this fixed property.
+  return `${encoded.slice(0, -1)},"metadata":${f.metadata_json}}`;
 }

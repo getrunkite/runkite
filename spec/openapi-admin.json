@@ -661,6 +661,9 @@
       },
       "AdminRegistryEntryView": {
         "type": "object",
+        "required": [
+          "metadata_json"
+        ],
         "properties": {
           "name": {
             "type": "string"
@@ -691,6 +694,10 @@
           },
           "version": {
             "type": "integer"
+          },
+          "metadata_json": {
+            "type": "string",
+            "description": "Stored metadata encoded as a JSON string for lossless browser replacement PUT. Validate as an object or null and retain the string without re-encoding parsed numbers. Storage precision limits still apply."
           },
           "created_at": {
             "type": "string",

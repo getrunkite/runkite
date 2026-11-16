@@ -7,7 +7,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry, AdminRegistryEntryVersion } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminRegistryPath, adminRegistryVersionsPath, adminTenantQuery } from "../lib/adminPaths";
-import { bodyFromForm, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
+import { jsonBodyFromForm, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -59,7 +59,7 @@ export function RegistryEntry() {
     setSaving(true);
     try {
       const q = adminTenantQuery(form.tenant_id);
-      const saved = await api.put<AdminRegistryEntry>(`/registry/${encodeURIComponent(slug)}${q}`, bodyFromForm(form));
+      const saved = await api.putRawJSON<AdminRegistryEntry>(`/registry/${encodeURIComponent(slug)}${q}`, jsonBodyFromForm(form));
       toast.success(isNew ? "Entry published" : "Entry updated", { description: slug });
       if (isNew) {
         navigate(`/admin/registry/${encodeURIComponent(slug)}?tenant_id=${encodeURIComponent(saved.tenant_id)}`, {
@@ -71,7 +71,7 @@ export function RegistryEntry() {
       }
     } catch (err) {
       toast.error("Save failed", {
-        description: err instanceof ApiError ? err.message : "Request failed.",
+        description: err instanceof Error ? err.message : "Request failed.",
       });
     } finally {
       setSaving(false);
@@ -134,7 +134,7 @@ export function RegistryEntry() {
               verify compatibility or grant connector access from this metadata.
               {" "}<a className="text-primary hover:underline" href={supportPage("registry.html#requirements")} target="_blank" rel="noreferrer">Requirements convention</a>
             </p>
-            <pre className="max-h-80 overflow-auto rounded-sm bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">{JSON.stringify(entry.data.metadata, null, 2)}</pre>
+            <pre className="max-h-80 overflow-auto rounded-sm bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">{entry.data.metadata_json ?? "Raw metadata is unavailable. Reload after upgrading every HTTP replica."}</pre>
           </CardContent>
         </Card>
       )}

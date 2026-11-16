@@ -569,6 +569,10 @@ func nonNilTags(tags []string) []string {
 func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.RegistryEntry) error {
 	tid := tenant.FromContext(ctx)
 	tags := nonNilTags(entry.Tags)
+	metadata, err := registryMetadataForBSON(entry.Metadata)
+	if err != nil {
+		return err
+	}
 
 	return s.withTransaction(ctx, func(sessCtx context.Context) error {
 		now := time.Now().UTC()
@@ -580,7 +584,7 @@ func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.Registry
 		if err == nil {
 			version = existing.Version
 			versionChanged = false
-			metaBytes, _ := json.Marshal(entry.Metadata)
+			metaBytes, _ := json.Marshal(metadata)
 			existingMetaBytes, _ := json.Marshal(existing.Metadata)
 			tagsBytes, _ := json.Marshal(tags)
 			existingTagsBytes, _ := json.Marshal(nonNilTags(existing.Tags))
@@ -602,7 +606,7 @@ func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.Registry
 					"display_name": entry.DisplayName, "description": entry.Description,
 					"author": entry.Author, "tags": tags,
 					"source_type": entry.SourceType, "source_ref": entry.SourceRef,
-					"metadata": entry.Metadata, "version": version, "updated_at": now,
+					"metadata": metadata, "version": version, "updated_at": now,
 				},
 				"$setOnInsert": bson.M{"tenant_id": tid, "name": entry.Name, "created_at": now},
 			},
@@ -616,7 +620,7 @@ func (s *Store) PublishRegistryEntry(ctx context.Context, entry *models.Registry
 			if _, err := s.col("registry_entry_versions").InsertOne(sessCtx, registryEntryVersionDoc{
 				TenantID: tid, Name: entry.Name, Version: version,
 				DisplayName: entry.DisplayName, Description: entry.Description, Author: entry.Author, Tags: tags,
-				SourceType: entry.SourceType, SourceRef: entry.SourceRef, Metadata: entry.Metadata, CreatedAt: now,
+				SourceType: entry.SourceType, SourceRef: entry.SourceRef, Metadata: metadata, CreatedAt: now,
 			}); err != nil {
 				return err
 			}

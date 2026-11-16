@@ -950,7 +950,9 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &v.Metadata)
-	json.Unmarshal(capsBytes, &v.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &v.Capabilities); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }
 
@@ -1208,7 +1210,9 @@ func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &e.Tags)
-	json.Unmarshal(metaBytes, &e.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &e.Metadata); err != nil {
+		return nil, err
+	}
 	return &e, nil
 }
 
@@ -1219,7 +1223,9 @@ func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVer
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &v.Tags)
-	json.Unmarshal(metaBytes, &v.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &v.Metadata); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }
 
@@ -1241,7 +1247,9 @@ func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, er
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &a.Metadata)
-	json.Unmarshal(capsBytes, &a.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &a.Capabilities); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 
@@ -1315,7 +1323,9 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 			return nil, err
 		}
 		json.Unmarshal(metaBytes, &a.Metadata)
-		json.Unmarshal(capsBytes, &a.Capabilities)
+		if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &a.Capabilities); err != nil {
+			return nil, err
+		}
 		agents = append(agents, &a)
 	}
 	return agents, nil
