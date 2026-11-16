@@ -68,11 +68,19 @@ successful output. Durable error, interruption and timeout remain tool errors.
 
 ## Authority and qualification
 
-Use a dedicated tenant's read/write credential, not an Admin key. Incoming MCP
-requires write authority, and retry observation requires REST read authority.
-An agent-run-only key is insufficient. A fixed target in a trusted client does
-not narrow the actual server-side rights of that credential. The native runtime
-can access its environment; the wrapper is not a sandbox or credential vault.
+The Unreleased source update uses a dedicated tenant's named credential with
+`agents:<specialist>:run` plus explicit `agents:<specialist>:observe`. Published
+v0.9.0 used broader read/write authority and lacks this profile. Exact GET/wait
+recovery checks the stored agent and SQL incarnation reference. The bridge saves
+that reference in a separate private file and refuses later replacement. Before
+a first reference is received, it cannot prove that the run ID was never deleted
+and reused. Retention and saved attempt markers remain required.
+
+These grants are agent-scoped, not requester-private. Existing creation can
+continue a known tenant thread, so dedicated-tenant/single-caller guidance stays.
+A fixed target in a trusted client does not narrow its credential. The native
+runtime can access its environment; the wrapper is not a sandbox or vault. See
+[the scoped contract](scoped-specialist-access.md).
 
 The [example guide](../../examples/trinity_specialist_mcp/README.md) separates
 three kinds of evidence: pinned upstream configuration functions, the actual

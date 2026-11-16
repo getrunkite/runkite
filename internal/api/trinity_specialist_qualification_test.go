@@ -99,7 +99,7 @@ func newTrinityQualificationFixture(t *testing.T, binary, python string) *trinit
 	t.Setenv("RUNNER_TENANTS_PYTHON_LANGGRAPH", "default")
 	runnerTokens := auth.LoadRunnerTokensFromEnv()
 	provider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
-		trinityClientFixture: {Name: "trinity-qualification", TenantID: "default", Permissions: []string{"read", "write"}},
+		trinityClientFixture: {Name: "trinity-qualification", TenantID: "default", Permissions: []string{auth.AgentRunPermission("echo_agent"), auth.AgentObservePermission("echo_agent")}},
 	})
 	ctx := tenant.ScopedContext(context.Background(), "default")
 	if err := env.store.UpsertAgent(ctx, &models.Agent{AgentID: "echo_agent", Name: "echo_agent"}); err != nil {

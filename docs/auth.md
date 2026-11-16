@@ -1,5 +1,32 @@
 # Auth
 
+## Scoped specialist callers (Unreleased, source checkout only)
+
+Published v0.9.0 does not include these additions. Current source accepts
+`agents:<id>:run` for the exact `/mcp` POST/GET/DELETE transport lifecycle and
+filters discovery to runnable agents. Invocation checks the agent again.
+Run-only credentials acquire no general read permission.
+
+The new explicit `agents:<id>:observe` grant permits only exact public
+`GET /runs/{run_id}` and `GET /runs/{run_id}/wait`, after the plane checks the
+stored tenant and agent. It does not grant MCP invocation, broad search, thread
+history, store access, streaming, cancellation or deletion. Use both grants for
+a specialist caller. Existing `read`, `write`, `admin` and no-auth local-mode
+behavior remain available.
+
+Scoped observation requires SQL-backed durable run incarnations. Read the
+run's `Runkite-Run-Reference` response header, persist it, then supply
+`Runkite-Expected-Run-Reference` on later GETs and waits. Scoped wait requires
+that identity precondition. It is not a credential or HTTP ETag. See the
+[scoped specialist contract](internal/scoped-specialist-access.md) for errors,
+retention and the boundary before a caller first saves a reference.
+
+This is agent-wide observation, including older retained runs for that agent,
+not requester-only privacy. Keep a dedicated tenant and one trusted caller when
+thread/history isolation matters. Scoped creation can still continue a known
+tenant thread. MCP sessions bind canonical permissions, verified identity,
+provenance and claims; changing authority requires reconnecting.
+
 <a id="strict-admission-identity-unreleased-after-v070"></a>
 
 ## Strict admission identity (v0.8.0)
@@ -36,7 +63,7 @@ Four providers, configured via `auth` in `langgraph.json`:
 | `jwt` | Validate tokens against a JWKS endpoint, extract claims |
 | `webhook` | Forward headers to a sidecar service for custom auth logic |
 
-**Authorization**: `permissions` set on an API key, JWT claim, or webhook response are enforced -- `read` is required for GET/HEAD, `write` for other methods (`admin` bypasses both). `POST /governance/decide` and `GET /governance/actions/{id}` are the exception: they require `governance:decide`, which `read`, `write`, and `agents:<agent_id>:run` do not imply. Optional `agents:<agent_id>:run` is **not** blanket write: it satisfies route-level `write` only on run-create routes (`POST /runs`, `POST /runs/stream`, `POST /runs/wait`, and the matching `POST /threads/{id}/runs[...]` variants). It does **not** authorize DELETE/cancel/store/thread mutations. Inside `createRunCtx`, `CanRunAgent` still requires that exact agent (blanket `write`/`admin` allow any agent). Pair with `read` if the client needs to stream/wait after create, e.g. `["read", "agents:echo:run"]`. When `auth.type` is `api_key`, `jwt`, or `webhook`, **empty permissions fail closed by default** (`403`) -- every caller must carry an explicit allow-list. Set `"strict_permissions": false` only for local/dev if you intentionally want the old empty=unrestricted behavior. `"strict_permissions": true` is always fail-closed (same as the default for those provider types).
+**Authorization**: `permissions` set on an API key, JWT claim, or webhook response are enforced -- `read` is required for GET/HEAD, `write` for other methods (`admin` bypasses both). `POST /governance/decide` and `GET /governance/actions/{id}` are the exception: they require `governance:decide`, which `read`, `write`, and `agents:<agent_id>:run` do not imply. Optional `agents:<agent_id>:run` is **not** blanket write: it satisfies route-level `write` on run-create routes (`POST /runs`, `POST /runs/stream`, `POST /runs/wait`, and the matching `POST /threads/{id}/runs[...]` variants). In Unreleased source, it also admits the exact MCP transport lifecycle described above. It does **not** authorize cancel/store/thread mutations or general REST reads. Inside `createRunCtx`, `CanRunAgent` still requires that exact agent (blanket `write`/`admin` allow any agent). Pair with `read` if the client needs to stream/wait after create, e.g. `["read", "agents:echo:run"]`. When `auth.type` is `api_key`, `jwt`, or `webhook`, **empty permissions fail closed by default** (`403`) -- every caller must carry an explicit allow-list. Set `"strict_permissions": false` only for local/dev if you intentionally want the old empty=unrestricted behavior. `"strict_permissions": true` is always fail-closed (same as the default for those provider types).
 
 For the managed AI SDK chat bridge, keep the Runkite credential on the application server and give it the managed API permissions it needs. The full integration creates threads and runs, reads streams and durable completion, and cancels runs, so it uses a key with `read` and `write`. A `governance:decide` key alone cannot perform those operations. The app still authenticates users and checks ownership of its chat-to-thread mapping on every request. See the [integration guide](../site/support/sdk-integration.html).
 

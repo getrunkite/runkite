@@ -2,6 +2,31 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
+## Scoped specialist access (Unreleased, source checkout only)
+
+Published v0.9.0 does not include scoped MCP permissions or durable observation
+references. Current source accepts `agents:<id>:run` on `/mcp`, advertises only
+runnable agents and rechecks invocation authority. Pair it with the new explicit
+`agents:<id>:observe` grant for exact public run GET/wait recovery. No `read` or
+`write` grant is needed for that profile. Other REST paths remain separately
+authorized. No-auth local mode and existing broad permissions remain compatible.
+
+Stateful sessions capture authority. Every later HTTP request must match its
+canonical tenant, identity, permissions, verification, provenance and claims;
+permission reordering/duplicates are equivalent. Changed authority requires a
+new session. This is request-time checking, not cancellation of an already
+admitted call.
+
+On SQL, completed managed tool results add a nonsecret
+`_meta["runkite/run_reference"]` identity reference. Public exact run GET/wait
+responses return the same value in `Runkite-Run-Reference`. Persist the first
+reference and send `Runkite-Expected-Run-Reference` on recovery. Scoped wait
+requires it. A supplied reference is checked for broad credentials too. A
+missing or replaced retained row cannot dispatch work through these GET routes.
+Before any reference is received and saved, the caller cannot prove that a run
+ID was never deleted and recreated. Retention still bounds recovery and MCP
+create-retry deduplication. See the [complete contract](internal/scoped-specialist-access.md).
+
 The reverse direction of Connectors: Connectors let a Runkite *agent* consume external MCP tool servers (MCP-client); this exposes Runkite's *own* configured agents *as* MCP tools, so any MCP-speaking client (IDEs, desktop apps, or your own tooling) can call them directly.
 
 ```
@@ -73,8 +98,8 @@ This is a synchronous call and reattachment contract, not a background task
 API. A client delivery timeout or disconnect does not prove that the worker
 stopped, and it must not trigger a blind retry with a new ID. Observation uses
 current caller authority; knowing an operation ID does not grant another
-agent's run permission. The HTTP MCP endpoint still uses its normal write/admin
-authentication gate; an agent-run-only key is not a general MCP credential.
+agent's run permission. Published v0.9.0 uses its normal write/admin authentication gate. Current
+source adds the scoped profile above; it does not grant general REST reads.
 
 Retain the run for as long as callers need retry protection. Deleting/pruning
 the row ends that protection. Run insertion and queue enqueue are not one
