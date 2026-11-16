@@ -83,8 +83,19 @@ business effects still need their own idempotency.
 The checkout example keeps immutable intent and an attempt marker before sending.
 It saves the first response reference in a separate mode-0600 `.run-reference`
 file using its existing fsync plus exclusive-publication discipline. Concurrent
-writers must agree. Later GET and wait requests use that saved reference, validate
-run/agent/thread/exact input, and refuse conflicting reference or missing retention.
+writers must agree. The state directory must have an existing parent and a clean
+absolute path; the bridge creates only the final directory. Every caller fsyncs
+the parent before accepting new or existing state. Loading valid intent or a
+reference establishes an independent state-directory fsync before use, so an
+in-flight linked file cannot borrow its publisher's unfinished durability barrier.
+The same helper fences fresh and already-existing publications. Failed prepare
+or load barriers stop before any MCP request or adoption of a loaded reference.
+A failed response-reference publication leaves the already-sent outcome unknown.
+This requires POSIX directory fsync and hard-link support; it does not protect
+against local
+same-user mutation, filesystem rollback or manual deletion. Later GET and wait
+requests use that saved reference, validate run/agent/thread/exact input, and
+refuse conflicting reference or missing retention.
 A missing reference from an incompatible server fails observation instead of
 reinvoking an attempted operation. This does not sandbox the surrounding agent.
 
@@ -97,4 +108,8 @@ SQLite tests cover stored-agent/tenant isolation, concurrent retained observers,
 reference mismatch for broad callers, deletion/recreation and completion's
 transactional incarnation precondition. The existing installed Trinity worker
 qualification now configures the narrow grants; its native upstream runtime
-qualification remains a separate boundary.
+qualification remains a separate boundary. Private-receipt regressions use real
+POSIX search-only directories to keep known intent/reference files readable
+while directory opens for fsync fail. They prove that new/existing parent state,
+loaded intent and loaded pins fail closed without mutable production hooks.
+Existing concurrent-process tests still require one first-send claim.

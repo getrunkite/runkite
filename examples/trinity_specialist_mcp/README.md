@@ -81,8 +81,9 @@ Edit `.mcp.json.template` in the printed staging directory before deployment:
 - `RUNKITE_BRIDGE_AGENT`: the fixed configured specialist, initially `echo_agent`.
 - `RUNKITE_BRIDGE_PROFILE`: a stable local profile name for this authority and
   destination. It is caller bookkeeping, not a server-verified tenant identity.
-- `RUNKITE_BRIDGE_STATE`: an absolute persistent directory. The template uses
-  `/home/developer/.runkite-specialist`.
+- `RUNKITE_BRIDGE_STATE`: an absolute persistent directory with an existing
+  parent. Use a clean path without dot components or a trailing slash. The
+  template uses `/home/developer/.runkite-specialist`.
 - Keep `RUNKITE_API_KEY` as the `${RUNKITE_API_KEY}` placeholder. Supply its value
   through Trinity's credential setup, never in the template, arguments or Git.
 
@@ -92,7 +93,25 @@ must therefore sit next to one another at the root of this agent package. The
 agent home is a persistent volume; protect and retain its bridge state across
 restarts. Intent receipts contain conversation input even though they do not
 store final specialist output. Keep them out of Git, reports and shared folders.
-The bridge creates its private state directory with mode `0700`.
+The bridge creates only its final private state directory with mode `0700`;
+it does not recursively create missing parents. Prepare the parent explicitly
+inside the agent container or when provisioning its persistent volume:
+
+```sh
+mkdir -p /home/developer
+# For a custom RUNKITE_BRIDGE_STATE, create its parent here instead.
+```
+
+Before accepting new or existing state, the bridge fsyncs the parent directory.
+Before using a loaded intent or run reference, it fsyncs the state directory
+itself. Each caller establishes these barriers even when another process has
+just published the same file. A failed barrier stops the invocation before any
+MCP call when preparing or loading caller state. A failed response-reference
+publication instead leaves the already-sent operation unknown. This requires a
+local filesystem that supports directory fsync and exclusive hard-link
+publication. A readable receipt alone is insufficient
+proof of persistence. These checks do not defend against another process
+already running as the same OS user, filesystem rollback or manual deletion.
 
 Keep this staging directory outside Git. Trinity's Git-aware archive path omits
 ignored untracked files, including the compiled binary this repository correctly

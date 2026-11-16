@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -329,5 +330,108 @@ func TestRunReferencePrivateDurableAndImmutable(t *testing.T) {
 	}
 	if err := loadRunReference(cfg.State, restarted); err == nil {
 		t.Fatal("accepted public reference file")
+	}
+}
+
+// POSIX search permission allows reading a known child but not opening the
+// directory for its persistence barrier. No global filesystem hook is needed.
+func denyReceiptDirectoryRead(t *testing.T, path string, mode os.FileMode) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX directory permissions required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, info.Mode().Perm()) })
+	if dir, err := os.Open(path); err == nil {
+		_ = dir.Close()
+		t.Skip("process bypasses POSIX directory read restrictions")
+	}
+}
+
+func TestPrepareDirectoryRequiresParentDurabilityOnNewAndExistingPaths(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing_%v", existing), func(t *testing.T) {
+			parent := receiptTestDirectory(t)
+			state := filepath.Join(parent, "state")
+			if existing {
+				if err := os.Mkdir(state, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The parent remains writable/searchable, so a missing child can be
+			// created. Only opening it for the durability barrier is forbidden.
+			denyReceiptDirectoryRead(t, parent, 0300)
+			if err := prepareDirectory(state); err == nil {
+				t.Fatal("accepted state directory without syncing its parent entry")
+			}
+			if info, err := os.Stat(state); err != nil || !info.IsDir() {
+				t.Fatal("fixture failed before the directory persistence barrier", err)
+			}
+		})
+	}
+}
+
+func TestPrepareDirectoryRejectsUncleanPath(t *testing.T) {
+	state := receiptTestDirectory(t)
+	for _, path := range []string{state + string(os.PathSeparator), state + string(os.PathSeparator) + "."} {
+		if err := prepareDirectory(path); err == nil {
+			t.Fatal("accepted inconsistent state path spelling")
+		}
+	}
+}
+
+func TestPrepareDirectoryRequiresExistingParent(t *testing.T) {
+	state := filepath.Join(receiptTestDirectory(t), "missing-parent", "state")
+	if err := prepareDirectory(state); err == nil {
+		t.Fatal("recursively created ancestors without a durability boundary")
+	}
+	if _, err := os.Stat(filepath.Dir(state)); !os.IsNotExist(err) {
+		t.Fatal("created an unowned ancestor", err)
+	}
+}
+
+func TestLoadedIntentRequiresOwnDirectoryBarrier(t *testing.T) {
+	cfg := receiptTestConfig(t)
+	in := receiptTestInvocation()
+	if _, err := loadOrSaveReceipt(cfg, cfg.URL, in); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfg.State, receiptName(in.OperationID)+".json")
+	denyReceiptDirectoryRead(t, cfg.State, 0100)
+	if _, err := os.ReadFile(path); err != nil {
+		t.Fatal("fixture cannot read the existing valid intent", err)
+	}
+	if _, err := loadOrSaveReceipt(cfg, cfg.URL, in); err == nil {
+		t.Fatal("trusted readable intent without completing its own directory sync")
+	}
+}
+
+func TestLoadedRunReferenceRequiresOwnDirectoryBarrier(t *testing.T) {
+	cfg := receiptTestConfig(t)
+	r, err := loadOrSaveReceipt(cfg, cfg.URL, receiptTestInvocation())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := "runkite-run-v1-" + strings.Repeat("a", 64)
+	if err := pinRunReference(cfg.State, r, reference); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfg.State, receiptName(r.OperationID)+".run-reference")
+	r.RunReference = ""
+	denyReceiptDirectoryRead(t, cfg.State, 0100)
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != reference {
+		t.Fatal("fixture cannot read the existing valid reference", err)
+	}
+	if err := loadRunReference(cfg.State, r); err == nil {
+		t.Fatal("trusted readable reference without completing its own directory sync")
+	}
+	if r.RunReference != "" {
+		t.Fatal("adopted reference before the persistence barrier")
 	}
 }

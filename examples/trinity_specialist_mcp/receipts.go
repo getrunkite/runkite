@@ -22,10 +22,12 @@ type receipt struct {
 }
 
 func prepareDirectory(path string) error {
-	if !filepath.IsAbs(path) {
-		return errors.New("absolute state directory required")
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return errors.New("absolute clean state directory required")
 	}
-	if err := os.MkdirAll(path, 0700); err != nil {
+	// Require an existing parent so this helper creates only one directory
+	// entry, whose durability it can establish before any caller dispatch.
+	if err := os.Mkdir(path, 0700); err != nil && !os.IsExist(err) {
 		return err
 	}
 	info, err := os.Lstat(path)
@@ -35,7 +37,18 @@ func prepareDirectory(path string) error {
 	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return errors.New("private directory required")
 	}
-	return nil
+	// An existing directory can belong to a concurrent writer whose mkdir
+	// has not reached disk yet. Establish our own parent-entry barrier.
+	return syncDirectory(filepath.Dir(path))
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func receiptName(id string) string {
@@ -78,6 +91,11 @@ func loadOrSaveReceipt(cfg bridgeConfig, endpoint string, in invocation) (*recei
 	if json.Unmarshal(stored, &got) != nil || got != want {
 		return nil, errors.New("operation binding changed")
 	}
+	// Another writer may have linked complete bytes without yet syncing the
+	// directory. Do not trust that writer to complete our durability barrier.
+	if err := syncDirectory(cfg.State); err != nil {
+		return nil, err
+	}
 	return &got, nil
 }
 
@@ -113,12 +131,7 @@ func publishPrivateFile(directory, path string, data []byte) (created bool, err 
 			return false, errors.New("invalid existing operation file")
 		}
 	}
-	dir, err := os.Open(directory)
-	if err != nil {
-		return false, err
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
+	if err := syncDirectory(directory); err != nil {
 		return false, err
 	}
 	return created, nil
@@ -168,6 +181,11 @@ func loadRunReference(directory string, r *receipt) error {
 	}
 	if _, err := hex.DecodeString(strings.TrimPrefix(reference, "runkite-run-v1-")); err != nil {
 		return errors.New("invalid run reference file")
+	}
+	// Reading an in-flight link is not a persistence barrier. Recovery must
+	// establish its own barrier before using this immutable identity pin.
+	if err := syncDirectory(directory); err != nil {
+		return err
 	}
 	r.RunReference = reference
 	return nil
