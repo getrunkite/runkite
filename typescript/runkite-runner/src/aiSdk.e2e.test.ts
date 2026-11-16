@@ -148,6 +148,15 @@ export function reconnect(context: { runId: string; signal: AbortSignal }) {
   }, { once: true });
   return buildAgent(context, true);
 }
+export function agui(context: { runId: string; signal: AbortSignal }) {
+  return {
+    model: new MockLanguageModelV4({ modelId: 'e2e-offline-model', doStream: async () => {
+      appendFileSync(process.env.E2E_CALLS_FILE, JSON.stringify({ runId: context.runId, agui: true }) + '\\n');
+      return stream(textParts('AG-UI text 🌍 e\\u0301 भारत'));
+    } }),
+    maxRetries: 0,
+  };
+}
 export function slow(context: { runId: string; signal: AbortSignal }) {
   context.signal.addEventListener('abort', () => {
     appendFileSync(process.env.E2E_CANCEL_FILE, context.runId + '\\n');
@@ -201,12 +210,14 @@ test(
           e2e_slow: "./agent.ts:slow",
           e2e_denied: "./agent.ts:agent",
           e2e_reconnect: "./agent.ts:reconnect",
+          e2e_agui: "./agent.ts:agui",
         },
         allowed_tools: { e2e_denied: [] },
         auth: {
           type: "api_key",
           keys: {
             "local-e2e-key": { permissions: ["admin"] },
+            "agui-e2e-key": { permissions: ["read", "write"] },
             "acme-e2e-key": { tenant_id: "acme雪", permissions: ["read", "write"] },
           },
         },
@@ -440,6 +451,59 @@ test(
         );
         await helper.verifyManagedBridge({ baseUrl, threadId: await createThread(), agentId: "e2e_agent" });
       });
+
+      if (process.env.RUNKITE_TEST_AG_UI === "1") {
+        await runCase("official AG-UI client renders and replaces a retained real managed text run", async () => {
+          const helper = await import(
+            new URL("../../../examples/managed_ag_ui/bridge.e2e-helper.ts", import.meta.url).href
+          );
+          const aguiThread = await createThread();
+          const runId = await helper.verifyManagedAGUI({
+            baseUrl,
+            threadId: aguiThread,
+            agentId: "e2e_agui",
+            apiKey: "agui-e2e-key",
+          });
+          const runs = await request(`/threads/${aguiThread}/runs`);
+          assert.equal(runs.length, 1);
+          assert.equal(runs[0].run_id, runId);
+          assert.equal((await readJsonLines(callsFile)).filter((call) => call.runId === runId).length, 1);
+          assert.equal((await readJsonLines(effectsFile)).filter((effect) => effect.runId === runId).length, 0);
+        });
+        await runCase("AG-UI detach and running replay preserve execution until explicit app Stop", async () => {
+          const helper = await import(
+            new URL("../../../examples/managed_ag_ui/bridge.e2e-helper.ts", import.meta.url).href
+          );
+          const aguiThread = await createThread();
+          const runId = await helper.verifyManagedAGUIDetachAndStop({
+            baseUrl,
+            threadId: aguiThread,
+            agentId: "e2e_slow",
+            apiKey: "agui-e2e-key",
+            assertDetached: async (activeRunId: string) => {
+              const run = await request(`/threads/${aguiThread}/runs/${activeRunId}`);
+              assert.ok(["pending", "running"].includes(run.status));
+              assert.equal((await readJsonLines(callsFile)).filter((call) => call.runId === activeRunId).length, 1);
+              try {
+                assert.equal((await readFile(cancelFile, "utf8")).includes(activeRunId), false);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+              }
+            },
+          });
+          await waitFor("AG-UI Stop reaches the real detached model", async () => {
+            try {
+              return (await readFile(cancelFile, "utf8")).includes(runId) || false;
+            } catch {
+              return false;
+            }
+          });
+          assert.equal((await completedRun(aguiThread, runId)).status, "interrupted");
+          assert.equal((await request(`/threads/${aguiThread}/runs`)).length, 1);
+          assert.equal((await readJsonLines(callsFile)).filter((call) => call.runId === runId).length, 1);
+          assert.equal((await readJsonLines(effectsFile)).filter((effect) => effect.runId === runId).length, 0);
+        });
+      }
 
       await runCase(
         "detached managed chat attaches to its running and completed run without another execution",

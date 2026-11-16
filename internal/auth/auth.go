@@ -315,7 +315,7 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 				json.NewEncoder(w).Encode(map[string]string{"message": "insufficient permissions (requires 'admin')"})
 				return
 			}
-		} else if !authorized(result, r.Method, path, opts.StrictPermissions) {
+		} else if !authorized(result, r.Method, path, opts.StrictPermissions) && !scopedObservationRoute(result, r.Method, r.URL.EscapedPath()) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{
@@ -420,9 +420,9 @@ func isGovernanceClientPath(method, path string) bool {
 // A NON-EMPTY list is always a real allow-list: the caller must hold the
 // specific permission the request requires. "write" implies "read"
 // (a writer can GET). "admin" implies everything. agents:<id>:run
-// satisfies "write" only on run-create paths (see isRunCreatePath),
-// never on DELETE/cancel/store/thread mutations, and never on the
-// embedded governance routes.
+// satisfies run-create routes and the MCP transport lifecycle. Observe grants
+// admit only exact public GET/wait routes, whose handlers check stored agents.
+// Neither grants cancel/store/thread mutations or embedded governance routes.
 func authorized(result *AuthResult, method, path string, strict bool) bool {
 	if result == nil {
 		return !strict
@@ -466,9 +466,9 @@ func SimulationRequested(raw string) bool {
 
 // hasPermission reports whether permissions grants required. "admin"
 // always grants everything; "write" implies "read" (a writer can GET).
-// An agents:<id>:run grant satisfies "write" only when method+path is a
-// run-create route; CanRunAgent still enforces the specific agent_id
-// inside createRunCtx. It never grants blanket write or read.
+// An agents:<id>:run grant admits run-create and MCP lifecycle routes;
+// CanRunAgent enforces the specific agent inside admission and MCP discovery.
+// Observe grants admit only exact public GET/wait, checked against stored agents.
 func hasPermission(permissions []string, required, method, path string) bool {
 	for _, p := range permissions {
 		if p == "admin" || p == required {
@@ -477,7 +477,10 @@ func hasPermission(permissions []string, required, method, path string) bool {
 		if required == "read" && p == "write" {
 			return true
 		}
-		if required == "write" && isAgentRunPermission(p) && isRunCreatePath(method, path) {
+		if isAgentRunPermission(p) && ((required == "write" && isRunCreatePath(method, path)) || isMCPLifecyclePath(method, path)) {
+			return true
+		}
+		if isAgentObservePermission(p) && isRunObservationPath(method, path) {
 			return true
 		}
 	}
@@ -497,7 +500,7 @@ func appPermission(p string) bool {
 	case "read", "write", "admin", GovernanceDecidePermission, GovernanceReadPermission, GovernanceApprovePermission:
 		return true
 	default:
-		return isAgentRunPermission(p)
+		return isAgentRunPermission(p) || isAgentObservePermission(p)
 	}
 }
 

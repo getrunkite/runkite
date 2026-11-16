@@ -34,7 +34,7 @@ func TestMySQLStore(t *testing.T) {
 	}
 	setupStore.Close()
 
-	conformance.RunStoreSuite(t, func(t *testing.T) state.Store {
+	factory := func(t *testing.T) state.Store {
 		ctx := context.Background()
 		s, err := mysql.New(ctx, dsn)
 		if err != nil {
@@ -45,5 +45,7 @@ func TestMySQLStore(t *testing.T) {
 		}
 		t.Cleanup(func() { s.Close() })
 		return s
-	})
+	}
+	conformance.RunStoreSuite(t, factory)
+	conformance.RunSQLControlJSONNumberTests(t, factory)
 }

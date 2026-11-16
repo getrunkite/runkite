@@ -1295,12 +1295,14 @@ def _build_admin_spec() -> dict:
                 **_connector_action_schemas(),
                 "AdminRegistryEntryView": {
                     "type": "object",
+                    "required": ["metadata_json"],
                     "properties": {
                         "name": {"type": "string"}, "display_name": {"type": "string"},
                         "description": {"type": "string"}, "author": {"type": "string"},
                         "tags": {"type": "array", "items": {"type": "string"}},
                         "source_type": {"type": "string"}, "source_ref": {"type": "string"},
                         "metadata": {"type": "object"}, "version": {"type": "integer"},
+                        "metadata_json": {"type": "string", "description": "Stored metadata encoded as a JSON string for lossless browser replacement PUT. Validate as an object or null and retain the string without re-encoding parsed numbers. Storage precision limits still apply."},
                         "created_at": {"type": "string", "format": "date-time"},
                         "updated_at": {"type": "string", "format": "date-time"},
                         "tenant_id": {"type": "string"},
@@ -2561,7 +2563,55 @@ def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
 
 def main() -> None:
     public = _build_public_spec()
+    for path in ("/runs/{run_id}", "/runs/{run_id}/wait"):
+        operation = public["paths"][path]["get"]
+        marker = " Exact retained run observation accepts ordinary read/write/admin or "
+        operation["description"] = operation.get("description", "").split(marker, 1)[0] + (
+            " Exact retained run observation accepts ordinary read/write/admin or "
+            "agents:<stored-agent-id>:observe. The latter is agent-wide within the tenant, "
+            "not requester-private, and requires a durable SQL run incarnation. "
+            "Runkite-Expected-Run-Reference is an identity precondition, not authorization. "
+            "Scoped wait requires it; scoped GET can acquire the first reference. "
+            "First acquisition cannot prove the ID was never recreated before that read."
+        )
+        operation["parameters"] = [parameter for parameter in operation.get("parameters", [])
+                                   if not (parameter.get("in") == "header" and
+                                           parameter.get("name", "").lower() == "runkite-expected-run-reference")]
+        operation["parameters"].append({
+            "in": "header", "name": "Runkite-Expected-Run-Reference", "required": False,
+            "description": "Previously saved Runkite-Run-Reference. Required for scoped wait. Applies to broad callers too when supplied.",
+            "schema": {"type": "string"},
+        })
+        operation["responses"]["200"]["headers"] = {"Runkite-Run-Reference": {
+            "description": "Nonsecret durable row identity. Preserve it for later observation; not an HTTP ETag or permanent deduplication key.",
+            "schema": {"type": "string"},
+        }}
+        operation["responses"].update({
+            "403": {"description": "Stored agent observation is not permitted"},
+            "412": {"description": "Reference mismatch or multiple precondition headers"},
+            "503": {"description": "Durable observation or required SQL incarnation unavailable"},
+        })
+        if path.endswith("/wait"):
+            operation["responses"]["428"] = {"description": "Scoped wait requires a previously acquired run reference"}
     admin = _build_admin_spec()
+    # A present empty selector is default, while omission retains legacy global reads.
+    for path in (
+        "/admin-api/agents/{agent_id}",
+        "/admin-api/agents/{agent_id}/schemas",
+        "/admin-api/agents/{agent_id}/versions",
+        "/admin-api/registry/{name}",
+        "/admin-api/registry/{name}/versions",
+    ):
+        for method, operation in admin["paths"][path].items():
+            for parameter in operation.get("parameters", []):
+                if parameter.get("name") == "tenant_id":
+                    parameter["description"] = (
+                        "Exact tenant identity without trimming. An explicitly empty "
+                        "value selects default. "
+                        + ("Omission retains the legacy global read; select a tenant "
+                           "to disambiguate same-named records." if method == "get" else
+                           "Omission also selects default for mutations.")
+                    )
     _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()

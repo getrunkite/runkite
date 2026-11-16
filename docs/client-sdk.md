@@ -136,6 +136,38 @@ It still refuses to combine generations after reclaim. See the
 [example's reconnect and retention contract](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
 These helpers are a v0.6.0 example update, not another client SDK package.
 
+### Managed AG-UI text transport (Unreleased)
+
+The [AG-UI application example](../examples/managed_ag_ui/README.md) is
+**source checkout only**. Published v0.9.0 does not include it or its additive
+shared-stream helpers. It pins official core, encoder and native client packages
+to `1.0.4`, protocol `1.0`, and reuses the existing managed-run lifecycle rather
+than moving model execution into an application handler or the Go binary.
+
+A native `HttpAgent` calls your authenticated application route. The route
+reauthorizes the stored chat/turn mapping for create, attach and Stop, keeps its
+dedicated tenant read/write key on the server and awaits an atomic assistant-ID
+binding before display. One plain user message enters Runkite; browser history
+cannot replace the runner checkpoint. Successful AG-UI finish requires the
+existing durable completion and attempt checks. Tools, interrupts, native
+approvals, structured output, multimodal input and protobuf transport are outside
+this text slice.
+
+Disconnect detaches delivery; explicit authenticated Stop requests cancellation.
+Full retained replay uses a fresh official client and replaces the exact partial
+assistant only after verified success. The example's reconstruction helper never
+appends replay or dispatches another run. Deletion, retention and the period
+before first assistant binding remain explicit application reconciliation
+boundaries. Agent-scoped observe access alone does not authorize streaming or
+Stop and is not a per-user privacy boundary.
+
+The provider-free qualification uses a real Go plane and packaged Node runner on
+SQLite/in-process. It proves native text completion, retained replay replacement,
+running detach/reattach and explicit Stop with one execution per stored run.
+This does not claim a web widget, CopilotKit, external provider, Postgres/Redis or
+multi-replica AG-UI qualification. See the
+[public integration reference](../site/support/sdk-integration.html#managed-ag-ui).
+
 ### Managed Microsoft Agent Framework (v0.6.1)
 
 For Microsoft agents that should dispatch through Runkite and appear in Admin

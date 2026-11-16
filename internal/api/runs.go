@@ -1246,11 +1246,8 @@ func (s *Server) handleCreateAndWaitRun(w http.ResponseWriter, r *http.Request) 
 
 // GET /runs/{runID}
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("runID")
-
-	run, err := s.store.GetRun(r.Context(), runID)
-	if err != nil {
-		handleStoreError(w, err)
+	run, ok := s.publicRunObservation(w, r, false)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
@@ -1308,8 +1305,11 @@ func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 
 // GET /runs/{runID}/wait
 func (s *Server) handleWaitRun(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("runID")
-	s.waitForExistingRun(w, r, runID)
+	run, ok := s.publicRunObservation(w, r, true)
+	if !ok {
+		return
+	}
+	s.writeRunObservation(w, r, run)
 }
 
 // GET /runs/{runID}/stream
@@ -1733,7 +1733,16 @@ func (e *runObservationError) Error() string { return e.message }
 func (e *runObservationError) Unwrap() error { return e.cause }
 
 func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runID string) {
-	resp, err := s.waitForExistingRunResult(r.Context(), runID)
+	run, err := s.store.GetRun(r.Context(), runID)
+	if err != nil {
+		handleStoreError(w, err)
+		return
+	}
+	s.writeRunObservation(w, r, run)
+}
+
+func (s *Server) writeRunObservation(w http.ResponseWriter, r *http.Request, run *models.Run) {
+	resp, err := s.waitForRunObservation(r.Context(), run)
 	if err != nil {
 		var observation *runObservationError
 		if errors.As(err, &observation) {
@@ -1742,6 +1751,9 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 			handleStoreError(w, err)
 		}
 		return
+	}
+	if reference := runObservationReference(resp.Run); reference != "" {
+		w.Header().Set("Runkite-Run-Reference", reference)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1757,6 +1769,12 @@ func (s *Server) waitForExistingRunResult(ctx context.Context, runID string) (*m
 	if err != nil {
 		return nil, err
 	}
+
+	return s.waitForRunObservation(ctx, run)
+}
+
+func (s *Server) waitForRunObservation(ctx context.Context, run *models.Run) (*models.RunWaitResponse, error) {
+	runID := run.RunID
 
 	if isTerminalStatus(run.Status) {
 		// Durable output survives the event broker replay retention window.
@@ -1800,11 +1818,21 @@ func (s *Server) waitForExistingRunResult(ctx context.Context, runID string) (*m
 
 	// If replay already contained a terminal event, no need to wait on live channel
 	if terminalStatus == "" {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
 	waitingForExisting:
 		for {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
+			case <-ticker.C:
+				latest, err := s.getObservedRun(ctx, run)
+				if err != nil {
+					return nil, err
+				}
+				if isTerminalStatus(latest.Status) {
+					break waitingForExisting
+				}
 			case event, open := <-eventCh:
 				if !open {
 					break waitingForExisting

@@ -23,6 +23,7 @@ const exactJSONNumbers = `{"integer":1234567890123456789012345678901234567890,"d
 func RunExactJSONNumberTests(t *testing.T, factory StoreFactory) {
 	t.Helper()
 	runJSONNumberTests(t, factory, exactJSONNumbers)
+	t.Run("opaque_control_json", func(t *testing.T) { runOpaqueControlJSONTests(t, factory, exactOpaqueJSONNumbers) })
 }
 
 func numberValues(t *testing.T, raw string) map[string]interface{} {

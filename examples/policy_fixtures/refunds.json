@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "default_effect": "deny",
+    "grants": [
+      {
+        "id": "refund-tools",
+        "tenant_id": "acme",
+        "agent_id": "refund-agent",
+        "connector": "payments",
+        "tools": {"allow": ["refund", "inspect", "delete"], "deny": ["delete"]}
+      }
+    ],
+    "predicates": [
+      {
+        "id": "review-large-refund",
+        "tenant_id": "acme",
+        "agent_id": "refund-agent",
+        "connector": "payments",
+        "tool": "refund",
+        "when": {"path": "amount", "op": "gt", "value": 100},
+        "effect": "pending"
+      },
+      {
+        "id": "maximum-refund",
+        "tenant_id": "acme",
+        "agent_id": "refund-agent",
+        "connector": "payments",
+        "tool": "refund",
+        "when": {"path": "amount", "op": "gt", "value": 1000},
+        "effect": "deny"
+      }
+    ],
+    "mandatory_hitl": [
+      {"id": "review-inspection", "tenant_id": "acme", "connector": "payments", "tools": ["inspect", "delete"]}
+    ]
+  },
+  "cases": [
+    {
+      "id": "small-refund",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "refund", "args": {"amount": 50}},
+      "expect": {"effect": "allow", "reason_code": "", "rule_id": "refund-tools"}
+    },
+    {
+      "id": "large-refund-needs-review",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "refund", "args": {"amount": 250}},
+      "expect": {"effect": "pending", "reason_code": "policy_pending", "rule_id": "review-large-refund"}
+    },
+    {
+      "id": "deny-wins-over-pending",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "refund", "args": {"amount": 1500}},
+      "expect": {"effect": "deny", "reason_code": "policy_predicate", "rule_id": "maximum-refund"}
+    },
+    {
+      "id": "tool-deny-cannot-be-elevated-to-review",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "delete", "args": {}},
+      "expect": {"effect": "deny", "reason_code": "policy_tool_denied", "rule_id": "refund-tools"}
+    },
+    {
+      "id": "mandatory-review",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "inspect", "args": {}},
+      "expect": {"effect": "pending", "reason_code": "mandatory_hitl", "rule_id": "review-inspection"}
+    },
+    {
+      "id": "foreign-tenant-no-grant",
+      "input": {"stage": "tool.call", "tenant_id": "other", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "refund", "args": {"amount": 50}},
+      "expect": {"effect": "deny", "reason_code": "policy_no_grant"}
+    },
+    {
+      "id": "session-grant",
+      "input": {"stage": "connector.session", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments"},
+      "expect": {"effect": "allow", "rule_id": "refund-tools"}
+    },
+    {
+      "id": "numeric-string-is-not-a-number",
+      "input": {"stage": "tool.call", "tenant_id": "acme", "principal": "declared-alice", "agent_id": "refund-agent", "connector": "payments", "tool": "refund", "args": {"amount": "1500"}},
+      "expect": {"effect": "allow", "rule_id": "refund-tools"}
+    },
+    {
+      "id": "policy-run-create-is-not-admission",
+      "input": {"stage": "run.create", "tenant_id": "other", "principal": "declared-alice", "agent_id": "unregistered-agent"},
+      "expect": {"effect": "allow", "reason_code": "", "rule_id": ""}
+    }
+  ]
+}

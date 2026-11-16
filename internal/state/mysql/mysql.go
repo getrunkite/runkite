@@ -1084,7 +1084,9 @@ func scanAgent(row rowScanner) (*models.Agent, error) {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &a.Metadata)
-	json.Unmarshal(capsBytes, &a.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &a.Capabilities); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 
@@ -1095,7 +1097,9 @@ func scanAgentVersion(row rowScanner) (*models.AgentVersion, error) {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &v.Metadata)
-	json.Unmarshal(capsBytes, &v.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &v.Capabilities); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }
 
@@ -3033,7 +3037,9 @@ func scanRegistryEntry(row rowScanner) (*models.RegistryEntry, error) {
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &e.Tags)
-	json.Unmarshal(metaBytes, &e.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &e.Metadata); err != nil {
+		return nil, err
+	}
 	return &e, nil
 }
 
@@ -3044,6 +3050,8 @@ func scanRegistryEntryVersion(row rowScanner) (*models.RegistryEntryVersion, err
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &v.Tags)
-	json.Unmarshal(metaBytes, &v.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &v.Metadata); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }

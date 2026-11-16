@@ -43,3 +43,25 @@ func TestBridgeWaitInputMustMatchSavedReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestBridgeReplacementReferenceBetweenReadsNeverRedispatches(t *testing.T) {
+	upstream := newBridgeTestUpstream(t, true)
+	caller := &bridge{config: bridgeTestConfig(t, upstream)}
+	intent := receiptTestInvocation()
+	result, first := bridgeTestInvoke(t, context.Background(), caller, intent)
+	if result.IsError || first.Outcome != "success" {
+		t.Fatal("initial invocation failed")
+	}
+	upstream.mu.Lock()
+	upstream.replaceAfterRead = true
+	upstream.mu.Unlock()
+	result, second := bridgeTestInvoke(t, context.Background(), caller, intent)
+	if !result.IsError || second.Outcome != "delivery_unknown" {
+		t.Fatal("replacement became success")
+	}
+	upstream.mu.Lock()
+	defer upstream.mu.Unlock()
+	if upstream.calls != 1 || upstream.reads != 1 || upstream.waits != 1 {
+		t.Fatalf("replacement triggered wrong traffic: calls=%d reads=%d waits=%d", upstream.calls, upstream.reads, upstream.waits)
+	}
+}

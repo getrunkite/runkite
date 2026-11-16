@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminPolicyGrant } from "../api/types";
+import { bodyFromForm, emptyForm, formFromGrant, type GrantForm } from "../lib/policyGrantForm";
 import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
@@ -27,62 +28,9 @@ function toolsSummary(g: AdminPolicyGrant): string {
   const deny = g.tools?.deny ?? [];
   if (allow.length === 0 && deny.length === 0) return "all tools";
   const parts: string[] = [];
-  if (allow.length) parts.push(`allow: ${allow.join(", ")}`);
-  if (deny.length) parts.push(`deny: ${deny.join(", ")}`);
+  if (allow.length) parts.push(`allow: ${JSON.stringify(allow)}`);
+  if (deny.length) parts.push(`deny: ${JSON.stringify(deny)}`);
   return parts.join("; ");
-}
-
-function parseToolList(raw: string): string[] {
-  return raw
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-interface GrantForm {
-  id: string;
-  tenant_id: string;
-  agent_id: string;
-  connector: string;
-  allow: string;
-  deny: string;
-}
-
-const emptyForm = (): GrantForm => ({
-  id: "",
-  tenant_id: "",
-  agent_id: "",
-  connector: "",
-  allow: "",
-  deny: "",
-});
-
-function formFromGrant(g: AdminPolicyGrant): GrantForm {
-  return {
-    id: g.id,
-    tenant_id: g.tenant_id,
-    agent_id: g.agent_id,
-    connector: g.connector,
-    allow: (g.tools?.allow ?? []).join(", "),
-    deny: (g.tools?.deny ?? []).join(", "),
-  };
-}
-
-function bodyFromForm(f: GrantForm): AdminPolicyGrant {
-  const allow = parseToolList(f.allow);
-  const deny = parseToolList(f.deny);
-  const out: AdminPolicyGrant = {
-    id: f.id.trim(),
-    tenant_id: f.tenant_id.trim(),
-    agent_id: f.agent_id.trim(),
-    connector: f.connector.trim(),
-  };
-  if (allow.length || deny.length) {
-    out.tools = {};
-    if (allow.length) out.tools.allow = allow;
-    if (deny.length) out.tools.deny = deny;
-  }
-  return out;
 }
 
 export function PolicyGrants() {
@@ -100,9 +48,9 @@ export function PolicyGrants() {
   const [deleting, setDeleting] = useState(false);
 
   const extra: Record<string, string> = {};
-  const tenant = tenantId.trim();
-  const agent = agentId.trim();
-  const conn = connector.trim();
+  const tenant = tenantId;
+  const agent = agentId;
+  const conn = connector;
   if (tenant) extra.tenant_id = tenant;
   if (agent) extra.agent_id = agent;
   if (conn) extra.connector = conn;
@@ -130,8 +78,13 @@ export function PolicyGrants() {
   };
 
   const save = async () => {
-    const body = bodyFromForm(form);
-    if (!body.tenant_id || !body.agent_id || !body.connector) {
+    let body: AdminPolicyGrant;
+    try { body = bodyFromForm(form); }
+    catch (err) {
+      toast.error("Invalid tool names", { description: err instanceof Error ? err.message : "Use a JSON string array." });
+      return;
+    }
+    if (!body.tenant_id.trim() || !body.agent_id.trim() || !body.connector.trim()) {
       toast.error("Missing fields", { description: "tenant_id, agent_id, and connector are required." });
       return;
     }
@@ -347,7 +300,7 @@ export function PolicyGrants() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit grant" : "New grant"}</DialogTitle>
             <DialogDescription>
-              Overlays hot-reload on this replica. Leave tool lists empty to allow every tool on the connector.
+              Overlays hot-reload on this replica. Names are exact, including whitespace. Leave tool lists empty to allow every tool on the connector.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
@@ -390,21 +343,21 @@ export function PolicyGrants() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="grant-allow">Allow tools (comma-separated)</Label>
+              <Label htmlFor="grant-allow">Allow tools (JSON string array)</Label>
               <Input
                 id="grant-allow"
                 value={form.allow}
                 onChange={(e) => setForm((f) => ({ ...f, allow: e.target.value }))}
-                placeholder="query, getRecord"
+                placeholder='["query", "getRecord"]'
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="grant-deny">Deny tools (comma-separated)</Label>
+              <Label htmlFor="grant-deny">Deny tools (JSON string array)</Label>
               <Input
                 id="grant-deny"
                 value={form.deny}
                 onChange={(e) => setForm((f) => ({ ...f, deny: e.target.value }))}
-                placeholder="updateRecord"
+                placeholder='["updateRecord"]'
               />
             </div>
           </div>

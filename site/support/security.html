@@ -116,10 +116,20 @@
           By default, a valid client credential with <code>write</code> can create a run
           against any agent. If you need finer control than that, "this key may only run
           the support-bot agent, not the finance one", add an
-          <code>agents:&lt;id&gt;:run</code> grant to that key's permissions. This only
-          applies to the run-create routes, not cancel/delete/store access, which still fall
-          back to the plain read/write check.
+          <code>agents:&lt;id&gt;:run</code> grant to that key's permissions. Published v0.9.0 applies this to run-create routes. Unreleased source also
+          admits scoped MCP discovery and invocation. Cancel/delete/store access still
+          requires its existing authority.
         </p>
+
+        <p class="note"><strong>Unreleased, current source:</strong> a separate
+          <code>agents:&lt;id&gt;:observe</code> grant permits exact public run GET/wait
+          for that stored agent, including its other retained runs. It does not grant
+          requester-private history, search, thread access or cancellation. Scoped wait
+          needs the <code>Runkite-Run-Reference</code> saved from an earlier response,
+          supplied as <code>Runkite-Expected-Run-Reference</code>. Missing retention or
+          a changed reference fails without redispatch. SQL is required. Reconnect MCP
+          after credential authority changes, and upgrade all HTTP replicas before using
+          this profile. See <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/scoped-specialist-access.md">the recovery and rollout contract</a>.</p>
 
         <h2>Layer 3, can this agent call this external service?</h2>
         <p>

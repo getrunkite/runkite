@@ -26,6 +26,10 @@ func (e *Engine) ApprovalRequirements() ApprovalRequirements {
 	return e.approvalRequirements
 }
 
+// evaluatorSemantics changes whenever the evaluator changes authorization
+// meaning, even if its configured rows remain identical.
+const evaluatorSemantics = "exact-positive-scopes-conservative-restrictions-v2"
+
 // Revision fingerprints the effective configured policy. A webhook's remote
 // rules are represented only by its operator-declared revision, not attested.
 // HMAC credentials never enter this descriptor.
@@ -48,6 +52,7 @@ func (e *Engine) Revision() string {
 		webhook = &webhookRevision{e.webhook.cfg.URL, e.webhook.cfg.Revision, int64(e.webhook.cfg.Timeout)}
 	}
 	descriptor := struct {
+		EvaluatorSemantics        string
 		DefaultEffect             string
 		FailClosed, AuditRequired bool
 		Grants                    []Grant
@@ -55,7 +60,7 @@ func (e *Engine) Revision() string {
 		MandatoryHITL             []MandatoryHITLRule
 		Webhook                   *webhookRevision
 		Approval                  ApprovalRequirements
-	}{e.defaultEffect, e.failClosed, e.auditRequired, grants, e.predicates, e.mandatoryHITL, webhook, e.approvalRequirements}
+	}{evaluatorSemantics, e.defaultEffect, e.failClosed, e.auditRequired, grants, e.predicates, e.mandatoryHITL, webhook, e.approvalRequirements}
 	raw, err := json.Marshal(descriptor)
 	if err != nil {
 		return ""
