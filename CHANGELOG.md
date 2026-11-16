@@ -4,6 +4,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Add explicit `agents:<id>:observe` specialist access, scoped MCP discovery
+  and invocation, canonical session authority binding, SQL run-reference
+  preconditions and durable reference pinning in the Trinity checkout caller.
+  Observation is agent-wide and retention-bounded, with no requester/thread
+  privacy or new cancellation permission. See
+  [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
+
 ## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
 
 Coordinated MCP retry and operator workflow release. The governance walkthrough

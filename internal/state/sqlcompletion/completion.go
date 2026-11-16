@@ -142,6 +142,15 @@ func (d Driver) CompleteRunInTx(ctx context.Context, tx Tx, c *state.RunCompleti
 	if err != nil {
 		return state.CompletionResult{}, err
 	}
+	if c.ExpectedIncarnationID != "" {
+		var incarnation string
+		if err := tx.Row(ctx, d.query(`SELECT incarnation_id FROM runs WHERE run_id=? AND tenant_id=?`), c.RunID, tid).Scan(&incarnation); err != nil {
+			return state.CompletionResult{}, err
+		}
+		if incarnation != c.ExpectedIncarnationID {
+			return state.CompletionResult{}, &state.ErrConflict{Resource: "run", ID: c.RunID, Reason: "retained run incarnation changed"}
+		}
+	}
 	c = state.ResolveCompletion(meta, c)
 	if err := state.CheckRunCompletionOwner(ctx, meta, c); err != nil {
 		return state.CompletionResult{}, err

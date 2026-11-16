@@ -20,11 +20,14 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -114,6 +117,9 @@ func (s *Server) newMCPServer(ctx context.Context) (*mcp.Server, error) {
 		Instructions: "Each tool invokes one Runkite-configured agent. Pass \"message\" for a plain natural-language turn, or \"input\" if you already know the agent's own expected input shape. Pass \"thread_id\" to continue an existing conversation instead of starting a new one. Supply a stable \"run_id\" to retry the same call without dispatching another run while its record is retained.",
 	})
 	for _, agent := range agents {
+		if !auth.CanRunAgent(identity, agent.AgentID) {
+			continue
+		}
 		description := agent.Description
 		if description == "" {
 			description = fmt.Sprintf("Invoke the %q agent.", agent.AgentID)
@@ -156,13 +162,16 @@ func (s *Server) mcpToolHandler(agentID, tenantID string, identity *auth.AuthRes
 		callIdentity := identity
 		// In-process callers may supply newer authority. Stateful HTTP MCP
 		// can retain its initialization context, so this does not replace
-		// the outer HTTP middleware's fresh write/admin check on every POST.
-		// An agent-only permission still does not grant the HTTP MCP route.
+		// the HTTP session owner's fresh canonical authority check on each request.
+		// Changed authority requires a new session instead of reusing this capture.
 		if current := auth.FromContext(ctx); current != nil {
 			if identity == nil || current.Identity != identity.Identity || tenant.FromContext(ctx) != tenantID {
 				return mcpErrorResult("MCP session identity does not match this call"), nil
 			}
 			callIdentity = current
+		}
+		if !auth.CanRunAgent(callIdentity, agentID) {
+			return mcpErrorResult("not authorized for this agent"), nil
 		}
 		runCtx := tenant.WithContext(ctx, tenantID)
 		if callIdentity != nil {
@@ -226,22 +235,43 @@ func (s *Server) mcpToolHandler(agentID, tenantID string, identity *auth.AuthRes
 		if err := runCtx.Err(); err != nil {
 			return mcpErrorResult(fmt.Sprintf("agent %q result delivery stopped: %v", agentID, err)), nil
 		}
+		// Cache-hit insertion receipts can omit TenantID on their in-memory
+		// return value. Bind result references to the authenticated tenant.
+		if resp.Run.TenantID == "" {
+			copy := *resp.Run
+			copy.TenantID = tenantID
+			resp.Run = &copy
+		}
 		switch resp.Run.Status {
 		case models.RunStatusError:
-			return mcpErrorResult(fmt.Sprintf("agent %q run errored: %s", agentID, resp.Run.Error)), nil
+			return mcpRunErrorResult(fmt.Sprintf("agent %q run errored: %s", agentID, resp.Run.Error), resp.Run), nil
 		case models.RunStatusInterrupted:
-			return mcpErrorResult(fmt.Sprintf("agent %q run was interrupted before completing", agentID)), nil
+			return mcpRunErrorResult(fmt.Sprintf("agent %q run was interrupted before completing", agentID), resp.Run), nil
 		case models.RunStatusTimeout:
-			return mcpErrorResult(fmt.Sprintf("agent %q run timed out", agentID)), nil
+			return mcpRunErrorResult(fmt.Sprintf("agent %q run timed out", agentID), resp.Run), nil
 		case models.RunStatusSuccess:
 		default:
 			return mcpErrorResult(fmt.Sprintf("agent %q run has not completed successfully", agentID)), nil
 		}
 
 		return &mcp.CallToolResult{
+			Meta:    mcpRunMeta(resp.Run),
 			Content: []mcp.Content{&mcp.TextContent{Text: extractMCPResponseText(resp.Values)}},
 		}, nil
 	}
+}
+
+func mcpRunMeta(run *models.Run) mcp.Meta {
+	if reference := runObservationReference(run); reference != "" {
+		return mcp.Meta{"runkite/run_reference": reference}
+	}
+	return nil
+}
+
+func mcpRunErrorResult(message string, run *models.Run) *mcp.CallToolResult {
+	result := mcpErrorResult(message)
+	result.Meta = mcpRunMeta(run)
+	return result
 }
 
 // mcpErrorResult reports a tool-level failure -- per Tool.IsError's own
@@ -378,8 +408,9 @@ type mcpSessionOwner struct {
 }
 
 type mcpSessionEntry struct {
-	caller   string
-	lastSeen time.Time
+	caller    string
+	authority string
+	lastSeen  time.Time
 }
 
 // newMCPSessionOwner takes ttl/sweepInterval as parameters (rather than
@@ -406,6 +437,37 @@ func mcpCallerKey(ctx context.Context) string {
 	return tenant.FromContext(ctx) + "|" + identity
 }
 
+// mcpAuthorityKey binds captured SDK authority, including verified identity,
+// claims and delegated assertion. Reordering or duplicating permissions is inert.
+// Only the digest is retained. Tokens and claims never enter logs or responses.
+func mcpAuthorityKey(ctx context.Context) string {
+	a := auth.FromContext(ctx)
+	if a == nil {
+		return "local"
+	}
+	permissions := slices.Clone(a.Permissions)
+	slices.Sort(permissions)
+	permissions = slices.Compact(permissions)
+	if len(permissions) == 0 {
+		permissions = nil
+	}
+	assertion := sha256.Sum256([]byte(auth.DelegatedJWTAssertion(a)))
+	raw, err := json.Marshal(struct {
+		Tenant      string
+		Identity    string
+		Permissions []string
+		Verified    bool
+		Provenance  *models.IdentityProvenance
+		Extra       map[string]interface{}
+		Assertion   [32]byte
+	}{tenant.FromContext(ctx), a.Identity, permissions, auth.HasVerifiedIdentity(a), a.Provenance, a.Extra, assertion})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
 // middleware checks the incoming request's own caller against whoever
 // established the session named in its Mcp-Session-Id header (if any),
 // BEFORE the wrapped MCP handler ever runs -- this must happen at the
@@ -422,6 +484,11 @@ func mcpCallerKey(ctx context.Context) string {
 func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller := mcpCallerKey(r.Context())
+		authority := mcpAuthorityKey(r.Context())
+		if authority == "" {
+			writeError(w, http.StatusForbidden, "mcp authority cannot be bound")
+			return
+		}
 		sessionID := r.Header.Get(mcpSessionIDHeader)
 
 		if sessionID != "" {
@@ -432,8 +499,8 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 				writeError(w, http.StatusForbidden, "mcp session unknown or expired")
 				return
 			}
-			if entry.caller != caller {
-				writeError(w, http.StatusForbidden, "mcp session belongs to a different caller")
+			if entry.caller != caller || entry.authority != authority {
+				writeError(w, http.StatusForbidden, "mcp session caller or authority changed; reconnect")
 				return
 			}
 		}
@@ -448,7 +515,7 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 			ResponseWriter: w,
 			recordNew: func(newID string) {
 				o.mu.Lock()
-				o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+				o.sessions[newID] = mcpSessionEntry{caller: caller, authority: authority, lastSeen: time.Now()}
 				o.mu.Unlock()
 			},
 		}
@@ -461,7 +528,7 @@ func (o *mcpSessionOwner) middleware(next http.Handler) http.Handler {
 		if newID := cw.sessionID(); newID != "" {
 			o.mu.Lock()
 			if _, exists := o.sessions[newID]; !exists {
-				o.sessions[newID] = mcpSessionEntry{caller: caller, lastSeen: time.Now()}
+				o.sessions[newID] = mcpSessionEntry{caller: caller, authority: authority, lastSeen: time.Now()}
 			} else {
 				entry := o.sessions[newID]
 				entry.lastSeen = time.Now()

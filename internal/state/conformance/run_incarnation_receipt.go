@@ -3,6 +3,7 @@ package conformance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,23 @@ func RunInsertionIdentity(t *testing.T, store state.Store) {
 			durable, err = store.GetRun(ctx, row.RunID)
 			if err != nil || durable.IncarnationID != row.IncarnationID {
 				t.Fatal("replacement receipt differs from stored run")
+			}
+			// A waiter admitted against the deleted row cannot complete its
+			// replacement, even when every public ID and generation matches.
+			completion := &state.RunCompletion{TrustedSystem: true, RunID: row.RunID, ExpectedIncarnationID: original, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "retained"}}
+			result, err := store.CompleteRun(ctx, completion)
+			var conflict *state.ErrConflict
+			if !errors.As(err, &conflict) || result.Applied || result.Accepted {
+				t.Fatalf("stale observer completed replacement: %+v %v", result, err)
+			}
+			unchanged, err := store.GetRun(ctx, row.RunID)
+			if err != nil || unchanged.Status != models.RunStatusPending || len(unchanged.Output) != 0 {
+				t.Fatalf("stale observation changed replacement: %+v %v", unchanged, err)
+			}
+			completion.ExpectedIncarnationID = row.IncarnationID
+			result, err = store.CompleteRun(ctx, completion)
+			if err != nil || !result.Applied || !result.Accepted {
+				t.Fatalf("current observer failed: %+v %v", result, err)
 			}
 		})
 	}

@@ -299,3 +299,35 @@ func TestReceiptConcurrentProcessesPublishOneIntentAndAttempt(t *testing.T) {
 		t.Fatalf("partial/temp files remained: entries=%v error=%v", entries, err)
 	}
 }
+
+func TestRunReferencePrivateDurableAndImmutable(t *testing.T) {
+	cfg := receiptTestConfig(t)
+	r, err := loadOrSaveReceipt(cfg, cfg.URL, receiptTestInvocation())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := "runkite-run-v1-" + strings.Repeat("a", 64)
+	if err := pinRunReference(cfg.State, r, reference); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadOrSaveReceipt(cfg, cfg.URL, receiptTestInvocation())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loadRunReference(cfg.State, restarted); err != nil || restarted.RunReference != reference {
+		t.Fatal("reference did not survive restart", err)
+	}
+	if err := pinRunReference(cfg.State, restarted, "runkite-run-v1-"+strings.Repeat("b", 64)); err == nil {
+		t.Fatal("replaced immutable reference")
+	}
+	if err := loadRunReference(cfg.State, restarted); err != nil || restarted.RunReference != reference {
+		t.Fatal("conflict changed durable reference", err)
+	}
+	path := filepath.Join(cfg.State, receiptName(r.OperationID)+".run-reference")
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadRunReference(cfg.State, restarted); err == nil {
+		t.Fatal("accepted public reference file")
+	}
+}

@@ -7,15 +7,17 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Receipts are private caller intent. Runkite remains the authority for status.
 type receipt struct {
-	Version  int    `json:"version"`
-	Endpoint string `json:"endpoint"`
-	Profile  string `json:"profile"`
-	AgentID  string `json:"agent_id"`
-	RunID    string `json:"run_id"`
+	RunReference string `json:"-"`
+	Version      int    `json:"version"`
+	Endpoint     string `json:"endpoint"`
+	Profile      string `json:"profile"`
+	AgentID      string `json:"agent_id"`
+	RunID        string `json:"run_id"`
 	invocation
 }
 
@@ -120,4 +122,53 @@ func publishPrivateFile(directory, path string, data []byte) (created bool, err 
 		return false, err
 	}
 	return created, nil
+}
+
+// pinRunReference publishes once, using the same private durable file discipline
+// as intent. Conflicting references require reconciliation, never replacement.
+func pinRunReference(directory string, r *receipt, reference string) error {
+	if len(reference) != len("runkite-run-v1-")+64 || !strings.HasPrefix(reference, "runkite-run-v1-") {
+		return errors.New("invalid retained run reference")
+	}
+	if _, err := hex.DecodeString(strings.TrimPrefix(reference, "runkite-run-v1-")); err != nil {
+		return errors.New("invalid retained run reference")
+	}
+	path := filepath.Join(directory, receiptName(r.OperationID)+".run-reference")
+	if _, err := publishPrivateFile(directory, path, []byte(reference)); err != nil {
+		return err
+	}
+	if err := loadRunReference(directory, r); err != nil {
+		return err
+	}
+	if r.RunReference != reference {
+		return errors.New("retained run reference changed")
+	}
+	return nil
+}
+
+func loadRunReference(directory string, r *receipt) error {
+	path := filepath.Join(directory, receiptName(r.OperationID)+".run-reference")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() != int64(len("runkite-run-v1-")+64) {
+		return errors.New("invalid run reference file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	reference := string(raw)
+	if !strings.HasPrefix(reference, "runkite-run-v1-") {
+		return errors.New("invalid run reference file")
+	}
+	if _, err := hex.DecodeString(strings.TrimPrefix(reference, "runkite-run-v1-")); err != nil {
+		return errors.New("invalid run reference file")
+	}
+	r.RunReference = reference
+	return nil
 }
