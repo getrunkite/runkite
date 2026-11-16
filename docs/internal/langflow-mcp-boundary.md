@@ -57,16 +57,19 @@ worker completion or fake successful response.
 
 The baseline fixture uses published v0.9.0 read/write authority. The optional
 `--scoped-source` mode requires the new source-only
-`agents:echo_agent:run` and separate `agents:echo_agent:observe` grants. That
-mode exercises native MCP invocation, not the REST observation-reference
-protocol. Its conformance belongs to the scoped-specialist feature tests.
+`agents:echo_agent:run` grant only. The native probe exclusively calls `/mcp`;
+the run grant admits its complete transport lifecycle, discovery and invocation,
+including retained retries. It needs no REST observation authority. That mode
+does not test the REST observation-reference protocol. A separate application
+recovery implementation would need the additive observe grant; its conformance
+belongs to the scoped-specialist feature tests.
 
 The dedicated `.github/workflows/langflow-mcp.yml` runs both profiles using
 separate client/runner Python 3.12 environments. It prepares Go modules before
 the bounded qualifier, validates both fixed receipt schemas and retains only
 their two allowlisted synthetic JSON files. Each profile starts its own local
 plane/worker and gets a new receipt path. The scoped gate requires the matching
-source authority feature and cannot fall back to broad permissions. Adding the
+source authority feature, uses only the run grant and cannot fall back to broad permissions. Adding the
 gate does not turn baseline evidence into scoped qualification.
 
 ## Limits and deployment checks

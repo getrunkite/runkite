@@ -31,11 +31,14 @@ Choose one authority profile deliberately:
   Neither grant provides search, thread history, store access, streaming, cost,
   cancel or delete. Scoped observation requires SQL durable run references.
 
-The source profile's key permissions are, for example:
+The MCP-only source profile needs only:
 
 ```json
-{"permissions": ["agents:echo_agent:run", "agents:echo_agent:observe"]}
+{"permissions": ["agents:echo_agent:run"]}
 ```
+
+The native scoped probe uses that run-only key. Add observation authority only
+to separate application-owned REST recovery code that actually needs it.
 
 Merge that entry into your existing authenticated configuration only after
 deploying source that implements the scoped contract. Keep a dedicated tenant
@@ -164,7 +167,7 @@ HTTP/gRPC listeners, a SQLite plane fixture and a real Python worker. Add
 `--scoped-source` only when testing a checkout with the new scoped MCP grants.
 Existing receipt/log files are never overwritten.
 
-The dedicated `langflow-mcp.yml` workflow runs both baseline and
+The dedicated `langflow-mcp.yml` workflow runs both baseline and run-only
 `--scoped-source` profiles on the integrated checkout, with separate clean
 client and runner environments and distinct receipts. The scoped gate requires
 the source permission implementation; it has no compatibility fallback.

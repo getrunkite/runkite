@@ -75,7 +75,7 @@ jobs:
             --runner-python "$RUNNER_TEMP/langflow-runner/bin/python" \
             --output "$LANGFLOW_QUALIFICATION_RECEIPT"
 
-      - name: Bounded native caller with scoped source authority
+      - name: Bounded native caller with run-only scoped source authority
         # Requires the scoped-specialist implementation in the integrated tree.
         env:
           LANGFLOW_QUALIFICATION_RECEIPT: ${{ runner.temp }}/langflow-mcp-scoped-source.json

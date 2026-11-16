@@ -52,7 +52,7 @@ func TestLangflowMCPQualification(t *testing.T) {
 	permissions := []string{"read", "write"}
 	profile := "published-v0.9-read-write"
 	if os.Getenv("RUNKITE_TEST_LANGFLOW_SCOPED") == "1" {
-		permissions = []string{"agents:echo_agent:run", "agents:echo_agent:observe"}
+		permissions = []string{"agents:echo_agent:run"}
 		profile = "unreleased-scoped-source"
 	}
 	provider := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
