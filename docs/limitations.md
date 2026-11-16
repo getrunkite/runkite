@@ -34,7 +34,10 @@ change an existing binary, image, wheel or npm install.
   caller created. It has no receipt for a skipped overlap or failure before run
   creation. Empty history does not mean never fired. Thread IDs remain globally
   unique, so equal schedule names across tenants can contend; use distinct
-  names. The view adds no next-fire preview or dispatch/retry behavior.
+  names. Retained-run links open guarded, read-only snapshots with manual
+  Refresh. These views expose no live SSE, cancellation or child-run navigation;
+  the guard is not an SSE incarnation fence. The view adds no next-fire preview
+  or dispatch/retry behavior.
 - Offline policy fixtures test a declared static snapshot, not authenticated
   authority, live overlays/webhooks, connector enforcement or tool execution.
   A logical pending result creates no approval. Live simulation has a different
@@ -52,13 +55,16 @@ change an existing binary, image, wheel or npm install.
 - The Langflow proof covers pinned native headless MCP discovery/conversion and
   invocation with a real Python worker. It does not qualify its visual editor,
   browser credential resolution, surrounding model loop or durable caller
-  receipt ownership. The baseline proof uses a dedicated read/write caller;
-  integrated scoped-source qualification is still a separate gate. Its MCP-only
-  fixture uses the run grant, without REST observation authority.
+  receipt ownership. Dedicated read/write and run-only scoped profiles passed
+  separately on integrated source with the same native dependency versions,
+  each producing two runs and two real worker assignments. The MCP-only scoped
+  fixture grants no REST observation authority and does not qualify that path.
 - The promptfoo proof covers its pinned ordinary evaluator with local assertions
-  and a scripted worker. Intentional repeats are fresh work; unknown delivery
-  uses only read recovery. Arbitrary strategies, external retries, real models
-  and upstream UI/server features are outside that proof.
+  and a scripted worker. Broad read/write and scoped run/observe profiles each
+  produced four runs, four threads and four reference-pinned waits; the scoped
+  profile also passed six denial probes. Intentional repeats are fresh work;
+  unknown delivery uses only read recovery. Arbitrary strategies, external
+  retries, real models and upstream UI/server features are outside that proof.
 - The AG-UI example is an application-side plain-text transport, not a full
   protocol compliance claim. It requires app-owned identity and state, complete
   retained replay and confirmed durable completion. Detach is not cancellation;

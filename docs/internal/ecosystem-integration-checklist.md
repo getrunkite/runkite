@@ -28,11 +28,14 @@ qualification receipts.
   Include `admin-ui/src/lib/registryEntryRoutes.ts` and exact Agent/Registry
   tenant selectors. Keep existing-name editing separate from creation mode,
   including the literal registry name `new`, and retain stale-form save guards.
+  Review reference: [PR #79](https://github.com/getrunkite/runkite/pull/79).
 - Capability descriptors and catalog requirements:
   `docs/internal/agent-capabilities.md`, `site/support/agents.html` and
   `site/support/registry.html#requirements`.
 - Retained cron visibility: `docs/internal/cron-run-visibility.md` and
-  `site/support/cron.html`, with exact-tenant Thread/Run navigation.
+  `site/support/cron.html`, with exact-tenant Thread/Run navigation. Retained-run
+  links open guarded, read-only snapshots with manual Refresh, without live
+  SSE, cancellation or child-run navigation.
 - Offline policy fixtures: `docs/policy-fixtures.md`,
   `docs/internal/offline-policy-fixtures.md`, `examples/policy_fixtures` and
   `site/support/policy.html#offline-regression-fixtures`.
@@ -45,16 +48,19 @@ qualification receipts.
   for a reloaded revision. Include `admin-ui/src/lib/policyGrantForm.ts` and
   `admin-ui/src/pages/PolicyGrants.tsx`: loaded row/scope bytes and list filters
   stay exact, and tool fields use validated JSON string arrays.
+  Review reference: [PR #78](https://github.com/getrunkite/runkite/pull/78).
 - Native Langflow caller: `examples/langflow_mcp`,
   `docs/internal/langflow-mcp-boundary.md`, `site/support/langflow.html` and
   `.github/workflows/langflow-mcp.yml`. The source fixture uses only its agent
   run grant for `/mcp`; separate REST observation authority is unnecessary.
+  Review reference: [PR #81](https://github.com/getrunkite/runkite/pull/81).
 - Native promptfoo provider: `examples/promptfoo`,
   `internal/api/promptfoo_qualification_test.go`,
   `docs/internal/promptfoo-managed-provider.md`, `site/support/promptfoo.html`
   and `.github/workflows/promptfoo-example.yml`. Its Node-only directory's
   minimal `go.mod` keeps upstream Go templates out of root Go discovery;
   first-party Go qualification stays in `internal/api`.
+  Review reference: [PR #80](https://github.com/getrunkite/runkite/pull/80).
 - AG-UI text delivery: `examples/managed_ag_ui`, the additive shared chunk
   helpers in `examples/managed_ai_sdk/bridge.ts`,
   `docs/internal/managed-ag-ui-bridge.md`,
@@ -87,9 +93,12 @@ not satisfy these dependencies.
 2. **Rebuild actual Admin.** Use its declared Node/npm toolchain; run the focused
    UI tests, lint, typecheck and build. Verify Agent Detail/Try Agent unknown
    states, read-only registry declarations, stale/empty/unavailable cron states,
-   exact tenant links and replacement-run rejection. Exercise Agent/Registry
-   selection changes, explicit empty-default versus omitted-global selectors,
-   the literal registry name `new`, and form remount/save/delete guards. Grant
+   exact tenant links and replacement-run rejection.
+   Verify retained-run snapshots expose manual guarded Refresh but no live SSE,
+   cancellation or child-run navigation; no stream incarnation fence is claimed.
+   Exercise Agent/Registry selection changes, explicit empty-default versus
+   omitted-global selectors, the literal registry name `new`, and form
+   remount/save/delete guards. Grant
    form roundtrips must retain exact row/scope bytes and comma/space tool names;
    invalid JSON tool lists must fail before a write. Generated Admin assets are
    owned by the feature integration, not this navigation pass.
@@ -103,10 +112,10 @@ not satisfy these dependencies.
 5. **Use native caller gates.** Run the dedicated Langflow, promptfoo and AG-UI
    workflows with their pinned dependencies, separate required environments and
    existing bounded supervisors. Langflow's baseline read/write receipt is not
-   scoped-source proof; rerun `examples/langflow_mcp/qualify.py --scoped-source`
-   only against the integrated scoped implementation. That native caller profile
-   tests run-only MCP authority, not REST observation references; retain the separate
-   scoped server/API reference tests. The AG-UI proof must retain
+   scoped-source proof; run `examples/langflow_mcp/qualify.py --scoped-source`
+   separately against the integrated scoped implementation. That native caller
+   profile tests run-only MCP authority, not REST observation references; retain
+   the separate scoped server/API reference tests. The AG-UI proof must retain
    both shared-bridge regressions and real runner detach/reattach/Stop cases.
    The promptfoo gate must exercise the native scheduler retry guard and fresh
    intentional repeats, then the actual public API with its scripted worker.
@@ -127,6 +136,35 @@ not satisfy these dependencies.
    navigation and all new anchors. Keep the v0.9.0 release badge, package/install
    labels and existing animations. A later release updates versions, artifact
    contents and labels together in its own authorized change.
+   Run `python3 scripts/openapi/check.py`. A route-contract check is not native
+   caller qualification.
+
+## Recorded local integrated qualification
+
+The November 16, 2026 integrated API contract check covered 169 Go routes, with
+spec integrity checks passing. This count records that source snapshot.
+
+On November 16, 2026, Langflow's baseline read/write and run-only scoped profiles
+both passed against integrated local source. Each retained exactly two managed
+runs and two real Python worker assignments, without redispatch on reconnect
+or failed-run retry. Both used LFX 1.13.2, MCP 1.30.0, LangChain Core 1.8.1 and
+Pydantic 2.13.5 with MCP protocol `2025-11-25`. The separate synthetic receipts
+are `outputs/runkite-next/research-20261116/langflow-integrated-baseline.json`
+and `outputs/runkite-next/research-20261116/langflow-integrated-scoped.json`.
+These receipts qualify the native headless MCP client, not its visual editor,
+browser credential handling, model loop, REST observation or production proxy.
+
+The pinned promptfoo 0.125.1 ordinary evaluator also passed separately with
+broad tenant read/write and scoped run/observe authority on Node 26.11.0. Each
+profile produced four distinct runs and threads and four reference-pinned waits;
+the scoped profile additionally passed all six denial probes. The receipts are
+`outputs/runkite-next/research-20261116/promptfoo-final-baseline.json` and
+`outputs/runkite-next/research-20261116/promptfoo-final-scoped.json`. Both used
+SQLite, in-process transport and a scripted worker with zero model calls. They
+do not qualify real providers, arbitrary evaluator strategies, upstream UI/server
+features, Postgres/Redis or multi-replica behavior. These local results do not
+assert a hosted workflow pass or publication, and must be rerun after relevant
+source or dependency changes.
 
 ## Keep demand-led work deferred
 

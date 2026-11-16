@@ -32,9 +32,11 @@ Discover and operate an existing agent:
   edit route, so a record literally named `new` remains editable; changing record,
   tenant or create/edit mode resets the form and confirmation state.
 - [Cron retained-run visibility](internal/cron-run-visibility.md) links a
-  schedule's exact-tenant thread and latest retained run. Empty history,
-  unavailable reads and failures before run creation remain different cases.
-  This adds no fire ledger, replay, next-fire prediction or scheduler behavior.
+  schedule's exact-tenant thread and latest retained run. Retained-run links open
+  guarded, read-only snapshots with manual Refresh, without live SSE, cancel or
+  child-run navigation. Empty history, unavailable reads and failures before run
+  creation remain different cases. This adds no fire ledger, replay, next-fire
+  prediction or scheduler behavior.
 - [Offline static policy fixtures](policy-fixtures.md) run `runkite policy test`
   over declared grants, predicates and mandatory review using the current
   engine. They contact no services and execute no tools. Live
@@ -59,17 +61,20 @@ Choose the caller or presentation boundary:
   grants no stream, cancel, search or thread-history access.
 - [Langflow MCP Tools](../examples/langflow_mcp/README.md) keeps the surrounding
   flow and model loop in Langflow. Its pinned native headless client was
-  qualified with baseline read/write authority against a real Runkite plane
-  and Python worker. The run-only scoped-source profile needs its own integrated
-  qualification. The visual editor,
-  credential-variable UI and arbitrary agent loop remain deployment checks.
+  qualified separately with baseline read/write and run-only scoped authority
+  against an integrated local Runkite plane and Python worker. Each profile
+  produced two runs and two assignments with the same native dependencies.
+  The visual editor, credential-variable UI and arbitrary agent loop remain
+  deployment checks. This MCP-only proof does not qualify REST observation.
   The stock component is not a durable operation-receipt store.
 - [promptfoo managed-run provider](../examples/promptfoo/README.md) evaluates
   ordinary governed runs with the pinned native loader, scheduler and CLI.
   Each intentional call has fresh IDs; one saved intent permits at most one
   create attempt, followed by read-only observation. Unknown delivery never
-  silently dispatches replacement work. Local qualification uses a scripted
-  worker and local assertions, not a real model or every evaluator strategy.
+  silently dispatches replacement work. Broad read/write and scoped run/observe
+  profiles passed separately, including reference-pinned waits and scoped
+  denial probes. Local qualification uses a scripted worker and local assertions,
+  not a real model or every evaluator strategy.
 - [AG-UI text transport](../examples/managed_ag_ui/README.md) presents an existing
   managed run through an application route and the official encoder/client.
   It reuses the shared bridge's ownership, durable finish, attempt, retained
