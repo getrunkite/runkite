@@ -2561,6 +2561,36 @@ def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
 
 def main() -> None:
     public = _build_public_spec()
+    for path in ("/runs/{run_id}", "/runs/{run_id}/wait"):
+        operation = public["paths"][path]["get"]
+        marker = " Exact retained run observation accepts ordinary read/write/admin or "
+        operation["description"] = operation.get("description", "").split(marker, 1)[0] + (
+            " Exact retained run observation accepts ordinary read/write/admin or "
+            "agents:<stored-agent-id>:observe. The latter is agent-wide within the tenant, "
+            "not requester-private, and requires a durable SQL run incarnation. "
+            "Runkite-Expected-Run-Reference is an identity precondition, not authorization. "
+            "Scoped wait requires it; scoped GET can acquire the first reference. "
+            "First acquisition cannot prove the ID was never recreated before that read."
+        )
+        operation["parameters"] = [parameter for parameter in operation.get("parameters", [])
+                                   if not (parameter.get("in") == "header" and
+                                           parameter.get("name", "").lower() == "runkite-expected-run-reference")]
+        operation["parameters"].append({
+            "in": "header", "name": "Runkite-Expected-Run-Reference", "required": False,
+            "description": "Previously saved Runkite-Run-Reference. Required for scoped wait. Applies to broad callers too when supplied.",
+            "schema": {"type": "string"},
+        })
+        operation["responses"]["200"]["headers"] = {"Runkite-Run-Reference": {
+            "description": "Nonsecret durable row identity. Preserve it for later observation; not an HTTP ETag or permanent deduplication key.",
+            "schema": {"type": "string"},
+        }}
+        operation["responses"].update({
+            "403": {"description": "Stored agent observation is not permitted"},
+            "412": {"description": "Reference mismatch or multiple precondition headers"},
+            "503": {"description": "Durable observation or required SQL incarnation unavailable"},
+        })
+        if path.endswith("/wait"):
+            operation["responses"]["428"] = {"description": "Scoped wait requires a previously acquired run reference"}
     admin = _build_admin_spec()
     _add_security_completion(admin)
     _add_review_spec(admin)

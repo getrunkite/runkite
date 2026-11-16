@@ -63,6 +63,9 @@ func Middleware(cfg *Config, next http.Handler) http.Handler {
 		if allowed, explicit := cfg.allows(origin); allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+			// Browser specialist callers persist the durable run reference before
+			// later observation. This exposes identity metadata, never credentials.
+			w.Header().Set("Access-Control-Expose-Headers", "Runkite-Run-Reference")
 			// Credentials only for an explicitly-listed origin, never
 			// for a "*" wildcard match. Fixed: this used to reflect the
 			// request's own Origin header verbatim and unconditionally

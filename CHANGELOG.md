@@ -11,12 +11,26 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   detach and explicit app-authorized Stop. No-text and unsupported streams
   fail delivery instead of inventing tool, interrupt or approval events.
 
+- Add `runkite policy test` for bounded offline static policy expectations,
+  reusing the existing engine without model, Vault, downstream or durable-state
+  calls. Logical pending results do not create approval records. Live `sim`
+  remains unchanged.
+
+- Add explicit `agents:<id>:observe` specialist access, scoped MCP discovery
+  and invocation, canonical session authority binding, SQL run-reference
+  preconditions and durable reference pinning in the Trinity checkout caller.
+  Observation is agent-wide and retention-bounded, with no requester/thread
+  privacy or new cancellation permission. See
+  [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
+
 - Enrich MCP nested input discovery from usable bounded stored agent schemas,
   with generic fallback, local reference relocation and explicit unknown
   freshness. Preserve the existing raw execution and session-snapshot contracts.
 
 ### Fixed
 
+- Match scoped agent grants against exact stored IDs, preserving surrounding
+  whitespace rather than aliasing another configured agent's authority.
 - Preserve an existing registry entry's opaque metadata when saving edits from
   Admin, including unchanged saves. The form still edits only its visible
   fields; registry PUT requests retain their existing replacement semantics.
