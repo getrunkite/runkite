@@ -254,7 +254,7 @@ func TestScopedSpecialistBroadAndLocalCompatibility(t *testing.T) {
 	f := newMCPRetryFixture(t)
 	f.seedRun(t, context.Background(), "compatibility", "thread", "mcp-agent", models.RunStatusSuccess, `{}`, `{"answer":"durable"}`)
 	for _, permission := range []string{"read", "write", "admin", "local"} {
-		var h http.Handler = f.plane.Handler()
+		h := f.plane.Handler()
 		if permission != "local" {
 			p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{"key": {Name: "caller", Permissions: []string{permission}}})
 			h = auth.Middleware(p, nil, nil, h)
