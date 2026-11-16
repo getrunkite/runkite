@@ -13,6 +13,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   privacy or new cancellation permission. See
   [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
 
+- Enrich MCP nested input discovery from usable bounded stored agent schemas,
+  with generic fallback, local reference relocation and explicit unknown
+  freshness. Preserve the existing raw execution and session-snapshot contracts.
+
 ### Fixed
 
 - Match scoped agent grants against exact stored IDs, preserving surrounding
