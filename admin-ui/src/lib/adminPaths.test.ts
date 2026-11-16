@@ -120,3 +120,19 @@ test("Cron row identity cannot collide across tenant/name pairs containing colon
   assert.equal(adminCronRowId({ name: "c" }), adminCronRowId({ tenant_id: "default", name: "c" }));
   assert.notEqual(adminCronRowId({ tenant_id: " tenant ", name: "c" }), adminCronRowId({ tenant_id: "tenant", name: "c" }));
 });
+
+test("retained reference views forward exact read guards and cannot dispatch live or cancel operations", async () => {
+  const { adminRunViewPaths } = await import("./adminPaths.ts");
+  for (const [tenant, incarnation] of [[" tenant ", "original"], ["tenant", null], [null, "original"], ["", "original"]] as const) {
+    const paths = adminRunViewPaths("reused/id", tenant, incarnation);
+    assert.equal(paths.retained, true);
+    assert.equal(paths.stream, null);
+    assert.equal(paths.cancel, null);
+    const detail = new URL(paths.detail, "https://plane.example");
+    assert.equal(detail.searchParams.get("expected_tenant_id"), tenant);
+    assert.equal(detail.searchParams.get("expected_incarnation_id"), incarnation);
+  }
+  assert.deepEqual(adminRunViewPaths("ordinary", null, null), {
+    retained: false, detail: "/runs/ordinary", stream: "/runs/ordinary/stream", cancel: "/runs/ordinary/cancel",
+  });
+});

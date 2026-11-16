@@ -129,7 +129,10 @@
         </p>
         <p>
           Run links retain the exact tenant and stored run incarnation. If the run was deleted
-          and its ID reused, the old link refuses to display the replacement. Without a durable
+          and its ID reused, the old link refuses to display the replacement. Reference views
+          are read-only snapshots: live events, cancellation and child-run navigation are
+          unavailable because those bare-ID operations cannot stay bound to the original
+          record. Refresh retained record performs another guarded read. Without a durable
           incarnation, the status remains visible without a result link.
         </p>
         <p>

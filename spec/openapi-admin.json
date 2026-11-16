@@ -3251,6 +3251,7 @@
           "Admin"
         ],
         "summary": "Get Run (admin)",
+        "description": "Optional exact retained-record selectors must be supplied together. The same fetched row must match before any run payload is returned. These selectors are identity preconditions, not authorization. Retained-reference UI views are read-only; bare-ID stream/cancel operations are unavailable there.",
         "operationId": "admin_get_run",
         "parameters": [
           {
@@ -3262,6 +3263,23 @@
             },
             "name": "run_id",
             "in": "path"
+          },
+          {
+            "name": "expected_tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expected_incarnation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -3275,8 +3293,28 @@
               }
             }
           },
+          "400": {
+            "description": "Incomplete or duplicate retained reference selectors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {

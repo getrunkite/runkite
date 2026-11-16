@@ -271,3 +271,49 @@ func TestAdminCronThreadOperationsHonorExactTenantSelection(t *testing.T) {
 		t.Fatalf("exact tenant could not delete its thread: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestAdminRetainedRunReadGuardRejectsReplacementPayload(t *testing.T) {
+	env := newCronHistoryEnv(t)
+	ctxA := tenant.ScopedContext(context.Background(), " tenant-a ")
+	ctxB := tenant.ScopedContext(context.Background(), "tenant-b")
+	now := time.Now().UTC()
+	for _, scope := range []struct {
+		ctx context.Context
+		id  string
+	}{{ctxA, "cron:daily"}, {ctxB, "replacement"}} {
+		if err := env.store.CreateThread(scope.ctx, &models.Thread{ThreadID: scope.id, Status: models.ThreadStatusIdle, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := &models.Run{RunID: "reused", ThreadID: "cron:daily", AgentID: "agent", Status: models.RunStatusSuccess, CreatedAt: now, UpdatedAt: now}
+	if err := env.store.CreateRun(ctxA, original); err != nil {
+		t.Fatal(err)
+	}
+	selector := url.Values{"expected_tenant_id": {" tenant-a "}, "expected_incarnation_id": {original.IncarnationID}}.Encode()
+	read := func(query string) *httptest.ResponseRecorder {
+		out := httptest.NewRecorder()
+		env.apiServer.Handler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/admin-api/runs/reused?"+query, nil))
+		return out
+	}
+	if out := read(selector); out.Code != http.StatusOK {
+		t.Fatal("exact original reference rejected", out.Code, out.Body.String())
+	}
+	for _, query := range []string{"expected_tenant_id=tenant-a", "expected_incarnation_id=original", selector + "&expected_incarnation_id=duplicate"} {
+		if out := read(query); out.Code != http.StatusBadRequest {
+			t.Fatal("incomplete or ambiguous reference accepted", out.Code, out.Body.String())
+		}
+	}
+	if err := env.store.DeleteRun(ctxA, original.RunID); err != nil {
+		t.Fatal(err)
+	}
+	replacement := &models.Run{RunID: original.RunID, ThreadID: "replacement", AgentID: "foreign", Status: models.RunStatusSuccess, Metadata: map[string]interface{}{"secret": "replacement-private-output"}, CreatedAt: now, UpdatedAt: now}
+	if err := env.store.CreateRun(ctxB, replacement); err != nil {
+		t.Fatal(err)
+	}
+	if out := read(selector); out.Code != http.StatusConflict || strings.Contains(out.Body.String(), "replacement-private-output") || strings.Contains(out.Body.String(), "tenant-b") {
+		t.Fatal("old reference exposed replacement", out.Code, out.Body.String())
+	}
+	if out := read(""); out.Code != http.StatusOK || !strings.Contains(out.Body.String(), "replacement-private-output") {
+		t.Fatal("ordinary Admin read behavior changed", out.Code, out.Body.String())
+	}
+}

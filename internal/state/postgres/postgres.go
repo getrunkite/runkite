@@ -2380,6 +2380,9 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		r.AssistantID = r.AgentID // SDK compat
 		runs = append(runs, &r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return runs, nil
 }
 

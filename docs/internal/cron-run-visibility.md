@@ -58,9 +58,16 @@ tenant on every request, including Delete.
 Changing the selected tenant remounts Thread Detail's request and confirmation
 state so the previous tenant's result cannot remain visible during navigation.
 Cron and Thread Detail run links reuse the existing Run Detail identity guard:
-each carries `expected_tenant_id` and `expected_incarnation_id`. Deleting a run
-and creating a replacement with the same public ID cannot make the old link
-display the replacement. A backend without an incarnation shows unlinked status
+each carries `expected_tenant_id` and `expected_incarnation_id`. Run Detail
+forwards those selectors to its initial and manual-refresh Admin GET; the server
+validates the same fetched snapshot before returning payload. Missing/duplicate
+selectors return 400 and a mismatched retained record returns 409. Deleting a run
+and creating a replacement with the same public ID cannot make that guarded read
+display the replacement. Retained-reference views are read-only snapshots:
+live events, cancellation and child-run navigation are disabled because those
+existing bare-ID operations cannot remain bound to an incarnation after a read.
+A guarded refresh can inspect the same retained record again. Ordinary Run Detail
+without retained selectors keeps its existing live controls. A backend without an incarnation shows unlinked status
 or run text instead of an ID-only fallback. Schedule table row keys encode the
 tenant/name pair as JSON so colons in either identifier cannot collide.
 
@@ -87,13 +94,21 @@ guard's rejection of a different tenant/incarnation. A SQLite regression capture
 the summary, deletes the run and creates a foreign-tenant replacement to verify
 that stored link identity differs from the replacement's actual Admin response.
 Shared SQL insertion-identity conformance also checks list results before and
-after deletion/recreation.
+after deletion/recreation. A regression validates guarded Admin GET before and
+after a real cross-tenant replacement, refusing the replacement's payload while
+ordinary global Admin reads remain compatible. UI route tests prove complete and
+incomplete retained selections cannot produce stream or cancel request paths.
+This closes an observed sequence where initial validation of A was followed by
+a bare-ID cancellation of replacement B.
 
 Validation in the feature worktree: focused `TestAdminCron*` route/SQLite tests
 pass without a network listener, all 96 Admin tests pass, TypeScript/Vite builds
 the embedded Admin bundle, and the 43 site tests plus local link checks pass.
 Admin lint passes with the existing Fast Refresh warnings in shared component
 modules. The full SQLite store suite passes after adding same-snapshot list
-incarnations. Live Postgres/MySQL conformance and the broader socket-based API
+incarnations. SQLite/Postgres run searches now propagate iteration failures and
+return no partial rows. A real SQLite view expression yields one valid ordered
+row followed by a driver error, proving partial results cannot become successful
+history. Live Postgres/MySQL conformance and the broader socket-based API
 tests require the parent task's local listener permissions; they were not
 completed in this sandbox.

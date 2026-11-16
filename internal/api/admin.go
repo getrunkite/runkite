@@ -552,6 +552,20 @@ func (s *Server) handleAdminGetRun(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err)
 		return
 	}
+	query := r.URL.Query()
+	tenants, selectedTenant := query["expected_tenant_id"]
+	incarnations, selectedIncarnation := query["expected_incarnation_id"]
+	if selectedTenant || selectedIncarnation {
+		if len(tenants) != 1 || len(incarnations) != 1 || incarnations[0] == "" {
+			writeError(w, http.StatusBadRequest, "complete retained run reference required")
+			return
+		}
+		// Validate the same fetched snapshot that supplies the response payload.
+		if run.TenantID != tenants[0] || run.IncarnationID == "" || run.IncarnationID != incarnations[0] {
+			writeError(w, http.StatusConflict, "the original retained run is unavailable")
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, toAdminRunView(run))
 }
 

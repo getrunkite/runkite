@@ -6,7 +6,7 @@ import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import { streamSSE, type SseEvent } from "../api/sse";
 import { reconcileRun } from "../api/reconcile-run";
-import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
+import { adminRunPath, adminRunViewPaths, adminThreadPath } from "../lib/adminPaths";
 import { eventPreview } from "../lib/eventPreview";
 import { identityEvidenceRows } from "../lib/identityEvidence";
 import { finalAnswerPreview } from "../lib/finalAnswerPreview";
@@ -65,13 +65,14 @@ function readRunManifest(metadata: Record<string, unknown> | undefined): RunMani
 
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
-  const run = useApi<AdminRun>(runId ? adminRunPath(runId) : "", [runId]);
   const [searchParams] = useSearchParams();
   const expectedTenant = searchParams.get("expected_tenant_id");
   const expectedIncarnation = searchParams.get("expected_incarnation_id");
-  const hasReference = expectedTenant !== null || expectedIncarnation !== null;
+  const paths = adminRunViewPaths(runId ?? "", expectedTenant, expectedIncarnation);
+  const hasReference = paths.retained;
+  const run = useApi<AdminRun>(runId ? paths.detail : "", [runId, expectedTenant, expectedIncarnation]);
   const referenceReady = !hasReference || Boolean(run.data && runId && connectorActionRunReferenceMatches(run.data, runId, expectedTenant, expectedIncarnation));
-  const childrenPath = runId ? adminListPath("/runs", undefined, { parent_run_id: runId }) : "";
+  const childrenPath = runId && !hasReference ? adminListPath("/runs", undefined, { parent_run_id: runId }) : "";
   const children = useApi<AdminRun[]>(childrenPath, [runId]);
   const [events, setEvents] = useState<LogEntry[]>([]);
   const [streaming, setStreaming] = useState(true);
@@ -82,10 +83,10 @@ export function RunDetail() {
   statusRef.current = run.data?.status;
 
   const handleCancel = async () => {
-    if (!runId) return;
+    if (!runId || !paths.cancel) return;
     setCancelling(true);
     try {
-      await api.post(`${adminRunPath(runId)}/cancel`);
+      await api.post(paths.cancel);
       toast.success("Cancel requested", { description: runId });
       setConfirmOpen(false);
       run.reload();
@@ -99,7 +100,7 @@ export function RunDetail() {
   };
 
   useEffect(() => {
-    if (!runId || !referenceReady) return;
+    if (!runId || !referenceReady || !paths.stream) return;
     setEvents([]);
     setStreaming(true);
     let active = true;
@@ -112,7 +113,7 @@ export function RunDetail() {
       }, () => TERMINAL_STATUSES.has(statusRef.current ?? ""));
     };
     const abort = streamSSE(
-      `${adminRunPath(runId)}/stream`,
+      paths.stream,
       (event) => {
         if (!active) return;
         if (event.event === "end" || event.event === "error") reconcile();
@@ -133,7 +134,7 @@ export function RunDetail() {
       abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, referenceReady]);
+  }, [runId, referenceReady, paths.stream]);
 
   useEffect(() => {
     const viewport = logAreaRef.current?.querySelector<HTMLDivElement>("[data-radix-scroll-area-viewport]");
@@ -155,10 +156,10 @@ export function RunDetail() {
   const childRuns = children.data ?? [];
   // Show A2A panel for delegated children immediately; for parents wait until
   // the child-run query finishes so ordinary runs don't flash an empty card.
-  const showA2A =
+  const showA2A = !hasReference && (
     Boolean(run.data.parent_run_id) ||
     (run.data.depth ?? 0) > 0 ||
-    (!children.loading && childRuns.length > 0);
+    (!children.loading && childRuns.length > 0));
 
   return (
     <div>
@@ -176,7 +177,7 @@ export function RunDetail() {
         actions={
           <>
             <DocsLink href={supportPage("admin-guide.html#5-threads--runs")}>Docs: threads & runs →</DocsLink>
-            {!isTerminal && (
+            {!isTerminal && !hasReference && (
               <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                 <DialogTrigger asChild>
                   <Button variant="destructive">
@@ -208,6 +209,14 @@ export function RunDetail() {
           </>
         }
       />
+
+      {hasReference && <Card className="mb-4">
+        <CardHeader><CardTitle>Retained run snapshot</CardTitle></CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>This reference view is read-only. Live events, cancellation and child-run navigation are unavailable because they cannot stay bound to this stored record after its ID is reused.</p>
+          <Button variant="outline" onClick={run.reload}>Refresh retained record</Button>
+        </CardContent>
+      </Card>}
 
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
@@ -361,7 +370,7 @@ export function RunDetail() {
 
       <RunConnectorActions key={JSON.stringify([run.data.tenant_id, run.data.run_id, run.data.incarnation_id])} run={run.data} />
 
-      <Card>
+      {!hasReference && (<Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Event stream</CardTitle>
           <Badge variant={streaming ? "success" : "muted"}>
@@ -387,7 +396,7 @@ export function RunDetail() {
             </div>
           </ScrollArea>
         </CardContent>
-      </Card>
+      </Card>)}
     </div>
   );
 }

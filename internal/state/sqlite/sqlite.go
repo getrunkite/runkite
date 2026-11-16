@@ -2242,6 +2242,9 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		r.AssistantID = r.AgentID // SDK compat
 		runs = append(runs, &r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return runs, nil
 }
 

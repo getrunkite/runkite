@@ -36,6 +36,23 @@ export function adminRunPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}`;
 }
 
+/** Retained-reference views can inspect a guarded snapshot, but bare-ID live
+ * operations cannot promise to target that same stored row after replacement.
+ */
+export function adminRunViewPaths(runId: string, expectedTenant: string | null, expectedIncarnation: string | null) {
+  const base = adminRunPath(runId);
+  const retained = expectedTenant !== null || expectedIncarnation !== null;
+  const query = new URLSearchParams();
+  if (expectedTenant !== null) query.set("expected_tenant_id", expectedTenant);
+  if (expectedIncarnation !== null) query.set("expected_incarnation_id", expectedIncarnation);
+  return {
+    retained,
+    detail: retained ? `${base}?${query}` : base,
+    stream: retained ? null : `${base}/stream`,
+    cancel: retained ? null : `${base}/cancel`,
+  };
+}
+
 /** Reuse Run Detail's existing exact retained-record guard for history links. */
 export function adminRetainedRunHref(run: { run_id: string; tenant_id: string; incarnation_id?: string }): string | null {
   return connectorActionRunHref({

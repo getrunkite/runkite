@@ -1717,7 +1717,10 @@ def _build_admin_spec() -> dict:
                 {"name": "thread_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 *admin_page,
             ], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRunView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
-            "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "operationId": "admin_get_run", "parameters": [r_id], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "404": _ERR_404}}},
+            "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "description": "Optional exact retained-record selectors must be supplied together. The same fetched row must match before any run payload is returned. These selectors are identity preconditions, not authorization. Retained-reference UI views are read-only; bare-ID stream/cancel operations are unavailable there.", "operationId": "admin_get_run", "parameters": [r_id,
+                {"name": "expected_tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "expected_incarnation_id", "in": "query", "required": False, "schema": {"type": "string", "minLength": 1}},
+            ], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "400": {"description": "Incomplete or duplicate retained reference selectors", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "409": _ERR_409}}},
             "/admin-api/runs/{run_id}/stream": {"get": {"tags": ["Admin"], "summary": "Stream Run (admin)", "operationId": "admin_stream_run", "parameters": [r_id], "responses": {"200": {"description": "SSE event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}}},
             "/admin-api/runs/{run_id}/cancel": {"post": {"tags": ["Admin"], "summary": "Cancel Run (admin)", "operationId": "admin_cancel_run", "parameters": [r_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}}},
             "/admin-api/policy-grants": {
