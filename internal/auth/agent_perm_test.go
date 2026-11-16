@@ -22,6 +22,9 @@ func TestCanRunAgent(t *testing.T) {
 		{name: "admin any", perms: []string{"admin"}, agent: "echo", want: true},
 		{name: "exact grant", perms: []string{auth.AgentRunPermission("echo")}, agent: "echo", want: true},
 		{name: "wrong agent", perms: []string{auth.AgentRunPermission("other")}, agent: "echo", want: false},
+		{name: "no whitespace alias", perms: []string{"agents:echo:run"}, agent: " echo ", want: false},
+		{name: "exact whitespace ID", perms: []string{auth.AgentRunPermission(" echo ")}, agent: " echo ", want: true},
+		{name: "no reverse whitespace alias", perms: []string{auth.AgentRunPermission(" echo ")}, agent: "echo", want: false},
 		{name: "read only", perms: []string{"read"}, agent: "echo", want: false},
 		{name: "empty agent", perms: []string{"write"}, agent: "", want: false},
 	}

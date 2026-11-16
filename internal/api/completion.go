@@ -139,6 +139,9 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 	if err != nil {
 		return state.CompletionResult{}, err
 	}
+	if c.ExpectedIncarnationID != "" && c.ExpectedIncarnationID != run.IncarnationID {
+		return state.CompletionResult{}, &state.ErrConflict{Resource: "run", ID: c.RunID, Reason: "retained run incarnation changed"}
+	}
 	if err := state.CheckRunCompletionOwner(ctx, run.Metadata, c); err != nil {
 		return state.CompletionResult{}, err
 	}
@@ -250,7 +253,7 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 	if !result.Accepted {
 		return result, nil
 	}
-	committed, err := s.store.GetRun(ctx, c.RunID)
+	committed, err := s.getObservedRun(ctx, run)
 	if err != nil {
 		return result, err
 	}
@@ -291,15 +294,15 @@ func (s *Server) finalizeCommittedRun(ctx context.Context, run *models.Run, appl
 // completeObservedRun shares the durable completion contract with wait callers
 // that observe the terminal event before the runner's ReportStatus RPC.
 func (s *Server) completeObservedRun(ctx context.Context, run *models.Run, terminal string, generation int64) (*models.Run, error) {
-	latest, err := s.store.GetRun(ctx, run.RunID)
+	latest, err := s.getObservedRun(ctx, run)
 	if err != nil {
 		return nil, err
 	}
 	if terminal != "" && !state.TerminalRunStatus(latest.Status) {
-		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
+		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: run.IncarnationID, RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
 			return nil, err
 		}
-		return s.store.GetRun(ctx, run.RunID)
+		return s.getObservedRun(ctx, run)
 	}
 	return latest, nil
 }
@@ -311,7 +314,7 @@ func (s *Server) awaitDurableCompletion(ctx context.Context, run *models.Run) (*
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		latest, err := s.store.GetRun(ctx, run.RunID)
+		latest, err := s.getObservedRun(ctx, run)
 		if err != nil {
 			return nil, err
 		}
@@ -339,12 +342,12 @@ func (s *Server) awaitDurableCompletion(ctx context.Context, run *models.Run) (*
 			if event.Method == "end" {
 				terminal = data.Status
 			}
-			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
+			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: run.IncarnationID, RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
 			if err != nil {
 				return nil, err
 			}
 			if accepted {
-				return s.store.GetRun(ctx, run.RunID)
+				return s.getObservedRun(ctx, run)
 			}
 			break
 		}

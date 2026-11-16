@@ -2,6 +2,31 @@
 
 > Deep dive moved from the root README. For a 60-second overview see the [root README](../README.md).
 
+## Scoped specialist access (Unreleased, source checkout only)
+
+Published v0.9.0 does not include scoped MCP permissions or durable observation
+references. Current source accepts `agents:<id>:run` on `/mcp`, advertises only
+runnable agents and rechecks invocation authority. Pair it with the new explicit
+`agents:<id>:observe` grant for exact public run GET/wait recovery. No `read` or
+`write` grant is needed for that profile. Other REST paths remain separately
+authorized. No-auth local mode and existing broad permissions remain compatible.
+
+Stateful sessions capture authority. Every later HTTP request must match its
+canonical tenant, identity, permissions, verification, provenance and claims;
+permission reordering/duplicates are equivalent. Changed authority requires a
+new session. This is request-time checking, not cancellation of an already
+admitted call.
+
+On SQL, completed managed tool results add a nonsecret
+`_meta["runkite/run_reference"]` identity reference. Public exact run GET/wait
+responses return the same value in `Runkite-Run-Reference`. Persist the first
+reference and send `Runkite-Expected-Run-Reference` on recovery. Scoped wait
+requires it. A supplied reference is checked for broad credentials too. A
+missing or replaced retained row cannot dispatch work through these GET routes.
+Before any reference is received and saved, the caller cannot prove that a run
+ID was never deleted and recreated. Retention still bounds recovery and MCP
+create-retry deduplication. See the [complete contract](internal/scoped-specialist-access.md).
+
 The reverse direction of Connectors: Connectors let a Runkite *agent* consume external MCP tool servers (MCP-client); this exposes Runkite's *own* configured agents *as* MCP tools, so any MCP-speaking client (IDEs, desktop apps, or your own tooling) can call them directly.
 
 ```
@@ -27,6 +52,21 @@ Every configured agent becomes exactly one MCP tool, named after its `agent_id`,
 ```
 
 The result's text content is the agent's last message; a run that errors or gets interrupted comes back as a **tool-level** error (`isError: true` in the content, not a raw MCP protocol failure) so the calling LLM can actually see what went wrong and self-correct, per the MCP spec's own guidance on tool errors.
+
+## Structured input discovery (Unreleased)
+
+Current source can enrich the nested `input` property in `tools/list` with a
+usable stored agent input schema. The existing envelope and message-only calls
+stay the same. Missing, stub, unsupported, invalid or oversized reports keep the
+generic object shape. Local JSON Pointer references are relocated inside
+`input`; external schema references are not fetched.
+
+This is advisory discovery, not invocation validation: Runkite still forwards
+raw input without filling defaults or coercing values. Tool metadata identifies
+reported versus generic discovery and marks freshness as unknown. An existing
+session keeps its catalog snapshot; start a new session after a report changes.
+Published v0.9.0 does not include this enrichment. See the
+[schema subset, limits and verification](internal/mcp-input-schemas.md).
 
 <a id="stable-operation-ids-unreleased-planned-v090"></a>
 
@@ -58,8 +98,8 @@ This is a synchronous call and reattachment contract, not a background task
 API. A client delivery timeout or disconnect does not prove that the worker
 stopped, and it must not trigger a blind retry with a new ID. Observation uses
 current caller authority; knowing an operation ID does not grant another
-agent's run permission. The HTTP MCP endpoint still uses its normal write/admin
-authentication gate; an agent-run-only key is not a general MCP credential.
+agent's run permission. Published v0.9.0 uses its normal write/admin authentication gate. Current
+source adds the scoped profile above; it does not grant general REST reads.
 
 Retain the run for as long as callers need retry protection. Deleting/pruning
 the row ends that protection. Run insertion and queue enqueue are not one
