@@ -7,6 +7,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry, AdminRegistryEntryVersion } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminRegistryPath, adminRegistryVersionsPath, adminTenantQuery } from "../lib/adminPaths";
+import { bodyFromForm, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -22,57 +23,6 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Skeleton } from "../components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-
-interface EntryForm {
-  tenant_id: string;
-  name: string;
-  display_name: string;
-  description: string;
-  author: string;
-  tags: string;
-  source_type: string;
-  source_ref: string;
-}
-
-const emptyForm = (): EntryForm => ({
-  tenant_id: "default",
-  name: "",
-  display_name: "",
-  description: "",
-  author: "",
-  tags: "",
-  source_type: "git",
-  source_ref: "",
-});
-
-function formFromEntry(e: AdminRegistryEntry): EntryForm {
-  return {
-    tenant_id: e.tenant_id,
-    name: e.name,
-    display_name: e.display_name ?? "",
-    description: e.description ?? "",
-    author: e.author ?? "",
-    tags: (e.tags ?? []).join(", "),
-    source_type: e.source_type,
-    source_ref: e.source_ref,
-  };
-}
-
-function bodyFromForm(f: EntryForm): Omit<AdminRegistryEntry, "tenant_id" | "version" | "created_at" | "updated_at"> {
-  const tags = f.tags
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return {
-    name: f.name.trim(),
-    display_name: f.display_name.trim() || undefined,
-    description: f.description.trim() || undefined,
-    author: f.author.trim() || undefined,
-    tags: tags.length ? tags : undefined,
-    source_type: f.source_type.trim(),
-    source_ref: f.source_ref.trim(),
-  };
-}
 
 export function RegistryEntry() {
   const { name: routeName } = useParams<{ name: string }>();

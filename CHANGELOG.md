@@ -4,12 +4,20 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
 - Add advisory configured-profile descriptors and support conditions in Agent
   Detail and Try Agent. Preserve opaque capabilities and stable definition
   versions during bootstrap; unknown profiles and pools stay unknown.
 - Document an optional versioned catalog requirements convention and show
   publisher metadata read-only in Admin. It does not install dependencies,
   verify compatibility, deploy source or grant connector authority.
+
+### Fixed
+
+- Preserve an existing registry entry's opaque metadata when saving edits from
+  Admin, including unchanged saves. The form still edits only its visible
+  fields; registry PUT requests retain their existing replacement semantics.
 
 ## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
 
