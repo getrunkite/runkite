@@ -10,6 +10,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   Observation is agent-wide and retention-bounded, with no requester/thread
   privacy or new cancellation permission. See
   [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
+### Fixed
+
+- Preserve an existing registry entry's opaque metadata when saving edits from
+  Admin, including unchanged saves. The form still edits only its visible
+  fields; registry PUT requests retain their existing replacement semantics.
 
 ## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
 
