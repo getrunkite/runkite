@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Langfuse traces · Runkite Docs</title>
+    <meta name="description" content="Configure existing Runkite OTLP trace export for Langfuse with per-language HTTP encodings and clear data boundaries." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <a class="active" href="langfuse.html" aria-current="page">Langfuse traces</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar"><a href="../">← Product</a><a href="https://github.com/getrunkite/runkite">GitHub</a></div>
+        <p class="kicker">Operate · Existing OTLP / new recipe</p>
+        <h1>Langfuse traces</h1>
+        <p class="lede">Send the plane and runner's existing operational spans to your Langfuse deployment through OpenTelemetry.</p>
+        <p>OTLP export already ships in v0.9.0. This current-checkout recipe adds setup guidance and qualification, not a Langfuse SDK, model proxy, database or UI inside Runkite. Langfuse runs separately.</p>
+
+        <h2 id="receiver">Prepare a receiver</h2>
+        <p>Use Langfuse's <a href="https://langfuse.com/self-hosting">official self-hosting instructions</a> and create a project. Configure its project API-key pair as OTLP Basic authorization through your deployment's process-secret mechanism. Runkite connector <code>secret_ref</code> does not configure the exporter.</p>
+        <p>The full trace endpoint is <code>https://langfuse.example/api/public/otel/v1/traces</code>. Replace the host and any reverse-proxy prefix with your own deployment. Langfuse accepts HTTP protobuf and JSON; Runkite's default gRPC selection will not work here. Keep TLS verification enabled outside a local fixture.</p>
+
+        <h2 id="configure">Configure each process</h2>
+        <p>Have your deployment inject <code>OTEL_EXPORTER_OTLP_TRACES_HEADERS</code> with <code>Authorization=Basic%20&lt;encoded-project-key-pair&gt;,x-langfuse-ingestion-version=4</code>. The key pair is the project's public key, a colon, then its secret key, Base64-encoded without line wrapping. Use the standard OTLP header-value encoding. The v4 marker selects the current ingestion path. Keep actual credentials out of source and support messages.</p>
+        <p>Set the trace endpoint and a distinct service name on the plane and each runner container. Signal-specific configuration avoids constructing a trace path from a generic endpoint. Plane-only configuration does not configure independent runners.</p>
+        <p><strong>Go plane:</strong></p>
+        <pre><code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://langfuse.example/api/public/otel/v1/traces
+OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+OTEL_SERVICE_NAME=runkite</code></pre>
+        <p><strong>Python runner:</strong> use the same endpoint with <code>http/protobuf</code> and a distinct service name such as <code>runkite-runner-python</code>. Install the runner's existing <code>otel</code> extra. If those optional packages are absent, Python logs a warning and tracing stays disabled.</p>
+        <p><strong>TypeScript runner:</strong> use the same endpoint with <code>http/json</code> and a distinct service name such as <code>runkite-runner-typescript</code>. Its current HTTP exporter sends JSON even when the HTTP selector is labelled <code>http/protobuf</code>. Go and Python send protobuf. Use the actual per-language encoding when configuring a receiver or collector.</p>
+        <p>See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/langfuse.md">complete deployment recipe</a> and Langfuse's <a href="https://langfuse.com/integrations/native/opentelemetry">official OTLP contract</a> for headers and version-specific behavior.</p>
+
+        <h2 id="observations">Understand the observations</h2>
+        <p>The plane creates a <code>run</code> span and supplies its W3C <code>traceparent</code> with the assignment. Runners create <code>runkite.run</code> beneath that context. Existing LangChain callbacks add model/tool name and status children. A name such as <code>runkite.llm</code> does not provide automatic prompt/completion, token or cost data for a Langfuse generation.</p>
+        <p>Run, thread and graph identifiers remain Runkite attributes. A Runkite thread is not automatically a Langfuse session, and a Runkite principal is not automatically a Langfuse user. An optional external collector mapping needs its own tested semantics. Additional framework instrumentation can export a different shape.</p>
+        <p><code>LOG_FORMAT=json</code> controls stdout logs. Prometheus metrics remain separate too; do not send either to the traces URL. See the receiver's <a href="https://langfuse.com/faq/all/opentelemetry-logs-metrics-span-links">signal support</a>.</p>
+
+        <h2 id="verify">Verify a deployment</h2>
+        <ol class="steps">
+          <li>Use one synthetic run and distinct service names; no customer prompt or credential belongs in a diagnostic span.</li>
+          <li>Allow batch delivery or graceful exporter shutdown. HTTP acceptance is not evidence of persisted asynchronous observations.</li>
+          <li>Read the backend's supported API or UI. Verify trace ID, parent IDs, span names and expected run metadata across the plane and worker.</li>
+          <li>Check <code>run.status</code> against durable Runkite state and confirm ordinary metadata has no invented body, token or cost data.</li>
+          <li>Test rejected authorization without logging header values before adding collector transformations or more instrumentation.</li>
+        </ol>
+        <p class="note">Verified locally on November 17, 2026 against unmodified, self-hosted Langfuse v4.81.0 at <code>f1e38efe36a752c551288292dc6318ce4c11ce1a</code>: actual Go/Python/TypeScript exporters and production run-span/LangChain callback helpers persisted seven ordinary <code>SPAN</code> observations across three services in one connected trace, with the expected parents and metadata. Missing/invalid-auth read probes were denied. No generation or model call was produced; empty model and zero usage fields are backend placeholders. This proves the exporter/helper boundary, without plane dispatch, framework workers, business tool execution, providers, HA or UI qualification. The wire/offline workflow does not start Langfuse. See the <a href="https://github.com/getrunkite/runkite/blob/main/examples/langfuse_otlp/README.md">reproduction commands</a>, <a href="https://github.com/getrunkite/runkite/blob/main/examples/langfuse_otlp/qualification.json">sanitized receipt</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/langfuse-otlp.md">engineering note</a>.</p>
+
+        <h2 id="boundaries">Keep the data boundary explicit</h2>
+        <ul class="expect">
+          <li>Names, IDs, exception text and application/framework-added attributes can contain sensitive data even though built-in callbacks omit normal bodies. Configure receiver access, retention and redaction before exporting production traces.</li>
+          <li>Langfuse project permissions do not inherit Runkite tenant permissions. A shared plane can emit multiple tenants into the selected project; choose an appropriate receiver/deployment boundary.</li>
+          <li>Tracing is best effort. Restart, replica takeover, abrupt shutdown or receiver failure can leave incomplete spans. The live plane span handle is process-local; durable run state remains authoritative.</li>
+          <li>A trace cannot authorize a tool, prove an exactly-once business effect or establish rollback after cancellation. Native tools still need to use an existing connector gate to receive its governance.</li>
+        </ul>
+        <p class="note">Related: <a href="security.html">Security and data</a> · <a href="feature-map.html">Feature map</a> · <a href="engineering.html#current-source">Engineering</a></p>
+      </main>
+    </div>
+    <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

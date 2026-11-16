@@ -470,7 +470,40 @@ OTEL_SERVICE_NAME=runkite \
 ./runkite serve --config examples/echo_agent/langgraph.json
 ```
 
-Every standard `OTEL_EXPORTER_OTLP_*` env var is honored (endpoint, headers for hosted backends' auth tokens, protocol `grpc`/`http/protobuf`, TLS, compression, timeout) -- this is what makes it work with any OTLP-speaking backend (Jaeger, an OTel Collector, Langfuse, Arize Phoenix, Datadog Agent) with zero runkite-specific configuration. Every HTTP request gets a span automatically (`otelhttp`); the runner gRPC bridge also emits server spans for `GetJob` / `ReportStatus` / `StreamEvents` / `WatchCancels` (`otelgrpc` StatsHandler) when tracing is on. Each run gets its own child span (`run.id`, `thread.id`, `graph.id`, `run.status` attributes) spanning from creation to terminal status, and the run's real W3C `traceparent` is propagated to the runner in `RunAssignment.trace_context`. When connector policy is enabled, every Decide adds a `policy.decide` span event on the active HTTP span (`policy.effect`, `policy.reason_code`, `run.id`, `agent.id`, `connector`, `tool`). Both runners honor the same `OTEL_EXPORTER_OTLP_*` / `OTEL_SERVICE_NAME` env vars and open a `runkite.run` child span under that parent for each job (default service name `runkite-runner`). The Python LangGraph, plain-LangChain, and TypeScript LangGraph.js runners attach a LangChain callback that opens `runkite.llm` / `runkite.tool` children under `runkite.run`; CrewAI and LlamaIndex adapters do the same via their native event/instrumentation hooks (model/tool name and status only -- prompt and completion bodies are not recorded). On `SIGTERM`/`SIGINT`, buffered spans are force-flushed before exit so a redeploy doesn't silently drop the last few seconds of traces.
+Runkite selects an existing OTLP exporter and uses its SDK-supported settings
+for endpoint, authorization headers, TLS, compression and timeout. Set the
+trace-specific endpoint/protocol variables when a backend needs an exact HTTP
+path. The default protocol is gRPC. The current Go and Python HTTP exporters
+send protobuf; the current TypeScript HTTP exporter sends JSON. Its HTTP branch
+does not switch encoders when labelled `http/protobuf`. Use `http/json` for
+that runner and `http/protobuf` for Go/Python when configuring Langfuse. The
+SDKs do not offer identical environment/resource behavior. Follow the
+[Langfuse recipe](langfuse.md) for the complete traces URL, receiver headers and
+data boundary; no additional exporter or backend is embedded.
+
+With tracing configured, HTTP requests use `otelhttp` server spans and the
+gRPC bridge uses `otelgrpc` spans for runner RPCs. The plane starts a
+`run` child with `run.id`, `thread.id`, `graph.id` and terminal
+`run.status` attributes. Its real W3C `traceparent` travels in
+`RunAssignment.trace_context`. Runners open `runkite.run` under that
+context, with a default service name of `runkite-runner`. The active plane
+span handle is process-local; restart or completion on another replica does
+not establish a complete original span. Durable run state remains authoritative.
+
+When connector policy is enabled, Decide adds a `policy.decide` event on
+the active span with effect, reason code and run/agent/connector/tool metadata.
+Python LangGraph, plain LangChain and TypeScript LangGraph.js callbacks add
+`runkite.llm` / `runkite.tool` children. CrewAI and LlamaIndex have
+adapter-specific event/instrumentation hooks. These built-in observers omit
+normal prompt/completion and tool input/output bodies; names, exceptions and
+application or third-party instrumentation can still contain sensitive data.
+They do not automatically supply GenAI token/cost measurements or translate
+Runkite threads/principals into a backend's sessions/users.
+
+Graceful exporter shutdown flushes ended spans when possible. Abrupt process
+loss and receiver failures can drop telemetry. OTLP trace delivery does not
+replace durable audit or metering, prove a business effect, or export stdout
+logs merely because `LOG_FORMAT=json` is set.
 
 ### LangGraph SDK Compatibility
 ```

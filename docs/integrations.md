@@ -254,6 +254,24 @@ Upstream: [google/adk-python](https://github.com/google/adk-python).
 Native model/tool callbacks provide the execution boundary; completed invocation
 validation, generation fencing and receipt recovery remain Runkite responsibilities.
 
+## Langfuse receives existing OTLP traces
+
+The [Langfuse deployment recipe](langfuse.md) uses the plane and runner exporters
+already present in published v0.9.0. The guide and qualification are new
+current-checkout work. Run Langfuse separately, configure its full OTLP traces
+URL and project authorization on every emitting process, and select HTTP:
+protobuf for Go/Python, JSON for the current TypeScript HTTP exporter.
+
+Existing Runkite operational spans carry identity, model/tool names and status.
+This path does not automatically capture prompt/completion bodies or supply
+Langfuse generation measurements, user/session mapping or cost data. Logs and
+metrics remain separate. Follow the guide's data-access and persistence checks
+before using a production receiver. An optional collector can provide fan-out
+or explicitly qualified mapping without a new exporter inside Runkite.
+
+Upstream: [langfuse/langfuse](https://github.com/langfuse/langfuse).
+See the [implementation and qualification boundary](internal/langfuse-otlp.md).
+
 ## Phoenix receives existing OTLP traces
 
 [Phoenix](https://github.com/Arize-ai/phoenix) accepts OTLP trace exports. Run its

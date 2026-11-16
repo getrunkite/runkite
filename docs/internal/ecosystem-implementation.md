@@ -66,11 +66,25 @@ Check the built Admin, static support links, engineering navigation, release
 availability labels and package/artifact contents. The later release will list
 only what was actually qualified. No finite suite proves absence of all bugs.
 
+## Follow-on qualification: Langfuse OTLP
+
+The [Langfuse recipe](../langfuse.md) is the next authorized slice. It reuses
+existing v0.9.0 OTLP exporters with explicit per-language HTTP encodings, project
+authorization and a separately operated receiver. The
+[engineering note](langfuse-otlp.md) records passing actual-exporter wire checks
+and local native Langfuse v4.81.0 persistence qualification on November 17, 2026.
+The latter persisted seven ordinary spans from three services using the real
+exporter/run-span/LangChain callback helpers, with no plane dispatch, framework
+worker or model call. Its [reproducible qualifier](../../examples/langfuse_otlp/README.md)
+and sanitized receipt keep that boundary distinct from a full managed-run or HA
+qualification. The new workflow covers wire/offline checks only. This adds no
+exporter, model wrapper or embedded backend, and does not change v0.9.0
+availability labels.
+
 ## Deliberately outside this release gate
 
-Temporal and Cloudflare caller examples remain demand-led. A Langfuse recipe
-should reuse OTLP over HTTP and state the actual per-language encoding, with no
-new exporter. OpenShell effective-policy work remains an explicitly experimental
+Temporal and Cloudflare caller examples remain demand-led. OpenShell
+effective-policy work remains an explicitly experimental
 qualification spike until its pinned runtime is proven.
 
 Response inspection, optional tools-only connector profiles, per-fire cron
