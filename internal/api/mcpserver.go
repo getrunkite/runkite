@@ -49,13 +49,10 @@ type mcpToolArgs struct {
 	RunID    string          `json:"run_id,omitempty"`
 }
 
-// mcpToolInputSchema is a plain, hand-written JSON Schema object, the
-// SAME shape for every agent -- not inferred via reflection the way the
-// SDK's generic AddTool does for a fixed Go struct type. Agents are
-// configured at runtime (loaded from langgraph.json, or created via the
-// registry API), not known at compile time, so Server.AddTool's
-// low-level form (a raw *Tool plus a ToolHandler working off raw JSON)
-// is what's used here, not the generic one.
+// mcpToolInputSchema is the stable, hand-written invocation envelope.
+// Discovery may enrich only its nested input with a usable reported schema.
+// Agents and schemas are runtime data. Low-level Server.AddTool keeps the
+// handler on raw JSON without the typed wrapper's validation or defaults.
 var mcpToolInputSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -113,15 +110,18 @@ func (s *Server) newMCPServer(ctx context.Context) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "runkite", Version: "1.0.0"}, &mcp.ServerOptions{
 		Instructions: "Each tool invokes one Runkite-configured agent. Pass \"message\" for a plain natural-language turn, or \"input\" if you already know the agent's own expected input shape. Pass \"thread_id\" to continue an existing conversation instead of starting a new one. Supply a stable \"run_id\" to retry the same call without dispatching another run while its record is retained.",
 	})
+	schemaBudget := mcpSchemaCatalogLimit
 	for _, agent := range agents {
 		description := agent.Description
 		if description == "" {
 			description = fmt.Sprintf("Invoke the %q agent.", agent.AgentID)
 		}
+		inputSchema, schemaMeta := s.mcpInputSchema(ctx, agent.AgentID, &schemaBudget)
 		server.AddTool(&mcp.Tool{
+			Meta:        schemaMeta,
 			Name:        agent.AgentID,
 			Description: description,
-			InputSchema: mcpToolInputSchema,
+			InputSchema: inputSchema,
 		}, s.mcpToolHandler(agent.AgentID, tenantID, identity))
 	}
 	return server, nil

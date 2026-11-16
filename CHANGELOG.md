@@ -4,6 +4,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
+- Enrich MCP nested input discovery from usable bounded stored agent schemas,
+  with generic fallback, local reference relocation and explicit unknown
+  freshness. Preserve the existing raw execution and session-snapshot contracts.
+
 ## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
 
 Coordinated MCP retry and operator workflow release. The governance walkthrough

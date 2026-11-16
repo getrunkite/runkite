@@ -28,6 +28,21 @@ Every configured agent becomes exactly one MCP tool, named after its `agent_id`,
 
 The result's text content is the agent's last message; a run that errors or gets interrupted comes back as a **tool-level** error (`isError: true` in the content, not a raw MCP protocol failure) so the calling LLM can actually see what went wrong and self-correct, per the MCP spec's own guidance on tool errors.
 
+## Structured input discovery (Unreleased)
+
+Current source can enrich the nested `input` property in `tools/list` with a
+usable stored agent input schema. The existing envelope and message-only calls
+stay the same. Missing, stub, unsupported, invalid or oversized reports keep the
+generic object shape. Local JSON Pointer references are relocated inside
+`input`; external schema references are not fetched.
+
+This is advisory discovery, not invocation validation: Runkite still forwards
+raw input without filling defaults or coercing values. Tool metadata identifies
+reported versus generic discovery and marks freshness as unknown. An existing
+session keeps its catalog snapshot; start a new session after a report changes.
+Published v0.9.0 does not include this enrichment. See the
+[schema subset, limits and verification](internal/mcp-input-schemas.md).
+
 <a id="stable-operation-ids-unreleased-planned-v090"></a>
 
 ## Stable operation IDs (v0.9.0)
