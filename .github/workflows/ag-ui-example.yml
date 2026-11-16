@@ -1,0 +1,66 @@
+name: Managed AG-UI example
+
+on:
+  pull_request:
+    paths:
+      - examples/managed_ag_ui/**
+      - examples/managed_ai_sdk/**
+      - typescript/runkite-runner/**
+      - internal/**
+      - cmd/**
+      - go.mod
+      - go.sum
+      - .github/workflows/ag-ui-example.yml
+  push:
+    branches: [main]
+    paths:
+      - examples/managed_ag_ui/**
+      - examples/managed_ai_sdk/**
+      - typescript/runkite-runner/**
+      - internal/**
+      - cmd/**
+      - go.mod
+      - go.sum
+      - .github/workflows/ag-ui-example.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  text-transport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.19.0"
+      - name: Install pinned runner and application dependencies
+        run: |
+          npm ci --prefix typescript/runkite-runner
+          npm run build --prefix typescript/runkite-runner
+          npm ci --prefix examples/managed_ai_sdk
+          npm ci --prefix examples/managed_ag_ui
+      - name: Existing AI SDK bridge regression gate
+        run: |
+          npm run check --prefix examples/managed_ai_sdk
+          npm test --prefix examples/managed_ai_sdk
+      - name: Native AG-UI reconstruction and failure boundaries
+        run: |
+          npm run check --prefix examples/managed_ag_ui
+          npm test --prefix examples/managed_ag_ui
+      - name: Build candidate control plane
+        env:
+          CGO_ENABLED: "0"
+        run: go build -o "${RUNNER_TEMP}/runkite-ag-ui" ./cmd
+      - name: Real plane and scripted runner with official AG-UI client
+        working-directory: typescript/runkite-runner
+        env:
+          RUNKITE_TEST_AG_UI: "1"
+        run: RUNKITE_TEST_BINARY="${RUNNER_TEMP}/runkite-ag-ui" node --import tsx --test src/aiSdk.e2e.test.ts

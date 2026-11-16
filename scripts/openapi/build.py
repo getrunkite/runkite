@@ -1719,7 +1719,10 @@ def _build_admin_spec() -> dict:
                 {"name": "thread_id", "in": "query", "required": False, "schema": {"type": "string"}},
                 *admin_page,
             ], "responses": {"200": {"description": "Success", "headers": admin_list_headers, "content": {"application/json": {"schema": _array_of(_ref("AdminRunView"))}}}, "400": {"description": "Invalid cursor or cursor+offset", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
-            "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "operationId": "admin_get_run", "parameters": [r_id], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "404": _ERR_404}}},
+            "/admin-api/runs/{run_id}": {"get": {"tags": ["Admin"], "summary": "Get Run (admin)", "description": "Optional exact retained-record selectors must be supplied together. The same fetched row must match before any run payload is returned. These selectors are identity preconditions, not authorization. Retained-reference UI views are read-only; bare-ID stream/cancel operations are unavailable there.", "operationId": "admin_get_run", "parameters": [r_id,
+                {"name": "expected_tenant_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                {"name": "expected_incarnation_id", "in": "query", "required": False, "schema": {"type": "string", "minLength": 1}},
+            ], "responses": {**_json_response("200", "Success", _ref("AdminRunView")), "400": {"description": "Incomplete or duplicate retained reference selectors", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "404": _ERR_404, "409": _ERR_409}}},
             "/admin-api/runs/{run_id}/stream": {"get": {"tags": ["Admin"], "summary": "Stream Run (admin)", "operationId": "admin_stream_run", "parameters": [r_id], "responses": {"200": {"description": "SSE event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}}},
             "/admin-api/runs/{run_id}/cancel": {"post": {"tags": ["Admin"], "summary": "Cancel Run (admin)", "operationId": "admin_cancel_run", "parameters": [r_id], "responses": {"204": {"description": "Success"}, "404": _ERR_404}}},
             "/admin-api/policy-grants": {
@@ -2561,9 +2564,88 @@ def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
     }
 
 
+def _add_cron_history(admin: dict) -> None:
+    schemas = admin["components"]["schemas"]
+    schemas["CronSchedule"]["properties"]["tenant_id"] = {"type": "string"}
+    schemas["AdminCronHistoryView"] = {
+        "allOf": [_ref("CronSchedule"), {
+            "type": "object",
+            "required": ["thread_id", "thread_available", "history_status"],
+            "properties": {
+                "thread_id": {"type": "string"},
+                "thread_available": {"type": "boolean"},
+                "history_status": {"type": "string", "enum": ["available", "empty", "unavailable"]},
+                "latest_run": {
+                    "type": "object",
+                    "required": ["run_id", "agent_id", "status", "created_at", "updated_at"],
+                    "properties": {
+                        "run_id": {"type": "string"},
+                        "incarnation_id": {"type": "string", "description": "Retained SQL insertion identity. Only link to a result when this reference is available."},
+                        "agent_id": {"type": "string"}, "status": {"type": "string"},
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                },
+            },
+        }],
+    }
+    operation = admin["paths"]["/admin-api/cron"]["get"]
+    operation["parameters"] = [{"name": "include_history", "in": "query", "required": False,
+                                "schema": {"type": "boolean", "default": False}}]
+    operation["description"] = (
+        "Definitions only by default. Literal include_history=true adds each schedule's "
+        "exact-tenant thread availability and latest retained run metadata. This is not a "
+        "fire ledger and does not record skips or failures before run creation."
+    )
+    operation["responses"]["200"]["content"]["application/json"]["schema"] = {
+        "anyOf": [_array_of(_ref("CronSchedule")), _array_of(_ref("AdminCronHistoryView"))]
+    }
+    for path, methods in (
+        ("/admin-api/threads/{thread_id}", ("get", "delete")),
+        ("/admin-api/threads/{thread_id}/runs", ("get",)),
+    ):
+        for method in methods:
+            admin["paths"][path][method].setdefault("parameters", []).append({
+                "name": "tenant_id", "in": "query", "required": False,
+                "schema": {"type": "string"},
+                "description": "Exact tenant selection without trimming. Empty selects default; omission preserves global Admin behavior.",
+            })
+
+
 def main() -> None:
     public = _build_public_spec()
+    for path in ("/runs/{run_id}", "/runs/{run_id}/wait"):
+        operation = public["paths"][path]["get"]
+        marker = " Exact retained run observation accepts ordinary read/write/admin or "
+        operation["description"] = operation.get("description", "").split(marker, 1)[0] + (
+            " Exact retained run observation accepts ordinary read/write/admin or "
+            "agents:<stored-agent-id>:observe. The latter is agent-wide within the tenant, "
+            "not requester-private, and requires a durable SQL run incarnation. "
+            "Runkite-Expected-Run-Reference is an identity precondition, not authorization. "
+            "Scoped wait requires it; scoped GET can acquire the first reference. "
+            "First acquisition cannot prove the ID was never recreated before that read."
+        )
+        operation["parameters"] = [parameter for parameter in operation.get("parameters", [])
+                                   if not (parameter.get("in") == "header" and
+                                           parameter.get("name", "").lower() == "runkite-expected-run-reference")]
+        operation["parameters"].append({
+            "in": "header", "name": "Runkite-Expected-Run-Reference", "required": False,
+            "description": "Previously saved Runkite-Run-Reference. Required for scoped wait. Applies to broad callers too when supplied.",
+            "schema": {"type": "string"},
+        })
+        operation["responses"]["200"]["headers"] = {"Runkite-Run-Reference": {
+            "description": "Nonsecret durable row identity. Preserve it for later observation; not an HTTP ETag or permanent deduplication key.",
+            "schema": {"type": "string"},
+        }}
+        operation["responses"].update({
+            "403": {"description": "Stored agent observation is not permitted"},
+            "412": {"description": "Reference mismatch or multiple precondition headers"},
+            "503": {"description": "Durable observation or required SQL incarnation unavailable"},
+        })
+        if path.endswith("/wait"):
+            operation["responses"]["428"] = {"description": "Scoped wait requires a previously acquired run reference"}
     admin = _build_admin_spec()
+    _add_cron_history(admin)
     # A present empty selector is default, while omission retains legacy global reads.
     for path in (
         "/admin-api/agents/{agent_id}",

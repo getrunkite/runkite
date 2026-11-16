@@ -452,9 +452,9 @@ func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) 
 	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
-// GET /admin-api/threads/{threadID}
+// GET /admin-api/threads/{threadID}[?tenant_id=]
 func (s *Server) handleAdminGetThread(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	thread, err := s.store.GetThread(ctx, r.PathValue("threadID"))
 	if err != nil {
 		handleStoreError(w, err)
@@ -477,11 +477,11 @@ func toAdminRunView(run *models.Run) adminRunView {
 	return adminRunView{Run: run, TenantID: run.TenantID, IncarnationID: run.IncarnationID}
 }
 
-// GET /admin-api/threads/{threadID}/runs?limit=&offset=&cursor= -- same data as the
+// GET /admin-api/threads/{threadID}/runs?tenant_id=&limit=&offset=&cursor= -- same data as the
 // client-facing list, but with tenant_id visible (models.Run hides it via
 // json:"-").
 func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	threadID := r.PathValue("threadID")
 	paging, err := adminListPaging(r)
 	if err != nil {
@@ -565,6 +565,20 @@ func (s *Server) handleAdminGetRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleStoreError(w, err)
 		return
+	}
+	query := r.URL.Query()
+	tenants, selectedTenant := query["expected_tenant_id"]
+	incarnations, selectedIncarnation := query["expected_incarnation_id"]
+	if selectedTenant || selectedIncarnation {
+		if len(tenants) != 1 || len(incarnations) != 1 || incarnations[0] == "" {
+			writeError(w, http.StatusBadRequest, "complete retained run reference required")
+			return
+		}
+		// Validate the same fetched snapshot that supplies the response payload.
+		if run.TenantID != tenants[0] || run.IncarnationID == "" || run.IncarnationID != incarnations[0] {
+			writeError(w, http.StatusConflict, "the original retained run is unavailable")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, toAdminRunView(run))
 }
