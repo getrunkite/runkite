@@ -7,7 +7,7 @@ import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry, AdminRegistryEntryVersion } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminRegistryPath, adminRegistryVersionsPath, adminTenantQuery } from "../lib/adminPaths";
-import { bodyFromForm, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
+import { jsonBodyFromForm, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -59,7 +59,7 @@ export function RegistryEntry() {
     setSaving(true);
     try {
       const q = adminTenantQuery(form.tenant_id);
-      const saved = await api.put<AdminRegistryEntry>(`/registry/${encodeURIComponent(slug)}${q}`, bodyFromForm(form));
+      const saved = await api.putRawJSON<AdminRegistryEntry>(`/registry/${encodeURIComponent(slug)}${q}`, jsonBodyFromForm(form));
       toast.success(isNew ? "Entry published" : "Entry updated", { description: slug });
       if (isNew) {
         navigate(`/admin/registry/${encodeURIComponent(slug)}?tenant_id=${encodeURIComponent(saved.tenant_id)}`, {
@@ -71,7 +71,7 @@ export function RegistryEntry() {
       }
     } catch (err) {
       toast.error("Save failed", {
-        description: err instanceof ApiError ? err.message : "Request failed.",
+        description: err instanceof Error ? err.message : "Request failed.",
       });
     } finally {
       setSaving(false);

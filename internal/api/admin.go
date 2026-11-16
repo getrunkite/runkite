@@ -299,11 +299,15 @@ func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
 
 type adminRegistryEntryView struct {
 	*models.RegistryEntry
-	TenantID string `json:"tenant_id"`
+	TenantID     string `json:"tenant_id"`
+	MetadataJSON string `json:"metadata_json"`
 }
 
 func toAdminRegistryEntryView(e *models.RegistryEntry) adminRegistryEntryView {
-	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID}
+	// The browser's parsed metadata may already contain rounded numbers. A string
+	// carries the stored JSON through visible-field edits without that conversion.
+	metadata, _ := json.Marshal(e.Metadata)
+	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID, MetadataJSON: string(metadata)}
 }
 
 // GET /admin-api/registry?limit=&offset=&cursor=

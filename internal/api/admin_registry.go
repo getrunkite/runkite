@@ -48,7 +48,7 @@ func (s *Server) handleAdminPutRegistryEntry(w http.ResponseWriter, r *http.Requ
 	ctx := adminWriteScopedContext(r)
 
 	var entry models.RegistryEntry
-	if err := readJSON(r, &entry); err != nil {
+	if err := readRegistryEntryJSON(r, &entry); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

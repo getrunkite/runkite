@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Preserve stored opaque capability and catalog numbers across SQL reads and
+  registry browser edits, using lossless JSON decoding and explicit raw metadata
+  transport. Corrupt nonempty control maps fail reads. MySQL native JSON and
+  Mongo numeric limits remain; no column migration or new PUT merge mode.
+
 - Preserve an existing registry entry's opaque metadata when saving edits from
   Admin, including unchanged saves. The form still edits only its visible
   fields; registry PUT requests retain their existing replacement semantics.

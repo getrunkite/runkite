@@ -1295,12 +1295,14 @@ def _build_admin_spec() -> dict:
                 **_connector_action_schemas(),
                 "AdminRegistryEntryView": {
                     "type": "object",
+                    "required": ["metadata_json"],
                     "properties": {
                         "name": {"type": "string"}, "display_name": {"type": "string"},
                         "description": {"type": "string"}, "author": {"type": "string"},
                         "tags": {"type": "array", "items": {"type": "string"}},
                         "source_type": {"type": "string"}, "source_ref": {"type": "string"},
                         "metadata": {"type": "object"}, "version": {"type": "integer"},
+                        "metadata_json": {"type": "string", "description": "Stored metadata encoded as a JSON string for lossless browser replacement PUT. Validate as an object or null and retain the string without re-encoding parsed numbers. Storage precision limits still apply."},
                         "created_at": {"type": "string", "format": "date-time"},
                         "updated_at": {"type": "string", "format": "date-time"},
                         "tenant_id": {"type": "string"},
