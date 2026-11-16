@@ -4,6 +4,7 @@ import { Package, Plus } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry } from "../api/types";
+import { adminRegistryEntryHref } from "../lib/adminPaths";
 import { DocsLink, EmptyState, ErrorState, PageHeader, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
 import { ListPager, adminListPath } from "../components/list-pager";
@@ -103,7 +104,7 @@ export function Registry() {
             getRowId={(e) => `${e.tenant_id}:${e.name}`}
             loading={loading}
             onRowClick={(e) =>
-              navigate(`/admin/registry/${encodeURIComponent(e.name)}?tenant_id=${encodeURIComponent(e.tenant_id)}`)
+              navigate(adminRegistryEntryHref(e.name, e.tenant_id))
             }
           />
           <ListPager

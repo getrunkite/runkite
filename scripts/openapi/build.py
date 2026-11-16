@@ -2564,6 +2564,24 @@ def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
 def main() -> None:
     public = _build_public_spec()
     admin = _build_admin_spec()
+    # A present empty selector is default, while omission retains legacy global reads.
+    for path in (
+        "/admin-api/agents/{agent_id}",
+        "/admin-api/agents/{agent_id}/schemas",
+        "/admin-api/agents/{agent_id}/versions",
+        "/admin-api/registry/{name}",
+        "/admin-api/registry/{name}/versions",
+    ):
+        for method, operation in admin["paths"][path].items():
+            for parameter in operation.get("parameters", []):
+                if parameter.get("name") == "tenant_id":
+                    parameter["description"] = (
+                        "Exact tenant identity without trimming. An explicitly empty "
+                        "value selects default. "
+                        + ("Omission retains the legacy global read; select a tenant "
+                           "to disambiguate same-named records." if method == "get" else
+                           "Omission also selects default for mutations.")
+                    )
     _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()

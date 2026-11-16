@@ -245,9 +245,14 @@ func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 // adminScopedAgentContext mirrors adminScopedRegistryContext: agent_id is
 // only unique within a tenant. System-context GetAgent under a cross-tenant
 // ID collision returns an arbitrary match. ?tenant_id= scopes the lookup.
+// An explicit empty selection means default and masks inherited system scope.
 func adminScopedAgentContext(r *http.Request) context.Context {
-	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
-		return tenant.WithContext(r.Context(), tid)
+	if r.URL.Query().Has("tenant_id") {
+		tid := r.URL.Query().Get("tenant_id")
+		if tid == "" {
+			tid = tenant.DefaultTenant
+		}
+		return tenant.ScopedContext(r.Context(), tid)
 	}
 	return tenant.SystemContext(r.Context())
 }
@@ -353,9 +358,14 @@ func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.R
 // disambiguates by scoping to that one tenant instead of system
 // context; omitting it keeps the old (ambiguous-under-collision)
 // behavior for a single-tenant deployment where no collision can occur.
+// An explicitly empty parameter selects default, rather than global history.
 func adminScopedRegistryContext(r *http.Request) context.Context {
-	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
-		return tenant.WithContext(r.Context(), tid)
+	if r.URL.Query().Has("tenant_id") {
+		tid := r.URL.Query().Get("tenant_id")
+		if tid == "" {
+			tid = tenant.DefaultTenant
+		}
+		return tenant.ScopedContext(r.Context(), tid)
 	}
 	return tenant.SystemContext(r.Context())
 }
