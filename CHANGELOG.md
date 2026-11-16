@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout-only Langflow MCP caller recipe with pinned native LFX client
+  qualification against a real local plane and Python runner, plus baseline
+  and run-only scoped-source CI gates. Visual-editor and model-loop behavior remain
+  outside the headless qualification.
+
 - Add a checkout-only promptfoo managed-run provider with private saved intent,
   one create attempt per intentional evaluation, and read-only result recovery.
   Qualify the pinned native evaluator and CLI with a scripted local worker;
