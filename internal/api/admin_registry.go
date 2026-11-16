@@ -32,14 +32,14 @@ type badRequestError struct{ msg string }
 func (e *badRequestError) Error() string { return e.msg }
 
 // adminWriteScopedContext scopes Admin mutations to ?tenant_id= (default
-// "default"). Writes never use system context — publishing under system
-// context would be ambiguous under cross-tenant name collisions.
+// "default"). Mask inherited system authority so exact mutations cannot
+// affect a same-named record in another tenant.
 func adminWriteScopedContext(r *http.Request) context.Context {
 	tid := r.URL.Query().Get("tenant_id")
 	if tid == "" {
 		tid = tenant.DefaultTenant
 	}
-	return tenant.WithContext(r.Context(), tid)
+	return tenant.ScopedContext(r.Context(), tid)
 }
 
 // PUT /admin-api/registry/{name}?tenant_id=

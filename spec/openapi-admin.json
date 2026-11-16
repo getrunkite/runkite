@@ -2308,7 +2308,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission retains the legacy global read; select a tenant to disambiguate same-named records."
           }
         ],
         "responses": {
@@ -2359,7 +2360,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission retains the legacy global read; select a tenant to disambiguate same-named records."
           }
         ],
         "responses": {
@@ -2410,7 +2412,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission retains the legacy global read; select a tenant to disambiguate same-named records."
           }
         ],
         "responses": {
@@ -2528,7 +2531,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission retains the legacy global read; select a tenant to disambiguate same-named records."
           }
         ],
         "responses": {
@@ -2577,7 +2581,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission also selects default for mutations."
           }
         ],
         "requestBody": {
@@ -2646,7 +2651,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission also selects default for mutations."
           }
         ],
         "responses": {
@@ -2690,7 +2696,8 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Exact tenant identity without trimming. An explicitly empty value selects default. Omission retains the legacy global read; select a tenant to disambiguate same-named records."
           }
         ],
         "responses": {

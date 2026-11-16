@@ -34,6 +34,23 @@ omitting metadata in an API request clears it. There is no metadata-preserve
 query, merge mode, conditional write, or new concurrent-edit protection. A stale
 form can still replace a newer server value, as before.
 
+Admin Agent and Registry exact selectors retain the supplied tenant ID without
+trimming. An explicitly empty `tenant_id` selects the default tenant and masks
+inherited system authority; omitting the query retains global Admin API lookup
+and version-history behavior. Registry mutations always mask system authority.
+The form keeps an existing entry's exact immutable route name and loaded tenant,
+including padding that distinguishes neighboring keys. Route or tenant selection
+changes remount its request, form and delete-confirmation state. Save also rejects
+an unhydrated form or a form whose record no longer matches that selection. New
+entry creation retains its existing slug cleanup. These changes do not add a
+general identifier normalization or validation policy.
+
+Registry creation and editing use explicit modes. Existing entries link to
+`/admin/registry/{name}/edit`, so an API entry literally named `new` is editable.
+The legacy `/admin/registry/new` creation URL and other legacy detail URLs remain
+available. Mode participates in the form remount key and save guard, preventing
+loaded metadata from crossing into a creation form. REST paths are unchanged.
+
 The guarantee follows storage precision. SQLite text and Postgres JSONB preserve
 these decimal values within their existing JSON limits. Postgres may normalize
 numeric spelling, so this promises numeric values rather than original whitespace
@@ -65,3 +82,7 @@ Native BSON encode/decode tests verify legacy ingress conversion and preservatio
 of direct int64 and Decimal128 values. These are not live Mongo server or browser
 UI qualification claims. The capability bootstrap caller needs its separate
 read/merge/write regression when integrated with the capability catalog change.
+Real Admin handler tests also cover exact padded and empty-default tenant
+selection under inherited system context, global no-query compatibility, and
+save/delete isolation from canonical neighbors. Shared-client request tests keep
+padded identifiers exact and reject stale form state after record selection.

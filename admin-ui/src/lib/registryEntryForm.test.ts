@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AdminRegistryEntry } from "../api/types.ts";
 import { api, setCSRFToken } from "../api/client.ts";
-import { jsonBodyFromForm, emptyForm, formFromEntry } from "./registryEntryForm.ts";
+import { jsonBodyFromForm, emptyForm, formFromEntry, registryEntryFormKey, registryEntrySaveRequest } from "./registryEntryForm.ts";
 
 const entry: AdminRegistryEntry = {
   tenant_id: "acme",
@@ -106,4 +106,58 @@ test("raw metadata accepts only one JSON object or null and cannot escape its pr
 
 test("the explicit raw write rejects invalid JSON before fetching", () => {
   assert.throws(() => api.putRawJSON("/registry/example", '{} {}'), SyntaxError);
+});
+
+test("existing saves keep exact padded record identity on the actual shared-client wire", async () => {
+  const original = globalThis.fetch;
+  let seenURL: string | undefined;
+  let seenBody: string | undefined;
+  globalThis.fetch = async (url, init) => {
+    seenURL = String(url);
+    seenBody = init?.body as string;
+    return Response.json(entry);
+  };
+  try {
+    for (const [name, tenant_id] of [[" entry ", "tenant"], ["entry", " tenant "], [" entry ", " tenant "], ["entry", "  "], ["new", " tenant "]]) {
+      const form = formFromEntry({ ...entry, name, tenant_id, metadata_json: rawMetadata });
+      form.description = "visible edit";
+      const request = registryEntrySaveRequest(form, "edit", name, tenant_id);
+      await api.putRawJSON(request.path, request.body);
+      const wire = new URL(seenURL!, "https://plane.example");
+      assert.equal(decodeURIComponent(wire.pathname.split("/").at(-1)!), name);
+      assert.equal(wire.searchParams.get("tenant_id"), tenant_id);
+      assert.equal(JSON.parse(seenBody!).name, name);
+      assert.equal(JSON.parse(seenBody!).description, "visible edit");
+      assert.ok(seenBody!.endsWith(`,"metadata":${rawMetadata}}`));
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a stale or unhydrated existing form cannot overwrite a newly selected record", () => {
+  const loaded = formFromEntry(entry);
+  assert.throws(() => registryEntrySaveRequest(loaded, "edit", "another-entry", entry.tenant_id), /selected record changed/);
+  assert.throws(() => registryEntrySaveRequest(loaded, "edit", entry.name, "another-tenant"), /selected record changed/);
+  assert.throws(() => registryEntrySaveRequest(loaded, "edit", entry.name, ""), /selected record changed/);
+  assert.throws(() => registryEntrySaveRequest({ ...loaded, metadata_json: undefined }, "edit", entry.name, entry.tenant_id), /selected record changed/);
+  const selectedDefault = formFromEntry({ ...entry, tenant_id: "default" });
+  assert.ok(registryEntrySaveRequest(selectedDefault, "edit", entry.name, "").path.endsWith("?tenant_id=default"));
+});
+
+test("new entry creation retains its existing slug cleanup and exact tenant selection", () => {
+  const form = { ...emptyForm(), name: " new-entry ", tenant_id: " tenant ", source_ref: "{}" };
+  const request = registryEntrySaveRequest(form, "create", undefined, " tenant ");
+  assert.equal(request.name, "new-entry");
+  assert.equal(request.path, "/registry/new-entry?tenant_id=%20tenant%20");
+  assert.equal(JSON.parse(request.body).name, "new-entry");
+});
+
+test("route and exact tenant navigation use distinct form remount keys", () => {
+  const selections: Array<[string, string | undefined]> = [
+    ["entry", undefined], ["entry", ""], ["entry", "default"], ["entry", "tenant"],
+    ["entry", " tenant "], [" entry ", "tenant"], ["a:b", "c"], ["a", "b:c"],
+  ];
+  const keys = selections.map(([name, tenant]) => registryEntryFormKey("edit", name, tenant));
+  assert.equal(new Set(keys).size, selections.length);
 });

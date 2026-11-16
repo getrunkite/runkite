@@ -12,6 +12,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Keep exact Admin tenant and registry identities across links, reads, edits and
+  deletion. Existing entries named `new` have an unambiguous edit URL, and
+  switching records resets stale form state before a save can be submitted.
+
 - Preserve stored opaque capability and catalog numbers across SQL reads and
   registry browser edits, using lossless JSON decoding and explicit raw metadata
   transport. Corrupt nonempty control maps fail reads. MySQL native JSON and
