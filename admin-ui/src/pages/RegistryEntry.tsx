@@ -6,7 +6,9 @@ import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { AdminRegistryEntry, AdminRegistryEntryVersion } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
-import { adminRegistryPath, adminRegistryVersionsPath, adminTenantQuery } from "../lib/adminPaths";
+import { adminRegistryEntryHref, adminRegistryPath, adminRegistryVersionsPath } from "../lib/adminPaths";
+import { registryEntryFormKey, registryEntrySaveRequest, emptyForm, formFromEntry, type EntryForm } from "../lib/registryEntryForm";
+import type { RegistryEntryMode } from "../lib/registryEntryRoutes";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -23,82 +25,36 @@ import { Label } from "../components/ui/label";
 import { Skeleton } from "../components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
-interface EntryForm {
-  tenant_id: string;
-  name: string;
-  display_name: string;
-  description: string;
-  author: string;
-  tags: string;
-  source_type: string;
-  source_ref: string;
-}
-
-const emptyForm = (): EntryForm => ({
-  tenant_id: "default",
-  name: "",
-  display_name: "",
-  description: "",
-  author: "",
-  tags: "",
-  source_type: "git",
-  source_ref: "",
-});
-
-function formFromEntry(e: AdminRegistryEntry): EntryForm {
-  return {
-    tenant_id: e.tenant_id,
-    name: e.name,
-    display_name: e.display_name ?? "",
-    description: e.description ?? "",
-    author: e.author ?? "",
-    tags: (e.tags ?? []).join(", "),
-    source_type: e.source_type,
-    source_ref: e.source_ref,
-  };
-}
-
-function bodyFromForm(f: EntryForm): Omit<AdminRegistryEntry, "tenant_id" | "version" | "created_at" | "updated_at"> {
-  const tags = f.tags
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return {
-    name: f.name.trim(),
-    display_name: f.display_name.trim() || undefined,
-    description: f.description.trim() || undefined,
-    author: f.author.trim() || undefined,
-    tags: tags.length ? tags : undefined,
-    source_type: f.source_type.trim(),
-    source_ref: f.source_ref.trim(),
-  };
-}
-
-export function RegistryEntry() {
+export function RegistryEntry({ mode }: { mode: RegistryEntryMode }) {
   const { name: routeName } = useParams<{ name: string }>();
-  const isNew = routeName === "new";
   const [searchParams] = useSearchParams();
+  const tenantSelection = searchParams.get("tenant_id") ?? undefined;
+  return <RegistryEntryContent key={registryEntryFormKey(mode, routeName, tenantSelection)} mode={mode} routeName={routeName} tenantSelection={tenantSelection} />;
+}
+
+// Reset form, request and confirmation state before a different record renders.
+function RegistryEntryContent({ mode, routeName, tenantSelection }: { mode: RegistryEntryMode; routeName?: string; tenantSelection?: string }) {
+  const isNew = mode === "create";
   const navigate = useNavigate();
-  const initialTenant = searchParams.get("tenant_id") ?? "default";
+  const initialTenant = tenantSelection ?? "default";
 
   const [form, setForm] = useState<EntryForm>(() => ({ ...emptyForm(), tenant_id: initialTenant }));
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const entryPath = isNew || !routeName ? null : adminRegistryPath(routeName, form.tenant_id);
-  const versionsPath = isNew || !routeName ? null : adminRegistryVersionsPath(routeName, form.tenant_id);
+  const entryPath = isNew || !routeName ? null : adminRegistryPath(routeName, initialTenant);
+  const versionsPath = isNew || !routeName ? null : adminRegistryVersionsPath(routeName, initialTenant);
 
-  const entry = useApi<AdminRegistryEntry>(entryPath ?? "", [routeName, form.tenant_id]);
-  const versions = useApi<AdminRegistryEntryVersion[]>(versionsPath ?? "", [routeName, form.tenant_id]);
+  const entry = useApi<AdminRegistryEntry>(entryPath ?? "", [routeName, tenantSelection]);
+  const versions = useApi<AdminRegistryEntryVersion[]>(versionsPath ?? "", [routeName, tenantSelection]);
 
   useEffect(() => {
     if (entry.data && !isNew) setForm(formFromEntry(entry.data));
   }, [entry.data, isNew]);
 
   const handleSave = async () => {
-    const slug = form.name.trim();
-    if (!slug) {
+    if (isNew && !form.name.trim()) {
       toast.error("Name is required", { description: "Use a URL-safe slug, e.g. sales-qualifier." });
       return;
     }
@@ -108,11 +64,11 @@ export function RegistryEntry() {
     }
     setSaving(true);
     try {
-      const q = adminTenantQuery(form.tenant_id);
-      const saved = await api.put<AdminRegistryEntry>(`/registry/${encodeURIComponent(slug)}${q}`, bodyFromForm(form));
-      toast.success(isNew ? "Entry published" : "Entry updated", { description: slug });
+      const request = registryEntrySaveRequest(form, mode, routeName, tenantSelection);
+      const saved = await api.putRawJSON<AdminRegistryEntry>(request.path, request.body);
+      toast.success(isNew ? "Entry published" : "Entry updated", { description: request.name });
       if (isNew) {
-        navigate(`/admin/registry/${encodeURIComponent(slug)}?tenant_id=${encodeURIComponent(saved.tenant_id)}`, {
+        navigate(adminRegistryEntryHref(request.name, saved.tenant_id), {
           replace: true,
         });
       } else {
@@ -121,7 +77,7 @@ export function RegistryEntry() {
       }
     } catch (err) {
       toast.error("Save failed", {
-        description: err instanceof ApiError ? err.message : "Request failed.",
+        description: err instanceof Error ? err.message : "Request failed.",
       });
     } finally {
       setSaving(false);
@@ -129,11 +85,10 @@ export function RegistryEntry() {
   };
 
   const handleDelete = async () => {
-    if (!routeName || isNew) return;
+    if (!routeName || isNew || !entry.data || entry.data.name !== routeName) return;
     setDeleting(true);
     try {
-      const q = adminTenantQuery(form.tenant_id);
-      await api.del(`/registry/${encodeURIComponent(routeName)}${q}`);
+      await api.del(adminRegistryPath(routeName, entry.data.tenant_id));
       toast.success("Entry deleted", { description: routeName });
       navigate("/admin/registry");
     } catch (err) {

@@ -52,11 +52,17 @@ test("path segments are URL-encoded", () => {
   assert.equal(adminAgentPath("weird id/slash", "ten ant"), "/agents/weird%20id%2Fslash?tenant_id=ten%20ant");
 });
 
-test("adminTenantQuery is empty for missing or blank tenant, otherwise a leading-? param", () => {
+test("tenant selection preserves exact IDs and distinguishes omitted from empty default scope", () => {
   assert.equal(adminTenantQuery(undefined), "");
-  assert.equal(adminTenantQuery(""), "");
-  assert.equal(adminTenantQuery("  "), "");
+  assert.equal(adminTenantQuery(""), "?tenant_id=");
+  assert.equal(adminTenantQuery("  "), "?tenant_id=%20%20");
+  assert.equal(adminTenantQuery(" tenant "), "?tenant_id=%20tenant%20");
   assert.equal(adminTenantQuery("default"), "?tenant_id=default");
+  for (const path of [adminAgentPath(" shared ", " tenant "), adminRegistryPath(" entry ", " tenant ")]) {
+    const url = new URL(`/admin-api${path}`, "https://plane.example");
+    assert.equal(url.searchParams.get("tenant_id"), " tenant ");
+    assert.ok(decodeURIComponent(url.pathname).includes(" "));
+  }
 });
 
 test("run/thread operations keep caller-supplied identifiers inside one URL segment", () => {

@@ -2,9 +2,8 @@ import { connectorActionRunHref } from "./connectorActions.ts";
 
 /** Build Admin API paths and exact UI record links. */
 export function adminTenantQuery(tenantId?: string): string {
-  const tid = tenantId?.trim();
-  if (!tid) return "";
-  return `?tenant_id=${encodeURIComponent(tid)}`;
+  if (tenantId === undefined) return "";
+  return `?tenant_id=${encodeURIComponent(tenantId)}`;
 }
 
 export function adminAgentPath(agentId: string, tenantId?: string): string {
@@ -30,6 +29,11 @@ export function adminRegistryPath(name: string, tenantId?: string): string {
 
 export function adminRegistryVersionsPath(name: string, tenantId?: string): string {
   return `/registry/${encodeURIComponent(name)}/versions${adminTenantQuery(tenantId)}`;
+}
+
+/** Existing registry records use an explicit edit route, even when named new. */
+export function adminRegistryEntryHref(name: string, tenantId?: string): string {
+  return `/admin/registry/${encodeURIComponent(name)}/edit${adminTenantQuery(tenantId)}`;
 }
 
 export function adminRunPath(runId: string): string {
@@ -67,17 +71,11 @@ export function adminCronRowId(schedule: { tenant_id?: string; name: string }): 
 }
 
 export function adminThreadPath(threadId: string, tenantId?: string): string {
-  return `/threads/${encodeURIComponent(threadId)}${threadTenantQuery(tenantId)}`;
+  return `/threads/${encodeURIComponent(threadId)}${adminTenantQuery(tenantId)}`;
 }
 
 export function adminThreadRunsPath(threadId: string, tenantId?: string): string {
-  return `/threads/${encodeURIComponent(threadId)}/runs${threadTenantQuery(tenantId)}`;
-}
-
-// A selected tenant is an exact identifier. Preserve even an empty selection
-// so a scoped thread operation cannot become a global Admin operation.
-function threadTenantQuery(tenantId?: string): string {
-  return tenantId === undefined ? "" : `?tenant_id=${encodeURIComponent(tenantId)}`;
+  return `/threads/${encodeURIComponent(threadId)}/runs${adminTenantQuery(tenantId)}`;
 }
 
 /** UI route to the immutable approval record, independent of a reused run ID. */

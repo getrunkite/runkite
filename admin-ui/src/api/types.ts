@@ -72,6 +72,8 @@ export interface AdminRegistryEntry {
   source_type: string;
   source_ref: string;
   metadata?: Record<string, unknown>;
+  /** Stored metadata JSON for lossless saves; parsed metadata can round numbers. */
+  metadata_json?: string;
   version: number;
   created_at: string;
   updated_at: string;

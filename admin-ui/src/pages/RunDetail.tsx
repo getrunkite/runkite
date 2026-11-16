@@ -236,7 +236,7 @@ export function RunDetail() {
             </DetailRow>
             <DetailRow label="Thread">
               {run.data.thread_id ? (
-                <Link to={`/admin${adminThreadPath(run.data.thread_id)}`} className="font-mono text-xs text-primary hover:underline">
+                <Link to={`/admin${adminThreadPath(run.data.thread_id, run.data.tenant_id)}`} className="font-mono text-xs text-primary hover:underline">
                   {run.data.thread_id}
                 </Link>
               ) : (

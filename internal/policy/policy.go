@@ -268,6 +268,8 @@ func (e *Engine) applyMandatoryHITLOverlaysLocked(overlays []MandatoryHITLRule) 
 
 // mergeMandatoryHITL unions baseline and overlays; overlays win on the same key.
 // Empty agent_id is a valid key (whole-tenant rule), unlike connector grants.
+// Restrictive HITL retains legacy trimmed matching and overlay keys so an
+// evaluator upgrade cannot silently remove an existing review requirement.
 func mergeMandatoryHITL(baseline, overlays []MandatoryHITLRule) []MandatoryHITLRule {
 	type key struct{ t, a, c string }
 	out := make([]MandatoryHITLRule, 0, len(baseline)+len(overlays))
@@ -300,8 +302,8 @@ func mergeGrants(baseline, overlays []Grant) []Grant {
 	out := make([]Grant, 0, len(baseline)+len(overlays))
 	idx := map[key]int{}
 	for _, g := range baseline {
-		k := key{strings.TrimSpace(g.TenantID), strings.TrimSpace(g.AgentID), strings.TrimSpace(g.Connector)}
-		if k.t == "" || k.a == "" || k.c == "" {
+		k := key{g.TenantID, g.AgentID, g.Connector}
+		if strings.TrimSpace(k.t) == "" || strings.TrimSpace(k.a) == "" || strings.TrimSpace(k.c) == "" {
 			continue
 		}
 		if i, ok := idx[k]; ok {
@@ -312,8 +314,8 @@ func mergeGrants(baseline, overlays []Grant) []Grant {
 		out = append(out, g)
 	}
 	for _, g := range overlays {
-		k := key{strings.TrimSpace(g.TenantID), strings.TrimSpace(g.AgentID), strings.TrimSpace(g.Connector)}
-		if k.t == "" || k.a == "" || k.c == "" {
+		k := key{g.TenantID, g.AgentID, g.Connector}
+		if strings.TrimSpace(k.t) == "" || strings.TrimSpace(k.a) == "" || strings.TrimSpace(k.c) == "" {
 			continue
 		}
 		if i, ok := idx[k]; ok {

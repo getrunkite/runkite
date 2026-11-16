@@ -14,14 +14,14 @@ import (
 const defaultDecisionCacheMaxEntries = 10_000
 
 // decisionCache is a short-TTL LRU keyed on
-// stage/tenant/agent/principal/connector/tool/args_digest (not
+// policy revision/stage/tenant/agent/principal/connector/tool/args_digest (not
 // run_id/generation) so webhook latency stays bounded without
 // cross-contaminating principals or argument values. A BYO webhook PDP
 // can allow Alice / deny Bob for the same tool; omitting Principal
 // would leak Alice's allow. Omitting ArgsDigest would reuse a $50
 // allow for a $250 call.
 type decisionCache struct {
-	lru *lru.LRU[string, PolicyDecision]
+	lru *lru.LRU[decisionCacheKey, PolicyDecision]
 }
 
 func newDecisionCache(ttl time.Duration) *decisionCache {
@@ -29,13 +29,19 @@ func newDecisionCache(ttl time.Duration) *decisionCache {
 		return nil
 	}
 	return &decisionCache{
-		lru: lru.NewLRU[string, PolicyDecision](defaultDecisionCacheMaxEntries, nil, ttl),
+		lru: lru.NewLRU[decisionCacheKey, PolicyDecision](defaultDecisionCacheMaxEntries, nil, ttl),
 	}
 }
 
-func cacheKey(in PolicyInput) string {
-	return in.Stage + "\x00" + in.TenantID + "\x00" + in.AgentID + "\x00" +
-		in.Principal + "\x00" + in.Connector + "\x00" + in.Tool + "\x00" + in.ArgsDigest
+// A tuple preserves exact identity bytes even when a field contains separators.
+// The captured revision prevents an in-flight old evaluation from repopulating
+// the current authority namespace after a reload cleared the cache.
+type decisionCacheKey struct {
+	revision, stage, tenant, agent, principal, connector, tool, argsDigest string
+}
+
+func cacheKey(in PolicyInput) decisionCacheKey {
+	return decisionCacheKey{in.PolicyRevision, in.Stage, in.TenantID, in.AgentID, in.Principal, in.Connector, in.Tool, in.ArgsDigest}
 }
 
 func (c *decisionCache) get(in PolicyInput) (PolicyDecision, bool) {

@@ -4,6 +4,63 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
+- Add a checkout-only Langflow MCP caller recipe with pinned native LFX client
+  qualification against a real local plane and Python runner, plus baseline
+  and run-only scoped-source CI gates. Visual-editor and model-loop behavior remain
+  outside the headless qualification.
+
+- Add a checkout-only promptfoo managed-run provider with private saved intent,
+  one create attempt per intentional evaluation, and read-only result recovery.
+  Qualify the pinned native evaluator and CLI with a scripted local worker;
+  broader evaluator strategies and real model execution remain separate checks.
+
+- Add a checkout AG-UI text bridge using the official protocol packages,
+  shared managed-run delivery, durable completion, full retained replay,
+  detach and explicit app-authorized Stop. No-text and unsupported streams
+  fail delivery instead of inventing tool, interrupt or approval events.
+
+- Add `runkite policy test` for bounded offline static policy expectations,
+  reusing the existing engine without model, Vault, downstream or durable-state
+  calls. Logical pending results do not create approval records. Live `sim`
+  remains unchanged.
+
+- Add explicit `agents:<id>:observe` specialist access, scoped MCP discovery
+  and invocation, canonical session authority binding, SQL run-reference
+  preconditions and durable reference pinning in the Trinity checkout caller.
+  Observation is agent-wide and retention-bounded, with no requester/thread
+  privacy or new cancellation permission. See
+  [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
+
+- Enrich MCP nested input discovery from usable bounded stored agent schemas,
+  with generic fallback, local reference relocation and explicit unknown
+  freshness. Preserve the existing raw execution and session-snapshot contracts.
+
+### Fixed
+
+- Keep exact Admin tenant and registry identities across links, reads, edits and
+  deletion. Existing entries named `new` have an unambiguous edit URL, and
+  switching records resets stale form state before a save can be submitted.
+
+- Preserve stored opaque capability and catalog numbers across SQL reads and
+  registry browser edits, using lossless JSON decoding and explicit raw metadata
+  transport. Corrupt nonempty control maps fail reads. MySQL native JSON and
+  Mongo numeric limits remain; no column migration or new PUT merge mode.
+
+- Bind positive connector policy grants and tool allows to exact identities.
+  Preserve legacy restrictive coverage, isolate decision caches by exact tuple
+  and policy revision, and require fresh managed approvals after the evaluator
+  upgrade. Admin grant edits preserve identities and accept exact tool-name JSON
+  arrays. Follow the coordinated upgrade procedure before restoring traffic.
+
+- Match scoped agent grants against exact stored IDs, preserving surrounding
+  whitespace rather than aliasing another configured agent's authority.
+
+- Preserve an existing registry entry's opaque metadata when saving edits from
+  Admin, including unchanged saves. The form still edits only its visible
+  fields; registry PUT requests retain their existing replacement semantics.
+
 ## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
 
 Coordinated MCP retry and operator workflow release. The governance walkthrough

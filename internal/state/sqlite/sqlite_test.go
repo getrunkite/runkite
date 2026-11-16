@@ -10,7 +10,7 @@ import (
 )
 
 func TestSQLiteStore(t *testing.T) {
-	conformance.RunStoreSuite(t, func(t *testing.T) state.Store {
+	factory := func(t *testing.T) state.Store {
 		s, err := sqlite.New("") // in-memory for tests
 		if err != nil {
 			t.Fatalf("create sqlite store: %v", err)
@@ -20,5 +20,7 @@ func TestSQLiteStore(t *testing.T) {
 		}
 		t.Cleanup(func() { s.Close() })
 		return s
-	})
+	}
+	conformance.RunStoreSuite(t, factory)
+	conformance.RunSQLControlJSONNumberTests(t, factory)
 }

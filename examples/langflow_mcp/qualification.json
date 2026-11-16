@@ -1,0 +1,31 @@
+{
+  "checks": [
+    "discovery",
+    "bearer_auth",
+    "native_schema_conversion",
+    "native_tool_execution",
+    "reconnect_same_run_id",
+    "conflicting_retry",
+    "terminal_error",
+    "terminal_error_retry",
+    "invalid_credential"
+  ],
+  "credential_profile": "published-v0.9-read-write",
+  "langflow_revision": "260cbf347cc5563cc48c79094c175ca31532ea2b",
+  "managed_runs": 2,
+  "native_client_sha256": "fc967fe3a496a682d67119404a3d4280dfbe1bc831b21d65f9e4f8e0f39e4e1f",
+  "native_component_sha256": "e125822930136495277cddf45a2ea5a5588b8a5f8f3f2e00ead8f16f9f56273e",
+  "passed": true,
+  "protocol_versions": [
+    "2025-11-25"
+  ],
+  "runner_assignments": 2,
+  "scope": "Native lfx update_tools, schema conversion and StructuredTool.ainvoke; real local Runkite and runner. No Langflow UI or model loop.",
+  "transport": "streamable_http",
+  "versions": {
+    "langchain-core": "1.8.1",
+    "lfx": "1.13.2",
+    "mcp": "1.30.0",
+    "pydantic": "2.13.5"
+  }
+}
