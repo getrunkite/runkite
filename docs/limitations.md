@@ -2,6 +2,73 @@
 
 Honest gaps, not hidden ones. Use the **Release summary** below in GitHub Release notes and launch posts; the long list after it is the full deep dive.
 
+## Unreleased current-source boundaries
+
+The [source integration guide](integrations.md#unreleased-current-source) maps
+checkout additions after published v0.9.0. Their presence on `main` does not
+change an existing binary, image, wheel or npm install.
+
+- Scoped specialist observation is agent-wide on exact public GET/wait and
+  requires SQL run references. It is not requester-private ownership, broad
+  read authority, streaming or cancellation. First reference acquisition cannot
+  prove prior continuity, and deletion/pruning ends retained-run protection.
+- Structured MCP discovery and configured capability descriptors are advisory.
+  Schema freshness, deployment identity and live worker readiness remain
+  unknown. Discovery does not apply defaults or validate invocation; unknown
+  profiles and execution pools do not inherit support from their names.
+- Registry metadata preservation is a loaded-value replacement roundtrip,
+  without a merge or concurrent-edit guard. SQLite and Postgres retain exact
+  opaque JSON numeric values within their existing limits. MySQL native JSON
+  can round precise decimals; Mongo keeps its legacy JSON/BSON boundary.
+  Earlier lost digits cannot be recovered. Declared requirements install,
+  execute and authorize nothing.
+- Exact Admin Agent/Registry selectors preserve supplied tenant bytes. An
+  explicit empty `tenant_id=` selects the default tenant; an omitted selector
+  retains global Admin API lookup/history behavior. Registry mutations mask
+  inherited system authority. Existing entries use `/admin/registry/{name}/edit`,
+  including a literal name `new`; `/admin/registry/new` remains creation mode.
+  Changing record, tenant or mode resets form/confirmation state and stale or
+  unhydrated saves are rejected. This adds neither general identifier
+  normalization nor concurrent-edit protection.
+- Cron shows retained rows on the schedule's thread, including rows another
+  caller created. It has no receipt for a skipped overlap or failure before run
+  creation. Empty history does not mean never fired. Thread IDs remain globally
+  unique, so equal schedule names across tenants can contend; use distinct
+  names. The view adds no next-fire preview or dispatch/retry behavior.
+- Offline policy fixtures test a declared static snapshot, not authenticated
+  authority, live overlays/webhooks, connector enforcement or tool execution.
+  A logical pending result creates no approval. Live simulation has a different
+  boundary and can perform real work.
+- Exact positive policy identities do not revoke decisions or app-owned
+  continuations already handed to an application. Restrictive rules still
+  match conservatively; padded configuration can deny more. Pause affected
+  callers/continuations while upgrading every replica, resubmit managed reviews
+  and discard/resubmit saved app continuations using the
+  [policy identity rollout](internal/exact-policy-identities.md). Admin grant
+  forms and filters retain exact loaded identities. Tool fields now require
+  JSON string arrays, not comma-separated names; invalid input is rejected
+  before a write. A blank or empty allow list still means no allow-list
+  restriction, not deny-all, and deny entries retain precedence.
+- The Langflow proof covers pinned native headless MCP discovery/conversion and
+  invocation with a real Python worker. It does not qualify its visual editor,
+  browser credential resolution, surrounding model loop or durable caller
+  receipt ownership. The baseline proof uses a dedicated read/write caller;
+  integrated scoped-source qualification is still a separate gate. Its MCP-only
+  fixture uses the run grant, without REST observation authority.
+- The promptfoo proof covers its pinned ordinary evaluator with local assertions
+  and a scripted worker. Intentional repeats are fresh work; unknown delivery
+  uses only read recovery. Arbitrary strategies, external retries, real models
+  and upstream UI/server features are outside that proof.
+- The AG-UI example is an application-side plain-text transport, not a full
+  protocol compliance claim. It requires app-owned identity and state, complete
+  retained replay and confirmed durable completion. Detach is not cancellation;
+  explicit Stop cannot undo earlier side effects. The measured real-plane
+  qualification is SQLite/in-process, not a Postgres/Redis or multi-replica claim.
+
+The detailed [qualification checklist](internal/ecosystem-integration-checklist.md)
+lists the source dependencies and gates before these slices are presented
+together. Demand-led integrations and broader runtime features stay deferred.
+
 ## Release summary
 
 The checkout-only [Trinity specialist example](../examples/trinity_specialist_mcp/README.md)

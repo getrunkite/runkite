@@ -115,6 +115,11 @@
   }
 }</pre>
 
+        <h2 id="exact-policy-identities">Exact policy identities (Unreleased)</h2>
+        <p>Current source matches positive tenant, agent, connector and allow-list tool identities exactly. Restrictive predicate/HITL scope matching stays conservative, so padded configuration can deny more. The <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/exact-policy-identities.md">identity and rollout guide</a> explains policy revision binding, fresh managed reviews and the coordinated replica upgrade. Decisions and app-owned continuations already handed to an application are not revoked; affected callers must pause and discard/resubmit saved continuations under the existing review contract.</p>
+
+        <p class="note"><strong>Current-source Admin grant form:</strong> loaded row ID, tenant, agent and connector values remain exact. Allow and deny tool fields accept JSON string arrays such as <code>["query", "getRecord"]</code>. A name containing a comma or space remains one string; malformed arrays are rejected before saving. Blank or empty allow lists impose no allow-list restriction, and deny entries still win. Preserving a padded name does not remove the evaluator's conservative restrictions.</p>
+
         <h2 id="required-audit">Require durable policy audit</h2>
         <p class="note"><strong>Availability:</strong> v0.7.0. Published v0.6.1 binaries do not implement this setting. Rebuild from current source before relying on required audit.</p>
         <p>Add <code>"audit_required": true</code> to the existing policy block when sensitive access must stop if its decision cannot be saved. Auditing must be enabled and the backend must be Postgres, MySQL or SQLite; incompatible configurations stop startup. The default remains best-effort audit.</p>

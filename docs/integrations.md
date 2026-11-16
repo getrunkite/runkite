@@ -3,6 +3,89 @@
 These integrations keep Runkite as a self-hosted operational plane. Other
 projects retain their clients, agent loops and observability backends.
 
+## Unreleased current source
+
+This is the entry point for the current-source additions after published
+v0.9.0. They require the matching integrated checkout; a published v0.9.0
+binary, wheel or npm package does not acquire them because a guide exists.
+Use the linked contracts and qualification commands before adopting a slice.
+The [support feature map](../site/support/feature-map.html#current-source)
+provides the same availability boundary for operators.
+
+Discover and operate an existing agent:
+
+- [Structured MCP input discovery](internal/mcp-input-schemas.md) enriches only
+  the nested `input` envelope from a bounded usable report. Raw invocation,
+  defaults and coercion stay unchanged. Missing or unsupported reports remain
+  generic; freshness is unknown and an existing session keeps its catalog.
+- [Configured-profile descriptors](internal/agent-capabilities.md) help Agent
+  Detail and Try Agent explain continuity, resume and local-tool conditions.
+  Unknown profiles and execution pools stay unknown. This is advisory metadata,
+  not readiness, code attestation, effective permissions or a live runner probe.
+- [Registry metadata and declared requirements](registry.md) keep definitions
+  discoverable without installing them. Admin preserves loaded opaque metadata;
+  the optional `runkite_definition` convention is publisher-supplied. The
+  [numeric preservation fix](internal/opaque-json-preservation.md) qualifies
+  SQLite/Postgres precision and states MySQL/Mongo limits. PUT still replaces
+  submitted values and adds no concurrent-edit protection. Agent/Registry
+  selectors retain exact tenant bytes. Existing registry records use an explicit
+  edit route, so a record literally named `new` remains editable; changing record,
+  tenant or create/edit mode resets the form and confirmation state.
+- [Cron retained-run visibility](internal/cron-run-visibility.md) links a
+  schedule's exact-tenant thread and latest retained run. Empty history,
+  unavailable reads and failures before run creation remain different cases.
+  This adds no fire ledger, replay, next-fire prediction or scheduler behavior.
+- [Offline static policy fixtures](policy-fixtures.md) run `runkite policy test`
+  over declared grants, predicates and mandatory review using the current
+  engine. They contact no services and execute no tools. Live
+  [simulation](sim.md) continues to create managed runs and can call connectors.
+- [Exact policy identities](internal/exact-policy-identities.md) keep positive
+  grants and tool allow lists tied to their supplied resource names. Restrictive
+  predicates/HITL retain their conservative trim behavior, so ambiguous padded
+  configuration can deny more. Upgrade all replicas with affected callers and
+  continuations paused, then obtain fresh reviews. Previously returned app-owned
+  decisions and saved app continuations are not revoked by a source upgrade;
+  follow the documented discard/resubmit procedure. The Admin grant form retains
+  exact loaded row/scope bytes and takes tool names as JSON string arrays,
+  preserving names containing commas or spaces without splitting or trimming.
+
+Choose the caller or presentation boundary:
+
+- [Scoped specialist access](auth.md#scoped-specialist-callers-unreleased-source-checkout-only)
+  separates `agents:<id>:run` from `agents:<id>:observe`. The former admits
+  filtered MCP discovery and invocation; the latter permits exact public
+  GET/wait observation with a saved SQL run reference. Observation is
+  agent-wide, including retained runs, not requester-private ownership. It
+  grants no stream, cancel, search or thread-history access.
+- [Langflow MCP Tools](../examples/langflow_mcp/README.md) keeps the surrounding
+  flow and model loop in Langflow. Its pinned native headless client was
+  qualified with baseline read/write authority against a real Runkite plane
+  and Python worker. The run-only scoped-source profile needs its own integrated
+  qualification. The visual editor,
+  credential-variable UI and arbitrary agent loop remain deployment checks.
+  The stock component is not a durable operation-receipt store.
+- [promptfoo managed-run provider](../examples/promptfoo/README.md) evaluates
+  ordinary governed runs with the pinned native loader, scheduler and CLI.
+  Each intentional call has fresh IDs; one saved intent permits at most one
+  create attempt, followed by read-only observation. Unknown delivery never
+  silently dispatches replacement work. Local qualification uses a scripted
+  worker and local assertions, not a real model or every evaluator strategy.
+- [AG-UI text transport](../examples/managed_ag_ui/README.md) presents an existing
+  managed run through an application route and the official encoder/client.
+  It reuses the shared bridge's ownership, durable finish, attempt, retained
+  replay, detach and explicit Stop behavior. It supports plain text only,
+  not tool, reasoning, interrupt or native approval events. The host app owns
+  authentication, chat/turn mapping and assistant-ID binding; streaming and
+  Stop still require the application's broader read/write authority.
+
+Keep operation intent and the first acquired run reference where the caller
+contract requires them. Neither an operation ID nor first reference acquisition
+proves continuity before it was saved or after pruning. A response, approval,
+cancel request or disconnected stream does not prove a remote business effect
+or rollback. See [current-source limits](limitations.md#unreleased-current-source-boundaries)
+and the [integration checklist](internal/ecosystem-integration-checklist.md).
+These examples establish bounded interoperability, not upstream endorsement.
+
 ## Cline calls Runkite over MCP
 
 [Cline](https://github.com/cline/cline) supports Streamable HTTP with custom

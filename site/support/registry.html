@@ -122,7 +122,7 @@
           <li><strong>Save changes</strong> updates the entry in place (a real content change still writes a new version, exactly like the API path); <strong>Delete</strong> removes it and its version history.</li>
           <li>The same "publishing is not deploying" rule applies here too, the entry is discoverable metadata, not a live agent, regardless of which path you used to create it.</li>
         </ol>
-        <p>Admin edits preserve the loaded <code>metadata</code> object, including keys the form does not display. Use the API to edit metadata. Saving still replaces the entry with the submitted values and does not add concurrent-edit protection.</p>
+        <p id="metadata-preservation">Admin edits preserve the loaded <code>metadata</code> object, including keys the form does not display. Use the API to edit metadata. Saving still replaces the entry with the submitted values and does not add concurrent-edit protection.</p>
         <p class="note">Admin writes go through <code>PUT</code> / <code>DELETE /admin-api/registry/{name}</code> (an Admin-only route, distinct from the client-facing <code>/registry/entries/{name}</code> above) and are audited the same way every other Admin mutation is.</p>
 
         <h2>In the product</h2>
