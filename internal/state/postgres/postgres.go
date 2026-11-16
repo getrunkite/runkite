@@ -2286,7 +2286,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs`
 	var args []interface{}
 	var where []string
 	argN := 1
@@ -2362,7 +2362,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	for rows.Next() {
 		var r models.Run
 		var metaBytes, inputBytes, configBytes, outputBytes []byte
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		if metaBytes != nil {

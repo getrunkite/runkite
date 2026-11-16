@@ -120,6 +120,37 @@
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron schedules" width="960" height="600" />
         </figure>
 
+        <h2>Run visibility (Unreleased, current source)</h2>
+        <p>
+          Admin &rarr; Cron refreshes every 15 seconds and shows the latest retained run on each
+          schedule's <code>cron:&lt;name&gt;</code> thread. Open a linked run status for its result, or
+          use the thread link to browse retained history. Links select the schedule's exact tenant.
+          Disabled schedules can still have retained runs.
+        </p>
+        <p>
+          Run links retain the exact tenant and stored run incarnation. If the run was deleted
+          and its ID reused, the old link refuses to display the replacement. Without a durable
+          incarnation, the status remains visible without a result link.
+        </p>
+        <p>
+          <strong>No retained runs</strong> means no run is currently stored for that tenant and
+          thread. It does not prove the schedule never fired: history may have been deleted.
+          <strong>History unavailable</strong> means a history read failed; it does not report a
+          dispatch failure. A refresh error leaves the last displayed data marked as potentially stale.
+        </p>
+        <p>
+          Skipped overlaps and failures before run creation do not have their own records in this view.
+          Runs created by another caller on the same thread also appear. Thread IDs are globally unique
+          today, so use distinct schedule names across tenants to avoid a <code>cron:&lt;name&gt;</code>
+          collision. The view never substitutes a different tenant's history for a missing thread.
+        </p>
+        <p>
+          The existing definition-only <code>GET /admin-api/cron</code> response is unchanged.
+          Operators can opt into the same retained-run summary with
+          <code>GET /admin-api/cron?include_history=true</code>. This visibility does not add a
+          scheduler, per-fire receipts, retries or next-fire predictions.
+        </p>
+
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Multi-replica</strong>: <code>cron_claims</code> ensures one dispatch per fire when replicas share Postgres.</li>

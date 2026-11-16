@@ -438,9 +438,9 @@ func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) 
 	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
-// GET /admin-api/threads/{threadID}
+// GET /admin-api/threads/{threadID}[?tenant_id=]
 func (s *Server) handleAdminGetThread(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	thread, err := s.store.GetThread(ctx, r.PathValue("threadID"))
 	if err != nil {
 		handleStoreError(w, err)
@@ -463,11 +463,11 @@ func toAdminRunView(run *models.Run) adminRunView {
 	return adminRunView{Run: run, TenantID: run.TenantID, IncarnationID: run.IncarnationID}
 }
 
-// GET /admin-api/threads/{threadID}/runs?limit=&offset=&cursor= -- same data as the
+// GET /admin-api/threads/{threadID}/runs?tenant_id=&limit=&offset=&cursor= -- same data as the
 // client-facing list, but with tenant_id visible (models.Run hides it via
 // json:"-").
 func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	threadID := r.PathValue("threadID")
 	paging, err := adminListPaging(r)
 	if err != nil {

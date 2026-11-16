@@ -12,6 +12,10 @@ or Runner Protocol change is introduced.
 
 ### Added
 
+- Show retained schedule-thread history in Admin Cron, with explicit empty and
+  unavailable states and exact tenant/run-incarnation links. Definition-only API
+  clients retain the existing list shape unless they request history.
+
 - A checkout-only Trinity specialist MCP example with a fixed destination,
   private caller intent receipts and read-only retry observation. Its stdio
   launcher reuses the official pinned Go MCP SDK. Source configuration checks
