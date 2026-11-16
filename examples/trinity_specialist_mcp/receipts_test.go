@@ -195,11 +195,12 @@ func TestReceiptAttemptMarkerRejectsSymlinkAndPublicMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			marker := filepath.Join(cfg.State, receiptName(r.OperationID)+".attempt")
-			if kind == "symlink" {
+			switch kind {
+			case "symlink":
 				err = os.Symlink(filepath.Join(t.TempDir(), "elsewhere"), marker)
-			} else if kind == "directory" {
+			case "directory":
 				err = os.Mkdir(marker, 0700)
-			} else {
+			default:
 				err = os.WriteFile(marker, []byte("attempted\n"), 0644)
 				if err == nil {
 					err = os.Chmod(marker, 0644)

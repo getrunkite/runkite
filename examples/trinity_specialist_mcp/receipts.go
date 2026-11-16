@@ -90,7 +90,7 @@ func publishPrivateFile(directory, path string, data []byte) (created bool, err 
 	if err != nil {
 		return false, err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if _, err = f.Write(data); err == nil {
 		err = f.Sync()
 	}

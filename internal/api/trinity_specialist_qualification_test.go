@@ -46,7 +46,7 @@ func (b *trinityQualificationLog) Write(data []byte) (int, error) {
 func (b *trinityQualificationLog) text() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Buffer.String()
+	return b.String()
 }
 
 type trinityQualificationFixture struct {

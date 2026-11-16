@@ -23,12 +23,12 @@ const endpointBodyLimit int64 = 4 << 20
 
 var (
 	errEndpointConfig   = errors.New("invalid Runkite endpoint configuration")
-	errEndpointResolve  = errors.New("Runkite endpoint resolution failed")
-	errEndpointAddress  = errors.New("Runkite endpoint address is not allowed")
+	errEndpointResolve  = errors.New("endpoint resolution failed")
+	errEndpointAddress  = errors.New("endpoint address is not allowed")
 	errEndpointOrigin   = errors.New("request must use the configured Runkite origin")
-	errEndpointConnect  = errors.New("Runkite endpoint connection failed")
-	errEndpointRead     = errors.New("Runkite response could not be read")
-	errEndpointBodySize = errors.New("Runkite response exceeds the size limit")
+	errEndpointConnect  = errors.New("endpoint connection failed")
+	errEndpointRead     = errors.New("response could not be read")
+	errEndpointBodySize = errors.New("response exceeds the size limit")
 )
 
 type endpointLookup func(context.Context, string, string) ([]netip.Addr, error)
@@ -147,7 +147,8 @@ func parseEndpoint(raw string) (*url.URL, error) {
 				return nil, errEndpointConfig
 			}
 			for _, c := range label {
-				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+				allowed := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-'
+				if !allowed {
 					return nil, errEndpointConfig
 				}
 			}
