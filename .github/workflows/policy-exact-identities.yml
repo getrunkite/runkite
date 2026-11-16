@@ -1,0 +1,47 @@
+name: Exact policy identity hardening
+
+on:
+  pull_request:
+    paths:
+      - internal/**
+      - cmd/**
+      - go.mod
+      - go.sum
+      - .github/workflows/policy-exact-identities.yml
+  push:
+    branches: [main]
+    paths:
+      - internal/**
+      - cmd/**
+      - go.mod
+      - go.sum
+      - .github/workflows/policy-exact-identities.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  race-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Focused exact authority and conservative restriction regressions
+        run: >-
+          go test -race ./internal/auth ./internal/policy ./internal/api
+          -count=1 -timeout=120s
+          -run '^(TestCanRunAgent|TestScopedSpecialist|TestCanObserveAgent|TestRunBinding.*Exact|TestExactAgentConnectorGrantBoundary|TestGovernancePositiveIdentityBytesAndCacheAreExact|TestPolicySemanticsUpgrade|TestPositive|TestGrantOverlay|TestRestrictivePadded|TestDecisionCacheExact|TestPolicyReload)'
+      - name: Full auth, policy and API race suites
+        # Default suites use local fixtures. Live/provider qualification remains
+        # opt-in; this workflow supplies no provider credentials or test data.
+        # Match the normal Go test package budget. Race-instrumented pure-Go
+        # SQLite migrations across the full API suite exceed five minutes.
+        run: go test -race ./internal/auth ./internal/policy ./internal/api -count=1 -timeout=600s -v

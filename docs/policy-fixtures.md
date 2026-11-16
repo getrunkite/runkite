@@ -78,8 +78,10 @@ The supported snapshot fields are:
   and optional `tools`. Matching allows become `pending`; denials stay denied.
 
 The fixture represents a controlled static snapshot. It does not query Admin
-or merge database overlays. Duplicate grant scopes and mandatory-HITL scopes
-are rejected instead of silently replacing earlier declarations. Predicate IDs
+or merge database overlays. Duplicate exact grant scopes and duplicate effective
+mandatory-HITL scopes are rejected instead of silently replacing earlier
+declarations. Mandatory-HITL uses the engine's legacy trimmed scope for this
+check; positive grants use exact scope bytes. Predicate IDs
 and case IDs must be unique. Invalid predicates are errors, even though the
 live engine's general constructor can skip invalid predicate rows.
 
@@ -99,6 +101,24 @@ Every input requires a declared `tenant_id`, `principal` and `agent_id`:
 - `run.create` excludes connector/tool/args. The static engine skips connector
   grants for this stage and normally allows it. This does not test actual run
   admission, authentication, agent existence, kill switches, limits or budgets.
+
+Declared tenant, principal, agent, connector and tool values retain surrounding
+whitespace. Tool lists retain it too. Required scope values must contain a
+non-whitespace character, but the parser never rewrites them. This lets a fixture
+distinguish a grant for `" echo "` from the neighboring stored ID `"echo"`.
+For example, with only an unrestricted grant for tenant `"acme"`, agent
+`" echo "` and connector `"tools"`, a connector-session case for `" echo "`
+expects `allow`; the same case for `"echo"` expects `deny` with
+`policy_no_grant`.
+
+The current evaluator's restrictive compatibility behavior remains visible:
+padded predicate and mandatory-HITL scopes can still deny or require review for
+a canonical neighboring spelling. Legacy per-grant tool-filter denials can also
+apply across trim-equivalent scopes, including under default allow. An ambiguous
+padded configuration may therefore deny more. Fixtures use the real evaluator;
+accepting a padded declaration does not invent an exact-only restriction mode or
+prove that a live API accepts that identity. See
+[policy identity upgrade guidance](ops-runbook.md#unreleased-policy-identity-upgrade).
 
 The principal is fixture data, not a verified identity. Static grants do not
 supply principal-specific RBAC. Declaring `principal: "admin"` does not simulate
@@ -123,8 +143,11 @@ service implementation or deployed policy state.
 The document limit is 1 MiB, nesting is at most 32 JSON containers, and there
 are at most 256 cases and 256 entries in each rule list. Each argument object
 and predicate value is at most 64 KiB. Identity/scope/metadata strings are at
-most 256 UTF-8 bytes, without controls or outer whitespace. Tool lists contain
-at most 128 distinct names each.
+most 256 UTF-8 bytes without control characters. Declared scope strings preserve
+outer whitespace; case/rule IDs, reason codes, effects and predicate syntax
+remain clean without outer whitespace. Tool lists contain at most 128 distinct
+exact names each. Empty optional scopes retain their existing wildcard meaning;
+blank nonempty scope values are rejected.
 
 Unsupported fields include webhooks, SIEM/audit configuration, approval quorum,
 cache settings, connectors, credential references as configuration, live

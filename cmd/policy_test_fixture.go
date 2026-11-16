@@ -186,13 +186,19 @@ func fixtureText(value string, required bool) bool {
 	return (!required || value != "") && len(value) <= 256 && utf8.ValidString(value) && strings.TrimSpace(value) == value && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
+// Scope values preserve declared identity bytes. Trimming is used only to
+// reject blank values, never to rewrite an identity before engine evaluation.
+func fixtureScope(value string, required bool) bool {
+	return (!required || value != "") && (value == "" || strings.TrimSpace(value) != "") && len(value) <= 256 && utf8.ValidString(value) && !strings.ContainsFunc(value, unicode.IsControl)
+}
+
 func validFixtureTools(tools []string) bool {
 	if len(tools) > 128 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, tool := range tools {
-		if !fixtureText(tool, true) || seen[tool] {
+		if !fixtureScope(tool, true) || seen[tool] {
 			return false
 		}
 		seen[tool] = true
@@ -216,7 +222,7 @@ func (f *policyFixture) validate() error {
 	}
 	grantKeys := map[string]bool{}
 	for i, g := range p.Grants {
-		if !fixtureText(g.ID, false) || !fixtureText(g.TenantID, true) || !fixtureText(g.AgentID, true) || !fixtureText(g.Connector, true) {
+		if !fixtureText(g.ID, false) || !fixtureScope(g.TenantID, true) || !fixtureScope(g.AgentID, true) || !fixtureScope(g.Connector, true) {
 			return fmt.Errorf("policy.grants[%d] has invalid identity/scope fields", i)
 		}
 		key := g.TenantID + "\x00" + g.AgentID + "\x00" + g.Connector
@@ -230,7 +236,7 @@ func (f *policyFixture) validate() error {
 	}
 	predicateIDs := map[string]bool{}
 	for i, predicate := range p.Predicates {
-		if !fixtureText(predicate.ID, true) || predicateIDs[predicate.ID] || !fixtureText(predicate.TenantID, true) || !fixtureText(predicate.AgentID, false) || !fixtureText(predicate.Connector, true) || !fixtureText(predicate.Tool, false) || !fixtureText(predicate.ReasonCode, false) || !fixtureText(predicate.Effect, true) || predicate.When == nil {
+		if !fixtureText(predicate.ID, true) || predicateIDs[predicate.ID] || !fixtureScope(predicate.TenantID, true) || !fixtureScope(predicate.AgentID, false) || !fixtureScope(predicate.Connector, true) || !fixtureScope(predicate.Tool, false) || !fixtureText(predicate.ReasonCode, false) || !fixtureText(predicate.Effect, true) || predicate.When == nil {
 			return fmt.Errorf("policy.predicates[%d] has invalid identity/scope/when fields", i)
 		}
 		predicateIDs[predicate.ID] = true
@@ -246,10 +252,11 @@ func (f *policyFixture) validate() error {
 	}
 	hitlKeys := map[string]bool{}
 	for i, r := range p.MandatoryHITL {
-		if !fixtureText(r.ID, false) || !fixtureText(r.TenantID, true) || !fixtureText(r.AgentID, false) || !fixtureText(r.Connector, true) || !validFixtureTools(r.Tools) {
+		if !fixtureText(r.ID, false) || !fixtureScope(r.TenantID, true) || !fixtureScope(r.AgentID, false) || !fixtureScope(r.Connector, true) || !validFixtureTools(r.Tools) {
 			return fmt.Errorf("policy.mandatory_hitl[%d] has invalid fields", i)
 		}
-		key := r.TenantID + "\x00" + r.AgentID + "\x00" + r.Connector
+		// The restrictive engine still merges these scopes after trimming.
+		key := strings.TrimSpace(r.TenantID) + "\x00" + strings.TrimSpace(r.AgentID) + "\x00" + strings.TrimSpace(r.Connector)
 		if hitlKeys[key] {
 			return fmt.Errorf("policy.mandatory_hitl[%d] duplicates scope", i)
 		}
@@ -265,7 +272,7 @@ func (f *policyFixture) validate() error {
 		}
 		seen[c.ID] = true
 		in := c.Input
-		if !fixtureText(in.TenantID, true) || !fixtureText(in.Principal, true) || !fixtureText(in.AgentID, true) || !fixtureText(in.Connector, false) || !fixtureText(in.Tool, false) {
+		if !fixtureScope(in.TenantID, true) || !fixtureScope(in.Principal, true) || !fixtureScope(in.AgentID, true) || !fixtureScope(in.Connector, false) || !fixtureScope(in.Tool, false) {
 			return fmt.Errorf("cases[%d].input has invalid identity/scope fields", i)
 		}
 		switch in.Stage {

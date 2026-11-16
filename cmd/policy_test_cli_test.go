@@ -91,6 +91,12 @@ func TestOfflinePolicyStrictValidation(t *testing.T) {
 		"unknown expectation":       strings.Replace(minimalPolicyFixture, `"effect":"deny"`, `"effect":"hitl"`, 1),
 		"missing principal":         strings.Replace(minimalPolicyFixture, `"principal":"alice",`, "", 1),
 		"trailing document":         minimalPolicyFixture + ` {}`,
+		"padded case id":            strings.Replace(minimalPolicyFixture, `"id":"default-deny"`, `"id":" default-deny "`, 1),
+		"padded expectation reason": strings.Replace(minimalPolicyFixture, `"reason_code":"policy_default_deny"`, `"reason_code":" policy_default_deny "`, 1),
+		"padded rule id":            strings.Replace(minimalPolicyFixture, `"policy":{}`, `"policy":{"grants":[{"id":" padded ","tenant_id":"acme","agent_id":"agent","connector":"tools"}]}`, 1),
+		"blank scope":               strings.Replace(minimalPolicyFixture, `"tenant_id":"acme"`, `"tenant_id":"   "`, 1),
+		"control scope":             strings.Replace(minimalPolicyFixture, `"tenant_id":"acme"`, `"tenant_id":"a\nb"`, 1),
+		"scope bytes":               strings.Replace(minimalPolicyFixture, `"tenant_id":"acme"`, `"tenant_id":"`+strings.Repeat("x", 257)+`"`, 1),
 		"control identity":          strings.Replace(minimalPolicyFixture, `"principal":"alice"`, `"principal":"a\nb"`, 1),
 		"argument bytes":            strings.Replace(minimalPolicyFixture, `"args":{}`, `"args":{"x":"`+strings.Repeat("x", maxPolicyFixtureArgs)+`"}`, 1),
 		"nesting":                   strings.Replace(minimalPolicyFixture, `"args":{}`, `"args":{"x":`+strings.Repeat("[", maxPolicyFixtureDepth)+`0`+strings.Repeat("]", maxPolicyFixtureDepth)+`}`, 1),
@@ -263,5 +269,76 @@ func TestOfflinePolicyRealCommandExitStatuses(t *testing.T) {
 				t.Fatalf("status=%d want=%d stderr=%s stdout=%s", code, tc.code, diagnostic.String(), out.String())
 			}
 		})
+	}
+}
+
+const exactScopePolicyFixture = `{
+ "schema_version":1,
+ "policy":{"grants":[{"id":"exact-padded","tenant_id":" tenant ","agent_id":" agent ","connector":" tools ","tools":{"allow":["read"," read "]}}]},
+ "cases":[
+  {"id":"exact-padded-tool","input":{"stage":"tool.call","tenant_id":" tenant ","principal":" caller ","agent_id":" agent ","connector":" tools ","tool":" read ","args":{}},"expect":{"effect":"allow","rule_id":"exact-padded"}},
+  {"id":"tenant-neighbor","input":{"stage":"tool.call","tenant_id":"tenant","principal":"caller","agent_id":" agent ","connector":" tools ","tool":"read","args":{}},"expect":{"effect":"deny","reason_code":"policy_no_grant"}},
+  {"id":"agent-neighbor","input":{"stage":"tool.call","tenant_id":" tenant ","principal":"caller","agent_id":"agent","connector":" tools ","tool":"read","args":{}},"expect":{"effect":"deny","reason_code":"policy_no_grant"}},
+  {"id":"connector-neighbor","input":{"stage":"tool.call","tenant_id":" tenant ","principal":"caller","agent_id":" agent ","connector":"tools","tool":"read","args":{}},"expect":{"effect":"deny","reason_code":"policy_no_grant"}},
+  {"id":"tool-neighbor","input":{"stage":"tool.call","tenant_id":" tenant ","principal":"caller","agent_id":" agent ","connector":" tools ","tool":"read ","args":{}},"expect":{"effect":"deny","reason_code":"policy_tool_denied"}}
+ ]
+}`
+
+const restrictiveScopePolicyFixture = `{
+ "schema_version":1,
+ "policy":{
+  "default_effect":"allow",
+  "grants":[{"id":"legacy-filter","tenant_id":" tenant ","agent_id":" agent ","connector":" restricted ","tools":{"allow":["read"],"deny":["delete"]}}],
+  "predicates":[{"id":"legacy-predicate","tenant_id":" tenant ","agent_id":" agent ","connector":" tools ","tool":" write ","when":{"path":"amount","op":"gt","value":100},"effect":"deny"}],
+  "mandatory_hitl":[{"id":"legacy-review","tenant_id":" tenant ","agent_id":" agent ","connector":" tools ","tools":[" write "]}]
+ },
+ "cases":[
+  {"id":"canonical-deny","input":{"stage":"tool.call","tenant_id":"tenant","principal":"caller","agent_id":"agent","connector":"tools","tool":"write","args":{"amount":200}},"expect":{"effect":"deny","rule_id":"legacy-predicate"}},
+  {"id":"canonical-review","input":{"stage":"tool.call","tenant_id":"tenant","principal":"caller","agent_id":"agent","connector":"tools","tool":"write","args":{"amount":50}},"expect":{"effect":"pending","rule_id":"legacy-review"}},
+  {"id":"padded-review","input":{"stage":"tool.call","tenant_id":" tenant ","principal":"caller","agent_id":" agent ","connector":" tools ","tool":" write ","args":{"amount":50}},"expect":{"effect":"pending","rule_id":"legacy-review"}},
+  {"id":"legacy-deny-filter","input":{"stage":"tool.call","tenant_id":"tenant","principal":"caller","agent_id":"agent","connector":"restricted","tool":" delete ","args":{}},"expect":{"effect":"deny","reason_code":"policy_tool_denied","rule_id":"legacy-filter"}},
+  {"id":"legacy-allow-exclusion","input":{"stage":"tool.call","tenant_id":"tenant","principal":"caller","agent_id":"agent","connector":"restricted","tool":" write ","args":{}},"expect":{"effect":"deny","reason_code":"policy_tool_denied","rule_id":"legacy-filter"}}
+ ]
+}`
+
+func TestOfflinePolicyScopeFixturesThroughRealCommand(t *testing.T) {
+	for _, tc := range []struct{ name, raw string }{{"exact-positive", exactScopePolicyFixture}, {"legacy-restrictions", restrictiveScopePolicyFixture}} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=^TestPolicyTestCommandHelper$")
+			command.Env = append(os.Environ(), "RUNKITE_POLICY_TEST_HELPER=1", "RUNKITE_POLICY_TEST_PATH=-")
+			command.Stdin = strings.NewReader(tc.raw)
+			var out, diagnostic bytes.Buffer
+			command.Stdout = &out
+			command.Stderr = &diagnostic
+			if err := command.Run(); err != nil || diagnostic.Len() != 0 {
+				t.Fatalf("real CLI rejected scope expectations: %v %s", err, diagnostic.String())
+			}
+			var report policyFixtureReport
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil || report.Passed != 5 || report.Failed != 0 {
+				t.Fatal("scope expectations did not match", out.String(), err)
+			}
+			if strings.Contains(out.String(), " tenant ") || strings.Contains(out.String(), " caller ") {
+				t.Fatal("report exposed declared scope input")
+			}
+		})
+	}
+	fixture, err := parsePolicyFixture([]byte(exactScopePolicyFixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Policy.Grants[0].TenantID != " tenant " || fixture.Policy.Grants[0].AgentID != " agent " || fixture.Policy.Grants[0].Connector != " tools " || fixture.Cases[0].Input.Principal != " caller " || fixture.Cases[0].Input.Tool != " read " {
+		t.Fatal("fixture parser rewrote declared scope bytes")
+	}
+}
+
+func TestOfflinePolicyEffectiveScopeDuplicatesRemainRejected(t *testing.T) {
+	for _, rules := range []string{
+		`"grants":[{"tenant_id":" tenant ","agent_id":" agent ","connector":" tools "},{"tenant_id":" tenant ","agent_id":" agent ","connector":" tools "}]`,
+		`"mandatory_hitl":[{"tenant_id":"tenant","agent_id":"agent","connector":"tools"},{"tenant_id":" tenant ","agent_id":" agent ","connector":" tools "}]`,
+	} {
+		raw := strings.Replace(minimalPolicyFixture, `"policy":{}`, `"policy":{`+rules+`}`, 1)
+		if status, out, _ := fixtureCLI(t, raw); status != 2 || out != "" {
+			t.Fatal("duplicate replacing scope accepted", status, out)
+		}
 	}
 }

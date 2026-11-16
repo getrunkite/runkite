@@ -29,6 +29,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Bind positive connector policy grants and tool allows to exact identities.
+  Preserve legacy restrictive coverage, isolate decision caches by exact tuple
+  and policy revision, and require fresh managed approvals after the evaluator
+  upgrade. Admin grant edits preserve identities and accept exact tool-name JSON
+  arrays. Follow the coordinated upgrade procedure before restoring traffic.
+
 - Match scoped agent grants against exact stored IDs, preserving surrounding
   whitespace rather than aliasing another configured agent's authority.
 - Preserve an existing registry entry's opaque metadata when saving edits from

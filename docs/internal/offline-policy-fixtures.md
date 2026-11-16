@@ -46,6 +46,17 @@ separate from schema keys and never printed. Invalid-input diagnostics do not
 echo argument contents. IDs and rule metadata are operator-declared/reportable,
 not secret containers.
 
+Scope validation is separate from reportable metadata validation. Declared
+tenant/principal/agent/connector/tool values and tool lists retain their original
+bytes, including outer whitespace, within the existing UTF-8, nonblank, control
+and length bounds. Case/rule IDs, reason codes, effects and predicate syntax keep
+the clean-string requirement. The fixture can therefore test exact padded
+positive identities and the evaluator's unchanged conservative restrictions.
+Exact grant duplicates remain errors. Mandatory-HITL duplicates are checked by
+its legacy trimmed effective scope, so newly accepted padding cannot silently
+replace an earlier restrictive declaration. No fixture mode or normalization
+layer is added.
+
 The report omits wall-clock latency, run IDs, random IDs, timestamps and free-form
 reasons. It contains only version/revision, ordered case metadata, compared
 decisions and counts. Process status distinguishes matching cases (0), mismatches
@@ -78,7 +89,12 @@ Tests exercise the real existing engine through all three effects, deny versus
 pending precedence, tool deny versus mandatory review, tenant scope, session
 and run-create stages, exact large numbers and string/number distinctions.
 Malformed/unknown/duplicate/case-variant fields, invalid predicates and bounds
-are refused before output. Mismatches keep later cases visible.
+are refused before output. Mismatches keep later cases visible. Real-main
+subprocess cases exercise a padded tenant/agent/connector grant, exact padded
+tool allows, canonical neighbors that remain denied, and preserved padded
+predicate, mandatory-review and tool-filter restrictions under default allow.
+The parser's scope bytes are checked directly; padded diagnostic metadata,
+control/blank/oversized scopes and replacing duplicate scopes remain invalid.
 
 A network tripwire, hostile ambient URLs/keys, literal environment/Vault markers
 and a file-content/directory comparison verify that the command neither calls
