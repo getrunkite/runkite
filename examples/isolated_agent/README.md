@@ -1,7 +1,7 @@
 # External isolated workload prototype
 
-Status: experimental in current v0.8.0 source, not yet tagged or published.
-The profile first shipped in v0.7.0. OpenShell remains an external product. The
+Status: experimental, available in published runners since v0.7.0.
+OpenShell remains an external product. The
 JSONL bridge and fleet pools are separate controls. Neither a fake-runtime unit
 test nor Helm rendering establishes an enforced sandbox.
 
@@ -72,8 +72,8 @@ The workload emits bounded JSON lines: incremental `event` frames, optional
 through the parent's existing run-bound MCP proxy. Deny and pending responses
 remain denies or holds; no automatic approval or polling is added.
 
-Published v0.7.0 has no supported workload usage-reporting contract. Unreleased
-v0.8.0 source supports [versioned cumulative reports](../../docs/internal/isolated-usage.md)
+Published v0.7.0 has no supported workload usage-reporting contract. v0.8.0
+introduced [versioned cumulative reports](../../docs/internal/isolated-usage.md)
 with durable acknowledgement and receipt/cancellation settlement. This offline
 example reports an explicit zero; `usage_fixture` values are synthetic test
 measurements only. A different workload must report its own measurements and

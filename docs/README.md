@@ -57,7 +57,7 @@ recovery checks, with fixture setup and measured rehearsal limits.
 
 The [Apache-2.0 transition record](internal/apache-2.0-transition.md) explains
 current-source licensing, the unchanged terms of published v0.6.0 artifacts,
-third-party notices and the packaging checks required for the next release.
+third-party notices and the packaging checks retained for release archives.
 
 Feature availability follows [CHANGELOG](../CHANGELOG.md), not the presence of a
 README or packaging metadata. Checkout-only adapters, independent governance
@@ -70,3 +70,4 @@ roadmap. This is application preparation, not a foundation admission claim.
 - [Identity and distribution qualification](internal/identity-distribution-qualification.md): executed maintainer checks and remaining external gates for v0.8.0.
 - [Node fetch and TLS compatibility](internal/node-fetch-tls-compatibility.md): the Node 22 dispatcher failure found by hosted qualification, its dependency adapter and regression coverage.
 - [v0.8.0 package recovery](internal/release-recovery-v080.md): release-client assumptions, public-index visibility and immutable source/controller recovery.
+- [v0.9.0 publication verification](internal/release-verification-v090.md): immutable source, archive and package checks, six image variants, actual publishing authority and qualification limits.

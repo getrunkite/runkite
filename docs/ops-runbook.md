@@ -2,17 +2,18 @@
 
 The **Supported** production profile uses **Postgres + Redis**, client auth and runner tokens. The linked guides explain the architecture and individual controls.
 
-**v0.8.0 deployment:** use matching plane and runner artifacts. The chart's
+**v0.9.0 deployment:** use matching plane and runner artifacts. The chart's
 `image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
-both to `0.8.0` for this upgrade, or select matching images built from the same
+both to `0.9.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
 
-## MCP and operator flow upgrade (planned v0.9.0)
+<a id="mcp-and-operator-flow-upgrade-planned-v090"></a>
 
-Availability: unreleased candidate. Published v0.8.0 remains the verified
-download. These changes add no SQL migration, Runner Protocol message or new
-credential role. An upgrade from an older release still needs its existing
+## MCP and operator flow upgrade (v0.9.0)
+
+Availability: v0.9.0. These changes add no SQL migration, Runner Protocol message
+or new credential role. An upgrade from an older release still needs its existing
 schema, identity and TLS procedures below; this section does not waive them.
 
 1. Deploy the qualified control-plane build, including its rebuilt embedded
@@ -60,7 +61,7 @@ and use the existing REST read/wait interfaces for investigation. There is no
 new schema to downgrade for this increment. Do not roll back earlier identity
 or approval migrations by editing tables or migration stamps. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
-[candidate release gates](releasing.md#v090-candidate-unreleased).
+[release verification](releasing.md#v090-candidate-unreleased).
 
 <a id="identity-and-distribution-candidate"></a>
 

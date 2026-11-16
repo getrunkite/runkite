@@ -1,22 +1,26 @@
 # Retry-safe MCP and a clearer operator workflow
 
-Target: the next coordinated release, planned as v0.9.0. These changes are
-unreleased until the tagged artifacts are published and verified. The public
-website must keep v0.8.0 as the verified download while this work is qualified.
+Implemented in v0.9.0. The tagged artifacts and current availability are tracked
+in the [release verification guide](../releasing.md#v090-release-verification).
+The source qualification below records its actual tested scope; publication does
+not establish a live-provider soak or independent security assessment.
 
-## Caller and existing implementation
+<a id="caller-and-existing-implementation"></a>
+
+## Caller and starting point
 
 An MCP client can lose a response after its Runkite run was created. Retrying
 the same request must be able to observe that run instead of starting another
 model/tool cycle. The REST API already supports caller-supplied `RunCreate.RunID`,
 `findRunForRetry`, exact-JSON input comparison, concurrent-insert handling and
-durable existing-run observation. The public MCP tool currently accepts only
-`message`, `input` and `thread_id`, so that entry point cannot use those contracts.
+durable existing-run observation. Before this change, the public MCP tool
+accepted only `message`, `input` and `thread_id`, so that entry point could not
+use those contracts.
 
-An operator investigating a managed connector action already has its exact
-approval ID, but global Admin sends them through a filtered list. Tenant Review
-already opens the existing approval detail directly. The same Admin already
-shows inputs, raw output, run manifests, usage, delegated runs and recorded
+An operator investigating a managed connector action already had its exact
+approval ID, but global Admin sent them through a filtered list. Tenant Review
+already opened the existing approval detail directly. The same Admin already
+showed inputs, raw output, run manifests, usage, delegated runs and recorded
 connector actions. There is no need for another approval store or timeline.
 
 A developer evaluating app-owned governance can already run the AI SDK note

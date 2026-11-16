@@ -7,8 +7,9 @@
 >
 > Current implementation: `internal/api/governance_decide.go`,
 > `python/runkite_governance` and `typescript/runkite-governance`.
-> The helper guards/Microsoft middleware remain checkout-only packages. The
-> managed AI SDK runner is included in published v0.6.1. New security controls
+> The helpers, including the guards and optional Microsoft middleware, have been
+> published independently as `runkite-governance` on npm and PyPI since v0.8.0.
+> The managed AI SDK runner is included in published v0.6.1. New security controls
 > are included in v0.7.0. See [client integration guidance](../client-sdk.md) and
 > [CHANGELOG](../../CHANGELOG.md) for availability and boundaries.
 >

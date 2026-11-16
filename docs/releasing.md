@@ -9,22 +9,28 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
-## v0.9.0 candidate (unreleased)
+<a id="v090-candidate-unreleased"></a>
 
-The current source prepares the next coordinated release as v0.9.0. A version
-bump is not publication. Keep v0.8.0 as the verified public download until the
-new tag's binaries, four registry packages and three images are published and
-verified. Do not replace or move any v0.8.0 artifact.
+## v0.9.0 release verification
 
-This candidate adds stable run IDs to the existing public MCP agent tools,
+v0.9.0 is the verified coordinated release for the control-plane binaries, four
+registry packages and three image repositories. A version bump or GitHub Release
+alone does not establish every destination. Verify the actual tagged archives,
+package distributions and both runtime platforms of each image before promoting
+availability labels. Do not replace or move any v0.8.0 artifact.
+
+This release adds stable run IDs to the existing public MCP agent tools,
 direct navigation to an existing approval record, a bounded plaintext assistant
 answer preview beside raw output, and a scripted model mode in the existing
 app-owned AI SDK governance example. The example remains a checkout asset;
 the model is scripted, while decisions, review and continuation use the real
 self-hosted plane. No SQL migration or Runner Protocol change is introduced.
 See the [engineering record](internal/mcp-retry-and-operator-flow.md).
+The [publication verification record](internal/release-verification-v090.md)
+binds the immutable source, published artifacts, actual authentication paths
+and qualification limits.
 
-Before tagging, retain evidence for:
+Retain the release's qualification evidence for:
 
 - MCP discovery and real protocol calls with stable IDs: matching terminal and
   in-flight retries, concurrent first calls with explicit or omitted threads,
@@ -48,10 +54,10 @@ Before tagging, retain evidence for:
   caller, real Runkite API/runner interoperability and supervisor cleanup. Keep
   native Trinity runtime qualification and upstream acceptance claims separate.
 
-After publication verification, promote the planned labels in README, the
-landing page, support/feature map and SDK guides together. Package READMEs are
+Promote the verified version in README, the landing page, support/feature map and
+SDK guides together only after publication verification. Package READMEs are
 embedded in immutable artifacts; the expanded governance installation/operator
-instructions will ship with this next actual package release. Preserve the
+instructions ship in the v0.9.0 package releases. Preserve the
 [v0.8.0 publication record](internal/release-recovery-v080.md#completed-recovery)
 as historical evidence, including its package-specific authentication paths.
 

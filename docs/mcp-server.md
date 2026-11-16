@@ -22,15 +22,17 @@ Every configured agent becomes exactly one MCP tool, named after its `agent_id`,
   "message": "What's the weather in Boston?",   // wrapped as a single user turn -- the common case
   "input": { "messages": [...] },                 // OR: raw input, for a caller that knows this agent's own shape. Wins if both given.
   "thread_id": "existing-thread-id",               // optional: continue a conversation instead of starting fresh
-  "run_id": "client-operation-123"                 // optional, next release: retry the same retained run
+  "run_id": "client-operation-123"                 // optional, v0.9.0+: retry the same retained run
 }
 ```
 
 The result's text content is the agent's last message; a run that errors or gets interrupted comes back as a **tool-level** error (`isError: true` in the content, not a raw MCP protocol failure) so the calling LLM can actually see what went wrong and self-correct, per the MCP spec's own guidance on tool errors.
 
-## Stable operation IDs (unreleased, planned v0.9.0)
+<a id="stable-operation-ids-unreleased-planned-v090"></a>
 
-The next release accepts an optional `run_id` in an agent tool's arguments.
+## Stable operation IDs (v0.9.0)
+
+v0.9.0 accepts an optional `run_id` in an agent tool's arguments.
 Published v0.8.0 does not implement this MCP retry contract. REST already has
 caller-supplied run IDs; the new MCP entry point reuses that existing machinery.
 Check that `tools/list` advertises `run_id` before relying on it. An older
@@ -70,7 +72,9 @@ create/get/wait/stream routes.
 For implementation choices and qualification, see the
 [engineering record](internal/mcp-retry-and-operator-flow.md).
 
-### A Trinity caller (unreleased example)
+<a id="a-trinity-caller-unreleased-example"></a>
+
+### A Trinity caller (checkout example)
 
 The [specialist example](../examples/trinity_specialist_mcp/README.md) shows a
 Trinity agent using an explicitly installed stdio caller for one configured
@@ -78,7 +82,7 @@ Runkite specialist. It saves an immutable operation receipt before dispatch;
 subsequent attempts use existing REST identity and durable wait routes without
 issuing another tool invocation. A missing retained run requires investigation.
 Trinity keeps its surrounding execution; only the specialist has a managed
-Runkite thread/run. This is checkout source for the planned v0.9.0 release,
+Runkite thread/run. This is a checkout example included with v0.9.0 source,
 with separate source-configuration and real Runkite protocol qualification.
 See the [boundary and design](internal/trinity-specialist-boundary.md).
 

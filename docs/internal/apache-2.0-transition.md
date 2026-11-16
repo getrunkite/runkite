@@ -80,8 +80,10 @@ dependencies under Apache-2.0 or establish foundation IP-policy compliance.
   preparation. That workflow must succeed before the mirror can be described
   as updated.
 
-The governance helpers remain unpublished. Adding open-source metadata does not
-add them to the release workflow or publish a new package.
+At the time of this license transition, the governance helpers were unpublished.
+Adding open-source metadata did not add them to the release workflow or publish
+a new package. Both helpers later first shipped on npm and PyPI in
+[v0.8.0](release-recovery-v080.md#completed-recovery).
 
 ## Verification and release handoff
 
