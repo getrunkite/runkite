@@ -119,11 +119,12 @@ independent assessment or a security ranking.
 
 ## Choose an integration path
 
-The next release is being prepared around [retry-safe MCP and a clearer operator
+v0.9.0 adds [retry-safe MCP and a clearer operator
 workflow](docs/internal/mcp-retry-and-operator-flow.md): stable MCP operation IDs,
 direct approval navigation, a plain-text final-answer preview and a scripted
-governance walkthrough. This work is unreleased; v0.8.0 remains the verified
-download until the next artifacts are published.
+governance walkthrough. These features require v0.9.0 or matching source;
+v0.8.0 does not include them. See [Releases](https://github.com/getrunkite/runkite/releases)
+for verified publication status.
 
 The checkout-only [Trinity specialist example](examples/trinity_specialist_mcp/README.md)
 keeps Trinity's native loop and invokes one Runkite-managed specialist. It
