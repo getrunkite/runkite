@@ -2559,9 +2559,58 @@ def _add_identity_and_usage(spec: dict, internal: bool = False) -> None:
     }
 
 
+def _add_cron_history(admin: dict) -> None:
+    schemas = admin["components"]["schemas"]
+    schemas["CronSchedule"]["properties"]["tenant_id"] = {"type": "string"}
+    schemas["AdminCronHistoryView"] = {
+        "allOf": [_ref("CronSchedule"), {
+            "type": "object",
+            "required": ["thread_id", "thread_available", "history_status"],
+            "properties": {
+                "thread_id": {"type": "string"},
+                "thread_available": {"type": "boolean"},
+                "history_status": {"type": "string", "enum": ["available", "empty", "unavailable"]},
+                "latest_run": {
+                    "type": "object",
+                    "required": ["run_id", "agent_id", "status", "created_at", "updated_at"],
+                    "properties": {
+                        "run_id": {"type": "string"},
+                        "incarnation_id": {"type": "string", "description": "Retained SQL insertion identity. Only link to a result when this reference is available."},
+                        "agent_id": {"type": "string"}, "status": {"type": "string"},
+                        "created_at": {"type": "string", "format": "date-time"},
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                },
+            },
+        }],
+    }
+    operation = admin["paths"]["/admin-api/cron"]["get"]
+    operation["parameters"] = [{"name": "include_history", "in": "query", "required": False,
+                                "schema": {"type": "boolean", "default": False}}]
+    operation["description"] = (
+        "Definitions only by default. Literal include_history=true adds each schedule's "
+        "exact-tenant thread availability and latest retained run metadata. This is not a "
+        "fire ledger and does not record skips or failures before run creation."
+    )
+    operation["responses"]["200"]["content"]["application/json"]["schema"] = {
+        "anyOf": [_array_of(_ref("CronSchedule")), _array_of(_ref("AdminCronHistoryView"))]
+    }
+    for path, methods in (
+        ("/admin-api/threads/{thread_id}", ("get", "delete")),
+        ("/admin-api/threads/{thread_id}/runs", ("get",)),
+    ):
+        for method in methods:
+            admin["paths"][path][method].setdefault("parameters", []).append({
+                "name": "tenant_id", "in": "query", "required": False,
+                "schema": {"type": "string"},
+                "description": "Exact tenant selection without trimming. Empty selects default; omission preserves global Admin behavior.",
+            })
+
+
 def main() -> None:
     public = _build_public_spec()
     admin = _build_admin_spec()
+    _add_cron_history(admin)
     _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()
