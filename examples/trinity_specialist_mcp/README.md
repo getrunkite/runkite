@@ -63,6 +63,7 @@ cp examples/trinity_specialist_mcp/CLAUDE.md \
   examples/trinity_specialist_mcp/runkite-specialist-mcp \
   examples/trinity_specialist_mcp/.gitignore \
   "$agent_package_dir/"
+cp LICENSE NOTICE "$agent_package_dir/"
 printf '%s\n' "$agent_package_dir"
 ```
 
