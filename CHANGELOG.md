@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout-only promptfoo managed-run provider with private saved intent,
+  one create attempt per intentional evaluation, and read-only result recovery.
+  Qualify the pinned native evaluator and CLI with a scripted local worker;
+  broader evaluator strategies and real model execution remain separate checks.
+
 - Add a checkout AG-UI text bridge using the official protocol packages,
   shared managed-run delivery, durable completion, full retained replay,
   detach and explicit app-authorized Stop. No-text and unsupported streams
@@ -46,6 +51,7 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 - Match scoped agent grants against exact stored IDs, preserving surrounding
   whitespace rather than aliasing another configured agent's authority.
+
 - Preserve an existing registry entry's opaque metadata when saving edits from
   Admin, including unchanged saves. The form still edits only its visible
   fields; registry PUT requests retain their existing replacement semantics.
