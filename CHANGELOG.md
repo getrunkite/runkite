@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add `runkite policy test` for bounded offline static policy expectations,
+  reusing the existing engine without model, Vault, downstream or durable-state
+  calls. Logical pending results do not create approval records. Live `sim`
+  remains unchanged.
+
 - Add explicit `agents:<id>:observe` specialist access, scoped MCP discovery
   and invocation, canonical session authority binding, SQL run-reference
   preconditions and durable reference pinning in the Trinity checkout caller.
