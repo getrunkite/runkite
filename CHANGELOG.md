@@ -6,6 +6,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Show retained schedule-thread history in Admin Cron, with explicit empty and
+  unavailable states and exact tenant/run-incarnation links. Definition-only API
+  clients retain the existing list shape unless they request history.
+
 - Add a checkout-only Langflow MCP caller recipe with pinned native LFX client
   qualification against a real local plane and Python runner, plus baseline
   and run-only scoped-source CI gates. Visual-editor and model-loop behavior remain
@@ -39,6 +43,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Guard retained Admin run reads before returning payload and make referenced
+  views read-only snapshots. A deleted/recreated run ID cannot redirect their
+  stream or Cancel actions. SQL run searches surface iteration errors.
+
 - Keep exact Admin tenant and registry identities across links, reads, edits and
   deletion. Existing entries named `new` have an unambiguous edit URL, and
   switching records resets stale form state before a save can be submitted.
@@ -68,10 +76,6 @@ and Trinity specialist integration remain checkout examples. No SQL migration
 or Runner Protocol change is introduced.
 
 ### Added
-
-- Show retained schedule-thread history in Admin Cron, with explicit empty and
-  unavailable states and exact tenant/run-incarnation links. Definition-only API
-  clients retain the existing list shape unless they request history.
 
 - A checkout-only Trinity specialist MCP example with a fixed destination,
   private caller intent receipts and read-only retry observation. Its stdio
