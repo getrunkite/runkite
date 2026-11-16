@@ -11,6 +11,7 @@ import {
 import { EvidenceRefresh } from "../components/connector-action-evidence";
 import { DocsLink, ErrorState, PageHeader, supportPage } from "../components/common";
 import { Skeleton } from "../components/ui/skeleton";
+import { adminPendingActionHref } from "../lib/adminPaths";
 
 export function ConnectorActionDetail() {
   const { actionId } = useParams<{ actionId: string }>();
@@ -43,7 +44,8 @@ function ActionDetail({ actionId }: { actionId: string }) {
     );
   const { action, run_available } = history.data;
   const runHref = connectorActionRunHref(action, run_available);
-  const pendingHref = connectorApprovalQueueHref(action.tenant_id, action.run_id);
+  const pendingQueueHref = connectorApprovalQueueHref(action.tenant_id, action.run_id);
+  const pendingHref = action.pending_action_id ? adminPendingActionHref(action.pending_action_id) : pendingQueueHref;
   return (
     <div className="space-y-4">
       <PageHeader
@@ -68,7 +70,7 @@ function ActionDetail({ actionId }: { actionId: string }) {
         }
       />
       {history.error && <ErrorState message={history.error} />}
-      <ConnectorActionRecord data={history.data} runHref={runHref} pendingHref={pendingHref} />
+      <ConnectorActionRecord data={history.data} runHref={runHref} pendingHref={pendingHref} pendingQueueHref={pendingQueueHref} />
     </div>
   );
 }

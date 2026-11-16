@@ -298,6 +298,7 @@
             event pane is a bounded diagnostic view, not the only place to find a
             completed answer.
           </li>
+          <li><strong>Unreleased, planned v0.9.0:</strong> successful runs with an unambiguous terminal assistant message gain an <strong>Assistant answer</strong> plain-text preview. Flat Python/native and nested LangGraph.js messages can qualify, including text-only blocks. The preview never searches backwards past a trailing tool/user message, renders HTML or guesses a final answer from arbitrary fields. Structured, mixed reasoning/tool or unsupported output stays in <strong>Output (raw JSON)</strong>. Previews are bounded to 12,000 UTF-16 units with a truncation label; the complete stored JSON remains available.</li>
           <li>
             This is the single best tool for debugging "the agent did something weird", you
             see every tool call, every value the graph produced, and the final status, in
@@ -487,6 +488,7 @@
         </figure>
 
         <h2 id="11-pending-approval-queue">11. Pending (approval queue)</h2>
+        <p class="note"><strong>Unreleased, planned v0.9.0:</strong> a managed connector action's <strong>Open approval record</strong> link opens its exact stored approval ID. <strong>Browse this run's approvals</strong> remains a separate broader list. Tenant Review keeps its own scoped detail route. These links navigate existing records; they do not approve, resume or retry an operation.</p>
         <p>
           <strong>What it's for:</strong> the inbox for held connector and embedded
           tool decisions awaiting an operator. A row records a policy decision; it does

@@ -8,6 +8,60 @@ both to `0.8.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
 
+## MCP and operator flow upgrade (planned v0.9.0)
+
+Availability: unreleased candidate. Published v0.8.0 remains the verified
+download. These changes add no SQL migration, Runner Protocol message or new
+credential role. An upgrade from an older release still needs its existing
+schema, identity and TLS procedures below; this section does not waive them.
+
+1. Deploy the qualified control-plane build, including its rebuilt embedded
+   Admin bundle. Keep the normal matching-artifact deployment profile. Upgrade
+   every replica that can serve `/mcp` before enabling stable-ID retries in a
+   caller. An older server may ignore the new argument and dispatch another run.
+2. Retain the existing sticky routing for session-based `/mcp`, or use one
+   MCP-serving replica. Retry protection does not create a shared session store
+   or remove the need to reconnect when a process loses its MCP session.
+3. Confirm that the actual server's `tools/list` schema advertises `run_id`.
+   Have the application persist an operation ID before its first call, then
+   reuse it with the same agent, input and any explicit thread. Set run retention
+   long enough for the required retry window; deleting the run removes this
+   protection. Use an isolated synthetic operation to check replayed success,
+   concurrent matching requests and rejected conflicting input.
+4. Treat a client delivery failure as an unknown delivery result, not proof that
+   the worker stopped. Retry the same retained operation or inspect it through
+   REST/Admin before considering new work. Known pre-dispatch failures trigger
+   bounded, tenant-preserving cleanup of the owned run/claim. If the state store
+   was unavailable, verify the durable run and thread state before proceeding.
+   A retained terminal error does not authorize redispatch with the same ID.
+   Queue-write acknowledgement loss and
+   uncertain external effects still require investigation and downstream
+   idempotency. Run insertion and enqueue are not an atomic cross-store commit.
+5. In Admin, open a managed connector action and follow **Open approval record**.
+   It must reach the exact stored approval ID; **Browse this run's approvals**
+   remains the broader list. A missing approval is not recreated by navigation.
+   Tenant Review must stay inside its own route/API namespace. Check successful
+   run text previews alongside **Output (raw JSON)** and confirm that incoming
+   events scroll only the log viewport. Previews do not change stored output,
+   infer a business effect or reinterpret tool/reasoning output as an answer.
+
+For an app-owned evaluation, follow the
+[scripted AI SDK walkthrough](../examples/governance_ai_sdk/DEMO.md) on an
+isolated SQL plane. Only the model is scripted. The real decision API, separate
+app/reviewer/operator credentials, exact proposal storage and app continuation
+remain in use. Installing this example creates no managed Thread/Run and adds
+no run kill switch, spend cap or automatic approval resume. Already-approved
+app actions require an app-enforced execution deadline and idempotency; polling
+does not consume approval or recheck current tool grants.
+
+If reverting this candidate to v0.8.0, stop callers relying on the MCP `run_id`
+argument before sending them to the older endpoint. Keep retained runs available
+and use the existing REST read/wait interfaces for investigation. There is no
+new schema to downgrade for this increment. Do not roll back earlier identity
+or approval migrations by editing tables or migration stamps. See the
+[MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
+[candidate release gates](releasing.md#v090-candidate-unreleased).
+
 <a id="identity-and-distribution-candidate"></a>
 
 ## Identity and distribution upgrade (v0.8.0)

@@ -80,6 +80,9 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.
 	if err != nil {
 		return nil, nil
 	}
+	if err := s.authorizeRunRetry(ctx, run); err != nil {
+		return nil, err
+	}
 	if reason := s.fingerprintMismatch(run, req, effectiveThreadID); reason != "" {
 		return nil, &state.ErrConflict{Resource: "run", ID: runID, Reason: reason}
 	}
@@ -89,6 +92,18 @@ func (s *Server) findRunForRetry(ctx context.Context, runID string, req *models.
 		}
 	}
 	return run, nil
+}
+
+// authorizeRunRetry keeps an existing run from bypassing the agent permission
+// that admission would require for a new one. Observation does not repeat
+// admission, reserve another budget hold or enqueue another assignment.
+func (s *Server) authorizeRunRetry(ctx context.Context, run *models.Run) error {
+	if auth.CanRunAgent(auth.FromContext(ctx), run.AgentID) {
+		return nil
+	}
+	s.writeAdmissionDenyAudit(ctx, tenant.FromContext(ctx), run.AgentID, run.RunID,
+		policy.ReasonAuthzDeny, "missing permission "+auth.AgentRunPermission(run.AgentID))
+	return &hooks.ErrDenied{Reason: "not authorized for the existing run's agent"}
 }
 
 // fingerprintMismatch returns a non-empty conflict reason if run doesn't
@@ -467,6 +482,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// polling/retrying to close.
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
+				if retryErr := s.authorizeRunRetry(ctx, existing); retryErr != nil {
+					return nil, nil, retryErr
+				}
 				// Same fingerprint check findRunForRetry's own
 				// pre-check applies -- this fallback exists BECAUSE
 				// that pre-check can miss a genuinely concurrent
@@ -492,8 +510,10 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	created := false
 	defer func() {
 		if err != nil && !created {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
 			tryStatusTransition("set_thread_status", threadID, "", func() error {
-				return s.store.SetThreadStatus(ctx, threadID, models.ThreadStatusIdle)
+				return s.store.SetThreadStatus(cleanupCtx, threadID, models.ThreadStatusIdle)
 			})
 		}
 	}()
@@ -644,6 +664,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		// forever with nothing left to ever idle it).
 		if req.RunID != "" {
 			if existing, getErr := s.store.GetRun(ctx, req.RunID); getErr == nil {
+				if retryErr := s.authorizeRunRetry(ctx, existing); retryErr != nil {
+					return nil, nil, retryErr
+				}
 				reason := s.fingerprintMismatch(existing, req, threadID)
 				if reason == "" {
 					// Structurally shouldn't happen (see above) --
@@ -801,6 +824,12 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	if run == nil {
 		return
 	}
+	// Delivery may have failed because the caller disconnected. Preserve its
+	// tenant and identity for cleanup, but give the owned row/claim a bounded
+	// chance to settle rather than writing with an already canceled context.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	ctx = cleanupCtx
 	tryStatusTransition("update_run_status", run.ThreadID, run.RunID, func() error {
 		return s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
 	})
@@ -1641,8 +1670,18 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	// Wait for terminal event
 	var terminalStatus string
 	var terminalGeneration int64
-	for event := range eventCh {
-		if event.IsTerminal() {
+waitingForRun:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event, open := <-eventCh:
+			if !open {
+				break waitingForRun
+			}
+			if !event.IsTerminal() {
+				continue
+			}
 			// Extract status from the end event data (e.g. {"status":"success"})
 			var endData map[string]interface{}
 			if json.Unmarshal(event.Data, &endData) == nil {
@@ -1651,7 +1690,7 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 					terminalGeneration = event.Generation
 				}
 			}
-			break
+			break waitingForRun
 		}
 	}
 
@@ -1682,11 +1721,41 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	return &resp, nil
 }
 
+// runObservationError keeps the established HTTP wait error response while
+// allowing MCP and other non-HTTP callers to share durable run observation.
+type runObservationError struct {
+	status  int
+	message string
+	cause   error
+}
+
+func (e *runObservationError) Error() string { return e.message }
+func (e *runObservationError) Unwrap() error { return e.cause }
+
 func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runID string) {
-	run, err := s.store.GetRun(r.Context(), runID)
+	resp, err := s.waitForExistingRunResult(r.Context(), runID)
 	if err != nil {
-		handleStoreError(w, err)
+		var observation *runObservationError
+		if errors.As(err, &observation) {
+			writeError(w, observation.status, observation.message)
+		} else {
+			handleStoreError(w, err)
+		}
 		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// waitForExistingRunResult observes an existing run without dispatching it.
+// A nil assignment in waitForRunResult means a completed cache hit, so it must
+// never stand in for this pending/running retry path.
+func (s *Server) waitForExistingRunResult(ctx context.Context, runID string) (*models.RunWaitResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
 	}
 
 	if isTerminalStatus(run.Status) {
@@ -1694,20 +1763,17 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 		resp := models.RunWaitResponse{Run: run}
 		if len(run.Output) > 0 {
 			if err := jsonvalue.Unmarshal(run.Output, &resp.Values); err != nil {
-				writeError(w, http.StatusInternalServerError, "invalid stored run output")
-				return
+				return nil, &runObservationError{http.StatusInternalServerError, "invalid stored run output", err}
 			}
 		}
 
-		writeJSON(w, http.StatusOK, resp)
-		return
+		return &resp, nil
 	}
 
 	// Subscribe FIRST, then replay to catch any events already published
-	eventCh, err := s.broker.Subscribe(r.Context(), runID)
+	eventCh, err := s.broker.Subscribe(ctx, runID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to subscribe")
-		return
+		return nil, &runObservationError{http.StatusInternalServerError, "failed to subscribe", err}
 	}
 
 	var terminalStatus string
@@ -1715,7 +1781,7 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 	maxReplayedSeq := map[int64]int64{}
 
 	// Replay past events to catch values already emitted
-	if past, replayErr := s.broker.Replay(r.Context(), runID, 0); replayErr == nil {
+	if past, replayErr := s.broker.Replay(ctx, runID, 0); replayErr == nil {
 		for _, ev := range past {
 			if ev.Seq > maxReplayedSeq[ev.Generation] {
 				maxReplayedSeq[ev.Generation] = ev.Seq
@@ -1734,11 +1800,18 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 
 	// If replay already contained a terminal event, no need to wait on live channel
 	if terminalStatus == "" {
-		for event := range eventCh {
-			if event.Seq <= maxReplayedSeq[event.Generation] {
-				continue
-			}
-			if event.IsTerminal() {
+	waitingForExisting:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case event, open := <-eventCh:
+				if !open {
+					break waitingForExisting
+				}
+				if event.Seq <= maxReplayedSeq[event.Generation] || !event.IsTerminal() {
+					continue
+				}
 				var endData map[string]interface{}
 				if json.Unmarshal(event.Data, &endData) == nil {
 					if s, ok := endData["status"].(string); ok {
@@ -1746,34 +1819,34 @@ func (s *Server) waitForExistingRun(w http.ResponseWriter, r *http.Request, runI
 						terminalGeneration = event.Generation
 					}
 				}
-				break
+				break waitingForExisting
 			}
 		}
 	}
 
-	finalRun, err := s.completeObservedRun(r.Context(), run, terminalStatus, terminalGeneration)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	finalRun, err := s.completeObservedRun(ctx, run, terminalStatus, terminalGeneration)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "failed to persist run completion")
-		return
+		return nil, &runObservationError{http.StatusServiceUnavailable, "failed to persist run completion", err}
 	}
 
 	if !isTerminalStatus(finalRun.Status) {
-		finalRun, err = s.awaitDurableCompletion(r.Context(), run)
+		finalRun, err = s.awaitDurableCompletion(ctx, run)
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "failed to observe durable completion")
-			return
+			return nil, &runObservationError{http.StatusServiceUnavailable, "failed to observe durable completion", err}
 		}
 	}
 	resp := models.RunWaitResponse{Run: finalRun}
 	if len(finalRun.Output) > 0 {
 		var vals map[string]interface{}
 		if err := jsonvalue.Unmarshal(finalRun.Output, &vals); err != nil {
-			writeError(w, http.StatusInternalServerError, "invalid stored run output")
-			return
+			return nil, &runObservationError{http.StatusInternalServerError, "invalid stored run output", err}
 		}
 		resp.Values = vals
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return &resp, nil
 }
 
 // cancelRun implements the Agent Protocol spec's two query params on

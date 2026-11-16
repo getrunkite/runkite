@@ -9,6 +9,48 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
+## v0.9.0 candidate (unreleased)
+
+The current source prepares the next coordinated release as v0.9.0. A version
+bump is not publication. Keep v0.8.0 as the verified public download until the
+new tag's binaries, four registry packages and three images are published and
+verified. Do not replace or move any v0.8.0 artifact.
+
+This candidate adds stable run IDs to the existing public MCP agent tools,
+direct navigation to an existing approval record, a bounded plaintext assistant
+answer preview beside raw output, and a scripted model mode in the existing
+app-owned AI SDK governance example. The example remains a checkout asset;
+the model is scripted, while decisions, review and continuation use the real
+self-hosted plane. No SQL migration or Runner Protocol change is introduced.
+See the [engineering record](internal/mcp-retry-and-operator-flow.md).
+
+Before tagging, retain evidence for:
+
+- MCP discovery and real protocol calls with stable IDs: matching terminal and
+  in-flight retries, concurrent first calls with explicit or omitted threads,
+  conflicting input/agent/thread, current HTTP authentication, tenant isolation,
+  delivery cancellation and pre-dispatch cleanup. Include the shared REST retry
+  regressions. A retry must not dispatch another assignment or report a
+  nonterminal run as success.
+- The actual Admin production bundle: exact approval navigation with opaque IDs,
+  unchanged tenant Review routing, managed versus app-owned approval wording,
+  plaintext/escaped answer previews with unsupported shapes left raw, and an
+  event pane that follows its own viewport without scrolling the run page.
+- The [scripted walkthrough](../examples/governance_ai_sdk/DEMO.md) with a real
+  isolated SQL plane and app store: pending, review, exact continuation, repeated
+  continuation, deny and unavailable plane. It must need no model-provider key;
+  ordinary example startup must retain its real-provider default.
+- The normal version, OpenAPI, package-artifact, Go, SDK, UI and documentation
+  gates. Confirm the release archives embed the rebuilt Admin assets. These
+  source checks do not establish registry publication or a live-provider soak.
+
+After publication verification, promote the planned labels in README, the
+landing page, support/feature map and SDK guides together. Package READMEs are
+embedded in immutable artifacts; the expanded governance installation/operator
+instructions will ship with this next actual package release. Preserve the
+[v0.8.0 publication record](internal/release-recovery-v080.md#completed-recovery)
+as historical evidence, including its package-specific authentication paths.
+
 ## v0.8.0 release verification
 
 v0.8.0 distributes the identity and usage controls, matching runner packages,

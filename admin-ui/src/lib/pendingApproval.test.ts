@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pendingApprovalBlockReason, validManagedTargetRevision, approvalProgress, pendingDecisionFeedback } from "./pendingApproval.ts";
+import { pendingApprovalBlockReason, validManagedTargetRevision, approvalProgress, pendingDecisionFeedback, pendingApprovalGuidance, approvalAuthorityDescription } from "./pendingApproval.ts";
 
 const target = `target-v1-${"a".repeat(64)}`;
 const current = { id: "pending-v2-fixture", args_digest: "bound-digest", target_revision: target, policy_revision: `policy-v1-${"a".repeat(64)}` };
@@ -58,4 +58,38 @@ test("partial review never claims approval or tells the caller to continue", () 
   assert.equal(pendingDecisionFeedback(action, "deny").title, "Denied");
   assert.match(pendingApprovalBlockReason({ ...action, required_approvals: 6 })!, /quorum/);
   assert.match(pendingApprovalBlockReason({ ...action, exclude_requester: true })!, /Requester identity/);
+});
+
+test("managed approval copy retains matching connector retry and current-policy checks", () => {
+  for (const expires_at of [undefined, null]) {
+    const action = { ...current, expires_at, status: "approved", required_approvals: 1, approval_count: 1 };
+    const feedback = pendingDecisionFeedback(action, "approve");
+    assert.equal(feedback.title, "Approved");
+    assert.match(feedback.description, /one matching connector operation.*original run.*current policy/);
+    assert.match(feedback.description, /No tool was executed/);
+    assert.match(pendingApprovalGuidance(action), /one matching connector retry.*original run.*current policy/);
+    assert.match(approvalAuthorityDescription(action), /rechecks current authority before approval and dispatch/);
+    assert.doesNotMatch(feedback.description, /does not consume approval|app owns continuation/);
+  }
+});
+
+test("app-owned approval copy leaves continuation, execution deadlines and idempotency with the app", () => {
+  const action = { ...current, expires_at: "2030-01-01T00:00:00Z", status: "approved", required_approvals: 2, approval_count: 2 };
+  const feedback = pendingDecisionFeedback(action, "approve");
+  assert.equal(feedback.title, "Approved");
+  for (const description of [feedback.description, pendingApprovalGuidance(action)]) {
+    assert.match(description, /exact saved proposal/);
+    assert.match(description, /app owns continuation, execution deadlines and idempotency/);
+    assert.match(description, /Polling does not consume approval/);
+    assert.doesNotMatch(description, /one matching|subject to current policy|before approval and dispatch/);
+  }
+  const authority = approvalAuthorityDescription(action);
+  assert.match(authority, /checks policy before recording approval/);
+  assert.match(authority, /Polling checks the stored approval binding and current review requirements/);
+  assert.match(authority, /does not recheck current tool grants or consume approval/);
+  assert.doesNotMatch(authority, /before approval and dispatch/);
+  const partial = pendingDecisionFeedback({ ...action, status: "pending", approval_count: 1 }, "approve");
+  assert.equal(partial.title, "Review recorded");
+  assert.match(partial.description, /remains pending/);
+  assert.doesNotMatch(partial.description, /may continue|may retry|may submit/);
 });

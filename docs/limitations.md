@@ -105,6 +105,22 @@ cannot gain that guard retroactively. See the
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
 - Vault references still read KV values. That original hardening slice did not add lease issuance. The v0.7.0 registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
 
+## Public MCP retry retention (unreleased, planned v0.9.0)
+
+Optional MCP `run_id` support reuses the existing REST retry identity and
+durable run observer. It is not available in published v0.8.0. Without a stable
+caller ID, repeated MCP calls remain separate runs; an existing thread ID alone
+does not deduplicate. Matching retries do not rerun admission budgets or enqueue
+another assignment, but still require current caller authority. Different
+agent/input or an explicitly different thread conflicts.
+
+Retry protection lasts only while the original run remains stored. MCP calls
+still wait synchronously, and delivery cancellation does not prove worker
+cancellation or rollback. This does not atomically join run insertion and queue
+enqueue or provide exactly-once external effects. It also does not make public
+MCP interchangeable with a run-bound connector proxy. See the
+[MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090).
+
 ## Deep dive
 
 - **Managed AI SDK is a separate runner profile.** The new `typescript-ai-sdk`

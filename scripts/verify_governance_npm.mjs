@@ -168,6 +168,8 @@ try {
     "tools.test.ts",
     "stream.test.ts",
     "state.test.ts",
+    "model.ts",
+    "model.test.ts",
   ]) {
     writeFileSync(
       join(temporary, "example", name),
@@ -180,6 +182,7 @@ try {
     "example/tools.test.ts",
     "example/stream.test.ts",
     "example/state.test.ts",
+    "example/model.test.ts",
   ]);
   console.log(
     JSON.stringify({

@@ -297,6 +297,17 @@ python -m pip install 'runkite-governance[agent-framework]'</pre>
         </ul>
         <p class="note">The app keeps its tool credentials and execution safety. Decision helpers provide no run kill switch, break-glass, run spend cap, process sandbox or downstream secret injection. Calls that skip Decide are outside this gate. For managed operational records and controls, choose a runner and its documented connector path.</p>
 
+        <h3 id="governance-demo">Try the approval workflow without a model account</h3>
+        <p class="note"><strong>Unreleased checkout example, planned v0.9.0:</strong> the existing AI SDK note app now has an explicit <code>RUNKITE_DEMO_MODEL=scripted</code> mode. Its model proposes one fixed harmless note and calls no provider. The app still uses the real self-hosted decision API, tenant reviewer, SQL approval/audit and durable application store. The decision API and published v0.8.0 helper already support that governance boundary.</p>
+        <ol class="steps">
+          <li>Prepare an isolated SQL-backed development plane. Merge the example's app, reviewer and operator roles plus its exact grant/HITL rule into a full configuration, preserving existing graphs and unrelated access.</li>
+          <li>Build the checkout helper and start the local app with <code>RUNKITE_DEMO_MODEL=scripted</code>, its plane URL, the app-only governance credential and a separate application token. The response and console label the scripted mode.</li>
+          <li>Submit one turn using a stable application idempotency key. Expect a pending job with an app job ID and plane action ID, and no note yet.</li>
+          <li>Approve that exact action in <code>/admin/review</code> as the tenant reviewer. Approval alone still creates no note. Continue the stored job through the app's authenticated route, then observe one note.</li>
+          <li>Repeat continuation and verify the same note ID. Use global Admin Pending/Audit to follow the same action and operation ID. Try rejection, policy deny and a plane outage only in that isolated scope.</li>
+        </ol>
+        <p>Follow the <a href="https://github.com/getrunkite/runkite/blob/main/examples/governance_ai_sdk/DEMO.md">complete runnable walkthrough</a> for build commands, the merge template, expected responses, role-specific screens and recovery limits. This demonstration creates no managed Thread/Run or Spend entry. It does not validate an LLM's quality, execute an external write or configure a production multi-replica application store.</p>
+
         <h2 id="managed-langgraph">Managed LangGraph and LangGraph.js</h2>
         <p>
           The default Python and TypeScript <code>runkite-runner</code> commands

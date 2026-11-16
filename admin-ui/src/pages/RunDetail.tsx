@@ -9,6 +9,7 @@ import { reconcileRun } from "../api/reconcile-run";
 import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
 import { eventPreview } from "../lib/eventPreview";
 import { identityEvidenceRows } from "../lib/identityEvidence";
+import { finalAnswerPreview } from "../lib/finalAnswerPreview";
 import { connectorActionRunReferenceMatches, connectorActionsHref } from "../lib/connectorActions";
 import type { AdminRun, RunManifest } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, isSimulationRun, PageHeader, StatusBadge, supportPage } from "../components/common";
@@ -18,6 +19,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { RunConnectorActions } from "../components/connector-action-evidence";
 import { IsolatedUsageRecord } from "../components/isolated-usage-record";
+import { FinalAnswerText } from "../components/final-answer-text";
 import {
   Dialog,
   DialogContent,
@@ -75,7 +77,7 @@ export function RunDetail() {
   const [streaming, setStreaming] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const logAreaRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef(run.data?.status);
   statusRef.current = run.data?.status;
 
@@ -134,8 +136,10 @@ export function RunDetail() {
   }, [runId, referenceReady]);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events.length]);
+    const viewport = logAreaRef.current?.querySelector<HTMLDivElement>("[data-radix-scroll-area-viewport]");
+    // Follow events inside the log, without moving the surrounding run page.
+    viewport?.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+  }, [events]);
 
   if (run.loading) return <RunDetailSkeleton />;
   if (run.error) return <ErrorState message={run.error} />;
@@ -146,6 +150,7 @@ export function RunDetail() {
   </div>;
 
   const manifest = readRunManifest(run.data.metadata);
+  const answerPreview = finalAnswerPreview(run.data.status, run.data.output);
   const isTerminal = TERMINAL_STATUSES.has(run.data.status);
   const childRuns = children.data ?? [];
   // Show A2A panel for delegated children immediately; for parents wait until
@@ -265,10 +270,18 @@ export function RunDetail() {
         </Card>
       </div>
 
+      {answerPreview && <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Assistant answer</CardTitle>
+          <p className="text-sm text-muted-foreground">Text preview from the last assistant message in the completed output.</p>
+        </CardHeader>
+        <CardContent><FinalAnswerText preview={answerPreview} /></CardContent>
+      </Card>}
+
       {run.data.output !== undefined && (
         <Card className="mb-4">
           <CardHeader>
-            <CardTitle>Output</CardTitle>
+            <CardTitle>Output (raw JSON)</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="max-h-96 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs">
@@ -357,7 +370,7 @@ export function RunDetail() {
           </Badge>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-96 rounded-lg border border-border/60 bg-muted/30">
+          <ScrollArea ref={logAreaRef} className="h-96 rounded-lg border border-border/60 bg-muted/30">
             <div className="space-y-1 p-3 font-mono text-xs">
               {events.length === 0 && <p className="text-muted-foreground">Waiting for events...</p>}
               {events.map((entry, i) => (
@@ -371,7 +384,6 @@ export function RunDetail() {
                   <span className="whitespace-pre-wrap break-all text-foreground/90">{entry.data}</span>
                 </div>
               ))}
-              <div ref={logEndRef} />
             </div>
           </ScrollArea>
         </CardContent>

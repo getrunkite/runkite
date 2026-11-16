@@ -18,10 +18,11 @@ export function EvidenceField({ label, children }: { label: string; children?: R
   );
 }
 
-export function ConnectorActionRecord({ data, runHref = null, pendingHref, review = false }: {
+export function ConnectorActionRecord({ data, runHref = null, pendingHref, pendingQueueHref, review = false }: {
   data: { action: AdminConnectorAction; events: AdminConnectorActionEvent[]; events_truncated?: boolean };
   runHref?: string | null;
   pendingHref: string;
+  pendingQueueHref?: string;
   review?: boolean;
 }) {
   const { action, events } = data;
@@ -105,9 +106,14 @@ export function ConnectorActionRecord({ data, runHref = null, pendingHref, revie
                     <code className="text-xs">{action.pending_action_id}</code>
                     <p className="mt-1">
                       <Link to={pendingHref} className="text-xs text-primary hover:underline">
-                        {review ? "Open approval reference →" : "Browse this run's approvals →"}
+                        Open approval record →
                       </Link>
                     </p>
+                    {!review && pendingQueueHref && <p className="mt-1">
+                      <Link to={pendingQueueHref} className="text-xs text-primary hover:underline">
+                        Browse this run's approvals →
+                      </Link>
+                    </p>}
                   </>
                 ) : (
                   "No approval reference recorded"

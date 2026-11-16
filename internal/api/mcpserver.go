@@ -21,6 +21,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -44,6 +46,7 @@ type mcpToolArgs struct {
 	Message  string          `json:"message,omitempty"`
 	Input    json.RawMessage `json:"input,omitempty"`
 	ThreadID string          `json:"thread_id,omitempty"`
+	RunID    string          `json:"run_id,omitempty"`
 }
 
 // mcpToolInputSchema is a plain, hand-written JSON Schema object, the
@@ -67,6 +70,10 @@ var mcpToolInputSchema = map[string]any{
 		"thread_id": map[string]any{
 			"type":        "string",
 			"description": "Continue an existing conversation thread instead of starting a new one.",
+		},
+		"run_id": map[string]any{
+			"type":        "string",
+			"description": "Stable caller-generated run ID for retrying the same agent, thread and input without dispatching it again. Reuse only while the run is retained.",
 		},
 	},
 }
@@ -104,7 +111,7 @@ func (s *Server) newMCPServer(ctx context.Context) (*mcp.Server, error) {
 	identity := auth.FromContext(ctx)
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "runkite", Version: "1.0.0"}, &mcp.ServerOptions{
-		Instructions: "Each tool invokes one Runkite-configured agent. Pass \"message\" for a plain natural-language turn, or \"input\" if you already know the agent's own expected input shape. Pass \"thread_id\" to continue an existing conversation instead of starting a new one.",
+		Instructions: "Each tool invokes one Runkite-configured agent. Pass \"message\" for a plain natural-language turn, or \"input\" if you already know the agent's own expected input shape. Pass \"thread_id\" to continue an existing conversation instead of starting a new one. Supply a stable \"run_id\" to retry the same call without dispatching another run while its record is retained.",
 	})
 	for _, agent := range agents {
 		description := agent.Description
@@ -146,33 +153,89 @@ func (s *Server) mcpToolHandler(agentID, tenantID string, identity *auth.AuthRes
 		// Rebuild tenant/identity onto the CURRENT call's own ctx (see
 		// newMCPServer's doc comment for why the captured values, not
 		// the captured context, are what's reused here).
+		callIdentity := identity
+		// In-process callers may supply newer authority. Stateful HTTP MCP
+		// can retain its initialization context, so this does not replace
+		// the outer HTTP middleware's fresh write/admin check on every POST.
+		// An agent-only permission still does not grant the HTTP MCP route.
+		if current := auth.FromContext(ctx); current != nil {
+			if identity == nil || current.Identity != identity.Identity || tenant.FromContext(ctx) != tenantID {
+				return mcpErrorResult("MCP session identity does not match this call"), nil
+			}
+			callIdentity = current
+		}
 		runCtx := tenant.WithContext(ctx, tenantID)
-		if identity != nil {
-			runCtx = auth.WithContext(runCtx, identity)
+		if callIdentity != nil {
+			runCtx = auth.WithContext(runCtx, callIdentity)
 		}
-
-		threadID := args.ThreadID
-		if threadID == "" {
-			threadID = "mcp-" + uuid.New().String()
+		create := &models.RunCreate{RunID: args.RunID, AgentID: agentID, Input: input}
+		if args.RunID != "" {
+			if err := s.authorizeRunRetry(runCtx, &models.Run{RunID: args.RunID, AgentID: agentID}); err != nil {
+				return mcpErrorResult(err.Error()), nil
+			}
 		}
-
-		run, assignment, err := s.createRunCtx(runCtx, threadID, &models.RunCreate{
-			AgentID: agentID,
-			Input:   input,
-		})
+		// Look up before generating a default thread ID. An omitted thread is
+		// compatible with the original run's thread, not a newly generated one.
+		existing, err := s.findRunForRetry(runCtx, args.RunID, create, args.ThreadID)
 		if err != nil {
-			return mcpErrorResult(fmt.Sprintf("failed to start agent %q: %v", agentID, err)), nil
+			return mcpErrorResult(fmt.Sprintf("failed to retry agent %q: %v", agentID, err)), nil
 		}
 
-		resp, err := s.waitForRunResult(runCtx, run, assignment)
+		var resp *models.RunWaitResponse
+		if existing == nil {
+			threadID := args.ThreadID
+			if threadID == "" {
+				threadID = "mcp-" + uuid.New().String()
+			}
+			run, assignment, createErr := s.createRunCtx(runCtx, threadID, create)
+			if createErr != nil {
+				var race *errRunRetryRace
+				if errors.As(createErr, &race) {
+					existing = race.run
+				} else {
+					// Concurrent first calls without a thread each generate a
+					// different default. The winner owns its thread; retry with
+					// the original caller fields after creation has released this
+					// request's losing claim, not with that generated thread ID.
+					var conflict *state.ErrConflict
+					if args.RunID != "" && errors.As(createErr, &conflict) {
+						existing, err = s.findRunForRetry(runCtx, args.RunID, &models.RunCreate{
+							RunID: args.RunID, AgentID: agentID, Input: input,
+						}, args.ThreadID)
+						if err != nil {
+							return mcpErrorResult(fmt.Sprintf("failed to retry agent %q: %v", agentID, err)), nil
+						}
+					}
+				}
+				if existing == nil {
+					return mcpErrorResult(fmt.Sprintf("failed to start agent %q: %v", agentID, createErr)), nil
+				}
+			} else {
+				resp, err = s.waitForRunResult(runCtx, run, assignment)
+			}
+		}
+		if existing != nil {
+			if err := s.authorizeRunRetry(runCtx, existing); err != nil {
+				return mcpErrorResult(err.Error()), nil
+			}
+			resp, err = s.waitForExistingRunResult(runCtx, existing.RunID)
+		}
 		if err != nil {
 			return mcpErrorResult(fmt.Sprintf("agent %q run failed: %v", agentID, err)), nil
 		}
-		if resp.Run.Status == models.RunStatusError {
-			return mcpErrorResult(fmt.Sprintf("agent %q run errored: %s", agentID, resp.Run.Error)), nil
+		if err := runCtx.Err(); err != nil {
+			return mcpErrorResult(fmt.Sprintf("agent %q result delivery stopped: %v", agentID, err)), nil
 		}
-		if resp.Run.Status == models.RunStatusInterrupted {
+		switch resp.Run.Status {
+		case models.RunStatusError:
+			return mcpErrorResult(fmt.Sprintf("agent %q run errored: %s", agentID, resp.Run.Error)), nil
+		case models.RunStatusInterrupted:
 			return mcpErrorResult(fmt.Sprintf("agent %q run was interrupted before completing", agentID)), nil
+		case models.RunStatusTimeout:
+			return mcpErrorResult(fmt.Sprintf("agent %q run timed out", agentID)), nil
+		case models.RunStatusSuccess:
+		default:
+			return mcpErrorResult(fmt.Sprintf("agent %q run has not completed successfully", agentID)), nil
 		}
 
 		return &mcp.CallToolResult{
