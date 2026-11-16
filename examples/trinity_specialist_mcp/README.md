@@ -1,6 +1,6 @@
 # A Trinity agent calling a Runkite specialist
 
-Unreleased example for the planned v0.9.0 release. Published v0.8.0 does not
+Checkout-only example included with v0.9.0 source. Published v0.8.0 does not
 provide the MCP stable-run-ID contract this example requires. This directory is
 checkout source, not a separately published package or a Trinity upstream
 integration.

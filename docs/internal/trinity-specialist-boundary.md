@@ -1,6 +1,6 @@
 # A specialist boundary between Trinity and Runkite
 
-Status: checkout-only example for the planned v0.9.0 release. It adds no
+Status: checkout-only example included with v0.9.0 source. It adds no
 control-plane endpoint, new runner kind or registry package. Published v0.8.0
 does not include the incoming MCP stable-run-ID contract this example requires.
 

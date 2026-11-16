@@ -4,8 +4,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
-Planned coordinated release: v0.9.0. Candidate source and package metadata do
-not establish publication; v0.8.0 remains the verified public download.
+## [0.9.0](https://github.com/getrunkite/runkite/releases/tag/v0.9.0) - 2026-11-16
+
+Coordinated MCP retry and operator workflow release. The governance walkthrough
+and Trinity specialist integration remain checkout examples. No SQL migration
+or Runner Protocol change is introduced.
 
 ### Added
 

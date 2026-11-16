@@ -169,7 +169,7 @@ walks through administrator configuration, application integration and review.
 
 ### Bring your framework
 
-The v0.8.0 runners retain these profiles from v0.7.0. Check the runner
+The v0.9.0 runners retain these profiles from earlier releases. Check the runner
 registry links above for published versions, and deploy matching plane and runner
 artifacts. Each profile supports its documented subset of native features.
 

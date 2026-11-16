@@ -5,7 +5,7 @@ Honest gaps, not hidden ones. Use the **Release summary** below in GitHub Releas
 ## Release summary
 
 The checkout-only [Trinity specialist example](../examples/trinity_specialist_mcp/README.md)
-targets the planned v0.9.0 MCP contract. It qualifies a pinned Trinity
+uses the v0.9.0 MCP contract. It qualifies a pinned Trinity
 configuration shape and a real Runkite API/runner protocol path separately.
 Native Trinity runtime execution is not yet qualified. Its fixed trusted
 caller uses a dedicated tenant read/write key; it is not a narrowly scoped
@@ -110,11 +110,13 @@ cannot gain that guard retroactively. See the
 
 - Required policy audit is opt-in, SQL-only and available in v0.7.0; it is absent
   from published v0.6.1 binaries. It refuses allow/pending during persistence failures, including cache hits and exceptional authorization paths. It is not a durable downstream action-outcome ledger.
-- A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. Kind-token mode alone does not distinguish workers sharing a runner kind. Current v0.8.0 source adds opt-in verified workload ownership and constrained token exchange, with the boundaries below. Cross-store queue/child authorization remains non-atomic.
+- A2A requires the active parent run and exact generation; supplied authority can only narrow the trusted parent. Kind-token mode alone does not distinguish workers sharing a runner kind. v0.8.0 introduced opt-in verified workload ownership and constrained token exchange, with the boundaries below. Cross-store queue/child authorization remains non-atomic.
 - Secret-field redaction covers named aliases rather than arbitrary secret discovery. Connector transport and OAuth acquisition errors omit raw endpoint/body text; tool result content remains the upstream service's responsibility.
 - Vault references still read KV values. That original hardening slice did not add lease issuance. The v0.7.0 registered database bindings now coordinate issuance, renewal and provider-confirmed cleanup; see [credential lifecycle](internal/credential-lifecycle.md).
 
-## Public MCP retry retention (unreleased, planned v0.9.0)
+<a id="public-mcp-retry-retention-unreleased-planned-v090"></a>
+
+## Public MCP retry retention (v0.9.0)
 
 Optional MCP `run_id` support reuses the existing REST retry identity and
 durable run observer. It is not available in published v0.8.0. Without a stable

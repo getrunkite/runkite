@@ -81,7 +81,7 @@
         <h1>Feature map</h1>
         <p class="lede">Every Admin surface and the handbook page that explains it, so empty states and reviews never strand you.</p>
 
-        <p class="note"><strong>Verified release: v0.8.0.</strong> The next-release improvements below are unreleased and planned for v0.9.0. A source checkout or version bump does not make them available in published v0.8.0 artifacts.</p>
+        <p class="note"><strong>Verified release: v0.9.0.</strong> The operator improvements below require v0.9.0 or matching source. The Trinity specialist and scripted governance walkthroughs remain checkout examples, separate from the published packages.</p>
 
         <div class="table-wrap">
           <table class="matrix">
@@ -109,16 +109,16 @@
           </table>
         </div>
 
-        <h2 id="next-release">Next-release operator workflow (planned v0.9.0)</h2>
-        <p>The checkout-only <a href="protocol.html#trinity-caller">Trinity specialist caller</a> also documents an external native loop invoking a Runkite-managed specialist. Source configuration and real Runkite protocol tests are qualified separately; it is not a new managed runtime or native Trinity certification.</p>
+        <h2 id="next-release">Operator workflow (v0.9.0)</h2>
+        <p>The checkout-only <a href="protocol.html#trinity-caller">Trinity specialist caller</a> also documents an external native loop invoking a Runkite-managed specialist. Source configuration and real Runkite protocol tests are qualified separately. Native Trinity execution remains unqualified; this is not a new managed runtime or upstream certification.</p>
         <div class="table-wrap">
           <table class="matrix">
-            <thead><tr><th>Area</th><th>Existing foundation</th><th>Unreleased improvement and guide</th></tr></thead>
+            <thead><tr><th>Area</th><th>Existing foundation</th><th>v0.9.0 improvement and guide</th></tr></thead>
             <tbody>
               <tr><td>Public MCP agent calls</td><td>Configured agents already run through <code>/mcp</code>; REST already accepts stable run IDs</td><td><a href="protocol.html">Optional MCP operation IDs</a> observe the same retained run after a lost response. Check discovery on the upgraded server. Retention bounds retry protection; this is not exactly-once external execution.</td></tr>
               <tr><td>Managed approval navigation</td><td>Approval detail, review history and connector evidence already exist</td><td><a href="connector-actions.html#reference">Open approval record</a> links directly to the stored ID; the run-filtered list remains secondary. Tenant Review keeps its own scope.</td></tr>
               <tr><td>Run output</td><td>Run Detail already retains durable output and event history</td><td><a href="admin-guide.html#5-threads--runs">Assistant answer</a> previews supported successful text output beside raw JSON. Unsupported/structured content stays raw, and log auto-follow stays inside its viewport.</td></tr>
-              <tr><td>App-owned governance evaluation</td><td>The decision API and independent Python/npm helpers ship in v0.8.0</td><td><a href="sdk-integration.html#governance-demo">Scripted AI SDK walkthrough</a> demonstrates real pending review and idempotent app continuation without a model account. Only the model response is scripted; no managed run is created.</td></tr>
+              <tr><td>App-owned governance evaluation</td><td>The decision API already existed; independent Python/npm helpers first shipped in v0.8.0</td><td><a href="sdk-integration.html#governance-demo">Scripted AI SDK walkthrough</a> demonstrates real pending review and idempotent app continuation without a model account. It remains a checkout asset. Only the model response is scripted; no managed run is created.</td></tr>
             </tbody>
           </table>
         </div>

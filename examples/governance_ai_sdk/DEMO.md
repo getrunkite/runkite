@@ -1,8 +1,8 @@
 # A local proposal, human review and one note
 
-Availability: unreleased checkout example. The governance decision API and
-independent helpers ship in v0.8.0; this scripted demo mode is new source work
-for the next release. It does not change or republish those artifacts.
+Availability: checkout example included with v0.9.0 source. The governance
+decision API already exists, and the independent helpers were first published
+in v0.8.0. This scripted demo mode is an example asset, not a registry package.
 
 This walkthrough keeps the existing application and its real AI SDK tool path.
 It replaces only the model with an explicit local script. The script always

@@ -180,7 +180,7 @@ interface. Configured agents are MCP tools; invoking one creates a managed run.
 This incoming interface is separate from the outgoing, run-bound connector MCP
 proxy and from app-owned `/governance/decide` decisions.
 
-**Unreleased, planned v0.9.0:** an agent tool accepts an optional stable
+**v0.9.0:** an agent tool accepts an optional stable
 `run_id`, reusing the existing REST run-retry contract. Published v0.8.0 does
 not implement this MCP argument. Confirm that `tools/list` advertises it before
 relying on retry protection; an older server may ignore an unknown argument.
