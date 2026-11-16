@@ -6,6 +6,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout-only Langflow MCP caller recipe with pinned native LFX client
+  qualification against a real local plane and Python runner, plus baseline
+  and scoped-source CI gates. Visual-editor and model-loop behavior remain
+  outside the headless qualification.
 - Enrich MCP nested input discovery from usable bounded stored agent schemas,
   with generic fallback, local reference relocation and explicit unknown
   freshness. Preserve the existing raw execution and session-snapshot contracts.

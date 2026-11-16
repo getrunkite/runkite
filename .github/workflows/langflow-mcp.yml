@@ -1,0 +1,144 @@
+name: Langflow native MCP caller
+
+on:
+  pull_request:
+    paths:
+      - examples/langflow_mcp/**
+      - examples/trinity_specialist_mcp/qualify.py
+      - examples/trinity_specialist_mcp/test_qualify_supervisor.py
+      - internal/**
+      - python/runkite_runner/**
+      - python/requirements.txt
+      - go.mod
+      - go.sum
+      - .github/workflows/langflow-mcp.yml
+  push:
+    branches: [main]
+    paths:
+      - examples/langflow_mcp/**
+      - examples/trinity_specialist_mcp/qualify.py
+      - examples/trinity_specialist_mcp/test_qualify_supervisor.py
+      - internal/**
+      - python/runkite_runner/**
+      - python/requirements.txt
+      - go.mod
+      - go.sum
+      - .github/workflows/langflow-mcp.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-caller:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "0"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Create separate clean native client and runner environments
+        run: |
+          python -m venv "$RUNNER_TEMP/langflow-client"
+          python -m venv "$RUNNER_TEMP/langflow-runner"
+          "$RUNNER_TEMP/langflow-client/bin/python" -m pip --isolated install -r examples/langflow_mcp/requirements.txt
+          "$RUNNER_TEMP/langflow-runner/bin/python" -m pip --isolated install -r python/requirements.txt
+
+      - name: Prepare Go modules and warm the API fixture build
+        run: |
+          go mod download
+          go test ./internal/api -run '^$' -count=1 -timeout=2m
+
+      - name: Existing supervisor cleanup and environment regressions
+        run: python -m unittest discover -s examples/trinity_specialist_mcp -p test_qualify_supervisor.py -v
+
+      - name: Bounded native caller with baseline read/write authority
+        env:
+          LANGFLOW_QUALIFICATION_RECEIPT: ${{ runner.temp }}/langflow-mcp-baseline.json
+        run: |
+          python examples/langflow_mcp/qualify.py \
+            --python "$RUNNER_TEMP/langflow-client/bin/python" \
+            --runner-python "$RUNNER_TEMP/langflow-runner/bin/python" \
+            --output "$LANGFLOW_QUALIFICATION_RECEIPT"
+
+      - name: Bounded native caller with scoped source authority
+        # Requires the scoped-specialist implementation in the integrated tree.
+        env:
+          LANGFLOW_QUALIFICATION_RECEIPT: ${{ runner.temp }}/langflow-mcp-scoped-source.json
+        run: |
+          python examples/langflow_mcp/qualify.py \
+            --python "$RUNNER_TEMP/langflow-client/bin/python" \
+            --runner-python "$RUNNER_TEMP/langflow-runner/bin/python" \
+            --output "$LANGFLOW_QUALIFICATION_RECEIPT" \
+            --scoped-source
+
+      - name: Verify both strict synthetic receipt schemas
+        env:
+          LANGFLOW_BASELINE_RECEIPT: ${{ runner.temp }}/langflow-mcp-baseline.json
+          LANGFLOW_SCOPED_RECEIPT: ${{ runner.temp }}/langflow-mcp-scoped-source.json
+        run: |
+          python -I - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError("duplicate receipt key")
+                  result[key] = value
+              return result
+
+          def invalid_constant(_value):
+              raise ValueError("invalid JSON numeric constant")
+
+          allowed = {"checks", "credential_profile", "langflow_revision", "managed_runs", "native_client_sha256", "native_component_sha256", "passed", "protocol_versions", "runner_assignments", "scope", "transport", "versions"}
+          checks = ["discovery", "bearer_auth", "native_schema_conversion", "native_tool_execution", "reconnect_same_run_id", "conflicting_retry", "terminal_error", "terminal_error_retry", "invalid_credential"]
+          scope = "Native lfx update_tools, schema conversion and StructuredTool.ainvoke; real local Runkite and runner. No Langflow UI or model loop."
+          for variable, profile in (("LANGFLOW_BASELINE_RECEIPT", "published-v0.9-read-write"), ("LANGFLOW_SCOPED_RECEIPT", "unreleased-scoped-source")):
+              with Path(os.environ[variable]).open("rb") as source:
+                  raw = source.read(8193)
+              assert len(raw) <= 8192, "oversized qualification receipt"
+              receipt = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+              assert type(receipt) is dict and set(receipt) == allowed, "unexpected receipt fields must not be retained"
+              assert receipt["passed"] is True
+              assert receipt["credential_profile"] == profile
+              assert type(receipt["managed_runs"]) is int and receipt["managed_runs"] == 2
+              assert type(receipt["runner_assignments"]) is int and receipt["runner_assignments"] == 2
+              assert receipt["langflow_revision"] == "260cbf347cc5563cc48c79094c175ca31532ea2b"
+              assert receipt["native_client_sha256"] == "fc967fe3a496a682d67119404a3d4280dfbe1bc831b21d65f9e4f8e0f39e4e1f"
+              assert receipt["native_component_sha256"] == "e125822930136495277cddf45a2ea5a5588b8a5f8f3f2e00ead8f16f9f56273e"
+              versions = receipt["versions"]
+              assert type(versions) is dict and set(versions) == {"lfx", "mcp", "langchain-core", "pydantic"}
+              assert all(type(value) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.!+_-]{0,63}", value) for value in versions.values())
+              assert versions["lfx"] == "1.13.2" and versions["mcp"] == "1.30.0"
+              assert receipt["transport"] == "streamable_http"
+              assert receipt["protocol_versions"] == ["2025-11-25"]
+              assert receipt["checks"] == checks and receipt["scope"] == scope
+          PY
+
+      - name: Retain only both validated synthetic JSON receipts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: langflow-native-mcp-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/langflow-mcp-baseline.json
+            ${{ runner.temp }}/langflow-mcp-scoped-source.json
+          if-no-files-found: error
+          retention-days: 7
