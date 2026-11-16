@@ -1295,12 +1295,14 @@ def _build_admin_spec() -> dict:
                 **_connector_action_schemas(),
                 "AdminRegistryEntryView": {
                     "type": "object",
+                    "required": ["metadata_json"],
                     "properties": {
                         "name": {"type": "string"}, "display_name": {"type": "string"},
                         "description": {"type": "string"}, "author": {"type": "string"},
                         "tags": {"type": "array", "items": {"type": "string"}},
                         "source_type": {"type": "string"}, "source_ref": {"type": "string"},
                         "metadata": {"type": "object"}, "version": {"type": "integer"},
+                        "metadata_json": {"type": "string", "description": "Stored metadata encoded as a JSON string for lossless browser replacement PUT. Validate as an object or null and retain the string without re-encoding parsed numbers. Storage precision limits still apply."},
                         "created_at": {"type": "string", "format": "date-time"},
                         "updated_at": {"type": "string", "format": "date-time"},
                         "tenant_id": {"type": "string"},
@@ -2592,6 +2594,24 @@ def main() -> None:
         if path.endswith("/wait"):
             operation["responses"]["428"] = {"description": "Scoped wait requires a previously acquired run reference"}
     admin = _build_admin_spec()
+    # A present empty selector is default, while omission retains legacy global reads.
+    for path in (
+        "/admin-api/agents/{agent_id}",
+        "/admin-api/agents/{agent_id}/schemas",
+        "/admin-api/agents/{agent_id}/versions",
+        "/admin-api/registry/{name}",
+        "/admin-api/registry/{name}/versions",
+    ):
+        for method, operation in admin["paths"][path].items():
+            for parameter in operation.get("parameters", []):
+                if parameter.get("name") == "tenant_id":
+                    parameter["description"] = (
+                        "Exact tenant identity without trimming. An explicitly empty "
+                        "value selects default. "
+                        + ("Omission retains the legacy global read; select a tenant "
+                           "to disambiguate same-named records." if method == "get" else
+                           "Omission also selects default for mutations.")
+                    )
     _add_security_completion(admin)
     _add_review_spec(admin)
     internal = _build_internal_spec()

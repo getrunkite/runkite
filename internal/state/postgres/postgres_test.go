@@ -27,7 +27,7 @@ func TestPostgresStore(t *testing.T) {
 	}
 	setupStore.Close()
 
-	conformance.RunStoreSuite(t, func(t *testing.T) state.Store {
+	factory := func(t *testing.T) state.Store {
 		ctx := context.Background()
 		s, err := postgres.New(ctx, dsn)
 		if err != nil {
@@ -39,5 +39,7 @@ func TestPostgresStore(t *testing.T) {
 		}
 		t.Cleanup(func() { s.Close() })
 		return s
-	})
+	}
+	conformance.RunStoreSuite(t, factory)
+	conformance.RunSQLControlJSONNumberTests(t, factory)
 }

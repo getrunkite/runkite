@@ -11,11 +11,25 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 
+	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/models"
 )
+
+// Registry metadata is opaque JSON. Keep its number tokens intact instead of
+// rounding through float64, with the same size and single-document bounds as
+// readJSON. Duplicate object keys retain encoding/json's last-value behavior.
+func readRegistryEntryJSON(r *http.Request, entry *models.RegistryEntry) error {
+	defer r.Body.Close()
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes))
+	if err != nil {
+		return err
+	}
+	return jsonvalue.Unmarshal(body, entry)
+}
 
 // PUT /registry/entries/{name} -- publish a new entry or a new version
 // of an existing one. Same version-bump-on-actual-change semantics as
@@ -24,7 +38,7 @@ func (s *Server) handlePublishRegistryEntry(w http.ResponseWriter, r *http.Reque
 	name := r.PathValue("name")
 
 	var entry models.RegistryEntry
-	if err := readJSON(r, &entry); err != nil {
+	if err := readRegistryEntryJSON(r, &entry); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

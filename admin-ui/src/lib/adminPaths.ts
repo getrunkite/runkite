@@ -1,8 +1,7 @@
 /** Build Admin API paths and exact UI record links. */
 export function adminTenantQuery(tenantId?: string): string {
-  const tid = tenantId?.trim();
-  if (!tid) return "";
-  return `?tenant_id=${encodeURIComponent(tid)}`;
+  if (tenantId === undefined) return "";
+  return `?tenant_id=${encodeURIComponent(tenantId)}`;
 }
 
 export function adminAgentPath(agentId: string, tenantId?: string): string {
@@ -28,6 +27,11 @@ export function adminRegistryPath(name: string, tenantId?: string): string {
 
 export function adminRegistryVersionsPath(name: string, tenantId?: string): string {
   return `/registry/${encodeURIComponent(name)}/versions${adminTenantQuery(tenantId)}`;
+}
+
+/** Existing registry records use an explicit edit route, even when named new. */
+export function adminRegistryEntryHref(name: string, tenantId?: string): string {
+  return `/admin/registry/${encodeURIComponent(name)}/edit${adminTenantQuery(tenantId)}`;
 }
 
 export function adminRunPath(runId: string): string {

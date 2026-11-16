@@ -32,6 +32,14 @@ Admin edits preserve the entry's loaded `metadata` object, including keys the
 form does not display. Use the API to edit metadata. Saves still replace the
 entry with the submitted values; this does not add concurrent-edit protection.
 
+Unreleased source carries loaded Admin metadata through a separate
+`metadata_json` string so the browser does not round its numbers before a save.
+Upgrade every HTTP replica and reload Admin before editing. A loaded entry from
+an older replica without that field fails closed. SQLite and Postgres preserve
+the supported stored decimal values; MySQL native JSON and Mongo HTTP-ingress
+precision limits remain. Previously rounded values cannot be recovered. See the
+[numeric transport and storage contract](internal/opaque-json-preservation.md).
+
 **Known limitations, stated plainly**:
 - **No security review workflow.** Anything published is immediately visible to every caller in that tenant -- there's no approve/reject step, unlike a real package registry's review queue.
 - **No deploy automation.** Publishing an entry doesn't register a runnable agent -- `source_ref` still requires a human (or separate tooling) to actually wire the code into a `langgraph.json` and restart/reload the relevant runner. The registry is a catalog, not a deployment pipeline.

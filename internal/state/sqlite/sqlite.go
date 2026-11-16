@@ -814,7 +814,9 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 		return nil, err
 	}
 	json.Unmarshal([]byte(metaStr), &v.Metadata)
-	json.Unmarshal([]byte(capsStr), &v.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &v.Capabilities); err != nil {
+		return nil, err
+	}
 	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return &v, nil
 }
@@ -1055,7 +1057,9 @@ func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
 		return nil, err
 	}
 	json.Unmarshal([]byte(tagsStr), &e.Tags)
-	json.Unmarshal([]byte(metaStr), &e.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(metaStr), &e.Metadata); err != nil {
+		return nil, err
+	}
 	e.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	e.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 	return &e, nil
@@ -1068,7 +1072,9 @@ func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVer
 		return nil, err
 	}
 	json.Unmarshal([]byte(tagsStr), &v.Tags)
-	json.Unmarshal([]byte(metaStr), &v.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(metaStr), &v.Metadata); err != nil {
+		return nil, err
+	}
 	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return &v, nil
 }
@@ -1091,7 +1097,9 @@ func (s *SQLiteStore) GetAgent(ctx context.Context, agentID string) (*models.Age
 		return nil, err
 	}
 	json.Unmarshal([]byte(metaStr), &a.Metadata)
-	json.Unmarshal([]byte(capsStr), &a.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &a.Capabilities); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 
@@ -1161,7 +1169,9 @@ func (s *SQLiteStore) SearchAgents(ctx context.Context, req *models.AgentSearchR
 			return nil, err
 		}
 		json.Unmarshal([]byte(metaStr), &a.Metadata)
-		json.Unmarshal([]byte(capsStr), &a.Capabilities)
+		if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &a.Capabilities); err != nil {
+			return nil, err
+		}
 		agents = append(agents, &a)
 	}
 	return agents, nil
