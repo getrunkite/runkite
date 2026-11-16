@@ -4,6 +4,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
+- Add `runkite policy test` for bounded offline static policy expectations,
+  reusing the existing engine without model, Vault, downstream or durable-state
+  calls. Logical pending results do not create approval records. Live `sim`
+  remains unchanged.
+
 ### Fixed
 
 - Preserve an existing registry entry's opaque metadata when saving edits from
