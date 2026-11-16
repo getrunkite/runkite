@@ -173,8 +173,12 @@ client and runner environments and distinct receipts. The scoped gate requires
 the source permission implementation; it has no compatibility fallback.
 Strict receipt validation precedes an allowlisted upload of the two synthetic
 JSON files. Process logs, intent files and environment state are not uploaded.
-The checked-in receipt above remains baseline evidence; the scoped profile must
-pass against the integrated tree before claiming that qualification.
+The checked-in receipt above remains baseline evidence. Both profiles also
+passed separately on the integrated source on November 16, 2026 with the same
+native dependency versions: each produced two retained runs and two real worker
+assignments, with no redispatch on reconnect or failed-run retry. The scoped
+profile used only the exact agent run grant. These headless checks do not
+establish the UI, model-loop or REST reference contracts.
 
 The unmodified installed `lfx.base.mcp.util.update_tools` path performs header
 handling, discovery, schema conversion and `StructuredTool.ainvoke` over its

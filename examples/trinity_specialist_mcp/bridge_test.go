@@ -27,6 +27,8 @@ type bridgeTestUpstream struct {
 	reads             int
 	waits             int
 	badAuth           int
+	reference         string
+	replaceAfterRead  bool
 	status            string
 	missing           bool
 	wrongThread       bool
@@ -101,11 +103,23 @@ func newBridgeTestUpstream(t *testing.T, advertiseRetry bool) *bridgeTestUpstrea
 		if strings.HasSuffix(r.URL.Path, "/wait") && u.waitInputOverride != nil {
 			row["input"] = u.waitInputOverride
 		}
+		reference := u.reference
+		if reference == "" {
+			reference = "runkite-run-v1-" + strings.Repeat("a", 64)
+		}
+		if expected := r.Header.Get("Runkite-Expected-Run-Reference"); expected != "" && expected != reference {
+			http.Error(w, "run reference changed", http.StatusPreconditionFailed)
+			return
+		}
+		w.Header().Set("Runkite-Run-Reference", reference)
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/wait") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"run": row, "values": map[string]any{"messages": []any{map[string]any{"role": "assistant", "content": "Scripted specialist result."}}}})
 		} else {
 			_ = json.NewEncoder(w).Encode(row)
+			if u.replaceAfterRead {
+				u.reference = "runkite-run-v1-" + strings.Repeat("b", 64)
+			}
 		}
 	}))
 	t.Cleanup(u.server.Close)

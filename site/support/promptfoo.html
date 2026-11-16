@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>promptfoo evaluation · Runkite Docs</title>
+    <meta name="description" content="Evaluate managed Runkite runs with the qualified promptfoo 0.125.1 custom provider. Unreleased checkout example." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a class="active" href="promptfoo.html" aria-current="page">promptfoo evaluation</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a  href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar">
+          <a href="../">← Product</a>
+          <a href="https://github.com/getrunkite/runkite">GitHub</a>
+        </div>
+
+        <p class="kicker">Connect · Unreleased checkout example</p>
+        <h1>Evaluate managed runs with promptfoo</h1>
+        <p class="lede">A custom API provider for promptfoo 0.125.1 creates ordinary Runkite managed runs and observes their durable results. The example lives in current source and is not part of the published 0.9.0 packages.</p>
+        <p class="note"><strong>Qualified scope:</strong> the pinned custom class loader, ordinary evaluator scheduler and CLI, using Node 26.11.0. The local qualification ran four evaluations as four distinct managed runs with a scripted worker and local equality assertions. It made no model calls. Real agent evaluations use the agent's configured model and tool budget.</p>
+
+        <h2 id="setup">Use the checkout example</h2>
+        <p>Start with an existing managed agent that accepts <code>input.messages</code> containing one user message and returns final assistant text. The <a href="agents.html">agent guide</a> and <a href="runs.html">runs guide</a> explain that contract. The provider creates normal governed work through public REST endpoints; capability descriptions do not grant authority or establish a live runner.</p>
+        <pre class="mono-block">cd examples/promptfoo
+npm ci
+export RUNKITE_URL=https://your-runkite.example
+export RUNKITE_AGENT_ID=your-agent
+export RUNKITE_API_KEY=your-dedicated-tenant-key
+export PROMPTFOO_DISABLE_TELEMETRY=1
+export PROMPTFOO_DISABLE_UPDATE=1
+npm exec -- promptfoo eval --config promptfooconfig.yaml --no-cache</pre>
+        <p>The sample asks for the word <code>ready</code>. Replace that assertion with an appropriate evaluation for your agent. Use Node 22.22 or newer and the committed lockfile, which pins promptfoo 0.125.1 with audited dependency overrides. Requalify the loader and scheduler before upgrading it. The provider requires HTTPS and rejects redirects; explicit literal-loopback HTTP is available only for local fixtures.</p>
+        <p>Use a dedicated tenant credential with the permissions required for run creation and observation. The compatibility example uses <code>read</code> and <code>write</code>, which are broader than a single specialist. See the <a href="credentials.html">credentials map</a>. Keep credentials in the environment and keep promptfoo evaluation artifacts private. The provider needs no Admin credential or simulation header.</p>
+        <p>A separate source-only native qualification profile is prepared for exact agent run and observe grants after scoped REST observation is integrated. It requires SQL run references and grants no lists, thread-history endpoints, stream, cancellation, deletion or Admin access. That profile is pending its own native gate; the measured broad baseline above does not qualify it. Observation is agent-wide rather than requester-private. Follow the example's <code>qualify:scoped</code> instructions on the matching checkout; published v0.9.0 does not include these permissions.</p>
+
+        <h2 id="delivery">One create attempt, explicit recovery</h2>
+        <p>Every intentional evaluator call gets fresh run and thread IDs. Before dispatch the provider fsyncs a private receipt with destination, agent, IDs and an input hash. It sends at most one <code>POST /threads/{threadID}/runs</code>, then uses <code>GET /runs/{runID}</code> and <code>GET /runs/{runID}/wait</code>. A lost create response followed by a missing row stays unknown. It never silently creates a replacement run.</p>
+        <p>The qualified scheduler honors the provider's <code>handlesOwnRetries</code> flag and zero retry budget. A new CLI invocation, intentional repeat, explicit caller retry or <code>--retry-errors</code> is new work. Arbitrary red-team strategies and external retry wrappers are outside this qualification.</p>
+        <p>Save the receipt path from <code>response.metadata.runkite.receipt</code>. With the same destination, agent and tenant credential, recovery reads retained state without creating anything:</p>
+        <pre class="mono-block">node recover.mjs /absolute/private/receipt.json</pre>
+        <p>Set <code>RUNKITE_RECEIPT_DIR</code> to a canonical private local directory if the default checkout directory is unsuitable. Receipts use a 0700 directory and 0600 files and contain no raw prompt, output or credential. Keep run rows and receipts for the full evaluation and recovery period. Another process running as the same user or a filesystem rollback is outside this local receipt boundary.</p>
+
+        <h2 id="identity">Observation identity and limits</h2>
+        <p>Retained responses must match the saved run, thread, agent and input hash. When a server returns <code>Runkite-Run-Reference</code>, the provider saves it and supplies <code>Runkite-Expected-Run-Reference</code> on later reads. Those responses must carry the same reference. This is an identity precondition, not an ETag or authorization token.</p>
+        <p>Published Runkite 0.9.0 does not advertise that reference. Its compatibility path checks retained identity fields but cannot prove that a deleted run ID was never recreated with identical input. First reference acquisition on a newer server also cannot prove prior history. Missing retention or conflicting identity requires investigation, not another create attempt.</p>
+        <p>The total deadline defaults to 60 seconds, with a maximum of five minutes. Individual requests default to 10 seconds and responses are capped at 1 MiB. Native caller abort is honored. Timeout or cancellation detaches observation; it does not prove the worker stopped, and this provider sends no automatic cancellation request.</p>
+
+        <h2 id="results">Results and tested boundaries</h2>
+        <p>Text output must be an unambiguous final assistant string. Tool requests, reasoning channels, truncated finishes and structured content blocks are rejected. Use explicit <code>outputMode: json</code> for structured graph values. Managed error, interruption and timeout statuses become provider errors. Measured token counts and explicit nonnegative cost are mapped only when consistent; missing or unmetered usage is omitted and does not establish invoice reconciliation.</p>
+        <p>The dedicated CI workflow requires the broad and scoped native profiles on the integrated checkout, along with provider regressions and the installed loader/scheduler. It runs the real CLI against authenticated Runkite public handlers, SQLite persistence and a scripted queue worker. Both profiles create fresh threads through the run-create request. It retains only both strictly validated nonsecret synthetic summaries. This does not qualify a real LLM, framework runner, embedding adapter, promptfoo web server, FTP/PAC proxy, filesystem MCP server or every upstream plugin.</p>
+        <p class="note">Source and complete instructions: <a href="https://github.com/getrunkite/runkite/tree/main/examples/promptfoo">examples/promptfoo</a> · <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/promptfoo-managed-provider.md">engineering evidence and audit scope</a> · <a href="sdk-integration.html">SDK integration choices</a> · <a href="limitations.html">Runkite limitations</a></p>
+      </main>
+    </div>
+    <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

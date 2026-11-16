@@ -1,0 +1,137 @@
+name: promptfoo managed-run example
+
+on:
+  pull_request:
+    paths:
+      - examples/promptfoo/**
+      - internal/**
+      - go.mod
+      - go.sum
+      - docs/internal/promptfoo-managed-provider.md
+      - site/support/promptfoo.html
+      - .github/workflows/promptfoo-example.yml
+  push:
+    branches: [main]
+    paths:
+      - examples/promptfoo/**
+      - internal/**
+      - go.mod
+      - go.sum
+      - docs/internal/promptfoo-managed-provider.md
+      - site/support/promptfoo.html
+      - .github/workflows/promptfoo-example.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-provider:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+      PROMPTFOO_DISABLE_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "26.11.0"
+          cache: npm
+          cache-dependency-path: examples/promptfoo/package-lock.json
+
+      - name: Select the locked npm client and install the example closure
+        working-directory: examples/promptfoo
+        run: |
+          npm install --global npm@10.9.3
+          test "$(node --version)" = "v26.11.0"
+          test "$(npm --version)" = "10.9.3"
+          npm ci
+          npm audit --audit-level=low
+          git diff --exit-code -- package-lock.json
+
+      - name: Provider regressions and exact native loader/scheduler
+        working-directory: examples/promptfoo
+        run: npm test
+
+      - name: Vet the scripted worker qualification
+        run: go vet ./internal/api
+
+      - name: Native promptfoo CLI with baseline read/write authority
+        env:
+          RUNKITE_PROMPTFOO_QUALIFY: "1"
+          RUNKITE_PROMPTFOO_REPORT: ${{ runner.temp }}/promptfoo-managed-provider.json
+        run: go test ./internal/api -run '^TestNativePromptfooManagedRuns$' -count=1 -timeout=90s -v
+
+      - name: Native promptfoo CLI with scoped source authority
+        # Requires scoped REST observation in the integrated checkout.
+        env:
+          RUNKITE_PROMPTFOO_QUALIFY: "1"
+          RUNKITE_PROMPTFOO_SCOPED_SOURCE: "1"
+          RUNKITE_PROMPTFOO_REPORT: ${{ runner.temp }}/promptfoo-managed-provider-scoped.json
+        run: go test ./internal/api -run '^TestNativePromptfooScopedManagedRuns$' -count=1 -timeout=90s -v
+
+      - name: Verify both strict synthetic receipt schemas
+        env:
+          PROMPTFOO_BASELINE_RECEIPT: ${{ runner.temp }}/promptfoo-managed-provider.json
+          PROMPTFOO_SCOPED_RECEIPT: ${{ runner.temp }}/promptfoo-managed-provider-scoped.json
+        run: |
+          python3 -I - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError("duplicate receipt key")
+                  result[key] = value
+              return result
+
+          def invalid_constant(_value):
+              raise ValueError("invalid JSON numeric constant")
+
+          allowed = {"passed", "node", "promptfoo", "permission_profile", "managed_runs", "managed_threads", "inline_thread_creates", "http_creates", "http_reads", "http_waits", "reference_pinned_waits", "run_reference_acquired", "scoped_denial_probes", "boundary_violations", "model_calls", "worker", "store", "transport"}
+          for variable, profile in (("PROMPTFOO_BASELINE_RECEIPT", "tenant-read-write"), ("PROMPTFOO_SCOPED_RECEIPT", "scoped-run-observe")):
+              with Path(os.environ[variable]).open("rb") as source:
+                  raw = source.read(8193)
+              assert len(raw) <= 8192, "oversized qualification receipt"
+              receipt = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object, parse_constant=invalid_constant)
+              assert type(receipt) is dict and set(receipt) == allowed, "unexpected receipt fields must not be retained"
+              assert receipt["passed"] is True
+              assert receipt["node"] == "v26.11.0" and receipt["promptfoo"] == "0.125.1"
+              assert receipt["permission_profile"] == profile
+              assert receipt["worker"] == "scripted" and receipt["store"] == "sqlite" and receipt["transport"] == "inprocess"
+              for key in ("managed_runs", "managed_threads", "inline_thread_creates", "http_creates", "http_reads", "http_waits"):
+                  assert type(receipt[key]) is int and receipt[key] == 4
+              for key in ("boundary_violations", "model_calls"):
+                  assert type(receipt[key]) is int and receipt[key] == 0
+              assert type(receipt["run_reference_acquired"]) is bool
+              pins = receipt["reference_pinned_waits"]
+              denials = receipt["scoped_denial_probes"]
+              assert type(pins) is int and type(denials) is int
+              if profile == "scoped-run-observe":
+                  assert pins == 4 and denials == 6 and receipt["run_reference_acquired"] is True
+              else:
+                  assert pins in (0, 4) and denials == 0
+                  assert receipt["run_reference_acquired"] is (pins == 4)
+          PY
+
+      - name: Retain only both validated nonsecret synthetic summaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: promptfoo-managed-provider-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/promptfoo-managed-provider.json
+            ${{ runner.temp }}/promptfoo-managed-provider-scoped.json
+          if-no-files-found: error
+          retention-days: 7

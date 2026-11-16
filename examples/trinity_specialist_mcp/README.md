@@ -1,7 +1,8 @@
 # A Trinity agent calling a Runkite specialist
 
-Checkout-only example included with v0.9.0 source. Published v0.8.0 does not
-provide the MCP stable-run-ID contract this example requires. This directory is
+Unreleased, source-checkout-only scoped caller update. Published v0.9.0 does
+not provide the scoped grants and observation references this updated bridge
+uses. The original v0.9.0 example used broader dedicated-tenant authority. This directory is
 checkout source, not a separately published package or a Trinity upstream
 integration.
 
@@ -31,12 +32,19 @@ Runkite deployment and runner. The existing
 Check that `tools/list` advertises `run_id` before relying on retry protection;
 the bridge refuses servers that do not advertise it.
 
-Provide a dedicated tenant with a server-side API key whose permissions include
-both `read` and `write`. The MCP call needs write authority and retry observation
-uses the existing REST read API. An `agents:<id>:run` key alone does not authorize
-the HTTP MCP route. Do not use an Admin key. A read/write key has broader tenant
-authority than one specialist; the fixed bridge target is a convenience for a
-trusted caller, not a new server-enforced permission boundary.
+Provide a dedicated tenant with a named server-side API key whose explicit
+permissions are `agents:<specialist_id>:run` and
+`agents:<specialist_id>:observe`. Use the configured specialist ID, such as
+`echo_agent`. The first grant permits scoped MCP discovery/invocation; the
+second permits only exact public run GET/wait recovery, checked against the
+stored agent. No general `read`, `write` or Admin grant is needed. The profile
+requires a SQL backend with durable run incarnations.
+
+The observation grant is agent-wide, including older retained runs. It is not
+requester-only privacy, and run creation can continue a known tenant thread.
+Keep the dedicated tenant/single trusted caller boundary. A fixed bridge target
+alone never narrows server authority. Existing broad credentials still work,
+but give the caller broader rights. Published v0.9.0 lacks this scoped profile.
 
 Expose Runkite through your existing HTTPS reverse proxy. Configure the bridge
 with the origin, such as `https://runkite.example.com`, without `/mcp`, a query,
@@ -73,8 +81,9 @@ Edit `.mcp.json.template` in the printed staging directory before deployment:
 - `RUNKITE_BRIDGE_AGENT`: the fixed configured specialist, initially `echo_agent`.
 - `RUNKITE_BRIDGE_PROFILE`: a stable local profile name for this authority and
   destination. It is caller bookkeeping, not a server-verified tenant identity.
-- `RUNKITE_BRIDGE_STATE`: an absolute persistent directory. The template uses
-  `/home/developer/.runkite-specialist`.
+- `RUNKITE_BRIDGE_STATE`: an absolute persistent directory with an existing
+  parent. Use a clean path without dot components or a trailing slash. The
+  template uses `/home/developer/.runkite-specialist`.
 - Keep `RUNKITE_API_KEY` as the `${RUNKITE_API_KEY}` placeholder. Supply its value
   through Trinity's credential setup, never in the template, arguments or Git.
 
@@ -84,7 +93,25 @@ must therefore sit next to one another at the root of this agent package. The
 agent home is a persistent volume; protect and retain its bridge state across
 restarts. Intent receipts contain conversation input even though they do not
 store final specialist output. Keep them out of Git, reports and shared folders.
-The bridge creates its private state directory with mode `0700`.
+The bridge creates only its final private state directory with mode `0700`;
+it does not recursively create missing parents. Prepare the parent explicitly
+inside the agent container or when provisioning its persistent volume:
+
+```sh
+mkdir -p /home/developer
+# For a custom RUNKITE_BRIDGE_STATE, create its parent here instead.
+```
+
+Before accepting new or existing state, the bridge fsyncs the parent directory.
+Before using a loaded intent or run reference, it fsyncs the state directory
+itself. Each caller establishes these barriers even when another process has
+just published the same file. A failed barrier stops the invocation before any
+MCP call when preparing or loading caller state. A failed response-reference
+publication instead leaves the already-sent operation unknown. This requires a
+local filesystem that supports directory fsync and exclusive hard-link
+publication. A readable receipt alone is insufficient
+proof of persistence. These checks do not defend against another process
+already running as the same OS user, filesystem rollback or manual deletion.
 
 Keep this staging directory outside Git. Trinity's Git-aware archive path omits
 ignored untracked files, including the compiled binary this repository correctly
@@ -149,9 +176,13 @@ The delivery deadline is 45 seconds. It bounds this request, not the specialist'
 execution. A timeout, disconnect or restarted caller does not prove cancellation.
 On another invocation of an attempted operation, the bridge establishes a fresh
 authenticated MCP session and checks discovery, then reads and validates the
-retained run's identity through REST. It observes completion through the existing
-`/runs/{run_id}/wait` endpoint. It does not call the upstream agent tool again.
-A missing run, including deletion between those two reads, fails closed instead
+retained run's identity through REST. It saves the SQL run incarnation reference in a separate private immutable
+`.run-reference` file and sends it as `Runkite-Expected-Run-Reference` on
+completion observation through `/runs/{run_id}/wait`. Later reads also send the
+reference. Successful initial MCP results can provide the same reference in
+`_meta["runkite/run_reference"]`, which the bridge saves before reporting it. It does not call the upstream agent tool again.
+A missing run or changed saved reference, including deletion/recreation between
+those two reads, fails closed instead
 of creating replacement work. Do not interpret an unknown result as a successful
 or failed external side effect.
 
@@ -162,6 +193,14 @@ Trinity's complete chat history. No end-user identity, parent-run relationship,
 cancellation or budget is automatically delegated across the two platforms.
 
 ## Recovery and security boundaries
+
+Before the bridge first receives and durably saves an incarnation reference,
+its saved run ID and input cannot prove that retention never disappeared. A
+lost first response followed by deletion/recreation before the first successful
+GET remains outside that proof. Protect run retention throughout this period;
+never recreate a missing operation to obtain a reference. The reference is an
+identity precondition, not a credential, permanent deduplication key or HTTP
+ETag. See [the engineering contract](../../docs/internal/scoped-specialist-access.md).
 
 Retain both caller receipts and Runkite runs for the entire retry window. Deleting
 or pruning a run ends result recovery and the plane's underlying retry protection.

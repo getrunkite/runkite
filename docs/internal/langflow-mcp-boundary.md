@@ -80,7 +80,10 @@ with this uncommitted example and test. MCP negotiated `2025-11-25`. There were
 exactly two retained runs and two real assignments despite reconnect and
 failed-run retries. Installed LFX 1.13.2, MCP 1.30.0, LangChain Core 1.8.1 and
 Pydantic 2.13.5 were used. The baseline read/write profile was tested; the
-optional scoped profile still needs qualification in the integrated source.
+run-only scoped profile and broad baseline also passed separately on the
+integrated source on the same date with those versions and the same two-run,
+two-assignment counts. The scoped proof covers MCP authority, not public REST
+observation references.
 
 The manual [application/operator recipe](../../examples/langflow_mcp/README.md)
 uses the documented Langflow server-registration and MCP Tools UI. Native

@@ -1,4 +1,6 @@
 import type { AdminRegistryEntry } from "../api/types.ts";
+import { adminRegistryPath } from "./adminPaths.ts";
+import type { RegistryEntryMode } from "./registryEntryRoutes.ts";
 
 export interface EntryForm {
   tenant_id: string;
@@ -9,7 +11,8 @@ export interface EntryForm {
   tags: string;
   source_type: string;
   source_ref: string;
-  metadata?: AdminRegistryEntry["metadata"];
+  // undefined is a new form; null means an older replica omitted the raw field.
+  metadata_json?: string | null;
 }
 
 export const emptyForm = (): EntryForm => ({
@@ -33,24 +36,61 @@ export function formFromEntry(e: AdminRegistryEntry): EntryForm {
     tags: (e.tags ?? []).join(", "),
     source_type: e.source_type,
     source_ref: e.source_ref,
-    ...(e.metadata !== undefined ? { metadata: e.metadata } : {}),
+    metadata_json: e.metadata_json ?? null,
   };
 }
 
-export function bodyFromForm(f: EntryForm): Omit<AdminRegistryEntry, "tenant_id" | "version" | "created_at" | "updated_at"> {
+export function registryEntryFormKey(mode: RegistryEntryMode, routeName: string | undefined, tenantId: string | undefined): string {
+  return JSON.stringify([mode, routeName, tenantId]);
+}
+
+/** Existing edits use the immutable route and loaded tenant, never a new slug. */
+export function registryEntrySaveRequest(f: EntryForm, mode: RegistryEntryMode, routeName: string | undefined, tenantSelection?: string) {
+  const isNew = mode === "create";
+  const name = isNew ? f.name.trim() : routeName;
+  if (!name) throw new Error("Name is required.");
+  if (isNew && (routeName !== undefined || f.metadata_json !== undefined)) {
+    throw new Error("Reload this entry before saving: the selected form mode changed.");
+  }
+  if (!isNew && (
+    f.metadata_json === undefined ||
+    f.name !== name ||
+    (tenantSelection !== undefined && f.tenant_id !== (tenantSelection || "default"))
+  )) {
+    throw new Error("Reload this entry before saving: the selected record changed.");
+  }
+  return { name, path: adminRegistryPath(name, f.tenant_id), body: jsonBodyFromForm({ ...f, name }) };
+}
+
+export function jsonBodyFromForm(f: EntryForm): string {
   const tags = f.tags
     .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  return {
-    name: f.name.trim(),
+  const body = {
+    name: f.name,
     display_name: f.display_name.trim() || undefined,
     description: f.description.trim() || undefined,
     author: f.author.trim() || undefined,
     tags: tags.length ? tags : undefined,
     source_type: f.source_type.trim(),
     source_ref: f.source_ref.trim(),
-    // The form does not edit metadata, but PUT replaces the entry.
-    ...(f.metadata !== undefined ? { metadata: f.metadata } : {}),
   };
+  const encoded = JSON.stringify(body);
+  if (f.metadata_json === undefined) return encoded;
+  if (f.metadata_json === null) {
+    throw new Error("Reload this entry from an updated server before saving its metadata.");
+  }
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(f.metadata_json);
+  } catch {
+    throw new Error("Reload this entry before saving: stored metadata JSON is unavailable.");
+  }
+  if (metadata !== null && (typeof metadata !== "object" || Array.isArray(metadata))) {
+    throw new Error("Reload this entry before saving: stored metadata must be an object or null.");
+  }
+  // Validation above never becomes serialization. The parsed object may contain
+  // rounded numbers; splice only the original fragment at this fixed property.
+  return `${encoded.slice(0, -1)},"metadata":${f.metadata_json}}`;
 }

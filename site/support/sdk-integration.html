@@ -403,6 +403,56 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           see the <a href="https://github.com/getrunkite/runkite/blob/main/examples/managed_ai_sdk/README.md#reattach-to-an-existing-run">example's reconnect and Stop contract</a>.
         </p>
 
+        <h2 id="managed-ag-ui">AG-UI text transport (Unreleased)</h2>
+        <p class="note">
+          <strong>Source checkout only:</strong> published v0.9.0 does not include
+          this application example or its additive shared-stream helpers. The
+          <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_ag_ui">managed AG-UI example</a>
+          pins official <code>@ag-ui/core</code>, <code>@ag-ui/encoder</code> and
+          <code>@ag-ui/client</code> at <code>1.0.4</code>, protocol <code>1.0</code>.
+        </p>
+        <p>
+          Use the native <code>HttpAgent</code> against an authenticated application
+          route. The adapter reuses the existing managed-run bridge for creation,
+          attempt checks, retained replay, durable finish, detach and Stop. The
+          official encoder produces AG-UI SSE. It emits one assistant text response
+          and terminal success or error; only confirmed durable success becomes
+          <code>RUN_FINISHED</code>. No model loop or JavaScript runtime moves into
+          the Go plane.
+        </p>
+        <p>
+          Your app checks chat and turn ownership on every create, attach and Stop,
+          persists its server-owned Runkite run ID before dispatch, and atomically
+          binds the first verified assistant ID before displaying it. Keep the
+          Runkite key on the server in a dedicated application tenant with the
+          read/write access needed for streaming and cancellation. Agent run/observe
+          grants alone do not cover those routes. Browser history cannot replace
+          the runner checkpoint; only the latest plain user text enters Runkite.
+          The app's AG-UI thread/run IDs must match its stored mapping.
+        </p>
+        <p>
+          Client abort and response cancellation detach delivery. A separate
+          authenticated app POST requests Stop. Full retained replay must be
+          reconstructed in a fresh native client and replace the exact partial
+          assistant only after success. The example's
+          <code>reconstructManagedAGUI</code> helper verifies the stored application
+          and assistant identities and leaves saved messages untouched on failure.
+          It never appends the full replay or dispatches a replacement run. Deleted
+          or expired history and the interval before first assistant binding still
+          require explicit application reconciliation.
+        </p>
+        <p>
+          This slice excludes frontend tools, interrupts, native approvals,
+          reasoning, arbitrary data/structured output, multimodal input and AG-UI
+          protobuf transport. Unsupported runner events fail delivery without fake
+          tool or approval events. It does not qualify a web widget or CopilotKit.
+          The provider-free real Go plane and packaged Node runner qualification
+          passed text completion, retained replay replacement, running detach and
+          explicit Stop on SQLite/in-process. It is one local plane, not a
+          Postgres/Redis or multi-replica qualification for AG-UI. See the
+          <a href="https://github.com/getrunkite/runkite/blob/main/examples/managed_ag_ui/README.md">installation, route and recovery contract</a>.
+        </p>
+
         <h2>Durability and limits</h2>
         <ul>
           <li>The v0.6.0 bridge applies <code>timeoutMs</code> (30 seconds by default) to browser request-body intake as well as HTTP setup and durable-completion reads. A stalled intake is canceled before any run is created. This is not a duration limit on the running chat stream.</li>

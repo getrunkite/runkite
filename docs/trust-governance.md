@@ -250,6 +250,28 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 | `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(tenant_id, agent_id, run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny + argument digest / config predicates |
 
+**Unreleased exact positive identities, source checkout only:** published v0.9.0
+predates this evaluator update. A grant's tenant, agent and connector scope must
+match the exact stored/request identity, and a tool allow entry must match the
+exact wire tool name. Baseline/SQL grant overlay keys are exact tuples. App-owned
+Decide preserves supplied agent, connector and tool names; its optional tenant
+claim must exactly equal the authenticated tenant. Whitespace cannot select a
+neighbor's positive grant.
+
+Restrictive predicates and mandatory-HITL rules deliberately retain their legacy
+trimmed matching and overlay behavior. Per-grant tool-filter denials are also
+retained across trim-equivalent scopes, including with `default_effect: allow`.
+This conservative compatibility check can deny more in ambiguous padded-name
+configurations; it never grants access. Review such rules explicitly rather than
+assuming they now apply only to the exact spelling. Decision-cache keys are
+structured exact tuples, including the captured policy revision, so separator
+characters cannot alias another decision and an old in-flight evaluation cannot
+repopulate the current revision after reload. The evaluator semantics revision
+changes managed approval authority even when configured rows are unchanged.
+See [the upgrade procedure](ops-runbook.md#unreleased-policy-identity-upgrade).
+Standalone approvals or allow decisions already returned to an app are not
+revoked by this fingerprint change.
+
 Static grants evaluate in-process. Optional **argument predicates**
 (`policy.predicates` in `langgraph.json`) run after grant evaluation and before
 the sync webhook. They inspect MCP `tools/call` `params.arguments`, or `args`

@@ -1,0 +1,16 @@
+description: Runkite managed agent evaluation
+prompts:
+  - '{{question}}'
+providers:
+  - id: file://runkite-provider.mjs
+    config:
+      apiKeyEnv: RUNKITE_API_KEY
+      timeoutMs: 60000
+      requestTimeoutMs: 10000
+      outputMode: text
+tests:
+  - vars:
+      question: Reply with exactly the word ready
+    assert:
+      - type: equals
+        value: ready

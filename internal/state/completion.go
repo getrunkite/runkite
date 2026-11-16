@@ -22,6 +22,8 @@ const (
 func NewCompletionCheckpointID() string { return "completion:" + uuid.NewString() }
 
 type RunCompletion struct {
+	// ExpectedIncarnationID fences trusted observation against run ID reuse.
+	ExpectedIncarnationID string `json:"-"`
 	// TrustedSystem is set only by internal cancellation, timeout, retained
 	// event recovery and reaper paths. Missing worker proof is never a bypass.
 	TrustedSystem bool `json:"-"`

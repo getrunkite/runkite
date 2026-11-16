@@ -1,5 +1,5 @@
-// Package jsonvalue preserves numbers in scoped application and policy JSON
-// without changing unrelated control metadata or typed counters.
+// Package jsonvalue preserves numbers in scoped application, policy, and opaque
+// catalog JSON without changing unrelated control metadata or typed counters.
 package jsonvalue
 
 import (
@@ -23,6 +23,20 @@ func Unmarshal(data []byte, value any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	return decoder.Decode(value)
+}
+
+// UnmarshalOptionalObject decodes an opaque SQL control map. Empty database
+// values and JSON null retain the legacy nil-map representation. Malformed
+// nonempty data fails closed without including stored data in the error.
+func UnmarshalOptionalObject(data []byte, value *map[string]interface{}) error {
+	if len(data) == 0 {
+		*value = nil
+		return nil
+	}
+	if err := Unmarshal(data, value); err != nil {
+		return fmt.Errorf("invalid stored JSON object")
+	}
+	return nil
 }
 
 // Equal compares decoded JSON values without rounding numbers. Equivalent
