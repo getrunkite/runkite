@@ -814,7 +814,9 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 		return nil, err
 	}
 	json.Unmarshal([]byte(metaStr), &v.Metadata)
-	json.Unmarshal([]byte(capsStr), &v.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &v.Capabilities); err != nil {
+		return nil, err
+	}
 	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return &v, nil
 }
@@ -1055,7 +1057,9 @@ func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
 		return nil, err
 	}
 	json.Unmarshal([]byte(tagsStr), &e.Tags)
-	json.Unmarshal([]byte(metaStr), &e.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(metaStr), &e.Metadata); err != nil {
+		return nil, err
+	}
 	e.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	e.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 	return &e, nil
@@ -1068,7 +1072,9 @@ func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVer
 		return nil, err
 	}
 	json.Unmarshal([]byte(tagsStr), &v.Tags)
-	json.Unmarshal([]byte(metaStr), &v.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(metaStr), &v.Metadata); err != nil {
+		return nil, err
+	}
 	v.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return &v, nil
 }
@@ -1091,7 +1097,9 @@ func (s *SQLiteStore) GetAgent(ctx context.Context, agentID string) (*models.Age
 		return nil, err
 	}
 	json.Unmarshal([]byte(metaStr), &a.Metadata)
-	json.Unmarshal([]byte(capsStr), &a.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &a.Capabilities); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 
@@ -1161,7 +1169,9 @@ func (s *SQLiteStore) SearchAgents(ctx context.Context, req *models.AgentSearchR
 			return nil, err
 		}
 		json.Unmarshal([]byte(metaStr), &a.Metadata)
-		json.Unmarshal([]byte(capsStr), &a.Capabilities)
+		if err := jsonvalue.UnmarshalOptionalObject([]byte(capsStr), &a.Capabilities); err != nil {
+			return nil, err
+		}
 		agents = append(agents, &a)
 	}
 	return agents, nil
@@ -2151,7 +2161,7 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs`
 	var args []interface{}
 	var where []string
 
@@ -2220,7 +2230,7 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		var r models.Run
 		var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 		var createdStr, updatedStr string
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		r.ParentRunID = nullStringToPtr(parentRunIDStr)
@@ -2241,6 +2251,9 @@ func (s *SQLiteStore) SearchRuns(ctx context.Context, req *models.RunSearchReque
 		r.UpdatedAt, _ = time.Parse(time.RFC3339, updatedStr)
 		r.AssistantID = r.AgentID // SDK compat
 		runs = append(runs, &r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return runs, nil
 }

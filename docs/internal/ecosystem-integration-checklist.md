@@ -32,10 +32,12 @@ qualification receipts.
 - Capability descriptors and catalog requirements:
   `docs/internal/agent-capabilities.md`, `site/support/agents.html` and
   `site/support/registry.html#requirements`.
+  Review reference: [PR #83](https://github.com/getrunkite/runkite/pull/83).
 - Retained cron visibility: `docs/internal/cron-run-visibility.md` and
   `site/support/cron.html`, with exact-tenant Thread/Run navigation. Retained-run
   links open guarded, read-only snapshots with manual Refresh, without live
   SSE, cancellation or child-run navigation.
+  Review reference: [PR #82](https://github.com/getrunkite/runkite/pull/82).
 - Offline policy fixtures: `docs/policy-fixtures.md`,
   `docs/internal/offline-policy-fixtures.md`, `examples/policy_fixtures` and
   `site/support/policy.html#offline-regression-fixtures`.
@@ -66,6 +68,7 @@ qualification receipts.
   `docs/internal/managed-ag-ui-bridge.md`,
   `site/support/sdk-integration.html#managed-ag-ui` and
   `.github/workflows/ag-ui-example.yml`.
+  Review reference: [PR #77](https://github.com/getrunkite/runkite/pull/77).
 
 These public PR links identify review context only. The maintainer records
 actual merge, hosted CI and publication status separately. Do not invent PRs

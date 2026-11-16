@@ -56,6 +56,9 @@ func TestMiddleware_AllowedOriginGetsHeader(t *testing.T) {
 	if rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
 		t.Error("expected Allow-Credentials=true so cookie/Authorization-bearing requests work")
 	}
+	if rec.Header().Get("Access-Control-Expose-Headers") != "Runkite-Run-Reference" {
+		t.Error("browser caller cannot persist the run reference")
+	}
 }
 
 func TestMiddleware_DisallowedOriginGetsNoHeader(t *testing.T) {
@@ -69,6 +72,9 @@ func TestMiddleware_DisallowedOriginGetsNoHeader(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("expected no CORS header for a disallowed origin, got %q", got)
+	}
+	if rec.Header().Get("Access-Control-Expose-Headers") != "" {
+		t.Error("disallowed origin received exposed headers")
 	}
 }
 

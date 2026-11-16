@@ -42,6 +42,8 @@ func (e *Engine) applyMandatoryHITL(in PolicyInput, dec PolicyDecision) PolicyDe
 	}
 }
 
+// Restrictive matching retains legacy trimming so existing review coverage
+// does not narrow when positive connector grants use exact identities.
 // MatchMandatoryHITL reports whether a rule would force pending for this
 // input (observability / break-glass audit). Nil when none match.
 func (e *Engine) MatchMandatoryHITL(in PolicyInput) *MandatoryHITLRule {

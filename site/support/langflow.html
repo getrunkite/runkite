@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Langflow MCP caller · Runkite Docs</title>
+    <meta name="description" content="Connect Langflow MCP Tools to a self-hosted Runkite specialist, with explicit retry and authority boundaries." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar"><a href="../">← Product</a><a href="https://github.com/getrunkite/runkite">GitHub</a></div>
+        <p class="kicker">Connect · Unreleased checkout recipe</p>
+        <h1>Langflow MCP caller</h1>
+        <p class="lede">Keep the Langflow flow and let its MCP Tools component call one specialist on your self-hosted Runkite plane.</p>
+        <p>Only the specialist creates a Runkite managed run. Langflow keeps its conversation, application and agent loop. No Langflow runtime or frontend is embedded in Runkite.</p>
+
+        <h2>Prepare authority</h2>
+        <p>Register a working Runkite agent and runner, initially the provider-free <code>echo_agent</code>. Use the exact HTTPS endpoint <code>https://&lt;your-plane&gt;/mcp</code> and configure MCP session affinity on a multi-replica deployment.</p>
+        <ul class="expect">
+          <li><strong>Published v0.9.0:</strong> a dedicated tenant and trusted server-side caller key with <code>read</code> and <code>write</code>. The key has broader tenant authority than one specialist. Do not use Admin.</li>
+          <li><strong>Unreleased scoped source:</strong> <code>agents:echo_agent:run</code> alone admits the MCP lifecycle, discovery and invocation used by this recipe and its native probe. Add <code>agents:echo_agent:observe</code> only to application-owned REST recovery that needs exact run GET/wait. Neither grant supplies broad lists, thread history, store, stream, cancel or delete. Published v0.9.0 does not include this scoped contract.</li>
+        </ul>
+        <p>Keep one trusted caller and a dedicated tenant. Agent-scoped observation is not requester-private ownership. Choosing a tool in Langflow does not narrow a broad Runkite credential.</p>
+
+        <h2>Connect MCP Tools</h2>
+        <ol class="steps">
+          <li>In Langflow, store the complete <code>Bearer &lt;caller-key&gt;</code> value in a Credential global variable named <code>RUNKITE_AUTHORIZATION</code>.</li>
+          <li>Open Settings &gt; MCP Servers &gt; Add MCP Server, choose HTTP/SSE, and set the URL to your plane's <code>/mcp</code> endpoint.</li>
+          <li>Set header <code>Authorization</code> to <code>RUNKITE_AUTHORIZATION</code>, keep TLS verification enabled, and save.</li>
+          <li>Drag the server from the MCP sidebar into the flow and select <code>echo_agent</code>. To use it with an Agent, enable Tool Mode and connect Toolset to Tools.</li>
+        </ol>
+        <p>For a manual provider-free smoke, leave Tool Mode off and supply <code>message</code>, a saved <code>run_id</code> and optional <code>thread_id</code>. Leave <code>input</code> unset when using a message: a supplied input object overrides it. Validate field binding and output rendering in your own Langflow deployment.</p>
+        <p>Keep the destination and credential in trusted server configuration. A private plane host may need Langflow's operator-controlled SSRF host allowlist. See the <a href="https://docs.langflow.org/mcp-client">official Langflow MCP client guide</a> and the <a href="https://github.com/getrunkite/runkite/blob/main/examples/langflow_mcp/README.md">checkout application/operator recipe</a>.</p>
+
+        <h2>Retain intent before retries</h2>
+        <p>Persist the exact agent, input, thread and unique run ID before the first invocation. Reuse that operation after a lost response. A model remembering an ID is insufficient, and the stock MCP Tools component does not supply a durable Runkite receipt store. Unattended tool use needs application code that injects and enforces the saved values. The pinned native client can retry after a session failure.</p>
+        <p>Retained matching calls observe the same run; intentional new turns need new saved IDs. Deleting the run ends retry protection. For background handles, use the existing REST create/get/wait API. If application-owned REST recovery adds the observe grant, preserve the first raw run reference and send <code>Runkite-Expected-Run-Reference</code> on subsequent exact observation. Displayed tool text may omit that metadata.</p>
+
+        <h2>Approvals and cancellation</h2>
+        <p>Tool errors remain failures. Delivery timeout or disconnect leaves the execution outcome unknown. Pending connector review stays in Runkite's existing Review/Admin flow and is not auto-approved by Langflow. Stopping a request or deleting an MCP session does not prove worker cancellation or rollback. Explicit cancel requires separate operator/API authority.</p>
+        <p>Reconnect after permission or schema changes. Typed nested agent-input discovery is a separate feature; this qualification uses the generic MCP envelope.</p>
+
+        <h2>What was qualified</h2>
+        <p>On November 16, 2026, unmodified LFX 1.13.2 and MCP 1.30.0 passed a native headless test against a real local Runkite API and Python worker. Native discovery, header handling, schema conversion and tool invocation negotiated MCP <code>2025-11-25</code>. Two intentional operations created exactly two managed runs and two worker assignments, including successful and failed-run retries. The test used the published read/write profile and made no provider calls.</p>
+        <p>Both the baseline and run-only scoped profile also passed separately on integrated source on November 16, 2026 with the same native dependencies: two retained runs and two real assignments per profile, without redispatch on reconnect or failed-run retry. This does not qualify the Langflow browser UI, server/project database, credential-variable UI, model loop, REST observation references or production proxy. See the <a href="https://github.com/getrunkite/runkite/blob/main/examples/langflow_mcp/qualification.json">original baseline receipt</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/langflow-mcp-boundary.md">engineering boundary</a>.</p>
+        <p class="note">Related: <a href="./protocol.html">Protocols</a> · <a href="./runs.html">Runs &amp; threads</a> · <a href="./credentials.html">Credentials map</a></p>
+      </main>
+    </div>
+    <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>

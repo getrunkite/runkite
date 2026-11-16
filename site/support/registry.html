@@ -123,6 +123,10 @@
           <li>The same "publishing is not deploying" rule applies here too, the entry is discoverable metadata, not a live agent, regardless of which path you used to create it.</li>
         </ol>
         <p id="metadata-preservation">Admin edits preserve the loaded <code>metadata</code> object, including keys the form does not display. Use the API to edit metadata. Saving still replaces the entry with the submitted values and does not add concurrent-edit protection.</p>
+        <p class="note"><strong>Unreleased, source checkout only:</strong> exact numeric preservation is available for registry metadata on SQLite and Postgres, including nested numbers larger than JavaScript's safe integer range and precise decimals. Admin carries stored metadata as a JSON string while editing visible fields, then submits the original numeric tokens. A response from an older server without that field blocks saving until the entry is reloaded from an updated server. Published v0.9.0 does not include this precision fix.</p>
+        <p>MySQL retains its native JSON numeric precision limits, even though its SQL readers no longer round number tokens through Go <code>float64</code>. Mongo retains its existing JSON numeric ingress and native BSON behavior; an HTTP metadata roundtrip cannot safely promise exact large or precise numbers on Mongo. Use SQLite or Postgres when those metadata values must remain exact. This change cannot restore digits already lost by an earlier client or storage write.</p>
+        <p>Current-source Admin saves retain the selected entry's exact name and tenant, including padding that distinguishes existing records. Changing the route or tenant resets the form and confirmation state. An explicit empty <code>tenant_id=</code> selects the default tenant; omitting the selector retains global Admin API lookup behavior.</p>
+        <p>Existing entries open at <code>/admin/registry/{name}/edit</code>, including an entry literally named <code>new</code>. The creation form remains at <code>/admin/registry/new</code>; other legacy detail URLs still work. This changes only Admin navigation, not the registry REST API.</p>
         <p class="note">Admin writes go through <code>PUT</code> / <code>DELETE /admin-api/registry/{name}</code> (an Admin-only route, distinct from the client-facing <code>/registry/entries/{name}</code> above) and are audited the same way every other Admin mutation is.</p>
 
         <h2>In the product</h2>
@@ -142,6 +146,11 @@
           · <a href="./agents.html">Agents</a>
         </p>
 
+        <section id="requirements">
+          <h2>Declared requirements and sample input</h2>
+          <p class="note"><strong>Unreleased, current source:</strong> Admin shows loaded publisher metadata read-only. The optional versioned <code>metadata.runkite_definition</code> convention can describe the intended framework, Runkite/package requirements, connector names and nonsecret sample input. These are declarations, not verified compatibility or live runner readiness.</p>
+          <p>Publishing does not install packages, fetch code, resolve secrets, grant connector access or run the sample. Inspect the publisher's tested lockfile and configure the deployment separately. Unknown metadata stays opaque. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md#optional-definition-requirements-unreleased-convention">format and safe example</a>.</p>
+        </section>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

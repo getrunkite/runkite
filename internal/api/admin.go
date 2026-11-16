@@ -245,9 +245,14 @@ func (s *Server) handleAdminListAgents(w http.ResponseWriter, r *http.Request) {
 // adminScopedAgentContext mirrors adminScopedRegistryContext: agent_id is
 // only unique within a tenant. System-context GetAgent under a cross-tenant
 // ID collision returns an arbitrary match. ?tenant_id= scopes the lookup.
+// An explicit empty selection means default and masks inherited system scope.
 func adminScopedAgentContext(r *http.Request) context.Context {
-	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
-		return tenant.WithContext(r.Context(), tid)
+	if r.URL.Query().Has("tenant_id") {
+		tid := r.URL.Query().Get("tenant_id")
+		if tid == "" {
+			tid = tenant.DefaultTenant
+		}
+		return tenant.ScopedContext(r.Context(), tid)
 	}
 	return tenant.SystemContext(r.Context())
 }
@@ -299,11 +304,15 @@ func (s *Server) handleAdminGetAgent(w http.ResponseWriter, r *http.Request) {
 
 type adminRegistryEntryView struct {
 	*models.RegistryEntry
-	TenantID string `json:"tenant_id"`
+	TenantID     string `json:"tenant_id"`
+	MetadataJSON string `json:"metadata_json"`
 }
 
 func toAdminRegistryEntryView(e *models.RegistryEntry) adminRegistryEntryView {
-	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID}
+	// The browser's parsed metadata may already contain rounded numbers. A string
+	// carries the stored JSON through visible-field edits without that conversion.
+	metadata, _ := json.Marshal(e.Metadata)
+	return adminRegistryEntryView{RegistryEntry: e, TenantID: e.TenantID, MetadataJSON: string(metadata)}
 }
 
 // GET /admin-api/registry?limit=&offset=&cursor=
@@ -349,9 +358,14 @@ func (s *Server) handleAdminListRegistryEntries(w http.ResponseWriter, r *http.R
 // disambiguates by scoping to that one tenant instead of system
 // context; omitting it keeps the old (ambiguous-under-collision)
 // behavior for a single-tenant deployment where no collision can occur.
+// An explicitly empty parameter selects default, rather than global history.
 func adminScopedRegistryContext(r *http.Request) context.Context {
-	if tid := r.URL.Query().Get("tenant_id"); tid != "" {
-		return tenant.WithContext(r.Context(), tid)
+	if r.URL.Query().Has("tenant_id") {
+		tid := r.URL.Query().Get("tenant_id")
+		if tid == "" {
+			tid = tenant.DefaultTenant
+		}
+		return tenant.ScopedContext(r.Context(), tid)
 	}
 	return tenant.SystemContext(r.Context())
 }
@@ -438,9 +452,9 @@ func (s *Server) handleAdminListThreads(w http.ResponseWriter, r *http.Request) 
 	writeAdminListJSON(w, http.StatusOK, views, next)
 }
 
-// GET /admin-api/threads/{threadID}
+// GET /admin-api/threads/{threadID}[?tenant_id=]
 func (s *Server) handleAdminGetThread(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	thread, err := s.store.GetThread(ctx, r.PathValue("threadID"))
 	if err != nil {
 		handleStoreError(w, err)
@@ -463,11 +477,11 @@ func toAdminRunView(run *models.Run) adminRunView {
 	return adminRunView{Run: run, TenantID: run.TenantID, IncarnationID: run.IncarnationID}
 }
 
-// GET /admin-api/threads/{threadID}/runs?limit=&offset=&cursor= -- same data as the
+// GET /admin-api/threads/{threadID}/runs?tenant_id=&limit=&offset=&cursor= -- same data as the
 // client-facing list, but with tenant_id visible (models.Run hides it via
 // json:"-").
 func (s *Server) handleAdminListThreadRuns(w http.ResponseWriter, r *http.Request) {
-	ctx := tenant.SystemContext(r.Context())
+	ctx := adminScopedThreadContext(r)
 	threadID := r.PathValue("threadID")
 	paging, err := adminListPaging(r)
 	if err != nil {
@@ -551,6 +565,20 @@ func (s *Server) handleAdminGetRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleStoreError(w, err)
 		return
+	}
+	query := r.URL.Query()
+	tenants, selectedTenant := query["expected_tenant_id"]
+	incarnations, selectedIncarnation := query["expected_incarnation_id"]
+	if selectedTenant || selectedIncarnation {
+		if len(tenants) != 1 || len(incarnations) != 1 || incarnations[0] == "" {
+			writeError(w, http.StatusBadRequest, "complete retained run reference required")
+			return
+		}
+		// Validate the same fetched snapshot that supplies the response payload.
+		if run.TenantID != tenants[0] || run.IncarnationID == "" || run.IncarnationID != incarnations[0] {
+			writeError(w, http.StatusConflict, "the original retained run is unavailable")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, toAdminRunView(run))
 }

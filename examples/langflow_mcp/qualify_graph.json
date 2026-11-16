@@ -1,0 +1,4 @@
+{
+  "graphs": {"echo_agent": "./qualify_graph.py:graph"},
+  "dependencies": ["."]
+}

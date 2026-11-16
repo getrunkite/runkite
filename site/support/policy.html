@@ -98,6 +98,19 @@
           </section>
         </div>
 
+        <h2 id="offline-regression-fixtures">Offline static policy regression tests</h2>
+        <p class="note"><strong>Unreleased, source checkout:</strong> <code>runkite policy test -f fixtures.json</code>
+          checks an explicit static policy snapshot using the existing engine, without creating
+          runs, contacting models, resolving secrets, calling Vault or executing downstream tools.
+          It supports declared grants, argument predicates and mandatory review with expected
+          allow, deny or pending outcomes. Pending here creates no approval record.</p>
+        <p>Exit status distinguishes matching expectations (0), mismatches (1), invalid input
+          or usage (2), and I/O or internal failure (3). This does not load your deployment
+          configuration, authenticate fixture identities, call your external PDP or prove runtime
+          enforcement. <a href="sim.html">Live simulation</a> remains a separate command that can
+          call real tools. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/policy-fixtures.md">fixture format and CLI guide</a>
+          and <a href="https://github.com/getrunkite/runkite/tree/main/examples/policy_fixtures">provider-free examples</a>.</p>
+
         <h2>How to implement</h2>
         <ol class="steps">
           <li>Enable <code>policy</code> (presence of the section fail-closes connector access).</li>

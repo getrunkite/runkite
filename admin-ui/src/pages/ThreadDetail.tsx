@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import { useApi } from "../api/useApi";
-import { adminRunPath, adminThreadPath } from "../lib/adminPaths";
+import { adminRetainedRunHref, adminThreadPath, adminThreadRunsPath } from "../lib/adminPaths";
 import type { AdminRun, AdminThread } from "../api/types";
 import { DocsLink, EmptyState, ErrorState, formatTimestamp, PageHeader, StatusBadge, supportPage, TableSkeleton } from "../components/common";
 import { Badge } from "../components/ui/badge";
@@ -24,9 +24,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 
 export function ThreadDetail() {
   const { threadId } = useParams<{ threadId: string }>();
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") ?? undefined;
+  return <ThreadDetailContent key={JSON.stringify([threadId, tenantId])} threadId={threadId} tenantId={tenantId} />;
+}
+
+// A tenant change remounts the request state before the next paint, so a prior
+// tenant's data or pending delete confirmation cannot survive navigation.
+function ThreadDetailContent({ threadId, tenantId }: { threadId?: string; tenantId?: string }) {
   const navigate = useNavigate();
-  const thread = useApi<AdminThread>(threadId ? adminThreadPath(threadId) : "", [threadId]);
-  const runs = useApi<AdminRun[]>(threadId ? `${adminThreadPath(threadId)}/runs` : "", [threadId]);
+  const thread = useApi<AdminThread>(threadId ? adminThreadPath(threadId, tenantId) : "", [threadId, tenantId]);
+  const runs = useApi<AdminRun[]>(threadId ? adminThreadRunsPath(threadId, tenantId) : "", [threadId, tenantId]);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -34,7 +42,7 @@ export function ThreadDetail() {
     if (!threadId) return;
     setDeleting(true);
     try {
-      await api.del(adminThreadPath(threadId));
+      await api.del(adminThreadPath(threadId, tenantId));
       toast.success("Thread deleted", { description: threadId });
       navigate("/admin/threads");
     } catch (err) {
@@ -150,20 +158,23 @@ export function ThreadDetail() {
               </TableHeader>
               <TableBody>
                 {runs.loading && !runs.data && <TableSkeleton columns={4} rows={3} />}
-                {runs.data?.map((run) => (
-                  <TableRow key={run.run_id}>
-                    <TableCell className="font-mono text-xs">
-                      <Link to={`/admin${adminRunPath(run.run_id)}`} className="font-medium text-primary hover:underline">
-                        {run.run_id}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{run.agent_id}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={run.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{formatTimestamp(run.updated_at)}</TableCell>
-                  </TableRow>
-                ))}
+                {runs.data?.map((run) => {
+                  const runHref = adminRetainedRunHref(run);
+                  return (
+                    <TableRow key={run.run_id}>
+                      <TableCell className="font-mono text-xs">
+                        {runHref ? <Link to={runHref} className="font-medium text-primary hover:underline">
+                          {run.run_id}
+                        </Link> : <span>{run.run_id}</span>}
+                      </TableCell>
+                      <TableCell>{run.agent_id}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={run.status} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{formatTimestamp(run.updated_at)}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

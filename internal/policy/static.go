@@ -39,24 +39,27 @@ func (s *Static) Decide(_ context.Context, in PolicyInput) (PolicyDecision, erro
 }
 
 func (s *Static) decide(in PolicyInput) PolicyDecision {
-	tenant := strings.TrimSpace(in.TenantID)
-	agent := strings.TrimSpace(in.AgentID)
-	connector := strings.TrimSpace(in.Connector)
+	// Preserve legacy restrictive coverage, including under default allow.
+	// Only the exact lookup below can grant authority. A trimmed-scope
+	// filter can still deny, so previously denied padded configurations do
+	// not become allowed merely because positive matching is now exact.
+	if in.Stage == StageToolCall {
+		for i := range s.grants {
+			g := &s.grants[i]
+			if legacyRestrictiveGrantScope(g, in) &&
+				(!toolAllowed(g.Tools, strings.TrimSpace(in.Tool)) || !toolAllowed(g.Tools, in.Tool) || strings.TrimSpace(in.Tool) == "") {
+				return grantToolDenied(g)
+			}
+		}
+	}
 
 	var matched *Grant
 	for i := range s.grants {
 		g := &s.grants[i]
-		if strings.TrimSpace(g.TenantID) != tenant {
-			continue
+		if g.TenantID == in.TenantID && g.AgentID == in.AgentID && g.Connector == in.Connector {
+			matched = g
+			break
 		}
-		if strings.TrimSpace(g.AgentID) != agent {
-			continue
-		}
-		if strings.TrimSpace(g.Connector) != connector {
-			continue
-		}
-		matched = g
-		break
 	}
 	if matched == nil {
 		return PolicyDecision{
@@ -66,22 +69,26 @@ func (s *Static) decide(in PolicyInput) PolicyDecision {
 		}
 	}
 
-	if in.Stage == StageToolCall {
-		tool := strings.TrimSpace(in.Tool)
-		if tool == "" || !toolAllowed(matched.Tools, tool) {
-			return PolicyDecision{
-				Effect:     EffectDeny,
-				Reason:     "tool not allowed by grant",
-				ReasonCode: ReasonPolicyToolDenied,
-				RuleID:     matched.ID,
-			}
-		}
-	}
-
 	return PolicyDecision{
 		Effect: EffectAllow,
 		Reason: "matched grant",
 		RuleID: matched.ID,
+	}
+}
+
+// Legacy matching is restrictive only. Never use it to select an allow grant.
+func legacyRestrictiveGrantScope(g *Grant, in PolicyInput) bool {
+	return strings.TrimSpace(g.TenantID) == strings.TrimSpace(in.TenantID) &&
+		strings.TrimSpace(g.AgentID) == strings.TrimSpace(in.AgentID) &&
+		strings.TrimSpace(g.Connector) == strings.TrimSpace(in.Connector)
+}
+
+func grantToolDenied(g *Grant) PolicyDecision {
+	return PolicyDecision{
+		Effect:     EffectDeny,
+		Reason:     "tool not allowed by grant",
+		ReasonCode: ReasonPolicyToolDenied,
+		RuleID:     g.ID,
 	}
 }
 

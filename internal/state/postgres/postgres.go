@@ -950,7 +950,9 @@ func scanAgentVersion(row agentVersionScanner) (*models.AgentVersion, error) {
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &v.Metadata)
-	json.Unmarshal(capsBytes, &v.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &v.Capabilities); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }
 
@@ -1208,7 +1210,9 @@ func scanRegistryEntry(row agentVersionScanner) (*models.RegistryEntry, error) {
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &e.Tags)
-	json.Unmarshal(metaBytes, &e.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &e.Metadata); err != nil {
+		return nil, err
+	}
 	return &e, nil
 }
 
@@ -1219,7 +1223,9 @@ func scanRegistryEntryVersion(row agentVersionScanner) (*models.RegistryEntryVer
 		return nil, err
 	}
 	json.Unmarshal(tagsBytes, &v.Tags)
-	json.Unmarshal(metaBytes, &v.Metadata)
+	if err := jsonvalue.UnmarshalOptionalObject(metaBytes, &v.Metadata); err != nil {
+		return nil, err
+	}
 	return &v, nil
 }
 
@@ -1241,7 +1247,9 @@ func (s *Store) GetAgent(ctx context.Context, agentID string) (*models.Agent, er
 		return nil, err
 	}
 	json.Unmarshal(metaBytes, &a.Metadata)
-	json.Unmarshal(capsBytes, &a.Capabilities)
+	if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &a.Capabilities); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 
@@ -1315,7 +1323,9 @@ func (s *Store) SearchAgents(ctx context.Context, req *models.AgentSearchRequest
 			return nil, err
 		}
 		json.Unmarshal(metaBytes, &a.Metadata)
-		json.Unmarshal(capsBytes, &a.Capabilities)
+		if err := jsonvalue.UnmarshalOptionalObject(capsBytes, &a.Capabilities); err != nil {
+			return nil, err
+		}
 		agents = append(agents, &a)
 	}
 	return agents, nil
@@ -2286,7 +2296,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		limit = 10
 	}
 
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs`
 	var args []interface{}
 	var where []string
 	argN := 1
@@ -2362,7 +2372,7 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 	for rows.Next() {
 		var r models.Run
 		var metaBytes, inputBytes, configBytes, outputBytes []byte
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		if metaBytes != nil {
@@ -2379,6 +2389,9 @@ func (s *Store) SearchRuns(ctx context.Context, req *models.RunSearchRequest) ([
 		}
 		r.AssistantID = r.AgentID // SDK compat
 		runs = append(runs, &r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return runs, nil
 }

@@ -1,0 +1,22 @@
+{
+  "name": "runkite-promptfoo-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.3",
+  "engines": { "node": ">=22.22.0" },
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "qualify": "cd ../.. && RUNKITE_PROMPTFOO_QUALIFY=1 CGO_ENABLED=0 go test ./internal/api -run '^TestNativePromptfooManagedRuns$' -count=1 -v",
+    "qualify:scoped": "cd ../.. && RUNKITE_PROMPTFOO_QUALIFY=1 RUNKITE_PROMPTFOO_SCOPED_SOURCE=1 CGO_ENABLED=0 go test ./internal/api -run '^TestNativePromptfooScopedManagedRuns$' -count=1 -v"
+  },
+  "devDependencies": {
+    "promptfoo": "0.125.1"
+  },
+  "overrides": {
+    "@hono/node-server": "2.1.6",
+    "basic-ftp": "6.2.4",
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
+  }
+}
