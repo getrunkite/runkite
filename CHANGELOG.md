@@ -10,6 +10,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   unavailable states and exact tenant/run-incarnation links. Definition-only API
   clients retain the existing list shape unless they request history.
 
+- Add advisory configured-profile descriptors and support conditions in Agent
+  Detail and Try Agent. Preserve opaque capabilities and stable definition
+  versions during bootstrap; unknown profiles and pools stay unknown.
+- Document an optional versioned catalog requirements convention and show
+  publisher metadata read-only in Admin. It does not install dependencies,
+  verify compatibility, deploy source or grant connector authority.
+
 - Add a checkout-only Langflow MCP caller recipe with pinned native LFX client
   qualification against a real local plane and Python runner, plus baseline
   and run-only scoped-source CI gates. Visual-editor and model-loop behavior remain

@@ -118,6 +118,12 @@ managed AI SDK backend described below ships in `runkite-runner` from `v0.5.8`
 
 A run is routed to whichever runner declared the target agent: `langgraph.json`'s top-level `runner_kind` is stashed into that agent's metadata at bootstrap, and `createRun` reads it back to set `RunAssignment.runner_kind` -- not hardcoded, so a single control plane can serve a Python runner and a TypeScript runner side by side, each only ever receiving jobs for the agents its own config declared. Falls back to `python-langgraph` when an agent predates this field or its lookup fails, so every existing deployment keeps working unchanged.
 
+Unreleased current source also publishes an advisory configured-profile
+descriptor in `Agent.Capabilities`. Agent Detail and Try Agent distinguish
+checkpoint-dependent LangGraph features, managed successful-turn HTTP state
+and unknown profiles. This is not live runner discovery or an authorization
+grant. See [descriptor fields and boundaries](internal/agent-capabilities.md).
+
 ### Dispatch generations and completion delivery
 
 Every run-specific RPC and bound `/internal/*` request must echo the exact

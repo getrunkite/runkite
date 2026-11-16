@@ -146,6 +146,11 @@
           · <a href="./agents.html">Agents</a>
         </p>
 
+        <section id="requirements">
+          <h2>Declared requirements and sample input</h2>
+          <p class="note"><strong>Unreleased, current source:</strong> Admin shows loaded publisher metadata read-only. The optional versioned <code>metadata.runkite_definition</code> convention can describe the intended framework, Runkite/package requirements, connector names and nonsecret sample input. These are declarations, not verified compatibility or live runner readiness.</p>
+          <p>Publishing does not install packages, fetch code, resolve secrets, grant connector access or run the sample. Inspect the publisher's tested lockfile and configure the deployment separately. Unknown metadata stays opaque. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/registry.md#optional-definition-requirements-unreleased-convention">format and safe example</a>.</p>
+        </section>
       </main>
     </div>
       <script src="./docs.js?v=20261108-final" defer></script>

@@ -130,6 +130,20 @@ function RegistryEntryContent({ mode, routeName, tenantSelection }: { mode: Regi
         </Button>
       </div>
 
+      {!isNew && entry.data?.metadata && Object.keys(entry.data.metadata).length > 0 && (
+        <Card className="mb-4">
+          <CardHeader><CardTitle className="text-base">Declared metadata and requirements</CardTitle></CardHeader>
+          <CardContent>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Publisher-supplied information. Runkite does not install packages, fetch source,
+              verify compatibility or grant connector access from this metadata.
+              {" "}<a className="text-primary hover:underline" href={supportPage("registry.html#requirements")} target="_blank" rel="noreferrer">Requirements convention</a>
+            </p>
+            <pre className="max-h-80 overflow-auto rounded-sm bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">{entry.data.metadata_json ?? "Raw metadata is unavailable. Reload after upgrading every HTTP replica."}</pre>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base">{isNew ? "New entry" : "Edit entry"}</CardTitle>
