@@ -148,6 +148,9 @@ func (b *bridge) invoke(parent context.Context, request *mcp.CallToolRequest) (*
 	if err != nil {
 		return outcome(nil, "rejected", "receipt_conflict_or_unavailable", nil), nil
 	}
+	if err := loadRunReference(b.config.State, r); err != nil {
+		return outcome(r, "rejected", "run_reference_unavailable", nil), nil
+	}
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "runkite-specialist-caller", Version: "1"}, nil).Connect(ctx,
 		&mcp.StreamableClientTransport{Endpoint: base.String() + "/mcp", HTTPClient: client, MaxRetries: -1, DisableStandaloneSSE: true}, nil)
 	if err != nil {
@@ -164,7 +167,7 @@ func (b *bridge) invoke(parent context.Context, request *mcp.CallToolRequest) (*
 	if !first {
 		// A missing retained run is ambiguous after a prior send. Never turn
 		// pruning, a lost queue acknowledgement or auth failure into new work.
-		if err := checkRetainedRun(ctx, client, base, r); err != nil {
+		if err := checkRetainedRun(ctx, client, base, r, b.config.State); err != nil {
 			return outcome(r, "delivery_unknown", "retained_run_unconfirmed_reconcile_before_retry", nil), nil
 		}
 		// Observation is read-only. Pruning between these reads can lose a
@@ -183,6 +186,11 @@ func (b *bridge) invoke(parent context.Context, request *mcp.CallToolRequest) (*
 	}})
 	if err != nil || upstream == nil {
 		return outcome(r, "delivery_unknown", "delivery_failed_reuse_saved_operation", nil), nil
+	}
+	if reference, ok := upstream.Meta["runkite/run_reference"].(string); ok {
+		if err := pinRunReference(b.config.State, r, reference); err != nil {
+			return outcome(r, "delivery_unknown", "run_reference_conflict_reconcile_before_retry", nil), nil
+		}
 	}
 	if upstream.IsError {
 		return outcome(r, "tool_error", "upstream_tool_error_no_automatic_redispatch", upstream), nil
@@ -236,8 +244,11 @@ func (t *credentialTransport) RoundTrip(request *http.Request) (*http.Response, 
 	return t.base.RoundTrip(r)
 }
 
-func checkRetainedRun(ctx context.Context, client *http.Client, base *url.URL, r *receipt) error {
+func checkRetainedRun(ctx context.Context, client *http.Client, base *url.URL, r *receipt, directory string) error {
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base.String()+"/runs/"+url.PathEscape(r.RunID), nil)
+	if r.RunReference != "" {
+		request.Header.Set("Runkite-Expected-Run-Reference", r.RunReference)
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return errors.New("observation failed")
@@ -259,17 +270,21 @@ func checkRetainedRun(ctx context.Context, client *http.Client, base *url.URL, r
 	if !receiptInputMatches(run.Input, r) {
 		return errors.New("retained input mismatch")
 	}
-	return nil
+	return pinRunReference(directory, r, response.Header.Get("Runkite-Run-Reference"))
 }
 
 func observeRetainedRun(ctx context.Context, client *http.Client, base *url.URL, r *receipt) (*mcp.CallToolResult, error) {
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base.String()+"/runs/"+url.PathEscape(r.RunID)+"/wait", nil)
+	if r.RunReference == "" {
+		return nil, errors.New("retained run reference required")
+	}
+	request.Header.Set("Runkite-Expected-Run-Reference", r.RunReference)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, errors.New("observation failed")
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK || response.Header.Get("Runkite-Run-Reference") != r.RunReference {
 		return nil, errors.New("durable result unavailable")
 	}
 	var result struct {

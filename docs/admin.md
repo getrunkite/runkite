@@ -157,6 +157,12 @@ Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a S
 
 <a id="connector-action-history-unreleased"></a>
 
+In the Unreleased source checkout, the grant editor preserves exact tenant,
+agent, connector and grant-row IDs, including surrounding whitespace. Tool lists
+use JSON string arrays such as `["read", " read ", "comma,name"]`; commas and
+spaces inside a tool name are not separators. Leave both lists empty for the
+existing unrestricted-filter behavior. Published v0.9.0 predates this form update.
+
 ## Connector action history (v0.7.0)
 
 v0.7.0 adds `/admin/connector-actions`, action detail and a

@@ -55,6 +55,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "unknown agents command: %s\n", os.Args[2])
 			os.Exit(1)
 		}
+	case "policy":
+		if len(os.Args) < 3 || os.Args[2] != "test" {
+			fmt.Fprintln(os.Stderr, "Usage: runkite policy test -f fixtures.json")
+			os.Exit(2)
+		}
+		cmdPolicyTest(os.Args[3:])
 	case "sim":
 		cmdSim(os.Args[2:])
 	case "version":
@@ -80,6 +86,7 @@ Commands:
   vector upgrade  Apply pending vector-store schema migrations (pgvector numbered; others = Init)
   vector downgrade  Roll back one pgvector migration (not supported for Qdrant/Weaviate/Pinecone)
   agents list     List registered agents from config
+  policy test     Check static policy fixtures offline
   sim             Replay fixture YAML against a live plane
   version         Print version info
   help            Show this help message

@@ -706,3 +706,42 @@ whose server certificate contains the matching DNS SAN. The current gRPC client
 sets IP literals as SNI, which Node.js 26 rejects. The runner reports this
 configuration error before polling. HTTPS URLs with matching IP SANs are still
 supported. See the [runner requirements](runners.md).
+
+
+## Unreleased policy identity upgrade
+
+This source-checkout evaluator update is not included in published v0.9.0.
+Positive grants now match exact tenant, agent and connector identities, and tool
+allow lists use exact wire names. Configure the bytes actually stored or sent;
+outer whitespace no longer borrows a different identity's grant. SQL grant
+overlays replace only the same exact scope tuple.
+
+Before upgrading, pause affected connector callers and app-owned pending
+continuations. Upgrade every serving replica before resuming them; a replica
+running the old evaluator still has its old matching behavior. Check intended
+grants against registered agents, authenticated tenant IDs, configured connector
+keys and native tool names. No automatic identifier renaming or rule migration
+is performed.
+
+Existing predicate and mandatory-HITL restrictions retain legacy trimmed scope
+matching. Per-grant tool-filter denials retain conservative trim-equivalent
+coverage as well, including under default allow. A previously ambiguous padded
+configuration may deny more after the update. Review those restrictions and
+expectations explicitly; do not remove them merely to make a positive grant
+match. The offline fixture CLI, when available in the same source checkout,
+tests the current evaluator only and is not evidence about an older deployment.
+
+The policy fingerprint now includes evaluator semantics. Previously pending or
+approved **managed connector** actions carry the old fingerprint and cannot be
+approved or consumed as current authority. Resubmit the exact intended operation
+for fresh policy evaluation and operator review through the existing retry and
+retention contract. Preserve old rows as history; changing a row's revision is
+not a migration or renewed consent.
+
+Standalone app-owned approvals and allow decisions already returned to an app
+are outside that managed capability boundary. This update does not revoke them
+or stop work already executing. Keep those continuations paused, discard their
+old execution authority in the app, and resubmit the saved proposal for fresh
+review under the new evaluator. Use the existing expiration and review contract
+for obsolete pending rows. The app remains responsible for its continuation
+state and downstream idempotency; no new revocation service is introduced.
