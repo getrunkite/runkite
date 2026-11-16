@@ -1,0 +1,22 @@
+{
+  "auth_denial_probes": 2,
+  "backend_version": "4.81.0",
+  "generation_observations": 0,
+  "model_calls": 0,
+  "observations": 7,
+  "passed": true,
+  "schema_version": 1,
+  "sdk_versions": {
+    "go": "go1.26.11",
+    "go_otel": "v1.45.0",
+    "go_otlp_http": "v1.45.0",
+    "node": "v26.11.0",
+    "python": "3.12.15",
+    "python_otel_sdk": "1.45.2",
+    "python_otlp_http": "1.45.2",
+    "typescript_otel_sdk": "2.10.0",
+    "typescript_otlp_http": "0.221.0"
+  },
+  "services": 3,
+  "span_observations": 7
+}

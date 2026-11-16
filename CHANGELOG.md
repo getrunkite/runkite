@@ -6,6 +6,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a Langfuse deployment recipe using the existing OTLP exporters, with
+  per-language HTTP encodings, receiver authorization and explicit observation,
+  privacy and qualification boundaries. Add three-language wire checks and a
+  bounded local qualifier, with seven ordinary spans persisted by Langfuse
+  4.81.0. No backend or additional SDK is embedded.
+
 - Show retained schedule-thread history in Admin Cron, with explicit empty and
   unavailable states and exact tenant/run-incarnation links. Definition-only API
   clients retain the existing list shape unless they request history.

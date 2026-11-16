@@ -1,0 +1,72 @@
+name: OTLP exporter wire contracts
+
+on:
+  pull_request:
+    paths:
+      - internal/tracing/**
+      - python/runkite_runner/tracing.py
+      - python/runkite_runner/otel_callbacks.py
+      - python/tests/test_tracing_otlp.py
+      - python/tests/fixtures/tracing_otlp_emit.py
+      - typescript/runkite-runner/**
+      - examples/langfuse_otlp/**
+      - examples/trinity_specialist_mcp/qualify.py
+      - go.mod
+      - go.sum
+      - .github/workflows/otlp-wire.yml
+  push:
+    branches: [main]
+    paths:
+      - internal/tracing/**
+      - python/runkite_runner/tracing.py
+      - python/runkite_runner/otel_callbacks.py
+      - python/tests/test_tracing_otlp.py
+      - python/tests/fixtures/tracing_otlp_emit.py
+      - typescript/runkite-runner/**
+      - examples/langfuse_otlp/**
+      - examples/trinity_specialist_mcp/qualify.py
+      - go.mod
+      - go.sum
+      - .github/workflows/otlp-wire.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wire-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.19.0"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install qualified exporter dependencies
+        run: |
+          python -m pip install opentelemetry-sdk==1.45.2 opentelemetry-exporter-otlp==1.45.2 langchain-core==1.7.3 protobuf==7.36.2
+          npm ci --prefix typescript/runkite-runner
+          npm run build --prefix typescript/runkite-runner
+      - name: Go HTTP protobuf wire and emitter guards
+        run: go test ./internal/tracing -count=1 -v
+      - name: Python HTTP protobuf wire
+        env:
+          PYTHONPATH: python
+        run: python python/tests/test_tracing_otlp.py
+      - name: TypeScript HTTP JSON wire
+        working-directory: typescript/runkite-runner
+        run: node --import tsx --test src/tracingOtlp.test.ts
+      - name: Native qualifier offline safety and receipt contracts
+        run: python -m unittest discover -s examples/langfuse_otlp -p 'test_*.py' -v
+      # This job uses bounded capture receivers, not a Langfuse backend.
+      # The separate native persistence check needs an owned local deployment.

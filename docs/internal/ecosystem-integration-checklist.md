@@ -169,10 +169,28 @@ features, Postgres/Redis or multi-replica behavior. These local results do not
 assert a hosted workflow pass or publication, and must be rerun after relevant
 source or dependency changes.
 
+On November 17, 2026, the separate [Langfuse OTLP qualification](langfuse-otlp.md)
+passed against unmodified local Langfuse v4.81.0. Actual Go/Python/TypeScript
+exporters and production run-span/LangChain callback helpers produced seven
+persisted ordinary spans across three services, with exact trace/parent
+identity and operational metadata. Both missing/invalid-auth API read probes
+were denied. No generation, model call or business tool execution was involved.
+The owned backend was removed after qualification. See the
+[qualifier commands](../../examples/langfuse_otlp/README.md) and
+[sanitized receipt](../../examples/langfuse_otlp/qualification.json).
+This result does not qualify plane dispatch, framework workers, backend UI,
+real providers or HA. The wire/offline workflow excludes the native backend;
+the earlier native caller results do not expand this helper-boundary proof.
+
 ## Keep demand-led work deferred
 
-Temporal and Cloudflare caller recipes, a language-qualified Langfuse OTLP
-recipe, effective OpenShell policy qualification, response inspection,
+The language-qualified [Langfuse OTLP recipe](../langfuse.md) and its own
+[exporter and receiver gates](langfuse-otlp.md) passed the scoped local checks
+recorded above. Production rollout and any additional GenAI attribute mapping
+still need caller-specific qualification.
+
+Temporal and Cloudflare caller recipes, effective OpenShell policy
+qualification, response inspection,
 tools-only connector profiles, per-fire cron receipts and requester-private
 thread ownership remain separate designs or demand-led work. No catalog
 installer, workflow runtime, policy engine, vault, identity issuer, observability
