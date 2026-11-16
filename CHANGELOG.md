@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout-only promptfoo managed-run provider with private saved intent,
+  one create attempt per intentional evaluation, and read-only result recovery.
+  Qualify the pinned native evaluator and CLI with a scripted local worker;
+  broader evaluator strategies and real model execution remain separate checks.
+
 - Enrich MCP nested input discovery from usable bounded stored agent schemas,
   with generic fallback, local reference relocation and explicit unknown
   freshness. Preserve the existing raw execution and session-snapshot contracts.
