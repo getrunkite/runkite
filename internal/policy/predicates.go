@@ -33,6 +33,8 @@ type Predicate struct {
 	ReasonCode string
 }
 
+// Restrictive predicate scopes retain legacy trimmed matching. They can deny
+// or require review, never grant a neighboring identity's authority.
 // ValidatePredicate returns a normalized copy or an error if the row
 // cannot be enforced. Callers skip invalid rows rather than fail-open.
 func ValidatePredicate(p Predicate) (Predicate, error) {

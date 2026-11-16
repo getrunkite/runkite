@@ -71,11 +71,10 @@ func (s *Server) handleGovernanceDecide(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	req.AgentID = strings.TrimSpace(req.AgentID)
-	req.Connector = strings.TrimSpace(req.Connector)
-	req.Tool = strings.TrimSpace(req.Tool)
+	// These are exact positive authority and execution identities. Preserve
+	// their bytes instead of authorizing a normalized neighbor.
 	req.RunID = strings.TrimSpace(req.RunID)
-	if req.AgentID == "" || req.Connector == "" || req.Tool == "" {
+	if strings.TrimSpace(req.AgentID) == "" || strings.TrimSpace(req.Connector) == "" || strings.TrimSpace(req.Tool) == "" {
 		writeError(w, http.StatusBadRequest, "agent_id, connector, and tool are required")
 		return
 	}
@@ -86,7 +85,7 @@ func (s *Server) handleGovernanceDecide(w http.ResponseWriter, r *http.Request) 
 	}
 
 	tenantID := tenant.FromContext(r.Context())
-	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != tenantID {
+	if req.TenantID != nil && *req.TenantID != tenantID {
 		writeError(w, http.StatusForbidden, "tenant_id does not match the authenticated tenant")
 		return
 	}
