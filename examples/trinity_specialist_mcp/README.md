@@ -122,6 +122,10 @@ IDs use 1 to 128 ASCII characters: the first must be a letter or digit, followed
 by letters, digits, `_`, `.`, `:` or `-`. Messages must contain non-whitespace
 text and fit within 8,192 UTF-8 bytes. This deliberately narrow example does not
 accept arbitrary structured agent input or select another specialist per call.
+Encoded tool arguments are capped at 32 KiB. Upstream responses are capped at
+4 MiB, with a narrower 1 MiB decoding limit on REST observations. An oversized
+result requires investigation through Runkite's existing APIs/Admin; it must
+not cause a fresh operation ID or another dispatch.
 
 Before dispatch, the bridge saves an immutable local intent binding the operation
 to the profile, configured destination, agent, thread and message. Its stable
