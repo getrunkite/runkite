@@ -28,6 +28,10 @@ Versioning follows the exact same convention as agent versioning above: publishi
 
 **Publishing from the Admin UI, not just the API**: `/admin/registry` is not read-only. `PUT`/`DELETE /admin-api/registry/{name}` (optionally `?tenant_id=`, default `"default"`) let an operator publish a new entry, edit an existing one, or unpublish it from a plain form -- no request body to hand-write. This is the exact same underlying `PublishRegistryEntry`/`DeleteRegistryEntry` store call the client-facing `/registry/entries/{name}` API above uses, just reached through the Admin session instead of a tenant API key, and every write is recorded to `audit_events` (`registry.entry.put` / `registry.entry.delete`). The "no deploy automation" limitation below applies identically regardless of which path created the entry.
 
+Admin edits preserve the entry's loaded `metadata` object, including keys the
+form does not display. Use the API to edit metadata. Saves still replace the
+entry with the submitted values; this does not add concurrent-edit protection.
+
 **Known limitations, stated plainly**:
 - **No security review workflow.** Anything published is immediately visible to every caller in that tenant -- there's no approve/reject step, unlike a real package registry's review queue.
 - **No deploy automation.** Publishing an entry doesn't register a runnable agent -- `source_ref` still requires a human (or separate tooling) to actually wire the code into a `langgraph.json` and restart/reload the relevant runner. The registry is a catalog, not a deployment pipeline.
