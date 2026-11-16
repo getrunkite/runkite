@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout AG-UI text bridge using the official protocol packages,
+  shared managed-run delivery, durable completion, full retained replay,
+  detach and explicit app-authorized Stop. No-text and unsupported streams
+  fail delivery instead of inventing tool, interrupt or approval events.
+
 - Add `runkite policy test` for bounded offline static policy expectations,
   reusing the existing engine without model, Vault, downstream or durable-state
   calls. Logical pending results do not create approval records. Live `sim`
