@@ -4,6 +4,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
+- Enrich MCP nested input discovery from usable bounded stored agent schemas,
+  with generic fallback, local reference relocation and explicit unknown
+  freshness. Preserve the existing raw execution and session-snapshot contracts.
+
 ### Fixed
 
 - Preserve stored opaque capability and catalog numbers across SQL reads and
