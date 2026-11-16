@@ -4,6 +4,15 @@ Honest gaps, not hidden ones. Use the **Release summary** below in GitHub Releas
 
 ## Release summary
 
+The checkout-only [Trinity specialist example](../examples/trinity_specialist_mcp/README.md)
+targets the planned v0.9.0 MCP contract. It qualifies a pinned Trinity
+configuration shape and a real Runkite API/runner protocol path separately.
+Native Trinity runtime execution is not yet qualified. Its fixed trusted
+caller uses a dedicated tenant read/write key; it is not a narrowly scoped
+credential or a sandbox for the surrounding agent. Only the invoked specialist
+creates a Runkite run. See the
+[engineering boundary](internal/trinity-specialist-boundary.md).
+
 What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth + runner tokens + TLS). Everything else is Compatible / Experimental — see [Architecture](architecture.md) backend tiers.
 
 | Area | Limitation |

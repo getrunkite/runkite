@@ -1,0 +1,7 @@
+/runkite-specialist-mcp
+/.runkite-specialist/
+/state/
+/.env
+/.mcp.json
+__pycache__/
+*.pyc

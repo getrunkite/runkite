@@ -1,0 +1,82 @@
+name: Trinity specialist example
+
+on:
+  pull_request:
+    paths:
+      - examples/trinity_specialist_mcp/**
+      - internal/**
+      - go.mod
+      - go.sum
+      - python/runkite_runner/**
+      - python/requirements.txt
+      - .github/workflows/trinity-specialist.yml
+  push:
+    branches: [main]
+    paths:
+      - examples/trinity_specialist_mcp/**
+      - internal/**
+      - go.mod
+      - go.sum
+      - python/runkite_runner/**
+      - python/requirements.txt
+      - .github/workflows/trinity-specialist.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  specialist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: runkite
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: runkite
+          persist-credentials: false
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: abilityai/trinity
+          ref: f70ebf6f231a981b032a965e3cc89a97f7ea6635
+          path: trinity
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: runkite/go.mod
+          cache-dependency-path: runkite/go.sum
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Example unit and network-boundary regressions
+        run: go test ./examples/trinity_specialist_mcp -race -count=1 -timeout=120s
+
+      - name: Prepare locked Go dependencies for offline qualification
+        run: go mod download
+
+      - name: Pinned Trinity source configuration
+        run: python3 examples/trinity_specialist_mcp/qualify_trinity_config.py --trinity-checkout ../trinity
+
+      - name: Qualification supervisor cleanup regressions
+        run: python3 -m unittest discover -s examples/trinity_specialist_mcp -p test_qualify_supervisor.py -v
+
+      - name: Install Python runner dependencies
+        run: python3 -m pip install -r python/requirements.txt
+
+      - name: Real Runkite API, Python runner and stdio caller
+        run: python3 examples/trinity_specialist_mcp/qualify.py --python "$(command -v python3)" --output "${RUNNER_TEMP}/trinity-specialist.json"
+
+      - name: Retain bounded qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trinity-specialist-qualification
+          path: ${{ runner.temp }}/trinity-specialist.json*
+          if-no-files-found: ignore
+          retention-days: 14

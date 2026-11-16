@@ -9,6 +9,11 @@ not establish publication; v0.8.0 remains the verified public download.
 
 ### Added
 
+- A checkout-only Trinity specialist MCP example with a fixed destination,
+  private caller intent receipts and read-only retry observation. Its stdio
+  launcher reuses the official pinned Go MCP SDK. Source configuration checks
+  target a pinned public Trinity revision; this does not establish native
+  Trinity runtime qualification or upstream endorsement.
 - Optional stable `run_id` for public MCP agent calls. Matching retries observe
   the retained run through existing REST retry identity and durable observation,
   including concurrent first calls and omitted thread IDs. Conflicting input,

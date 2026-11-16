@@ -70,6 +70,18 @@ create/get/wait/stream routes.
 For implementation choices and qualification, see the
 [engineering record](internal/mcp-retry-and-operator-flow.md).
 
+### A Trinity caller (unreleased example)
+
+The [specialist example](../examples/trinity_specialist_mcp/README.md) shows a
+Trinity agent using an explicitly installed stdio caller for one configured
+Runkite specialist. It saves an immutable operation receipt before dispatch;
+subsequent attempts use existing REST identity and durable wait routes without
+issuing another tool invocation. A missing retained run requires investigation.
+Trinity keeps its surrounding execution; only the specialist has a managed
+Runkite thread/run. This is checkout source for the planned v0.9.0 release,
+with separate source-configuration and real Runkite protocol qualification.
+See the [boundary and design](internal/trinity-specialist-boundary.md).
+
 Mounted as a normal client-facing route (`/mcp`, not under `/internal/*`), so it goes through the exact same auth middleware (API key/JWT) as every other endpoint -- an MCP client is configured with a Runkite API key exactly the way any other Agent Protocol client would be. A session's tenant is fixed for its lifetime, resolved once at session establishment (the natural behavior for how MCP clients are actually configured in practice -- one static key per configured server entry) -- see `internal/api/mcpserver.go`'s doc comment for why the request context itself, not just the tenant/identity it carries, can't be reused across a session's later calls.
 
 Uses the stateful (session-ID-based) Streamable HTTP transport rather than the newest stateless-only mode, since real-world MCP clients today predominantly still speak the older, session-based protocol revisions -- the official Go SDK (`github.com/modelcontextprotocol/go-sdk`) negotiates the right one automatically per client.
