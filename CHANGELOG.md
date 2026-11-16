@@ -6,6 +6,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add a checkout AG-UI text bridge using the official protocol packages,
+  shared managed-run delivery, durable completion, full retained replay,
+  detach and explicit app-authorized Stop. No-text and unsupported streams
+  fail delivery instead of inventing tool, interrupt or approval events.
+
 - Enrich MCP nested input discovery from usable bounded stored agent schemas,
   with generic fallback, local reference relocation and explicit unknown
   freshness. Preserve the existing raw execution and session-snapshot contracts.

@@ -446,22 +446,52 @@ export async function cancelManagedChatRun(
   await requestCancellation(connection, connection.timeoutMs);
 }
 
-/** Read-only attachment by default. Never creates or dispatches another run. */
+/** Validated application-side stream. Consumers must cancel its reader on
+ * disconnect and must not reinterpret an advisory event as durable completion.
+ */
+export interface ManagedChatChunks {
+  stream: ReadableStream<UIMessageChunk>;
+  runId: string;
+}
+
+/** Existing AI SDK transport wrapper. Shared lifecycle logic stays below. */
 export async function attachManagedChatResponse(
   request: Request,
   options: ManagedChatAttachOptions,
 ): Promise<Response> {
-  if (request.method !== "GET")
-    throw new Error("Managed chat attach requires GET");
-  checkAbort(request.signal);
-  return managedChatResponse(request, managedConnection(options, "detach"));
+  return managedUIResponse(await attachManagedChatChunks(request, options));
 }
 
-/** New user turn. Opt into detach only after persisting its server-owned run ID. */
 export async function createManagedChatResponse(
   request: Request,
   options: ManagedChatOptions,
 ): Promise<Response> {
+  return managedUIResponse(await createManagedChatChunks(request, options));
+}
+
+function managedUIResponse({ stream, runId }: ManagedChatChunks): Response {
+  return createUIMessageStreamResponse({
+    stream,
+    headers: { "X-Runkite-Run-Id": runId },
+  });
+}
+
+/** Read-only attachment by default. Never creates or dispatches another run. */
+export async function attachManagedChatChunks(
+  request: Request,
+  options: ManagedChatAttachOptions,
+): Promise<ManagedChatChunks> {
+  if (request.method !== "GET")
+    throw new Error("Managed chat attach requires GET");
+  checkAbort(request.signal);
+  return managedChatChunks(request, managedConnection(options, "detach"));
+}
+
+/** New user turn. Opt into detach only after persisting its server-owned run ID. */
+export async function createManagedChatChunks(
+  request: Request,
+  options: ManagedChatOptions,
+): Promise<ManagedChatChunks> {
   if (request.method !== "POST")
     throw new Error("Managed chat creation requires POST");
   if (options.disconnectPolicy === "detach" && !options.runId)
@@ -515,14 +545,14 @@ export async function createManagedChatResponse(
   }
   checkAbort(request.signal);
 
-  return managedChatResponse(request, connection, { agentId, text });
+  return managedChatChunks(request, connection, { agentId, text });
 }
 
-async function managedChatResponse(
+async function managedChatChunks(
   request: Request,
   connection: Connection,
   newTurn?: { agentId: string; text: string },
-): Promise<Response> {
+): Promise<ManagedChatChunks> {
   const {
     threadId,
     runId,
@@ -949,8 +979,5 @@ async function managedChatResponse(
       }
     },
   });
-  return createUIMessageStreamResponse({
-    stream,
-    headers: { "X-Runkite-Run-Id": runId },
-  });
+  return { stream, runId };
 }
