@@ -1218,12 +1218,22 @@ func bootstrapAgents(store state.Store, configPath string) {
 			if cache, ok := cfg.LLMCache[entry.GraphID]; ok && cache.TTLSeconds > 0 {
 				metadata["cache_ttl_seconds"] = cache.TTLSeconds
 			}
+			var previousCapabilities map[string]interface{}
+			previous, lookupErr := store.GetAgent(ctx, entry.GraphID)
+			var notFound *state.ErrNotFound
+			if lookupErr != nil && !errors.As(lookupErr, &notFound) {
+				slog.Error("failed to read agent capabilities, skipping registration", "graph_id", entry.GraphID, "error", lookupErr)
+				continue
+			}
+			if previous != nil {
+				previousCapabilities = previous.Capabilities
+			}
 			agent := &models.Agent{
 				AgentID:      entry.GraphID,
 				Name:         entry.GraphID,
 				Description:  fmt.Sprintf("Graph loaded from %s (%s:%s)", path, entry.Path, entry.Symbol),
 				Metadata:     metadata,
-				Capabilities: map[string]interface{}{},
+				Capabilities: configuredAgentCapabilities(previousCapabilities, cfg.RunnerKind, cfg.ExecutionPool),
 			}
 			if err := store.UpsertAgent(ctx, agent); err != nil {
 				slog.Error("failed to register agent", "graph_id", entry.GraphID, "error", err)

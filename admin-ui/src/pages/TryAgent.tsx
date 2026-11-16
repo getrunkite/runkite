@@ -17,6 +17,8 @@ import {
   parseSseMethod,
 } from "../lib/agentMessages";
 import { parseToolAuth } from "../lib/runHop";
+import { selectedAgentProfile } from "../lib/agentCapabilities";
+import { AgentCapabilities } from "../components/agent-capabilities";
 
 type ChatMsg = { role: "user" | "assistant" | "system"; text: string };
 type RawLine = { ts: string; event: string; preview: string };
@@ -365,6 +367,9 @@ export function TryAgent() {
         </div>
 
         <div className="flex min-h-[28rem] flex-col gap-3">
+          <div className="rounded-sm border border-border bg-card px-3 py-3">
+            <AgentCapabilities profile={selectedAgentProfile(agents, tenantId, agentId)} compact />
+          </div>
           <RunHop
             agentId={agentId}
             tenantId={tenantId}

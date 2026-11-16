@@ -4,6 +4,8 @@ import { useApi } from "../api/useApi";
 import type { AdminAgent, AdminAgentSchema, AdminAgentVersion } from "../api/types";
 import { DocsLink, ErrorState, formatTimestamp, PageHeader, supportPage } from "../components/common";
 import { adminAgentPath, adminAgentSchemasPath, adminAgentVersionsPath } from "../lib/adminPaths";
+import { agentProfileView } from "../lib/agentCapabilities";
+import { AgentCapabilities } from "../components/agent-capabilities";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -98,10 +100,14 @@ export function AgentDetail() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Capabilities</CardTitle>
+            <CardTitle className="text-base">Execution profile</CardTitle>
           </CardHeader>
           <CardContent>
-            <JsonBlock value={a.capabilities} />
+            <AgentCapabilities profile={agentProfileView(a.capabilities)} />
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-muted-foreground">Raw capabilities</summary>
+              <div className="mt-2"><JsonBlock value={a.capabilities} /></div>
+            </details>
           </CardContent>
         </Card>
 

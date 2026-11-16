@@ -100,6 +100,15 @@
           </section>
         </div>
 
+        <h2>Configured execution profile</h2>
+        <p class="note"><strong>Unreleased, current source:</strong> Agent Detail and Try Agent
+          show an advisory configured profile with continuity, native resume, checkpoint
+          selection, local-tool filtering and schema-reporting conditions. Unknown profiles
+          and execution pools remain unknown. This does not confirm a live worker, usable
+          checkpoint, loaded code, credentials or isolation, and does not grant authority.
+          See <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/agent-capabilities.md">the descriptor and rollout contract</a>
+          and the <a href="frameworks.html">framework matrix</a>.</p>
+
         <h2>How to implement</h2>
         <ol class="steps">
           <li><strong>Python (LangGraph)</strong>: install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>
