@@ -404,6 +404,9 @@ as the TypeScript guard, with no managed run, run controls or spend caps.
 
 ## Related
 
+- [MCP server and stable operation IDs](mcp-server.md): the planned v0.9.0 MCP
+  retry contract reuses the existing REST run-ID machinery. It is unreleased
+  and does not change the app-owned governance operation-ID boundary.
 - Spec regeneration / drift CI: [`spec/README.md`](../spec/README.md) (`make openapi`, `make openapi-check`)
 - Control-plane + runner setup: [`README.md`](../README.md), [`docs/quickstart.md`](quickstart.md)
 

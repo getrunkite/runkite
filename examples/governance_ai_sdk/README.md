@@ -1,6 +1,12 @@
 # App-owned AI SDK tools with Runkite governance
 
-This runnable server keeps its Vercel AI SDK request loop and application state. Runkite decides whether its `createNote` tool is allowed. The note is a local application object, so the example performs no external write. The model provider is called only when you submit a new turn.
+This runnable server keeps its Vercel AI SDK request loop and application state. Runkite decides whether its `createNote` tool is allowed. The note is a local application object, so the example performs no external write. In the normal provider mode, the model is called only when you submit a new turn.
+
+For an **unreleased checkout walkthrough without a model account**, follow
+[proposal, tenant review and one local note](DEMO.md). The explicit
+`RUNKITE_DEMO_MODEL=scripted` mode uses the pinned SDK's public mock-model API to
+propose a fixed note, while the real plane still handles policy, approval and
+audit. Responses identify the scripted mode. Provider mode remains the default.
 
 `tools.ts` uses the reusable `createGovernedExecute` helper inside an ordinary
 AI SDK `tool.execute`. The helper calls Decide once with an immutable JSON
@@ -51,6 +57,13 @@ npm start
 ```
 
 The server binds only to `127.0.0.1:8088`. `PORT` and `APP_STATE_FILE` are optional. Keys stay in the server environment. The sample application token authenticates its local routes; the separate Runkite key needs `governance:decide` and the correct tenant. Do not give a browser either server-side provider key.
+
+For the scripted path, set `RUNKITE_DEMO_MODEL=scripted` in that server process
+and omit `OPENAI_API_KEY` and `MODEL`. It always proposes the fixed note described
+in [DEMO.md](DEMO.md); it does not interpret the prompt or contact a model
+provider. Unknown mode values fail startup. `modelMode` in the reply identifies
+the selected path, and `toolErrors` counts SDK tool failures. An HTTP success
+alone is not proof of tool execution.
 
 Add a matching grant and mandatory HITL rule to your existing Runkite configuration (or its existing Admin overlays). For a default-tenant key:
 

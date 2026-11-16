@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ApprovalPlan, ApprovalProgress } from "../components/approval-plan";
-import { pendingApprovalBlockReason, pendingDecisionFeedback } from "../lib/pendingApproval";
+import { pendingApprovalBlockReason, pendingApprovalGuidance, pendingDecisionFeedback } from "../lib/pendingApproval";
 import type { AdminConnectorAction } from "../api/types";
 import { ConnectorActionRecord, EvidenceField } from "../components/connector-action-record";
 import { ConnectorActionBadge, ConnectorEvidenceSetup, EvidenceRefresh } from "../components/connector-action-evidence";
@@ -132,7 +132,7 @@ function PendingDetail({ id }: { id: string }) {
     <Card><CardHeader><CardTitle>Approval plan and history</CardTitle></CardHeader><CardContent><ApprovalPlan action={action} /></CardContent></Card>
     {identity.can_approve && action.args !== undefined && <Card><CardHeader><CardTitle>Capped argument display</CardTitle></CardHeader><CardContent><p className="mb-2 text-xs text-muted-foreground">Existing redacted review metadata, not the raw argument payload.</p><pre className="overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(action.args, null, 2)}</pre></CardContent></Card>}
     {!identity.can_approve && <p className="text-sm text-muted-foreground">Your role can inspect approval metadata. Argument display and decision controls require governance:approve.</p>}
-    {controls?.showActions && <div className="space-y-3"><p className="text-sm text-muted-foreground">{controls.approveBlocked || "Approval permits one matching operation subject to current policy. It does not execute or retry a tool."}</p><div className="flex gap-2"><Button disabled={busy || Boolean(controls.approveBlocked)} onClick={() => resolve("approve")}>Approve</Button><Button variant="outline" disabled={busy || controls.denyBlocked} onClick={() => resolve("deny")}>Deny</Button></div></div>}
+    {controls?.showActions && <div className="space-y-3"><p className="text-sm text-muted-foreground">{controls.approveBlocked || pendingApprovalGuidance(action)}</p><div className="flex gap-2"><Button disabled={busy || Boolean(controls.approveBlocked)} onClick={() => resolve("approve")}>Approve</Button><Button variant="outline" disabled={busy || controls.denyBlocked} onClick={() => resolve("deny")}>Deny</Button></div></div>}
     </>}
   </div>;
 }

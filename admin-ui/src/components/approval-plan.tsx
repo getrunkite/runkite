@@ -1,5 +1,5 @@
 import type { AdminPendingAction } from "../api/types";
-import { approvalProgress } from "../lib/pendingApproval";
+import { approvalAuthorityDescription, approvalProgress } from "../lib/pendingApproval";
 import { EvidenceField } from "./connector-action-record";
 import { formatTimestamp } from "./common";
 
@@ -16,7 +16,7 @@ export function ApprovalPlan({ action }: { action: AdminPendingAction }) {
       <EvidenceField label="Policy revision"><code className="text-xs">{action.policy_revision || (action.expires_at != null ? "App-owned decision" : "Legacy unbound policy")}</code></EvidenceField>
       <EvidenceField label="Tool schema"><code className="text-xs">{action.tool_revision || "No tool schema pin recorded"}</code></EvidenceField>
     </dl>
-    <p className="text-xs text-muted-foreground">Reviews count exact authenticated identities. A recorded schema revision does not pin the remote implementation. The server rechecks current authority before approval and dispatch.</p>
+    <p className="text-xs text-muted-foreground">{approvalAuthorityDescription(action)}</p>
     <div><h3 className="mb-2 text-sm font-medium">Recorded reviews</h3>
       {!action.approvals?.length ? <p className="text-xs text-muted-foreground">No reviewer history recorded.</p> : <ol className="space-y-2">{action.approvals.map((vote) => <li key={vote.reviewer_identity} className="flex flex-wrap justify-between gap-2 rounded-sm border border-border p-2 text-xs"><code className="break-all">{vote.reviewer_identity || "Local single-reviewer mode (no identity)"}</code><time dateTime={vote.reviewed_at}>{formatTimestamp(vote.reviewed_at)}</time></li>)}</ol>}
     </div>

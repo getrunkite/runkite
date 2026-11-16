@@ -121,6 +121,16 @@
           and owns pending continuation. It does not inherit run kill switches, break-glass
           or spend caps. See <a href="sdk-integration.html">SDK integrations</a>.
         </p>
+        <h2 id="mcp-retries">MCP clients and safe retries</h2>
+        <p>Runkite's public <code>/mcp</code> exposes configured agents as tools. Calling a tool creates a managed run through the same admission and runner path. This is separate from the outgoing run-bound connector proxy.</p>
+        <p class="note"><strong>Unreleased, planned v0.9.0:</strong> an optional <code>run_id</code> lets an MCP caller retry the same retained operation after losing a response. Published v0.8.0 does not implement this MCP retry contract. REST already supports client-selected run IDs.</p>
+        <pre class="mono-block">{
+  "message": "Summarize this document",
+  "run_id": "document-summary-operation-123"
+}</pre>
+        <p>Confirm that <code>tools/list</code> advertises <code>run_id</code> before relying on retry protection; an older server may ignore an unknown argument. Generate and persist the operation ID in the calling app. A matching retry reuses the existing run and original thread; it does not enqueue another assignment. The agent, input and any explicitly supplied <code>thread_id</code> must match. Conflicting reuse returns a tool error. Omitting <code>run_id</code> retains the existing new-run behavior.</p>
+        <p>Calls still wait synchronously. A lost response is not evidence that execution stopped. Keep the same operation ID when reconnecting and use a new one only for genuinely new work. The stored run must remain available; deletion/pruning ends retry protection. This is not exactly-once external execution or an atomic transaction across the run store and queue. Failed, interrupted and timed-out runs remain tool errors.</p>
+        <p>The endpoint still needs its normal write/admin client credential. Retry observation checks agent authority too. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/mcp-server.md">MCP guide</a> for authentication, sticky routing, retention and the existing REST background-run alternative.</p>
         <h2>Why not one protocol</h2>
         <p>
           Collapsing them either leaks reclaim/fencing internals to every client, or starves

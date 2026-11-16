@@ -1,4 +1,4 @@
-/** Build /admin-api paths with optional tenant scoping. */
+/** Build Admin API paths and exact UI record links. */
 export function adminTenantQuery(tenantId?: string): string {
   const tid = tenantId?.trim();
   if (!tid) return "";
@@ -36,4 +36,9 @@ export function adminRunPath(runId: string): string {
 
 export function adminThreadPath(threadId: string): string {
   return `/threads/${encodeURIComponent(threadId)}`;
+}
+
+/** UI route to the immutable approval record, independent of a reused run ID. */
+export function adminPendingActionHref(pendingId: string): string {
+  return `/admin/pending/${encodeURIComponent(pendingId)}`;
 }

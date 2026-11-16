@@ -41,7 +41,25 @@ export function pendingApprovalBlockReason(action: PendingApprovalBinding): stri
 export function pendingDecisionFeedback(action: PendingApprovalBinding, verb: "approve" | "deny") {
   if (verb === "deny") return { title: "Denied", description: "This operation remains blocked. No external effect was undone." };
   const { count, required } = approvalProgress(action);
-  if (action.status === "approved" && count >= required) return { title: "Approved", description: "The required reviews are recorded. The caller may submit its matching operation, subject to current policy. No tool was executed here." };
+  if (action.status === "approved" && count >= required) return {
+    title: "Approved",
+    description: action.expires_at != null
+      ? "The required reviews are recorded for the exact saved proposal. The app owns continuation, execution deadlines and idempotency. Polling does not consume approval. No tool was executed here."
+      : "The required reviews are recorded. The caller may retry one matching connector operation under its original run, subject to current policy. No tool was executed here.",
+  };
   if (action.status === "pending") return { title: "Review recorded", description: `${count} of ${required} required reviews are recorded. The caller remains pending.` };
   return { title: "Decision recorded", description: "Refresh the operation to inspect its current authority. No tool was executed here." };
+}
+
+/** App-owned approval is observed by the app, not consumed by connector dispatch. */
+export function pendingApprovalGuidance(action: PendingApprovalBinding): string {
+  return action.expires_at != null
+    ? "After approval, the app may continue the exact saved proposal. The app owns continuation, execution deadlines and idempotency. Polling does not consume approval; no tool runs here."
+    : "Approval permits one matching connector retry under its original run, subject to current policy. It does not execute or retry a tool here.";
+}
+
+export function approvalAuthorityDescription(action: PendingApprovalBinding): string {
+  return action.expires_at != null
+    ? "Reviews count exact authenticated identities. The server checks policy before recording approval. Polling checks the stored approval binding and current review requirements; it does not recheck current tool grants or consume approval. The app owns continuation, execution deadlines and idempotency."
+    : "Reviews count exact authenticated identities. A recorded schema revision does not pin the remote implementation. The server rechecks current authority before approval and dispatch.";
 }

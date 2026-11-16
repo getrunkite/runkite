@@ -4,8 +4,39 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+Planned coordinated release: v0.9.0. Candidate source and package metadata do
+not establish publication; v0.8.0 remains the verified public download.
+
+### Added
+
+- Optional stable `run_id` for public MCP agent calls. Matching retries observe
+  the retained run through existing REST retry identity and durable observation,
+  including concurrent first calls and omitted thread IDs. Conflicting input,
+  thread or agent reuse remains an error. No-ID calls still create new runs.
+- Exact approval-record navigation from managed connector action detail in
+  global Admin, with the broader run approval list retained as a secondary link.
+- Escaped plain-text final-answer previews for supported successful terminal
+  assistant messages, alongside complete raw JSON. Ambiguous, structured,
+  tool/reasoning and incomplete output remains raw-only; truncation is labelled.
+- An explicit provider-free scripted mode and guided review/continuation
+  walkthrough in the existing app-owned AI SDK note example. Runkite still
+  supplies real SQL-backed policy, approval and audit. The application continues
+  to own its execution and idempotency.
+
 ### Fixed
 
+- Require stored-agent execution authority on run-create retry observations,
+  including concurrent creation fallbacks. A retained run ID cannot bypass the
+  agent permission normally enforced by admission.
+- Preserve tenant scope while using bounded cleanup after canceled admission,
+  subscription or enqueue failures, so a disconnected caller does not prevent
+  an owned thread claim from being released or a known failed dispatch from
+  being marked failed.
+- Stop MCP result delivery promptly on cancellation without redispatching or
+  reporting in-flight work as success. Durable error, interruption and timeout
+  remain tool errors.
+- Keep Admin event-log auto-follow inside the log viewport, so replay no longer
+  moves the whole page away from the run details and final answer.
 - Consolidate app-owned governance setup for administrators and application
   developers, including the independent Python/npm helpers, separate credentials,
   SQL grants and review, pending continuation and Admin visibility. Correct the

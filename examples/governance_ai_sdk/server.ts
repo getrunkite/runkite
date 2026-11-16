@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { generateText } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { createGovernanceClient } from "runkite-governance";
+import { createApplicationModel, SCRIPTED_NOTE } from "./model.ts";
 import { NoteStore, type NoteJob } from "./state.ts";
 import { createNoteTool } from "./tools.ts";
 
@@ -12,8 +12,7 @@ function required(name: string): string {
   return value;
 }
 const appToken = Buffer.from(required("APP_TOKEN"));
-const provider = createOpenAI({ apiKey: required("OPENAI_API_KEY") });
-const model = provider(required("MODEL"));
+const { model, mode: modelMode } = await createApplicationModel();
 const governance = createGovernanceClient({
   baseUrl: required("RUNKITE_HTTP_URL"),
   apiKey: required("RUNKITE_API_KEY"),
@@ -95,7 +94,13 @@ createServer(async (request, response) => {
           }),
         },
       });
-      const reply = { turnId, text: result.text, jobs };
+      const reply = {
+        turnId,
+        modelMode,
+        text: result.text,
+        jobs,
+        toolErrors: result.content.filter((part) => part.type === "tool-error").length,
+      };
       await store.finishTurn(turnId, reply);
       send(jobs.some((job) => job.status === "pending") ? 202 : 200, reply);
       return;
@@ -138,4 +143,10 @@ createServer(async (request, response) => {
     "Governance AI SDK example listening on loopback port " +
       (process.env.PORT ?? 8088),
   );
+  if (modelMode === "scripted") {
+    console.log(
+      "Scripted local demo. No model provider is called. Each new turn proposes: " +
+        JSON.stringify(SCRIPTED_NOTE),
+    );
+  }
 });

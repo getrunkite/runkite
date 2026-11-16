@@ -119,6 +119,12 @@ independent assessment or a security ranking.
 
 ## Choose an integration path
 
+The next release is being prepared around [retry-safe MCP and a clearer operator
+workflow](docs/internal/mcp-retry-and-operator-flow.md): stable MCP operation IDs,
+direct approval navigation, a plain-text final-answer preview and a scripted
+governance walkthrough. This work is unreleased; v0.8.0 remains the verified
+download until the next artifacts are published.
+
 | | Runkite owns execution | Your app owns execution |
 |---|---|---|
 | **Good fit** | Agents you want Runkite to dispatch and operate. | An existing Next, Nuxt or other backend that keeps its SDK loop. |

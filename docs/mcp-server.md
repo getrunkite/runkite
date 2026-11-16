@@ -21,11 +21,54 @@ Every configured agent becomes exactly one MCP tool, named after its `agent_id`,
 {
   "message": "What's the weather in Boston?",   // wrapped as a single user turn -- the common case
   "input": { "messages": [...] },                 // OR: raw input, for a caller that knows this agent's own shape. Wins if both given.
-  "thread_id": "existing-thread-id"                // optional: continue a conversation instead of starting fresh
+  "thread_id": "existing-thread-id",               // optional: continue a conversation instead of starting fresh
+  "run_id": "client-operation-123"                 // optional, next release: retry the same retained run
 }
 ```
 
 The result's text content is the agent's last message; a run that errors or gets interrupted comes back as a **tool-level** error (`isError: true` in the content, not a raw MCP protocol failure) so the calling LLM can actually see what went wrong and self-correct, per the MCP spec's own guidance on tool errors.
+
+## Stable operation IDs (unreleased, planned v0.9.0)
+
+The next release accepts an optional `run_id` in an agent tool's arguments.
+Published v0.8.0 does not implement this MCP retry contract. REST already has
+caller-supplied run IDs; the new MCP entry point reuses that existing machinery.
+Check that `tools/list` advertises `run_id` before relying on it. An older
+server may ignore an unknown argument rather than provide retry protection.
+
+Generate and persist one operation ID in the calling application before the
+first call. Retry with that same ID, agent and input after a lost response.
+Supply the same `thread_id` if you explicitly selected one. If you omitted a
+thread, a matching retry finds the originally created thread instead of
+generating a replacement. Equivalent JSON objects compare structurally and
+numeric values compare exactly. Reusing an ID with different agent, input or
+an explicitly different thread is a tool error.
+
+A matching retry observes the retained run. It does not dispatch a second
+assignment or bill a second model cycle merely because the caller repeated
+the MCP request. Successful output can be read from durable storage after
+broker replay expires. Error, interrupted and timeout results remain tool
+errors; an in-flight run is not rendered as completed. Without `run_id`, each
+call keeps the existing new-run behavior. A shared `thread_id` alone does not
+deduplicate calls.
+
+This is a synchronous call and reattachment contract, not a background task
+API. A client delivery timeout or disconnect does not prove that the worker
+stopped, and it must not trigger a blind retry with a new ID. Observation uses
+current caller authority; knowing an operation ID does not grant another
+agent's run permission. The HTTP MCP endpoint still uses its normal write/admin
+authentication gate; an agent-run-only key is not a general MCP credential.
+
+Retain the run for as long as callers need retry protection. Deleting/pruning
+the row ends that protection. Run insertion and queue enqueue are not one
+cross-store transaction, and external tools can still need their own
+idempotency. This contract does not guarantee exactly-once side effects or
+turn a raw nonterminal broker event into durable completion. For clients that
+need an explicit background run ID/status response, use the existing REST
+create/get/wait/stream routes.
+
+For implementation choices and qualification, see the
+[engineering record](internal/mcp-retry-and-operator-flow.md).
 
 Mounted as a normal client-facing route (`/mcp`, not under `/internal/*`), so it goes through the exact same auth middleware (API key/JWT) as every other endpoint -- an MCP client is configured with a Runkite API key exactly the way any other Agent Protocol client would be. A session's tenant is fixed for its lifetime, resolved once at session establishment (the natural behavior for how MCP clients are actually configured in practice -- one static key per configured server entry) -- see `internal/api/mcpserver.go`'s doc comment for why the request context itself, not just the tenant/identity it carries, can't be reused across a session's later calls.
 

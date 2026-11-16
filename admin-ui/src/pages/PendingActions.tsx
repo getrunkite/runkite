@@ -18,6 +18,7 @@ import { pendingApprovalBlockReason, pendingDecisionFeedback } from "../lib/pend
 import { ApprovalTargetRevision } from "../components/approval-target-revision";
 
 import { ApprovalProgress } from "../components/approval-plan";
+import { adminPendingActionHref } from "../lib/adminPaths";
 
 const STATUS_OPTIONS = ["pending", "approved", "denied", "consumed", "all"];
 
@@ -79,7 +80,7 @@ export function PendingActions() {
     {
       accessorKey: "id",
       header: "Approval ID",
-      cell: ({ getValue }) => <Link className="block max-w-44 truncate font-mono text-xs text-primary hover:underline" to={`/admin/pending/${encodeURIComponent(getValue() as string)}`} title={getValue() as string}>{getValue() as string}</Link>,
+      cell: ({ getValue }) => <Link className="block max-w-44 truncate font-mono text-xs text-primary hover:underline" to={adminPendingActionHref(getValue() as string)} title={getValue() as string}>{getValue() as string}</Link>,
     },
     {
       accessorKey: "created_at",

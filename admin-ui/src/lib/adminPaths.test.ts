@@ -9,6 +9,7 @@ import {
   adminRunPath,
   adminThreadPath,
   adminTenantQuery,
+  adminPendingActionHref,
 } from "./adminPaths.ts";
 
 // Regression: every sub-resource path must place its extra path segment
@@ -65,4 +66,15 @@ test("run/thread operations keep caller-supplied identifiers inside one URL segm
     assert.equal(decodeURIComponent(parts[3]), id);
     assert.equal(parts[4], "cancel");
   }
+});
+
+test("exact approval links cannot turn opaque IDs into another run, tenant or route", () => {
+  const id = "pending/../雪?run_id=reused&tenant_id=foreign#fragment%";
+  const url = new URL(adminPendingActionHref(id), "https://plane.example");
+  assert.equal(url.pathname.split("/").length, 4);
+  assert.equal(url.pathname.split("/")[2], "pending");
+  assert.equal(decodeURIComponent(url.pathname.split("/")[3]), id);
+  assert.equal(url.search, "");
+  assert.equal(url.hash, "");
+  assert.equal(adminPendingActionHref("original-approval"), "/admin/pending/original-approval");
 });

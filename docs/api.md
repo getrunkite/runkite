@@ -29,10 +29,10 @@ for wide integers or high-precision decimal results.
 
 ## Authorization and recovery changes (v0.6.0)
 
-MCP rejects ambiguous JSON, including duplicate nested members and invalid Unicode,
+The outgoing connector MCP proxy rejects ambiguous JSON, including duplicate nested members and invalid Unicode,
 and requires object arguments when present. Governance keeps the submitted JSON
 type, with omitted/null arguments still treated as `{}`. Exact, versioned argument
-digests prevent approval/cache collisions. A prior approval cannot bypass a current
+digests prevent approval/cache collisions. A managed connector approval cannot bypass a current
 explicit deny. Legacy pending/approved app action polling reports `rejected` with
 `approval_binding_legacy`; Admin refuses fresh approval of legacy rows.
 
@@ -173,6 +173,47 @@ POST   /runs/{runID}/cancel        Cancel run by ID (query params: wait, action 
 
 Create-run accepts an optional `checkpoint_ref` (opaque past-checkpoint id) for time-travel resume. LangGraph runners map it to `configurable.checkpoint_id`; non-LangGraph runners fail the run rather than ignore it. Empty/whitespace values are treated as absent (resume from the thread's latest checkpoint). The control plane does not verify the id exists before dispatch.
 
+### Public MCP agent tools
+
+`POST`, `GET` and `DELETE /mcp` serve the existing session-based Streamable HTTP
+interface. Configured agents are MCP tools; invoking one creates a managed run.
+This incoming interface is separate from the outgoing, run-bound connector MCP
+proxy and from app-owned `/governance/decide` decisions.
+
+**Unreleased, planned v0.9.0:** an agent tool accepts an optional stable
+`run_id`, reusing the existing REST run-retry contract. Published v0.8.0 does
+not implement this MCP argument. Confirm that `tools/list` advertises it before
+relying on retry protection; an older server may ignore an unknown argument.
+For example, these are arguments to one configured agent tool:
+
+```json
+{
+  "message": "Hello",
+  "run_id": "client-operation-123"
+}
+```
+
+Persist the operation ID before the first call. Retry with the same agent,
+exact JSON input and any explicitly selected `thread_id`. If the thread was
+omitted, the matching retry observes the original thread, including a concurrent
+matching first call. Conflicting reuse is a tool error. A retained successful
+result comes from durable output; pending/running work is observed rather than
+redispatched or treated as a completed cache hit. Error, interrupted and timeout
+remain tool-level errors. Omit `run_id` to retain the existing new-run behavior.
+
+A delivery timeout or disconnect does not prove cancellation or absence of an
+external effect. Reattach with the saved ID; do not blindly create another ID.
+Deleting or pruning the run ends retry protection. Run insertion and queue
+enqueue remain separate operations, and downstream effects may still require
+their own idempotency. The HTTP endpoint retains its write/admin authentication
+gate and session-owner binding. Keep sticky routing for a multi-replica MCP
+deployment. For explicit background run/status handling, use the REST routes.
+
+See [MCP server](mcp-server.md#stable-operation-ids-unreleased-planned-v090),
+[rollout](ops-runbook.md#mcp-and-operator-flow-upgrade-planned-v090) and
+[design rationale](internal/mcp-retry-and-operator-flow.md). This increment adds
+no REST route, SQL migration or Runner Protocol message.
+
 ### Store
 ```
 PUT    /store/items                Create/update store item (body: ..., ttl_minutes?)
@@ -227,7 +268,13 @@ Permission is `governance:decide` (`read`, `write`, and `agents:<id>:run` do not
 
 `pending` includes `action_id`. Admin approval changes that row; it does not invoke the tool or resume an application. The app persists the action ID and exact original arguments, polls, then continues the same operation only after `approved`, using its own execution idempotency. GET does not consume approval. Poll status is `pending`, `approved`, or `rejected` (`consumed` is also exposed for a consumed connector one-shot). An embedded row still pending after 24 hours is rejected with `pending_expired`; connector HITL rows have no expiry.
 
-Run kill switches, break-glass and spend caps are not applied on this path. The checkout-only helpers in [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) expose decide and bounded polling. `createGovernedExecute` and the optional Microsoft function middleware decide once before a local tool executor; pending continuation stays with the app. For managed AI SDK threads and runs, use the runner path in [Client SDK](client-sdk.md#managed-vercel-ai-sdk-v058). See [`spec/openapi.json`](../spec/openapi.json).
+Run kill switches, break-glass and spend caps are not applied on this path. The independent helpers in [`typescript/runkite-governance`](../typescript/runkite-governance) and [`python/runkite_governance`](../python/runkite_governance) first ship as npm/PyPI `runkite-governance` packages in v0.8.0 and expose decide and bounded polling. `createGovernedExecute` and the optional Microsoft function middleware decide once before a local tool executor; pending continuation stays with the app. For managed AI SDK threads and runs, use the runner path in [Client SDK](client-sdk.md#managed-vercel-ai-sdk-v058). See [`spec/openapi.json`](../spec/openapi.json).
+
+App-owned action polling checks the stored approval binding and current review
+requirements, but does not consume approval or re-evaluate current tool grants.
+The 24-hour expiry applies while awaiting review, not to an already-approved
+operation. The app owns the exact saved proposal, execution deadline and
+side-effect idempotency. See [operator setup](app-owned-governance.md).
 
 Plane policy and SQL Admin governance are documented in full elsewhere — this reference is the Agent Protocol / client surface. Pointers:
 

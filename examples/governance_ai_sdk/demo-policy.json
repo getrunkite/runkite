@@ -1,0 +1,46 @@
+{
+  "auth": {
+    "type": "api_key",
+    "strict_permissions": true,
+    "keys": {
+      "replace-with-app-api-key": {
+        "name": "notes-backend",
+        "tenant_id": "default",
+        "permissions": ["governance:decide"]
+      },
+      "replace-with-reviewer-api-key": {
+        "name": "notes-reviewer",
+        "tenant_id": "default",
+        "permissions": ["governance:approve"]
+      },
+      "replace-with-operator-api-key": {
+        "name": "local-operator",
+        "tenant_id": "default",
+        "permissions": ["admin"]
+      }
+    }
+  },
+  "policy": {
+    "default_effect": "deny",
+    "audit": true,
+    "audit_required": true,
+    "grants": [
+      {
+        "id": "notes-create",
+        "tenant_id": "default",
+        "agent_id": "notes-app",
+        "connector": "workspace",
+        "tools": { "allow": ["createNote"] }
+      }
+    ],
+    "mandatory_hitl": [
+      {
+        "id": "notes-review",
+        "tenant_id": "default",
+        "agent_id": "notes-app",
+        "connector": "workspace",
+        "tools": ["createNote"]
+      }
+    ]
+  }
+}
