@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "runkite-specialist": {
+      "command": "python3",
+      "args": ["/home/developer/launch.py"],
+      "env": {
+        "RUNKITE_BRIDGE_URL": "https://runkite.example.com",
+        "RUNKITE_BRIDGE_AGENT": "echo_agent",
+        "RUNKITE_BRIDGE_PROFILE": "specialist-demo",
+        "RUNKITE_API_KEY": "${RUNKITE_API_KEY}",
+        "RUNKITE_BRIDGE_STATE": "/home/developer/.runkite-specialist"
+      }
+    }
+  }
+}

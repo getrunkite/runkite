@@ -43,6 +43,10 @@ Before tagging, retain evidence for:
 - The normal version, OpenAPI, package-artifact, Go, SDK, UI and documentation
   gates. Confirm the release archives embed the rebuilt Admin assets. These
   source checks do not establish registry publication or a live-provider soak.
+- The checkout-only [Trinity specialist example](../examples/trinity_specialist_mcp/README.md):
+  its dedicated workflow checks pinned upstream configuration, the built stdio
+  caller, real Runkite API/runner interoperability and supervisor cleanup. Keep
+  native Trinity runtime qualification and upstream acceptance claims separate.
 
 After publication verification, promote the planned labels in README, the
 landing page, support/feature map and SDK guides together. Package READMEs are

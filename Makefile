@@ -32,6 +32,10 @@ check-doc-links:
 test-site: check-doc-links
 	node --test tests/site_docs_test.cjs tests/site_execution_flow_test.cjs tests/site_admin_status_test.cjs tests/site_walkthrough_test.cjs
 
+.PHONY: test-trinity-specialist
+test-trinity-specialist:
+	go test ./examples/trinity_specialist_mcp -count=1 -timeout=120s
+
 # Default: SQLite + in-memory only (no external services needed).
 # Explicitly unset backend env vars so inherited shell env doesn't leak.
 test:
