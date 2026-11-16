@@ -56,6 +56,9 @@ func TestCanObserveAgentSeparatesRunAuthority(t *testing.T) {
 	}{
 		{[]string{"agents:echo:run"}, "echo", false}, {[]string{"agents:echo:observe"}, "echo", true},
 		{[]string{"agents:echo:observe"}, "other", false}, {[]string{"read"}, "other", true},
+		{[]string{"agents:echo:observe"}, " echo ", false},
+		{[]string{auth.AgentObservePermission(" echo ")}, " echo ", true},
+		{[]string{auth.AgentObservePermission(" echo ")}, "echo", false},
 		{[]string{"write"}, "other", true}, {[]string{"admin"}, "other", true},
 	} {
 		if got := auth.CanObserveAgent(&auth.AuthResult{Permissions: tc.perms}, tc.agent); got != tc.want {

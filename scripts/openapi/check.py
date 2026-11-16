@@ -60,6 +60,15 @@ def _check_spec_integrity(name: str, spec: dict) -> list[str]:
                 continue
             if not isinstance(op, dict):
                 continue
+            parameters: set[tuple[str, str]] = set()
+            for parameter in op.get("parameters", []):
+                location, param_name = parameter.get("in", ""), parameter.get("name", "")
+                if not location or not param_name:
+                    continue
+                key = (location, param_name.lower() if location == "header" else param_name)
+                if key in parameters:
+                    problems.append(f"{name}: {method.upper()} {path} duplicates parameter {param_name!r}")
+                parameters.add(key)
             oid = op.get("operationId")
             if not oid:
                 problems.append(f"{name}: {method.upper()} {path} missing operationId")

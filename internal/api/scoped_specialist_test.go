@@ -34,6 +34,7 @@ func TestScopedSpecialistObservationIsolationAndReference(t *testing.T) {
 	f.seedRun(t, context.Background(), "retained", "thread", "mcp-agent", models.RunStatusSuccess, `{"message":"input"}`, `{"answer":"private"}`)
 	f.seedRun(t, context.Background(), "encoded/run", "encoded-thread", "mcp-agent", models.RunStatusSuccess, `{}`, `{"answer":"encoded"}`)
 	f.seedRun(t, context.Background(), "foreign-agent", "other-thread", "other-agent", models.RunStatusSuccess, `{}`, `{"answer":"foreign"}`)
+	f.seedRun(t, context.Background(), "whitespace-agent", "whitespace-thread", " mcp-agent ", models.RunStatusSuccess, `{}`, `{"answer":"foreign-whitespace"}`)
 	p := auth.NewAPIKeyProvider(map[string]auth.APIKeyEntry{
 		"run":          {Name: "caller", Permissions: []string{"agents:mcp-agent:run"}},
 		"observe":      {Name: "caller", Permissions: []string{"agents:mcp-agent:observe"}},
@@ -46,6 +47,7 @@ func TestScopedSpecialistObservationIsolationAndReference(t *testing.T) {
 		status               int
 	}{
 		{"run", "/runs/retained", "", 403}, {"observe", "/runs/foreign-agent", "", 403},
+		{"observe", "/runs/whitespace-agent", "", 403},
 		{"other-tenant", "/runs/retained", "", 404}, {"observe", "/runs/retained/wait", "", 428},
 		{"observe", "/runs/retained", "wrong", 412}, {"broad", "/runs/retained", "wrong", 412},
 		{"broad", "/runs/retained/wait", "", 200},

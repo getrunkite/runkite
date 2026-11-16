@@ -12,6 +12,11 @@ DELETE transport lifecycle. Discovery contains only runnable agents and each
 invocation checks the agent again through existing admission. Observe permission
 never grants invocation. Existing run-only credentials gain no public GET reads.
 
+Agent IDs are compared exactly, as they are stored. Run and observe grants for
+`echo` do not authorize a separate configured agent named ` echo `. Permission
+builders preserve those bytes instead of normalizing one stored identity into
+another.
+
 Observe permits only exact public `GET /runs/{run_id}` and `/wait`, with the
 stored tenant-scoped agent checked before input/output is returned. It grants no
 search, thread/history/store access, stream, cost, cancellation or deletion.

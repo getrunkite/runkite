@@ -24,7 +24,7 @@ func isAgentPermission(p, suffix string) bool {
 
 // AgentRunPermission builds the agents:<id>:run grant string.
 func AgentRunPermission(agentID string) string {
-	return agentRunPermPrefix + strings.TrimSpace(agentID) + agentRunPermSuffix
+	return agentRunPermPrefix + agentID + agentRunPermSuffix
 }
 
 // isRunCreatePath reports POST routes that create a new run. An
@@ -72,8 +72,9 @@ func isRunCreatePath(method, path string) bool {
 //   - "agents:<agentID>:run" → that agent only
 //   - otherwise → false
 func CanRunAgent(result *AuthResult, agentID string) bool {
-	agentID = strings.TrimSpace(agentID)
-	if agentID == "" {
+	// Store IDs are exact strings. Normalizing them here could authorize a
+	// different configured agent whose name has surrounding whitespace.
+	if strings.TrimSpace(agentID) == "" {
 		return false
 	}
 	if result == nil || len(result.Permissions) == 0 {
@@ -91,7 +92,7 @@ func CanRunAgent(result *AuthResult, agentID string) bool {
 // AgentObservePermission grants agent-wide retained run observation, separately
 // from invocation. It does not grant thread history or requester-only privacy.
 func AgentObservePermission(agentID string) string {
-	return agentRunPermPrefix + strings.TrimSpace(agentID) + agentObservePermSuffix
+	return agentRunPermPrefix + agentID + agentObservePermSuffix
 }
 
 // CanReadAllRuns preserves ordinary read/write/admin and local-mode semantics.

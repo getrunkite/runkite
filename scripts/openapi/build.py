@@ -2563,7 +2563,8 @@ def main() -> None:
     public = _build_public_spec()
     for path in ("/runs/{run_id}", "/runs/{run_id}/wait"):
         operation = public["paths"][path]["get"]
-        operation["description"] = operation.get("description", "") + (
+        marker = " Exact retained run observation accepts ordinary read/write/admin or "
+        operation["description"] = operation.get("description", "").split(marker, 1)[0] + (
             " Exact retained run observation accepts ordinary read/write/admin or "
             "agents:<stored-agent-id>:observe. The latter is agent-wide within the tenant, "
             "not requester-private, and requires a durable SQL run incarnation. "
@@ -2571,7 +2572,10 @@ def main() -> None:
             "Scoped wait requires it; scoped GET can acquire the first reference. "
             "First acquisition cannot prove the ID was never recreated before that read."
         )
-        operation.setdefault("parameters", []).append({
+        operation["parameters"] = [parameter for parameter in operation.get("parameters", [])
+                                   if not (parameter.get("in") == "header" and
+                                           parameter.get("name", "").lower() == "runkite-expected-run-reference")]
+        operation["parameters"].append({
             "in": "header", "name": "Runkite-Expected-Run-Reference", "required": False,
             "description": "Previously saved Runkite-Run-Reference. Required for scoped wait. Applies to broad callers too when supplied.",
             "schema": {"type": "string"},

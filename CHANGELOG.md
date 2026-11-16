@@ -4,14 +4,19 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+### Added
+
 - Add explicit `agents:<id>:observe` specialist access, scoped MCP discovery
   and invocation, canonical session authority binding, SQL run-reference
   preconditions and durable reference pinning in the Trinity checkout caller.
   Observation is agent-wide and retention-bounded, with no requester/thread
   privacy or new cancellation permission. See
   [the design and rollout boundaries](docs/internal/scoped-specialist-access.md).
+
 ### Fixed
 
+- Match scoped agent grants against exact stored IDs, preserving surrounding
+  whitespace rather than aliasing another configured agent's authority.
 - Preserve an existing registry entry's opaque metadata when saving edits from
   Admin, including unchanged saves. The form still edits only its visible
   fields; registry PUT requests retain their existing replacement semantics.
