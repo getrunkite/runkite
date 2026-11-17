@@ -193,6 +193,13 @@ receipt recovery, usage and authenticated gateway TLS checks. Its owned runtime
 cleanup was confirmed. Site tests passed 43 cases; OpenAPI coverage matched all
 170 registered Go routes.
 
+The earlier HA harness hardening is integrated with these proof-aware fixtures.
+Its 31 fixture, 10 environment, 12 evidence-validator and 12 supervisor unit tests
+passed, as did actionlint with ShellCheck. A fresh three-cycle native run passed
+the shared measured-evidence validator after confirmed runtime and backend
+cleanup. Child tools start with an explicit environment; provider, authentication,
+proxy and user Docker configuration are not inherited implicitly.
+
 Hosted qualification on the published commit and release-artifact verification
 remain release gates. The checks above do not establish unrestricted production
 soak, provider billing truth or exactly-once business effects.
