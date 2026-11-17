@@ -79,7 +79,7 @@
 
         <p class="kicker">Operate</p>
         <h1>Cron</h1>
-        <p class="lede">Fire agents on a schedule from the control plane, same enqueue path as a client-created run, with exactly-once claims across replicas.</p>
+        <p class="lede">Run agents on a schedule through the control plane's existing managed-run path, with shared fire claims coordinating replicas.</p>
 
         <div class="guide-grid">
           <section>
@@ -151,14 +151,27 @@
           The existing definition-only <code>GET /admin-api/cron</code> response is unchanged.
           Operators can opt into the same retained-run summary with
           <code>GET /admin-api/cron?include_history=true</code>. This visibility does not add a
-          scheduler, per-fire receipts, retries or next-fire predictions.
+          scheduler, per-fire receipts or retries. The separate optional calendar preview below is not retained execution history.
         </p>
+
+        <h2 id="next-fire-preview">Next calendar boundary (Unreleased)</h2>
+        <p>Admin Cron can show one projected future calendar boundary from the same pinned backend parser used by the scheduler. Read the UTC computation time and effective timezone with it. A boundary is strictly after that computation instant; it is not reserved work, a dispatch promise, a live countdown or evidence that a previous fire occurred.</p>
+        <p><code>GET /admin-api/cron?include_preview=true</code> adds <code>next_fire_preview</code> without thread/run/claim history reads or history fields. Combine it with <code>include_history=true</code> when both views are needed. Definition-only and history-only callers keep their existing shape and read cost. All preview rows in one response share a single <code>computed_at</code> in UTC; a scheduled row also has UTC <code>next_fire_at</code>.</p>
+        <ul class="expect">
+          <li><strong>Scheduled:</strong> a projected next calendar occurrence, not a guarantee of a run.</li>
+          <li><strong>Disabled:</strong> no next execution promise, even if retained history exists.</li>
+          <li><strong>Invalid expression:</strong> correct the configured expression; do not retry a run to repair it.</li>
+          <li><strong>No future fire:</strong> the pinned parser returned no future occurrence.</li>
+          <li><strong>Relative interval unavailable:</strong> <code>@every</code> needs an anchor that preview does not read, so no next time is invented.</li>
+        </ul>
+        <p>An invalid configured timezone is flagged when it actually causes UTC fallback. An explicit expression-level <code>TZ=</code> or <code>CRON_TZ=</code> can instead select its own zone without that fallback flag. DST gaps, repeated times and date constraints follow the pinned backend parser. Refresh through the existing page flow for a newer snapshot. If no run appears at a projected boundary, investigate logs, claims, overlap, admission and workers; preview does not record those outcomes. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-next-fire-preview.md">engineering contract</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#cron-calendar-preview-unreleased">operator procedure</a>.</p>
 
         <h2>What to expect</h2>
         <ul class="expect">
-          <li><strong>Multi-replica</strong>: <code>cron_claims</code> ensures one dispatch per fire when replicas share Postgres.</li>
+          <li><strong>Multi-replica</strong>: the supported shared Postgres profile coordinates matching schedule/fire timestamps through <code>cron_claims</code>. A successful claim is not proof that dispatch or a business effect completed.</li>
           <li><strong>Missed fires</strong>: restarting schedules catch the latest miss only (no backlog storm); brand-new schedules start from registration time.</li>
           <li><strong>Overlap</strong>: if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
+          <li><strong>Relative intervals</strong>: <code>@every</code> keeps its local not-due anchor so intervals longer than the poll tick can become due. It has no globally synchronized phase across replicas; preview intentionally supplies no anchor or next time.</li>
         </ul>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>

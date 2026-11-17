@@ -2635,16 +2635,38 @@ def _add_cron_history(admin: dict) -> None:
             },
         }],
     }
+    schemas["CronNextFirePreview"] = {
+        "type": "object",
+        "required": ["computed_at", "status"],
+        "properties": {
+            "computed_at": {"type": "string", "format": "date-time", "description": "One request-wide UTC calculation time."},
+            "status": {"type": "string", "enum": ["scheduled", "disabled", "invalid_expression", "no_future_fire", "relative_interval_unavailable"]},
+            "next_fire_at": {"type": "string", "format": "date-time", "description": "UTC expression occurrence strictly after computed_at. Present only for scheduled previews; this is not a dispatch promise."},
+            "effective_timezone": {"type": "string", "description": "Effective calendar location, including expression timezone precedence. Local means server-local time."},
+            "timezone_fallback": {"type": "boolean", "description": "True when an invalid configured timezone causes the calendar calculation to use UTC. An explicit valid expression timezone takes precedence."},
+        },
+        "description": "Advisory next calendar occurrence from the scheduler's shared parser. Disabled/invalid/impossible/relative definitions do not invent a timestamp. No claim, run, catch-up or execution readiness is read or inferred.",
+    }
+    for name, base in (("AdminCronPreviewView", "CronSchedule"), ("AdminCronHistoryPreviewView", "AdminCronHistoryView")):
+        schemas[name] = {"allOf": [_ref(base), {
+            "type": "object", "required": ["next_fire_preview"],
+            "properties": {"next_fire_preview": _ref("CronNextFirePreview")},
+        }]}
     operation = admin["paths"]["/admin-api/cron"]["get"]
-    operation["parameters"] = [{"name": "include_history", "in": "query", "required": False,
-                                "schema": {"type": "boolean", "default": False}}]
+    operation["parameters"] = [{"name": name, "in": "query", "required": False,
+                                "schema": {"type": "boolean", "default": False}}
+                               for name in ("include_history", "include_preview")]
     operation["description"] = (
         "Definitions only by default. Literal include_history=true adds each schedule's "
-        "exact-tenant thread availability and latest retained run metadata. This is not a "
-        "fire ledger and does not record skips or failures before run creation."
+        "exact-tenant thread availability and latest retained run metadata. Independently, "
+        "literal include_preview=true adds next_fire_preview, computed once per request "
+        "without history or claim reads. Request both flags to receive both extensions. "
+        "A preview is an expression projection, not a dispatch guarantee or fire ledger. "
+        "History does not record skips or failures before run creation."
     )
     operation["responses"]["200"]["content"]["application/json"]["schema"] = {
-        "anyOf": [_array_of(_ref("CronSchedule")), _array_of(_ref("AdminCronHistoryView"))]
+        "anyOf": [_array_of(_ref(name)) for name in
+                  ("CronSchedule", "AdminCronHistoryView", "AdminCronPreviewView", "AdminCronHistoryPreviewView")]
     }
     for path, methods in (
         ("/admin-api/threads/{thread_id}", ("get", "delete")),

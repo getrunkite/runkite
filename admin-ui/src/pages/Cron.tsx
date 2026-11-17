@@ -5,6 +5,7 @@ import { useApi } from "../api/useApi";
 import type { AdminCronSchedule } from "../api/types";
 import { DocsLink, EmptyState, ErrorState, formatRelativeTime, formatTimestamp, PageHeader, StatusBadge, supportPage } from "../components/common";
 import { adminCronRowId, adminRetainedRunHref, adminThreadPath } from "../lib/adminPaths";
+import { adminCronListPath, cronPreviewDisplay } from "../lib/cronPreview";
 import { DataTable } from "../components/data-table";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -19,7 +20,7 @@ const columns: ColumnDef<AdminCronSchedule, unknown>[] = [
   },
   {
     accessorKey: "timezone",
-    header: "Timezone",
+    header: "Configured timezone",
     cell: ({ getValue }) => <span className="text-muted-foreground">{(getValue() as string) || "UTC"}</span>,
   },
   {
@@ -34,6 +35,26 @@ const columns: ColumnDef<AdminCronSchedule, unknown>[] = [
     cell: ({ getValue }) => {
       const enabled = getValue() as boolean;
       return <Badge variant={enabled ? "success" : "muted"}>{enabled ? "enabled" : "disabled"}</Badge>;
+    },
+  },
+  {
+    id: "next_fire_preview",
+    header: "Next boundary (projection)",
+    cell: ({ row }) => {
+      const preview = cronPreviewDisplay(row.original.next_fire_preview);
+      return (
+        <div className="flex flex-col items-start gap-1">
+          <Tooltip>
+            <TooltipTrigger><Badge variant={preview.tone}>{preview.label}</Badge></TooltipTrigger>
+            <TooltipContent>
+              {preview.computedAt ? `Computed ${preview.computedAt}. ` : "Computation time unavailable. "}
+              Calendar projection only. Dispatch is not guaranteed.
+            </TooltipContent>
+          </Tooltip>
+          {preview.timezone && <span className="text-xs text-muted-foreground">Effective timezone: {preview.timezone}</span>}
+          {preview.fallback && <span className="text-xs text-warning">Invalid configured timezone; using UTC</span>}
+        </div>
+      );
     },
   },
   {
@@ -96,7 +117,7 @@ const columns: ColumnDef<AdminCronSchedule, unknown>[] = [
 ];
 
 export function Cron() {
-  const { data, error, loading } = useApi<AdminCronSchedule[]>("/cron?include_history=true", [], 15000);
+  const { data, error, loading } = useApi<AdminCronSchedule[]>(adminCronListPath, [], 15000);
 
   return (
     <div>
@@ -106,12 +127,13 @@ export function Cron() {
         actions={<DocsLink href={supportPage("admin-guide.html#7-cron")}>Docs: cron →</DocsLink>}
       />
       <p className="mb-4 text-sm text-muted-foreground">
+        Next boundary is a calendar projection, not a dispatch guarantee. Relative intervals have no calendar preview.
         Latest retained run on each schedule thread. A linked status opens its exact stored result.
         Skipped fires and failures before a run was created are not recorded here.
         History may have been deleted, and other callers can create runs on the same thread.
       </p>
       {error && !data && <ErrorState message={error} />}
-      {error && data && <ErrorState message={`Could not refresh schedules. Displayed history may be stale. ${error}`} />}
+      {error && data && <ErrorState message={`Could not refresh schedules. Displayed history and next-boundary projections may be stale. ${error}`} />}
       {data && data.length === 0 && (
         <EmptyState
           icon={Clock}

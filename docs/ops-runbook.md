@@ -93,6 +93,40 @@ Schema definitions can contain sensitive defaults, examples and descriptions.
 Share only redacted diagnostics, not schema dumps, credentials or upstream error
 bodies. See the [exact algorithm and recovery procedure](internal/schema-publication-recovery.md).
 
+## Cron calendar preview (Unreleased)
+
+Admin Cron can request `include_preview=true` independently of retained history.
+The preview-only API adds no thread/run/claim reads. A single UTC computation
+instant is shared across its schedule rows. Use a matching server and rebuilt
+Admin bundle, then inspect **Next boundary (projection)**, status and effective
+timezone before relying on a definition. This adds no migration or scheduling
+service. Existing definition-only and history-only callers keep their shape and
+read cost; `/internal/cron` stays definition-only.
+
+Treat `next_fire_at` as a projection strictly after `computed_at`, not a reserved
+dispatch. Correct invalid expressions and investigate timezone fallback;
+expression-level `TZ=`/`CRON_TZ=` can override the configured zone. `@every`
+reports `relative_interval_unavailable` rather than guessing its anchor.
+Disabled/no-future states supply no next execution promise. DST transitions
+follow the pinned backend parser, not the browser's timezone interpretation.
+For `@every`, a not-due poll retains the previous anchor, and a handled fire
+advances to its fire timestamp rather than poll time. Success, a lost equal-fire
+claim and a skipped busy-thread overlap preserve that phase; retryable errors
+retain the old anchor. This keeps a common starting phase aligned across
+different poll times, but cannot align staggered fresh anchors. Shared claims
+coordinate equal timestamps only, so one fire per relative interval across all
+replicas is not promised. Prefer calendar expressions such as `*/5 * * * *`
+with the same explicit timezone for an HA shared cadence. Malformed-prefix and
+zero/non-advancing-next guards are separate liveness fixes, not dispatch proof.
+
+Refresh using the existing list flow when the computation timestamp is stale.
+If a projected boundary passes without a run, inspect scheduler logs, actual
+retained runs, claims, overlap, admission and workers. A claim can precede a
+failed dispatch, and a retained row can have come from another caller on the
+same thread. Neither projection is a skip ledger or exactly-once proof. See
+the [preview engineering note](internal/cron-next-fire-preview.md) and
+[public guide](../site/support/cron.html#next-fire-preview).
+
 ## Tools-only connector rollout (Unreleased)
 
 For callers that require only tools, the new optional `mcp.tools_only: true`

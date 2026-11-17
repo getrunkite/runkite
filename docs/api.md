@@ -400,7 +400,29 @@ CSRF. See the Review-tagged operations in `spec/openapi-admin.json` and
 ### Cron Scheduler
 ```
 GET    /internal/cron              List configured cron schedules (name, agent_id, expression, timezone, enabled)
+GET    /admin-api/cron             Global Admin schedule definitions; optional history and preview projections
 ```
+
+Unreleased Admin clients can request `include_preview=true` to add
+`next_fire_preview`, independently of the existing `include_history=true`.
+With neither flag, the API keeps the definition-only response and cost;
+history-only adds no preview; preview-only adds no thread/run history fields or lookups. Both flags
+combine the projections. `/internal/cron` is unchanged.
+
+Each preview has a UTC `computed_at` shared across that response and a `status`:
+`scheduled`, `disabled`, `invalid_expression`, `no_future_fire` or
+`relative_interval_unavailable`. Optional `next_fire_at` is a UTC calendar
+boundary strictly after the computation time. `effective_timezone` and
+`timezone_fallback` describe the parser's applicable timezone outcome. Fallback
+is flagged when an invalid configured zone actually drives UTC; an explicit
+expression timezone can override it without that flag. `@every` gets no invented
+next time because the projection does not read an interval anchor. Disabled,
+invalid-expression and relative-interval statuses omit next-time/timezone claims.
+
+Preview uses the scheduler's shared pinned parser, not browser cron logic.
+It does not claim a fire, reserve work, query a skip ledger or guarantee
+dispatch. See [the preview contract](internal/cron-next-fire-preview.md) and
+[Cron operations](../site/support/cron.html#next-fire-preview).
 
 ### Retention
 

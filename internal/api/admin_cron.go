@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/getrunkite/runkite/internal/cronschedule"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -23,57 +24,73 @@ type adminCronRunView struct {
 	UpdatedAt     time.Time        `json:"updated_at"`
 }
 
-type adminCronScheduleView struct {
-	*models.CronSchedule
+type adminCronHistoryView struct {
 	ThreadID        string            `json:"thread_id"`
 	ThreadAvailable bool              `json:"thread_available"`
 	HistoryStatus   string            `json:"history_status"`
 	LatestRun       *adminCronRunView `json:"latest_run,omitempty"`
 }
 
-// GET /admin-api/cron?include_history=true. The schedule list is global Admin data, but every
-// history lookup uses its schedule's tenant. A deterministic cron thread ID
-// alone must never select another tenant's retained history.
+type adminCronScheduleView struct {
+	*models.CronSchedule
+	*adminCronHistoryView
+	NextFirePreview *cronschedule.PreviewResult `json:"next_fire_preview,omitempty"`
+}
+
+// GET /admin-api/cron. History and calendar preview are independent opt-ins.
+// The list is global Admin data; every history read uses its schedule's tenant.
 func (s *Server) handleAdminListCronSchedules(w http.ResponseWriter, r *http.Request) {
+	s.handleAdminListCronSchedulesAt(w, r, time.Now().UTC())
+}
+
+func (s *Server) handleAdminListCronSchedulesAt(w http.ResponseWriter, r *http.Request, now time.Time) {
 	schedules, err := s.store.ListCronSchedules(tenant.SystemContext(r.Context()))
 	if err != nil {
 		handleStoreError(w, err)
 		return
 	}
-	// Existing consumers keep the definition-only shape and read cost.
-	if r.URL.Query().Get("include_history") != "true" {
+	includeHistory := r.URL.Query().Get("include_history") == "true"
+	includePreview := r.URL.Query().Get("include_preview") == "true"
+	// Existing definition-only consumers keep their shape and read cost.
+	if !includeHistory && !includePreview {
 		writeJSON(w, http.StatusOK, schedules)
 		return
 	}
+	now = now.UTC()
 	views := make([]adminCronScheduleView, 0, len(schedules))
 	for _, schedule := range schedules {
-		tenantID := schedule.TenantID
-		if tenantID == "" {
-			tenantID = tenant.DefaultTenant
+		view := adminCronScheduleView{CronSchedule: schedule}
+		if includePreview {
+			preview := cronschedule.Preview(schedule.Expression, schedule.Timezone, schedule.Enabled, now)
+			view.NextFirePreview = &preview
 		}
-		ctx := tenant.ScopedContext(r.Context(), tenantID)
-		view := adminCronScheduleView{
-			CronSchedule: schedule, ThreadID: "cron:" + schedule.Name, HistoryStatus: "available",
-		}
-		_, threadErr := s.store.GetThread(ctx, view.ThreadID)
-		view.ThreadAvailable = threadErr == nil
-		var missing *state.ErrNotFound
-		if threadErr != nil && !errors.As(threadErr, &missing) {
-			view.HistoryStatus = "unavailable"
-			slog.Warn("cron history: thread lookup failed", "tenant", schedule.TenantID, "name", schedule.Name, "error", threadErr)
-		}
-		runs, runErr := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: view.ThreadID, Limit: 1})
-		if runErr != nil {
-			view.HistoryStatus = "unavailable"
-			slog.Warn("cron history: run lookup failed", "tenant", schedule.TenantID, "name", schedule.Name, "error", runErr)
-		} else if len(runs) > 0 {
-			run := runs[0]
-			view.LatestRun = &adminCronRunView{
-				RunID: run.RunID, IncarnationID: run.IncarnationID, AgentID: run.AgentID, Status: run.Status,
-				CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
+		if includeHistory {
+			tenantID := schedule.TenantID
+			if tenantID == "" {
+				tenantID = tenant.DefaultTenant
 			}
-		} else if view.HistoryStatus != "unavailable" {
-			view.HistoryStatus = "empty"
+			ctx := tenant.ScopedContext(r.Context(), tenantID)
+			view.adminCronHistoryView = &adminCronHistoryView{ThreadID: "cron:" + schedule.Name, HistoryStatus: "available"}
+			_, threadErr := s.store.GetThread(ctx, view.ThreadID)
+			view.ThreadAvailable = threadErr == nil
+			var missing *state.ErrNotFound
+			if threadErr != nil && !errors.As(threadErr, &missing) {
+				view.HistoryStatus = "unavailable"
+				slog.Warn("cron history: thread lookup failed", "tenant", schedule.TenantID, "name", schedule.Name, "error", threadErr)
+			}
+			runs, runErr := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: view.ThreadID, Limit: 1})
+			if runErr != nil {
+				view.HistoryStatus = "unavailable"
+				slog.Warn("cron history: run lookup failed", "tenant", schedule.TenantID, "name", schedule.Name, "error", runErr)
+			} else if len(runs) > 0 {
+				run := runs[0]
+				view.LatestRun = &adminCronRunView{
+					RunID: run.RunID, IncarnationID: run.IncarnationID, AgentID: run.AgentID, Status: run.Status,
+					CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
+				}
+			} else if view.HistoryStatus != "unavailable" {
+				view.HistoryStatus = "empty"
+			}
 		}
 		views = append(views, view)
 	}

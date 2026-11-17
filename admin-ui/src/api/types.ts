@@ -134,6 +134,14 @@ export interface AdminConnector {
   circuit_breaker_state?: string;
 }
 
+export interface AdminCronPreview {
+  computed_at: string;
+  status: "scheduled" | "disabled" | "invalid_expression" | "no_future_fire" | "relative_interval_unavailable";
+  next_fire_at?: string;
+  effective_timezone?: string;
+  timezone_fallback?: boolean;
+}
+
 export interface AdminCronSchedule {
   tenant_id?: string;
   name: string;
@@ -146,6 +154,7 @@ export interface AdminCronSchedule {
   thread_id: string;
   thread_available: boolean;
   history_status: "available" | "empty" | "unavailable";
+  next_fire_preview?: AdminCronPreview;
   latest_run?: Pick<AdminRun, "run_id" | "incarnation_id" | "agent_id" | "status" | "created_at" | "updated_at">;
 }
 

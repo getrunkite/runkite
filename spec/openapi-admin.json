@@ -1542,6 +1542,80 @@
           }
         ]
       },
+      "CronNextFirePreview": {
+        "type": "object",
+        "required": [
+          "computed_at",
+          "status"
+        ],
+        "properties": {
+          "computed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "One request-wide UTC calculation time."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "disabled",
+              "invalid_expression",
+              "no_future_fire",
+              "relative_interval_unavailable"
+            ]
+          },
+          "next_fire_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC expression occurrence strictly after computed_at. Present only for scheduled previews; this is not a dispatch promise."
+          },
+          "effective_timezone": {
+            "type": "string",
+            "description": "Effective calendar location, including expression timezone precedence. Local means server-local time."
+          },
+          "timezone_fallback": {
+            "type": "boolean",
+            "description": "True when an invalid configured timezone causes the calendar calculation to use UTC. An explicit valid expression timezone takes precedence."
+          }
+        },
+        "description": "Advisory next calendar occurrence from the scheduler's shared parser. Disabled/invalid/impossible/relative definitions do not invent a timestamp. No claim, run, catch-up or execution readiness is read or inferred."
+      },
+      "AdminCronPreviewView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          {
+            "type": "object",
+            "required": [
+              "next_fire_preview"
+            ],
+            "properties": {
+              "next_fire_preview": {
+                "$ref": "#/components/schemas/CronNextFirePreview"
+              }
+            }
+          }
+        ]
+      },
+      "AdminCronHistoryPreviewView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminCronHistoryView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "next_fire_preview"
+            ],
+            "properties": {
+              "next_fire_preview": {
+                "$ref": "#/components/schemas/CronNextFirePreview"
+              }
+            }
+          }
+        ]
+      },
       "PendingActionApproval": {
         "type": "object",
         "additionalProperties": false,
@@ -5348,6 +5422,18 @@
                       "items": {
                         "$ref": "#/components/schemas/AdminCronHistoryView"
                       }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminCronPreviewView"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminCronHistoryPreviewView"
+                      }
                     }
                   ]
                 }
@@ -5364,9 +5450,18 @@
               "type": "boolean",
               "default": false
             }
+          },
+          {
+            "name": "include_preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
-        "description": "Definitions only by default. Literal include_history=true adds each schedule's exact-tenant thread availability and latest retained run metadata. This is not a fire ledger and does not record skips or failures before run creation."
+        "description": "Definitions only by default. Literal include_history=true adds each schedule's exact-tenant thread availability and latest retained run metadata. Independently, literal include_preview=true adds next_fire_preview, computed once per request without history or claim reads. Request both flags to receive both extensions. A preview is an expression projection, not a dispatch guarantee or fire ledger. History does not record skips or failures before run creation."
       }
     },
     "/admin-api/usage/summary": {
