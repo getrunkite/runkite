@@ -163,3 +163,36 @@ The work does not extend the decision-only governance API into managed runs,
 proxy local framework database writes, or change Mongo's public SQL-only feature
 boundaries. It closes an authority ambiguity inside the existing dispatch and
 completion model.
+
+## Local qualification, 2026-11-17
+
+The combined cron and assignment-identity tree passed the complete
+`go test ./internal/... ./cmd/...` suite and whole-Go lint with zero findings.
+Provider-free native checks used disposable Postgres, MySQL, Mongo replica-set,
+Redis and NATS fixtures. All three SQL stores passed record-finalization
+conformance; all four stores passed record-scoped terminal-hook conformance.
+The MySQL cleanup regression also verifies its test reset removes usage holds.
+Kafka passed its full native compatibility suite and the additional retained-slot
+fairness case, without an atomic HA claim.
+
+The TypeScript runner passed 303 unit tests. Its two opt-in native tests were
+qualified separately: the packaged mTLS case passed, and managed AI SDK plus
+native chat bridge passed all 10 cases on SQLite and Postgres/Redis. All four
+managed Python SDK profiles passed with freshly installed wheels and native
+chat bridges on both backends. Model and tool fixtures are local and scripted;
+these are not live-provider tests.
+
+Linux race qualification passed the identity, completion, reservation, timeout,
+checkpoint and Admin replay API cases, plus the complete auth, bridge,
+in-process transport and SQLite packages. This is targeted API race coverage,
+not a claim that the entire API suite passed under the race detector.
+
+The external-runtime HA fixture passed three bounded recovery cycles against
+two HTTP replicas, including original-proof propagation, installed runner,
+receipt recovery, usage and authenticated gateway TLS checks. Its owned runtime
+cleanup was confirmed. Site tests passed 43 cases; OpenAPI coverage matched all
+170 registered Go routes.
+
+Hosted qualification on the published commit and release-artifact verification
+remain release gates. The checks above do not establish unrestricted production
+soak, provider billing truth or exactly-once business effects.
