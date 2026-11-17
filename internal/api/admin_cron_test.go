@@ -114,14 +114,11 @@ func TestAdminCronHistoryUsesScheduleTenantAndLatestRetainedRun(t *testing.T) {
 		t.Fatalf("history decode=%v rows=%s", err, raw)
 	}
 	for _, row := range rows {
-		if row.ThreadID != "cron:daily-report" {
-			t.Fatalf("wrong deterministic thread: %+v", row)
-		}
 		if row.TenantID == "tenant-a" {
-			if !row.ThreadAvailable || row.HistoryStatus != "available" || row.LatestRun == nil || row.LatestRun.RunID != "latest-run" || row.LatestRun.Status != models.RunStatusError || row.LatestRun.IncarnationID == "" {
+			if row.ThreadID != "cron:daily-report" || !row.ThreadAvailable || row.HistoryStatus != "available" || row.LatestRun == nil || row.LatestRun.RunID != "latest-run" || row.LatestRun.Status != models.RunStatusError || row.LatestRun.IncarnationID == "" {
 				t.Fatalf("latest retained run missing after schedule agent changed: %+v", row)
 			}
-		} else if row.ThreadAvailable || row.HistoryStatus != "empty" || row.LatestRun != nil {
+		} else if !strings.HasPrefix(row.ThreadID, "cron-tenant:v1:") || row.ThreadAvailable || row.HistoryStatus != "empty" || row.LatestRun != nil {
 			t.Fatalf("same schedule name exposed another tenant's history: %+v", row)
 		}
 	}

@@ -1,12 +1,15 @@
 # Cron retained-run visibility
 
-Status: Unreleased, current source. This change adds Admin visibility and exact
-tenant navigation. It does not change dispatch, overlap, catch-up, claims or
-retry behavior.
+Status: Unreleased, current source. The original projection adds Admin
+visibility and exact tenant navigation. The tenant-routing follow-up below
+also corrects dispatch thread selection. Overlap, catch-up, claims and retry
+behavior remain governed by the existing managed-run path.
 
 ## Stored history, not a fire ledger
 
-`DispatchScheduledRun` creates ordinary managed runs on `cron:<schedule-name>`.
+`DispatchScheduledRun` creates ordinary managed runs on a stable schedule thread.
+Default-tenant schedules keep `cron:<schedule-name>`. Named-tenant selection is
+described below; existing owned legacy threads retain their history.
 Admin Cron now displays the latest retained run on that tenant's thread and
 links to its existing Run Detail result when a SQL incarnation is available.
 A retained thread has a link to Thread Detail. Disabled definitions retain
@@ -31,7 +34,7 @@ copied into the new latest-run summary.
 The existing `GET /admin-api/cron` remains definition-only, with the same shape
 and no history reads. `?include_history=true` adds:
 
-- `thread_id`: the existing deterministic thread ID.
+- `thread_id`: the resolved schedule thread ID, shared with dispatch.
 - `thread_available`: a successful exact-tenant thread lookup.
 - `history_status`: `available`, `empty` or `unavailable`.
 - Optional `latest_run`: run/agent IDs, SQL incarnation when available, status
@@ -42,8 +45,9 @@ The list requires the existing global Admin authority. Each history lookup uses
 authority. Per-row history errors retain the definitions and produce a generic
 unavailable state; detailed store errors are logged server-side. Admin Cron
 polls this opt-in list 15 seconds after each completed request. Each schedule
-adds one thread lookup and one latest-run query; no background worker or cache
-is introduced.
+adds one latest-run query and bounded exact-tenant thread resolution; no
+background worker or cache is introduced. Default threads need one lookup.
+Named tenants need at most two, including the legacy continuity check.
 SQLite and Postgres run-search projections now retain the SQL incarnation from
 the same query snapshot, matching MySQL. No follow-up GetRun can silently bind a
 replacement record to an already listed row. Public Run JSON still hides this
@@ -71,11 +75,49 @@ without retained selectors keeps its existing live controls. A backend without a
 or run text instead of an ID-only fallback. Schedule table row keys encode the
 tenant/name pair as JSON so colons in either identifier cannot collide.
 
-SQL thread IDs are currently global primary keys, while cron schedule names are
-unique within a tenant. Two tenants with equal schedule names can therefore
-contend for the same deterministic thread. This change fails closed on reads
-and navigation; it does not migrate IDs or make those schedules independently
-dispatchable. Operators should use distinct schedule names across tenants.
+## Named-tenant thread routing (Unreleased)
+
+Thread IDs are globally unique, while schedule names and fire claims are scoped
+to a tenant. Previously every schedule selected `cron:<name>`. A second tenant
+could acquire its own fire claim but fail to create that already-owned thread.
+This was an availability failure. Scoped reads already prevented adopting the
+other tenant's conversation.
+
+Dispatch and Admin history now share one resolver:
+
+1. The default tenant keeps `cron:<name>` unchanged.
+2. A named tenant first checks its canonical `cron-tenant:v1:<digest>` thread.
+3. If absent, it reuses `cron:<name>` only when an exact scoped lookup finds an
+   existing thread owned by that same tenant.
+4. Otherwise it selects the canonical thread. Lookup errors other than not
+   found stop resolution; a create conflict never triggers a legacy fallback.
+
+The digest frames the exact tenant and schedule strings before hashing. This
+keeps IDs bounded and prevents delimiter ambiguity. Its prefix is disjoint from
+`cron:`, so a default schedule name cannot reproduce the generated namespace.
+Canonical precedence remains stable if an owned legacy row appears later.
+The entire dispatch context is explicitly tenant scoped, even for an exported
+caller that supplied inherited system authority.
+
+No thread, run, state or checkpoint is renamed or imported. Reusing an owned
+legacy thread preserves its exact checkpoint key and prior conversation.
+Named LangGraph tenants still require HTTP proxy checkpoints under the existing
+identity rules. Unrelated manually created threads can still conflict with an
+explicit ID; that remains a failure rather than permission to change history.
+
+Stop all cron writers for a coordinated upgrade or rollback. An older scheduler
+does not understand canonical routing and can split a new named schedule's first
+history across legacy and canonical threads during a mixed-version rollout.
+If both already exist, inspect both before choosing a conversation; the resolver
+prefers canonical and does not merge state. Deleting a thread deletes the basis
+for its continuity choice. Back up history before removing or replacing it.
+
+This routing correction adds no schema migration. Older pre-tenancy SQLite and
+Postgres databases can retain a single-column schedule-name primary key from
+their original schema; this change does not remove that independent constraint.
+Configuration-file discovery still bootstraps default-tenant schedules and
+requires unique names across discovered files. The fix enables same-name
+dispatch for named schedules that the tenant-scoped store already supports.
 
 ## Scope and verification
 
@@ -117,3 +159,13 @@ row followed by a driver error, proving partial results cannot become successful
 history. Live Postgres/MySQL conformance and the broader socket-based API
 tests require the parent task's local listener permissions; they were not
 completed in this sandbox.
+
+The tenant-routing follow-up passed focused `TestCanonicalCron*`,
+`TestCronTenant*` and `TestAdminCron*` cases plus the complete API, shared cron
+parser and command package suites on the prepared Go 1.26.11 macOS toolchain.
+Real SQLite cases verify exact padded/Unicode/delimiter identities, durable
+conversation and checkpoint continuity, legacy/canonical precedence, foreign
+collision refusal, busy-thread overlap and backend lookup failures. Definition
+and preview-only requests still perform no history lookups. The 43 static-site
+tests and local-link checks passed. Hosted Linux and live backend results must
+be read separately from these local measurements.

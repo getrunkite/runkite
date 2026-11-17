@@ -851,13 +851,16 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 }
 
 // DispatchScheduledRun creates and enqueues a run with no HTTP request
-// involved at all -- for the cron scheduler (see cmd/cron.go) or any other
-// non-HTTP caller. Uses a fixed thread per schedule name ("cron:<name>")
-// so a schedule's run history is browsable as one continuous thread the
-// same way any other Agent Protocol thread is, rather than a fresh
-// disconnected thread per fire.
+// involved, for the cron scheduler (see cmd/cron.go) or any other
+// non-HTTP caller. Uses one tenant-scoped thread per schedule, preserving
+// default and owned legacy "cron:<name>" threads, so run history is one
+// continuous thread instead of a fresh disconnected thread per fire.
 func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID string, input, config json.RawMessage) (*models.Run, error) {
-	threadID := "cron:" + scheduleName
+	ctx = tenant.ScopedContext(ctx, tenant.FromContext(ctx))
+	threadID, _, err := s.resolveCronThread(ctx, scheduleName)
+	if err != nil {
+		return nil, err
+	}
 	run, assignment, err := s.createRunCtx(ctx, threadID, &models.RunCreate{
 		AgentID: agentID, Input: input, Config: config,
 	})

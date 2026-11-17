@@ -109,14 +109,17 @@ func TestAdminCronPreviewFlagsPreserveIndependentShapesAndHistoryCost(t *testing
 			}
 			wantReads := 0
 			if tc.history {
-				wantReads = 4
+				wantReads = 5
 			}
 			if len(store.reads) != wantReads {
 				t.Fatalf("history reads=%d want=%d", len(store.reads), wantReads)
 			}
 			for index, read := range store.reads {
-				wantTenant := []string{" tenant-a ", " tenant-a ", "default", "default"}[index]
-				if read.system || read.tenant != wantTenant || read.thread != "cron:same" || read.method != []string{"thread", "runs"}[index%2] {
+				wantTenant := []string{" tenant-a ", " tenant-a ", " tenant-a ", "default", "default"}[index]
+				canonicalID := canonicalCronThreadID(" tenant-a ", "same")
+				wantThread := []string{canonicalID, "cron:same", canonicalID, "cron:same", "cron:same"}[index]
+				wantMethod := []string{"thread", "thread", "runs", "thread", "runs"}[index]
+				if read.system || read.tenant != wantTenant || read.thread != wantThread || read.method != wantMethod {
 					t.Fatal("preview changed exact per-schedule history scope")
 				}
 			}
@@ -200,7 +203,7 @@ func TestAdminCronPreviewDoesNotTurnHistoryFailureIntoEmptyHistory(t *testing.T)
 	rows := previewRows(t, NewServer(store, nil, nil, nil), "?include_history=true&include_preview=true", fixedCronPreviewTime())
 	var status string
 	_ = json.Unmarshal(rows[0]["history_status"], &status)
-	if status != "unavailable" || rows[0]["next_fire_preview"] == nil || len(store.reads) != 2 {
+	if status != "unavailable" || rows[0]["next_fire_preview"] == nil || len(store.reads) != 1 {
 		t.Fatal("preview masked history failure or changed history reads")
 	}
 	encoded, _ := json.Marshal(rows)
