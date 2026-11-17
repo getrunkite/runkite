@@ -41,17 +41,17 @@ func (q *cronAcknowledgementQueue) Enqueue(ctx context.Context, assignment *tran
 		return q.cause
 	}
 	job, err := q.Dequeue(ctx, assignment.RunnerKind, time.Second)
-	if err != nil || job == nil || job.RunID != assignment.RunID {
+	if err != nil || job == nil || job.RunID != assignment.RunID || job.RunIncarnationID != assignment.RunIncarnationID || job.Generation != assignment.Generation {
 		q.t.Fatal("fixture did not accept the scheduled assignment")
 	}
-	if accepted, err := q.plane.BeginRunAttempt(ctx, job.RunID, job.Generation); err != nil || !accepted {
+	if accepted, err := q.plane.BeginRunAttempt(ctx, job.RunID, job.RunIncarnationID, job.Generation); err != nil || !accepted {
 		q.t.Fatal("fixture did not admit the scheduled attempt")
 	}
 	q.effects++
 	if q.mode == "active" {
 		return q.cause
 	}
-	if accepted, err := q.plane.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: job.RunID, Generation: job.Generation, Status: models.RunStatusSuccess}); err != nil || !accepted {
+	if accepted, err := q.plane.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: job.RunIncarnationID, RunID: job.RunID, Generation: job.Generation, Status: models.RunStatusSuccess}); err != nil || !accepted {
 		q.t.Fatal("fixture did not complete the scheduled attempt")
 	}
 	return q.cause

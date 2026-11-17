@@ -60,7 +60,7 @@ func (s *cronDispatchCreationStore) CreateCachedRun(ctx context.Context, run *mo
 
 type cronDispatchCloseFailureBroker struct{ transport.EventBroker }
 
-func (*cronDispatchCloseFailureBroker) Close(string) error {
+func (*cronDispatchCloseFailureBroker) Close(string, string) error {
 	return errors.New("synthetic finalization outage")
 }
 
@@ -107,8 +107,21 @@ func TestScheduledRunRetryRequiresPositiveOriginalRollback(t *testing.T) {
 			run, err := plane.DispatchScheduledRun(tenant.SystemContext(ctx), "daily", "agent", nil, nil)
 			var disposition *ScheduledRunDispatchError
 			var conflict *state.ErrConflict
-			if run == nil || !errors.Is(err, cause) || !errors.As(err, &disposition) || !errors.As(err, &conflict) {
+			if run == nil || !errors.As(err, &disposition) {
 				t.Fatal("scheduled error lost its original run, cause or wrapped conflict")
+			}
+			if mode == "missing_identity" {
+				// Strict dispatch refuses an unbound store result before a queue
+				// publication. The attempted store write still committed, so this
+				// is uncertain creation rather than a safe scheduled retry.
+				if errors.Is(err, cause) || state.RunIdentity(run) != "" {
+					t.Fatal("missing store proof reached queue acknowledgement handling")
+				}
+				if count, err := queue.Len(ctx); err != nil || count != 0 {
+					t.Fatal("unbound original record was dispatched", count, err)
+				}
+			} else if !errors.Is(err, cause) || !errors.As(err, &conflict) {
+				t.Fatal("scheduled error lost its original queue cause or wrapped conflict")
 			}
 			if disposition.RetrySafe() != (mode == "never_started") {
 				t.Fatalf("retry disposition=%t for %s", disposition.RetrySafe(), mode)
@@ -121,7 +134,7 @@ func TestScheduledRunRetryRequiresPositiveOriginalRollback(t *testing.T) {
 				if current.Status != models.RunStatusError || current.Error != "enqueue failed" {
 					t.Fatal("retry proof did not correspond to a committed pre-attempt failure")
 				}
-				if accepted, err := store.BeginRunAttempt(ctx, run.RunID, 1); err != nil || accepted {
+				if accepted, err := store.BeginRunAttempt(ctx, run.RunID, state.RunIdentity(run), 1); err != nil || accepted {
 					t.Fatal("a delayed queued copy could execute after positive rollback proof")
 				}
 			}

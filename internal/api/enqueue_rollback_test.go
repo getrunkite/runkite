@@ -47,10 +47,10 @@ func rollbackAcceptAttempt(t *testing.T, plane *Server, queue *inprocess.Queue, 
 	t.Helper()
 	ctx := context.Background()
 	job, err := queue.Dequeue(ctx, assignment.RunnerKind, time.Second)
-	if err != nil || job == nil || job.RunID != assignment.RunID {
+	if err != nil || job == nil || job.RunID != assignment.RunID || job.RunIncarnationID != assignment.RunIncarnationID || job.Generation != assignment.Generation {
 		t.Fatalf("accepted assignment was not available: job=%+v err=%v", job, err)
 	}
-	if accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), assignment.Generation); err != nil || !accepted {
+	if accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, assignment.RunIncarnationID, assignment.Generation); err != nil || !accepted {
 		t.Fatalf("begin accepted assignment: accepted=%v err=%v", accepted, err)
 	}
 }
@@ -58,7 +58,7 @@ func rollbackAcceptAttempt(t *testing.T, plane *Server, queue *inprocess.Queue, 
 func rollbackCompleteAttempt(t *testing.T, plane *Server, assignment *transport.RunAssignment) {
 	t.Helper()
 	ctx := context.Background()
-	if err := plane.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
+	if err := plane.broker.Publish(ctx, assignment.RunID, assignment.RunIncarnationID, withOriginalRunEvent(assignment.RunIncarnationID, &transport.RunEvent{
 		Generation: assignment.Generation, Method: "values", Seq: 1,
 		Data: json.RawMessage(`{"answer":"committed","usage":{"prompt_tokens":13,"completion_tokens":5,"model":"synthetic"}}`),
 	})); err != nil {
