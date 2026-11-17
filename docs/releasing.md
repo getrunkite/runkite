@@ -9,6 +9,35 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
+## v0.10.0 candidate (unpublished)
+
+The prepared next minor is 0.10.0 because assignment identity protocol 1 and
+record-bound SQL finalization require a coordinated upgrade. Version metadata
+identifies the candidate; no tag, registry version, image or release is established
+by that preparation. Published v0.9.0 remains the verified release below.
+
+Use the [candidate checklist](internal/release-candidate-v0100.md) before tagging.
+It records the exact locally qualified source, outstanding fresh-version artifact
+and hosted example gates, publication authority and verification requirements.
+The upgrade requires stopped writers, restorable backups, Postgres/SQLite
+migration 23 or MySQL migration 24, matching planes/runners/custom integrations,
+and explicit reconciliation of legacy accounting, hook claims and receipts.
+There is no automatic downgrade or missing-proof compatibility path. Managed
+policy reviews and app-owned continuations have different invalidation contracts;
+follow the linked operator instructions before restoring callers.
+
+The version-scoped notice in [the GoReleaser header](../.goreleaser.yaml) places
+the 0.10.0 coordinated-upgrade warning in the generated GitHub release body.
+Keep it with the download/install instructions; an automatic commit changelog
+alone is insufficient upgrade guidance. Validate the rendered notice before
+publication, and keep the historical v0.9.0 verification unchanged.
+
+Before the final package build, change candidate-only package README wording to
+describe the exact version that will ship. Keep website release badges and
+published availability labels at v0.9.0 until every advertised destination is
+verified. Examples that remain checkout assets must retain that distinction
+after a release; a new runner wheel or npm tarball does not install them.
+
 <a id="v090-candidate-unreleased"></a>
 
 ## v0.9.0 release verification

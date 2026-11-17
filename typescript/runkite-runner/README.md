@@ -10,6 +10,14 @@ optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 
 Requires Node.js 22.19 or newer, matching the locked Undici HTTP client.
 
+The 0.10.0 source contract requires matching record-aware planes and workers.
+Published 0.9.0 packages do not implement that contract. This README does not
+establish registry publication: until matching artifacts are published and
+verified, build the plane from the same checkout and run this package with
+`npm ci && npm run build`, then `node dist/cli.js` from its directory. Unpinned
+registry installation below selects the available published version. Follow the
+[coordinated upgrade](../../docs/ops-runbook.md#assignment-identity-upgrade).
+
 | | |
 |---|---|
 | **Install** | `npm install -g runkite-runner` |
@@ -133,7 +141,7 @@ See the [managed AI SDK example](../../examples/managed_ai_sdk/README.md) for a
 working offline factory and an application-owned `useChat` stream bridge. That
 bridge keeps browser authentication and server credentials in your app.
 
-## Assignment identity upgrade (Unreleased)
+## Assignment identity upgrade (0.10.0 source contract)
 
 Use matching proof-aware runners and control planes. Workers advertise
 `assignment_identity_version=1` for GetJob and WatchCancels, validate the
@@ -143,7 +151,11 @@ events, completion and bound HTTP calls. Internal helpers send
 The plane rejects missing or mismatched proof rather than borrowing authority
 from a replacement record.
 
-Drain active and queued work before upgrading all replicas and workers.
+Back up and drain all writers and active/queued work before upgrading every plane,
+worker and custom store together. Apply Postgres/SQLite migration 23 or MySQL
+migration 24 before traffic resumes; startup also migrates. Keep legacy unbound
+accounting and receipts for explicit reconciliation, rather than rewriting their
+identity to force execution.
 The AI SDK committed receipt includes original identity: same-record reclaim
 replays without another model/tool cycle; a different record with the same public
 ID executes a fresh turn. A legacy same-ID receipt without proof fails closed,

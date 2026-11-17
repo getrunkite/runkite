@@ -5,7 +5,7 @@ runner kind is `python-openai-agents`; executions appear in Admin Threads/Runs.
 The SDK runs in this Python worker. The Go plane uses the existing Runner
 Protocol and HTTP checkpoint surface.
 
-## Original run records (Unreleased source)
+## Original run records (0.10.0 source contract)
 
 Committed receipts now retain the assignment's original `run_incarnation_id`.
 Only the same public run ID and exact original record replay saved output.
@@ -13,13 +13,18 @@ A known new record reusing that public ID executes a fresh turn with the owned
 conversation history. A legacy receipt without the record proof is ambiguous
 for the same public ID and fails closed; a different public run ID can still
 restore that legacy conversation normally. No history is imported or relabelled.
-Use matching source plane/runner versions and drain older assignments before
-relying on this contract.
+Use matching 0.10.0 source plane/runner builds. Back up and drain all writers and
+older assignments, then apply Postgres/SQLite migration 23 or MySQL migration 24
+before resuming traffic. This source contract does not establish registry
+publication; published 0.9.0 packages do not implement it. Until matching
+artifacts are published and verified, use the source installation below with a
+plane built from the same checkout. Follow the
+[coordinated upgrade](../../../docs/ops-runbook.md#assignment-identity-upgrade).
 
 ## Install and run
 
-Published PyPI `0.6.1` includes this profile through the `openai-agents` extra.
-The current checkout contains the v0.7.0 implementation.
+PyPI `0.6.1` first included this profile through the `openai-agents` extra.
+This checkout contains the 0.10.0 source contract.
 To install the matching runner from source, use a clean Python 3.11+
 environment from the repository root (shown with 3.12):
 

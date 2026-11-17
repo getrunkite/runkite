@@ -4,6 +4,35 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+**Prepared candidate: 0.10.0, unpublished.** Published v0.9.0 artifacts keep
+their existing contract. The [candidate checklist](docs/internal/release-candidate-v0100.md)
+separates completed source qualification from pending hosted, artifact and
+publication checks.
+
+### Coordinated upgrade required
+
+- Stop submissions, cron dispatch and affected app-owned continuations; drain
+  workers and queued/inflight assignments, stop all writers and verify restorable
+  database, queue and receipt backups before applying the new schema.
+- Apply Postgres/SQLite migration 23 or MySQL migration 24 with the matching
+  plane, then deploy matching protocol-1 planes, runners and custom integrations
+  before restoring traffic. Missing original-record proof has no fallback.
+  Automatic downgrade is refused; rollback requires a reviewed backup restore
+  and accounting reconciliation.
+- Preserve and reconcile legacy unbound accounting, bare terminal-hook claims
+  and ambiguous same-ID receipts. Never infer their original owner from a
+  current row or delete evidence to force a retry. Use fresh IDs for intentional
+  new operations.
+- Re-evaluate managed connector operations carrying the old policy fingerprint.
+  The update does not revoke app-owned approvals or allows already returned;
+  their owners must discard old execution authority and resubmit saved proposals
+  for fresh evaluation/review. Review exact grant/tool names before resuming.
+- Kafka requires explicit `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` to accept
+  its weaker Compatible mode. Redis does not add atomic Kafka queue fencing.
+
+Follow the [complete upgrade sequence](docs/internal/release-candidate-v0100.md#upgrade-sequence)
+and preserve the existing tenant, TLS, checkpoint and review prerequisites.
+
 ### Added
 
 - Add optional Admin cron calendar previews using the scheduler's shared pinned
