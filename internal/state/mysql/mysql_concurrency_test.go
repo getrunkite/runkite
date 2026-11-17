@@ -135,12 +135,10 @@ func TestThread_ConcurrentClaimOnlyOneWins(t *testing.T) {
 }
 
 // TestCron_ConcurrentClaimOnlyOneWins directly exercises the empirical
-// claim underlying TryClaimCronFire's design (verified live before
-// writing the implementation): MySQL's INSERT ... ON DUPLICATE KEY
-// UPDATE reports RowsAffected()=1 for a genuine insert and =0 for a
-// no-op update onto an existing row, so N concurrent instances racing
-// to claim the exact same (schedule, fire_time) tick must produce
-// exactly one winner, never zero and never more than one.
+// claim underlying TryClaimCronFire's design: the composite unique key
+// admits one atomic INSERT, and duplicate-key errors lose the claim.
+// N concurrent instances racing to claim the exact same schedule/fire
+// tick must produce exactly one winner, never zero or more than one.
 func TestCron_ConcurrentClaimOnlyOneWins(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

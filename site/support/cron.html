@@ -176,6 +176,7 @@
           <li><strong>Overlap</strong>: if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
           <li><strong>Relative intervals</strong>: <code>@every</code> keeps its local not-due anchor so intervals longer than the poll tick can become due. It has no globally synchronized phase across replicas; preview intentionally supplies no anchor or next time.</li>
         </ul>
+        <p><strong>MySQL claim correction (Unreleased, current source):</strong> equal tenant/schedule/fire-time claims use an atomic insert. A duplicate-key result loses the claim with either value of the valid <code>clientFoundRows</code> driver option. Other database errors remain errors. Native before/after qualification on an owned MySQL 8.4 fixture reproduced twenty duplicate winners before the fix and exactly one winner in each concurrent driver profile afterward. This adds no schema migration, dispatch receipt or exactly-once business-effect guarantee. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#mysql-cron-claim-insertion-unreleased">claim contract and native regression scope</a>.</p>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
           · <a href="./admin-guide.html#7-cron">Admin UI guide → Cron</a>

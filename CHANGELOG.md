@@ -94,6 +94,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   reusing the same ID. Use the existing completion transaction and idempotent
   finalization; the caller still receives the original delivery error.
 
+- Make MySQL cron fire claims independent of `clientFoundRows`: atomic inserts
+  report only duplicate-key conflicts as lost claims, preserving exact tenant,
+  schedule and fire-time scope without changing valid DSN options or schema.
+
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`
   so intervals longer than the scheduler tick can become due. Calendar
