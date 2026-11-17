@@ -84,12 +84,13 @@ only what was actually qualified. No finite suite proves absence of all bugs.
    boundary are not narrowed into a broader isolation claim. Commit `60b833f`
    and [PR #88](https://github.com/getrunkite/runkite/pull/88) track the exact
    implementation and its separate public review, hosted and merge gates.
-3. **Cron schedule preview: implemented; qualification in progress.**
+3. **Cron schedule preview: implemented.**
    The [calendar projection](cron-next-fire-preview.md) uses a shared backend
    parser and independent `include_preview=true`, preserving definition-only
    and history-only response/read-cost boundaries. Specific parser/interval
    liveness corrections are documented separately from dispatch guarantees.
-   Preview is not a per-fire receipt ledger.
+   Preview is not a per-fire receipt ledger. Check the matching implementation
+   PR's hosted results for the exact qualification state.
 
 These are current-source work items, not additions to published v0.9.0 artifacts
 or evidence that the three implementations and release gates are complete.

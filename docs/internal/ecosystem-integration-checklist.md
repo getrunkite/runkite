@@ -13,7 +13,7 @@ tools-only connector profiles, then cron schedule preview. Schema recovery
 `f738af4f0b5af60f09e2d249fbd72d0795cb30b2` after all 16 hosted checks passed.
 The tools-only implementation at `60b833f` and its qualification are tracked in
 [PR #88](https://github.com/getrunkite/runkite/pull/88). Cron preview is
-implemented with qualification in progress in this slice. Follow
+implemented in this slice; inspect its matching PR's hosted results. Follow
 [the staged plan](ecosystem-implementation.md#next-authorized-slices-in-order).
 For schema recovery, assemble `SchemaPublisher`, both internal schema handlers,
 the optional `AgentSchemaRecoveryStore` extension and its four built-in store
