@@ -150,6 +150,13 @@ path. Reports are in the maintainer workspace under
 `outputs/runkite-next/openshell-policy-20261117/prover-native-controls.json`.
 They contain synthetic evidence, not customer policies or model calls.
 
+The separate [hosted native Linux job](https://github.com/getrunkite/runkite/actions/runs/44027024047)
+also passed on source commit `778476f4846ded982b98bce7d26e739a59c741be`.
+Its Ubuntu 24.04 runner reported Linux `7.0.0-1017-azure`, Docker `28.0.4`
+and Landlock ABI `8`. The downloaded summaries confirmed both policy attempts,
+all four real checker controls, gateway TLS and owned cleanup. This is evidence
+for that native job, separately from the pull request's overall CI status.
+
 The automatic [OpenShell policy workflow](../../.github/workflows/openshell-policy.yml)
 adds actual native Linux execution on relevant pull requests/main pushes and
 manual dispatch. It checks Docker and Landlock prerequisites and requires

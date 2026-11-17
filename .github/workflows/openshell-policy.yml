@@ -105,10 +105,15 @@ jobs:
             python scripts/start-isolated-fixture.py \
               --cli "$QUALIFICATION_OUTPUT/bin/openshell" \
               --output-dir "$QUALIFICATION_OUTPUT/runtime" --tls -- \
-              bash -ceu 'python scripts/qualify-isolated.py \
-                --cli "$RUNKITE_TEST_ISOLATED_CLI" --gateway "$RUNKITE_TEST_ISOLATED_GATEWAY" \
-                --image "$RUNKITE_TEST_ISOLATED_IMAGE" --prover "$RUNKITE_TEST_OPENSHELL_PROVER" \
-                --output "$QUALIFICATION_OUTPUT/runtime/policy-evidence.json"'
+              python -c 'import os, sys;
+          os.execv(sys.executable, [
+              sys.executable, "scripts/qualify-isolated.py",
+              "--cli", os.environ["RUNKITE_TEST_ISOLATED_CLI"],
+              "--gateway", os.environ["RUNKITE_TEST_ISOLATED_GATEWAY"],
+              "--image", os.environ["RUNKITE_TEST_ISOLATED_IMAGE"],
+              "--prover", os.environ["RUNKITE_TEST_OPENSHELL_PROVER"],
+              "--output", os.path.join(os.environ["QUALIFICATION_OUTPUT"], "runtime/policy-evidence.json")
+          ])'
       - name: Require comparison, TLS and confirmed cleanup together
         run: |
           python - "$QUALIFICATION_OUTPUT" <<'PY'
