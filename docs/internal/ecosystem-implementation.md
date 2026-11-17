@@ -75,9 +75,12 @@ only what was actually qualified. No finite suite proves absence of all bugs.
    [engineering contract](schema-publication-recovery.md) records the local
    real-worker and storage qualification. Hosted checks remain a separate PR
    merge gate.
-2. **Optional tools-only connector profiles: selected, not implemented by this slice.**
-   Define and qualify this separately after schema recovery. The current
-   connector contract is unchanged by the schema work.
+2. **Optional tools-only connector profiles: implementation and qualification in progress.**
+   The [connector profile](tools-only-connectors.md) adds an opt-in inbound method
+   allowlist and narrowed initialize capabilities to the existing proxy, with
+   v4 managed target binding. Default behavior stays compatible. Tool results,
+   SDK upstream negotiation and the separate session-credential acquisition
+   boundary are not narrowed into a broader isolation claim.
 3. **Cron schedule preview: selected, not implemented by this slice.**
    Define and qualify preview separately after the connector slice. Existing
    scheduler behavior and retained-run visibility are unchanged here. Preview
@@ -85,6 +88,9 @@ only what was actually qualified. No finite suite proves absence of all bugs.
 
 These are current-source work items, not additions to published v0.9.0 artifacts
 or evidence that the three implementations and release gates are complete.
+The schema-recovery [PR #87](https://github.com/getrunkite/runkite/pull/87)
+has separate hosted checks and merge state; inspect that review rather than
+inferring it from this follow-on worktree.
 
 ## Follow-on qualification: Langfuse OTLP
 

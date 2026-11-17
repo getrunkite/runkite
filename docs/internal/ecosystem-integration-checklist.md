@@ -8,9 +8,11 @@ The public entry point is [Integrations](../integrations.md#unreleased-current-s
 ## Assemble the matching source tree
 
 The next authorized sequence is static graph schema recovery, optional
-tools-only connector profiles, then cron schedule preview. Only schema recovery
-is in progress in this slice. Do not advertise the other two as implemented or
-qualified. Follow [the staged plan](ecosystem-implementation.md#next-authorized-slices-in-order).
+tools-only connector profiles, then cron schedule preview. Schema recovery has
+its own [PR #87](https://github.com/getrunkite/runkite/pull/87) review/checks;
+the tools-only slice is in implementation and qualification here. Cron preview
+is selected separately, not implemented by these two changes. Follow
+[the staged plan](ecosystem-implementation.md#next-authorized-slices-in-order).
 For schema recovery, assemble `SchemaPublisher`, both internal schema handlers,
 the optional `AgentSchemaRecoveryStore` extension and its four built-in store
 implementations together with [the recovery guide](schema-publication-recovery.md).
@@ -19,6 +21,16 @@ preserved useful/partial reports, configured-kind checks, old-plane 404 and
 custom-store 501 without PUT fallback. Keep real worker recovery, store races
 and MCP session snapshots separate test boundaries. No native-worker or hosted
 pass is claimed by this checklist entry.
+
+For the [tools-only connector profile](tools-only-connectors.md), assemble its
+configuration, proxy/init gates, v4 target descriptor, Admin projection and
+badge, generated API contracts and operator rollout together. Qualify default
+and opt-in behavior on both transports, unsupported request/notification
+handling before proxy credential/breaker/discovery work, narrowed initialization
+and existing-token profile checks. Keep SDK upstream negotiation, earlier
+`GetSession` credential acquisition and arbitrary tool result bodies outside
+the inbound-only claim. No new raw-SSE parser or universal MCP content filter
+is implied. A configured badge or source guide is not a native/hosted test pass.
 
 The navigation change expects the following feature documents and support
 sections to land with their implementations. A partial checkout can therefore

@@ -98,6 +98,13 @@ func TargetRevisionForConfig(cfg ConnectorConfig) (string, error) {
 			CorrelationHeaders bool                 `json:"correlation_headers"`
 		}{value, exchange, cfg.MCP.CorrelationHeaders}
 	}
+	if cfg.MCP.ToolsOnly {
+		prefix = "target-v4-"
+		value = struct {
+			Base      any  `json:"base"`
+			ToolsOnly bool `json:"tools_only"`
+		}{value, true}
+	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return "", ErrTargetRevisionUnavailable

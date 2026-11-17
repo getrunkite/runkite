@@ -14,6 +14,12 @@ provides the same availability boundary for operators.
 
 Discover and operate an existing agent:
 
+- [Tools-only connector profiles](connectors.md#tools-only-mcp-profile-unreleased)
+  optionally narrow an outgoing connector proxy's inbound method surface and
+  initialize capabilities. Existing filters, grants and approvals still apply.
+  It does not inspect tool results, gate every SDK upstream message or affect
+  the incoming public agent `/mcp` server. Upgrade all HTTP replicas before
+  enabling the profile; opt-in binds managed targets as v4.
 - [Static graph schema recovery](internal/schema-publication-recovery.md) keeps
   cached static Python LangGraph reports recoverable after a registration reset
   or failed startup publication. Its new endpoint atomically fills only existing

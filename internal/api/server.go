@@ -767,6 +767,7 @@ func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
 		Name           string `json:"name"`
 		Type           string `json:"type"`
 		MCP            string `json:"mcp,omitempty"`
+		MCPToolsOnly   bool   `json:"mcp_tools_only"`
 		CircuitBreaker string `json:"circuit_breaker_state,omitempty"`
 	}
 	names := s.connectors.List()
@@ -782,6 +783,7 @@ func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
 		// checked name/type. Shows the proxy path instead.
 		if c.Config.MCP != nil {
 			info.MCP = "/internal/connectors/" + name + "/mcp"
+			info.MCPToolsOnly = c.Config.MCP.ToolsOnly
 		}
 		result = append(result, info)
 	}
@@ -805,6 +807,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		Name           string            `json:"name"`
 		Type           string            `json:"type"`
 		MCP            string            `json:"mcp,omitempty"`
+		MCPToolsOnly   bool              `json:"mcp_tools_only"`
 		Errors         map[string]string `json:"errors,omitempty"`
 		Tools          interface{}       `json:"tools,omitempty"`
 		CircuitBreaker string            `json:"circuit_breaker_state,omitempty"`
@@ -826,6 +829,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	// connect to, and consistent with what GetSession itself hands out.
 	if c.Config.MCP != nil {
 		resp.MCP = "/internal/connectors/" + name + "/mcp"
+		resp.MCPToolsOnly = c.Config.MCP.ToolsOnly
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1079,6 +1083,10 @@ func (s *Server) handleProxyMCPRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := registry.ProxyMCPRequest(ctx, name, userCtx, body)
 	if err != nil {
+		if errors.Is(err, connector.ErrMCPInitializationInvalid) {
+			writeError(w, http.StatusBadRequest, "bad initialization request")
+			return
+		}
 		if errors.Is(err, connector.ErrTargetRevisionChanged) || errors.Is(err, connector.ErrToolRevisionChanged) || errors.Is(err, connector.ErrToolRevisionUnavailable) || errors.Is(err, connector.ErrMCPDispatchBlocked) {
 			writeError(w, http.StatusConflict, "connector target changed; protected tool was not dispatched")
 			return

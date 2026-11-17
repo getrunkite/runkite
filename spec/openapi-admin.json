@@ -449,7 +449,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[123]-[0-9a-f]{64}$",
+            "pattern": "^target-v[1234]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },
@@ -814,6 +814,10 @@
           "mcp": {
             "type": "string"
           },
+          "mcp_tools_only": {
+            "type": "boolean",
+            "description": "Configured tools-only MCP method profile on this replica; false or absent preserves the existing transport behavior."
+          },
           "circuit_breaker_state": {
             "type": "string"
           }
@@ -1013,7 +1017,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[123]-[0-9a-f]{64}$",
+            "pattern": "^target-v[1234]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },
@@ -1857,7 +1861,7 @@
           },
           "target_revision": {
             "type": "string",
-            "pattern": "^target-v[123]-[0-9a-f]{64}$",
+            "pattern": "^target-v[1234]-[0-9a-f]{64}$",
             "minLength": 74,
             "maxLength": 74
           },

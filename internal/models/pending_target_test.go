@@ -15,7 +15,10 @@ func TestPendingTargetRevisionValidationAndNamespace(t *testing.T) {
 	if !ValidConnectorTargetRevision("target-v3-" + strings.Repeat("a", 64)) {
 		t.Fatal("constrained delegation target must be recognized")
 	}
-	for _, value := range []string{"", "target-v1-" + strings.Repeat("A", 64), "target-v1-" + strings.Repeat("a", 63), a + "a", "target-v4-" + strings.Repeat("a", 64), "target-v1-" + strings.Repeat("g", 64)} {
+	if !ValidConnectorTargetRevision("target-v4-" + strings.Repeat("a", 64)) {
+		t.Fatal("tools-only target must be recognized")
+	}
+	for _, value := range []string{"", "target-v1-" + strings.Repeat("A", 64), "target-v1-" + strings.Repeat("a", 63), a + "a", "target-v5-" + strings.Repeat("a", 64), "target-v1-" + strings.Repeat("g", 64)} {
 		if ValidConnectorTargetRevision(value) {
 			t.Fatalf("invalid target revision accepted: %q", value)
 		}
@@ -26,6 +29,12 @@ func TestPendingTargetRevisionValidationAndNamespace(t *testing.T) {
 	if PendingActionKey(row) == first {
 		t.Fatal("managed pending key merges different targets")
 	}
+	row.TargetRevision = "target-v4-" + strings.Repeat("a", 64)
+	if PendingActionKey(row) == first {
+		t.Fatal("managed pending key merges tools-only and legacy targets")
+	}
+	row.TargetRevision = b
+
 	old := *row
 	old.RunIncarnationID = b
 	old.TargetRevision = ""

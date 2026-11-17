@@ -137,7 +137,7 @@ func PendingActionKey(a *PendingAction) string {
 // It never accepts an absent or malformed managed approval binding.
 func ValidConnectorTargetRevision(value string) bool {
 	const prefix = "target-v1-"
-	if len(value) != len(prefix)+64 || (!strings.HasPrefix(value, prefix) && !strings.HasPrefix(value, "target-v2-") && !strings.HasPrefix(value, "target-v3-")) {
+	if len(value) != len(prefix)+64 || (!strings.HasPrefix(value, prefix) && !strings.HasPrefix(value, "target-v2-") && !strings.HasPrefix(value, "target-v3-") && !strings.HasPrefix(value, "target-v4-")) {
 		return false
 	}
 	for _, c := range value[len(prefix):] {

@@ -6,6 +6,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add optional `mcp.tools_only` for the existing connector proxy, with a narrow
+  inbound method surface, local unsupported-method replies and tools-only
+  initialize capabilities. Opt-in uses target-v4 managed approval binding and
+  an Admin configuration badge; defaults keep their existing fingerprints.
+  Tool results are not inspected and SDK-originated upstream negotiation is
+  unchanged. Upgrade every HTTP replica before enabling it.
+
 - Extend the opt-in isolated fixture qualifier with pinned OpenShell 0.1.8
   effective/loaded-policy capture and whole-policy containment checking before
   execution and observed-policy consistency checks before deletion. Add native

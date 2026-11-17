@@ -57,6 +57,9 @@ type AuthConfig struct {
 
 // MCPConfig points to an MCP server endpoint.
 type MCPConfig struct {
+	// ToolsOnly restricts incoming methods and advertised capabilities to the
+	// request-scoped tools profile. Omission preserves the existing proxy.
+	ToolsOnly          bool `json:"tools_only,omitempty" yaml:"tools_only,omitempty"`
 	CorrelationHeaders bool `json:"correlation_headers,omitempty" yaml:"correlation_headers,omitempty"`
 	PinTools           bool `json:"pin_tools,omitempty" yaml:"pin_tools,omitempty"`
 

@@ -311,6 +311,25 @@ Plane policy and SQL Admin governance are documented in full elsewhere — this 
 | Trust boundary, run-binding, reason codes | [Trust & governance](trust-governance.md) |
 | Runner connector session + MCP proxy (`POST /internal/connectors/{name}/session`, `…/mcp`) | [Connectors](connectors.md) · OpenAPI [`spec/openapi-internal.json`](../spec/openapi-internal.json) |
 
+### Tools-only connector profile (Unreleased)
+
+The existing run-bound MCP proxy honors optional `mcp.tools_only: true`.
+It admits only `initialize`, `notifications/initialized`, `ping`, `tools/list`
+and `tools/call`. Unsupported requests, including inbound `server/discover`,
+receive HTTP 200 with JSON-RPC `-32601`; unsupported notifications receive HTTP
+202 with an empty body. Normal runner/session authorization still applies.
+This is a connector configuration option, not a new public endpoint.
+
+Initialization exposes only the upstream's tools capability with no
+`listChanged`; tool content is not inspected. The profile adds no outbound SDK
+method gate or raw-SSE parser. Existing session tokens are not revision-bound,
+but each new proxy request still checks its configured profile. A separate
+session request can already have acquired credentials before a method is
+rejected locally. Connector list/detail projections add `mcp_tools_only`, used
+by Admin's **Tools only** badge. An omitted/false setting keeps existing
+fingerprints; opt-in uses `target-v4-` and matching managed approval targets.
+See [configuration and rollout](connectors.md#tools-only-mcp-profile-unreleased).
+
 Laptop proof for the governance announce bar: `make smoke-governance`.
 
 <a id="managed-connector-action-readers-unreleased"></a>

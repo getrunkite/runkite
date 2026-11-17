@@ -93,6 +93,42 @@ Schema definitions can contain sensitive defaults, examples and descriptions.
 Share only redacted diagnostics, not schema dumps, credentials or upstream error
 bodies. See the [exact algorithm and recovery procedure](internal/schema-publication-recovery.md).
 
+## Tools-only connector rollout (Unreleased)
+
+For callers that require only tools, the new optional `mcp.tools_only: true`
+restricts inbound connector MCP methods. It works with both existing transports
+and adds no DDL. Keep the existing auth, tool filters, grants and approval policy.
+See the [configuration and exact scope](connectors.md#tools-only-mcp-profile-unreleased).
+
+1. Inventory non-tool method use before opting in. Resources, prompts,
+   completions, logging, tasks and cross-request cancellation are not exposed by
+   the tools-only profile. Tool return values can still contain arbitrary data
+   and resource links; they are not inspected or redacted.
+2. Upgrade every HTTP replica first with the setting still false. Older binaries
+   may ignore the boolean and retain the wider surface; older target validators
+   cannot recognize the new v4 descriptor. Avoid mixed-version enforcement.
+3. Pause affected callers and drain/reconcile in-flight work. Apply the same
+   configuration on every replica and restart using the deployment's normal
+   procedure. Inspect `mcp_tools_only` and Admin's **Tools only** badge on each
+   replica, then run synthetic allowed/blocked method and initialize checks.
+4. Inspect outstanding managed approvals. The changed profile changes the target
+   fingerprint to `target-v4-`; obtain fresh review for the changed operation
+   when required. Existing tokens are not revision-bound, so their continued
+   validity is not profile attestation. New proxy requests enforce the configured
+   profile, while already admitted requests retain their snapshot.
+5. Resume callers after checking the configured surface. A local unsupported
+   request is JSON-RPC `-32601` with HTTP 200, or an empty HTTP 202 for a
+   notification. Do not confuse that with tool denial or uncertain execution.
+   Reverting the flag restores the default target contract, not permanent
+   revocation of prior approvals. Review retained authority before rollback.
+
+The profile's method gate runs before that proxy operation's breaker,
+credential resolution and upstream discovery, but a previous `GetSession` may
+already have acquired credentials. JSON and SDK-negotiated initialization have
+different parsing boundaries; no new raw-SSE validator or outbound SDK gate is
+added. Follow the [engineering contract](internal/tools-only-connectors.md)
+for capability narrowing, evidence and explicit limits.
+
 <a id="identity-and-distribution-candidate"></a>
 
 ## Identity and distribution upgrade (v0.8.0)
