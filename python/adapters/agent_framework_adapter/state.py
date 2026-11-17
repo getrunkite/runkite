@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from runkite_runner.assignment_identity import require_run_incarnation
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.opaque_checkpoint import OpaqueCheckpointClient, _strong_numeric_etag
 
@@ -126,6 +127,8 @@ def _validate_envelope(value: Any, graph_id: str) -> None:
     reject_approval(restored.state)
     state_json(restored.to_dict())
     completed = value.get("completed")
+    if isinstance(completed, dict) and "run_incarnation_id" in completed:
+        require_run_incarnation(completed["run_incarnation_id"])
     if (
         not isinstance(completed, dict)
         or completed.get("status") != "success"

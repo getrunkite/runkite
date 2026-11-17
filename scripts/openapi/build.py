@@ -1987,7 +1987,7 @@ def _build_internal_spec() -> dict:
 
     return {
         "openapi": "3.1.0",
-        "info": {"title": "Runkite Internal (Runner) API", "version": "0.1.0", "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require X-Runkite-Generation and exactly one run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Upgrade the plane before runners that use encoded identities."},
+        "info": {"title": "Runkite Internal (Runner) API", "version": "0.1.0", "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require the original X-Runkite-Run-Incarnation from the dispatch, X-Runkite-Generation and exactly one public run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Use matching proof-aware planes and runners. Missing or mismatched original record identity is rejected; never derive it from a newly looked-up run."},
         "tags": [
             {"name": "Runner", "description": "Endpoints consumed by runner processes."},
             {"name": "Store", "description": "Proxy-mode store access for runners."},
@@ -2680,6 +2680,46 @@ def _add_cron_history(admin: dict) -> None:
             })
 
 
+def _add_assignment_binding(spec: dict) -> None:
+    """Describe the exact original assignment proof required on internal calls."""
+    headers = [
+        {"name": "X-Runkite-Run-Incarnation", "in": "header", "required": True,
+         "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+         "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[!-~]+$"}},
+        {"name": "X-Runkite-Generation", "in": "header", "required": True,
+         "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+         "schema": {"type": "integer", "format": "int64"}},
+        {"name": "X-Runkite-Run-Id", "in": "header", "required": False,
+         "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+         "schema": {"type": "string"}},
+        {"name": "X-Runkite-Run-Id-B64", "in": "header", "required": False,
+         "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+         "schema": {"type": "string"}},
+    ]
+    for path, operations in spec["paths"].items():
+        bound = (
+            path.startswith(("/internal/checkpoints/", "/internal/store/", "/internal/vectors/"))
+            or path == "/internal/a2a/runs"
+            or (path.startswith("/internal/connectors/") and path.endswith(("/session", "/mcp")))
+            or (path.startswith("/internal/runs/") and path.endswith(("/usage", "/status")))
+        )
+        if not bound:
+            continue
+        for method, operation in operations.items():
+            if method not in {"get", "post", "put", "delete", "patch"}:
+                continue
+            parameters = operation.setdefault("parameters", [])
+            names = {parameter.get("name") for parameter in parameters}
+            parameters.extend(copy.deepcopy(header) for header in headers if header["name"] not in names)
+            if path.endswith("/status"):
+                operation["description"] = (
+                    "Validate the original stored record, generation, frozen runner kind, pool and optional workload owner. "
+                    "A matching terminal record remains readable after lease removal. Authentication or binding denial must stop execution."
+                )
+                operation["responses"]["401"] = {"description": "Original run binding or runner authentication missing"}
+                operation["responses"]["403"] = {"description": "Original record, generation, kind, pool or workload authority refused"}
+
+
 def main() -> None:
     public = _build_public_spec()
     for path in ("/runs/{run_id}", "/runs/{run_id}/wait"):
@@ -2739,6 +2779,7 @@ def main() -> None:
     _add_identity_and_usage(public)
     _add_identity_and_usage(admin)
     _add_identity_and_usage(internal, internal=True)
+    _add_assignment_binding(internal)
 
     n_pub = _write_spec(public, SPEC_DIR / "openapi.json")
     n_admin = _write_spec(admin, SPEC_DIR / "openapi-admin.json")

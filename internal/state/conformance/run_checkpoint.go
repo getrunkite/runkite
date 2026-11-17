@@ -23,7 +23,7 @@ func runBoundCheckpointTests(t *testing.T, factory StoreFactory) {
 		if err := s.CreateRun(ctx, &models.Run{RunID: binding.RunID, ThreadID: binding.ThreadID, AgentID: "checkpoint-agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		if ok, err := s.BeginRunAttempt(ctx, binding.RunID, generation); err != nil || !ok {
+		if ok, err := s.BeginRunAttempt(ctx, binding.RunID, originalRunIdentity(t, s, binding.RunID), generation); err != nil || !ok {
 			t.Fatalf("begin attempt: accepted=%t err=%v", ok, err)
 		}
 		run, err := s.GetRun(ctx, binding.RunID)
@@ -48,7 +48,7 @@ func runBoundCheckpointTests(t *testing.T, factory StoreFactory) {
 		if _, err := s.PutBoundOpaqueCheckpoint(ctx, old, "adapter-state", []byte("old"), "test", nil); err != nil {
 			t.Fatal(err)
 		}
-		if ok, err := s.BeginRunAttempt(ctx, old.RunID, 2); err != nil || !ok {
+		if ok, err := s.BeginRunAttempt(ctx, old.RunID, originalRunIdentity(t, s, old.RunID), 2); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 		current := old
@@ -142,7 +142,7 @@ func runBoundCheckpointTests(t *testing.T, factory StoreFactory) {
 		if err := s.CreateRun(ctx, replacement); err != nil {
 			t.Fatal(err)
 		}
-		if accepted, err := s.BeginRunAttempt(ctx, old.RunID, old.Generation); err != nil || !accepted {
+		if accepted, err := s.BeginRunAttempt(ctx, old.RunID, originalRunIdentity(t, s, old.RunID), old.Generation); err != nil || !accepted {
 			t.Fatal(accepted, err)
 		}
 		replacement, err = s.GetRun(ctx, old.RunID)

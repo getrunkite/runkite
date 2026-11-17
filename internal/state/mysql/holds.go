@@ -37,10 +37,11 @@ func (s *Store) UpsertUsageHold(ctx context.Context, h *models.UsageHold) error 
 		ts = time.Now().UTC()
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_holds (run_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO usage_holds (run_id, run_incarnation_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
+		VALUES (?, '', ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
-			tenant_id=VALUES(tenant_id),
+			run_incarnation_id=VALUES(run_incarnation_id),
+ tenant_id=VALUES(tenant_id),
 			agent_id=VALUES(agent_id),
 			usd_hold=VALUES(usd_hold),
 			tokens_hold=VALUES(tokens_hold),

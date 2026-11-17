@@ -131,8 +131,8 @@ async def _wait_until(predicate, timeout_s=5.0):
 
 async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
     assignments = [
-        {"run_id": "c1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "c2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "c1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "c2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     controller = _ConcurrencyTrackingController()
@@ -171,8 +171,8 @@ async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
 
 async def test_poll_loop_concurrency_1_is_sequential_by_default():
     assignments = [
-        {"run_id": "s1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "s2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "s1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "s2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     controller = _ConcurrencyTrackingController()
@@ -213,8 +213,8 @@ async def test_poll_loop_concurrency_1_is_sequential_by_default():
 
 async def test_cancel_isolation_under_concurrency():
     assignments = [
-        {"run_id": "iso1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "iso2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "iso1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "iso2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     controller = _ConcurrencyTrackingController()
@@ -245,7 +245,7 @@ async def test_cancel_isolation_under_concurrency():
     # (and, since cancelled, last) chunk -- simulates the graph
     # naturally progressing to its next step after the cancel signal
     # arrived, same as a real LangGraph run would.
-    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1")
+    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1", run_incarnation_id="record-fixture")
     controller.release_events["iso1"].set()
 
     ok2 = await _wait_until(
@@ -264,7 +264,7 @@ async def test_cancel_isolation_under_concurrency():
 
 
 async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancellation():
-    assignments = [{"run_id": "d1", "thread_id": "t1", "graph_id": "g1"}]
+    assignments = [{"run_id": "d1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"}]
     stub = _MultiJobFakeStub(assignments)
     controller = _ConcurrencyTrackingController()
     pending_cancels: dict = {}

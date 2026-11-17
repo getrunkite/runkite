@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"time"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/jsonvalue"
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
@@ -19,12 +21,15 @@ import (
 // BeginRunAttempt is called before a dequeued assignment is delivered. The
 // durable fence makes a completion from a superseded dispatch harmless even
 // when reclaim races a SQL write or a runner reconnects to another replica.
-func (s *Server) BeginRunAttempt(ctx context.Context, id string, generation int64) (bool, error) {
+func (s *Server) BeginRunAttempt(ctx context.Context, id, incarnation string, generation int64) (bool, error) {
 	// Recover a completed event stream before delivering a reclaimed job.
 	// This resends no model/tool work merely because ReportStatus was interrupted.
 	run, err := s.store.GetRun(tenant.SystemContext(ctx), id)
 	if err != nil {
 		return false, err
+	}
+	if !auth.ValidRunIncarnation(incarnation) || state.RunIdentity(run) != incarnation {
+		return false, nil
 	}
 	if state.TerminalRunStatus(run.Status) {
 		if _, done := run.Metadata[state.CompletionGenerationKey]; done {
@@ -45,7 +50,7 @@ func (s *Server) BeginRunAttempt(ctx context.Context, id string, generation int6
 			return false, nil
 		}
 	}
-	return s.store.BeginRunAttempt(tenant.SystemContext(ctx), id, generation)
+	return s.store.BeginRunAttempt(tenant.SystemContext(ctx), id, incarnation, generation)
 }
 
 // recoverDeliveredCompletion preserves a delivered agent outcome when the
@@ -53,13 +58,13 @@ func (s *Server) BeginRunAttempt(ctx context.Context, id string, generation int6
 // at the retry ceiling, where there will be no next GetJob to recover it.
 func (s *Server) recoverDeliveredCompletion(ctx context.Context, run *models.Run) (bool, error) {
 	generation := state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
-	events, err := s.broker.Replay(ctx, run.RunID, 0)
+	events, err := s.broker.Replay(ctx, run.RunID, state.RunIdentity(run), 0)
 	if err != nil {
 		return false, err
 	}
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
-		if !event.IsTerminal() || event.Generation != generation {
+		if !event.IsTerminal() || event.Generation != generation || event.RunIncarnationID != state.RunIdentity(run) {
 			continue
 		}
 		status := models.RunStatusError
@@ -73,7 +78,7 @@ func (s *Server) recoverDeliveredCompletion(ctx context.Context, run *models.Run
 		if event.Method == "end" {
 			status = data.Status
 		}
-		return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, Generation: generation, Status: status, Error: data.Message})
+		return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: run.RunID, ExpectedIncarnationID: state.RunIdentity(run), Generation: generation, Status: status, Error: data.Message})
 	}
 	return false, nil
 }
@@ -81,6 +86,8 @@ func (s *Server) recoverDeliveredCompletion(ctx context.Context, run *models.Run
 // CompleteReclaimedRun finalizes an exhausted assignment before the reaper
 // removes its retained lease. Backend and finalization failures are retried by
 // the next reclaim tick, including after a control-plane process restarts.
+// A true result also permits disposal of a definitively retired physical row.
+// That path performs no completion or finalization on a replacement record.
 func (s *Server) CompleteReclaimedRun(ctx context.Context, pill transport.PoisonPill, errorMsg string) (bool, error) {
 	if pill.Generation <= 0 {
 		return false, fmt.Errorf("invalid poison-pill generation")
@@ -90,12 +97,21 @@ func (s *Server) CompleteReclaimedRun(ctx context.Context, pill transport.Poison
 	if err != nil {
 		return false, err
 	}
-	if assignment == nil || assignment.Generation != generation {
+	if assignment == nil || !auth.ValidRunIncarnation(pill.RunIncarnationID) || assignment.RunIncarnationID != pill.RunIncarnationID || assignment.Generation != generation {
 		return false, nil
 	}
 	run, err := s.store.GetRun(tenant.SystemContext(ctx), pill.RunID)
 	if err != nil {
+		var missing *state.ErrNotFound
+		if errors.As(err, &missing) {
+			return true, nil
+		}
 		return false, err
+	}
+	if state.RunIdentity(run) != pill.RunIncarnationID {
+		// The queue's subsequent Ack still compares the captured old record and
+		// generation atomically. Never finalize or bill the new physical row.
+		return auth.ValidRunIncarnation(state.RunIdentity(run)), nil
 	}
 	if state.TerminalRunStatus(run.Status) {
 		if _, done := run.Metadata[state.CompletionGenerationKey]; done {
@@ -117,12 +133,12 @@ func (s *Server) CompleteReclaimedRun(ctx context.Context, pill transport.Poison
 	// recorded. Only the trusted reaper can bind that retained lease here.
 	if current != generation || !attempted {
 		recovery := state.WithTrustedAttemptRecovery(transport.WithWorkloadIdentity(tenant.SystemContext(ctx), assignment.WorkloadOwner))
-		accepted, err := s.store.BeginRunAttempt(recovery, pill.RunID, generation)
+		accepted, err := s.store.BeginRunAttempt(recovery, pill.RunID, pill.RunIncarnationID, generation)
 		if err != nil || !accepted {
 			return false, err
 		}
 	}
-	return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: pill.RunID, Generation: generation, Status: models.RunStatusError, Error: errorMsg})
+	return s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: pill.RunID, ExpectedIncarnationID: pill.RunIncarnationID, Generation: generation, Status: models.RunStatusError, Error: errorMsg})
 }
 
 // CompleteRun is retryable after either an RPC failure or a lost response. The
@@ -135,6 +151,9 @@ func (s *Server) CompleteRun(ctx context.Context, c *state.RunCompletion) (bool,
 // completeRunResult retains the transaction's Applied flag so trusted sweeps
 // count and report only their own transition while still retrying finalization.
 func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
+	if !auth.ValidRunIncarnation(c.ExpectedIncarnationID) {
+		return state.CompletionResult{}, &state.ErrConflict{Resource: "run", ID: c.RunID, Reason: "original run record identity required"}
+	}
 	run, err := s.store.GetRun(tenant.SystemContext(ctx), c.RunID)
 	if err != nil {
 		return state.CompletionResult{}, err
@@ -172,7 +191,21 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 		if !done || state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey) != c.Generation || run.Status != c.Status {
 			return state.CompletionResult{}, nil
 		}
-		return state.CompletionResult{Accepted: true}, s.finalizeCommittedRun(ctx, run, false)
+		// A lost acknowledgement can be retried after the queue lease is gone.
+		// The captured read is insufficient when deletion and recreation race it;
+		// check the echoed original identity under the same lock as completion.
+		result, err := s.store.CompleteRun(ctx, c)
+		if err != nil || !result.Accepted {
+			return result, err
+		}
+		if result.Applied {
+			return result, fmt.Errorf("completed-result replay unexpectedly applied a transition")
+		}
+		committed, err := s.getObservedRun(ctx, run)
+		if err != nil {
+			return result, err
+		}
+		return result, s.finalizeCommittedRun(ctx, committed, false)
 	}
 	if !state.TerminalRunStatus(c.Status) {
 		return state.CompletionResult{}, fmt.Errorf("invalid terminal run status %q", c.Status)
@@ -195,7 +228,7 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 		}
 		replayed := make(chan replayResult, 1)
 		go func() {
-			events, err := s.broker.Replay(replayCtx, c.RunID, 0)
+			events, err := s.broker.Replay(replayCtx, c.RunID, state.RunIdentity(run), 0)
 			replayed <- replayResult{events: events, err: err}
 		}()
 		var result replayResult
@@ -212,7 +245,7 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 		} else {
 			for i := len(result.events) - 1; i >= 0; i-- {
 				event := result.events[i]
-				if event.Method != "values" || event.Generation != completion.Generation {
+				if event.Method != "values" || event.Generation != completion.Generation || event.RunIncarnationID != state.RunIdentity(run) {
 					continue
 				}
 				var values struct {
@@ -234,13 +267,13 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 		// A pending-only enqueue failure has no admitted worker output. Do not
 		// make definite rejection recovery depend on a healthy event broker.
 		if !completion.FailUnstarted {
-			events, err := s.broker.Replay(ctx, c.RunID, 0)
+			events, err := s.broker.Replay(ctx, c.RunID, state.RunIdentity(run), 0)
 			if err != nil {
 				return state.CompletionResult{}, fmt.Errorf("replay final output: %w", err)
 			}
 			for i := len(events) - 1; i >= 0; i-- {
 				event := events[i]
-				if event.Method != "values" || event.Generation != completion.Generation {
+				if event.Method != "values" || event.Generation != completion.Generation || event.RunIncarnationID != state.RunIdentity(run) {
 					continue
 				}
 				if err := jsonvalue.Unmarshal(event.Data, &completion.Values); err != nil {
@@ -276,7 +309,7 @@ func (s *Server) finalizeCommittedRun(ctx context.Context, run *models.Run, appl
 	if err := s.persistTerminalUsage(ctx, run, applied); err != nil {
 		return err
 	}
-	if err := s.releaseUsageHold(ctx, run.RunID); err != nil {
+	if err := s.releaseUsageHold(ctx, run.RunID, state.RunIdentity(run)); err != nil {
 		return err
 	}
 	s.maybeCancelInflightAfterTerminal(ctx, run)
@@ -289,10 +322,10 @@ func (s *Server) finalizeCommittedRun(ctx context.Context, run *models.Run, appl
 			return err
 		}
 	}
-	if err := s.broker.Close(run.RunID); err != nil {
+	if err := s.broker.Close(run.RunID, state.RunIdentity(run)); err != nil {
 		return err
 	}
-	return s.finishRun(run.RunID, run.ThreadID, run.AgentID, run.TenantID, run.Status, run.Error, run.Metadata["cache_hit"] == true)
+	return s.finishRun(run)
 }
 
 // completeObservedRun shares the durable completion contract with wait callers
@@ -326,13 +359,13 @@ func (s *Server) awaitDurableCompletion(ctx context.Context, run *models.Run) (*
 			return latest, nil
 		}
 		generation := state.MetadataGeneration(latest.Metadata, state.AttemptGenerationKey)
-		events, err := s.broker.Replay(ctx, run.RunID, 0)
+		events, err := s.broker.Replay(ctx, run.RunID, state.RunIdentity(run), 0)
 		if err != nil {
 			return nil, err
 		}
 		for i := len(events) - 1; i >= 0; i-- {
 			event := events[i]
-			if !event.IsTerminal() || event.Generation != generation {
+			if !event.IsTerminal() || event.Generation != generation || event.RunIncarnationID != state.RunIdentity(run) {
 				continue
 			}
 			terminal := models.RunStatusError

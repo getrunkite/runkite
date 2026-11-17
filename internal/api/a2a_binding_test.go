@@ -43,7 +43,7 @@ func activateA2AParent(t *testing.T, env *testEnv, runID string, user *transport
 		t.Fatal(err)
 	}
 	if assignment == nil {
-		assignment = &transport.RunAssignment{RunID: runID, ThreadID: parent.ThreadID, GraphID: parent.AgentID, TenantID: parent.TenantID, Generation: 1, RunnerKind: "python-langgraph", User: user}
+		assignment = &transport.RunAssignment{RunID: runID, ThreadID: parent.ThreadID, GraphID: parent.AgentID, TenantID: parent.TenantID, Generation: 1, RunnerKind: "python-langgraph", User: user, RunIncarnationID: originalRunIdentity(t, env.store, runID)}
 		if err := env.queue.Enqueue(ctx, assignment); err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func postA2AWithHeaders(t *testing.T, env *testEnv, body map[string]interface{},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/internal/a2a/runs", bytes.NewReader(raw))
 	if runID != "" {
-		req.Header.Set(auth.HeaderRunID, runID)
+		req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, req.Header, auth.HeaderRunID, runID))
 	}
 	if generation != "" {
 		req.Header.Set(auth.HeaderGeneration, generation)
@@ -150,7 +150,7 @@ func TestA2A_ParentAuthorityCannotBeReplaced(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			assignment := &transport.RunAssignment{RunID: "parent", ThreadID: "parent-thread", GraphID: "parent-agent", RunnerKind: "python-langgraph", TenantID: "tenant-a", Generation: 5, User: user}
+			assignment := &transport.RunAssignment{RunID: "parent", ThreadID: "parent-thread", GraphID: "parent-agent", RunnerKind: "python-langgraph", TenantID: "tenant-a", Generation: 5, User: user, RunIncarnationID: originalRunIdentity(t, env.store, "parent")}
 			if err := env.queue.Enqueue(ctx, assignment); err != nil {
 				t.Fatal(err)
 			}
@@ -158,7 +158,9 @@ func TestA2A_ParentAuthorityCannotBeReplaced(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.inactive {
-				if _, err := env.queue.Ack(ctx, "parent", 5); err != nil {
+				if _, err := env.queue.Ack(ctx, "parent", originalRunIdentity(t, env.store,
+
+					"parent"), 5); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -273,7 +275,7 @@ func TestA2A_RechecksParentAfterSlowBody(t *testing.T) {
 			raw, _ := json.Marshal(map[string]interface{}{"agent_id": "child", "parent_run_id": parent.RunID})
 			body := &a2aBeforeRead{Reader: bytes.NewReader(raw), before: func() { changeA2AParent(t, env, parent, mode) }}
 			req := httptest.NewRequest(http.MethodPost, "/internal/a2a/runs", body)
-			req.Header.Set(auth.HeaderRunID, parent.RunID)
+			req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, req.Header, auth.HeaderRunID, parent.RunID))
 			req.Header.Set(auth.HeaderGeneration, strconv.FormatInt(parent.Generation, 10))
 			recorder := httptest.NewRecorder()
 			auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: env.queue}, env.apiServer.Handler()).ServeHTTP(recorder, req)

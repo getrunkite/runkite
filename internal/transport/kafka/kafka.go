@@ -137,6 +137,7 @@ func consumerGroupID(namespace, runnerKind string) string {
 // (Ack'd or otherwise cleared) -- standard log-compaction convention,
 // not a value this struct itself represents.
 type stateEntry struct {
+	RunIncarnationID string `json:"run_incarnation_id,omitempty"`
 	// Canceled marks a run_id that must never be delivered (or
 	// re-delivered) again -- checked by Enqueue and Dequeue, set by
 	// Cancel. A canceled entry has no Job/Generation/TouchedAt.
@@ -161,10 +162,12 @@ var nowMillis = func() int64 { return time.Now().UnixMilli() }
 // hint, the compacted state topic as the authoritative in-flight
 // record).
 type Queue struct {
-	brokers       []string
-	namespace     string
-	jobPartitions int
-	writer        *kafka.Writer
+	allowNonAtomicFencing bool
+	mutationMu            sync.Mutex
+	brokers               []string
+	namespace             string
+	jobPartitions         int
+	writer                *kafka.Writer
 
 	mu      sync.Mutex
 	readers map[string]*kafka.Reader // runner_kind -> consumer-group reader
@@ -177,6 +180,15 @@ type Queue struct {
 
 // Option configures a Queue at construction time.
 type Option func(*Queue)
+
+// ErrNonAtomicFencing refuses Kafka's non-CAS lease model unless explicitly accepted.
+var ErrNonAtomicFencing = errors.New("kafkatransport: non-atomic assignment fencing requires explicit compatibility opt-in")
+
+// AllowNonAtomicFencing acknowledges the Compatible-only last-write-wins
+// transport. It provides no cross-replica atomic lease fencing guarantee.
+func AllowNonAtomicFencing(allow bool) Option {
+	return func(q *Queue) { q.allowNonAtomicFencing = allow }
+}
 
 // WithJobPartitions overrides defaultJobPartitions (1) for every job
 // topic this Queue creates. Only affects topics created for the first
@@ -251,6 +263,10 @@ func NewQueueWithNamespace(ctx context.Context, brokers []string, namespace stri
 	}
 	for _, opt := range opts {
 		opt(q)
+	}
+
+	if !q.allowNonAtomicFencing {
+		return nil, ErrNonAtomicFencing
 	}
 
 	if err := ensureTopic(ctx, brokers, q.stateTopic(), 1, map[string]string{
@@ -422,7 +438,10 @@ func (q *Queue) readerFor(ctx context.Context, runnerKind string) (*kafka.Reader
 }
 
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
-	if entry, ok := q.getState(job.RunID); ok && entry.Canceled {
+	if !q.allowNonAtomicFencing {
+		return ErrNonAtomicFencing
+	}
+	if entry, ok := q.getState(job.RunID); ok && entry.Canceled && stateHasIdentity(entry, job.RunIncarnationID) {
 		return nil
 	}
 	if err := ensureTopic(ctx, q.brokers, q.jobTopic(job.RunnerKind), q.jobPartitions, nil); err != nil {
@@ -483,6 +502,9 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 // canceled jobs and re-check ctx between messages, not to re-cap a
 // single fetch.
 func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*transport.RunAssignment, error) {
+	if !q.allowNonAtomicFencing {
+		return nil, ErrNonAtomicFencing
+	}
 	reader, err := q.readerFor(ctx, runnerKind)
 	if err != nil {
 		return nil, err
@@ -519,7 +541,7 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 			continue
 		}
 
-		if entry, ok := q.getState(job.RunID); ok && entry.Canceled {
+		if entry, ok := q.getState(job.RunID); ok && entry.Canceled && stateHasIdentity(entry, job.RunIncarnationID) {
 			if err := reader.CommitMessages(context.Background(), msg); err != nil {
 				return nil, fmt.Errorf("kafkatransport: commit past canceled job: %w", err)
 			}
@@ -534,6 +556,20 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 		if job.Generation == 0 {
 			job.Generation = 1
 		}
+		q.mutationMu.Lock()
+		if current, exists := q.getState(job.RunID); exists && !current.Canceled && (!stateHasIdentity(current, job.RunIncarnationID) || current.Generation >= job.Generation) {
+			if !stateHasIdentity(current, job.RunIncarnationID) || current.Generation != job.Generation {
+				if err := q.writeWithTopicRetry(ctx, kafka.Message{Topic: q.jobTopic(runnerKind), Key: []byte(job.RunID), Value: msg.Value}); err != nil {
+					q.mutationMu.Unlock()
+					return nil, err
+				}
+			}
+			q.mutationMu.Unlock()
+			if err := reader.CommitMessages(ctx, msg); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		}
 		// putState before CommitMessages -- see this function's own
 		// doc comment for why the order is load-bearing. Not committing
 		// on a putState failure is deliberate: it leaves this message
@@ -541,12 +577,15 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 		// it outright.
 		if err := q.putState(ctx, job.RunID, &stateEntry{
 			RunnerKind:         runnerKind,
+			RunIncarnationID:   job.RunIncarnationID,
 			Generation:         job.Generation,
 			TouchedAtUnixMilli: nowMillis(),
 			Job:                msg.Value,
 		}); err != nil {
+			q.mutationMu.Unlock()
 			return nil, fmt.Errorf("kafkatransport: record inflight state: %w", err)
 		}
+		q.mutationMu.Unlock()
 		if err := reader.CommitMessages(context.Background(), msg); err != nil {
 			return nil, fmt.Errorf("kafkatransport: commit offset: %w", err)
 		}
@@ -557,19 +596,37 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 // fenced looks up the state entry for runID and decides whether the
 // presented generation is allowed to act on it -- same shape as
 // natstransport's own fenced helper. Zero is not a wildcard.
-func (q *Queue) fenced(runID string, generation int64) (stateEntry, bool) {
+func sameStateIdentity(a, b stateEntry) bool {
+	var job transport.RunAssignment
+	return json.Unmarshal(b.Job, &job) == nil && stateHasIdentity(a, job.RunIncarnationID)
+}
+
+func stateHasIdentity(entry stateEntry, incarnation string) bool {
+	if entry.Canceled {
+		return entry.RunIncarnationID == incarnation
+	}
+	var job transport.RunAssignment
+	return json.Unmarshal(entry.Job, &job) == nil && job.RunIncarnationID == incarnation
+}
+
+func (q *Queue) fenced(runID, incarnation string, generation int64) (stateEntry, bool) {
 	entry, ok := q.getState(runID)
 	if !ok || entry.Canceled {
 		return stateEntry{}, false
 	}
-	if entry.Generation != generation {
+	if entry.Generation != generation || !stateHasIdentity(entry, incarnation) {
 		return stateEntry{}, false
 	}
 	return entry, true
 }
 
-func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
-	if _, ok := q.fenced(runID, generation); !ok {
+func (q *Queue) Ack(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
+	q.mutationMu.Lock()
+	defer q.mutationMu.Unlock()
+	if !q.allowNonAtomicFencing {
+		return false, ErrNonAtomicFencing
+	}
+	if _, ok := q.fenced(runID, incarnation, generation); !ok {
 		return false, nil
 	}
 	if err := q.putState(ctx, runID, nil); err != nil {
@@ -578,8 +635,13 @@ func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, 
 	return true, nil
 }
 
-func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
-	entry, ok := q.fenced(runID, generation)
+func (q *Queue) Renew(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
+	q.mutationMu.Lock()
+	defer q.mutationMu.Unlock()
+	if !q.allowNonAtomicFencing {
+		return false, ErrNonAtomicFencing
+	}
+	entry, ok := q.fenced(runID, incarnation, generation)
 	if !ok {
 		return false, nil
 	}
@@ -625,8 +687,13 @@ func bumpGeneration(payload []byte, newGen int64) ([]byte, error) {
 	return json.Marshal(&job)
 }
 
-func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
-	entry, ok := q.fenced(runID, generation)
+func (q *Queue) Nack(ctx context.Context, runID, incarnation string, generation int64) error {
+	q.mutationMu.Lock()
+	defer q.mutationMu.Unlock()
+	if !q.allowNonAtomicFencing {
+		return ErrNonAtomicFencing
+	}
+	entry, ok := q.fenced(runID, incarnation, generation)
 	if !ok {
 		return nil // not in-flight -- nothing to do, same as Redis's/NATS's Nack
 	}
@@ -644,8 +711,16 @@ func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error 
 	return q.putState(ctx, runID, nil)
 }
 
-func (q *Queue) Cancel(ctx context.Context, runID string) error {
-	return q.putState(ctx, runID, &stateEntry{Canceled: true})
+func (q *Queue) Cancel(ctx context.Context, runID, incarnation string) error {
+	q.mutationMu.Lock()
+	defer q.mutationMu.Unlock()
+	if !q.allowNonAtomicFencing {
+		return ErrNonAtomicFencing
+	}
+	if current, ok := q.getState(runID); ok && !stateHasIdentity(current, incarnation) {
+		return nil
+	}
+	return q.putState(ctx, runID, &stateEntry{Canceled: true, RunIncarnationID: incarnation})
 }
 
 // ReclaimStale re-enqueues (re-produces to the job topic, bumping the
@@ -655,6 +730,11 @@ func (q *Queue) Cancel(ctx context.Context, runID string) error {
 // lock when REDIS_URL is set. The local re-check before produce only
 // skips work already reflected in this process's materialized view.
 func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetries int) (int, []transport.PoisonPill, error) {
+	q.mutationMu.Lock()
+	defer q.mutationMu.Unlock()
+	if !q.allowNonAtomicFencing {
+		return 0, nil, ErrNonAtomicFencing
+	}
 	cutoff := nowMillis() - maxAge.Milliseconds()
 
 	q.stateMu.RLock()
@@ -675,7 +755,7 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 	reclaimed := 0
 	var dead []transport.PoisonPill
 	for _, s := range stale {
-		if cur, ok := q.getState(s.runID); !ok || cur.Canceled || cur.Generation != s.entry.Generation || cur.TouchedAtUnixMilli > cutoff {
+		if cur, ok := q.getState(s.runID); !ok || cur.Canceled || cur.Generation != s.entry.Generation || !sameStateIdentity(cur, s.entry) || cur.TouchedAtUnixMilli > cutoff {
 			continue
 		}
 		newGen := s.entry.Generation + 1
@@ -686,10 +766,11 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 			var job transport.RunAssignment
 			_ = json.Unmarshal(s.entry.Job, &job)
 			dead = append(dead, transport.PoisonPill{
-				RunID:      s.runID,
-				Generation: newGen,
-				AgentID:    job.GraphID,
-				TenantID:   job.TenantID,
+				RunID:            s.runID,
+				RunIncarnationID: job.RunIncarnationID,
+				Generation:       newGen,
+				AgentID:          job.GraphID,
+				TenantID:         job.TenantID,
 			})
 			continue
 		}

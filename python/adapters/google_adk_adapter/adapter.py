@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from runkite_runner.assignment_identity import native_turn_id, receipt_matches_assignment, require_run_incarnation
 from runkite_runner.checkpoint import resolve_checkpoint_http_url
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
@@ -282,6 +283,7 @@ class GoogleAdkAdapter:
 
         event_callback = send
         run_id, graph_id = assignment["run_id"], assignment["graph_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         thread_id, generation = assignment.get("thread_id") or "", int(assignment.get("generation") or 0)
         tenant_id = assignment.get("tenant_id") or "default"
         identity = {"graph_id": graph_id, "app_name": graph_id, "user_id": tenant_id, "session_id": thread_id}
@@ -459,7 +461,7 @@ class GoogleAdkAdapter:
             check_cancel()
             await event_callback(make_event("lifecycle", {"event": "running"}))
             completed = (prior or {}).get("completed")
-            if completed and completed["run_id"] == run_id:
+            if completed and receipt_matches_assignment(completed, run_id, run_incarnation_id):
                 if completed["input"] != input_key:
                     raise ValueError("reclaimed run input differs from its committed turn")
                 output = json.loads(state_json(completed["output"]))
@@ -502,7 +504,7 @@ class GoogleAdkAdapter:
             stream = runner.run_async(
                 user_id=tenant_id,
                 session_id=thread_id,
-                invocation_id=run_id,
+                invocation_id=native_turn_id(run_id, run_incarnation_id),
                 new_message=types.Content(role="user", parts=[types.Part(text=incoming[0]["content"])]),
                 run_config=run_config,
                 abort_signal=cancel_event,
@@ -513,7 +515,7 @@ class GoogleAdkAdapter:
                 except StopAsyncIteration:
                     break
                 check_cancel()
-                if event.invocation_id != run_id:
+                if event.invocation_id != native_turn_id(run_id, run_incarnation_id):
                     raise ValueError("Google ADK returned an event for another invocation")
                 _validate_actions(event.actions)
                 if event.error_code or event.error_message or event.interrupted or event.long_running_tool_ids:
@@ -547,6 +549,7 @@ class GoogleAdkAdapter:
                 "completed": {
                     "status": "success",
                     "run_id": run_id,
+                    "run_incarnation_id": run_incarnation_id,
                     "input": input_key,
                     "output": output,
                     "text_events": text_events,

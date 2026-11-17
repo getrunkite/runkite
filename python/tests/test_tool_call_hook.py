@@ -163,6 +163,7 @@ async def test_execute_run_emits_tool_call_event():
         "graph_id": "react_agent",
         "input": {"messages": [{"role": "human", "content": "search for something"}]},
         "stream_modes": ["updates"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(_FakeAdapter(), assignment, event_callback)
 
@@ -190,6 +191,7 @@ async def test_execute_run_does_not_duplicate_tool_call_across_stream_modes():
         "graph_id": "react_agent",
         "input": {"messages": [{"role": "human", "content": "search again"}]},
         "stream_modes": ["values", "updates"],
+        "run_incarnation_id": "record-fixture",
     }
     await execute_run(_FakeAdapter(), assignment, event_callback)
 
@@ -251,6 +253,7 @@ async def test_execute_run_denies_disallowed_tool():
         "input": {"messages": [HumanMessage(content="hi")]},
         "stream_modes": ["values"],
         "allowed_tools": ["search"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(FakeAdapter(), assignment, event_callback)
     check("status is error", status == "error")
@@ -344,6 +347,7 @@ async def test_execute_run_denies_after_empty_name_chunk():
         "input": {"messages": [HumanMessage(content="hi")], "step": 0},
         "stream_modes": ["values"],
         "allowed_tools": ["search"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(FakeAdapter(), assignment, event_callback)
     check("status is error after empty→named deny", status == "error")
@@ -405,6 +409,7 @@ async def test_execute_run_captures_usage_before_interrupt():
         "graph_id": "gate_agent",
         "input": {"messages": [{"role": "human", "content": "do the thing"}]},
         "stream_modes": ["values"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(_InterruptAdapter(), assignment, event_callback)
 
@@ -474,6 +479,7 @@ async def test_execute_run_captures_usage_before_interrupt_updates_mode_only():
         "graph_id": "gate_agent",
         "input": {"messages": [{"role": "human", "content": "do the thing"}]},
         "stream_modes": ["updates"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(_InterruptAdapter(), assignment, event_callback)
 
@@ -542,6 +548,7 @@ async def test_execute_run_does_not_double_count_usage_across_turns():
             "graph_id": "chat",
             "input": {"messages": [{"role": "human", "content": content}]},
             "stream_modes": ["values"],
+            "run_incarnation_id": "record-fixture",
         }
         status = await execute_run(_ChatAdapter(), assignment, event_callback)
         check(f"{run_id} succeeds", status == "success")
@@ -623,6 +630,7 @@ async def test_execute_run_skip_prefix_covers_bare_concat_idless_graph():
             "graph_id": "chat",
             "input": {"messages": [{"role": "human", "content": content}]},
             "stream_modes": ["values"],
+            "run_incarnation_id": "record-fixture",
         }
         status = await execute_run(_BareConcatAdapter(), assignment, event_callback)
         check(f"{run_id} succeeds", status == "success")
@@ -697,6 +705,7 @@ async def test_execute_run_resume_does_not_recount_pre_interrupt_usage():
         "graph_id": "gate_agent",
         "input": {"messages": [{"role": "human", "content": "do it"}]},
         "stream_modes": ["values"],
+        "run_incarnation_id": "record-fixture",
     }
     status1 = await execute_run(_InterruptAdapter(), assignment1, cb1)
     check("first run interrupts", status1 == "interrupted")
@@ -723,6 +732,7 @@ async def test_execute_run_resume_does_not_recount_pre_interrupt_usage():
         "input": None,
         "resume_command": {"response": True},
         "stream_modes": ["values"],
+        "run_incarnation_id": "record-fixture",
     }
     status2 = await execute_run(_InterruptAdapter(), assignment2, cb2)
     check("resume succeeds", status2 == "success")

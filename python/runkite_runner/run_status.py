@@ -5,6 +5,8 @@ plane whether the run is still executable before starting agent work --
 a cancel that landed between dequeue and execute is otherwise a silent
 race. Fail-open on transport errors: WatchCancels remains the primary
 cancel path; a brief CP blip must not drop every job.
+Missing record proof and HTTP 401/403 always stop execution, including
+ordinary runners. Pool and certificate-owned checks keep their stricter policy.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+from .assignment_identity import valid_run_incarnation
 from .tenant_ctx import run_id_headers, tenant_id_headers
 from .tls_utils import httpx_tls_kwargs
 
@@ -32,14 +35,19 @@ async def should_skip_run(
     tenant_id: str = "",
     generation: int | None = None,
     require_authority: bool = False,
+    run_incarnation_id: str = "",
 ) -> bool:
     """Return True when the assignment must be discarded without executing."""
     base = http_address.rstrip("/")
+    if not valid_run_incarnation(run_incarnation_id):
+        logger.warning("pre-exec status: missing or invalid original run identity; discarding assignment")
+        return True
     pool = require_authority or runner_kind.startswith("pool-")
     if require_authority and urlsplit(base).scheme != "https":
         logger.warning("certificate-owned assignment refuses a non-HTTPS control-plane URL")
         return True
     headers: dict[str, str] = {}
+    headers["X-Runkite-Run-Incarnation"] = run_incarnation_id
     if generation is not None:
         headers.update(run_id_headers(run_id))
         headers["X-Runkite-Generation"] = str(generation)
@@ -55,7 +63,7 @@ async def should_skip_run(
     try:
         async with httpx.AsyncClient(timeout=5.0, **httpx_tls_kwargs()) as client:
             resp = await client.get(f"{base}/internal/runs/{quote(run_id, safe='')}/status", headers=headers)
-        if resp.status_code == 404:
+        if resp.status_code in {401, 403, 404}:
             logger.warning("pre-exec status: run %s not found; discarding", run_id)
             return True
         if resp.status_code != 200:

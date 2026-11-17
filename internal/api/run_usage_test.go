@@ -30,7 +30,7 @@ func TestDurableUsageReportsSettleUnknownZeroAndCancelledPartialExactlyOnce(t *t
 			store, queue, broker, cancel := completionFixture(t, map[string]interface{}{"run_manifest": map[string]interface{}{"runner_kind": "python-isolated"}})
 			plane := api.NewServer(store, queue, broker, cancel)
 			ctx := tenant.ScopedContext(t.Context(), "default")
-			if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+			if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 				t.Fatal(err)
 			}
 			run, _ := store.GetRun(ctx, "run")
@@ -43,7 +43,7 @@ func TestDurableUsageReportsSettleUnknownZeroAndCancelledPartialExactlyOnce(t *t
 				}
 			}
 			for range 2 {
-				accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: "run", Generation: 1, Status: models.RunStatus(scenario.status), CancelCurrentAttempt: scenario.status == "interrupted"})
+				accepted, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{TrustedSystem: true, RunID: "run", Generation: 1, Status: models.RunStatus(scenario.status), CancelCurrentAttempt: scenario.status == "interrupted"}))
 				if err != nil || !accepted {
 					t.Fatal(accepted, err)
 				}
@@ -73,7 +73,7 @@ func TestUsageReportEndpointRejectsAmbiguityAndCallerAuthority(t *testing.T) {
 	store, queue, broker, cancel := completionFixture(t, map[string]interface{}{"run_manifest": map[string]interface{}{"runner_kind": "python-isolated"}})
 	plane := api.NewServer(store, queue, broker, cancel)
 	ctx := context.Background()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	run, _ := store.GetRun(ctx, "run")
@@ -111,7 +111,7 @@ func TestUsageReportRequiresFrozenIsolatedProfile(t *testing.T) {
 	store, queue, broker, cancel := completionFixture(t)
 	plane := api.NewServer(store, queue, broker, cancel)
 	ctx := context.Background()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	run, _ := store.GetRun(ctx, "run")

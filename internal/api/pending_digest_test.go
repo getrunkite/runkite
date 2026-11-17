@@ -267,7 +267,7 @@ func newBankTransferHITL(t *testing.T, store state.Store, tenantID, runID string
 
 	binding = &auth.RunBinding{
 		RunID: runID, Generation: 1, TenantID: tenantID, AgentID: "payroll",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, runID),
 	}
 	seedManagedPendingFixture(t, store, binding)
 	call = func(amount string) (int, []byte) {

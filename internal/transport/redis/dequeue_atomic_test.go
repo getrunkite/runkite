@@ -61,7 +61,7 @@ func TestDequeue_PendingOrphanRecoveredByReclaim(t *testing.T) {
 		t.Fatalf("inflight payload mismatch")
 	}
 
-	acked, err := q.Ack(ctx, job.RunID, job.Generation)
+	acked, err := q.Ack(ctx, job.RunID, "", job.Generation)
 	if err != nil || !acked {
 		t.Fatalf("Ack after drain: acked=%v err=%v", acked, err)
 	}
@@ -100,7 +100,7 @@ func TestDequeue_BLMoveThenPromote_HappyPath(t *testing.T) {
 		t.Fatal("expected job in inflight:data after Dequeue")
 	}
 
-	acked, err := q.Ack(ctx, job.RunID, job.Generation)
+	acked, err := q.Ack(ctx, job.RunID, "", job.Generation)
 	if err != nil || !acked {
 		t.Fatalf("Ack: acked=%v err=%v", acked, err)
 	}
@@ -122,7 +122,7 @@ func TestDequeue_CanceledJobDiscardedFromPending(t *testing.T) {
 	if err := q.Enqueue(ctx, job); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Cancel(ctx, job.RunID); err != nil {
+	if err := q.Cancel(ctx, job.RunID, ""); err != nil {
 		t.Fatal(err)
 	}
 

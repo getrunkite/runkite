@@ -4,6 +4,18 @@
 
 ## Current status of this walkthrough
 
+- **Unreleased assignment identity protocol 1:** matching planes and runners
+  negotiate capability 1, echo original-record identity and generation, and
+  keep event/cancel namespaces separate across run-ID reuse. Follow the
+  [contract](assignment-identity.md) and [upgrade](../ops-runbook.md#assignment-identity-upgrade).
+  The same source upgrade adds SQL original-record accounting migration 23 on
+  Postgres/SQLite or 24 on MySQL, plus record-bound terminal-hook claims. Back up
+  and drain all writers; legacy unbound rows are preserved and collisions need
+  explicit reconciliation rather than automatic identity backfill.
+  Current-source Kafka is refused unless its non-atomic compatibility mode is
+  explicitly enabled. Redis does not add queue CAS; older Kafka statements in
+  this historical walkthrough are not qualification of atomic HA fencing.
+
 - **Released in v0.5.6:** authenticated runner-kind binding, exact generation fencing including generation 0, final persistence and finalization before queue acknowledgement, retained leases at the retry ceiling, strict MCP parsing and opt-in upstream `streamable_http`. Follow `internal/bridge/server.go:StreamEvents/ReportStatus`, `internal/api/completion.go:BeginRunAttempt/CompleteRun/CompleteReclaimedRun`, `cmd/reclaim.go:finishPoisonPill`, and `internal/connector/mcpproxy.go`.
 - **Released in v0.5.7:** Go and Admin UI build dependency security updates, with no additional runner behavior change. Postgres and Redis remain the supported HA pair. Runkite remains self-host only.
 - **Released in v0.5.8; independent helper packages from v0.8.0:** app-owned TypeScript `createGovernedExecute` and Python Microsoft Agent Framework function middleware use the existing decision API. `internal/api/governance_decide.go` does not create Threads or Runs, dispatch a job, or apply managed-run kill switches, break-glass or spend caps. An allow is a decision, not evidence that a tool ran.
@@ -1885,8 +1897,8 @@ It is purely: "does this implementation correctly fulfill the interface contract
 Based on conformance AND operational evidence:
 
 - **Supported:** Conformance passes + multi-replica soak tested + production recommended. Today: Postgres + Redis.
-- **Compatible:** Conformance passes + some operational evidence but not full production soak. Today: NATS triad, MySQL, SQLite (governance), Kafka+Redis, Helm packaging.
-- **Experimental:** Partial conformance, known gaps, use at your own risk. Today: Kafka without Redis for multi-replica.
+- **Compatible:** Conformance passes + some operational evidence but not full production soak. Today: NATS triad, MySQL, SQLite (governance), Helm packaging, and Kafka only with an explicit non-atomic compatibility opt-in.
+- **Experimental:** Partial conformance, known gaps, use at your own risk. Kafka without Redis additionally lacks shared event/cancel delivery; neither Kafka pairing has cross-replica atomic queue CAS.
 
 ---
 
@@ -1898,7 +1910,7 @@ This is the list of things that do NOT work perfectly, that have known race cond
 
 **MongoDB governance gap:** Mongo can enforce allow/deny from config grants. But it cannot store audit events, admin overlay grants, pending actions, kill switches, break-glass, or mandatory HITL rules. Admin governance routes return 501. Pending fails closed to deny. Do not market governance for Mongo.
 
-**Kafka without Redis:** Kafka alone lacks EventBroker fan-out and CancelBroker shapes for multi-replica. Without Redis you get single-instance event delivery only. ReclaimStale across replicas needs Redis for leader election. This combination is Experimental.
+**Kafka queue fencing:** current source requires `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`. Kafka has no cross-replica atomic queue CAS. Redis supplies separate event/cancel delivery and a reclaim-leader lease, not atomic Ack/Renew/Nack/dequeue mutations. Without Redis, event/cancel delivery is also process-local.
 
 **MCP sticky routing:** Agent Protocol MCP sessions (`/mcp`) store state in process memory. Multi-replica deployments MUST configure sticky load balancing for this path or sessions break randomly.
 
@@ -2030,7 +2042,7 @@ An external review of the codebase right before the v0.3.0 tag surfaced several 
 - **MongoDB governance gap:** 501 on admin governance routes.
 - **Event check and publish race:** All events check generation before publication, but those operations are not atomic. Confirm completion against the durable run or `/wait`.
 - `/mcp` **requires sticky routing:** Process-local sessions.
-- **Kafka without Redis:** Not safe for multi-replica reclaim.
+- **Kafka:** explicit non-atomic compatibility mode only; Redis does not repair cross-replica queue CAS. Without Redis, shared event/cancel delivery is absent too.
 - **A2A breadth race:** Can overshoot under concurrency.
 - **Admin session TTL is sliding, no absolute max:** A browser that keeps making requests within each 12h window stays logged in indefinitely. No hard cap yet.
 - **Reverse-proxy trust is all-or-nothing:** The admin login limiter (above) now correctly ignores `X-Forwarded-For`, which means a deployment genuinely behind a reverse proxy rate-limits per proxy IP, not per real client, until real trusted-proxy configuration exists. Coarser, not broken.
@@ -2074,7 +2086,7 @@ When you open a file, this tells you which product part you are in.
 | `internal/transport/`              | Transport interfaces (JobQueue, EventBroker, CancelBroker)        |
 | `internal/transport/redis/`        | Redis implementation of all three (Supported)                     |
 | `internal/transport/nats/`         | NATS implementation (Compatible)                                  |
-| `internal/transport/kafka/`        | Kafka JobQueue (needs Redis for broker/cancel)                    |
+| `internal/transport/kafka/`        | Kafka JobQueue (explicit non-atomic opt-in; Redis for shared broker/cancel)                    |
 | `internal/transport/inprocess/`    | Single-process implementation (dev mode)                          |
 | `internal/transport/conformance/`  | Shared test suites for transport backends                         |
 | `internal/state/`                  | State store interface and all backend drivers                     |
@@ -3525,7 +3537,7 @@ Shared-nothing processes, shared-everything backends. Postgres is truth. Redis i
 Govern the plane, not the prompt. Policy engine evaluates grants + webhook for every connector tool call. Fail-closed on errors. Kill switches, break-glass, mandatory HITL, audit trail. Run-binding prevents tenant forgery. Serve refuses to start insecure.
 
 **"What about Kafka?"**
-Kafka for JobQueue is Compatible. But EventBroker fan-out and CancelBroker need Redis alongside Kafka. Kafka alone for multi-replica HA is Experimental because you lack fan-out, cancel delivery, and safe reclaim leader.
+Current-source Kafka JobQueue requires an explicit non-atomic Compatible-mode opt-in. Redis supplies event/cancel delivery and a reclaim leader, but neither pairing supplies cross-replica atomic queue CAS. Without Redis those other functions are process-local as well.
 
 **"What about MongoDB?"**
 State store: Compatible for agents/threads/runs. Governance: NOT supported — no audit tables, Admin governance returns 501, pending fails closed to deny. Do not market governance for Mongo.
@@ -4020,7 +4032,7 @@ This means: if something works in `dev` but not in `serve`, the issue is likely 
 
 **Tenancy:** Flat string tenant_id. Scoped queries. Run-binding prevents forgery on proxy paths. RUNNER_TENANTS allowlists limit blast radius.
 
-**Honest gaps:** Mongo has no governance durability. Kafka needs Redis for the supported distributed coordination shapes. `/mcp` needs sticky routing. Event generation checks and publication are separate steps. A2A breadth can race. Direct checkpoint mode trusts runner database credentials. Memory rate limits multiply across replicas. See the current limitations guide for the full support boundary.
+**Honest gaps:** Mongo has no governance durability. Kafka requires explicit non-atomic compatibility opt-in; Redis adds event/cancel and reclaim-leader functions, not queue CAS. `/mcp` needs sticky routing. Event generation checks and publication are separate steps within one record; current-source event namespaces prevent crossing original-record boundaries. A2A breadth can race. Direct checkpoint mode trusts runner database credentials. Memory rate limits multiply across replicas. See the current limitations guide for the full support boundary.
 
 When you can explain all of the above from memory without looking at notes, you understand the product completely.
 
@@ -4387,7 +4399,7 @@ Similarly:
 
 - Redis: Supported tier, full triad (JobQueue + EventBroker + CancelBroker), recommended
 - NATS: Compatible tier, full triad with a known Close() semantic gap
-- Kafka: Compatible for JobQueue only, needs Redis alongside for EventBroker/CancelBroker/reclaim-leader
+- Kafka: explicit non-atomic Compatible-mode opt-in for JobQueue; Redis supplies EventBroker/CancelBroker/reclaim-leader but not queue CAS
 - In-process: Dev only, single process, no multi-replica
 
 
@@ -4426,7 +4438,7 @@ Here is every important path in the repository with a one-sentence explanation o
 - `internal/transport/` — Interface definitions (JobQueue, EventBroker, CancelBroker).
 - `internal/transport/redis/` — Redis implementation (Supported).
 - `internal/transport/nats/` — NATS implementation (Compatible).
-- `internal/transport/kafka/` — Kafka JobQueue (needs Redis for other components).
+- `internal/transport/kafka/`: Kafka JobQueue (explicit non-atomic opt-in; Redis supplies other components, not queue CAS).
 - `internal/transport/inprocess/` — Single-process implementation (dev mode).
 - `internal/transport/conformance/` — Shared test suites all backends must pass.
 
@@ -4610,9 +4622,9 @@ When choosing your stack:
 
 **Supported (Postgres + Redis):** You can deploy this with confidence. Multi-replica HA is soak-tested. All features work. Governance is fully operational. The team tests fixes against this combination first.
 
-**Compatible (NATS triad, MySQL, SQLite governance, Kafka+Redis, Helm):** Works correctly based on conformance tests and limited operational evidence. May have documented behavioral differences (like NATS Close gap). You can use it in production if you understand and accept the documented caveats. Less tested under extreme conditions than Supported.
+**Compatible (NATS triad, MySQL, SQLite governance, Helm):** conformance and bounded operational evidence do not equal the Supported soak profile. Kafka additionally requires explicit non-atomic compatibility opt-in; even with Redis it lacks cross-replica atomic queue CAS.
 
-**Experimental (Kafka without Redis):** Compiles. May pass some tests. Has known issues with multi-replica correctness (double-dispatch, missing fan-out). Use only for evaluation or with heavy caveats. Not production-recommended.
+**Kafka without Redis:** additionally has process-local event/cancel delivery. Current source refuses every Kafka pairing without explicit non-atomic compatibility opt-in. Do not infer atomic fencing from conformance or a reclaim-leader lease.
 
 The promotion path: Experimental → Compatible → Supported requires: conformance green, multi-replica live proof, residual list empty enough for production, documentation updated, soak automation added. Wanting a tier upgrade is not a criterion — evidence is.
 

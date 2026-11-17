@@ -251,6 +251,9 @@ jobs:
           python -m unittest discover -s python/tests -p test_isolated_usage.py
           python -m unittest discover -s python/tests -p test_isolated_fixture.py
           python -m unittest discover -s python/tests -p test_runner_image_qualification.py
+          python -m unittest discover -s python/tests -p test_assignment_identity.py
+          python python/tests/test_completion.py
+          python python/tests/test_worker_completion.py
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py

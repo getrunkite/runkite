@@ -61,14 +61,22 @@ func TestWebSocket_RunStartStreamsEventsOnSameConnection(t *testing.T) {
 	if err != nil || assignment == nil || assignment.RunID != runID {
 		t.Fatalf("expected queued job for run %s: %v", runID, err)
 	}
-	env.broker.Publish(ctx, runID, &transport.RunEvent{
+	env.broker.Publish(ctx, runID, originalRunIdentity(t, env.store,
+
+		runID), withOriginalRunEvent(originalRunIdentity(t, env.store,
+
+		runID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"step":1}`), Ts: time.Now().UnixMilli(),
-	})
-	env.broker.Publish(ctx, runID, &transport.RunEvent{
+	}))
+	env.broker.Publish(ctx, runID, originalRunIdentity(t, env.store,
+
+		runID), withOriginalRunEvent(originalRunIdentity(t, env.store,
+
+		runID), &transport.RunEvent{
 		EventID: "evt_2", Seq: 2, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	// Same connection must now deliver both events, in order, without a
 	// second request of any kind.

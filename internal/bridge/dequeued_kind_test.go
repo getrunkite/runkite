@@ -25,13 +25,13 @@ type misroutedKindQueue struct {
 	nackDeadline bool
 }
 
-func (q *misroutedKindQueue) Nack(ctx context.Context, runID string, generation int64) error {
+func (q *misroutedKindQueue) Nack(ctx context.Context, runID string, incarnation string, generation int64) error {
 	q.nackRunID, q.nackGen = runID, generation
 	_, q.nackDeadline = ctx.Deadline()
 	if q.nackError != nil {
 		return q.nackError
 	}
-	return q.JobQueue.Nack(ctx, runID, generation)
+	return q.JobQueue.Nack(ctx, runID, incarnation, generation)
 }
 
 func (q *misroutedKindQueue) Dequeue(ctx context.Context, _ string, timeout time.Duration) (*transport.RunAssignment, error) {
@@ -43,20 +43,20 @@ func TestGetJobRejectsDequeuedAssignmentFromAnotherAuthenticatedKind(t *testing.
 	queue := inprocess.NewQueue()
 	job := &transport.RunAssignment{
 		RunID: "foreign-assignment", RunnerKind: "private-kind", GraphID: "private-agent", Generation: 1,
-		Input: json.RawMessage(`{"private":"synthetic tenant input"}`),
+		Input: json.RawMessage(`{"private":"synthetic tenant input"}`), RunIncarnationID: originalRunIdentity(t, queue, "foreign-assignment"),
 	}
 	if err := queue.Enqueue(ctx, job); err != nil {
 		t.Fatal(err)
 	}
 	routed := &misroutedKindQueue{JobQueue: queue, returnedKind: "private-kind"}
-	srv := NewServer(routed, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
-	defer srv.cleanupRun(job.RunID)
+	srv := newIdentityServer(routed, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	defer srv.cleanupRun(job.RunID, "fixture-record")
 	attempts := 0
-	srv.SetRunLifecycle(func(context.Context, string, int64) (bool, error) {
+	setIdentityLifecycle(srv, func(context.Context, string, string, int64) (bool, error) {
 		attempts++
 		return true, nil
 	}, nil)
-	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1})
+	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if status.Code(err) != codes.PermissionDenied || response != nil {
 		t.Errorf("foreign assignment reached an authenticated runner: hasResponse=%t err=%v", response != nil, err)
 	}
@@ -75,18 +75,18 @@ func TestGetJobRejectsDequeuedAssignmentFromAnotherAuthenticatedKind(t *testing.
 func TestGetJobRetainsForeignAssignmentWhenReturnFails(t *testing.T) {
 	ctx := context.WithValue(context.Background(), runnerIdentityKey{}, "allowed-kind")
 	queue := inprocess.NewQueue()
-	job := &transport.RunAssignment{RunID: "foreign-nack-failure", RunnerKind: "private-kind", Generation: 3}
+	job := &transport.RunAssignment{RunID: "foreign-nack-failure", RunnerKind: "private-kind", Generation: 3, RunIncarnationID: originalRunIdentity(t, queue, "foreign-nack-failure")}
 	if err := queue.Enqueue(ctx, job); err != nil {
 		t.Fatal(err)
 	}
 	routed := &misroutedKindQueue{JobQueue: queue, returnedKind: "private-kind", nackError: errors.New("backend unavailable")}
-	srv := NewServer(routed, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	srv := newIdentityServer(routed, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
 	attempts := 0
-	srv.SetRunLifecycle(func(context.Context, string, int64) (bool, error) {
+	setIdentityLifecycle(srv, func(context.Context, string, string, int64) (bool, error) {
 		attempts++
 		return true, nil
 	}, nil)
-	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1})
+	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if status.Code(err) != codes.Unavailable || response != nil || attempts != 0 {
 		t.Fatalf("failed return leaked/advanced assignment: response=%v err=%v attempts=%d", response, err, attempts)
 	}
@@ -102,13 +102,13 @@ func TestGetJobRetainsForeignAssignmentWhenReturnFails(t *testing.T) {
 func TestGetJobPreservesTrustedLocalModeForDequeuedKind(t *testing.T) {
 	ctx := context.Background()
 	queue := inprocess.NewQueue()
-	job := &transport.RunAssignment{RunID: "local-assignment", RunnerKind: "private-kind", Generation: 1}
+	job := &transport.RunAssignment{RunID: "local-assignment", RunnerKind: "private-kind", Generation: 1, RunIncarnationID: originalRunIdentity(t, queue, "local-assignment")}
 	if err := queue.Enqueue(ctx, job); err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(&misroutedKindQueue{JobQueue: queue, returnedKind: "private-kind"}, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
-	defer srv.cleanupRun(job.RunID)
-	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1})
+	srv := newIdentityServer(&misroutedKindQueue{JobQueue: queue, returnedKind: "private-kind"}, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	defer srv.cleanupRun(job.RunID, "fixture-record")
+	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "allowed-kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil || response == nil || !response.HasJob {
 		t.Fatalf("local no-token compatibility changed: response=%v err=%v", response, err)
 	}

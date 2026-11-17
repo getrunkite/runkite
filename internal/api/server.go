@@ -94,7 +94,7 @@ type Server struct {
 	// StatusCallback lands on a different replica than createRun) is an
 	// accepted observability trade-off; terminal webhooks must NOT be
 	// gated on this map -- see finishRun / finishedRuns.
-	runSpans sync.Map // run_id -> trace.Span
+	runSpans sync.Map // original run record key -> trace.Span
 
 	// finishedRuns is a process-local fast path that skips a second DB
 	// claim when cancel and StatusCallback race on the same replica.
@@ -102,7 +102,7 @@ type Server struct {
 	// Entries expire after finishedRunTTL so the map cannot grow for the
 	// lifetime of a long-running process; a late retry after expiry
 	// still no-ops via TryClaimTerminalHook.
-	finishedRuns sync.Map // run_id -> struct{}
+	finishedRuns sync.Map // original run record key -> struct{}
 }
 
 // NewServer creates the HTTP API server.
@@ -595,7 +595,7 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 			}
 		}
 		generation := state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
-		_, err = s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: runID, Generation: generation, Status: models.RunStatus(statusStr), Error: errorMsg})
+		_, err = s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: state.RunIdentity(run), RunID: runID, Generation: generation, Status: models.RunStatus(statusStr), Error: errorMsg})
 		if err != nil {
 			slog.Error("status callback: durable completion failed", "run_id", runID, "error", err)
 		}
@@ -619,15 +619,12 @@ func (s *Server) StatusCallback() func(runID, status, errorMsg string) {
 // claim write is skipped entirely when no sinks are registered
 // (HasSinks) -- zero cost when webhooks are unconfigured. A claim-store
 // error is retryable, so completion does not acknowledge missing bookkeeping.
-func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status models.RunStatus, errorMsg string, cacheHit ...bool) error {
-	// Cancel/timeout may finish without StatusCallback ever releasing the
-	// create-time hold. DELETE is idempotent with the status-path release.
-	if isTerminalStatus(status) {
-		if err := s.releaseUsageHold(tenant.WithContext(context.Background(), tenantID), runID); err != nil {
-			return err
-		}
-	}
-	if v, ok := s.runSpans.LoadAndDelete(runID); ok {
+func (s *Server) finishRun(run *models.Run) error {
+	runID, threadID, agentID, tenantID := run.RunID, run.ThreadID, run.AgentID, run.TenantID
+	status, errorMsg := run.Status, run.Error
+	incarnation := state.RunIdentity(run)
+	key := transport.RunRecordKey(runID, incarnation)
+	if v, ok := s.runSpans.LoadAndDelete(key); ok {
 		span := v.(trace.Span)
 		span.SetAttributes(attribute.String("run.status", string(status)))
 		// timeout is a forced control-plane failure (hung agent), same
@@ -640,12 +637,12 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 		span.End()
 	}
 
-	if _, already := s.finishedRuns.Load(runID); already {
+	if _, already := s.finishedRuns.Load(key); already {
 		return nil
 	}
 	markFinished := func() {
-		s.finishedRuns.Store(runID, struct{}{})
-		time.AfterFunc(finishedRunTTL, func() { s.finishedRuns.Delete(runID) })
+		s.finishedRuns.Store(key, struct{}{})
+		time.AfterFunc(finishedRunTTL, func() { s.finishedRuns.Delete(key) })
 	}
 
 	if !s.hooks.HasSinks() {
@@ -653,7 +650,11 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 		return nil
 	}
 
-	won, err := s.store.TryClaimTerminalHook(context.Background(), runID)
+	claims, ok := s.store.(state.RunTerminalHookStore)
+	if !ok {
+		return fmt.Errorf("state store does not support original-record terminal hook fencing")
+	}
+	won, err := claims.TryClaimRunTerminalHook(tenant.ScopedContext(context.Background(), tenantID), runID, incarnation)
 	if err != nil {
 		slog.Error("terminal webhook claim failed", "run_id", runID, "error", err)
 		return err
@@ -670,7 +671,7 @@ func (s *Server) finishRun(runID, threadID, agentID, tenantID string, status mod
 		hookType = hooks.Interrupt
 	}
 	data := map[string]interface{}{"status": string(status), "error": errorMsg}
-	if len(cacheHit) > 0 && cacheHit[0] {
+	if run.Metadata["cache_hit"] == true {
 		data["cache_hit"] = true
 	}
 	s.hooks.Dispatch(hooks.Event{

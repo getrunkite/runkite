@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getrunkite/runkite/internal/transport"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -40,10 +41,10 @@ func TestCancelBusContextCancelReleasesPubSub(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		runID := fmt.Sprintf("cancel-leak-%d", i)
-		channels[i] = cancelChannel(runID)
+		channels[i] = cancelChannel(transport.RunRecordKey(runID, ""))
 		subCtx, cancel := context.WithCancel(ctx)
 		cancels[i] = cancel
-		if _, err := bus.SubscribeCancel(subCtx, runID); err != nil {
+		if _, err := bus.SubscribeCancel(subCtx, runID, ""); err != nil {
 			t.Fatalf("SubscribeCancel(%s): %v", runID, err)
 		}
 	}

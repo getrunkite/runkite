@@ -109,7 +109,7 @@ class GeminiWireTests(unittest.IsolatedAsyncioTestCase):
             if on_event is not None:
                 await on_event(event)
 
-        tenant, run = bind_tenant("tenant"), bind_run(run_id, 1)
+        tenant, run = bind_tenant("tenant"), bind_run(run_id, 1, run_incarnation_id="record-fixture")
         try:
             return await self.adapter.execute(
                 {
@@ -119,6 +119,7 @@ class GeminiWireTests(unittest.IsolatedAsyncioTestCase):
                     "tenant_id": "tenant",
                     "generation": 1,
                     "input": {"messages": [{"role": "user", "content": "hello"}]},
+                    "run_incarnation_id": "record-fixture",
                 },
                 emit,
                 cancel or asyncio.Event(),

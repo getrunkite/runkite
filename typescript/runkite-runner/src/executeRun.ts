@@ -25,6 +25,8 @@ export interface RunEvent {
 
 export interface RunAssignment {
   run_id: string;
+  /** Immutable original record proof. Worker entrypoints require it before execution. */
+  run_incarnation_id?: string;
   workload_owner?: { uri: string; key_sha256: string; not_after: string };
   thread_id: string;
   graph_id: string;

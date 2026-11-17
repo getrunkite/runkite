@@ -31,6 +31,7 @@ from typing import Any, Protocol
 import grpc
 
 from . import runner_pb2, runner_pb2_grpc
+from .assignment_identity import require_run_incarnation, valid_run_incarnation
 from .cancellation import PendingCancels, record_cancel_signal, register_run, unregister_run
 from .completion import CompletionDeliveryError, finish_run
 from .execution_pool import validate_pool_environment
@@ -199,19 +200,26 @@ async def run_worker(
     # Attempt-local Events isolate a stale heartbeat from its replacement.
     # WatchCancels fans out and retains early signals for racing registrations.
     pending_cancels: PendingCancels = {}
-    pre_cancelled: set[str] = set()
+    pre_cancelled: set[tuple[str, str]] = set()
     pending_cancels_lock = asyncio.Lock()
 
     async def watch_cancels():
         while True:
             try:
                 stream = stub.WatchCancels(
-                    runner_pb2.WatchCancelsRequest(runner_kind=runner_kind), metadata=auth_metadata
+                    runner_pb2.WatchCancelsRequest(runner_kind=runner_kind, assignment_identity_version=1),
+                    metadata=auth_metadata,
                 )
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
-                    await record_cancel_signal(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
+                    await record_cancel_signal(
+                        pending_cancels,
+                        pre_cancelled,
+                        pending_cancels_lock,
+                        run_id,
+                        getattr(signal, "run_incarnation_id", ""),
+                    )
             except grpc.aio.AioRpcError as e:
                 logger.error(f"WatchCancels error: {e.code()} {e.details()}")
                 await asyncio.sleep(1)
@@ -284,6 +292,7 @@ async def _handle_job(
     from .tenant_ctx import bind_run, bind_runner, bind_tenant, reset_run, reset_runner, reset_tenant
 
     run_id = None
+    run_incarnation_id = ""
     stream_task = None
     status = "error"
     # Fencing token -- see heartbeat.py's docstring. Initialized here
@@ -294,6 +303,7 @@ async def _handle_job(
     try:
         assignment = json.loads(response.assignment_json)
         run_id = assignment["run_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         # Legacy assignments may omit this field. Zero is an exact legacy
         # generation, not a bypass for a current positive-generation job.
         generation = assignment.get("generation", 0)
@@ -307,12 +317,13 @@ async def _handle_job(
             runner_token=runner_token,
             tenant_id=assignment.get("tenant_id") or "",
             generation=generation,
+            run_incarnation_id=run_incarnation_id,
             require_authority=assignment.get("workload_owner") is not None,
         ):
             return
 
         tenant_token = bind_tenant(assignment.get("tenant_id"))
-        run_token = bind_run(run_id, generation)
+        run_token = bind_run(run_id, generation, run_incarnation_id)
         runner_binding = bind_runner(runner_kind, runner_token)
         try:
             with run_span(
@@ -337,6 +348,7 @@ async def _handle_job(
                             run_id=run_id,
                             event_json=json.dumps(event, ensure_ascii=False, separators=(",", ":")),
                             generation=generation,
+                            run_incarnation_id=run_incarnation_id,
                         )
                     )
 
@@ -345,6 +357,7 @@ async def _handle_job(
                     pre_cancelled,
                     pending_cancels_lock,
                     run_id,
+                    run_incarnation_id,
                 )
 
                 # Started as soon as run_id is known, before StreamEvents' first
@@ -352,7 +365,14 @@ async def _handle_job(
                 # A stale heartbeat stops only this attempt. Real cancellation
                 # is broadcast to every overlapping attempt by WatchCancels.
                 heartbeat_task = asyncio.create_task(
-                    heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+                    heartbeat_loop(
+                        stub,
+                        run_id,
+                        auth_metadata,
+                        generation=generation,
+                        cancel_event=cancel_event,
+                        run_incarnation_id=run_incarnation_id,
+                    )
                 )
 
                 stream_task = None
@@ -400,7 +420,15 @@ async def _handle_job(
                     await event_queue.put(None)
                     if stream_task is None:
                         raise CompletionDeliveryError(f"event stream was not established for {run_id}")
-                    status = await finish_run(stub, run_id, generation, status, stream_task, auth_metadata)
+                    status = await finish_run(
+                        stub,
+                        run_id,
+                        generation,
+                        status,
+                        stream_task,
+                        auth_metadata,
+                        run_incarnation_id=run_incarnation_id,
+                    )
                 finally:
                     heartbeat_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -409,7 +437,9 @@ async def _handle_job(
                         stream_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await stream_task
-                    await unregister_run(pending_cancels, pending_cancels_lock, run_id, cancel_event)
+                    await unregister_run(
+                        pending_cancels, pending_cancels_lock, run_id, cancel_event, run_incarnation_id
+                    )
 
                 if status:
                     set_run_status(span, status)
@@ -425,7 +455,7 @@ async def _handle_job(
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
     except Exception as e:
         logger.exception(f"Worker error handling run_id={run_id}: {e}")
-        if run_id is not None:
+        if run_id is not None and valid_run_incarnation(run_incarnation_id):
             try:
                 await stub.ReportStatus(
                     runner_pb2.ReportStatusRequest(
@@ -433,6 +463,7 @@ async def _handle_job(
                         status="error",
                         error_message=str(e),
                         generation=generation,
+                        run_incarnation_id=run_incarnation_id,
                     ),
                     metadata=auth_metadata,
                 )
@@ -589,6 +620,7 @@ async def _poll_loop(
                 runner_pb2.GetJobRequest(
                     runner_kind=runner_kind,
                     timeout_seconds=30,
+                    assignment_identity_version=1,
                 ),
                 metadata=auth_metadata,
             )

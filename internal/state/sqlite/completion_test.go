@@ -33,7 +33,7 @@ func seedCompletion(t *testing.T) (*SQLiteStore, context.Context) {
 
 func TestCompletionTransactionRollsBackAllResultWrites(t *testing.T) {
 	s, ctx := seedCompletion(t)
-	if ok, err := s.BeginRunAttempt(ctx, "run", 1); err != nil || !ok {
+	if ok, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	_, err := s.db.Exec(`CREATE TRIGGER fail_completion BEFORE UPDATE OF status ON runs WHEN NEW.status = 'success' BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END`)
@@ -81,7 +81,7 @@ func TestBeginRunAttemptFailureDoesNotPartiallyStartRun(t *testing.T) {
 	if _, err := s.db.Exec(`CREATE TRIGGER fail_dispatch BEFORE UPDATE OF status ON runs WHEN NEW.status = 'running' BEGIN SELECT RAISE(ABORT, 'injected dispatch failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := s.BeginRunAttempt(ctx, "run", 1); err == nil || accepted {
+	if accepted, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err == nil || accepted {
 		t.Fatal("failed dispatch must not be accepted", accepted, err)
 	}
 	after, err := s.GetRun(ctx, "run")
@@ -97,7 +97,7 @@ func TestBeginRunAttemptFailureDoesNotPartiallyStartRun(t *testing.T) {
 	if _, err := s.db.Exec(`DROP TRIGGER fail_dispatch`); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := s.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+	if accepted, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err != nil || !accepted {
 		t.Fatal("retry must start the run", accepted, err)
 	}
 	after, err = s.GetRun(ctx, "run")
@@ -113,7 +113,7 @@ func TestCompletionGenerationIsMonotonicAndDoesNotReopenTerminal(t *testing.T) {
 		wg.Add(1)
 		go func(g int64) {
 			defer wg.Done()
-			if _, err := s.BeginRunAttempt(ctx, "run", g); err != nil {
+			if _, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), g); err != nil {
 				t.Error(err)
 			}
 		}(gen)
@@ -134,7 +134,7 @@ func TestCompletionGenerationIsMonotonicAndDoesNotReopenTerminal(t *testing.T) {
 	if err != nil || result.Accepted {
 		t.Fatal(result, err)
 	}
-	if ok, err := s.BeginRunAttempt(ctx, "run", 11); err != nil || ok {
+	if ok, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 11); err != nil || ok {
 		t.Fatal("terminal dispatch reopened", ok, err)
 	}
 	run, _ = s.GetRun(ctx, "run")

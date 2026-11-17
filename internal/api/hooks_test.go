@@ -261,10 +261,10 @@ func TestHooks_ToolCallFiresFromEventStream(t *testing.T) {
 	json.Unmarshal(readBody(t, resp), &run)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
 
-	env.broker.Publish(ctx, run.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run.RunID, originalRunIdentity(t, env.store, run.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "tool_call",
 		Namespace: []string{}, Data: json.RawMessage(`{"tool":"search","args":{"q":"weather"}}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	events := waitForHookCount(t, sink, 1)
 	if events[0].RunID != run.RunID || events[0].ThreadID != "tool-call-thread" || events[0].AgentID != "tool-agent" {

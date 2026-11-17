@@ -75,7 +75,9 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
 
         response = SimpleNamespace(
-            assignment_json=json.dumps({"run_id": "run", "thread_id": "thread", "graph_id": "graph"})
+            assignment_json=json.dumps(
+                {"run_id": "run", "thread_id": "thread", "graph_id": "graph", "run_incarnation_id": "record-fixture"}
+            )
         )
         before = set(asyncio.all_tasks())
         with (
@@ -172,7 +174,15 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
 
         response = SimpleNamespace(
-            assignment_json=json.dumps({"run_id": "run", "thread_id": "thread", "graph_id": "graph", "generation": 9})
+            assignment_json=json.dumps(
+                {
+                    "run_id": "run",
+                    "thread_id": "thread",
+                    "graph_id": "graph",
+                    "generation": 9,
+                    "run_incarnation_id": "record-fixture",
+                }
+            )
         )
         before = set(asyncio.all_tasks())
         with (
@@ -249,7 +259,13 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
         def response(generation):
             return SimpleNamespace(
                 assignment_json=json.dumps(
-                    {"run_id": "run", "thread_id": "thread", "graph_id": "graph", "generation": generation}
+                    {
+                        "run_id": "run",
+                        "thread_id": "thread",
+                        "graph_id": "graph",
+                        "generation": generation,
+                        "run_incarnation_id": "record-fixture",
+                    }
                 )
             )
 
@@ -273,9 +289,13 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(events[2].is_set(), "A stale heartbeat cancelled the replacement attempt")
                 release[1].set()
                 await asyncio.wait_for(tasks[0], 2)
-                self.assertEqual(pending["run"], {events[2]}, "Old cleanup removed the replacement registration")
+                self.assertEqual(
+                    pending[("run", "record-fixture")], {events[2]}, "Old cleanup removed the replacement registration"
+                )
                 if cancel_current:
-                    await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                    await module.record_cancel_signal(
+                        pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                    )
                     self.assertTrue(events[2].is_set(), "The replacement missed a genuine run-wide cancel")
                 release[2].set()
                 await asyncio.wait_for(tasks[1], 2)
@@ -307,23 +327,43 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
                 pending = {}
                 pre_cancelled = set()
                 lock = asyncio.Lock()
-                first = await module.register_run(pending, pre_cancelled, lock, "run")
-                second = await module.register_run(pending, pre_cancelled, lock, "run")
-                self.assertTrue(await module.record_cancel_signal(pending, pre_cancelled, lock, "run"))
+                first = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
+                second = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
+                self.assertTrue(
+                    await module.record_cancel_signal(
+                        pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                    )
+                )
                 self.assertTrue(first.is_set())
                 self.assertTrue(second.is_set())
-                await module.unregister_run(pending, lock, "run", first)
-                third = await module.register_run(pending, pre_cancelled, lock, "run")
+                await module.unregister_run(pending, lock, "run", first, run_incarnation_id="record-fixture")
+                third = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 self.assertTrue(third.is_set(), "A replacement consumed or missed a genuine cancellation")
-                self.assertFalse(await module.record_cancel_signal(pending, pre_cancelled, lock, "run"))
-                await module.unregister_run(pending, lock, "run", first)
-                self.assertEqual(pending["run"], {second, third}, "Duplicate cleanup removed another attempt")
-                await module.unregister_run(pending, lock, "run", second)
-                await module.unregister_run(pending, lock, "run", third)
-                self.assertEqual(len(pending["run"]), 0, "Only the bounded canceled tombstone should remain")
-                after_cleanup = await module.register_run(pending, pre_cancelled, lock, "run")
+                self.assertFalse(
+                    await module.record_cancel_signal(
+                        pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                    )
+                )
+                await module.unregister_run(pending, lock, "run", first, run_incarnation_id="record-fixture")
+                self.assertEqual(
+                    pending[("run", "record-fixture")], {second, third}, "Duplicate cleanup removed another attempt"
+                )
+                await module.unregister_run(pending, lock, "run", second, run_incarnation_id="record-fixture")
+                await module.unregister_run(pending, lock, "run", third, run_incarnation_id="record-fixture")
+                self.assertEqual(
+                    len(pending[("run", "record-fixture")]), 0, "Only the bounded canceled tombstone should remain"
+                )
+                after_cleanup = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 self.assertTrue(after_cleanup.is_set(), "A cancel was lost between cleanup and registration")
-                await module.unregister_run(pending, lock, "run", after_cleanup)
+                await module.unregister_run(pending, lock, "run", after_cleanup, run_incarnation_id="record-fixture")
                 clock.advance(cancellation.CANCEL_SIGNAL_TTL_S)
                 self.assertEqual(pending, {})
                 self.assertEqual(pre_cancelled, set())
@@ -338,13 +378,21 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
                 pending = {}
                 pre_cancelled = set()
                 lock = asyncio.Lock()
-                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
-                first = await module.register_run(pending, pre_cancelled, lock, "run")
-                second = await module.register_run(pending, pre_cancelled, lock, "run")
+                await module.record_cancel_signal(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
+                first = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
+                second = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 self.assertIsNot(first, second)
                 self.assertTrue(first.is_set())
                 self.assertTrue(second.is_set())
-                unrelated = await module.register_run(pending, pre_cancelled, lock, "other")
+                unrelated = await module.register_run(
+                    pending, pre_cancelled, lock, "other", run_incarnation_id="record-fixture"
+                )
                 self.assertFalse(unrelated.is_set())
 
     async def test_cancellation_stays_latched_past_orphan_expiry_while_attempts_are_active(self):
@@ -357,18 +405,24 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
                 pending = {}
                 pre_cancelled = set()
                 lock = asyncio.Lock()
-                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
-                first = await module.register_run(pending, pre_cancelled, lock, "run")
+                await module.record_cancel_signal(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
+                first = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 clock.advance(cancellation.CANCEL_SIGNAL_TTL_S * 2)
                 self.assertTrue(first.is_set())
-                self.assertIn("run", pending, "An old expiry callback removed a registered attempt")
+                self.assertIn(("run", "record-fixture"), pending, "An old expiry callback removed a registered attempt")
                 # The active bucket's run-wide latch must not depend on the
                 # orphan marker surviving for the whole execution.
-                pre_cancelled.discard("run")
-                second = await module.register_run(pending, pre_cancelled, lock, "run")
+                pre_cancelled.discard(("run", "record-fixture"))
+                second = await module.register_run(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 self.assertTrue(second.is_set(), "The replacement forgot a genuine run-wide cancellation")
-                await module.unregister_run(pending, lock, "run", first)
-                await module.unregister_run(pending, lock, "run", second)
+                await module.unregister_run(pending, lock, "run", first, run_incarnation_id="record-fixture")
+                await module.unregister_run(pending, lock, "run", second, run_incarnation_id="record-fixture")
                 clock.advance(cancellation.CANCEL_SIGNAL_TTL_S)
                 self.assertEqual(pending, {})
 
@@ -382,12 +436,20 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
                 pending = {}
                 pre_cancelled = set()
                 lock = asyncio.Lock()
-                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                await module.record_cancel_signal(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
-                await module.record_cancel_signal(pending, pre_cancelled, lock, "run")
+                await module.record_cancel_signal(
+                    pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+                )
                 clock.advance(1)
-                self.assertIn("run", pending, "The older expiry deleted a refreshed canceled bucket")
-                self.assertIn("run", pre_cancelled, "The older expiry cleared the newer cancel marker")
+                self.assertIn(
+                    ("run", "record-fixture"), pending, "The older expiry deleted a refreshed canceled bucket"
+                )
+                self.assertIn(
+                    ("run", "record-fixture"), pre_cancelled, "The older expiry cleared the newer cancel marker"
+                )
                 clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
                 self.assertEqual(pending, {})
                 self.assertEqual(pre_cancelled, set())
@@ -398,16 +460,20 @@ class WorkerCompletionTests(unittest.IsolatedAsyncioTestCase):
             pending = {}
             pre_cancelled = set()
             lock = asyncio.Lock()
-            await cancellation.record_cancel_signal(pending, pre_cancelled, lock, "run")
-            old_bucket = pending.pop("run")
-            pre_cancelled.discard("run")
+            await cancellation.record_cancel_signal(
+                pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+            )
+            old_bucket = pending.pop(("run", "record-fixture"))
+            pre_cancelled.discard(("run", "record-fixture"))
             clock.advance(1)
-            await cancellation.record_cancel_signal(pending, pre_cancelled, lock, "run")
-            new_bucket = pending["run"]
+            await cancellation.record_cancel_signal(
+                pending, pre_cancelled, lock, "run", run_incarnation_id="record-fixture"
+            )
+            new_bucket = pending[("run", "record-fixture")]
             clock.advance(cancellation.CANCEL_SIGNAL_TTL_S - 1)
             self.assertIsNot(old_bucket, new_bucket)
-            self.assertIs(pending["run"], new_bucket)
-            self.assertIn("run", pre_cancelled)
+            self.assertIs(pending[("run", "record-fixture")], new_bucket)
+            self.assertIn(("run", "record-fixture"), pre_cancelled)
             clock.advance(1)
             self.assertEqual(pending, {})
             self.assertEqual(pre_cancelled, set())

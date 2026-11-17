@@ -658,15 +658,15 @@ func TestCheckpoint_BackgroundRunPollPattern(t *testing.T) {
 	if err != nil || assignment == nil {
 		t.Fatalf("expected job in queue: %v", err)
 	}
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"messages":[{"role":"ai","content":"hi"}]}`),
 		Ts: time.Now().UnixMilli(),
-	})
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	}))
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	// Simulate the runner's ReportStatus RPC arriving (this is what a real
 	// runner does after StreamEvents completes).
@@ -1384,10 +1384,10 @@ func TestIdempotentRun_StreamRetry_DoesNotReDispatch(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_end", Seq: 1, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-stream"}
@@ -1426,14 +1426,14 @@ func TestIdempotentRun_WaitRetry_ReturnsSameResultWithoutSecondDispatch(t *testi
 		}
 		atomic.AddInt32(&dequeueCount, 1)
 		time.Sleep(150 * time.Millisecond) // let the retry race in before finishing
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 			Namespace: []string{}, Data: json.RawMessage(`{"answer":"42"}`), Ts: time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	body := map[string]interface{}{"agent_id": "test", "run_id": "client-retry-wait"}
@@ -1514,22 +1514,22 @@ func TestAP042_StreamRun(t *testing.T) {
 			return
 		}
 		// Publish events
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID:   assignment.RunID + "_evt_1",
 			Seq:       1,
 			Method:    "values",
 			Namespace: []string{},
 			Data:      json.RawMessage(`{"messages":[{"role":"ai","content":"hello"}]}`),
 			Ts:        time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID:   assignment.RunID + "_evt_2",
 			Seq:       2,
 			Method:    "end",
 			Namespace: []string{},
 			Data:      json.RawMessage(`{"status":"success"}`),
 			Ts:        time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	resp, _ := postJSON(env.srv.URL+"/threads/stream-thread/runs/stream", map[string]interface{}{
@@ -1563,22 +1563,22 @@ func TestAP040_WaitForRun(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID:   assignment.RunID + "_evt_1",
 			Seq:       1,
 			Method:    "values",
 			Namespace: []string{},
 			Data:      json.RawMessage(`{"answer":"42"}`),
 			Ts:        time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID:   assignment.RunID + "_evt_2",
 			Seq:       2,
 			Method:    "end",
 			Namespace: []string{},
 			Data:      json.RawMessage(`{"status":"success"}`),
 			Ts:        time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	resp, _ := postJSON(env.srv.URL+"/threads/wait-thread/runs/wait", map[string]interface{}{
@@ -2084,23 +2084,23 @@ func TestStreamExistingRun_MidRunReplay(t *testing.T) {
 	}
 
 	// Publish 2 events BEFORE a client attaches
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"step":1}`), Ts: time.Now().UnixMilli(),
-	})
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	}))
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_2", Seq: 2, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"step":2}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	// Now a client attaches mid-run — publish the terminal event async so the
 	// stream handler isn't stuck forever
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: "evt_3", Seq: 3, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	streamResp, _ := http.Get(env.srv.URL + "/runs/" + run.RunID + "/stream")
@@ -2137,18 +2137,18 @@ func TestWaitExistingRun_MidRunReplay(t *testing.T) {
 	}
 
 	// Publish values event BEFORE client calls wait
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"messages":[{"role":"ai","content":"early"}]}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	// Terminal event arrives shortly after client calls wait
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: "evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	waitResp, _ := http.Get(env.srv.URL + "/runs/" + run.RunID + "/wait")
@@ -2179,14 +2179,14 @@ func TestStreamCompletedRun_FullReplay(t *testing.T) {
 	ctx := context.Background()
 	assignment, _ := env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
 
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"final":"data"}`), Ts: time.Now().UnixMilli(),
-	})
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	}))
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_2", Seq: 2, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	// Mark run terminal
 	env.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusSuccess, nil, "")
@@ -2242,15 +2242,15 @@ func TestSSE_SurvivesMetricsMiddlewareWrapping(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 			Namespace: []string{}, Data: json.RawMessage(`{"messages":[{"role":"ai","content":"hi"}]}`),
 			Ts: time.Now().UnixMilli(),
-		})
-		broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	resp, err := postJSON(srv.URL+"/threads/wrapped-thread/runs/stream", map[string]interface{}{"agent_id": "test"})
@@ -2279,14 +2279,14 @@ func TestTS002_CreateAndStreamThreadRun(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 			Namespace: []string{}, Data: json.RawMessage(`{"msg":"hi"}`), Ts: time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ts2"})
@@ -2314,14 +2314,14 @@ func TestTS003_CreateAndWaitThreadRun(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 			Namespace: []string{}, Data: json.RawMessage(`{"result":"done"}`), Ts: time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "ts3"})
@@ -2406,10 +2406,10 @@ func TestTS_CreateAndWaitPersistsStatusBeforeResponding(t *testing.T) {
 		// Deliberately no UpdateRunStatus/StatusCallback call here --
 		// isolates the exact gap between "terminal event observed" and
 		// "ReportStatus RPC processed" that caused the real bug.
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "create-wait-persist"})
@@ -2445,10 +2445,10 @@ func TestTS_CreateAndWaitResetsThreadStatusBeforeResponding(t *testing.T) {
 		if err != nil || assignment == nil {
 			return
 		}
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	postJSON(env.srv.URL+"/threads", map[string]interface{}{"thread_id": "create-wait-thread-reset"})
@@ -2480,10 +2480,10 @@ func TestTS_StatusCallbackDoesNotClobberNewerRunClaim(t *testing.T) {
 	if err != nil || assignment == nil {
 		t.Fatalf("expected job in queue: %v", err)
 	}
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	waitResp, _ := http.Get(env.srv.URL + "/threads/clobber-thread/runs/" + run1.RunID + "/wait")
 	expectStatus(t, waitResp, 200)
@@ -2545,10 +2545,10 @@ func TestTS_WaitResetsThreadStatusBeforeResponding(t *testing.T) {
 	// Terminal event reaches the broker -- StatusCallback (the runner's
 	// separate ReportStatus RPC) deliberately never runs in this test,
 	// isolating the exact gap.
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	waitResp, _ := http.Get(env.srv.URL + "/threads/wait-thread-reset/runs/" + run1.RunID + "/wait")
 	expectStatus(t, waitResp, 200)
@@ -2605,10 +2605,10 @@ func TestTS_WaitPersistsStatusBeforeResponding(t *testing.T) {
 	// StatusCallback (the runner's separate ReportStatus RPC) never
 	// runs in this test, deliberately, to isolate exactly the gap that
 	// caused the real bug.
-	env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 
 	waitResp, _ := http.Get(env.srv.URL + "/threads/wait-persist/runs/" + run.RunID + "/wait")
 	expectStatus(t, waitResp, 200)
@@ -2752,7 +2752,7 @@ func withTestConnectorRunBinding(next http.Handler) http.Handler {
 				}
 			}
 			r = r.WithContext(auth.WithRunBinding(r.Context(), &auth.RunBinding{
-				RunID: runID, Generation: gen, TenantID: "default", AgentID: "test",
+				RunID: runID, Generation: gen, TenantID: "default", AgentID: "test", RunIncarnationID: "fixture-record",
 			}))
 		}
 		next.ServeHTTP(w, r)

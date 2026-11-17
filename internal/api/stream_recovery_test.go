@@ -81,7 +81,7 @@ func streamRecoveryFixture(t *testing.T) (state.Store, transport.JobQueue, trans
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = broker.Close(runID)
+		_ = broker.Close(runID, originalRunIdentity(t, store, runID))
 		_ = store.DeleteThread(context.Background(), threadID)
 	})
 	return store, queue, broker, cancels, runID, threadID
@@ -95,37 +95,37 @@ type recoverySubscribeBroker struct {
 	replayOnce sync.Once
 }
 
-func (b *recoverySubscribeBroker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
-	events, err := b.EventBroker.Subscribe(ctx, runID)
+func (b *recoverySubscribeBroker) Subscribe(ctx context.Context, runID string, incarnation string) (<-chan *transport.RunEvent, error) {
+	events, err := b.EventBroker.Subscribe(ctx, runID, incarnation)
 	if err == nil {
 		b.once.Do(func() { close(b.subscribed) })
 	}
 	return events, err
 }
 
-func (b *recoverySubscribeBroker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*transport.RunEvent, error) {
-	events, err := b.EventBroker.Replay(ctx, runID, sinceSeq)
+func (b *recoverySubscribeBroker) Replay(ctx context.Context, runID string, incarnation string, sinceSeq int64) ([]*transport.RunEvent, error) {
+	events, err := b.EventBroker.Replay(ctx, runID, incarnation, sinceSeq)
 	if err == nil {
 		b.replayOnce.Do(func() { close(b.replayed) })
 	}
 	return events, err
 }
 
-func recoveryPublish(t *testing.T, broker transport.EventBroker, runID string, generation, seq int64, id, method, data string) {
+func recoveryPublish(t *testing.T, store state.Store, broker transport.EventBroker, runID string, generation, seq int64, id, method, data string) {
 	t.Helper()
-	if err := broker.Publish(context.Background(), runID, &transport.RunEvent{
+	if err := broker.Publish(context.Background(), runID, originalRunIdentity(t, store, runID), withOriginalRunEvent(originalRunIdentity(t, store, runID), &transport.RunEvent{
 		Generation: generation, EventID: id, Seq: seq, Method: method,
 		Namespace: []string{}, Data: json.RawMessage(data), Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func recoveryPublishCurrent(t *testing.T, broker transport.EventBroker, runID string) {
+func recoveryPublishCurrent(t *testing.T, store state.Store, broker transport.EventBroker, runID string) {
 	t.Helper()
-	recoveryPublish(t, broker, runID, 2, 1, "current-message", "messages", `[{"type":"ai","content":"current answer"},{}]`)
-	recoveryPublish(t, broker, runID, 2, 2, "current-values", "values", `{"answer":"current answer"}`)
-	recoveryPublish(t, broker, runID, 2, 3, "current-terminal", "end", `{"status":"success"}`)
+	recoveryPublish(t, store, broker, runID, 2, 1, "current-message", "messages", `[{"type":"ai","content":"current answer"},{}]`)
+	recoveryPublish(t, store, broker, runID, 2, 2, "current-values", "values", `{"answer":"current answer"}`)
+	recoveryPublish(t, store, broker, runID, 2, 3, "current-terminal", "end", `{"status":"success"}`)
 }
 
 func recoveryWaitSubscribed(t *testing.T, ctx context.Context, broker *recoverySubscribeBroker) {
@@ -156,14 +156,14 @@ func TestStreamRecoveryRunAndThreadSurviveSupersededTerminal(t *testing.T) {
 						plane := api.NewServer(store, queue, broker, cancels)
 						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 						defer cancel()
-						if accepted, err := store.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+						if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 1); err != nil || !accepted {
 							t.Fatalf("begin first attempt: accepted=%v err=%v", accepted, err)
 						}
-						if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+						if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 							t.Fatalf("begin replacement: accepted=%v err=%v", accepted, err)
 						}
 						if replay {
-							recoveryPublish(t, rawBroker, runID, staleGeneration, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
+							recoveryPublish(t, store, rawBroker, runID, staleGeneration, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
 						}
 						method, path, body := http.MethodGet, "/runs/"+runID+"/stream", ""
 						if thread {
@@ -178,9 +178,9 @@ func TestStreamRecoveryRunAndThreadSurviveSupersededTerminal(t *testing.T) {
 						}()
 						recoveryWaitSubscribed(t, ctx, broker)
 						if !replay {
-							recoveryPublish(t, rawBroker, runID, staleGeneration, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
+							recoveryPublish(t, store, rawBroker, runID, staleGeneration, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
 						}
-						recoveryPublishCurrent(t, rawBroker, runID)
+						recoveryPublishCurrent(t, store, rawBroker, runID)
 						select {
 						case <-done:
 						case <-ctx.Done():
@@ -247,15 +247,15 @@ func TestStreamRecoveryWebSocketSurvivesSupersededTerminal(t *testing.T) {
 	if runID == "" {
 		t.Fatal("run.start missing run ID")
 	}
-	t.Cleanup(func() { _ = queue.Cancel(context.Background(), runID) })
+	t.Cleanup(func() { _ = queue.Cancel(context.Background(), runID, originalRunIdentity(t, store, runID)) })
 	recoveryWaitSubscribed(t, ctx, broker)
 	for _, generation := range []int64{1, 2} {
-		if accepted, err := store.BeginRunAttempt(ctx, runID, generation); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), generation); err != nil || !accepted {
 			t.Fatalf("begin attempt %d: accepted=%v err=%v", generation, accepted, err)
 		}
 	}
-	recoveryPublish(t, rawBroker, runID, 1, 80, "stale-terminal", "end", `{"status":"error"}`)
-	recoveryPublishCurrent(t, rawBroker, runID)
+	recoveryPublish(t, store, rawBroker, runID, 1, 80, "stale-terminal", "end", `{"status":"error"}`)
+	recoveryPublishCurrent(t, store, rawBroker, runID)
 	var methods []string
 	for {
 		var event models.StreamingEvent
@@ -288,10 +288,10 @@ func TestStreamRecoveryThreadSinceDoesNotHideReplacementSequence(t *testing.T) {
 	plane := api.NewServer(store, queue, broker, cancels)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if accepted, err := store.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 1); err != nil || !accepted {
 		t.Fatalf("begin first attempt: accepted=%v err=%v", accepted, err)
 	}
-	recoveryPublish(t, rawBroker, runID, 1, 1, "already-seen", "messages", `[{"type":"ai","content":"already seen"},{}]`)
+	recoveryPublish(t, store, rawBroker, runID, 1, 1, "already-seen", "messages", `[{"type":"ai","content":"already seen"},{}]`)
 	request := httptest.NewRequest(http.MethodPost, "/threads/"+threadID+"/stream", strings.NewReader(`{"since":1}`)).WithContext(ctx)
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -300,11 +300,11 @@ func TestStreamRecoveryThreadSinceDoesNotHideReplacementSequence(t *testing.T) {
 		close(done)
 	}()
 	recoveryWaitSubscribed(t, ctx, broker)
-	if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 		t.Fatalf("begin replacement: accepted=%v err=%v", accepted, err)
 	}
-	recoveryPublish(t, rawBroker, runID, 1, 2, "stale-terminal", "end", `{"status":"error"}`)
-	recoveryPublishCurrent(t, rawBroker, runID)
+	recoveryPublish(t, store, rawBroker, runID, 1, 2, "stale-terminal", "end", `{"status":"error"}`)
+	recoveryPublishCurrent(t, store, rawBroker, runID)
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -340,7 +340,7 @@ func TestStreamRecoveryRetriesTerminalAfterTransientCompletionFailure(t *testing
 			plane := api.NewServer(fault, queue, broker, cancels)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 				t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 			}
 			method, path, body := http.MethodGet, "/runs/"+runID+"/stream", ""
@@ -355,7 +355,7 @@ func TestStreamRecoveryRetriesTerminalAfterTransientCompletionFailure(t *testing
 				close(done)
 			}()
 			recoveryWaitSubscribed(t, ctx, broker)
-			recoveryPublishCurrent(t, rawBroker, runID)
+			recoveryPublishCurrent(t, store, rawBroker, runID)
 			select {
 			case <-done:
 			case <-ctx.Done():
@@ -381,7 +381,7 @@ func TestStreamRecoveryFinishesDurableCancellationWithoutRunnerTerminal(t *testi
 			plane := api.NewServer(store, queue, broker, cancels)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 				t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 			}
 			method, path, body := http.MethodGet, "/runs/"+runID+"/stream", ""
@@ -422,7 +422,7 @@ func TestStreamRecoveryDisconnectStopsWaitingWithoutCancellingRun(t *testing.T) 
 			plane := api.NewServer(store, queue, broker, cancels)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 				t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 			}
 			method, path, body := http.MethodGet, "/runs/"+runID+"/stream", ""
@@ -443,7 +443,7 @@ func TestStreamRecoveryDisconnectStopsWaitingWithoutCancellingRun(t *testing.T) 
 			select {
 			case <-done:
 			case <-waitCtx.Done():
-				_ = rawBroker.Close(runID)
+				_ = rawBroker.Close(runID, originalRunIdentity(t, store, runID))
 				<-done
 				t.Fatal("stream ignored its disconnected request context")
 			}
@@ -465,12 +465,12 @@ func TestStreamRecoveryCompletedReplaySkipsSupersededTerminal(t *testing.T) {
 			plane := api.NewServer(store, queue, rawBroker, cancels)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 				t.Fatalf("begin replacement: accepted=%v err=%v", accepted, err)
 			}
-			recoveryPublish(t, rawBroker, runID, 1, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
-			recoveryPublishCurrent(t, rawBroker, runID)
-			if accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 2, Status: models.RunStatusSuccess}); err != nil || !accepted {
+			recoveryPublish(t, store, rawBroker, runID, 1, 80, "stale-terminal", terminal, `{"status":"error","message":"superseded"}`)
+			recoveryPublishCurrent(t, store, rawBroker, runID)
+			if accepted, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: runID, Generation: 2, Status: models.RunStatusSuccess})); err != nil || !accepted {
 				t.Fatalf("complete replacement: accepted=%v err=%v", accepted, err)
 			}
 			request := httptest.NewRequest(http.MethodGet, "/runs/"+runID+"/stream", nil).WithContext(ctx)
@@ -497,18 +497,18 @@ func TestStreamRecoveryRetainsControlPlaneToolAuthEvents(t *testing.T) {
 					plane := api.NewServer(store, queue, broker, cancels)
 					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 					defer cancel()
-					if accepted, err := store.BeginRunAttempt(ctx, runID, 2); err != nil || !accepted {
+					if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 2); err != nil || !accepted {
 						t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 					}
 					controlID := runID + "_tool_auth_fixed"
 					publish := func() {
-						recoveryPublish(t, rawBroker, runID, 2, 1, "current-message", "messages", `[{"type":"ai","content":"current answer"},{}]`)
+						recoveryPublish(t, store, rawBroker, runID, 2, 1, "current-message", "messages", `[{"type":"ai","content":"current answer"},{}]`)
 						// Policy assigns its own sequence from replay, so it can
 						// collide with the next event from the runner. Its stable
 						// control-plane ID must deduplicate independently.
-						recoveryPublish(t, rawBroker, runID, controlGeneration, 2, controlID, "tool_auth", `{"decision":"deny","reason":"operator policy"}`)
-						recoveryPublish(t, rawBroker, runID, 2, 2, "current-values", "values", `{"answer":"current answer"}`)
-						recoveryPublish(t, rawBroker, runID, 2, 3, "current-terminal", "end", `{"status":"success"}`)
+						recoveryPublish(t, store, rawBroker, runID, controlGeneration, 2, controlID, "tool_auth", `{"decision":"deny","reason":"operator policy"}`)
+						recoveryPublish(t, store, rawBroker, runID, 2, 2, "current-values", "values", `{"answer":"current answer"}`)
+						recoveryPublish(t, store, rawBroker, runID, 2, 3, "current-terminal", "end", `{"status":"success"}`)
 					}
 					if replay {
 						publish()

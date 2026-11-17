@@ -75,6 +75,20 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Require assignment identity protocol 1 before workers dequeue work. Matching
+  planes and Python/TypeScript runners echo the original record identity on
+  bound HTTP and lifecycle RPCs; missing proof cannot inherit a replacement's
+  authority. Scope events, cancellation and queue fences to the record as well
+  as its attempt. Atomically bind SQL usage events, reservations and terminal-hook
+  claims to the original record. Back up and drain all writers, apply
+  Postgres/SQLite migration 23 or MySQL migration 24, and deploy matching builds.
+  Preserve and explicitly reconcile legacy unbound accounting, hook claims and
+  ambiguous same-ID receipts; intentional new operations need fresh IDs.
+- Refuse Kafka queue startup unless operators explicitly set
+  `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`. Compatible mode still lacks
+  cross-replica atomic queue fencing, including when Redis supplies events,
+  cancellation and the reclaim leader.
+
 - Isolate newly created named-tenant cron threads so same-named schedules can
   dispatch independently on supported tenant-scoped stores. Reuse an existing
   exact-owned legacy thread to preserve conversation/checkpoint continuity;

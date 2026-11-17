@@ -8,6 +8,7 @@ import {
   checkpointThreadId,
   currentTenant,
   HEADER_GENERATION,
+  HEADER_RUN_INCARNATION,
   HEADER_RUN_ID,
   HEADER_RUN_ID_B64,
   HEADER_TENANT_ID,
@@ -133,4 +134,17 @@ test("runWithBinding adds run id + generation headers", async () => {
     assert.equal(h[HEADER_GENERATION], "3");
   });
   assert.equal(tenantHeaders()[HEADER_RUN_ID], undefined);
+});
+
+test("concurrent same-ID assignments preserve original proof through nested tenant bindings", async () => {
+  const observed = await Promise.all(
+    ["old-record", "new-record"].map((proof) =>
+      runWithBinding({ tenantId: "acme", runId: "same-run", generation: 1, runIncarnationId: proof }, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return runWithTenant("acme", () => tenantHeaders()[HEADER_RUN_INCARNATION]);
+      }),
+    ),
+  );
+  assert.deepEqual(observed, ["old-record", "new-record"]);
+  assert.equal(tenantHeaders()[HEADER_RUN_INCARNATION], undefined);
 });

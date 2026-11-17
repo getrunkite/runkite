@@ -182,7 +182,7 @@ func TestHardeningUpstream401NeverRequestsSessionRenewal(t *testing.T) {
 	t.Cleanup(up.Close)
 	s := NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
 	s.SetConnectorRegistry(connector.NewRegistry(map[string]connector.ConnectorConfig{"test": {Auth: connector.AuthConfig{Type: "bearer", BearerToken: "synthetic"}, MCP: &connector.MCPConfig{URL: up.URL}}}))
-	binding := &auth.RunBinding{RunID: "bound", Generation: 3, TenantID: "test", AgentID: "agent"}
+	binding := &auth.RunBinding{RunID: "bound", Generation: 3, TenantID: "test", AgentID: "agent", RunIncarnationID: originalRunIdentity(t, s, "bound")}
 	r := httptest.NewRequest("POST", "/internal/connectors/test/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write","arguments":{}}}`))
 	r.SetPathValue("name", "test")
 	r = r.WithContext(auth.WithRunBinding(r.Context(), binding))

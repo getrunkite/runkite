@@ -18,6 +18,8 @@ export async function shouldSkipRun(httpAddress, runId, opts) {
         Object.assign(headers, runIdHeaders(runId));
         headers["X-Runkite-Generation"] = String(opts.generation);
     }
+    if (opts?.runIncarnationId)
+        headers["X-Runkite-Run-Incarnation"] = opts.runIncarnationId;
     if (opts?.runnerToken) {
         headers["X-Runner-Kind"] = opts.runnerKind || "typescript-langgraphjs";
         headers["X-Runner-Token"] = opts.runnerToken;
@@ -34,7 +36,7 @@ export async function shouldSkipRun(httpAddress, runId, opts) {
             signal: AbortSignal.timeout(5_000),
         };
         const resp = await fetch(`${base}/internal/runs/${encodeURIComponent(runId)}/status`, init);
-        if (resp.status === 404) {
+        if (resp.status === 404 || resp.status === 401 || resp.status === 403) {
             logger.warn(`pre-exec status: run ${runId} not found; discarding`);
             return true;
         }

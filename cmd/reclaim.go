@@ -141,15 +141,18 @@ func initReclaimMaxAge(configPath string) time.Duration {
 
 type reclaimCompletion func(context.Context, transport.PoisonPill, string) (bool, error)
 
+// The callback authorizes disposal after durable completion/finalization or
+// definitive retirement of the original physical row. Ack always compares the
+// captured old tuple, so neither path can release a replacement assignment.
 func finishPoisonPill(ctx context.Context, queue transport.JobQueue, pill transport.PoisonPill, message string, complete reclaimCompletion) (bool, error) {
 	if complete == nil {
 		return false, nil
 	}
-	accepted, err := complete(ctx, pill, message)
-	if err != nil || !accepted {
+	disposable, err := complete(ctx, pill, message)
+	if err != nil || !disposable {
 		return false, err
 	}
-	return queue.Ack(transport.TrustedQueueContext(ctx), pill.RunID, pill.Generation-1)
+	return queue.Ack(transport.TrustedQueueContext(ctx), pill.RunID, pill.RunIncarnationID, pill.Generation-1)
 }
 
 func reclaimStaleJobs(ctx context.Context, queue transport.JobQueue, rdb *goredis.Client, maxAge time.Duration, maxRetries int, complete reclaimCompletion) {

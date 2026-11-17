@@ -168,7 +168,7 @@ func numericMongoRun(t *testing.T, store *Store) {
 	if err := store.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Input: json.RawMessage(`{"id":9007199254740993}`), CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil || !accepted {
 		t.Fatalf("begin attempt: %v %v", accepted, err)
 	}
 }

@@ -280,10 +280,11 @@ test(
       `
 import { appendFileSync, existsSync } from 'node:fs';
 import { MockLanguageModelV4 } from 'ai/test';
+import { runnerHeaders } from 'runkite-runner/dist/tenantCtx.js';
 export function agent(context) {
  return { maxRetries: 0, model: new MockLanguageModelV4({ modelId: 'offline-strict-mtls', doStream: async ({ prompt }) => ({ stream: new ReadableStream({ async start(controller) {
   const users = prompt.filter(message => message.role === 'user').length;
-  appendFileSync(process.env.E2E_CALLS_FILE, JSON.stringify({runId:context.runId,users}) + '\\n');
+  appendFileSync(process.env.E2E_CALLS_FILE, JSON.stringify({runId:context.runId,users,runIncarnationId:runnerHeaders()['X-Runkite-Run-Incarnation']}) + '\\n');
   controller.enqueue({type:'stream-start',warnings:[]});
   controller.enqueue({type:'text-start',id:'text'});
   controller.enqueue({type:'text-delta',id:'text',delta:'Strict mTLS history ' + users});
@@ -429,7 +430,14 @@ export function agent(context) {
     assert.equal(owner.uri, uri);
     assert.match(owner.key_sha256, /^[0-9a-f]{64}$/);
     assert.equal(current.metadata._runkite_attempt_generation, 1);
+    const runIncarnationId = (await readFile(calls, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((call) => call.runId === run)?.runIncarnationId;
+    assert.match(runIncarnationId, /^[\x21-\x7e]{1,256}$/);
     const runnerHeaders = {
+      "X-Runkite-Run-Incarnation": runIncarnationId,
       "X-Runner-Kind": "typescript-ai-sdk",
       "X-Runner-Token": runnerToken,
       "X-Runkite-Run-Id": run,
@@ -449,8 +457,8 @@ export function agent(context) {
     metadataHeader.set("runner-kind", "typescript-ai-sdk");
     metadataHeader.set("runner-token", runnerToken);
     for (const [method, body] of [
-      ["heartbeat", { runId: run, generation: "1" }],
-      ["reportStatus", { runId: run, generation: "1", status: "success", errorMessage: "" }],
+      ["heartbeat", { runId: run, runIncarnationId, generation: "1" }],
+      ["reportStatus", { runId: run, runIncarnationId, generation: "1", status: "success", errorMessage: "" }],
     ] as const) {
       const error = await new Promise<any>((resolve) =>
         (peer as any)[method](body, metadataHeader, { deadline: Date.now() + 5000 }, (caught: unknown) =>

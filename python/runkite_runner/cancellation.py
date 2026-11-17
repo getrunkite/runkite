@@ -3,31 +3,34 @@
 import asyncio
 from asyncio import get_running_loop
 
+from .assignment_identity import require_run_incarnation, valid_run_incarnation
+
 CANCEL_SIGNAL_TTL_S = 60
 
 
 class RunCancellation(set[asyncio.Event]):
     """Run-wide user cancellation, separate from each attempt's stop Event."""
 
-    def __init__(self, pre_cancelled: set[str]):
+    def __init__(self, pre_cancelled: set[tuple[str, str]]):
         super().__init__()
         self.cancelled = False
         self.pre_cancelled = pre_cancelled
         self.expiry: asyncio.TimerHandle | None = None
 
 
-PendingCancels = dict[str, RunCancellation]
+RunRecord = tuple[str, str]
+PendingCancels = dict[RunRecord, RunCancellation]
 
 
-def _entry(pending_cancels: PendingCancels, pre_cancelled: set[str], run_id: str) -> RunCancellation:
-    entry = pending_cancels.get(run_id)
+def _entry(pending_cancels: PendingCancels, pre_cancelled: set[RunRecord], record: RunRecord) -> RunCancellation:
+    entry = pending_cancels.get(record)
     if entry is None:
         entry = RunCancellation(pre_cancelled)
-        pending_cancels[run_id] = entry
+        pending_cancels[record] = entry
     return entry
 
 
-def _expire_orphan(pending_cancels: PendingCancels, run_id: str, entry: RunCancellation) -> None:
+def _expire_orphan(pending_cancels: PendingCancels, record: RunRecord, entry: RunCancellation) -> None:
     if entry.expiry is not None:
         entry.expiry.cancel()
 
@@ -37,9 +40,9 @@ def _expire_orphan(pending_cancels: PendingCancels, run_id: str, entry: RunCance
         if entry.expiry is not timer:
             return
         entry.expiry = None
-        if pending_cancels.get(run_id) is entry and not entry:
-            pending_cancels.pop(run_id)
-            entry.pre_cancelled.discard(run_id)
+        if pending_cancels.get(record) is entry and not entry:
+            pending_cancels.pop(record)
+            entry.pre_cancelled.discard(record)
 
     timer = get_running_loop().call_later(CANCEL_SIGNAL_TTL_S, expire)
     entry.expiry = timer
@@ -47,18 +50,20 @@ def _expire_orphan(pending_cancels: PendingCancels, run_id: str, entry: RunCance
 
 async def register_run(
     pending_cancels: PendingCancels,
-    pre_cancelled: set[str],
+    pre_cancelled: set[RunRecord],
     lock: asyncio.Lock,
     run_id: str,
+    run_incarnation_id: str,
 ) -> asyncio.Event:
     """Allocate an attempt-local Event and observe any recent run cancel."""
     event = asyncio.Event()
+    record = (run_id, require_run_incarnation(run_incarnation_id))
     async with lock:
-        entry = _entry(pending_cancels, pre_cancelled, run_id)
+        entry = _entry(pending_cancels, pre_cancelled, record)
         if entry.expiry is not None:
             entry.expiry.cancel()
             entry.expiry = None
-        if run_id in pre_cancelled:
+        if record in pre_cancelled:
             entry.cancelled = True
         if entry.cancelled:
             event.set()
@@ -71,38 +76,44 @@ async def unregister_run(
     lock: asyncio.Lock,
     run_id: str,
     event: asyncio.Event,
+    run_incarnation_id: str,
 ) -> None:
     """Remove only this attempt; a replacement can still be executing."""
+    record = (run_id, require_run_incarnation(run_incarnation_id))
     async with lock:
-        entry = pending_cancels.get(run_id)
+        entry = pending_cancels.get(record)
         if entry is None or event not in entry:
             return
         entry.remove(event)
         if not entry:
             if entry.cancelled:
-                _expire_orphan(pending_cancels, run_id, entry)
+                _expire_orphan(pending_cancels, record, entry)
             else:
-                pending_cancels.pop(run_id)
+                pending_cancels.pop(record)
 
 
 async def record_cancel_signal(
     pending_cancels: PendingCancels,
-    pre_cancelled: set[str],
+    pre_cancelled: set[RunRecord],
     lock: asyncio.Lock,
     run_id: str,
+    run_incarnation_id: str,
 ) -> bool:
     """Cancel every attempt and retain the signal for racing registrations.
 
     Return whether the signal was newly remembered. Orphan duplicates refresh
     their bounded expiry; active canceled buckets stay latched until cleanup.
     """
+    if not run_id or not valid_run_incarnation(run_incarnation_id):
+        return False
+    record = (run_id, run_incarnation_id)
     async with lock:
-        new_signal = run_id not in pre_cancelled
-        pre_cancelled.add(run_id)
-        entry = _entry(pending_cancels, pre_cancelled, run_id)
+        new_signal = record not in pre_cancelled
+        pre_cancelled.add(record)
+        entry = _entry(pending_cancels, pre_cancelled, record)
         entry.cancelled = True
         for event in entry:
             event.set()
         if not entry:
-            _expire_orphan(pending_cancels, run_id, entry)
+            _expire_orphan(pending_cancels, record, entry)
         return new_signal

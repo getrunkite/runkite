@@ -10,6 +10,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 )
 
@@ -19,7 +20,7 @@ import (
 // recursively invoke CompleteRun.
 func (s *Server) replayRunEvents(
 	ctx context.Context,
-	runID string,
+	runID, incarnation string,
 	since *int64,
 	eventCh <-chan *transport.RunEvent,
 	emit func(*transport.RunEvent) error,
@@ -28,6 +29,12 @@ func (s *Server) replayRunEvents(
 	if err != nil {
 		return err
 	}
+	if incarnation == "" || state.RunIdentity(run) != incarnation {
+		return &state.ErrConflict{Resource: "run", ID: runID, Reason: "original run record changed"}
+	}
+	// Admin may authorize the first lookup across tenants. Retained replay and
+	// refresh belong only to this captured row and use its narrowed tenant scope.
+	ctx = tenant.ScopedContext(ctx, run.TenantID)
 	generation := state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey)
 	cursorGeneration := generation
 	if _, ok := run.Metadata[state.AttemptGenerationKey]; !ok {
@@ -55,7 +62,7 @@ func (s *Server) replayRunEvents(
 		}
 	}
 	refresh := func() error {
-		latest, err := s.store.GetRun(ctx, runID)
+		latest, err := s.getObservedRun(ctx, run)
 		if err != nil {
 			return err
 		}
@@ -68,14 +75,14 @@ func (s *Server) replayRunEvents(
 	durableEnd := func() error {
 		data, _ := json.Marshal(map[string]string{"status": string(run.Status)})
 		return emit(&transport.RunEvent{
-			Generation: state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey),
-			EventID:    runID + "_end", Method: "end", Data: data,
+			Generation: state.MetadataGeneration(run.Metadata, state.CompletionGenerationKey), RunIncarnationID: incarnation,
+			EventID: runID + "_end", Method: "end", Data: data,
 		})
 	}
 	// A failed completion must not consume its terminal cursor. Replaying it
 	// retries the existing idempotent transaction and its finalization steps.
 	consume := func(event *transport.RunEvent) (done bool, err error) {
-		if event == nil || marked(event) {
+		if event == nil || event.RunIncarnationID != incarnation || marked(event) {
 			return false, nil
 		}
 		// Older control-plane policy notices did not stamp the envelope's
@@ -111,7 +118,7 @@ func (s *Server) replayRunEvents(
 				return false, nil
 			}
 			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{
-				TrustedSystem: true, RunID: runID, Generation: event.Generation, Status: terminal, Error: data.Message,
+				TrustedSystem: true, ExpectedIncarnationID: incarnation, RunID: runID, Generation: event.Generation, Status: terminal, Error: data.Message,
 			})
 			if err != nil {
 				return false, err
@@ -148,7 +155,7 @@ func (s *Server) replayRunEvents(
 			return err
 		}
 		retry := false
-		past, replayErr := s.broker.Replay(ctx, runID, 0)
+		past, replayErr := s.broker.Replay(ctx, runID, incarnation, 0)
 		if replayErr != nil {
 			// Completed records remain readable when retained events expire or
 			// the broker is unavailable. Never substitute a stale raw terminal.

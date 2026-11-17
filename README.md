@@ -19,7 +19,7 @@ See [license scope](#license).
 
 **[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Demo guide](https://getrunkite.com/support/try.html)**
 
-**Unreleased, current source:** start with the [source integration and operator guide](docs/integrations.md#unreleased-current-source) for scoped specialist callers, advisory discovery, retained-run visibility and the Langflow, promptfoo and AG-UI examples. Each guide states its required checkout and tested boundary. Published v0.9.0 install and package instructions below describe the released baseline.
+**Unreleased, current source:** matching planes and runners now require [assignment identity protocol 1](docs/internal/assignment-identity.md), including exact original-record echoes and a coordinated drain/upgrade. Kafka requires an explicit non-atomic compatibility opt-in, even with Redis. Start with the [source integration and operator guide](docs/integrations.md#unreleased-current-source) for scoped specialist callers, advisory discovery, retained-run visibility and the Langflow, promptfoo and AG-UI examples. Each guide states its required checkout and tested boundary. Published v0.9.0 install and package instructions below describe the released baseline.
 
 <p align="center">
   <img src="docs/assets/runkite-overview.svg" alt="Two ways to use one Runkite plane: managed agents create Threads and Runs through runners; app-owned loops request individual tool decisions without creating managed runs." width="1120" />

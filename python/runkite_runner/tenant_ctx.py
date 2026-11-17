@@ -24,6 +24,8 @@ import os
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
+from .assignment_identity import require_run_incarnation
+
 _DEFAULT = "default"
 _active: ContextVar[str] = ContextVar("runkite_tenant", default=_DEFAULT)
 
@@ -32,6 +34,7 @@ _active: ContextVar[str] = ContextVar("runkite_tenant", default=_DEFAULT)
 class _RunBinding:
     run_id: str
     generation: int
+    run_incarnation_id: str
 
 
 _run: ContextVar[_RunBinding | None] = ContextVar("runkite_run", default=None)
@@ -44,6 +47,7 @@ HEADER_TENANT_ID_B64 = "X-Runkite-Tenant-Id-B64"
 HEADER_RUN_ID = "X-Runkite-Run-Id"
 HEADER_RUN_ID_B64 = "X-Runkite-Run-Id-B64"
 HEADER_GENERATION = "X-Runkite-Generation"
+HEADER_RUN_INCARNATION = "X-Runkite-Run-Incarnation"
 
 
 def current_tenant() -> str:
@@ -60,12 +64,16 @@ def reset_tenant(token: Token[str]) -> None:
     _active.reset(token)
 
 
-def bind_run(run_id: str | None, generation: int | None) -> Token[_RunBinding | None]:
+def bind_run(
+    run_id: str | None, generation: int | None, run_incarnation_id: str | None = None
+) -> Token[_RunBinding | None]:
     rid = run_id or ""
     if not rid:
         return _run.set(None)
     gen = int(generation or 0)
-    return _run.set(_RunBinding(run_id=rid, generation=gen))
+    return _run.set(
+        _RunBinding(run_id=rid, generation=gen, run_incarnation_id=require_run_incarnation(run_incarnation_id))
+    )
 
 
 def reset_run(token: Token[_RunBinding | None]) -> None:
@@ -79,6 +87,7 @@ def tenant_headers() -> dict[str, str]:
     if binding is not None:
         headers.update(run_id_headers(binding.run_id))
         headers[HEADER_GENERATION] = str(binding.generation)
+        headers[HEADER_RUN_INCARNATION] = binding.run_incarnation_id
     return headers
 
 

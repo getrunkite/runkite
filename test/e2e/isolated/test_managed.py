@@ -19,7 +19,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -62,6 +62,8 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.api_key, self.runner_token, self.downstream_secret = (secrets.token_urlsafe(32) for _ in range(3))
         self.effects = 0
         self.lock = threading.Lock()
+        self.run_proofs = {}
+        self.owned_run_ids = set()
         test = self
 
         class Tool(BaseHTTPRequestHandler):
@@ -221,6 +223,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
         for index in range(len(self.bases)):
             self.start_plane(index)
         self.plane = self.planes[0]
+        self.assignment_relay, _, _ = self.relay_after_receipt()
         self.start_parent()
 
     def make_certificates(self):
@@ -405,7 +408,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 "--grpc-address",
                 self.grpc,
                 "--http-address",
-                address or self.base,
+                address or self.assignment_relay,
                 "--execution-pool",
                 "fixture",
             ],
@@ -431,7 +434,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
         return self.request("/threads", {})["thread_id"]
 
     def create_run(self, thread, value):
-        return self.request(f"/threads/{thread}/runs", {"agent_id": "isolated_echo", "input": value})["run_id"]
+        run = "isolated-fixture-" + secrets.token_hex(16)
+        with self.lock:
+            self.owned_run_ids.add(run)
+        created = self.request(f"/threads/{thread}/runs", {"run_id": run, "agent_id": "isolated_echo", "input": value})
+        self.assertEqual(created["run_id"], run, "created fixture run identity changed")
+        return run
 
     def final(self, thread, run):
         def done():
@@ -441,21 +449,34 @@ class ManagedIsolatedE2E(unittest.TestCase):
         return wait_for("isolated durable result", done, timeout=120)
 
     def state(self, thread, run, generation=None):
+        with self.lock:
+            if run not in self.run_proofs:
+                return None
         if generation is None:
             current = self.request(f"/threads/{thread}/runs/{run}")
             generation = current.get("metadata", {}).get("_runkite_attempt_generation", 1)
         response = self.client_for(self.parent_identity).get(
             self.base + f"/internal/checkpoints/{thread}/adapter-state",
-            headers={
-                "X-Runner-Kind": "pool-fixture",
-                "X-Runner-Token": self.runner_token,
-                "X-Runkite-Run-Id": run,
-                "X-Runkite-Generation": str(generation),
-            },
+            headers=self.bound_headers(run, generation),
         )
         return response.json() if response.status_code == 200 else None
 
-    def relay_after_receipt(self, thread):
+    def observe_assignment_proof(self, method, path, headers, status):
+        run = headers.get("X-Runkite-Run-Id")
+        if method != "GET" or not run or path != f"/internal/runs/{quote(run, safe='')}/status" or status != 200:
+            return
+        with self.lock:
+            if run not in self.owned_run_ids:
+                return
+        proof = headers.get("X-Runkite-Run-Incarnation")
+        self.assertTrue(
+            isinstance(proof, str) and 1 <= len(proof) <= 256 and all(0x21 <= ord(value) <= 0x7E for value in proof),
+            "installed parent supplied no valid original record proof",
+        )
+        with self.lock:
+            self.assertTrue(self.run_proofs.setdefault(run, proof) == proof, "fixture run record identity changed")
+
+    def relay_after_receipt(self, thread=None):
         test = self
         committed = threading.Event()
         observed = {}
@@ -476,6 +497,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
                         timeout=120, trust_env=False, verify=test.tls_context(test.parent_identity) if test.ha else True
                     ) as client:
                         upstream = client.request(self.command, test.base + self.path, headers=headers, content=body)
+                    test.observe_assignment_proof(self.command, self.path, self.headers, upstream.status_code)
                     state = (
                         json.loads(body)
                         if self.command == "PUT"
@@ -487,6 +509,15 @@ class ManagedIsolatedE2E(unittest.TestCase):
                         observed.update(state)
                         observed["_fixture_receipt_generation"] = int(self.headers["X-Runkite-Generation"])
                         run = self.headers["X-Runkite-Run-Id"]
+                        proof = test.bound_headers(run)["X-Runkite-Run-Incarnation"]
+                        test.assertTrue(
+                            self.headers["X-Runkite-Run-Incarnation"] == proof, "receipt request proof changed"
+                        )
+                        observed["_fixture_run_incarnation_id"] = proof
+                        test.assertTrue(
+                            state["receipts"].get(proof, {}).get("run_id") == run,
+                            "committed isolated receipt belongs to another original record",
+                        )
                         with httpx.Client(
                             timeout=15,
                             trust_env=False,
@@ -606,15 +637,11 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.assertEqual(self.effects, count)
         stale = self.client_for(self.parent_identity).post(
             self.base + "/internal/connectors/fixture/session",
-            headers={
-                "X-Runner-Kind": "pool-fixture",
-                "X-Runner-Token": self.runner_token,
-                "X-Runkite-Run-Id": uncertain,
-                "X-Runkite-Generation": str(intent["intent"]["generation"]),
-            },
+            headers=self.bound_headers(uncertain, intent["intent"]["generation"]),
             json={},
         )
         self.assertEqual(stale.status_code, 403)
+        self.assertIn(stale.json().get("reason_code"), {"run_not_inflight", "run_generation_mismatch"})
         self.evidence["cases"].append(
             "uncertain launch intent refuses replay after reclaim; stale attempt cannot obtain connector authority"
         )
@@ -635,11 +662,15 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.evidence["passed"] = True
 
     def bound_headers(self, run, generation=1):
+        with self.lock:
+            proof = self.run_proofs.get(run)
+        self.assertIsNotNone(proof, "original assignment proof has not been observed")
         return {
             "X-Runner-Kind": "pool-fixture",
             "X-Runner-Token": self.runner_token,
             "X-Runkite-Run-Id": run,
             "X-Runkite-Generation": str(generation),
+            "X-Runkite-Run-Incarnation": proof,
         }
 
     def qualify_replicated_usage(self):
@@ -682,10 +713,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 self.bases[1] + f"/internal/runs/{run}/usage", headers=self.bound_headers(run, generation)
             )
             self.assertEqual(denied.status_code, 403)
+            self.assertEqual(denied.json().get("reason_code"), "workload_owner_mismatch")
             rotated = self.client_for("rotated-" + self.parent_identity).get(
                 self.bases[1] + f"/internal/runs/{run}/usage", headers=self.bound_headers(run, generation)
             )
             self.assertEqual(rotated.status_code, 403)
+            self.assertEqual(rotated.json().get("reason_code"), "workload_owner_mismatch")
             without_identity = ssl.create_default_context(cafile=str(self.pki / "ca.pem"))
             with httpx.Client(verify=without_identity, timeout=5, trust_env=False) as unbound:
                 with self.assertRaises(httpx.HTTPError):

@@ -21,16 +21,16 @@ type successfulLeaseChanges struct {
 	acknowledgements int
 }
 
-func (q *successfulLeaseChanges) Renew(ctx context.Context, id string, generation int64) (bool, error) {
-	current, err := q.Queue.Renew(ctx, id, generation)
+func (q *successfulLeaseChanges) Renew(ctx context.Context, id string, incarnation string, generation int64) (bool, error) {
+	current, err := q.Queue.Renew(ctx, id, incarnation, generation)
 	if err == nil && current {
 		q.renewals++
 	}
 	return current, err
 }
 
-func (q *successfulLeaseChanges) Ack(ctx context.Context, id string, generation int64) (bool, error) {
-	accepted, err := q.Queue.Ack(ctx, id, generation)
+func (q *successfulLeaseChanges) Ack(ctx context.Context, id string, incarnation string, generation int64) (bool, error) {
+	accepted, err := q.Queue.Ack(ctx, id, incarnation, generation)
 	if err == nil && accepted {
 		q.acknowledgements++
 	}
@@ -41,7 +41,7 @@ func generationZeroFixture(t *testing.T, generation int64) (*Server, *successful
 	t.Helper()
 	queue := &successfulLeaseChanges{Queue: inprocess.NewQueue()}
 	broker := inprocess.NewBroker()
-	assignment := &transport.RunAssignment{RunID: "generation-zero-run", ThreadID: "thread", RunnerKind: "kind", GraphID: "graph", Generation: generation, Input: json.RawMessage(`{}`)}
+	assignment := &transport.RunAssignment{RunID: "generation-zero-run", ThreadID: "thread", RunnerKind: "kind", GraphID: "graph", Generation: generation, Input: json.RawMessage(`{}`), RunIncarnationID: originalRunIdentity(t, queue, "generation-zero-run")}
 	if err := queue.Enqueue(context.Background(), assignment); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func generationZeroFixture(t *testing.T, generation int64) (*Server, *successful
 	if err != nil || job == nil {
 		t.Fatalf("dequeue: job=%v err=%v", job, err)
 	}
-	return NewServer(queue, broker, inprocess.NewCancelBus(), nil), queue, broker
+	return newIdentityServer(queue, broker, inprocess.NewCancelBus(), nil), queue, broker
 }
 
 func assertGenerationZeroLeaseRetained(t *testing.T, queue *successfulLeaseChanges, generation int64) {
@@ -67,11 +67,13 @@ func TestStreamEvents_ZeroGenerationCannotBorrowLivePositiveAttempt(t *testing.T
 	for _, generation := range []int64{1, 2} {
 		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
 			srv, queue, broker := generationZeroFixture(t, generation)
-			stale := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: 0, EventJson: `{"event_id":"stale","seq":1,"method":"values","generation":2,"data":{"answer":"stale"}}`}}}
+			stale := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: 0, EventJson: `{"event_id":"stale","seq":1,"method":"values","generation":2,"data":{"answer":"stale"}}`, RunIncarnationId:
 			// Dropping the event or rejecting the RPC are both safe. A claimed generation
 			// inside EventJson must never replace the missing outer fencing token.
+			"fixture-record"}}}
+
 			_ = srv.StreamEvents(stale)
-			events, err := broker.Replay(context.Background(), "generation-zero-run", 0)
+			events, err := broker.Replay(context.Background(), "generation-zero-run", originalRunIdentity(t, broker, "generation-zero-run"), 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -79,11 +81,11 @@ func TestStreamEvents_ZeroGenerationCannotBorrowLivePositiveAttempt(t *testing.T
 				t.Fatalf("zero-generation event was published as current: %+v", events)
 			}
 			assertGenerationZeroLeaseRetained(t, queue, generation)
-			current := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: generation, EventJson: `{"event_id":"current","seq":1,"method":"values","generation":999,"data":{"answer":"current"}}`}}}
+			current := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: generation, EventJson: `{"event_id":"current","seq":1,"method":"values","generation":999,"data":{"answer":"current"}}`, RunIncarnationId: "fixture-record"}}}
 			if err := srv.StreamEvents(current); err != nil {
 				t.Fatal(err)
 			}
-			events, err = broker.Replay(context.Background(), "generation-zero-run", 0)
+			events, err = broker.Replay(context.Background(), "generation-zero-run", originalRunIdentity(t, broker, "generation-zero-run"), 0)
 			if err != nil || len(events) != 1 {
 				t.Fatalf("exact-generation event missing: events=%+v err=%v", events, err)
 			}
@@ -98,12 +100,12 @@ func TestHeartbeat_ZeroGenerationCannotExtendLivePositiveAttempt(t *testing.T) {
 	for _, generation := range []int64{1, 2} {
 		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
 			srv, queue, _ := generationZeroFixture(t, generation)
-			response, err := srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: 0})
+			response, err := srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: 0, RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 			if err == nil && (response == nil || !response.Superseded) {
 				t.Fatalf("zero-generation heartbeat was accepted: response=%+v", response)
 			}
 			assertGenerationZeroLeaseRetained(t, queue, generation)
-			response, err = srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: generation})
+			response, err = srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: generation, RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 			if err != nil || response == nil || !response.Ok || response.Superseded || queue.renewals == 0 {
 				t.Fatalf("exact-generation heartbeat rejected: response=%+v renewals=%d err=%v", response, queue.renewals, err)
 			}
@@ -116,12 +118,12 @@ func TestReportStatus_ZeroGenerationCannotPersistOrAckLivePositiveAttempt(t *tes
 		t.Run(strconv.FormatInt(generation, 10), func(t *testing.T) {
 			srv, queue, _ := generationZeroFixture(t, generation)
 			var persisted []*state.RunCompletion
-			srv.SetRunLifecycle(nil, func(_ context.Context, c *state.RunCompletion) (bool, error) {
+			setIdentityLifecycle(srv, nil, func(_ context.Context, c *state.RunCompletion) (bool, error) {
 				copy := *c
 				persisted = append(persisted, &copy)
 				return true, nil
 			})
-			response, err := srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: 0, Status: "success"})
+			response, err := srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: 0, Status: "success", RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 			if err == nil && (response == nil || !response.Superseded) {
 				t.Fatalf("zero-generation completion was accepted: response=%+v", response)
 			}
@@ -129,7 +131,7 @@ func TestReportStatus_ZeroGenerationCannotPersistOrAckLivePositiveAttempt(t *tes
 				t.Fatalf("zero-generation completion reached durable persistence: %+v", persisted)
 			}
 			assertGenerationZeroLeaseRetained(t, queue, generation)
-			response, err = srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: generation, Status: "success"})
+			response, err = srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: generation, Status: "success", RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 			if err != nil || response == nil || !response.Ok || response.Superseded {
 				t.Fatalf("exact-generation completion rejected: response=%+v err=%v", response, err)
 			}
@@ -146,27 +148,27 @@ func TestReportStatus_ZeroGenerationCannotPersistOrAckLivePositiveAttempt(t *tes
 
 func TestGenerationZero_ActualLegacyAssignmentRemainsCompatible(t *testing.T) {
 	srv, queue, broker := generationZeroFixture(t, 0)
-	legacy := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: 0, EventJson: `{"event_id":"legacy","seq":1,"method":"values","data":{"answer":"legacy"}}`}}}
+	legacy := &fakeStreamEventsServer{msgs: []*pb.RunEventProto{{RunId: "generation-zero-run", Generation: 0, EventJson: `{"event_id":"legacy","seq":1,"method":"values","data":{"answer":"legacy"}}`, RunIncarnationId: "fixture-record"}}}
 	if err := srv.StreamEvents(legacy); err != nil {
 		t.Fatalf("legacy stream rejected: %v", err)
 	}
-	events, err := broker.Replay(context.Background(), "generation-zero-run", 0)
+	events, err := broker.Replay(context.Background(), "generation-zero-run", originalRunIdentity(t, broker, "generation-zero-run"), 0)
 	if err != nil || len(events) != 1 || events[0].Generation != 0 {
 		t.Fatalf("legacy event missing: events=%+v err=%v", events, err)
 	}
-	response, err := srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: 0})
+	response, err := srv.Heartbeat(context.Background(), &pb.HeartbeatRequest{RunId: "generation-zero-run", Generation: 0, RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 	if err != nil || response == nil || !response.Ok || response.Superseded {
 		t.Fatalf("legacy heartbeat rejected: response=%+v err=%v", response, err)
 	}
 	completions := 0
-	srv.SetRunLifecycle(nil, func(_ context.Context, c *state.RunCompletion) (bool, error) {
+	setIdentityLifecycle(srv, nil, func(_ context.Context, c *state.RunCompletion) (bool, error) {
 		completions++
 		if c.Generation != 0 {
 			t.Fatalf("legacy completion relabeled as generation %d", c.Generation)
 		}
 		return true, nil
 	})
-	completed, err := srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: 0, Status: "success"})
+	completed, err := srv.ReportStatus(context.Background(), &pb.ReportStatusRequest{RunId: "generation-zero-run", Generation: 0, Status: "success", RunIncarnationId: originalRunIdentity(t, queue, "generation-zero-run")})
 	if err != nil || completed == nil || !completed.Ok || completed.Superseded || completions != 1 || queue.acknowledgements != 1 {
 		t.Fatalf("legacy completion rejected: response=%+v completions=%d acknowledgements=%d err=%v", completed, completions, queue.acknowledgements, err)
 	}

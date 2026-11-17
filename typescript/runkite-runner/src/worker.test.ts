@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordCancelSignal, registerRun, unregisterRun, type CancelState } from "./worker.js";
+import { cancelRecordKey, recordCancelSignal, registerRun, unregisterRun, type CancelState } from "./worker.js";
 
 test("registerRun before recordCancelSignal: cancel observed normally", () => {
   const pending = new Map<string, CancelState>();
@@ -43,13 +43,13 @@ test("cancels for different run_ids never interfere", () => {
   recordCancelSignal(pending, "run-b");
 
   assert.equal(stateA.cancelled, false, "run-a must be unaffected by a cancel for run-b");
-  assert.equal(pending.get("run-b")!.cancelled, true);
+  assert.equal(pending.get(cancelRecordKey("run-b", ""))!.cancelled, true);
 });
 
 test("recordCancelSignal for a never-registered run leaves a claimable entry immediately after", () => {
   const pending = new Map<string, CancelState>();
   recordCancelSignal(pending, "orphan-run");
-  assert.equal(pending.get("orphan-run")!.cancelled, true);
+  assert.equal(pending.get(cancelRecordKey("orphan-run", ""))!.cancelled, true);
 });
 
 // The orphan-entry leak this closes: WatchCancels broadcasts every cancel
@@ -63,10 +63,16 @@ test("an orphaned pre-registered entry (never claimed by registerRun) is evicted
   const pending = new Map<string, CancelState>();
 
   recordCancelSignal(pending, "orphan-run");
-  assert.ok(pending.has("orphan-run"), "expected the pre-registered entry to exist right after the signal");
+  assert.ok(
+    pending.has(cancelRecordKey("orphan-run", "")),
+    "expected the pre-registered entry to exist right after the signal",
+  );
 
   t.mock.timers.tick(5 * 60 * 1000);
-  assert.ok(!pending.has("orphan-run"), "expected the orphaned entry to be evicted after the cleanup window");
+  assert.ok(
+    !pending.has(cancelRecordKey("orphan-run", "")),
+    "expected the orphaned entry to be evicted after the cleanup window",
+  );
 });
 
 test("a legitimately claimed entry survives past the cleanup window (not evicted out from under a real run)", (t) => {
@@ -77,7 +83,7 @@ test("a legitimately claimed entry survives past the cleanup window (not evicted
   const state = registerRun(pending, "run-1"); // claimed before the cleanup timer fires
 
   t.mock.timers.tick(5 * 60 * 1000);
-  assert.ok(pending.has("run-1"), "expected a claimed entry to survive the cleanup window");
+  assert.ok(pending.has(cancelRecordKey("run-1", "")), "expected a claimed entry to survive the cleanup window");
   assert.equal(state.cancelled, true, "expected the pre-arrived cancel to still be observed after the window");
 });
 
@@ -119,7 +125,7 @@ test("a real cancel survives the last cleanup for a dispatch still awaiting regi
   const current = registerRun(pending, "run-1");
   assert.equal(current.cancelled, true);
   t.mock.timers.tick(5 * 60 * 1000);
-  assert.equal(pending.has("run-1"), true, "an expiry timer must not remove an active attempt");
+  assert.equal(pending.has(cancelRecordKey("run-1", "")), true, "an expiry timer must not remove an active attempt");
   unregisterRun(pending, "run-1", current);
   t.mock.timers.tick(5 * 60 * 1000);
   assert.equal(pending.size, 0, "the canceled tombstone must not leak after every attempt leaves");
@@ -132,7 +138,33 @@ test("another real cancel refreshes an orphan tombstone instead of losing it to 
   t.mock.timers.tick(4 * 60 * 1000);
   recordCancelSignal(pending, "run-1");
   t.mock.timers.tick(2 * 60 * 1000);
-  assert.equal(pending.has("run-1"), true);
+  assert.equal(pending.has(cancelRecordKey("run-1", "")), true);
   t.mock.timers.tick(3 * 60 * 1000);
   assert.equal(pending.size, 0);
+});
+
+test("reused public run IDs keep cancellation and cleanup bound to their original record", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = new Map<string, CancelState>();
+  recordCancelSignal(pending, "same-run", "old-record");
+  const old = registerRun(pending, "same-run", "old-record");
+  const replacement = registerRun(pending, "same-run", "new-record");
+  assert.equal(old.cancelled, true);
+  assert.equal(replacement.cancelled, false);
+  unregisterRun(pending, "same-run", old, "old-record");
+  t.mock.timers.tick(5 * 60 * 1000);
+  assert.equal(pending.has(cancelRecordKey("same-run", "old-record")), false);
+  assert.equal(pending.has(cancelRecordKey("same-run", "new-record")), true);
+  recordCancelSignal(pending, "same-run", "old-record");
+  assert.equal(replacement.cancelled, false, "a delayed old cancellation cannot interrupt its replacement");
+  recordCancelSignal(pending, "same-run", "new-record");
+  assert.equal(replacement.cancelled, true, "current record cancellation remains effective");
+  unregisterRun(pending, "same-run", replacement, "new-record");
+  t.mock.timers.tick(5 * 60 * 1000);
+  assert.equal(pending.size, 0);
+});
+
+test("record cancellation keys cannot collide through delimiters", () => {
+  assert.notEqual(cancelRecordKey("a:b", "c"), cancelRecordKey("a", "b:c"));
+  assert.notEqual(cancelRecordKey("a", ""), cancelRecordKey("a", "record"));
 });

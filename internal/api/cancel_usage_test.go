@@ -27,14 +27,14 @@ func TestCancelRetainsDeliveredCurrentUsageWithoutUnfinishedHistory(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BeginRunAttempt(ctx, "run", 2); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil {
 		t.Fatal(err)
 	}
-	publishReviewEvent(t, b, 1, 1, "values", `{"usage":{"prompt_tokens":999}}`)
-	publishReviewEvent(t, b, 2, 1, "values", `{"messages":[{"role":"assistant","content":"unfinished"}],"usage":{"prompt_tokens":10,"completion_tokens":4}}`)
+	publishReviewEvent(t, store, b, 1, 1, "values", `{"usage":{"prompt_tokens":999}}`)
+	publishReviewEvent(t, store, b, 2, 1, "values", `{"messages":[{"role":"assistant","content":"unfinished"}],"usage":{"prompt_tokens":10,"completion_tokens":4}}`)
 	// A later progress value without usage must not erase an observed charge.
-	publishReviewEvent(t, b, 2, 2, "values", `{"progress":"waiting for provider"}`)
-	publishReviewEvent(t, b, 1, 2, "values", `{"usage":{"prompt_tokens":1000}}`)
+	publishReviewEvent(t, store, b, 2, 2, "values", `{"progress":"waiting for provider"}`)
+	publishReviewEvent(t, store, b, 1, 2, "values", `{"usage":{"prompt_tokens":1000}}`)
 	for i := 0; i < 2; i++ {
 		rec := httptest.NewRecorder()
 		plane.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/runs/run/cancel", nil))
@@ -66,7 +66,7 @@ func TestCancelRetainsDeliveredCurrentUsageWithoutUnfinishedHistory(t *testing.T
 
 type unavailableCancelReplayBroker struct{ transport.EventBroker }
 
-func (b unavailableCancelReplayBroker) Replay(context.Context, string, int64) ([]*transport.RunEvent, error) {
+func (b unavailableCancelReplayBroker) Replay(context.Context, string, string, int64) ([]*transport.RunEvent, error) {
 	return nil, errors.New("synthetic broker outage")
 }
 
@@ -74,7 +74,7 @@ func TestCancelStillCommitsWhenUsageReplayIsUnavailable(t *testing.T) {
 	store, q, b, c := completionFixture(t)
 	plane := api.NewServer(store, q, unavailableCancelReplayBroker{b}, c)
 	ctx := context.Background()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
@@ -90,7 +90,7 @@ func TestCancelStillCommitsWhenUsageReplayIsUnavailable(t *testing.T) {
 
 type stalledCancelReplayBroker struct{ transport.EventBroker }
 
-func (b stalledCancelReplayBroker) Replay(ctx context.Context, _ string, _ int64) ([]*transport.RunEvent, error) {
+func (b stalledCancelReplayBroker) Replay(ctx context.Context, _ string, incarnation string, _ int64) ([]*transport.RunEvent, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -101,7 +101,7 @@ type uncooperativeCancelReplayBroker struct {
 	done    chan struct{}
 }
 
-func (b uncooperativeCancelReplayBroker) Replay(context.Context, string, int64) ([]*transport.RunEvent, error) {
+func (b uncooperativeCancelReplayBroker) Replay(context.Context, string, string, int64) ([]*transport.RunEvent, error) {
 	defer close(b.done)
 	<-b.release
 	return nil, errors.New("synthetic socket timeout")
@@ -121,10 +121,10 @@ func TestCancelCommitsBeforeAnUncooperativeBrokerReadReturns(t *testing.T) {
 	plane := api.NewServer(store, q, fault, c)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+	accepted, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true}))
 	if err != nil || !accepted {
 		t.Fatalf("optional socket read blocked cancellation: accepted=%v err=%v", accepted, err)
 	}
@@ -144,10 +144,10 @@ func TestCancelDoesNotSpendItsWholeDeadlineOnOptionalUsageReplay(t *testing.T) {
 	plane := api.NewServer(store, q, stalledCancelReplayBroker{b}, c)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+	accepted, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true}))
 	if err != nil || !accepted {
 		t.Fatalf("optional replay blocked cancellation: accepted=%v err=%v", accepted, err)
 	}
@@ -181,13 +181,13 @@ func TestCancelDropsUsageWhenReclaimRacesCapturedSnapshot(t *testing.T) {
 	plane := api.NewServer(fault, q, b, c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := store.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
-	publishReviewEvent(t, b, 1, 1, "values", `{"usage":{"prompt_tokens":999}}`)
+	publishReviewEvent(t, store, b, 1, 1, "values", `{"usage":{"prompt_tokens":999}}`)
 	done := make(chan error, 1)
 	go func() {
-		_, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+		_, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: "run", Status: models.RunStatusInterrupted, CancelCurrentAttempt: true}))
 		done <- err
 	}()
 	select {
@@ -195,7 +195,7 @@ func TestCancelDropsUsageWhenReclaimRacesCapturedSnapshot(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("cancellation did not capture usage")
 	}
-	if _, err := store.BeginRunAttempt(ctx, "run", 2); err != nil {
+	if _, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil {
 		close(fault.resume)
 		t.Fatal(err)
 	}

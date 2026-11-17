@@ -35,38 +35,7 @@ func (s *SQLiteStore) upUsageEvents(ctx context.Context) error {
 
 // WriteUsageEvent upserts one usage row keyed by (run_id, source).
 func (s *SQLiteStore) WriteUsageEvent(ctx context.Context, ev *models.UsageEvent) error {
-	if ev == nil {
-		return nil
-	}
-	tenantID := ev.TenantID
-	if tenantID == "" {
-		tenantID = tenant.FromContext(ctx)
-	}
-	ts := ev.TS
-	if ts.IsZero() {
-		ts = time.Now().UTC()
-	}
-	source := ev.Source
-	if source == "" {
-		source = models.UsageSourceTerminalOutput
-	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_events (
-			id, ts, tenant_id, run_id, agent_id, principal, model,
-			tokens_in, tokens_out, usd_estimate, source
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(run_id, source) DO UPDATE SET
-			ts = excluded.ts,
-			tenant_id = excluded.tenant_id,
-			agent_id = excluded.agent_id,
-			principal = excluded.principal,
-			model = excluded.model,
-			tokens_in = excluded.tokens_in,
-			tokens_out = excluded.tokens_out,
-			usd_estimate = excluded.usd_estimate
-	`, ev.ID, formatTS(ts), tenantID, ev.RunID, ev.AgentID, ev.Principal, ev.Model,
-		ev.TokensIn, ev.TokensOut, ev.USDEstimate, source)
-	return err
+	return s.completionDriver().WriteUsageEvent(ctx, ev)
 }
 
 // SumUsage aggregates tokens and USD for a tenant (and optional agent) in [since, until).
@@ -103,7 +72,7 @@ func (s *SQLiteStore) SearchUsageSummary(ctx context.Context, req *models.UsageS
 	// substr(ts,1,10) works for RFC3339Nano UTC strings written by formatTS.
 	query := `SELECT substr(ts, 1, 10) AS day, tenant_id, agent_id,
 		COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0),
-		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT run_id)
+		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT json_array(run_id,run_incarnation_id))
 		FROM usage_events`
 	var args []interface{}
 	var where []string

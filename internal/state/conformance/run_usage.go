@@ -71,7 +71,7 @@ func RunUsageSnapshots(t *testing.T, store state.Store) {
 				t.Fatal("changed/reordered/regressing cumulative report accepted")
 			}
 		}
-		if _, err := store.BeginRunAttempt(ctx, run.RunID, 2); err != nil {
+		if _, err := store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), 2); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := usage.ReportRunUsage(ctx, binding, partial); err == nil {
@@ -116,7 +116,7 @@ func RunUsageSnapshots(t *testing.T, store state.Store) {
 		run, _ := store.GetRun(ctx, fixture.RunID)
 		owner := &transport.WorkloadIdentity{URI: "spiffe://fixture.test/pool/worker-a", KeySHA256: strings.Repeat("a", 64), NotAfter: time.Now().Add(time.Hour)}
 		ctx = transport.WithWorkloadIdentity(ctx, owner)
-		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, 2); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), 2); err != nil || !accepted {
 			t.Fatal(accepted, err)
 		}
 		binding := state.RunUsageBinding{RunCheckpointBinding: state.RunCheckpointBinding{RunID: run.RunID, ThreadID: run.ThreadID, Generation: 2}, RunIncarnationID: run.IncarnationID, TenantID: run.TenantID}
@@ -130,7 +130,7 @@ func RunUsageSnapshots(t *testing.T, store state.Store) {
 		if _, _, err := usage.ReportRunUsage(foreign, binding, reported(1, 0, 0, true)); err == nil {
 			t.Fatal("same-pool peer changed another worker's usage")
 		}
-		if accepted, err := store.BeginRunAttempt(foreign, run.RunID, 2); err == nil || accepted {
+		if accepted, err := store.BeginRunAttempt(foreign, run.RunID, originalRunIdentity(t, store, run.RunID), 2); err == nil || accepted {
 			t.Fatal("same-generation owner was replaced")
 		}
 		for _, changed := range []state.RunUsageBinding{
@@ -144,7 +144,7 @@ func RunUsageSnapshots(t *testing.T, store state.Store) {
 		if _, _, err := usage.ReportRunUsage(tenant.ScopedContext(ctx, "foreign"), binding, reported(1, 0, 0, true)); err == nil {
 			t.Fatal("foreign tenant observed private report")
 		}
-		if accepted, err := store.BeginRunAttempt(foreign, run.RunID, 3); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(foreign, run.RunID, originalRunIdentity(t, store, run.RunID), 3); err != nil || !accepted {
 			t.Fatal("reclaim failed to establish replacement owner", accepted, err)
 		}
 		binding.Generation = 3

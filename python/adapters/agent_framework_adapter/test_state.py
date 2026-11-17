@@ -411,7 +411,7 @@ class OpaqueCompatibilityTests(unittest.IsolatedAsyncioTestCase):
             transport=transport,
         )
         tenant = bind_tenant("tenant-one")
-        run = bind_run("run-one", 4)
+        run = bind_run("run-one", 4, run_incarnation_id="record-fixture")
         runner = bind_runner("python-agent-framework", "bound-token")
         try:
             with patch.dict("os.environ", {"RUNNER_TOKEN": "environment-token"}):

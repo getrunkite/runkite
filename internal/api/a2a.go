@@ -42,6 +42,7 @@ import (
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
 )
@@ -94,7 +95,7 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent run is not in-flight", "reason_code": auth.ReasonRunNotInflight})
 		return
 	}
-	if current.Generation != binding.Generation {
+	if current.Generation != binding.Generation || current.RunIncarnationID != binding.RunIncarnationID {
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent generation mismatch", "reason_code": auth.ReasonRunGenerationMismatch})
 		return
 	}
@@ -112,11 +113,11 @@ func (s *Server) handleA2ACreateRun(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err)
 		return
 	}
-	if parent.ThreadID != current.ThreadID || parent.AgentID != current.GraphID {
+	if state.RunIdentity(parent) != binding.RunIncarnationID || parent.ThreadID != current.ThreadID || parent.AgentID != current.GraphID {
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent assignment does not match stored run", "reason_code": "a2a_parent_mismatch"})
 		return
 	}
-	if parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending {
+	if state.RunIdentity(parent) != binding.RunIncarnationID || (parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "parent run is terminal", "reason_code": auth.ReasonRunNotInflight})
 		return
 	}
@@ -188,7 +189,7 @@ func (s *Server) checkA2AParentCurrent(ctx context.Context, parentID string) err
 	if err != nil {
 		return fmt.Errorf("resolve parent assignment: %w", err)
 	}
-	if current == nil || current.Generation != binding.Generation || current.ThreadID != binding.ThreadID || current.GraphID != binding.AgentID {
+	if current == nil || current.RunIncarnationID != binding.RunIncarnationID || current.Generation != binding.Generation || current.ThreadID != binding.ThreadID || current.GraphID != binding.AgentID {
 		return &hooks.ErrDenied{Reason: "parent assignment is no longer current"}
 	}
 	tenantID := current.TenantID
@@ -202,7 +203,7 @@ func (s *Server) checkA2AParentCurrent(ctx context.Context, parentID string) err
 	if err != nil {
 		return err
 	}
-	if parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending {
+	if state.RunIdentity(parent) != binding.RunIncarnationID || (parent.Status != models.RunStatusRunning && parent.Status != models.RunStatusPending) {
 		return &hooks.ErrDenied{Reason: "parent run is no longer active"}
 	}
 	return nil

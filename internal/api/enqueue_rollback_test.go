@@ -50,7 +50,7 @@ func rollbackAcceptAttempt(t *testing.T, plane *Server, queue *inprocess.Queue, 
 	if err != nil || job == nil || job.RunID != assignment.RunID {
 		t.Fatalf("accepted assignment was not available: job=%+v err=%v", job, err)
 	}
-	if accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, assignment.Generation); err != nil || !accepted {
+	if accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), assignment.Generation); err != nil || !accepted {
 		t.Fatalf("begin accepted assignment: accepted=%v err=%v", accepted, err)
 	}
 }
@@ -58,14 +58,14 @@ func rollbackAcceptAttempt(t *testing.T, plane *Server, queue *inprocess.Queue, 
 func rollbackCompleteAttempt(t *testing.T, plane *Server, assignment *transport.RunAssignment) {
 	t.Helper()
 	ctx := context.Background()
-	if err := plane.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+	if err := plane.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 		Generation: assignment.Generation, Method: "values", Seq: 1,
 		Data: json.RawMessage(`{"answer":"committed","usage":{"prompt_tokens":13,"completion_tokens":5,"model":"synthetic"}}`),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	if accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{
-		TrustedSystem: true, RunID: assignment.RunID, Generation: assignment.Generation, Status: models.RunStatusSuccess,
+		TrustedSystem: true, ExpectedIncarnationID: assignment.RunIncarnationID, RunID: assignment.RunID, Generation: assignment.Generation, Status: models.RunStatusSuccess,
 	}); err != nil || !accepted {
 		t.Fatalf("complete accepted assignment: accepted=%v err=%v", accepted, err)
 	}
@@ -203,7 +203,7 @@ type rollbackReplayFailureBroker struct {
 	replays int
 }
 
-func (b *rollbackReplayFailureBroker) Replay(context.Context, string, int64) ([]*transport.RunEvent, error) {
+func (b *rollbackReplayFailureBroker) Replay(context.Context, string, string, int64) ([]*transport.RunEvent, error) {
 	b.replays++
 	return nil, errors.New("synthetic broker replay outage")
 }
@@ -316,7 +316,7 @@ func TestEnqueueRollbackRechecksStartedAttemptInsideTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	plane.store = &rollbackCompletionStore{Store: store, before: func(ctx context.Context, completion *state.RunCompletion) {
-		if accepted, err := store.BeginRunAttempt(ctx, completion.RunID, 1); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, completion.RunID, originalRunIdentity(t, store, completion.RunID), 1); err != nil || !accepted {
 			t.Fatalf("worker admission race was not established: %v", err)
 		}
 	}}

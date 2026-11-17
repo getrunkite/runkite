@@ -97,6 +97,7 @@ function fakeAdapter(graph: RunnableGraph): LangGraphAdapter {
 function makeAssignment(runId: string, graphId = "test_graph") {
   return {
     run_id: runId,
+    run_incarnation_id: "record-" + runId,
     thread_id: `thread-${runId}`,
     graph_id: graphId,
     input: { messages: [{ role: "user", content: "hi" }] },

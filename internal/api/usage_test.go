@@ -208,11 +208,11 @@ func TestUsage_TerminalIngest(t *testing.T) {
 	})
 
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"cost_usd":0.05,"model":"gpt-4o-mini"}}`)
-	if err := broker.Publish(acme, "run-usage", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-usage", originalRunIdentity(t, store, "run-usage"), withOriginalRunEvent(originalRunIdentity(t, store, "run-usage"), &transport.RunEvent{
 		EventID: "run-usage_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-usage", "success", "")
@@ -286,11 +286,11 @@ func TestUsage_UnpricedAlertsOnMissingPricebookRow(t *testing.T) {
 	})
 
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"some-new-model-v9"}}`)
-	if err := broker.Publish(acme, "run-unpriced", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-unpriced", originalRunIdentity(t, store, "run-unpriced"), withOriginalRunEvent(originalRunIdentity(t, store, "run-unpriced"), &transport.RunEvent{
 		EventID: "run-unpriced_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-unpriced", "success", "")
@@ -379,11 +379,11 @@ func TestUsage_UnmeteredAlertsWhenRunnerFoundNoUsageAtAll(t *testing.T) {
 	// runner's explicit unmetered marker, exactly what a future/
 	// unrecognized provider integration would emit.
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"unmetered":true,"model":"some-brand-new-provider-v1"}}`)
-	if err := broker.Publish(acme, "run-unmetered", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-unmetered", originalRunIdentity(t, store, "run-unmetered"), withOriginalRunEvent(originalRunIdentity(t, store, "run-unmetered"), &transport.RunEvent{
 		EventID: "run-unmetered_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-unmetered", "success", "")
@@ -456,11 +456,11 @@ func TestUsage_NoUnmeteredAlertForOrdinaryZeroUsageRun(t *testing.T) {
 
 	// No usage key at all -- a deterministic agent that never called an LLM.
 	out := []byte(`{"messages":[]}`)
-	if err := broker.Publish(acme, "run-nousage", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-nousage", originalRunIdentity(t, store, "run-nousage"), withOriginalRunEvent(originalRunIdentity(t, store, "run-nousage"), &transport.RunEvent{
 		EventID: "run-nousage_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-nousage", "success", "")
@@ -517,11 +517,11 @@ func TestUsage_NoUnpricedAlertWhenPricebookEmpty(t *testing.T) {
 	s.SetFinOps(&finops.Config{Pricebook: finops.Pricebook{}})
 
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"gpt-4o-mini"}}`)
-	if err := broker.Publish(acme, "run-empty-pb", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-empty-pb", originalRunIdentity(t, store, "run-empty-pb"), withOriginalRunEvent(originalRunIdentity(t, store, "run-empty-pb"), &transport.RunEvent{
 		EventID: "run-empty-pb_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-empty-pb", "success", "")
@@ -580,11 +580,11 @@ func TestUsage_NoUnpricedAlertWhenZeroRateRow(t *testing.T) {
 	})
 
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"free-model"}}`)
-	if err := broker.Publish(acme, "run-zero-rate", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-zero-rate", originalRunIdentity(t, store, "run-zero-rate"), withOriginalRunEvent(originalRunIdentity(t, store, "run-zero-rate"), &transport.RunEvent{
 		EventID: "run-zero-rate_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-zero-rate", "success", "")
@@ -643,11 +643,11 @@ func TestUsage_NoUnpricedAlertWhenPricebookMatches(t *testing.T) {
 	})
 
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"model":"gpt-4o-mini"}}`)
-	if err := broker.Publish(acme, "run-priced", &transport.RunEvent{
+	if err := broker.Publish(acme, "run-priced", originalRunIdentity(t, store, "run-priced"), withOriginalRunEvent(originalRunIdentity(t, store, "run-priced"), &transport.RunEvent{
 		EventID: "run-priced_evt_1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out),
 		Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	s.StatusCallback()("run-priced", "success", "")

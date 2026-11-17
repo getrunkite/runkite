@@ -37,7 +37,7 @@ func TestPolicySemanticsUpgradeRequiresFreshManagedApproval(t *testing.T) {
 	if engine.Revision() == priorIdentityEvaluatorRevision {
 		t.Fatal("evaluator semantics retained old policy authority")
 	}
-	binding := &auth.RunBinding{RunID: "semantics-run", ThreadID: "semantics-thread", Generation: 1, TenantID: "default", AgentID: "agent"}
+	binding := &auth.RunBinding{RunID: "semantics-run", ThreadID: "semantics-thread", Generation: 1, TenantID: "default", AgentID: "agent", RunIncarnationID: originalRunIdentity(t, db, "semantics-run")}
 	seedManagedPendingFixture(t, db, binding)
 	_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":3}`))
 	old := &models.PendingAction{ID: pendingActionIDPrefix + "old-semantics", RunID: binding.RunID, TenantID: binding.TenantID, AgentID: binding.AgentID, Generation: binding.Generation, Connector: "files", Tool: "write", ArgsDigest: digest, Args: args, TargetRevision: target, PolicyRevision: priorIdentityEvaluatorRevision}

@@ -93,7 +93,11 @@ func seedCheckpointRun(ctx context.Context, store state.Store, runID, threadID s
 	if err := store.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: threadID, AgentID: "test", Status: models.RunStatusPending, Metadata: map[string]interface{}{}}); err != nil {
 		return err
 	}
-	if ok, err := store.BeginRunAttempt(ctx, runID, generation); err != nil || !ok {
+	run, err := store.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if ok, err := store.BeginRunAttempt(ctx, runID, state.RunIdentity(run), generation); err != nil || !ok {
 		return fmt.Errorf("seed checkpoint attempt: accepted=%t: %w", ok, err)
 	}
 	return nil
@@ -242,7 +246,7 @@ func TestOpaqueCheckpointThreadMismatch(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	putReq, _ := http.NewRequest("PUT", srv.URL+"/internal/checkpoints/other-thread/cp-1", bytes.NewReader([]byte("x")))
-	putReq.Header.Set(auth.HeaderRunID, "run-1")
+	putReq.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, putReq.Header, auth.HeaderRunID, "run-1"))
 	putReq.Header.Set(auth.HeaderGeneration, "1")
 	resp, err := http.DefaultClient.Do(putReq)
 	if err != nil {
@@ -260,7 +264,7 @@ func TestOpaqueCheckpointThreadMismatch(t *testing.T) {
 	}
 
 	okReq, _ := http.NewRequest("PUT", srv.URL+"/internal/checkpoints/thr-bound/cp-1", bytes.NewReader([]byte("ok")))
-	okReq.Header.Set(auth.HeaderRunID, "run-1")
+	okReq.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, okReq.Header, auth.HeaderRunID, "run-1"))
 	okReq.Header.Set(auth.HeaderGeneration, "1")
 	okResp, err := http.DefaultClient.Do(okReq)
 	if err != nil {

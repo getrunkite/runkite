@@ -24,9 +24,11 @@ func TestConnectorSession_MintAndRequire(t *testing.T) {
 	s.SetConnectorRegistry(reg)
 	s.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
 
-	binding := &auth.RunBinding{RunID: "run-1", Generation: 2, TenantID: "acme", AgentID: "sales"}
+	binding := &auth.RunBinding{RunID: "run-1", Generation: 2, TenantID: "acme", AgentID: "sales", RunIncarnationID:
 
 	// Mint via session handler
+	originalRunIdentity(t, s, "run-1")}
+
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/sf/session", nil)
 	req.SetPathValue("name", "sf")
 	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
@@ -69,7 +71,7 @@ func TestConnectorSession_MintAndRequire(t *testing.T) {
 	req.SetPathValue("name", "sf")
 	req.Header.Set(connector.HeaderConnectorSession, sess.SessionToken)
 	req = req.WithContext(auth.WithRunBinding(req.Context(), &auth.RunBinding{
-		RunID: "other", Generation: 2, TenantID: "acme", AgentID: "sales",
+		RunID: "other", Generation: 2, TenantID: "acme", AgentID: "sales", RunIncarnationID: originalRunIdentity(t, s, "other"),
 	}))
 	rec = httptest.NewRecorder()
 	s.handleProxyMCPRequest(rec, req)
@@ -82,7 +84,7 @@ func TestConnectorSession_MintAndRequire(t *testing.T) {
 	req.SetPathValue("name", "sf")
 	req.Header.Set(connector.HeaderConnectorSession, sess.SessionToken)
 	req = req.WithContext(auth.WithRunBinding(req.Context(), &auth.RunBinding{
-		RunID: "run-1", Generation: 3, TenantID: "acme", AgentID: "sales",
+		RunID: "run-1", Generation: 3, TenantID: "acme", AgentID: "sales", RunIncarnationID: originalRunIdentity(t, s, "run-1"),
 	}))
 	rec = httptest.NewRecorder()
 	s.handleProxyMCPRequest(rec, req)
@@ -113,7 +115,7 @@ func TestConnectorSession_NonMCPNoToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/myapi/session", nil)
 	req.SetPathValue("name", "myapi")
 	req = req.WithContext(auth.WithRunBinding(req.Context(), &auth.RunBinding{
-		RunID: "r", Generation: 1, TenantID: "t", AgentID: "a",
+		RunID: "r", Generation: 1, TenantID: "t", AgentID: "a", RunIncarnationID: originalRunIdentity(t, s, "r"),
 	}))
 	rec := httptest.NewRecorder()
 	s.handleGetConnectorSession(rec, req)

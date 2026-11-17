@@ -1,3 +1,7 @@
+# Unreleased source images require matching plane/runner protocol 1 builds and
+# a coordinated drain/upgrade. Published image tags retain their own contract.
+# Kafka requires explicit config.extraEnv.RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES:
+# "true" for non-atomic Compatible mode, even with Redis. It is not enabled here.
 # Minimal production-shaped defaults. Postgres + Redis are NOT bundled --
 # point postgresDsn / redisUrl (or an existingSecret) at infrastructure you
 # already run. Multi-replica requires Redis (shared queue/broker/cancel/

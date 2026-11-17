@@ -40,7 +40,8 @@ func seedManagedPendingFixture(t *testing.T, store state.Store, binding *auth.Ru
 	if !ok {
 		t.Fatal("managed approval fixture requires durable run attempts")
 	}
-	if accepted, err := completion.BeginRunAttempt(ctx, binding.RunID, binding.Generation); err != nil || !accepted {
+	binding.RunIncarnationID = originalRunIdentity(t, store, binding.RunID)
+	if accepted, err := completion.BeginRunAttempt(ctx, binding.RunID, binding.RunIncarnationID, binding.Generation); err != nil || !accepted {
 		t.Fatalf("begin managed approval fixture: accepted=%v error=%v", accepted, err)
 	}
 }

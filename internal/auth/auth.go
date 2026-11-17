@@ -182,8 +182,9 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 				writeDenied(w, http.StatusServiceUnavailable, ReasonRunBindingLookupFailed, "execution pool requires active assignment lookup")
 				return
 			}
-			strictRun := runnerTokens.WorkloadIdentityEnabled() && strings.HasPrefix(path, "/internal/runs/")
-			if opts.Inflight != nil && (requiresRunBinding(path) || strictRun || (poolKind && !poolSchema)) {
+			statusProbe := r.Method == http.MethodGet && strings.HasPrefix(path, "/internal/runs/") && strings.HasSuffix(path, "/status")
+			strictRun := runnerTokens.WorkloadIdentityEnabled() && strings.HasPrefix(path, "/internal/runs/") && !statusProbe
+			if opts.Inflight != nil && (requiresRunBinding(path) || strictRun || (poolKind && !poolSchema && !statusProbe)) {
 				ctx, ok := bindInternalRun(w, r, kind, runnerTokens, opts.Inflight)
 				if !ok {
 					return

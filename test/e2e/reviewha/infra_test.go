@@ -21,6 +21,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/state/postgres"
 	"github.com/getrunkite/runkite/internal/tenant"
 	"github.com/getrunkite/runkite/internal/transport"
@@ -137,7 +138,7 @@ func newHASuite(t *testing.T) *haSuite {
 		}
 		if s.queue != nil {
 			for _, a := range s.assignments {
-				_, _ = s.queue.Ack(context.Background(), a.RunID, a.Generation)
+				_, _ = s.queue.Ack(context.Background(), a.RunID, a.RunIncarnationID, a.Generation)
 			}
 		}
 		if s.store != nil {
@@ -381,10 +382,15 @@ func (s *haSuite) seed(f tenantFixture) {
 	if err := s.store.CreateRun(ctx, &models.Run{RunID: f.run, ThreadID: f.thread, AgentID: "ha-agent", Status: models.RunStatusRunning, Metadata: map[string]any{"run_manifest": manifest}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		s.t.Fatal(err)
 	}
-	if accepted, err := s.store.BeginRunAttempt(ctx, f.run, f.generation); err != nil || !accepted {
+	record, err := s.store.GetRun(ctx, f.run)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	identity := state.RunIdentity(record)
+	if accepted, err := s.store.BeginRunAttempt(ctx, f.run, identity, f.generation); err != nil || !accepted {
 		s.t.Fatal("could not create synthetic durable attempt")
 	}
-	a := &transport.RunAssignment{RunID: f.run, ThreadID: f.thread, TenantID: f.tenant, GraphID: "ha-agent", Generation: f.generation, RunnerKind: s.runnerKind, User: &transport.UserContext{Identity: "synthetic-agent"}}
+	a := &transport.RunAssignment{RunID: f.run, RunIncarnationID: identity, ThreadID: f.thread, TenantID: f.tenant, GraphID: "ha-agent", Generation: f.generation, RunnerKind: s.runnerKind, User: &transport.UserContext{Identity: "synthetic-agent"}}
 	if err := s.queue.Enqueue(ctx, a); err != nil {
 		s.t.Fatal(err)
 	}

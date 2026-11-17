@@ -6,6 +6,7 @@ import json
 import math
 from typing import Any
 
+from runkite_runner.assignment_identity import receipt_native_turn_id, require_run_incarnation
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.opaque_checkpoint import OpaqueCheckpointClient, _strong_numeric_etag
 
@@ -353,7 +354,9 @@ def _validate_envelope(value: Any, *, graph_id: str, app_name: str, user_id: str
     if _canonical(messages) != _canonical(visible):
         raise ValueError("native session does not match its visible conversation")
     receipt = value["completed"]
-    _keys(receipt, {"status", "run_id", "input", "output", "text_events"})
+    _keys(receipt, {"status", "run_id", "input", "output", "text_events"}, {"run_incarnation_id"})
+    if "run_incarnation_id" in receipt:
+        require_run_incarnation(receipt["run_incarnation_id"])
     if (
         receipt["status"] != "success"
         or type(receipt["run_id"]) is not str
@@ -361,7 +364,7 @@ def _validate_envelope(value: Any, *, graph_id: str, app_name: str, user_id: str
         or type(receipt["input"]) is not str
     ):
         raise ValueError("native state requires a successful committed receipt")
-    if model_events[-1].invocation_id != receipt["run_id"]:
+    if model_events[-1].invocation_id != receipt_native_turn_id(receipt):
         raise ValueError("native latest invocation does not match its receipt")
     incoming = _messages(json.loads(receipt["input"], object_pairs_hook=_unique_object), incoming=True)
     if state_json(incoming) != receipt["input"]:
@@ -389,7 +392,7 @@ def _validate_envelope(value: Any, *, graph_id: str, app_name: str, user_id: str
         raise ValueError("receipt output identity or history does not match")
     _counter(metadata["generation"])
     _usage(output["usage"])
-    current = [event for event in model_events if event.invocation_id == receipt["run_id"]]
+    current = [event for event in model_events if event.invocation_id == receipt_native_turn_id(receipt)]
     prompt, completion = 0, 0
     for event in current:
         p, c = native_usage(event.usage_metadata)

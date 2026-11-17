@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, get_args, get_origin
 
+from runkite_runner.assignment_identity import native_turn_id, receipt_matches_assignment, require_run_incarnation
 from runkite_runner.checkpoint import resolve_checkpoint_http_url
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
@@ -247,6 +248,7 @@ class PydanticAIAdapter:
         )
 
         run_id, graph_id = assignment["run_id"], assignment["graph_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         thread_id, generation = assignment.get("thread_id") or "", int(assignment.get("generation") or 0)
         make_event = make_event_factory(run_id)
 
@@ -408,7 +410,7 @@ class PydanticAIAdapter:
             check_cancel()
             await event_callback(make_event("lifecycle", {"event": "running"}))
             completed = (prior or {}).get("completed")
-            if completed and completed["run_id"] == run_id:
+            if completed and receipt_matches_assignment(completed, run_id, run_incarnation_id):
                 if completed["input"] != input_key:
                     raise ValueError("reclaimed run input differs from its committed turn")
                 output = json.loads(state_json(completed["output"]))
@@ -462,7 +464,7 @@ class PydanticAIAdapter:
             text_events, assistant_text, receipt_bytes, final = [], "", 2, None
             async with agent.run_stream_events(
                 conversation=conversation,
-                run_id=run_id,
+                run_id=native_turn_id(run_id, run_incarnation_id),
                 deps=deps,
                 capabilities=[ManagedCapability()],
             ) as events:
@@ -534,6 +536,7 @@ class PydanticAIAdapter:
                 "completed": {
                     "status": "success",
                     "run_id": run_id,
+                    "run_incarnation_id": run_incarnation_id,
                     "input": input_key,
                     "output": output,
                     "text_events": text_events,

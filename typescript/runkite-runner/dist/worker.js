@@ -67,6 +67,9 @@ export class Semaphore {
 // worst-case leak lifetime for an orphaned entry to a few minutes rather
 // than the runner's entire uptime.
 const ORPHAN_CANCEL_CLEANUP_MS = 5 * 60 * 1000;
+export function cancelRecordKey(runId, runIncarnationId) {
+    return JSON.stringify([runId, runIncarnationId]);
+}
 function cancellationEntry(pendingCancels, runId) {
     const existing = pendingCancels.get(runId);
     if (existing) {
@@ -96,17 +99,18 @@ function expireOrphanCancel(pendingCancels, runId, entry) {
  * attempt and any dispatch that has not registered yet. Orphan signals
  * expire instead of accumulating on every runner watching this kind.
  */
-export function recordCancelSignal(pendingCancels, runId) {
-    const entry = cancellationEntry(pendingCancels, runId);
+export function recordCancelSignal(pendingCancels, runId, runIncarnationId = "") {
+    const key = cancelRecordKey(runId, runIncarnationId);
+    const entry = cancellationEntry(pendingCancels, key);
     entry.cancelled = true;
     for (const attempt of entry._attempts)
         attempt.cancelled = true;
     if (entry._attempts.size === 0)
-        expireOrphanCancel(pendingCancels, runId, entry);
+        expireOrphanCancel(pendingCancels, key, entry);
 }
 /** Each registration belongs to one attempt, including overlapping generations. */
-export function registerRun(pendingCancels, runId) {
-    const entry = cancellationEntry(pendingCancels, runId);
+export function registerRun(pendingCancels, runId, runIncarnationId = "") {
+    const entry = cancellationEntry(pendingCancels, cancelRecordKey(runId, runIncarnationId));
     if (entry._cleanupTimer) {
         clearTimeout(entry._cleanupTimer);
         entry._cleanupTimer = undefined;
@@ -116,7 +120,8 @@ export function registerRun(pendingCancels, runId) {
     return attempt;
 }
 /** Release only this attempt; preserve other attempts and early user cancels. */
-export function unregisterRun(pendingCancels, runId, attempt) {
+export function unregisterRun(pendingCancels, runId, attempt, runIncarnationId = "") {
+    runId = cancelRecordKey(runId, runIncarnationId);
     const entry = pendingCancels.get(runId);
     if (!entry?._attempts?.delete(attempt) || entry._attempts.size !== 0)
         return;
@@ -185,10 +190,11 @@ export async function runWorker(opts) {
         while (!watcherStopped) {
             try {
                 await new Promise((resolve, reject) => {
-                    const call = client.watchCancels({ runnerKind: opts.runnerKind }, metadata);
+                    const call = client.watchCancels({ runnerKind: opts.runnerKind, assignmentIdentityVersion: 1 }, metadata);
                     call.on("data", (signal) => {
                         logger.info(`Cancel signal received via gRPC for run ${signal.runId}`);
-                        recordCancelSignal(pendingCancels, signal.runId);
+                        if (typeof signal.runIncarnationId === "string" && /^[\x21-\x7e]{1,256}$/.test(signal.runIncarnationId))
+                            recordCancelSignal(pendingCancels, signal.runId, signal.runIncarnationId);
                     });
                     call.on("error", reject);
                     call.on("end", resolve);
@@ -262,9 +268,14 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
     // always has a defined value even if JSON.parse/assignment.run_id
     // itself threw first.
     let generation = 0;
+    let runIncarnationId;
     try {
         const assignment = JSON.parse(response.assignmentJson);
         runId = assignment.run_id;
+        const proof = assignment.run_incarnation_id;
+        if (typeof proof !== "string" || !/^[\x21-\x7e]{1,256}$/.test(proof))
+            throw new CompletionDeliveryError("assignment has no valid original record identity");
+        runIncarnationId = proof;
         // Legacy assignments may omit this field. Zero matches only a legacy-zero
         // assignment; it cannot renew or complete a positive-generation attempt.
         generation = assignment.generation ?? 0;
@@ -281,6 +292,7 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
             await runWithBinding({
                 tenantId: assignment.tenant_id,
                 runId: runId,
+                runIncarnationId,
                 generation,
                 runnerKind: opts?.runnerKind,
                 runnerToken: opts?.runnerToken,
@@ -295,11 +307,13 @@ export async function handleJob(client, adapter, response, metadata, pendingCanc
         logger.error(`Worker error handling run_id=${runId}:`, err);
         if (err instanceof CompletionDeliveryError)
             return;
-        if (runId !== undefined) {
+        if (runId !== undefined && runIncarnationId !== undefined) {
             const failedRunId = runId;
+            const failedRunIncarnationId = runIncarnationId;
             await new Promise((resolve) => {
                 client.reportStatus({
                     runId: failedRunId,
+                    runIncarnationId: failedRunIncarnationId,
                     status: "error",
                     errorMessage: err instanceof Error ? err.message : String(err),
                     generation: String(generation),
@@ -315,11 +329,13 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
             runnerKind: opts.runnerKind,
             runnerToken: opts.runnerToken,
             generation,
+            runIncarnationId: assignment.run_incarnation_id,
             requireAuthority: assignment.workload_owner !== undefined,
         }))) {
         return undefined;
     }
-    const cancelState = registerRun(pendingCancels, runId);
+    const runIncarnationId = assignment.run_incarnation_id;
+    const cancelState = registerRun(pendingCancels, runId, runIncarnationId);
     // Started as soon as runId is known, BEFORE streamEvents' first
     // message -- see heartbeat.ts / the Python runner's mirrored change
     // in worker.py's _handle_job. onSuperseded shares cancelState with
@@ -328,6 +344,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
     // instead of racing a second runner that's already taken over.
     const heartbeat = startHeartbeatLoop(client, runId, metadata, {
         generation,
+        runIncarnationId,
         onSuperseded: () => {
             cancelState.cancelled = true;
         },
@@ -352,7 +369,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
                 resolveStream(resp);
         });
         const sendEvent = async (event) => {
-            call.write({ runId: runId, eventJson: JSON.stringify(event), generation: String(generation) });
+            call.write({ runId: runId, runIncarnationId, eventJson: JSON.stringify(event), generation: String(generation) });
         };
         let status;
         try {
@@ -372,6 +389,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
         call.end();
         const completedStatus = await finishRun(client, {
             runId,
+            runIncarnationId,
             status,
             errorMessage: status === "error" ? "see error event" : "",
             generation: String(generation),
@@ -382,7 +400,7 @@ async function handleJobUnderTenant(client, adapter, assignment, runId, generati
     finally {
         heartbeat.stop();
         // A previous generation can finish while its replacement is still active.
-        unregisterRun(pendingCancels, runId, cancelState);
+        unregisterRun(pendingCancels, runId, cancelState, runIncarnationId);
     }
 }
 /**
@@ -409,7 +427,7 @@ export async function pollLoop(client, adapter, runnerKind, metadata, pendingCan
         let response;
         try {
             response = await new Promise((resolve, reject) => {
-                client.getJob({ runnerKind, timeoutSeconds: 30 }, metadata, (err, resp) => {
+                client.getJob({ runnerKind, timeoutSeconds: 30, assignmentIdentityVersion: 1 }, metadata, (err, resp) => {
                     if (err)
                         reject(err);
                     else

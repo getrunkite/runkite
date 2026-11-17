@@ -18,15 +18,15 @@ import (
 func TestDelayedFailedDispatchCannotNackReplacement(t *testing.T) {
 	ctx := context.Background()
 	queue := inprocess.NewQueue()
-	srv := NewServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	srv := newIdentityServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
 	const runID = "delayed-dispatch"
-	defer srv.cleanupRun(runID)
-	if err := queue.Enqueue(ctx, &transport.RunAssignment{RunID: runID, RunnerKind: "kind", Generation: 1}); err != nil {
+	defer srv.cleanupRun(runID, "fixture-record")
+	if err := queue.Enqueue(ctx, &transport.RunAssignment{RunID: runID, RunnerKind: "kind", Generation: 1, RunIncarnationID: originalRunIdentity(t, queue, runID)}); err != nil {
 		t.Fatal(err)
 	}
 	entered, release := make(chan struct{}), make(chan struct{})
 	var attempts atomic.Int32
-	srv.SetRunLifecycle(func(context.Context, string, int64) (bool, error) {
+	setIdentityLifecycle(srv, func(context.Context, string, string, int64) (bool, error) {
 		if attempts.Add(1) == 1 {
 			close(entered)
 			<-release
@@ -36,7 +36,7 @@ func TestDelayedFailedDispatchCannotNackReplacement(t *testing.T) {
 	}, nil)
 	firstResult := make(chan error, 1)
 	go func() {
-		_, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+		_, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 		firstResult <- err
 	}()
 	select {
@@ -48,7 +48,7 @@ func TestDelayedFailedDispatchCannotNackReplacement(t *testing.T) {
 		close(release)
 		t.Fatalf("reclaim: n=%d err=%v", n, err)
 	}
-	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+	response, err := srv.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	close(release)
 	if err != nil || response == nil || !response.HasJob {
 		t.Fatalf("replacement dispatch: response=%v err=%v", response, err)
@@ -68,7 +68,7 @@ func TestDelayedFailedDispatchCannotNackReplacement(t *testing.T) {
 	if replacement.Generation != 2 {
 		t.Fatalf("replacement generation = %d", replacement.Generation)
 	}
-	if current, err := queue.Renew(ctx, runID, replacement.Generation); err != nil || !current {
+	if current, err := queue.Renew(ctx, runID, originalRunIdentity(t, queue, runID), replacement.Generation); err != nil || !current {
 		t.Fatalf("old dispatch removed replacement lease: current=%t err=%v", current, err)
 	}
 	if extra, err := queue.Dequeue(ctx, "kind", 10*time.Millisecond); err != nil || extra != nil {

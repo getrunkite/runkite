@@ -39,10 +39,11 @@ func (s *Store) UpsertUsageHold(ctx context.Context, h *models.UsageHold) error 
 		ts = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO usage_holds (run_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO usage_holds (run_id, run_incarnation_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
+		VALUES ($1, '', $2, $3, $4, $5, $6)
 		ON CONFLICT (run_id) DO UPDATE SET
-			tenant_id=EXCLUDED.tenant_id,
+			run_incarnation_id=EXCLUDED.run_incarnation_id,
+ tenant_id=EXCLUDED.tenant_id,
 			agent_id=EXCLUDED.agent_id,
 			usd_hold=EXCLUDED.usd_hold,
 			tokens_hold=EXCLUDED.tokens_hold,

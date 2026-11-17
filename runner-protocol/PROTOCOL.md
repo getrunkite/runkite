@@ -116,7 +116,8 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
   "stream_modes": ["array of strings"],
   "connector_needs": ["array of strings"],
   "allowed_tools": ["array of strings (optional)"],
-  "generation": "integer (optional; fencing token, starts at 1)",
+  "generation": "integer (fencing token, starts at 1)",
+  "run_incarnation_id": "string (original stored record proof)",
   "trace_context": {
     "traceparent": "string (W3C Trace Context format)",
     "tracestate": "string",
@@ -142,7 +143,7 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 | `connector_needs` | array of strings | No | Pre-warm hint. The control plane MAY call GetSession for these connectors at dispatch (e.g. warm OAuth caches) but MUST NOT embed sessions or credentials in the assignment. The runner MAY request sessions for connectors not in this list on-demand via the Connector Session API. This is a hint, NOT an allow-list. |
 | `allowed_tools` | array of strings | No | Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = the runner MUST refuse tool names not listed before framework tool side effects (emit `tool_call`, then `tool_auth` deny + `error` + `end` status error). Distinct from connector policy grants on the MCP/proxy path. |
 | `generation` | integer | No | Fencing token for this dispatch attempt. Starts at 1 when a run is created; the control plane increments it on reclaim so a superseded runner's late Heartbeat / StreamEvents / ReportStatus can be rejected. The runner MUST echo the assigned value on every run-specific RPC and bound HTTP call. Zero matches only an actual generation-zero assignment; it never bypasses fencing or inherits a newer attempt. Older runners that omit the field must upgrade for positive-generation assignments. |
-| `run_incarnation_id` | string | No | Immutable stored run-row identity supplied by compatible durable stores. A deleted/recreated client `run_id` gets a new incarnation; reclaim preserves it. Isolated execution requires this value and keys its committed receipts and unresolved launch intents by it. Older SDK adapters may ignore this additive field; it does not retrofit their receipt implementation. |
+| `run_incarnation_id` | string | Yes | Exact original stored record identity. Printable ASCII, 1 to 256 bytes. Reclaim preserves it; deletion/recreation changes it even when the public ID and generation are reused. Every worker validates it before agent work and echoes it on run-specific RPCs and bound HTTP calls. Missing proof is never filled from a current lookup. |
 | `tenant_id` | string | No | Exact tenant from the originating authenticated request. Empty resolves to `default`. Runners MUST preserve this identity in task-local store/vector access and internal HTTP headers. Run-bound routes derive it from the assignment; unbound routes validate its runner-kind allowlist. Native LangGraph checkpoint keys retain the legacy bare-default / tenant-prefix layout only for unambiguous identities; see section 6.6. Proxy mode uses the bare thread ID under the exact tenant. |
 | `trace_context` | object | No | W3C Trace Context for cross-process observability. The runner SHOULD set this as the active trace context before executing the agent, so that all spans (LLM calls, tool invocations, etc.) are children of this trace. |
 
@@ -152,6 +153,31 @@ A `RunAssignment` is a JSON object sent from the control plane to a runner. It c
 - `input` can be any valid JSON value. The protocol does not constrain its shape. Null means "no input" (valid for resume-only runs).
 - The control plane sets `thread_id` and `run_id` in `config.configurable` before dispatching the RunAssignment. The runner MUST verify they are present and MUST NOT replace them with a *different logical* run/thread. If they are missing (e.g., due to a bug), the runner MUST inject them from the top-level `run_id` and `thread_id` fields. LangGraph runners MAY encode `tenant_id` into `configurable.thread_id` as the checkpointer key (`"{tenant_id}:{thread_id}"` for non-default tenants) -- that is the same logical thread, not a substitution.
 - Unknown fields in RunAssignment MUST be ignored by the runner (forward compatibility).
+
+---
+
+### 3.4 Assignment identity capability (Unreleased)
+
+`GetJobRequest.assignment_identity_version` must equal `1`. The plane rejects
+missing or unknown versions before dequeue. `WatchCancelsRequest` requires the
+same version before subscription. Proto3 retaining wire compatibility does not
+make older worker behavior safe.
+
+`RunEventProto`, `HeartbeatRequest` and `ReportStatusRequest` carry
+`run_incarnation_id` in addition to the exact generation. The tuple
+`(run_id, run_incarnation_id, generation)` fences queue renewal, acknowledgement,
+negative acknowledgement, attempt admission and durable completion. Custom Go
+queues must implement the new signatures rather than discard the proof.
+Event Publish, Subscribe, Replay and Close use `(run_id, run_incarnation_id)`
+namespaces, as do cancel publication and subscription.
+
+Redis mutations use Lua; NATS uses revision CAS; in-process mode uses its lock.
+Kafka's local materialized view and append do not provide atomic cross-replica
+fencing, even with Redis as event broker. Kafka queue construction therefore
+fails closed unless the operator explicitly sets
+`RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` (Go option
+`kafka.AllowNonAtomicFencing(true)`). This is a weaker compatibility tier.
+Passing its sequential conformance tests does not qualify atomic HA fencing.
 
 ---
 
@@ -200,7 +226,7 @@ A `RunEvent` is a JSON object published by the runner back to the control plane.
 
 ### Attempt identity on stored events
 
-The bridge stamps accepted events with the authenticated assignment generation
+The bridge stamps accepted events with the verified original record proof and assignment generation
 and appends `:gN` to event IDs on attempts after generation 1. Runner-authored
 JSON cannot override that generation. A runner's `seq` restarts for each attempt;
 replay consumers should track `(generation, seq)` and deduplicate by event ID.
@@ -210,7 +236,7 @@ the bridge never promotes a missing or zero generation to the current one.
 An actual legacy generation-zero assignment matches zero only. Reclaim increments
 that generation, after which an unversioned runner is superseded. Both shipped
 runners echo the assigned generation; custom and older runners must do the same.
-Final output is selected only from events with the accepted attempt generation,
+Final output is selected only from events with the exact original record proof and accepted attempt generation,
 so unversioned historical values cannot replace a positive attempt's result.
 
 Completion persists final output, thread values, a checkpoint and run status
@@ -222,7 +248,7 @@ unconfirmed and its lease stays recoverable. The runner MUST NOT report an
 agent `error` solely because stream acknowledgement failed. The plane can
 recover an already delivered terminal stream before redispatching work.
 The same recovery runs before a retry-ceiling error is applied. Only a terminal
-from the recorded attempt generation is eligible, including a recorded zero
+from the recorded original identity and attempt generation is eligible, including a recorded zero
 attempt; an unversioned event cannot complete a positive attempt. At the ceiling,
 the assignment remains in flight at that actual generation without another
 enqueue. `CompleteReclaimedRun` must confirm durable completion and finalization
@@ -311,28 +337,31 @@ The runner accesses checkpoints in one of two modes:
 
 Base URL: the control plane's internal API root.
 
-Run-bound PUT and DELETE validate the durable run generation and terminal status
-in the same transaction as the blob mutation, serialized with attempt advancement
-and completion. Authorization at request start is insufficient for a slow upload.
-An obsolete attempt receives `403 run_generation_mismatch`; a completed, canceled
-or missing run receives `403 run_not_inflight`. Unreleased current source also
-requires the captured stored record identity. An already authorized request
-retaining an old binding across deletion/recreation, even with the same run ID
-and generation, receives `403 run_incarnation_mismatch`; a missing
-identity receives `403 run_binding_required`. SQL uses its existing incarnation,
-and Mongo uses its existing immutable ObjectID privately. This does not enable
-Mongo's SQL-only public run references, governance or durable usage APIs.
-Blob ETags still protect against
-concurrent changes within an allowed attempt and return `412` on conflict.
-Existing run-binding headers are unchanged. These checks apply to HTTP proxy
-state; direct framework database writes remain owned by the framework driver.
-This adds no client-echoed incarnation proof. A fresh request still uses existing
-runner-pool and workload-owner authorization. Use fresh operation IDs while old
-workers or RPCs can still send requests; this snapshot fence does not make
-reusing a deleted run ID safe against every stale message.
-Upgrade all control-plane replicas before relying on the new fence. Drain queued
-or active assignments lacking the identity and submit fresh dispatches; the
-plane never fills a missing old snapshot from a potentially replacement row.
+Every bound HTTP call sends the assigned `X-Runkite-Run-Incarnation`,
+`X-Runkite-Generation`, and exactly one `X-Runkite-Run-Id` or canonical encoded
+`X-Runkite-Run-Id-B64`. The plane derives tenant, agent and thread from the
+matching assignment. Missing, duplicate, malformed or mismatched original proof
+is rejected before proxy work.
+
+Run-bound PUT and DELETE validate original record identity, durable generation
+and terminal status in the same transaction as the blob mutation, serialized
+with attempt advancement and completion. Authorization at request start cannot
+authorize a slow upload after replacement. A mismatched attempt receives
+`403 run_generation_mismatch`; a terminal or missing run receives
+`403 run_not_inflight`; a replaced record receives `403 run_incarnation_mismatch`.
+SQL reuses its immutable incarnation, and Mongo uses its nonzero immutable
+ObjectID privately. This does not enable Mongo's SQL-only public run references,
+governance or durable usage APIs. Blob ETags independently protect against
+concurrent state changes and return `412` on conflict. Direct framework database
+writes remain owned by the framework driver.
+
+Upgrade planes and workers together after draining active and queued work. Old
+workers cannot dequeue because they do not advertise capability version 1.
+Assignments without original proof are not executed or repaired from a newer
+record. A legacy committed receipt for the same public run ID cannot prove
+reclaim ownership and fails closed; legacy history from a different run remains
+readable. This proof prevents accidental stale-record authority. It is not a
+secret, sandbox attestation, or a defense against a compromised current worker.
 
 **Save checkpoint:**
 ```
@@ -698,10 +727,12 @@ Runner                         Control Plane                Client
 
 ### 10.1 Cancel Signaling
 
-The control plane signals cancellation via a transport-specific side-channel:
-
-- **Queue transport**: publish to a cancel topic/channel (e.g., Redis Pub/Sub `cancel:{run_id}`, NATS `cancel.{run_id}`). The runner subscribes to this channel for each active run.
-- **gRPC transport**: cancel the gRPC context or send a `CancelRun` message on the bidirectional stream.
+The plane namespaces its cancel bus by public run ID and original record proof.
+The worker opens `WatchCancels` with `assignment_identity_version=1` and receives
+`CancelSignal{run_id, run_incarnation_id}`. One user cancellation reaches every
+generation of that original record. A delayed signal for a deleted record cannot
+cancel its replacement. Workers keep separate attempt flags so a superseded
+heartbeat stops only that attempt; cleanup cannot remove a newer registration.
 
 ### 10.2 Runner Rules
 
@@ -716,7 +747,7 @@ The control plane signals cancellation via a transport-specific side-channel:
 
 If a run is cancelled after the runner has dequeued the `RunAssignment` but before execution begins:
 
-1. The runner MUST check the run's current status against the control plane (via `GET /internal/runs/{run_id}/status`) before starting execution.
+1. The runner MUST check the run's current status against the control plane (via `GET /internal/runs/{run_id}/status`) with original record proof and generation before starting execution. A matching terminal record is readable after the queue lease is removed; 401/403/404 must stop execution.
 2. If the status is `interrupted` or any terminal state, the runner MUST NOT execute the run. It should discard the assignment.
 3. The transport SHOULD remove or poison the job in the queue when cancel is received. This is a best-effort optimization -- the pre-execution status check is the authoritative guard.
 

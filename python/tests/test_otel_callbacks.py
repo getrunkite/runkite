@@ -63,6 +63,7 @@ def test_build_run_config_merges_callbacks():
             "thread_id": "t1",
             "graph_id": "g",
             "config": {"callbacks": [existing]},
+            "run_incarnation_id": "record-fixture",
         }
     )
     cbs = cfg.get("callbacks") or []

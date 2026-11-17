@@ -272,3 +272,24 @@ test("stop cancels the active call and ignores its late superseded callback", { 
   assert.equal(calls, 1);
   assert.equal(superseded, 0, "An already-stopped generation cannot send a new cancellation");
 });
+
+test("heartbeat captures the original proof instead of observing later option mutation", async () => {
+  const requests: HeartbeatRequest[] = [];
+  const options = { generation: 1, runIncarnationId: "original-record", intervalMs: 5 };
+  const handle = startHeartbeatLoop(
+    fakeClient((request) => {
+      requests.push(request);
+    }),
+    "same-run",
+    new Metadata(),
+    options,
+  );
+  options.runIncarnationId = "replacement-record";
+  try {
+    await sleep(30);
+    assert.ok(requests.length >= 1);
+    assert.ok(requests.every((request) => request.runIncarnationId === "original-record"));
+  } finally {
+    handle.stop();
+  }
+});

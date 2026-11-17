@@ -126,12 +126,17 @@ grant. See [descriptor fields and boundaries](internal/agent-capabilities.md).
 
 ### Dispatch generations and completion delivery
 
-Every run-specific RPC and bound `/internal/*` request must echo the exact
-`generation` from `GetJob`. A new run starts at generation `1`; reclaim increments
-it. Zero is an ordinary legacy value, never a wildcard for a positive attempt.
-An older runner that omits generation can act only on an actual generation-zero
-assignment and stops matching after reclaim. Upgrade custom runners to preserve
-this field. Both shipped runners already propagate it.
+Unreleased current source requires assignment identity protocol 1. Workers
+advertise `assignment_identity_version: 1` on `GetJob` and `WatchCancels` before
+receiving work, then echo the exact `(run_id, run_incarnation_id, generation)`
+on lifecycle RPCs and bound HTTP calls. HTTP uses
+`X-Runkite-Run-Incarnation`; the existing raw/base64url run-ID headers remain.
+Generation starts at 1 and advances on reclaim while incarnation stays fixed.
+A zero generation is never a wildcard. Missing proof never inherits a current
+record's identity, including after same-ID deletion/recreation. Older workers
+without capability 1 are rejected before dequeue, rather than executing work
+and discovering incompatibility at its first checkpoint. Use matching builds;
+published v0.9.0 workers are not upgraded by installing a new plane.
 
 The runner waits for event-stream acknowledgement before reporting completion.
 If stream delivery fails or its acknowledgement is lost, completion stays
@@ -151,6 +156,37 @@ the exhausted delivery leased with `+WPI`; any native redelivery still passes th
 existing generation fence and completion recovery before execution. See
 [Runner Protocol](../runner-protocol/PROTOCOL.md).
 
+### Assignment identity rollout (Unreleased)
+
+Drain older queued/inflight assignments before switching all planes and runners
+in a coordinated maintenance window. Verify database, queue and receipt backups,
+stop every writer, and apply SQL migration 23 on Postgres/SQLite or 24 on MySQL
+with `runkite db upgrade` before traffic resumes. Startup also applies migrations;
+do not mix old and new writers around this upgrade. Keep retained history and
+receipts; an old receipt for the same public run ID without its original identity is ambiguous
+and must not be replayed as proof for a replacement. Reconcile the operation or
+use a fresh run ID for intentional new work. Do not delete or rewrite receipts
+to force execution. Record-aware native turn IDs separate intentional same-ID
+replacement from same-record reclaim.
+
+Custom runners must update generated protobuf clients, capability negotiation,
+HTTP task bindings, event/status/heartbeat fields and record-scoped cancellation.
+Custom Go queues must implement identity-aware `Ack`/`Renew`/`Nack` and record-wide
+`Cancel`; event brokers namespace publish/subscribe/replay/close by run and
+record identity. Stores must fence attempt admission and completion against the
+original immutable record. There is no permissive old-interface fallback.
+SQL finalization also needs `state.RunUsageEventStore` and
+`state.RunUsageHoldStore`; terminal-hook delivery needs
+`state.RunTerminalHookStore`. These optional capabilities bind their mutations to
+the captured original record atomically. Custom stores must implement the
+capabilities used by their deployment; the plane does not fall back to an
+unfenced accounting or terminal-hook write. Legacy unbound accounting rows and
+bare run-ID hook claims remain intact and can block finalization. Reconcile the
+operation and estimated accounting explicitly. Use fresh operation IDs for
+intentional new work, without deleting evidence to force a replay.
+See the [engineering contract](internal/assignment-identity.md) and
+[operator procedure](ops-runbook.md#assignment-identity-upgrade).
+
 ### Live streaming during reclaim (v0.6.0)
 
 Run SSE, thread SSE and WebSocket streams confirm terminal events through the
@@ -161,7 +197,9 @@ result. Normal delivery still uses the existing push subscription. Sequence
 cursors apply to the initial attempt; a replacement can restart its sequence
 without having its events hidden by the previous attempt's cursor.
 
-Event IDs preserve the attempt boundary. Raw nonterminal events remain advisory
+Current-source event streams are also namespaced by original run record, and
+event identity is stamped and checked before consumption. Event IDs preserve the
+attempt boundary. Raw nonterminal events remain advisory
 because generation checking and broker publication are separate operations.
 Clients cannot undo old text already displayed, so they must detect attempt
 changes and avoid merging output across generations. The managed AI SDK bridge

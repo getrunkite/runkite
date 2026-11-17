@@ -38,38 +38,7 @@ func (s *Store) upUsageEvents(ctx context.Context, conn *pgxpool.Conn) error {
 
 // WriteUsageEvent upserts one usage row keyed by (run_id, source).
 func (s *Store) WriteUsageEvent(ctx context.Context, ev *models.UsageEvent) error {
-	if ev == nil {
-		return nil
-	}
-	tenantID := ev.TenantID
-	if tenantID == "" {
-		tenantID = tenant.FromContext(ctx)
-	}
-	ts := ev.TS
-	if ts.IsZero() {
-		ts = time.Now().UTC()
-	}
-	source := ev.Source
-	if source == "" {
-		source = models.UsageSourceTerminalOutput
-	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO usage_events (
-			id, ts, tenant_id, run_id, agent_id, principal, model,
-			tokens_in, tokens_out, usd_estimate, source
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-		ON CONFLICT (run_id, source) DO UPDATE SET
-			ts = EXCLUDED.ts,
-			tenant_id = EXCLUDED.tenant_id,
-			agent_id = EXCLUDED.agent_id,
-			principal = EXCLUDED.principal,
-			model = EXCLUDED.model,
-			tokens_in = EXCLUDED.tokens_in,
-			tokens_out = EXCLUDED.tokens_out,
-			usd_estimate = EXCLUDED.usd_estimate
-	`, ev.ID, ts, tenantID, ev.RunID, ev.AgentID, ev.Principal, ev.Model,
-		ev.TokensIn, ev.TokensOut, ev.USDEstimate, source)
-	return err
+	return s.completionDriver().WriteUsageEvent(ctx, ev)
 }
 
 // SumUsage aggregates tokens and USD for a tenant (and optional agent) in [since, until).
@@ -105,7 +74,7 @@ func (s *Store) SearchUsageSummary(ctx context.Context, req *models.UsageSummary
 	}
 	query := `SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, tenant_id, agent_id,
 		COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0),
-		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT run_id)
+		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT (run_id,run_incarnation_id))
 		FROM usage_events`
 	var args []interface{}
 	var where []string

@@ -314,6 +314,7 @@ def test_build_run_config_sets_server_info_keys():
         "thread_id": "thread-1",
         "graph_id": "my_agent",
         "config": {},
+        "run_incarnation_id": "record-fixture",
     }
     config = build_run_config(assignment)
     configurable = config["configurable"]
@@ -324,7 +325,16 @@ def test_build_run_config_sets_server_info_keys():
     check("graph_id set", configurable["graph_id"] == "my_agent")
     check("langgraph_auth_user absent when no user forwarded", "langgraph_auth_user" not in configurable)
 
-    with_gen = build_run_config({"run_id": "run-2", "thread_id": "t", "graph_id": "g", "generation": 3, "config": {}})
+    with_gen = build_run_config(
+        {
+            "run_id": "run-2",
+            "thread_id": "t",
+            "graph_id": "g",
+            "generation": 3,
+            "config": {},
+            "run_incarnation_id": "record-fixture",
+        }
+    )
     check("generation echoed from assignment", with_gen["configurable"]["generation"] == 3)
 
 
@@ -340,6 +350,7 @@ def test_build_run_config_sets_langgraph_auth_user_when_authenticated():
         "graph_id": "my_agent",
         "config": {},
         "user": {"identity": "alice-123", "display_name": "Alice", "email": "alice@example.com"},
+        "run_incarnation_id": "record-fixture",
     }
     config = build_run_config(assignment)
     auth_user = config["configurable"]["langgraph_auth_user"]
@@ -363,6 +374,7 @@ def test_build_run_config_preserves_existing_configurable_keys():
         "thread_id": "thread-1",
         "graph_id": "my_agent",
         "config": {"configurable": {"memories_enabled": False}},
+        "run_incarnation_id": "record-fixture",
     }
     config = build_run_config(assignment)
     check("caller-supplied configurable keys survive", config["configurable"]["memories_enabled"] is False)
@@ -378,14 +390,31 @@ def test_build_run_config_maps_checkpoint_ref_to_checkpoint_id():
         "thread_id": "thread-1",
         "graph_id": "my_agent",
         "checkpoint_ref": "  past-cp-42  ",
+        "run_incarnation_id": "record-fixture",
     }
     config = build_run_config(assignment)
     check("checkpoint_id set from checkpoint_ref", config["configurable"]["checkpoint_id"] == "past-cp-42")
 
-    no_ref = build_run_config({"run_id": "r", "thread_id": "t", "graph_id": "g", "checkpoint_ref": None})
+    no_ref = build_run_config(
+        {
+            "run_id": "r",
+            "thread_id": "t",
+            "graph_id": "g",
+            "checkpoint_ref": None,
+            "run_incarnation_id": "record-fixture",
+        }
+    )
     check("checkpoint_id absent when checkpoint_ref is null", "checkpoint_id" not in no_ref["configurable"])
 
-    blank = build_run_config({"run_id": "r", "thread_id": "t", "graph_id": "g", "checkpoint_ref": "   "})
+    blank = build_run_config(
+        {
+            "run_id": "r",
+            "thread_id": "t",
+            "graph_id": "g",
+            "checkpoint_ref": "   ",
+            "run_incarnation_id": "record-fixture",
+        }
+    )
     check("checkpoint_id absent for whitespace-only ref", "checkpoint_id" not in blank["configurable"])
 
 
@@ -393,16 +422,28 @@ def test_build_run_config_tenant_scopes_checkpoint_thread_id():
     """Non-default tenants must not share LangGraph checkpoint rows when
     they reuse the same client-chosen thread_id -- configurable.thread_id
     becomes the checkpointer key."""
-    bare = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g"})
+    bare = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "run_incarnation_id": "record-fixture"})
     check("absent tenant keeps bare thread_id", bare["configurable"]["thread_id"] == "t1")
 
-    default = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "default"})
+    default = build_run_config(
+        {
+            "run_id": "r",
+            "thread_id": "t1",
+            "graph_id": "g",
+            "tenant_id": "default",
+            "run_incarnation_id": "record-fixture",
+        }
+    )
     check("default tenant keeps bare thread_id", default["configurable"]["thread_id"] == "t1")
 
-    blank = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "  "})
+    blank = build_run_config(
+        {"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "  ", "run_incarnation_id": "record-fixture"}
+    )
     check("nonempty tenant whitespace is not normalized", blank["configurable"]["thread_id"] == "  :t1")
 
-    acme = build_run_config({"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "acme"})
+    acme = build_run_config(
+        {"run_id": "r", "thread_id": "t1", "graph_id": "g", "tenant_id": "acme", "run_incarnation_id": "record-fixture"}
+    )
     check("non-default tenant prefixes thread_id", acme["configurable"]["thread_id"] == "acme:t1")
 
 
@@ -438,6 +479,7 @@ async def test_lifecycle_running_emitted_before_slow_factory_construction():
         "input": {"messages": []},
         "config": {},
         "stream_modes": ["values"],
+        "run_incarnation_id": "record-fixture",
     }
     status = await execute_run(adapter, assignment, event_callback)
 

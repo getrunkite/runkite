@@ -43,16 +43,17 @@ export declare class Semaphore {
 export interface CancelState {
     cancelled: boolean;
 }
+export declare function cancelRecordKey(runId: string, runIncarnationId: string): string;
 /**
  * WatchCancels is run-wide, so a real user cancel reaches every active
  * attempt and any dispatch that has not registered yet. Orphan signals
  * expire instead of accumulating on every runner watching this kind.
  */
-export declare function recordCancelSignal(pendingCancels: Map<string, CancelState>, runId: string): void;
+export declare function recordCancelSignal(pendingCancels: Map<string, CancelState>, runId: string, runIncarnationId?: string): void;
 /** Each registration belongs to one attempt, including overlapping generations. */
-export declare function registerRun(pendingCancels: Map<string, CancelState>, runId: string): CancelState;
+export declare function registerRun(pendingCancels: Map<string, CancelState>, runId: string, runIncarnationId?: string): CancelState;
 /** Release only this attempt; preserve other attempts and early user cancels. */
-export declare function unregisterRun(pendingCancels: Map<string, CancelState>, runId: string, attempt: CancelState): void;
+export declare function unregisterRun(pendingCancels: Map<string, CancelState>, runId: string, attempt: CancelState, runIncarnationId?: string): void;
 export declare function runWorker(opts: WorkerOptions): Promise<void>;
 /**
  * Executes one dispatched job end to end: register cancel, stream

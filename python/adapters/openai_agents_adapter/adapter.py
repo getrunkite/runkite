@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from runkite_runner.assignment_identity import receipt_matches_assignment, require_run_incarnation
 from runkite_runner.checkpoint import resolve_checkpoint_http_url
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
@@ -237,6 +238,7 @@ class OpenAIAgentsAdapter:
         from agents import Agent, Model, RunConfig, RunHooks, Runner
 
         run_id, graph_id = assignment["run_id"], assignment["graph_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         thread_id = assignment.get("thread_id") or ""
         generation = int(assignment.get("generation") or 0)
         tenant_id = assignment.get("tenant_id") or "default"
@@ -410,7 +412,7 @@ class OpenAIAgentsAdapter:
             check_cancel()
             await event_callback(make_event("lifecycle", {"event": "running"}))
             completed = (prior or {}).get("completed")
-            if completed is not None and completed["run_id"] == run_id:
+            if completed is not None and receipt_matches_assignment(completed, run_id, run_incarnation_id):
                 if completed["input"] != input_key:
                     raise ValueError("reclaimed run input differs from its committed turn")
                 output = json.loads(state_json(completed["output"]))
@@ -511,6 +513,7 @@ class OpenAIAgentsAdapter:
                 "messages": messages,
                 "completed": {
                     "run_id": run_id,
+                    "run_incarnation_id": run_incarnation_id,
                     "input": input_key,
                     "status": "success",
                     "output": output,

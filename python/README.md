@@ -11,6 +11,14 @@ so clients see live SSE / WebSocket progress in the Admin UI.
 The default CLI runs LangGraph. An optional Microsoft Agent Framework profile
 ships in the published PyPI `0.6.1` wheel via the `agent-framework` extra.
 
+**Unreleased source assignment identity:** matching planes and runners now
+negotiate record-aware dispatch. Every job must contain its exact original
+`run_incarnation_id`; missing or malformed proofs are refused before execution.
+The runner echoes it on status checks, internal HTTP calls, events, heartbeat
+and completion. Cancellation applies to that stored record across its attempts.
+Upgrade matching components and drain older assignments; do not fill an old
+assignment from a current run row. Published package labels below are unchanged.
+
 ```text
   Client / SDK ──HTTP/SSE──► Runkite control plane (Go)
                                     │ gRPC Runner Protocol

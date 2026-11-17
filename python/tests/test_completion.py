@@ -17,7 +17,16 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
 
         stream = asyncio.sleep(0, result=SimpleNamespace(ok=True))
         self.assertEqual(
-            await finish_run(SimpleNamespace(ReportStatus=report), "r", 4, "success", stream, [], retry_delay=0),
+            await finish_run(
+                SimpleNamespace(ReportStatus=report),
+                "r",
+                4,
+                "success",
+                stream,
+                [],
+                retry_delay=0,
+                run_incarnation_id="record-fixture",
+            ),
             "success",
         )
         self.assertEqual(seen, [("success", 4), ("success", 4)])
@@ -37,7 +46,15 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
                     raise error
 
                 with self.assertRaises(CompletionDeliveryError) as caught:
-                    await finish_run(SimpleNamespace(ReportStatus=report), "r", 2, status, stream(), [])
+                    await finish_run(
+                        SimpleNamespace(ReportStatus=report),
+                        "r",
+                        2,
+                        status,
+                        stream(),
+                        [],
+                        run_incarnation_id="record-fixture",
+                    )
                 self.assertIs(caught.exception.__cause__, cause)
         self.assertEqual(seen, [])
 
@@ -55,6 +72,7 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
                         "success",
                         asyncio.sleep(0, result=response),
                         [],
+                        run_incarnation_id="record-fixture",
                     )
 
     async def test_superseded_is_not_retried(self):
@@ -69,6 +87,7 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
                 "success",
                 asyncio.sleep(0, result=SimpleNamespace(ok=True)),
                 [],
+                run_incarnation_id="record-fixture",
             )
         )
 
@@ -86,6 +105,7 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
                 [],
                 attempts=2,
                 retry_delay=0,
+                run_incarnation_id="record-fixture",
             )
 
 

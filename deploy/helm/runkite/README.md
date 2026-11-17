@@ -19,6 +19,33 @@ Minimal Kubernetes packaging for a multi-replica Runkite control plane
   Pin `image.tag` / `runner.image.tag` for production. For air-gapped/kind,
   build locally and override `image.repository` / `runner.image.repository`.
 
+## Coordinated source upgrade (Unreleased)
+
+Assignment identity protocol 1 requires matching plane and runner images. Pin
+both `image.tag` and `runner.image.tag` to the corresponding source artifacts;
+the chart does not make a published v0.9.0 image understand this contract.
+Do not mix new planes with old workers or assume a rolling mixed-version window
+is safe. Stop submissions/schedules, drain queued/inflight assignments and
+preserve native history/receipts before upgrading all replicas and worker fleets.
+Older assignments without original identity and ambiguous same-ID legacy
+receipts fail closed. Do not rewrite identity fields or erase receipts to force
+execution. See the [operator procedure](../../../docs/ops-runbook.md#assignment-identity-upgrade)
+and [engineering contract](../../../docs/internal/assignment-identity.md).
+
+Postgres plus the full Redis transport remains the Supported profile. A custom
+Kafka queue now refuses startup unless `config.extraEnv` explicitly contains:
+
+```yaml
+config:
+  extraEnv:
+    RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES: "true"
+```
+
+This deliberately accepts Kafka's non-atomic Compatible mode. Redis may supply
+event/cancel delivery and reclaim leadership, but it does not provide Kafka with
+cross-replica atomic queue CAS. The chart does not enable this opt-in by default.
+No new chart or package version is published by this source change.
+
 ## Supported profile
 
 [`values-supported.yaml`](values-supported.yaml) pins the announce /

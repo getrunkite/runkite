@@ -117,7 +117,7 @@ func TestMySQLUnsupportedApplicationNumberLeavesRunRecoverable(t *testing.T) {
 	if err := store.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: threadID, AgentID: "numbers-agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 1); err != nil || !accepted {
 		t.Fatalf("begin attempt: %v %v", accepted, err)
 	}
 	values := map[string]interface{}{"result": json.Number("12345678901234567890123456789012345")}

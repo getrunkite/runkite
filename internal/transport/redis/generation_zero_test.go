@@ -33,16 +33,16 @@ func TestMissingGenerationIndexDoesNotMakePositiveAssignmentLegacy(t *testing.T)
 			if generation == 0 {
 				wrong = 2
 			}
-			if current, err := q.Renew(ctx, job.RunID, wrong); err != nil || current {
+			if current, err := q.Renew(ctx, job.RunID, "", wrong); err != nil || current {
 				t.Fatalf("mismatched Renew changed missing-index assignment: current=%v err=%v", current, err)
 			}
-			if accepted, err := q.Ack(ctx, job.RunID, wrong); err != nil || accepted {
+			if accepted, err := q.Ack(ctx, job.RunID, "", wrong); err != nil || accepted {
 				t.Fatalf("mismatched Ack changed missing-index assignment: accepted=%v err=%v", accepted, err)
 			}
-			if current, err := q.Renew(ctx, job.RunID, generation); err != nil || !current {
+			if current, err := q.Renew(ctx, job.RunID, "", generation); err != nil || !current {
 				t.Fatalf("exact Renew rejected: current=%v err=%v", current, err)
 			}
-			if accepted, err := q.Ack(ctx, job.RunID, generation); err != nil || !accepted {
+			if accepted, err := q.Ack(ctx, job.RunID, "", generation); err != nil || !accepted {
 				t.Fatalf("exact Ack rejected: accepted=%v err=%v", accepted, err)
 			}
 		})
@@ -62,10 +62,10 @@ func TestMissingGenerationIndexRejectsMalformedPayloadGeneration(t *testing.T) {
 			if err := rdb.HSet(ctx, "rk:inflight:data", runID, payload).Err(); err != nil {
 				t.Fatal(err)
 			}
-			if current, err := q.Renew(ctx, runID, 0); err != nil || current {
+			if current, err := q.Renew(ctx, runID, "", 0); err != nil || current {
 				t.Fatalf("malformed Renew accepted: current=%v err=%v", current, err)
 			}
-			if accepted, err := q.Ack(ctx, runID, 0); err != nil || accepted {
+			if accepted, err := q.Ack(ctx, runID, "", 0); err != nil || accepted {
 				t.Fatalf("malformed Ack accepted: accepted=%v err=%v", accepted, err)
 			}
 			if exists, err := rdb.HExists(ctx, "rk:inflight:data", runID).Result(); err != nil || !exists {

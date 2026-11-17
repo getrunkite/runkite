@@ -62,7 +62,7 @@ func TestQueueFailedRequeueRetainsLease(t *testing.T) {
 				}
 				var err error
 				if op == "nack" {
-					err = q.Nack(ctx, assignment.RunID, assignment.Generation)
+					err = q.Nack(ctx, assignment.RunID, "", assignment.Generation)
 				} else {
 					var n int
 					n, _, err = q.ReclaimStale(ctx, time.Minute, 0)
@@ -85,12 +85,12 @@ func TestQueueFailedRequeueRetainsLease(t *testing.T) {
 				if err != nil || ready == nil {
 					t.Fatal(ready, err)
 				}
-				if _, err := q.Ack(context.Background(), ready.RunID, ready.Generation); err != nil {
+				if _, err := q.Ack(context.Background(), ready.RunID, "", ready.Generation); err != nil {
 					t.Fatal(err)
 				}
 				wantedGeneration := assignment.Generation
 				if op == "nack" {
-					if err := q.Nack(context.Background(), assignment.RunID, assignment.Generation); err != nil {
+					if err := q.Nack(context.Background(), assignment.RunID, "", assignment.Generation); err != nil {
 						t.Fatal(err)
 					}
 				} else {
@@ -111,7 +111,7 @@ func TestQueueFailedRequeueRetainsLease(t *testing.T) {
 						}
 						found = true
 					}
-					if _, err := q.Ack(context.Background(), job.RunID, job.Generation); err != nil {
+					if _, err := q.Ack(context.Background(), job.RunID, "", job.Generation); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -128,7 +128,7 @@ func TestQueueStaleNackDoesNotTouchFullReadyOrNewLease(t *testing.T) {
 	q.mu.Lock()
 	q.inflight[assignment.RunID].job.Generation = 2
 	q.mu.Unlock()
-	if err := q.Nack(context.Background(), assignment.RunID, 1); err != nil {
+	if err := q.Nack(context.Background(), assignment.RunID, "", 1); err != nil {
 		t.Fatal(err)
 	}
 	assignment.Generation = 2
@@ -143,13 +143,13 @@ func TestQueueCanceledRequeueWithCapacityRetainsLease(t *testing.T) {
 			if err != nil || ready == nil {
 				t.Fatal(ready, err)
 			}
-			if _, err := q.Ack(context.Background(), ready.RunID, ready.Generation); err != nil {
+			if _, err := q.Ack(context.Background(), ready.RunID, "", ready.Generation); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			if op == "nack" {
-				err = q.Nack(ctx, assignment.RunID, assignment.Generation)
+				err = q.Nack(ctx, assignment.RunID, "", assignment.Generation)
 			} else {
 				_, _, err = q.ReclaimStale(ctx, time.Minute, 0)
 			}
@@ -167,7 +167,7 @@ func TestQueuePartialReclaimRetainsEveryUncommittedLease(t *testing.T) {
 	if err != nil || ready == nil {
 		t.Fatal(ready, err)
 	}
-	if _, err := q.Ack(context.Background(), ready.RunID, ready.Generation); err != nil {
+	if _, err := q.Ack(context.Background(), ready.RunID, "", ready.Generation); err != nil {
 		t.Fatal(err)
 	}
 	if n, _, err := q.ReclaimStale(context.Background(), time.Minute, 0); n != 1 || !errors.Is(err, errReadyQueueFull) {

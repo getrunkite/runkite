@@ -22,18 +22,18 @@ type cancelFinalizationFaultStore struct {
 	fail  atomic.Bool
 }
 
-func (s *cancelFinalizationFaultStore) WriteUsageEvent(ctx context.Context, event *models.UsageEvent) error {
+func (s *cancelFinalizationFaultStore) WriteRunUsageEvent(ctx context.Context, incarnation string, event *models.UsageEvent) error {
 	if s.stage == "usage" && s.fail.Load() {
 		return errors.New("injected cancellation usage outage")
 	}
-	return s.SQLiteStore.WriteUsageEvent(ctx, event)
+	return s.SQLiteStore.WriteRunUsageEvent(ctx, incarnation, event)
 }
 
-func (s *cancelFinalizationFaultStore) ReleaseUsageHold(ctx context.Context, runID string) error {
+func (s *cancelFinalizationFaultStore) ReleaseRunUsageHold(ctx context.Context, runID, incarnation string) error {
 	if s.stage == "hold" && s.fail.Load() {
 		return errors.New("injected cancellation hold outage")
 	}
-	return s.SQLiteStore.ReleaseUsageHold(ctx, runID)
+	return s.SQLiteStore.ReleaseRunUsageHold(ctx, runID, incarnation)
 }
 
 func TestCancelFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
@@ -47,21 +47,21 @@ func TestCancelFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
 			rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+			job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 			if err != nil || !job.HasJob {
 				t.Fatal(job, err)
 			}
-			cancelled, err := c.SubscribeCancel(ctx, "run")
+			cancelled, err := c.SubscribeCancel(ctx, "run", originalRunIdentity(t, store, "run"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			now := time.Now().UTC()
-			if err := store.UpsertUsageHold(ctx, &models.UsageHold{
+			if err := store.UpsertRunUsageHold(ctx, originalRunIdentity(t, store, "run"), &models.UsageHold{
 				RunID: "run", TenantID: "default", AgentID: "agent", TokensHold: 7, CreatedAt: now,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			publishReviewEvent(t, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":5,"completion_tokens":2}}`)
+			publishReviewEvent(t, store, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":5,"completion_tokens":2}}`)
 			rec := httptest.NewRecorder()
 			plane.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/runs/run/cancel", nil).WithContext(ctx))
 			run, err := store.GetRun(ctx, "run")
@@ -92,7 +92,7 @@ func TestCancelFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
 			if n, dead, err := q.ReclaimStale(ctx, -time.Second, 3); err != nil || n != 1 || len(dead) != 0 {
 				t.Fatal(n, dead, err)
 			}
-			job, err = rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+			job, err = rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 			if err != nil || job.HasJob {
 				t.Fatalf("cancelled agent was redispatched: job=%+v err=%v", job, err)
 			}

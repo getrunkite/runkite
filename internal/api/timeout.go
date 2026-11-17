@@ -39,7 +39,7 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 	var failures []error
 	for _, run := range runs {
 		result, completionErr := s.completeRunResult(ctx, &state.RunCompletion{
-			TrustedSystem: true, RunID: run.RunID, Status: models.RunStatusTimeout, Error: errMsg, CancelCurrentAttempt: true,
+			TrustedSystem: true, ExpectedIncarnationID: state.RunIdentity(run), RunID: run.RunID, Status: models.RunStatusTimeout, Error: errMsg, CancelCurrentAttempt: true,
 		})
 		if result.Applied {
 			n++
@@ -50,7 +50,7 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 				// Stop the live runner while retaining its recoverable lease. A
 				// reclaimed GetJob finalizes the committed timeout before Ack.
 				tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
-					return s.cancel.PublishCancel(runCtx, run.RunID)
+					return s.cancel.PublishCancel(runCtx, run.RunID, state.RunIdentity(run))
 				})
 			}
 			slog.Error("run timeout: durable completion failed", "run_id", run.RunID, "error", completionErr)
@@ -61,12 +61,12 @@ func (s *Server) TimeoutOverdueRuns(ctx context.Context, maxDuration time.Durati
 			continue
 		}
 		if !tryStatusTransition("queue_cancel", run.ThreadID, run.RunID, func() error {
-			return s.queue.Cancel(runCtx, run.RunID)
+			return s.queue.Cancel(runCtx, run.RunID, state.RunIdentity(run))
 		}) {
 			failures = append(failures, fmt.Errorf("timeout run %s: failed to cancel run queue lease", run.RunID))
 		}
 		if !tryStatusTransition("publish_cancel", run.ThreadID, run.RunID, func() error {
-			return s.cancel.PublishCancel(runCtx, run.RunID)
+			return s.cancel.PublishCancel(runCtx, run.RunID, state.RunIdentity(run))
 		}) {
 			failures = append(failures, fmt.Errorf("timeout run %s: failed to publish runner cancellation", run.RunID))
 		}

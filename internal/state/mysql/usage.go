@@ -35,38 +35,7 @@ func (s *Store) upUsageEvents(ctx context.Context, db migrate.DB) error {
 
 // WriteUsageEvent upserts one usage row keyed by (run_id, source).
 func (s *Store) WriteUsageEvent(ctx context.Context, ev *models.UsageEvent) error {
-	if ev == nil {
-		return nil
-	}
-	tenantID := ev.TenantID
-	if tenantID == "" {
-		tenantID = tenant.FromContext(ctx)
-	}
-	ts := ev.TS
-	if ts.IsZero() {
-		ts = time.Now().UTC()
-	}
-	source := ev.Source
-	if source == "" {
-		source = models.UsageSourceTerminalOutput
-	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_events (
-			id, ts, tenant_id, run_id, agent_id, principal, model,
-			tokens_in, tokens_out, usd_estimate, source
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-		ON DUPLICATE KEY UPDATE
-			ts = VALUES(ts),
-			tenant_id = VALUES(tenant_id),
-			agent_id = VALUES(agent_id),
-			principal = VALUES(principal),
-			model = VALUES(model),
-			tokens_in = VALUES(tokens_in),
-			tokens_out = VALUES(tokens_out),
-			usd_estimate = VALUES(usd_estimate)
-	`, ev.ID, ts, tenantID, ev.RunID, ev.AgentID, ev.Principal, ev.Model,
-		ev.TokensIn, ev.TokensOut, ev.USDEstimate, source)
-	return err
+	return s.completionDriver().WriteUsageEvent(ctx, ev)
 }
 
 // SumUsage aggregates tokens and USD for a tenant (and optional agent) in [since, until).
@@ -102,7 +71,7 @@ func (s *Store) SearchUsageSummary(ctx context.Context, req *models.UsageSummary
 	}
 	query := `SELECT DATE_FORMAT(ts, '%Y-%m-%d') AS day, tenant_id, agent_id,
 		COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0),
-		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT run_id)
+		COALESCE(SUM(usd_estimate),0), COUNT(DISTINCT run_id,run_incarnation_id)
 		FROM usage_events`
 	var args []interface{}
 	var where []string

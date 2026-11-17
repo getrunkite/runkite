@@ -601,7 +601,7 @@ class NativeStateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_checkpoint_requests_use_trusted_runner_tenant_attempt_and_graph_binding(self) -> None:
         tenant = bind_tenant("tenant-two")
-        run = bind_run("run-bound", 9)
+        run = bind_run("run-bound", 9, run_incarnation_id="record-fixture")
         runner = bind_runner("python-openai-agents", "test-runner-token")
         try:
             store = self.store(state_json(envelope()).encode())

@@ -101,7 +101,12 @@ async def test_load_config_and_string_output():
 
         callback, events = _collector()
         status = await adapter.execute(
-            {"run_id": "r1", "graph_id": "my_chain", "input": {"messages": [{"role": "user", "content": "hi there"}]}},
+            {
+                "run_id": "r1",
+                "graph_id": "my_chain",
+                "input": {"messages": [{"role": "user", "content": "hi there"}]},
+                "run_incarnation_id": "record-fixture",
+            },
             callback,
             None,
         )
@@ -135,6 +140,7 @@ async def test_extracts_last_human_message_and_passes_input_key():
                     {"role": "user", "content": "the real question"},
                 ]
             },
+            "run_incarnation_id": "record-fixture",
         },
         callback,
         None,
@@ -152,7 +158,14 @@ async def test_basemessage_output_normalized_to_text():
 
     callback, events = _collector()
     await adapter.execute(
-        {"run_id": "r3", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None
+        {
+            "run_id": "r3",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
+        callback,
+        None,
     )
 
     values_event = next(e for e in events if e["method"] == "values")
@@ -165,7 +178,11 @@ async def test_basemessage_output_normalized_to_text():
 async def test_unknown_graph_id_reports_error_without_crashing():
     adapter = LangChainAdapter()
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r4", "graph_id": "does-not-exist", "input": {}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r4", "graph_id": "does-not-exist", "input": {}, "run_incarnation_id": "record-fixture"},
+        callback,
+        None,
+    )
     check("unknown graph_id status is error", status == "error")
     check("error event emitted", any(e["method"] == "error" for e in events))
 
@@ -175,7 +192,14 @@ async def test_runnable_exception_reports_error_without_crashing():
     adapter.runnables["chat"] = _FakeRunnable(None, raise_error=True)
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r5", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}}, callback, None
+        {
+            "run_id": "r5",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
+        callback,
+        None,
     )
     check("exception inside chain reports error status", status == "error")
     check(
@@ -197,7 +221,12 @@ async def test_cancel_event_interrupts_a_slow_chain():
     fire_task = asyncio.ensure_future(_fire_cancel_soon())
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r6", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r6",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         cancel_event,
     )
@@ -241,7 +270,12 @@ async def test_basemessage_with_usage_metadata_reaches_values():
     adapter.runnables["chat"] = _FakeRunnable(_AI())
     callback, events = _collector()
     await adapter.execute(
-        {"run_id": "r-usage", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r-usage",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -263,7 +297,12 @@ async def test_real_reply_with_no_usage_anywhere_is_flagged_unmetered():
 
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r-unmetered", "graph_id": "chat", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r-unmetered",
+            "graph_id": "chat",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -288,7 +327,12 @@ async def test_bare_ainvoke_without_config_kwarg_still_runs():
     adapter.runnables["bare"] = _Bare()
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r-bare", "graph_id": "bare", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r-bare",
+            "graph_id": "bare",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )

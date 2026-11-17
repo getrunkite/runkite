@@ -20,14 +20,14 @@ type unavailableStreamBroker struct {
 	failSubscribe bool
 }
 
-func (b *unavailableStreamBroker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
+func (b *unavailableStreamBroker) Subscribe(ctx context.Context, runID string, incarnation string) (<-chan *transport.RunEvent, error) {
 	if b.failSubscribe {
 		return nil, errors.New("synthetic subscription outage")
 	}
-	return b.EventBroker.Subscribe(ctx, runID)
+	return b.EventBroker.Subscribe(ctx, runID, incarnation)
 }
 
-func (b *unavailableStreamBroker) Replay(context.Context, string, int64) ([]*transport.RunEvent, error) {
+func (b *unavailableStreamBroker) Replay(context.Context, string, string, int64) ([]*transport.RunEvent, error) {
 	return nil, errors.New("synthetic replay outage")
 }
 
@@ -42,11 +42,11 @@ func TestStreamRecoveryCompletedRunSurvivesBrokerOutage(t *testing.T) {
 			plane := api.NewServer(store, queue, broker, cancels)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			if accepted, err := store.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 1); err != nil || !accepted {
 				t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 			}
-			recoveryPublish(t, broker, runID, 1, 1, "durable-values", "values", `{"answer":"durable"}`)
-			if accepted, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !accepted {
+			recoveryPublish(t, store, broker, runID, 1, 1, "durable-values", "values", `{"answer":"durable"}`)
+			if accepted, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess})); err != nil || !accepted {
 				t.Fatalf("completion: accepted=%v err=%v", accepted, err)
 			}
 			plane = api.NewServer(store, queue, &unavailableStreamBroker{EventBroker: broker, failSubscribe: failSubscribe}, cancels)
@@ -64,8 +64,8 @@ type streamContextBroker struct {
 	contexts chan context.Context
 }
 
-func (b *streamContextBroker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
-	ch, err := b.EventBroker.Subscribe(ctx, runID)
+func (b *streamContextBroker) Subscribe(ctx context.Context, runID string, incarnation string) (<-chan *transport.RunEvent, error) {
+	ch, err := b.EventBroker.Subscribe(ctx, runID, incarnation)
 	if err == nil {
 		b.contexts <- ctx
 	}
@@ -87,7 +87,7 @@ func TestStreamRecoveryWriteFailureStopsSubscriptionWithoutCompletingRun(t *test
 	plane := api.NewServer(store, queue, broker, cancels)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if accepted, err := store.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, store, runID), 1); err != nil || !accepted {
 		t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 	}
 	done := make(chan struct{})
@@ -101,7 +101,7 @@ func TestStreamRecoveryWriteFailureStopsSubscriptionWithoutCompletingRun(t *test
 	case <-ctx.Done():
 		t.Fatal("stream did not subscribe")
 	}
-	recoveryPublish(t, rawBroker, runID, 1, 1, "client-message", "messages", `[{"type":"ai","content":"synthetic"},{}]`)
+	recoveryPublish(t, store, rawBroker, runID, 1, 1, "client-message", "messages", `[{"type":"ai","content":"synthetic"},{}]`)
 	select {
 	case <-done:
 	case <-ctx.Done():

@@ -11,6 +11,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/metrics"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/transport"
 )
 
@@ -138,12 +139,17 @@ func wsWriteCommandResult(ctx context.Context, c *websocket.Conn, id int, failEr
 func (s *Server) streamRunOverWS(ctx context.Context, c *websocket.Conn, runID string) {
 	streamCtx, stopStream := context.WithCancel(ctx)
 	defer stopStream()
-	eventCh, err := s.broker.Subscribe(streamCtx, runID)
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return
+	}
+	incarnation := state.RunIdentity(run)
+	eventCh, err := s.broker.Subscribe(streamCtx, runID, incarnation)
 	if err != nil {
 		slog.Error("websocket: failed to subscribe to run", "run_id", runID, "error", err)
 		return
 	}
-	_ = s.replayAndTail(streamCtx, runID, nil, nil, eventCh, func(_ *transport.RunEvent, se *models.StreamingEvent) error {
+	_ = s.replayAndTail(streamCtx, runID, incarnation, nil, nil, eventCh, func(_ *transport.RunEvent, se *models.StreamingEvent) error {
 		return wsjson.Write(streamCtx, c, se)
 	})
 }

@@ -14,6 +14,7 @@ export const HEADER_TENANT_ID_B64 = "X-Runkite-Tenant-Id-B64";
 export const HEADER_RUN_ID = "X-Runkite-Run-Id";
 export const HEADER_RUN_ID_B64 = "X-Runkite-Run-Id-B64";
 export const HEADER_GENERATION = "X-Runkite-Generation";
+export const HEADER_RUN_INCARNATION = "X-Runkite-Run-Incarnation";
 export function currentTenant() {
     return als.getStore()?.tenantId || DEFAULT_TENANT;
 }
@@ -24,6 +25,7 @@ export function runWithTenant(tenantId, fn) {
         ...prev,
         tenantId: tid,
         runId: prev?.runId ?? "",
+        runIncarnationId: prev?.runIncarnationId ?? "",
         generation: prev?.generation ?? 0,
     }, fn);
 }
@@ -34,6 +36,7 @@ export function runWithBinding(opts, fn) {
     return als.run({
         tenantId: tid,
         runId,
+        runIncarnationId: opts.runIncarnationId ?? "",
         generation: opts.generation ?? 0,
         runnerKind: opts.runnerKind,
         runnerToken: opts.runnerToken,
@@ -45,6 +48,8 @@ export function tenantHeaders() {
     if (store?.runId) {
         Object.assign(headers, runIdHeaders(store.runId));
         headers[HEADER_GENERATION] = String(store.generation ?? 0);
+        if (store.runIncarnationId)
+            headers[HEADER_RUN_INCARNATION] = store.runIncarnationId;
     }
     return headers;
 }

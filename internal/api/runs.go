@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -643,6 +644,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 			return nil, nil, err
 		}
 	}
+	if _, _, _, err = s.usageHoldWriter(run); err != nil {
+		return nil, nil, err
+	}
 	if err = s.createRunRespectingLimits(ctx, run, now); err != nil {
 		// run_id is the primary key, so this fails with a unique-
 		// constraint violation if a concurrent request already inserted
@@ -682,10 +686,17 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 		return nil, nil, err
 	}
 	created = true // pending run owns the claim; do not idle the thread on later returns
-	s.placeUsageHold(ctx, run)
-
+	if !auth.ValidRunIncarnation(state.RunIdentity(run)) {
+		return nil, nil, fmt.Errorf("durable store did not provide an immutable run identity")
+	}
 	metrics.RunsTotal.WithLabelValues(req.AgentID, "created").Inc()
 	metrics.ActiveRuns.Inc()
+	if err = s.placeUsageHold(ctx, run); err != nil {
+		// No assignment has escaped. Complete only this original pending row;
+		// ambiguous accounting cleanup remains visible for reconciliation.
+		s.rollbackCreatedRun(ctx, run)
+		return nil, nil, err
+	}
 
 	// OTel run span, part of the OTel observability fan-out. No-op with
 	// zero overhead unless OTEL_EXPORTER_OTLP_ENDPOINT is set (see
@@ -699,7 +710,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 			attribute.String("graph.id", req.AgentID),
 		),
 	)
-	s.runSpans.Store(runID, span)
+	s.runSpans.Store(transport.RunRecordKey(runID, state.RunIdentity(run)), span)
 
 	// runner_kind comes from the agent's own declared config (langgraph.json's
 	// top-level "runner_kind", stashed in agent metadata at bootstrap --
@@ -810,7 +821,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// terminal outcome). Skipped entirely when nothing is listening for
 	// hooks, so this costs nothing in the common (hooks-disabled) case.
 	if s.hooks.HasSinks() {
-		s.watchRunEventsForToolCallHook(runID, threadID, req.AgentID, tenant.FromContext(ctx))
+		s.watchRunEventsForToolCallHook(runID, state.RunIdentity(run), threadID, req.AgentID, tenant.FromContext(ctx))
 	}
 
 	return run, assignment, nil
@@ -872,12 +883,12 @@ func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID
 // immediately dispatched runner cannot publish before registration. Only the
 // consumer runs asynchronously. The watcher recognizes explicit "tool_call"
 // events without parsing framework-specific values or updates.
-func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantID string) {
+func (s *Server) watchRunEventsForToolCallHook(runID, incarnation, threadID, agentID, tenantID string) {
 	// Ceiling so an orphaned run (never reaches StatusCallback / cancel,
 	// so broker.Close never fires) cannot leave this goroutine blocked
 	// forever. Cancel also releases the broker's underlying Redis tailer.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-	ch, err := s.broker.Subscribe(ctx, runID)
+	ch, err := s.broker.Subscribe(ctx, runID, incarnation)
 	if err != nil {
 		cancel()
 		slog.Warn("tool-call hook subscription failed", "run_id", runID, "error", err)
@@ -891,7 +902,7 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantI
 				if !ok {
 					return
 				}
-				if event.Method != "tool_call" {
+				if event.RunIncarnationID != incarnation || event.Method != "tool_call" {
 					continue
 				}
 				var data map[string]interface{}
@@ -1499,10 +1510,36 @@ func (s *Server) verifyRunThread(w http.ResponseWriter, r *http.Request, runID, 
 // GET /internal/runs/{runID}/status
 func (s *Server) handleGetRunStatus(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("runID")
+	incarnation := r.Header.Get(auth.HeaderRunIncarnation)
+	generation, generationErr := strconv.ParseInt(r.Header.Get(auth.HeaderGeneration), 10, 64)
+	if !auth.ValidRunIncarnation(incarnation) || len(r.Header.Values(auth.HeaderRunIncarnation)) != 1 || generationErr != nil || len(r.Header.Values(auth.HeaderGeneration)) != 1 {
+		writeError(w, http.StatusUnauthorized, "original run record identity and generation required")
+		return
+	}
 
 	run, err := s.store.GetRun(r.Context(), runID)
 	if err != nil {
 		handleStoreError(w, err)
+		return
+	}
+	if state.RunIdentity(run) != incarnation || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) != generation {
+		writeError(w, http.StatusForbidden, "original run record or generation mismatch")
+		return
+	}
+	var manifest models.RunManifest
+	encoded, manifestErr := json.Marshal(run.Metadata["run_manifest"])
+	if manifestErr != nil || json.Unmarshal(encoded, &manifest) != nil {
+		writeError(w, http.StatusForbidden, "stored run authority unavailable")
+		return
+	}
+	kind := auth.RunnerKindFromContext(r.Context())
+	if kind != "" && (manifest.RunnerKind != kind || !s.executionPools.AllowsRoute(kind, tenant.FromContext(r.Context()), run.AgentID)) {
+		writeError(w, http.StatusForbidden, "run belongs to another runner authority")
+		return
+	}
+	owner, ownerErr := state.StoredWorkloadOwner(run.Metadata)
+	if ownerErr != nil || ((owner != nil || auth.WorkloadIdentityFromContext(r.Context()) != nil) && auth.RequireWorkloadOwner(r.Context(), owner) != nil) {
+		writeError(w, http.StatusForbidden, "run workload owner mismatch or expired")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": string(run.Status)})
@@ -1524,7 +1561,7 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request, run *models.R
 	// Subscribe BEFORE enqueuing (no race).
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
-	eventCh, err := s.broker.Subscribe(streamCtx, run.RunID)
+	eventCh, err := s.broker.Subscribe(streamCtx, run.RunID, state.RunIdentity(run))
 	if err != nil {
 		s.rollbackCreatedRun(r.Context(), run)
 		writeError(w, http.StatusInternalServerError, "failed to subscribe to events")
@@ -1558,7 +1595,7 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request, run *models.R
 
 	// Preserve payload-only Agent Protocol SSE while sharing durable terminal
 	// confirmation and recovery with reconnect and thread streaming paths.
-	_ = s.replayRunEvents(streamCtx, run.RunID, nil, eventCh, func(event *transport.RunEvent) error {
+	_ = s.replayRunEvents(streamCtx, run.RunID, state.RunIdentity(run), nil, eventCh, func(event *transport.RunEvent) error {
 		if err := writeRunSSE(w, event); err != nil {
 			return err
 		}
@@ -1580,7 +1617,7 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 	// Subscribe FIRST so no live events are missed, then replay history.
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
-	eventCh, err := s.broker.Subscribe(streamCtx, runID)
+	eventCh, err := s.broker.Subscribe(streamCtx, runID, state.RunIdentity(run))
 	if err != nil && !isTerminalStatus(run.Status) {
 		writeError(w, http.StatusInternalServerError, "failed to subscribe")
 		return
@@ -1595,7 +1632,7 @@ func (s *Server) streamExistingRun(w http.ResponseWriter, r *http.Request, runID
 		return
 	}
 
-	_ = s.replayRunEvents(streamCtx, runID, nil, eventCh, func(event *transport.RunEvent) error {
+	_ = s.replayRunEvents(streamCtx, runID, state.RunIdentity(run), nil, eventCh, func(event *transport.RunEvent) error {
 		if err := writeRunSSE(w, event); err != nil {
 			return err
 		}
@@ -1653,7 +1690,7 @@ func (s *Server) waitForRunResult(ctx context.Context, run *models.Run, assignme
 	}
 
 	// Subscribe BEFORE enqueuing
-	eventCh, err := s.broker.Subscribe(ctx, run.RunID)
+	eventCh, err := s.broker.Subscribe(ctx, run.RunID, state.RunIdentity(run))
 	if err != nil {
 		s.rollbackCreatedRun(ctx, run)
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
@@ -1676,7 +1713,7 @@ waitingForRun:
 			if !open {
 				break waitingForRun
 			}
-			if !event.IsTerminal() {
+			if event.RunIncarnationID != state.RunIdentity(run) || !event.IsTerminal() {
 				continue
 			}
 			// Extract status from the end event data (e.g. {"status":"success"})
@@ -1786,7 +1823,7 @@ func (s *Server) waitForRunObservation(ctx context.Context, run *models.Run) (*m
 	}
 
 	// Subscribe FIRST, then replay to catch any events already published
-	eventCh, err := s.broker.Subscribe(ctx, runID)
+	eventCh, err := s.broker.Subscribe(ctx, runID, state.RunIdentity(run))
 	if err != nil {
 		return nil, &runObservationError{http.StatusInternalServerError, "failed to subscribe", err}
 	}
@@ -1796,8 +1833,11 @@ func (s *Server) waitForRunObservation(ctx context.Context, run *models.Run) (*m
 	maxReplayedSeq := map[int64]int64{}
 
 	// Replay past events to catch values already emitted
-	if past, replayErr := s.broker.Replay(ctx, runID, 0); replayErr == nil {
+	if past, replayErr := s.broker.Replay(ctx, runID, state.RunIdentity(run), 0); replayErr == nil {
 		for _, ev := range past {
+			if ev.RunIncarnationID != state.RunIdentity(run) {
+				continue
+			}
 			if ev.Seq > maxReplayedSeq[ev.Generation] {
 				maxReplayedSeq[ev.Generation] = ev.Seq
 			}
@@ -1834,7 +1874,7 @@ func (s *Server) waitForRunObservation(ctx context.Context, run *models.Run) (*m
 				if !open {
 					break waitingForExisting
 				}
-				if event.Seq <= maxReplayedSeq[event.Generation] || !event.IsTerminal() {
+				if event.RunIncarnationID != state.RunIdentity(run) || event.Seq <= maxReplayedSeq[event.Generation] || !event.IsTerminal() {
 					continue
 				}
 				var endData map[string]interface{}
@@ -1986,13 +2026,13 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 
 	// Commit cancellation before removing its recoverable lease. The transaction
 	// targets the current attempt, while refusing to overwrite a terminal winner.
-	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
+	accepted, completionErr := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: state.RunIdentity(run), RunID: runID, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true})
 	if completionErr != nil {
 		if accepted {
 			// The interruption committed, but usage/hold/hook finalization can
 			// still fail. Stop the runner while retaining its lease so ordinary
 			// reclaim retries that bookkeeping without another caller request.
-			tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID) })
+			tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID, state.RunIdentity(run)) })
 		}
 		return nil, completionErr
 	}
@@ -2005,16 +2045,16 @@ func (s *Server) cancelRunSingle(ctx context.Context, run *models.Run, wait bool
 			return current, nil
 		}
 	}
-	if !tryStatusTransition("queue_cancel", run.ThreadID, runID, func() error { return s.queue.Cancel(ctx, runID) }) {
+	if !tryStatusTransition("queue_cancel", run.ThreadID, runID, func() error { return s.queue.Cancel(ctx, runID, state.RunIdentity(run)) }) {
 		return nil, fmt.Errorf("failed to cancel run queue lease")
 	}
-	if !tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID) }) {
+	if !tryStatusTransition("publish_cancel", run.ThreadID, runID, func() error { return s.cancel.PublishCancel(ctx, runID, state.RunIdentity(run)) }) {
 		return nil, fmt.Errorf("failed to publish runner cancellation")
 	}
 	// Give runner time to emit its own terminal event, then close broker.
 	closeBroker := func() {
 		time.Sleep(5 * time.Second)
-		_ = s.broker.Close(runID)
+		_ = s.broker.Close(runID, state.RunIdentity(run))
 	}
 	if wait {
 		closeBroker()

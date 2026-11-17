@@ -26,32 +26,32 @@ func TestGetJob_CancelImmediatelyAfterDispatch(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		queue := inprocess.NewQueue()
 		cancelBus := inprocess.NewCancelBus()
-		srv := NewServer(queue, inprocess.NewBroker(), cancelBus, nil)
+		srv := newIdentityServer(queue, inprocess.NewBroker(), cancelBus, nil)
 
 		runID := "race-run"
-		assignment := &transport.RunAssignment{RunID: runID, ThreadID: "t", RunnerKind: "k", GraphID: "g", Input: json.RawMessage(`{}`)}
+		assignment := &transport.RunAssignment{RunID: runID, ThreadID: "t", RunnerKind: "k", GraphID: "g", Input: json.RawMessage(`{}`), RunIncarnationID: originalRunIdentity(t, queue, runID)}
 		if err := queue.Enqueue(context.Background(), assignment); err != nil {
 			t.Fatal(err)
 		}
 
 		// Runner is already watching, as it would be at startup via WatchCancels.
-		watchCh := make(chan string, 1)
+		watchCh := make(chan *pb.CancelSignal, 1)
 		srv.addWatcher("k", watchCh)
 
 		// Sequenced (not concurrent): a client cannot cancel a run before
 		// the runner has been dispatched it, i.e. before GetJob returns.
 		// This is the tightest realistic race -- cancel fired the instant
 		// after dispatch.
-		resp, err := srv.GetJob(context.Background(), &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1})
+		resp, err := srv.GetJob(context.Background(), &pb.GetJobRequest{RunnerKind: "k", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 		if err != nil || !resp.HasJob {
 			t.Fatalf("GetJob failed: %v %v", resp, err)
 		}
-		_ = cancelBus.PublishCancel(context.Background(), runID)
+		_ = cancelBus.PublishCancel(context.Background(), runID, originalRunIdentity(t, cancelBus, runID))
 
 		select {
 		case got := <-watchCh:
-			if got != runID {
-				t.Errorf("wrong run id: %s", got)
+			if got.RunId != runID {
+				t.Errorf("wrong run id: %s", got.RunId)
 			}
 		case <-time.After(200 * time.Millisecond):
 			missed.Add(1)

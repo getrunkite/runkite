@@ -206,7 +206,7 @@ async def test_generation_and_active_parent_binding():
             except RuntimeError:
                 pass
         check("invalid generations dispatch nothing", not captured)
-        token = bind_run("parent", 7)
+        token = bind_run("parent", 7, run_incarnation_id="record-fixture")
         try:
             for run_id, generation in (("foreign", 7), ("parent", 6)):
                 try:

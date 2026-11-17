@@ -4,6 +4,21 @@ Runs an ordinary public `LlmAgent` through `python-google-adk`. Runkite owns
 Threads/Runs, dispatch, cancellation, received usage and durable records. The
 SDK retains its model loop in the Python worker.
 
+## Original run records (Unreleased source)
+
+Committed receipts now retain the assignment's original `run_incarnation_id`.
+Only the same public run ID and exact original record replay saved output.
+A known new record reusing that public ID executes a fresh turn with the owned
+conversation history. A legacy receipt without the record proof is ambiguous
+for the same public ID and fails closed; a different public run ID can still
+restore that legacy conversation normally. No history is imported or relabelled.
+Use matching source plane/runner versions and drain older assignments before
+relying on this contract.
+
+Native SDK turn IDs derive from the public run ID and original record proof so
+ID reuse cannot alias native invocations or prior-turn usage. The Runkite
+factory context retains the public `run_id`.
+
 ## Install
 
 Published PyPI `0.6.1` includes this profile through the `google-adk` extra.

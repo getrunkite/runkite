@@ -28,7 +28,7 @@ func TestConnectorSessionChecksTenantAndAgentWithOtherwiseMatchingBinding(t *tes
 		{"other_identity", "beta", "replacement-agent", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := auth.WithRunBinding(context.Background(), &auth.RunBinding{RunID: "same-run", Generation: 2, TenantID: tc.tenant, AgentID: tc.agent})
+			ctx := auth.WithRunBinding(context.Background(), &auth.RunBinding{RunID: "same-run", Generation: 2, TenantID: tc.tenant, AgentID: tc.agent, RunIncarnationID: originalRunIdentity(t, s, "same-run")})
 			r := httptest.NewRequest(http.MethodPost, "/internal/connectors/fixture/mcp", nil).WithContext(ctx)
 			r.Header.Set(connector.HeaderConnectorSession, capability.Token)
 			w := httptest.NewRecorder()

@@ -177,10 +177,14 @@ func TestSimulation_SkipsUsageIngest(t *testing.T) {
 		Pricebook: finops.Pricebook{"gpt-4o-mini": {InputPer1k: 0.00015, OutputPer1k: 0.0006}},
 	})
 	out := []byte(`{"messages":[],"usage":{"prompt_tokens":1000,"completion_tokens":500,"cost_usd":0.05,"model":"gpt-4o-mini"}}`)
-	if err := env.broker.Publish(ctx, "run-sim-usage", &transport.RunEvent{
+	if err := env.broker.Publish(ctx, "run-sim-usage", originalRunIdentity(t, env.store,
+
+		"run-sim-usage"), withOriginalRunEvent(originalRunIdentity(t, env.store,
+
+		"run-sim-usage"), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(out), Ts: time.Now().UnixMilli(),
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	env.apiServer.StatusCallback()("run-sim-usage", "success", "")
@@ -305,10 +309,10 @@ func TestSimulation_SkipsLLMCache(t *testing.T) {
 	if err != nil || assignment == nil {
 		t.Fatalf("expected enqueue: %v", err)
 	}
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"messages":[{"role":"ai","content":"4"}]}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	resp2, err := postJSONHeader(env.srv.URL+"/threads/cache-sim-2/runs", map[string]interface{}{

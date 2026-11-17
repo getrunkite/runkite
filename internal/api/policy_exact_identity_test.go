@@ -101,7 +101,7 @@ func TestExactAgentConnectorGrantBoundary(t *testing.T) {
 				request := httptest.NewRequest(http.MethodPost, "/internal/connectors/"+url.PathEscape(requestedConnector)+"/session", nil)
 				request.Header.Set(auth.HeaderRunnerKind, "python-langgraph")
 				request.Header.Set(auth.HeaderRunnerToken, "fixture-runner-token")
-				request.Header.Set(auth.HeaderRunID, assignment.RunID)
+				request.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, db, request.Header, auth.HeaderRunID, assignment.RunID))
 				request.Header.Set(auth.HeaderGeneration, strconv.FormatInt(assignment.Generation, 10))
 				output := httptest.NewRecorder()
 				handler.ServeHTTP(output, request)

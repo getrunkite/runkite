@@ -14,6 +14,16 @@ provides the same availability boundary for operators.
 
 Discover and operate an existing agent:
 
+- [Assignment identity protocol 1](internal/assignment-identity.md) requires
+  matching planes and runners, exact run/record/generation echoes and a
+  coordinated drain of older assignments and all writers, verified backups and
+  Postgres/SQLite migration 23 or MySQL migration 24. Legacy unbound accounting,
+  terminal-hook claims and same-ID receipts require explicit reconciliation;
+  new intentional operations need fresh IDs. Events and cancellation use separate
+  record namespaces. This is continuity fencing, not a secret capability, worker attestation or external-effect
+  idempotency. Kafka is off unless its non-atomic compatibility mode is
+  explicitly accepted, including when paired with Redis.
+
 - [Tools-only connector profiles](connectors.md#tools-only-mcp-profile-unreleased)
   optionally narrow an outgoing connector proxy's inbound method surface and
   initialize capabilities. Existing filters, grants and approvals still apply.

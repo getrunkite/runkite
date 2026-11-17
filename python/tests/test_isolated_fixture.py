@@ -9,6 +9,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -230,6 +231,105 @@ class FixtureCleanupTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cleanup was not confirmed"):
                 case.cleanup()
         self.assertFalse(json.loads(output.read_text())["passed"])
+
+
+class ManagedAssignmentProofTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.managed = load_source("isolated_managed_assignment_contract", ROOT / "test/e2e/isolated/test_managed.py")
+
+    def setUp(self):
+        self.case = self.managed.ManagedIsolatedE2E("test_managed_runtime_lifecycle")
+        self.case.lock = threading.Lock()
+        self.case.run_proofs = {}
+        self.case.owned_run_ids = {"owned-run"}
+        self.case.runner_token = "synthetic-runner-token"
+        self.headers = {"X-Runkite-Run-Id": "owned-run", "X-Runkite-Run-Incarnation": "original-record"}
+
+    def observe(self, headers=None, **options):
+        self.case.observe_assignment_proof(
+            options.get("method", "GET"),
+            options.get("path", "/internal/runs/owned-run/status"),
+            self.headers if headers is None else headers,
+            options.get("status", 200),
+        )
+
+    def test_only_successful_owned_preflight_can_supply_the_original_proof(self):
+        for options in (
+            {"status": 401},
+            {"status": 403},
+            {"status": 500},
+            {"method": "POST"},
+            {"path": "/internal/runs/owned-run/usage"},
+            {"path": "/internal/runs/owned-run/status?ignored=1"},
+        ):
+            with self.subTest(options=options):
+                self.observe(**options)
+                self.assertEqual(self.case.run_proofs, {})
+        self.case.observe_assignment_proof(
+            "GET",
+            "/internal/runs/foreign-run/status",
+            {**self.headers, "X-Runkite-Run-Id": "foreign-run"},
+            200,
+        )
+        self.assertEqual(self.case.run_proofs, {})
+        self.observe()
+        self.assertEqual(self.case.bound_headers("owned-run")["X-Runkite-Run-Incarnation"], "original-record")
+
+    def test_missing_proof_never_sends_a_probe_or_reads_a_replacement(self):
+        self.case.request = Mock(side_effect=AssertionError("no public record read expected"))
+        self.case.client_for = Mock(side_effect=AssertionError("no unbound probe expected"))
+        self.assertIsNone(self.case.state("owned-thread", "owned-run"))
+        with self.assertRaisesRegex(AssertionError, "original assignment proof has not been observed"):
+            self.case.bound_headers("owned-run")
+        self.case.request.assert_not_called()
+        self.case.client_for.assert_not_called()
+
+    def test_malformed_or_replacement_proof_cannot_replace_the_original(self):
+        for proof in (None, "", "bad record", "bad\nrecord", "é", "x" * 257):
+            with self.subTest(proof=proof):
+                with self.assertRaisesRegex(AssertionError, "no valid original record proof"):
+                    self.observe({**self.headers, "X-Runkite-Run-Incarnation": proof})
+                self.assertEqual(self.case.run_proofs, {})
+        self.observe()
+        with self.assertRaisesRegex(AssertionError, "fixture run record identity changed"):
+            self.observe({**self.headers, "X-Runkite-Run-Incarnation": "replacement-record"})
+        self.assertEqual(self.case.run_proofs, {"owned-run": "original-record"})
+
+    def test_checkpoint_and_stale_generation_headers_keep_the_observed_record(self):
+        self.observe()
+        self.case.base = "https://127.0.0.1:12345"
+        self.case.parent_identity = "a"
+        self.case.request = Mock(
+            return_value={"metadata": {"_runkite_attempt_generation": 9}, "incarnation_id": "replacement-record"}
+        )
+        client = Mock()
+        client.get.return_value = SimpleNamespace(status_code=200, json=lambda: {"intent": {"generation": 9}})
+        self.case.client_for = Mock(return_value=client)
+        self.assertEqual(self.case.state("owned-thread", "owned-run"), {"intent": {"generation": 9}})
+        headers = client.get.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-Runkite-Run-Incarnation"], "original-record")
+        self.assertEqual(headers["X-Runkite-Generation"], "9")
+        stale_headers = self.case.bound_headers("owned-run", 1)
+        self.assertEqual(stale_headers["X-Runkite-Run-Incarnation"], "original-record")
+        self.assertEqual(stale_headers["X-Runkite-Generation"], "1")
+
+    def test_run_is_owned_before_the_installed_worker_can_preflight(self):
+        def create(path, body):
+            self.assertEqual(path, "/threads/owned-thread/runs")
+            run = body["run_id"]
+            self.assertIn(run, self.case.owned_run_ids)
+            self.case.observe_assignment_proof(
+                "GET",
+                f"/internal/runs/{run}/status",
+                {**self.headers, "X-Runkite-Run-Id": run},
+                200,
+            )
+            return {"run_id": run}
+
+        self.case.request = create
+        run = self.case.create_run("owned-thread", {"text": "synthetic"})
+        self.assertEqual(self.case.bound_headers(run)["X-Runkite-Run-Incarnation"], "original-record")
 
 
 class FixtureNetworkTests(unittest.TestCase):

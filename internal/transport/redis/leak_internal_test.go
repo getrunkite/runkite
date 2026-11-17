@@ -36,14 +36,14 @@ func TestBrokerTailersMapDoesNotLeak(t *testing.T) {
 	const n = 25
 	for i := 0; i < n; i++ {
 		runID := "leak-run"
-		ch, err := b.Subscribe(ctx, runID+string(rune('a'+i)))
+		ch, err := b.Subscribe(ctx, runID+string(rune('a'+i)), "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		rid := runID + string(rune('a'+i))
 		// Publish a terminal event immediately -- no explicit Close() call,
 		// exactly the normal-completion path (not the cancel-timeout path).
-		if err := b.Publish(ctx, rid, &transport.RunEvent{
+		if err := b.Publish(ctx, rid, "", &transport.RunEvent{
 			EventID: "e", Seq: 1, Method: "end", Namespace: []string{}, Data: []byte(`{"status":"success"}`),
 		}); err != nil {
 			t.Fatal(err)

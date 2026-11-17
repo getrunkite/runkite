@@ -102,7 +102,7 @@ class _SupersededAfterNStub:
 
 async def test_heartbeat_loop_calls_repeatedly_with_run_id():
     stub = _CountingStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "run-x", [], interval_s=0.05))
+    task = asyncio.create_task(heartbeat_loop(stub, "run-x", [], interval_s=0.05, run_incarnation_id="record-fixture"))
     await wait_for_calls(lambda: len(stub.calls) >= 3)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -114,7 +114,7 @@ async def test_heartbeat_loop_calls_repeatedly_with_run_id():
 
 async def test_heartbeat_loop_stops_cleanly_on_cancel():
     stub = _CountingStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "run-y", [], interval_s=0.05))
+    task = asyncio.create_task(heartbeat_loop(stub, "run-y", [], interval_s=0.05, run_incarnation_id="record-fixture"))
     await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -129,7 +129,7 @@ async def test_heartbeat_loop_stops_cleanly_on_cancel():
 
 async def test_heartbeat_loop_survives_a_failed_rpc():
     stub = _FailingThenCountingStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "run-z", [], interval_s=0.05))
+    task = asyncio.create_task(heartbeat_loop(stub, "run-z", [], interval_s=0.05, run_incarnation_id="record-fixture"))
     await wait_for_calls(lambda: stub.calls >= 3)
     task.cancel()
     # If the failed RPC had propagated out of the loop instead of being
@@ -143,7 +143,9 @@ async def test_heartbeat_loop_survives_a_failed_rpc():
 
 async def test_heartbeat_loop_sends_the_given_generation():
     stub = _CountingStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "run-gen", [], generation=7, interval_s=0.05))
+    task = asyncio.create_task(
+        heartbeat_loop(stub, "run-gen", [], generation=7, interval_s=0.05, run_incarnation_id="record-fixture")
+    )
     await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -155,7 +157,9 @@ async def test_heartbeat_loop_sends_the_given_generation():
 
 async def test_heartbeat_loop_defaults_generation_to_zero():
     stub = _CountingStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "run-default-gen", [], interval_s=0.05))
+    task = asyncio.create_task(
+        heartbeat_loop(stub, "run-default-gen", [], interval_s=0.05, run_incarnation_id="record-fixture")
+    )
     await wait_for_calls(lambda: len(stub.calls) >= 2)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -168,7 +172,15 @@ async def test_heartbeat_loop_stops_and_sets_cancel_event_on_superseded():
     stub = _SupersededAfterNStub(supersede_at_call=2)
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
-        heartbeat_loop(stub, "run-superseded", [], generation=1, cancel_event=cancel_event, interval_s=0.05)
+        heartbeat_loop(
+            stub,
+            "run-superseded",
+            [],
+            generation=1,
+            cancel_event=cancel_event,
+            interval_s=0.05,
+            run_incarnation_id="record-fixture",
+        )
     )
     await asyncio.wait_for(asyncio.shield(task), 3)
 
@@ -183,7 +195,15 @@ async def test_heartbeat_loop_does_not_touch_cancel_event_when_not_superseded():
     stub = _CountingStub()
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
-        heartbeat_loop(stub, "run-not-superseded", [], generation=1, cancel_event=cancel_event, interval_s=0.05)
+        heartbeat_loop(
+            stub,
+            "run-not-superseded",
+            [],
+            generation=1,
+            cancel_event=cancel_event,
+            interval_s=0.05,
+            run_incarnation_id="record-fixture",
+        )
     )
     await wait_for_calls(lambda: len(stub.calls) >= 2)
     check("cancel_event untouched while not superseded", not cancel_event.is_set())
@@ -197,7 +217,11 @@ async def test_heartbeat_loop_superseded_without_cancel_event_does_not_raise():
     must still stop the loop cleanly, not raise, when no cancel_event
     was given."""
     stub = _SupersededAfterNStub(supersede_at_call=1)
-    task = asyncio.create_task(heartbeat_loop(stub, "run-no-cancel-event", [], generation=1, interval_s=0.05))
+    task = asyncio.create_task(
+        heartbeat_loop(
+            stub, "run-no-cancel-event", [], generation=1, interval_s=0.05, run_incarnation_id="record-fixture"
+        )
+    )
     await asyncio.wait_for(asyncio.shield(task), 3)
     check("loop stopped cleanly with no cancel_event given", task.done())
     check("task raised nothing", task.exception() is None)
@@ -221,7 +245,9 @@ async def test_hung_heartbeat_is_cancelled_and_loop_recovers():
             return _FakeHeartbeatResponse()
 
     stub = HungFirstStub()
-    task = asyncio.create_task(heartbeat_loop(stub, "hung", [], interval_s=0.01, rpc_timeout_s=0.02))
+    task = asyncio.create_task(
+        heartbeat_loop(stub, "hung", [], interval_s=0.01, rpc_timeout_s=0.02, run_incarnation_id="record-fixture")
+    )
     try:
         await asyncio.wait_for(renewed.wait(), 1)
         check("timed-out heartbeat RPC cancelled", canceled.is_set())
@@ -243,7 +269,9 @@ async def test_owner_cancel_cancels_active_heartbeat_rpc():
             finally:
                 canceled.set()
 
-    task = asyncio.create_task(heartbeat_loop(HungStub(), "stopped", [], interval_s=0.01))
+    task = asyncio.create_task(
+        heartbeat_loop(HungStub(), "stopped", [], interval_s=0.01, run_incarnation_id="record-fixture")
+    )
     await asyncio.wait_for(entered.wait(), 1)
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -265,7 +293,12 @@ async def test_permanent_authority_denial_stops_work():
                 )
 
         stub = DeniedStub()
-        await asyncio.wait_for(heartbeat_loop(stub, "owned", [], cancel_event=cancel_event, interval_s=0.001), 1)
+        await asyncio.wait_for(
+            heartbeat_loop(
+                stub, "owned", [], cancel_event=cancel_event, interval_s=0.001, run_incarnation_id="record-fixture"
+            ),
+            1,
+        )
         check("permanent authority denial cancels work", cancel_event.is_set())
         check("permanent authority denial is not retried", stub.calls == 1)
 

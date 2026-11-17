@@ -12,6 +12,7 @@ const DEFAULT_TENANT = "default";
 export type RunBinding = {
   tenantId: string;
   runId: string;
+  runIncarnationId: string;
   generation: number;
   runnerKind?: string;
   runnerToken?: string;
@@ -25,6 +26,7 @@ export const HEADER_TENANT_ID_B64 = "X-Runkite-Tenant-Id-B64";
 export const HEADER_RUN_ID = "X-Runkite-Run-Id";
 export const HEADER_RUN_ID_B64 = "X-Runkite-Run-Id-B64";
 export const HEADER_GENERATION = "X-Runkite-Generation";
+export const HEADER_RUN_INCARNATION = "X-Runkite-Run-Incarnation";
 
 export function currentTenant(): string {
   return als.getStore()?.tenantId || DEFAULT_TENANT;
@@ -38,6 +40,7 @@ export function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise
       ...prev,
       tenantId: tid,
       runId: prev?.runId ?? "",
+      runIncarnationId: prev?.runIncarnationId ?? "",
       generation: prev?.generation ?? 0,
     },
     fn,
@@ -46,7 +49,14 @@ export function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise
 
 /** Bind tenant + run id/generation for the duration of fn (proxy headers). */
 export function runWithBinding<T>(
-  opts: { tenantId?: string; runId: string; generation?: number; runnerKind?: string; runnerToken?: string },
+  opts: {
+    tenantId?: string;
+    runId: string;
+    runIncarnationId?: string;
+    generation?: number;
+    runnerKind?: string;
+    runnerToken?: string;
+  },
   fn: () => Promise<T>,
 ): Promise<T> {
   const tid = opts.tenantId || DEFAULT_TENANT;
@@ -55,6 +65,7 @@ export function runWithBinding<T>(
     {
       tenantId: tid,
       runId,
+      runIncarnationId: opts.runIncarnationId ?? "",
       generation: opts.generation ?? 0,
       runnerKind: opts.runnerKind,
       runnerToken: opts.runnerToken,
@@ -69,6 +80,7 @@ export function tenantHeaders(): Record<string, string> {
   if (store?.runId) {
     Object.assign(headers, runIdHeaders(store.runId));
     headers[HEADER_GENERATION] = String(store.generation ?? 0);
+    if (store.runIncarnationId) headers[HEADER_RUN_INCARNATION] = store.runIncarnationId;
   }
   return headers;
 }

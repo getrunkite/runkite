@@ -15,7 +15,7 @@ func TestExhaustedReclaimRetainsStateUntilDurableAcknowledgement(t *testing.T) {
 	}
 	// No broker writer is installed. Poison detection must be read-only with
 	// respect to Kafka state and may not send a tombstone before durable completion.
-	queue := &Queue{state: map[string]stateEntry{"exhausted": {RunnerKind: "kind", Generation: 3, TouchedAtUnixMilli: 1, Job: raw}}}
+	queue := &Queue{allowNonAtomicFencing: true, state: map[string]stateEntry{"exhausted": {RunnerKind: "kind", Generation: 3, TouchedAtUnixMilli: 1, Job: raw}}}
 	for attempt := 0; attempt < 2; attempt++ {
 		reclaimed, dead, err := queue.ReclaimStale(context.Background(), 0, 3)
 		if err != nil || reclaimed != 0 || len(dead) != 1 {

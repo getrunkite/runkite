@@ -109,7 +109,7 @@ settings, imported from `runkite-runner/ai-sdk`. The runner constructs the nativ
 It records real managed threads/runs and reports native provider token usage.
 
 Native model/tool message history persists through the plane's run-bound opaque
-checkpoint API, using TLS, tenant/kind credentials, generation headers and CAS.
+checkpoint API, using TLS, tenant/kind credentials, original-record proof, generation headers and CAS.
 Success and UI finish follow the confirmed state commit. A committed turn can be
 replayed after reclaim without invoking its model or tools again. A crash before
 that commit can still repeat an external side effect; use downstream idempotency.
@@ -132,6 +132,24 @@ output that cannot be delivered or replayed.
 See the [managed AI SDK example](../../examples/managed_ai_sdk/README.md) for a
 working offline factory and an application-owned `useChat` stream bridge. That
 bridge keeps browser authentication and server credentials in your app.
+
+## Assignment identity upgrade (Unreleased)
+
+Use matching proof-aware runners and control planes. Workers advertise
+`assignment_identity_version=1` for GetJob and WatchCancels, validate the
+assignment's `run_incarnation_id` before agent work, and echo it on heartbeats,
+events, completion and bound HTTP calls. Internal helpers send
+`X-Runkite-Run-Incarnation` alongside the public run ID and generation.
+The plane rejects missing or mismatched proof rather than borrowing authority
+from a replacement record.
+
+Drain active and queued work before upgrading all replicas and workers.
+The AI SDK committed receipt includes original identity: same-record reclaim
+replays without another model/tool cycle; a different record with the same public
+ID executes a fresh turn. A legacy same-ID receipt without proof fails closed,
+while legacy history from a different run remains readable.
+See the [operations guide](../../docs/ops-runbook.md) and
+[engineering rationale](../../docs/internal/assignment-identity.md).
 
 ## Links
 

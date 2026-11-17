@@ -190,7 +190,7 @@ class ProviderWireTests(unittest.IsolatedAsyncioTestCase):
                 self.latest_usage = event["data"]["usage"]
 
         tenant = bind_tenant("wire-tenant")
-        run = bind_run(run_id, generation)
+        run = bind_run(run_id, generation, run_incarnation_id="record-fixture")
         try:
             status = await self.adapter.execute(
                 {
@@ -200,6 +200,7 @@ class ProviderWireTests(unittest.IsolatedAsyncioTestCase):
                     "tenant_id": "wire-tenant",
                     "generation": generation,
                     "input": {"messages": [{"role": "user", "content": text}]},
+                    "run_incarnation_id": "record-fixture",
                 },
                 send,
                 asyncio.Event(),

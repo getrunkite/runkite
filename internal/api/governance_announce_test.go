@@ -91,7 +91,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 
 		gotTenant = ""
 		req := httptest.NewRequest(http.MethodGet, "/internal/store/items", nil)
-		req.Header.Set(auth.HeaderRunID, "run-bound")
+		req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, store, req.Header, auth.HeaderRunID, "run-bound"))
 		req.Header.Set(auth.HeaderGeneration, "2")
 		req.Header.Set(auth.HeaderTenantID, "evil")
 		rec := httptest.NewRecorder()
@@ -122,7 +122,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 		req.SetPathValue("name", connectorY)
 		req = req.WithContext(auth.WithRunBinding(context.Background(), &auth.RunBinding{
 			RunID: runDeny, Generation: 1, TenantID: tenantB, AgentID: "sales",
-			User: &transport.UserContext{Identity: "bob"},
+			User: &transport.UserContext{Identity: "bob"}, RunIncarnationID: originalRunIdentity(t, store, runDeny),
 		}))
 		rec := httptest.NewRecorder()
 		s.handleGetConnectorSession(rec, req)
@@ -217,7 +217,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 		// Phase 2b: mandatory HITL pending → approve → one-shot → pending again.
 		binding := &auth.RunBinding{
 			RunID: runHITL, Generation: 1, TenantID: tenantA, AgentID: "sales",
-			User: &transport.UserContext{Identity: "alice"},
+			User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, runHITL),
 		}
 		seedManagedPendingFixture(t, store, binding)
 		callMCP := func() (int, []byte) {

@@ -32,7 +32,13 @@ def _patch_get(status_code: int, body: dict | None = None):
 class TestShouldSkipRun(unittest.TestCase):
     def test_owned_assignment_refuses_plaintext_before_creating_http_client(self):
         with patch("runkite_runner.run_status.httpx.AsyncClient") as factory:
-            self.assertTrue(_run(should_skip_run("http://cp:2026", "run", require_authority=True)))
+            self.assertTrue(
+                _run(
+                    should_skip_run(
+                        "http://cp:2026", "run", require_authority=True, run_incarnation_id="record-fixture"
+                    )
+                )
+            )
         factory.assert_not_called()
 
     def test_certificate_owned_ordinary_kind_fails_closed(self):
@@ -46,7 +52,12 @@ class TestShouldSkipRun(unittest.TestCase):
                 self.assertEqual(
                     _run(
                         should_skip_run(
-                            "https://cp", "run", runner_kind="python-langgraph", generation=1, require_authority=True
+                            "https://cp",
+                            "run",
+                            runner_kind="python-langgraph",
+                            generation=1,
+                            require_authority=True,
+                            run_incarnation_id="record-fixture",
                         )
                     ),
                     skipped,
@@ -56,7 +67,15 @@ class TestShouldSkipRun(unittest.TestCase):
         for status in (403, 503, 200):
             with _patch_get(status, {}) as factory:
                 self.assertTrue(
-                    _run(should_skip_run("http://cp:2026", "run-1", runner_kind="pool-finance", generation=3))
+                    _run(
+                        should_skip_run(
+                            "http://cp:2026",
+                            "run-1",
+                            runner_kind="pool-finance",
+                            generation=3,
+                            run_incarnation_id="record-fixture",
+                        )
+                    )
                 )
                 headers = factory.return_value.get.call_args.kwargs["headers"]
                 self.assertEqual(headers["X-Runkite-Run-Id"], "run-1")
@@ -64,19 +83,19 @@ class TestShouldSkipRun(unittest.TestCase):
 
     def test_skip_interrupted(self):
         with _patch_get(200, {"status": "interrupted"}):
-            self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1")))
+            self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1", run_incarnation_id="record-fixture")))
 
     def test_proceed_pending(self):
         with _patch_get(200, {"status": "pending"}):
-            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1")))
+            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1", run_incarnation_id="record-fixture")))
 
     def test_fail_open_on_http_error(self):
         with _patch_get(503, {}):
-            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1")))
+            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1", run_incarnation_id="record-fixture")))
 
     def test_skip_404(self):
         with _patch_get(404, {}):
-            self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1")))
+            self.assertTrue(_run(should_skip_run("http://cp:2026", "run-1", run_incarnation_id="record-fixture")))
 
     def test_sends_tenant_header(self):
         resp = MagicMock()
@@ -87,14 +106,16 @@ class TestShouldSkipRun(unittest.TestCase):
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         with patch("runkite_runner.run_status.httpx.AsyncClient", return_value=client):
-            self.assertFalse(_run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme")))
+            self.assertFalse(
+                _run(should_skip_run("http://cp:2026", "run-1", tenant_id="acme", run_incarnation_id="record-fixture"))
+            )
         kwargs = client.get.await_args.kwargs
         self.assertEqual(kwargs["headers"].get("X-Runkite-Tenant-Id"), "acme")
 
     def test_custom_run_id_is_one_path_component(self):
         with _patch_get(200, {"status": "running"}) as factory:
             run_id = "run/child?status=success#fragment%tail"
-            self.assertFalse(_run(should_skip_run("http://cp:2026/", run_id)))
+            self.assertFalse(_run(should_skip_run("http://cp:2026/", run_id, run_incarnation_id="record-fixture")))
             client = factory.return_value
             self.assertEqual(
                 client.get.await_args.args[0],
@@ -104,7 +125,9 @@ class TestShouldSkipRun(unittest.TestCase):
     def test_unicode_tenant_claim_uses_the_encoded_header(self):
         with _patch_get(200, {"status": "running"}) as factory:
             tenant = "tenant-ré-雪"
-            self.assertFalse(_run(should_skip_run("http://cp:2026", "run", tenant_id=tenant)))
+            self.assertFalse(
+                _run(should_skip_run("http://cp:2026", "run", tenant_id=tenant, run_incarnation_id="record-fixture"))
+            )
             headers = factory.return_value.get.await_args.kwargs["headers"]
             self.assertNotIn("X-Runkite-Tenant-Id", headers)
             encoded = headers["X-Runkite-Tenant-Id-B64"]

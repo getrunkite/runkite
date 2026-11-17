@@ -19,9 +19,47 @@ func (m mapInflight) LookupInflight(_ context.Context, runID string) (*transport
 	return m[runID], nil
 }
 
+func TestMiddleware_RunBindingRequiresExactOriginalRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		assignment string
+		presented  []string
+		want       int
+	}{
+		{"missing", "original", nil, 401},
+		{"empty", "original", []string{""}, 401},
+		{"duplicate", "original", []string{"original", "original"}, 401},
+		{"whitespace", "original", []string{" original"}, 401},
+		{"unbounded", "original", []string{string(make([]byte, 257))}, 401},
+		{"superseded", "replacement", []string{"original"}, 403},
+		{"unbound_legacy", "", []string{"original"}, 403},
+		{"exact", "original", []string{"original"}, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lookup := mapInflight{"run": {RunID: "run", Generation: 1, RunIncarnationID: tc.assignment}}
+			called := false
+			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				if binding := auth.RunBindingFromContext(r.Context()); binding == nil || binding.RunIncarnationID != "original" {
+					t.Fatal("binding borrowed identity", binding)
+				}
+			}))
+			request := httptest.NewRequest(http.MethodGet, "/internal/store/items", nil)
+			request.Header.Set(auth.HeaderRunID, "run")
+			request.Header.Set(auth.HeaderGeneration, "1")
+			request.Header[auth.HeaderRunIncarnation] = tc.presented
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != tc.want || called != (tc.want == 200) {
+				t.Fatal("unexpected proof decision", response.Code, called, response.Body)
+			}
+		})
+	}
+}
+
 func TestMiddleware_RunBindingRequiredOnStore(t *testing.T) {
 	inflight := mapInflight{
-		"run-1": {RunID: "run-1", Generation: 2, TenantID: "acme", GraphID: "echo"},
+		"run-1": {RunID: "run-1", Generation: 2, TenantID: "acme", GraphID: "echo", RunIncarnationID: "fixture-record"},
 	}
 	var gotTenant, gotAgent string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +85,7 @@ func TestMiddleware_RunBindingRequiredOnStore(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/internal/store/items", nil)
-	req.Header.Set(auth.HeaderRunID, "run-1")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "run-1"))
 	req.Header.Set(auth.HeaderGeneration, "2")
 	req.Header.Set(auth.HeaderTenantID, "evil") // must be ignored
 	rec = httptest.NewRecorder()
@@ -65,13 +103,13 @@ func TestMiddleware_RunBindingRequiredOnStore(t *testing.T) {
 
 func TestMiddleware_RunBindingGenerationMismatch(t *testing.T) {
 	inflight := mapInflight{
-		"run-1": {RunID: "run-1", Generation: 2, TenantID: "acme"},
+		"run-1": {RunID: "run-1", Generation: 2, TenantID: "acme", RunIncarnationID: "fixture-record"},
 	}
 	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight},
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 
 	req := httptest.NewRequest("POST", "/internal/connectors/sf/session", nil)
-	req.Header.Set(auth.HeaderRunID, "run-1")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "run-1"))
 	req.Header.Set(auth.HeaderGeneration, "1")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -97,11 +135,11 @@ func TestMiddleware_RunBindingGenerationZeroIsNotWildcard(t *testing.T) {
 		{"actual_legacy_matches", 0, 0, http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inflight := mapInflight{"run": {RunID: "run", Generation: tc.assignment, TenantID: "acme"}}
+			inflight := mapInflight{"run": {RunID: "run", Generation: tc.assignment, TenantID: "acme", RunIncarnationID: "fixture-record"}}
 			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight},
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 			req := httptest.NewRequest("POST", "/internal/connectors/example/session", nil)
-			req.Header.Set(auth.HeaderRunID, "run")
+			req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "run"))
 			req.Header.Set(auth.HeaderGeneration, strconv.FormatInt(tc.presented, 10))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -135,7 +173,7 @@ func TestMiddleware_RunBindingNotInflight(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 
 	req := httptest.NewRequest("POST", "/internal/vectors/search", nil)
-	req.Header.Set(auth.HeaderRunID, "missing")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "missing"))
 	req.Header.Set(auth.HeaderGeneration, "1")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -153,7 +191,7 @@ func TestMiddleware_RunBindingAttachesPrincipal(t *testing.T) {
 	inflight := mapInflight{
 		"run-1": {
 			RunID: "run-1", Generation: 1, TenantID: "acme", GraphID: "echo",
-			User: &transport.UserContext{Identity: "alice", DisplayName: "Alice"},
+			User: &transport.UserContext{Identity: "alice", DisplayName: "Alice"}, RunIncarnationID: "fixture-record",
 		},
 	}
 	var gotIdentity string
@@ -166,7 +204,7 @@ func TestMiddleware_RunBindingAttachesPrincipal(t *testing.T) {
 	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight}, next)
 
 	req := httptest.NewRequest("POST", "/internal/connectors/sf/mcp", nil)
-	req.Header.Set(auth.HeaderRunID, "run-1")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "run-1"))
 	req.Header.Set(auth.HeaderGeneration, strconv.FormatInt(1, 10))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -201,12 +239,12 @@ func TestMiddleware_RunBindingRequiresRunnerKindOwner(t *testing.T) {
 	t.Setenv("RUNNER_TOKEN_PYTHON_LANGGRAPH", "tok-py")
 	t.Setenv("RUNNER_TENANTS_PYTHON_LANGGRAPH", "acme")
 	tokens := auth.LoadRunnerTokensFromEnv()
-	inflight := mapInflight{"run-foreign": {RunID: "run-foreign", RunnerKind: "typescript-langgraphjs", Generation: 1, TenantID: "acme"}}
+	inflight := mapInflight{"run-foreign": {RunID: "run-foreign", RunnerKind: "typescript-langgraphjs", Generation: 1, TenantID: "acme", RunIncarnationID: "fixture-record"}}
 	handler := auth.MiddlewareWithOpts(nil, nil, tokens, auth.MiddlewareOpts{Inflight: inflight}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("foreign run reached handler") }))
 	req := httptest.NewRequest("GET", "/internal/store/items", nil)
 	req.Header.Set("X-Runner-Kind", "python-langgraph")
 	req.Header.Set("X-Runner-Token", "tok-py")
-	req.Header.Set(auth.HeaderRunID, "run-foreign")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "run-foreign"))
 	req.Header.Set(auth.HeaderGeneration, "1")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -231,7 +269,7 @@ func TestMiddleware_A2ARequiresCurrentParentBinding(t *testing.T) {
 		{"current", []string{"2"}, http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inflight := mapInflight{"parent": {RunID: "parent", Generation: 2, TenantID: "acme", GraphID: "parent-agent", User: &transport.UserContext{Identity: "alice"}}}
+			inflight := mapInflight{"parent": {RunID: "parent", Generation: 2, TenantID: "acme", GraphID: "parent-agent", User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: "fixture-record"}}
 			called := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
@@ -243,7 +281,7 @@ func TestMiddleware_A2ARequiresCurrentParentBinding(t *testing.T) {
 			})
 			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight}, next)
 			req := httptest.NewRequest(http.MethodPost, "/internal/a2a/runs", nil)
-			req.Header.Set(auth.HeaderRunID, "parent")
+			req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, nil, req.Header, auth.HeaderRunID, "parent"))
 			req.Header.Set(auth.HeaderTenantID, "foreign")
 			for _, generation := range tc.generation {
 				req.Header.Add(auth.HeaderGeneration, generation)

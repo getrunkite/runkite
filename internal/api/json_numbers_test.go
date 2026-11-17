@@ -91,10 +91,13 @@ func jsonNumbersFixture(t *testing.T) *numberFixture {
 	}
 	f.plane = api.NewServer(store, queue, broker, cancels)
 	f.plane.SetFinOps(&finops.Config{Pricebook: finops.Pricebook{"number-test": {InputPer1k: 1, OutputPer1k: 2}}})
-	if accepted, err := store.BeginRunAttempt(ctx, f.runID, 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, f.runID, originalRunIdentity(t, store, f.runID), 1); err != nil || !accepted {
 		t.Fatalf("begin: %v %v", accepted, err)
 	}
-	t.Cleanup(func() { _ = broker.Close(f.runID); _ = store.DeleteThread(context.Background(), f.threadID) })
+	t.Cleanup(func() {
+		_ = broker.Close(f.runID, originalRunIdentity(t, store, f.runID))
+		_ = store.DeleteThread(context.Background(), f.threadID)
+	})
 	return f
 }
 
@@ -176,10 +179,14 @@ func numberRequest(t *testing.T, f *numberFixture, method, path, body string) *h
 func completeNumbers(t *testing.T, f *numberFixture, runID, result string) {
 	t.Helper()
 	raw := fmt.Sprintf(`{"result":%s,"usage":{"prompt_tokens":10,"completion_tokens":4,"model":"number-test"}}`, result)
-	if err := f.broker.Publish(context.Background(), runID, &transport.RunEvent{Generation: 1, EventID: runID + "_values", Seq: 1, Method: "values", Data: json.RawMessage(raw)}); err != nil {
+	if err := f.broker.Publish(context.Background(), runID, originalRunIdentity(t, f.store,
+
+		runID), withOriginalRunEvent(originalRunIdentity(t, f.store,
+
+		runID), &transport.RunEvent{Generation: 1, EventID: runID + "_values", Seq: 1, Method: "values", Data: json.RawMessage(raw)})); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := f.plane.CompleteRun(context.Background(), &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !accepted {
+	if accepted, err := f.plane.CompleteRun(context.Background(), withOriginalCompletion(t, f.store, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess})); err != nil || !accepted {
 		t.Fatalf("complete: %v %v", accepted, err)
 	}
 }
@@ -250,7 +257,7 @@ func TestJSONNumbersThreadWritesAndSecondCompletionKeepPriorValues(t *testing.T)
 	if err := f.store.CreateRun(ctx, &models.Run{RunID: nextID, ThreadID: f.threadID, AgentID: f.agentID, Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := f.store.BeginRunAttempt(ctx, nextID, 1); err != nil || !accepted {
+	if accepted, err := f.store.BeginRunAttempt(ctx, nextID, originalRunIdentity(t, f.store, nextID), 1); err != nil || !accepted {
 		t.Fatalf("begin second: %v %v", accepted, err)
 	}
 	completeNumbers(t, f, nextID, `{"later":1}`)
@@ -277,7 +284,7 @@ func TestJSONNumbersThreadWritesAndSecondCompletionKeepPriorValues(t *testing.T)
 	if err != nil || in != 20 || out != 8 || math.Abs(cost-0.036) > 1e-9 {
 		t.Fatalf("usage changed: in=%d out=%d usd=%v err=%v", in, out, cost, err)
 	}
-	if accepted, err := f.plane.CompleteRun(ctx, &state.RunCompletion{RunID: nextID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !accepted {
+	if accepted, err := f.plane.CompleteRun(ctx, withOriginalCompletion(t, f.store, &state.RunCompletion{RunID: nextID, Generation: 1, Status: models.RunStatusSuccess})); err != nil || !accepted {
 		t.Fatalf("replay completion: %v %v", accepted, err)
 	}
 	in, out, cost, err = usageStore.SumUsage(ctx, "default", f.agentID, now.Add(-time.Hour), now.Add(time.Hour))
@@ -294,10 +301,18 @@ func TestJSONNumbersRunningWaitReturnsExactValues(t *testing.T) {
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() { f.plane.Handler().ServeHTTP(response, request); close(done) }()
-	if err := f.broker.Publish(ctx, f.runID, &transport.RunEvent{Generation: 1, EventID: f.runID + "_values", Seq: 1, Method: "values", Data: json.RawMessage(`{"result":` + numberResult + `}`)}); err != nil {
+	if err := f.broker.Publish(ctx, f.runID, originalRunIdentity(t, f.store,
+
+		f.runID), withOriginalRunEvent(originalRunIdentity(t, f.store,
+
+		f.runID), &transport.RunEvent{Generation: 1, EventID: f.runID + "_values", Seq: 1, Method: "values", Data: json.RawMessage(`{"result":` + numberResult + `}`)})); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.broker.Publish(ctx, f.runID, &transport.RunEvent{Generation: 1, EventID: f.runID + "_end", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)}); err != nil {
+	if err := f.broker.Publish(ctx, f.runID, originalRunIdentity(t, f.store,
+
+		f.runID), withOriginalRunEvent(originalRunIdentity(t, f.store,
+
+		f.runID), &transport.RunEvent{Generation: 1, EventID: f.runID + "_end", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)})); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -318,7 +333,11 @@ func TestJSONNumbersCacheAndRetryIdentity(t *testing.T) {
 	}
 	firstThread, firstRun := "number-cache-"+uuid.NewString(), uuid.NewString()
 	t.Cleanup(func() { _ = f.store.DeleteThread(context.Background(), firstThread) })
-	t.Cleanup(func() { _ = f.queue.Cancel(context.Background(), firstRun) })
+	t.Cleanup(func() {
+		_ = f.queue.Cancel(context.Background(), firstRun, originalRunIdentity(t, f.store,
+
+			firstRun))
+	})
 	input := `{"identity":9007199254740993,"one":1}`
 	first := numberRequest(t, f, http.MethodPost, "/threads/"+firstThread+"/runs", requestBody(firstRun, input))
 	if numberJSON(t, first.Body.Bytes()).(map[string]any)["run_id"] != firstRun {
@@ -337,7 +356,7 @@ func TestJSONNumbersCacheAndRetryIdentity(t *testing.T) {
 	if err != nil || job == nil || job.RunID != firstRun {
 		t.Fatalf("cache miss dispatch: %v %v", job, err)
 	}
-	if accepted, err := f.store.BeginRunAttempt(ctx, firstRun, 1); err != nil || !accepted {
+	if accepted, err := f.store.BeginRunAttempt(ctx, firstRun, originalRunIdentity(t, f.store, firstRun), 1); err != nil || !accepted {
 		t.Fatalf("begin cached run: %v %v", accepted, err)
 	}
 	completeNumbers(t, f, firstRun, numberResult)
@@ -359,7 +378,11 @@ func TestJSONNumbersCacheAndRetryIdentity(t *testing.T) {
 	}
 	thirdThread, thirdRun := "number-cache-neighbor-"+uuid.NewString(), uuid.NewString()
 	t.Cleanup(func() { _ = f.store.DeleteThread(context.Background(), thirdThread) })
-	t.Cleanup(func() { _ = f.queue.Cancel(context.Background(), thirdRun) })
+	t.Cleanup(func() {
+		_ = f.queue.Cancel(context.Background(), thirdRun, originalRunIdentity(t, f.store,
+
+			thirdRun))
+	})
 	third := numberRequest(t, f, http.MethodPost, "/threads/"+thirdThread+"/runs", requestBody(thirdRun, `{"identity":9007199254740992,"one":1}`))
 	if numberJSON(t, third.Body.Bytes()).(map[string]any)["metadata"].(map[string]any)["cache_hit"] == true {
 		t.Fatalf("neighboring large input hit wrong cache: %s", third.Body.String())
@@ -459,8 +482,12 @@ func TestJSONNumbersCommandsPreserveInputAndResume(t *testing.T) {
 					t.Fatal("command did not return a run ID")
 				}
 				t.Cleanup(func() {
-					_ = f.queue.Cancel(context.Background(), runID)
-					_ = f.broker.Close(runID)
+					_ = f.queue.Cancel(context.Background(), runID, originalRunIdentity(t, f.store,
+
+						runID))
+					_ = f.broker.Close(runID, originalRunIdentity(t, f.store,
+
+						runID))
 				})
 				return runID
 			}
@@ -475,7 +502,7 @@ func TestJSONNumbersCommandsPreserveInputAndResume(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertNumberResult(t, numberJSON(t, run.Input))
-			if accepted, err := f.store.BeginRunAttempt(ctx, runID, job.Generation); err != nil || !accepted {
+			if accepted, err := f.store.BeginRunAttempt(ctx, runID, originalRunIdentity(t, f.store, runID), job.Generation); err != nil || !accepted {
 				t.Fatalf("begin command run: accepted=%v err=%v", accepted, err)
 			}
 			numberRequest(t, f, http.MethodPost, "/runs/"+runID+"/cancel", `{}`)

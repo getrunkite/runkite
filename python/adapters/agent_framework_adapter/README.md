@@ -8,6 +8,17 @@ Native session history and committed-turn receipts use run-bound opaque
 checkpoints with CAS (If-Match / If-None-Match), matching the managed AI SDK
 reclaim safeguards.
 
+## Original run records (Unreleased source)
+
+Committed receipts now retain the assignment's original `run_incarnation_id`.
+Only the same public run ID and exact original record replay saved output.
+A known new record reusing that public ID executes a fresh turn with the owned
+conversation history. A legacy receipt without the record proof is ambiguous
+for the same public ID and fails closed; a different public run ID can still
+restore that legacy conversation normally. No history is imported or relabelled.
+Use matching source plane/runner versions and drain older assignments before
+relying on this contract.
+
 ## Scope
 
 - Agent factories, text streaming, ordinary local tools

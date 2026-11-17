@@ -39,7 +39,7 @@ class RunIdentityTests(unittest.TestCase):
     def test_exact_run_id_is_encoded_when_raw_header_would_change_it(self):
         for run_id in ("run ", " run", "run\tpart", "run\npart", "run-ré-雪", "\u00a0run"):
             with self.subTest(run_id=repr(run_id)):
-                token = bind_run(run_id, 4)
+                token = bind_run(run_id, 4, run_incarnation_id="record-fixture")
                 try:
                     headers = tenant_headers()
                     self.assertNotIn(HEADER_RUN_ID, headers)
@@ -55,7 +55,7 @@ class RunIdentityTests(unittest.TestCase):
     def test_connector_config_replaces_both_header_forms(self):
         for bound, explicit in (("old", "ré 雪"), ("old ", "new")):
             with self.subTest(bound=bound):
-                token = bind_run(bound, 1)
+                token = bind_run(bound, 1, run_incarnation_id="record-fixture")
                 try:
                     headers = _run_bound_headers({"run_id": explicit, "generation": 3})
                     expected = run_id_headers(explicit)

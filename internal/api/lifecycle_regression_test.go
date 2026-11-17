@@ -30,10 +30,10 @@ func (failQueue) Enqueue(context.Context, *transport.RunAssignment) error {
 func (failQueue) Dequeue(context.Context, string, time.Duration) (*transport.RunAssignment, error) {
 	return nil, errors.New("unused")
 }
-func (failQueue) Ack(context.Context, string, int64) (bool, error)   { return true, nil }
-func (failQueue) Nack(context.Context, string, int64) error          { return nil }
-func (failQueue) Renew(context.Context, string, int64) (bool, error) { return true, nil }
-func (failQueue) Cancel(context.Context, string) error {
+func (failQueue) Ack(context.Context, string, string, int64) (bool, error)   { return true, nil }
+func (failQueue) Nack(context.Context, string, string, int64) error          { return nil }
+func (failQueue) Renew(context.Context, string, string, int64) (bool, error) { return true, nil }
+func (failQueue) Cancel(context.Context, string, string) error {
 	return nil
 }
 func (failQueue) Len(context.Context) (int64, error) { return 0, nil }

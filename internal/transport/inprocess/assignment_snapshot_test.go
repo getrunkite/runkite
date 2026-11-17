@@ -21,7 +21,7 @@ func TestQueueGenerationSnapshotsDoNotAliasCallers(t *testing.T) {
 		t.Fatalf("enqueue snapshot: job=%v err=%v", first, err)
 	}
 	first.Generation = 700
-	if current, err := q.Renew(ctx, source.RunID, 1); err != nil || !current {
+	if current, err := q.Renew(ctx, source.RunID, "", 1); err != nil || !current {
 		t.Fatalf("dequeue copy mutated queue generation: current=%t err=%v", current, err)
 	}
 	if n, _, err := q.ReclaimStale(ctx, 0, 0); err != nil || n != 1 {

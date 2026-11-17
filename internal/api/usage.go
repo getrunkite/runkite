@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/getrunkite/runkite/internal/hooks"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/policy"
+	"github.com/getrunkite/runkite/internal/state"
+	"github.com/getrunkite/runkite/internal/transport"
 )
 
 // usageStore is the SQL surface for usage_events + budget Counters.
@@ -220,7 +223,7 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 	if !isTerminalStatus(run.Status) {
 		return nil
 	}
-	store, ok := s.usageEvents()
+	_, ok := s.usageEvents()
 	if !ok {
 		return nil
 	}
@@ -286,7 +289,7 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 			},
 		})
 	}
-	id := "usage-" + run.RunID
+	id := "usage-v2-" + transport.RunRecordKey(run.RunID, state.RunIdentity(run))
 	source := models.UsageSourceTerminalOutput
 	if isolated {
 		// Retained usage must not suppress a new run reusing the same public ID.
@@ -306,7 +309,11 @@ func (s *Server) persistTerminalUsage(ctx context.Context, run *models.Run, aler
 		USDEstimate: usd,
 		Source:      source,
 	}
-	if err := store.WriteUsageEvent(ctx, ev); err != nil {
+	writer, ok := s.store.(state.RunUsageEventStore)
+	if !ok {
+		return fmt.Errorf("state store does not support original-record usage fencing")
+	}
+	if err := writer.WriteRunUsageEvent(ctx, state.RunIdentity(run), ev); err != nil {
 		slog.Warn("usage event write failed", "run_id", run.RunID, "error", err)
 		return err
 	}
@@ -339,40 +346,52 @@ func (s *Server) usageHolds() (usageHoldStore, bool) {
 	return hs, ok
 }
 
-func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) {
-	if s == nil || run == nil || s.FinOps() == nil || !s.FinOps().ReservationEnabled() {
-		return
+// usageHoldWriter validates the reservation capability before a run is stored.
+// Mongo's documented absence of SQL budgets remains unchanged.
+func (s *Server) usageHoldWriter(run *models.Run) (state.RunUsageHoldStore, float64, int64, error) {
+	if s == nil || run == nil || s.FinOps() == nil || !s.FinOps().ReservationEnabled() || models.RunIsSimulation(run.Metadata) {
+		return nil, 0, 0, nil
 	}
-	if models.RunIsSimulation(run.Metadata) {
-		return
-	}
-	hs, ok := s.usageHolds()
-	if !ok {
-		return
+	if _, ok := s.usageHolds(); !ok {
+		return nil, 0, 0, nil
 	}
 	usd, tokens := s.FinOps().ReservationFor(run.TenantID, run.AgentID)
 	if usd <= 0 && tokens <= 0 {
-		return
+		return nil, 0, 0, nil
 	}
-	h := &models.UsageHold{
-		RunID:      run.RunID,
-		TenantID:   run.TenantID,
-		AgentID:    run.AgentID,
-		USDHold:    usd,
-		TokensHold: tokens,
-		CreatedAt:  time.Now().UTC(),
+	writer, ok := s.store.(state.RunUsageHoldStore)
+	if !ok {
+		return nil, 0, 0, fmt.Errorf("state store does not support original-record usage hold fencing")
 	}
-	if err := hs.UpsertUsageHold(ctx, h); err != nil {
-		slog.Warn("usage hold upsert failed", "run_id", run.RunID, "error", err)
-	}
+	return writer, usd, tokens, nil
 }
 
-func (s *Server) releaseUsageHold(ctx context.Context, runID string) error {
-	hs, ok := s.usageHolds()
+func (s *Server) placeUsageHold(ctx context.Context, run *models.Run) error {
+	writer, usd, tokens, err := s.usageHoldWriter(run)
+	if err != nil || writer == nil {
+		return err
+	}
+	hold := &models.UsageHold{
+		RunID: run.RunID, TenantID: run.TenantID, AgentID: run.AgentID,
+		USDHold: usd, TokensHold: tokens, CreatedAt: time.Now().UTC(),
+	}
+	if err := writer.UpsertRunUsageHold(ctx, state.RunIdentity(run), hold); err != nil {
+		slog.Warn("usage hold upsert failed", "run_id", run.RunID, "error", err)
+		return err
+	}
+	return nil
+}
+
+func (s *Server) releaseUsageHold(ctx context.Context, runID, incarnation string) error {
+	_, ok := s.usageHolds()
 	if !ok {
 		return nil
 	}
-	if err := hs.ReleaseUsageHold(ctx, runID); err != nil {
+	writer, ok := s.store.(state.RunUsageHoldStore)
+	if !ok {
+		return fmt.Errorf("state store does not support original-record usage hold fencing")
+	}
+	if err := writer.ReleaseRunUsageHold(ctx, runID, incarnation); err != nil {
 		slog.Warn("usage hold release failed", "run_id", runID, "error", err)
 		return err
 	}

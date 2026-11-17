@@ -17,7 +17,14 @@
     "config": {
       "configurable": {}
     },
-    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
+    "user": {
+      "identity": "test-user",
+      "is_authenticated": true,
+      "permissions": [
+        "read",
+        "write"
+      ]
+    },
     "checkpoint_ref": null,
     "resume_command": null,
     "stream_modes": [
@@ -28,7 +35,9 @@
       "traceparent": "00-abcdef1234567890abcdef1234567890-b234567890abcdef-01",
       "tracestate": "",
       "correlation_id": "req-0011"
-    }
+    },
+    "run_incarnation_id": "fixture-record:a1b2c3d4-0011-4000-8000-000000000011",
+    "generation": 1
   },
   "expected_events": [
     {

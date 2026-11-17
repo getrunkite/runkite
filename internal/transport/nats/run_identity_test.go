@@ -25,17 +25,17 @@ func TestNATSRunIdentityRejectsWildcardReplayAndSubscriptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, victim := range []string{"another-tenant", "another-tenant.child"} {
-		if err := broker.Publish(ctx, victim, &transport.RunEvent{EventID: victim, Seq: 1, Method: "values", Data: json.RawMessage(`{"private":"another run"}`)}); err != nil {
+		if err := broker.Publish(ctx, victim, "", &transport.RunEvent{EventID: victim, Seq: 1, Method: "values", Data: json.RawMessage(`{"private":"another run"}`)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, id := range []string{"*", ">", "another-tenant.*"} {
-		if events, err := broker.Replay(ctx, id, 0); err == nil {
+		if events, err := broker.Replay(ctx, id, "", 0); err == nil {
 			t.Errorf("run ID %q became a subject filter and replayed %d unrelated events: %+v", id, len(events), events)
 		}
 		watchCtx, stop := context.WithCancel(ctx)
-		if events, err := broker.Subscribe(watchCtx, id); err == nil {
-			if err := broker.Publish(ctx, "another-tenant.child", &transport.RunEvent{EventID: "new-private", Seq: 2, Method: "values", Data: json.RawMessage(`{"private":"live"}`)}); err != nil {
+		if events, err := broker.Subscribe(watchCtx, id, ""); err == nil {
+			if err := broker.Publish(ctx, "another-tenant.child", "", &transport.RunEvent{EventID: "new-private", Seq: 2, Method: "values", Data: json.RawMessage(`{"private":"live"}`)}); err != nil {
 				t.Fatal(err)
 			}
 			select {
@@ -50,11 +50,11 @@ func TestNATSRunIdentityRejectsWildcardReplayAndSubscriptions(t *testing.T) {
 	bus := natstransport.NewCancelBus(nc)
 	for _, id := range []string{"*", ">"} {
 		watchCtx, stop := context.WithCancel(ctx)
-		if signals, err := bus.SubscribeCancel(watchCtx, id); err == nil {
+		if signals, err := bus.SubscribeCancel(watchCtx, id, ""); err == nil {
 			if err := nc.Flush(); err != nil {
 				t.Fatal(err)
 			}
-			if err := bus.PublishCancel(ctx, "another-tenant"); err != nil {
+			if err := bus.PublishCancel(ctx, "another-tenant", ""); err != nil {
 				t.Fatal(err)
 			}
 			select {
@@ -120,29 +120,29 @@ func TestNATSRunIdentityPreservesLiteralPartitions(t *testing.T) {
 			if err != nil || assignment == nil || assignment.RunID != id {
 				t.Fatalf("literal queue identity changed: %+v %v", assignment, err)
 			}
-			if accepted, err := queue.Ack(ctx, id, assignment.Generation); err != nil || !accepted {
+			if accepted, err := queue.Ack(ctx, id, "", assignment.Generation); err != nil || !accepted {
 				t.Fatalf("literal ack: %v %v", accepted, err)
 			}
 			other := "neighbor-" + id
 			for _, runID := range []string{id, other} {
-				if err := broker.Publish(ctx, runID, &transport.RunEvent{EventID: runID, Seq: 1, Method: "values", Data: json.RawMessage(`{}`)}); err != nil {
+				if err := broker.Publish(ctx, runID, "", &transport.RunEvent{EventID: runID, Seq: 1, Method: "values", Data: json.RawMessage(`{}`)}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			past, err := broker.Replay(ctx, id, 0)
+			past, err := broker.Replay(ctx, id, "", 0)
 			if err != nil || len(past) != 1 || past[0].EventID != id {
 				t.Fatalf("literal replay crossed partitions: %+v %v", past, err)
 			}
 			watchCtx, stop := context.WithCancel(ctx)
 			defer stop()
-			live, err := broker.Subscribe(watchCtx, id)
+			live, err := broker.Subscribe(watchCtx, id, "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := broker.Publish(ctx, other, &transport.RunEvent{EventID: "wrong", Seq: 2, Method: "values", Data: json.RawMessage(`{}`)}); err != nil {
+			if err := broker.Publish(ctx, other, "", &transport.RunEvent{EventID: "wrong", Seq: 2, Method: "values", Data: json.RawMessage(`{}`)}); err != nil {
 				t.Fatal(err)
 			}
-			if err := broker.Publish(ctx, id, &transport.RunEvent{EventID: "right", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)}); err != nil {
+			if err := broker.Publish(ctx, id, "", &transport.RunEvent{EventID: "right", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)}); err != nil {
 				t.Fatal(err)
 			}
 			select {
@@ -153,14 +153,14 @@ func TestNATSRunIdentityPreservesLiteralPartitions(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
-			cancelled, err := bus.SubscribeCancel(watchCtx, id)
+			cancelled, err := bus.SubscribeCancel(watchCtx, id, "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := bus.PublishCancel(ctx, other); err != nil {
+			if err := bus.PublishCancel(ctx, other, ""); err != nil {
 				t.Fatal(err)
 			}
-			if err := bus.PublishCancel(ctx, id); err != nil {
+			if err := bus.PublishCancel(ctx, id, ""); err != nil {
 				t.Fatal(err)
 			}
 			select {

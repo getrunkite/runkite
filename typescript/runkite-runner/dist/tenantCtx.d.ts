@@ -1,6 +1,7 @@
 export type RunBinding = {
     tenantId: string;
     runId: string;
+    runIncarnationId: string;
     generation: number;
     runnerKind?: string;
     runnerToken?: string;
@@ -11,12 +12,14 @@ export declare const HEADER_TENANT_ID_B64 = "X-Runkite-Tenant-Id-B64";
 export declare const HEADER_RUN_ID = "X-Runkite-Run-Id";
 export declare const HEADER_RUN_ID_B64 = "X-Runkite-Run-Id-B64";
 export declare const HEADER_GENERATION = "X-Runkite-Generation";
+export declare const HEADER_RUN_INCARNATION = "X-Runkite-Run-Incarnation";
 export declare function currentTenant(): string;
 export declare function runWithTenant<T>(tenantId: string | undefined, fn: () => Promise<T>): Promise<T>;
 /** Bind tenant + run id/generation for the duration of fn (proxy headers). */
 export declare function runWithBinding<T>(opts: {
     tenantId?: string;
     runId: string;
+    runIncarnationId?: string;
     generation?: number;
     runnerKind?: string;
     runnerToken?: string;

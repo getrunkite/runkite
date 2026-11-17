@@ -310,9 +310,11 @@ The integrated follow-up passed the full API/command suites and configured
 state suites on SQLite, Postgres, MySQL and Mongo, plus vet, lint, site/link
 checks and the 170-route OpenAPI check. The [combined qualification record](atomic-results-and-identities.md#durable-state-qualification-november-17-2026)
 separates the valid run from earlier fixture failures. This is a fence for a
-request retaining its captured identity across replacement. Fresh requests
-still use existing runner-pool/workload-owner authorization; no client-echoed
-incarnation proof or general stale-RPC revocation is added.
+request retaining its captured identity across replacement. Those measurements
+predate the subsequent [assignment identity protocol](assignment-identity.md),
+which requires client echoes for fresh requests as well. The new protocol has
+its own matching-build, queue capability and qualification boundaries; it is not
+an attestation or external-effect revocation guarantee.
 
 ## Verification for contributors
 

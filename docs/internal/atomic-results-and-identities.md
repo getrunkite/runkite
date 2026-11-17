@@ -6,6 +6,68 @@ completion and argument authority, while this pass follows the same invariants
 through cache hits, thread replacement and runner identity transport. A source
 change or unchanged package version does not establish published availability.
 
+## Original-record finalization (Unreleased)
+
+This current-source follow-up extends
+[assignment identity protocol 1](assignment-identity.md). It is separate from the
+historical qualification later in this note and from published v0.9.0 artifacts.
+
+A checked completion read does not fence a later accounting write. An old
+finalizer can pause after reading its terminal run while another request deletes
+that run and creates a different record with the same public ID. A later
+public-ID-only write can then change the replacement's usage reservation or
+collide with its ledger entry. A bare run-ID terminal-hook claim can also suppress
+a replacement's hook or be acquired for the wrong physical record.
+
+SQL stores now implement the optional `state.RunUsageEventStore` and
+`state.RunUsageHoldStore` contracts. `WriteRunUsageEvent`, `UpsertRunUsageHold`
+and `ReleaseRunUsageHold` receive the captured original record identity. Each
+mutation locks the tenant-scoped run row, checks that identity and mutates within
+the same transaction. Ledger uniqueness is `(run_id, run_incarnation_id, source)`;
+the public run ID alone no longer collapses two known distinct records. Holds
+retain their original-record binding, so an old release cannot delete a new
+record's reservation. Hidden binding columns do not add public usage fields.
+
+Terminal delivery uses optional `state.RunTerminalHookStore`.
+`TryClaimRunTerminalHook` checks the original terminal record and claims its
+record key under the same fence. Mongo uses its existing transaction and a
+private original-document write to conflict with deletion/replacement; it gains
+no SQL accounting or public run-reference capability. Process-local tracing and
+finished-run deduplication also use the original record pair. A custom store must
+implement the optional capabilities its deployment uses. No public-ID-only
+finalization fallback supplies their guarantee.
+
+Postgres/SQLite migration **23**, or MySQL migration **24**, is named
+`run_finalization_identity`. It adds private `run_incarnation_id` columns to
+`usage_events` and `usage_holds` and changes ledger uniqueness. SQLite rebuilds
+the usage-events table transactionally; Postgres changes its columns/index;
+MySQL DDL commits implicitly and installs the wider unique key before removing
+the old key. Existing accounting rows keep an empty proof. Existing bare hook
+claims are retained. Neither is assigned to a current record from its reusable
+public ID or timestamp. A modern same-ID collision fails closed with an
+actionable conflict rather than overwriting a historical charge, inserting an
+unproven duplicate charge or borrowing a legacy hook claim.
+
+Back up database, queue and receipts, stop submissions and cron dispatch, and
+drain all runners and writers before `runkite db upgrade`. Startup also migrates;
+deploy matching planes, runners and custom stores before resuming traffic.
+Downgrade is refused. Restore a reviewed backup and reconcile accounting if
+rollback is required. Investigate a legacy collision against retained operation,
+usage, reservation and webhook evidence. Use fresh operation IDs for intentional
+new work, and explicitly reconcile old accounting instead of deleting or
+backfilling rows to force a retry. A terminal result does not by itself confirm
+later accounting or hook finalization. This fence provides no provider-bill
+verification or exactly-once external-effect guarantee.
+
+Sources: [SQL finalization](../../internal/state/sqlcompletion/finalization.go),
+[SQL terminal claims](../../internal/state/sqlcompletion/terminal_hook.go),
+[Mongo terminal claims](../../internal/state/mongo/terminal_hook.go),
+[accounting interfaces](../../internal/state/run_finalization.go),
+[hook interface](../../internal/state/terminal_hook.go). Follow the
+[coordinated upgrade](../ops-runbook.md#assignment-identity-upgrade) and the
+[assignment qualification record](assignment-identity.md#qualification-and-operator-handoff)
+for executed evidence; the earlier measurements below do not qualify this change.
+
 ## A cache hit is still a durable completion
 
 The normal completion transaction already committed run output, merged thread
@@ -353,8 +415,10 @@ credential files were deleted after confirmed cleanup.
 Safe command outcomes and logs are retained outside the repository under
 `outputs/runkite-next/fence-backends-20261117/`. These measurements do not imply
 live-provider execution, long-duration soak or independent assessment. Queue
-acknowledgement errors remain unknown delivery, and a request snapshot adds no
-client-echoed incarnation proof for fresh stale RPCs after run-ID reuse.
+acknowledgement errors remain unknown delivery. That historical snapshot-fence
+qualification predates [assignment identity protocol 1](assignment-identity.md),
+which separately requires exact client echoes for fresh lifecycle and bound HTTP
+requests. Its coordinated rollout and current qualification are recorded there.
 
 These fixes reuse completion, admission, tenant context, transaction adapters and
 saver selection already present in the repository. They do not add a second

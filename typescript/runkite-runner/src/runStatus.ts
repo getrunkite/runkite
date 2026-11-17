@@ -15,7 +15,13 @@ type FetchInit = RequestInit & { dispatcher?: unknown };
 export async function shouldSkipRun(
   httpAddress: string,
   runId: string,
-  opts?: { runnerKind?: string; runnerToken?: string; generation?: number; requireAuthority?: boolean },
+  opts?: {
+    runnerKind?: string;
+    runnerToken?: string;
+    generation?: number;
+    runIncarnationId?: string;
+    requireAuthority?: boolean;
+  },
 ): Promise<boolean> {
   const base = httpAddress.replace(/\/+$/, "");
   const pool = opts?.requireAuthority === true || (opts?.runnerKind?.startsWith("pool-") ?? false);
@@ -26,6 +32,7 @@ export async function shouldSkipRun(
     Object.assign(headers, runIdHeaders(runId));
     headers["X-Runkite-Generation"] = String(opts.generation);
   }
+  if (opts?.runIncarnationId) headers["X-Runkite-Run-Incarnation"] = opts.runIncarnationId;
   if (opts?.runnerToken) {
     headers["X-Runner-Kind"] = opts.runnerKind || "typescript-langgraphjs";
     headers["X-Runner-Token"] = opts.runnerToken;
@@ -41,7 +48,7 @@ export async function shouldSkipRun(
       signal: AbortSignal.timeout(5_000),
     };
     const resp = await fetch(`${base}/internal/runs/${encodeURIComponent(runId)}/status`, init);
-    if (resp.status === 404) {
+    if (resp.status === 404 || resp.status === 401 || resp.status === 403) {
       logger.warn(`pre-exec status: run ${runId} not found; discarding`);
       return true;
     }

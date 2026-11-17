@@ -27,12 +27,59 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		}
 		return s, ctx
 	}
+	t.Run("attempt_requires_original_physical_record", func(t *testing.T) {
+		s, ctx := seed(t)
+		original, err := s.GetRun(ctx, "completion-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		identity := state.RunIdentity(original)
+		if accepted, err := s.BeginRunAttempt(ctx, original.RunID, "", 1); err == nil || accepted {
+			t.Fatal("missing record identity advanced an attempt", accepted, err)
+		}
+		if accepted, err := s.BeginRunAttempt(ctx, original.RunID, "different-record", 1); err != nil || accepted {
+			t.Fatal("foreign record identity advanced an attempt", accepted, err)
+		}
+		if err := s.DeleteRun(ctx, original.RunID); err != nil {
+			t.Fatal(err)
+		}
+		replacement := *original
+		replacement.IncarnationID, replacement.StorageIdentity = "", ""
+		if err := s.CreateRun(ctx, &replacement); err != nil {
+			t.Fatal(err)
+		}
+		if state.RunIdentity(&replacement) == identity {
+			t.Fatal("replacement reused the original physical record identity")
+		}
+		if accepted, err := s.BeginRunAttempt(ctx, original.RunID, identity, 1); err != nil || accepted {
+			t.Fatal("captured old dispatch advanced replacement", accepted, err)
+		}
+		current, err := s.GetRun(ctx, original.RunID)
+		if err != nil || current.Status != models.RunStatusPending || current.Metadata[state.AttemptGenerationKey] != nil {
+			t.Fatal("rejected stale dispatch changed replacement", current, err)
+		}
+		if accepted, err := s.BeginRunAttempt(ctx, original.RunID, state.RunIdentity(&replacement), 1); err != nil || !accepted {
+			t.Fatal("replacement could not begin its own attempt", accepted, err)
+		}
+		replay := &state.RunCompletion{RunID: original.RunID, ExpectedIncarnationID: state.RunIdentity(&replacement), Generation: 1, Status: models.RunStatusSuccess, ReplayOnly: true}
+		if result, err := s.CompleteRun(ctx, replay); err != nil || result.Accepted || result.Applied {
+			t.Fatal("replay created an uncommitted result", result, err)
+		}
+		replay.ReplayOnly = false
+		if result, err := s.CompleteRun(ctx, replay); err != nil || !result.Applied {
+			t.Fatal("ordinary completion failed after rejected replay", result, err)
+		}
+		replay.ReplayOnly = true
+		if result, err := s.CompleteRun(ctx, replay); err != nil || !result.Accepted || result.Applied {
+			t.Fatal("committed replay was not an idempotent read", result, err)
+		}
+	})
 	t.Run("fenced_atomic_idempotent_result", func(t *testing.T) {
 		s, ctx := seed(t)
-		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 2); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
-		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 1); err != nil || ok {
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 1); err != nil || ok {
 			t.Fatal("attempt moved backward", ok, err)
 		}
 		completion := &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "current"}}
@@ -72,10 +119,10 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		if history[0].Values["previous"] != "kept" || history[0].Values["answer"] != "current" {
 			t.Fatalf("completion checkpoint is a partial patch instead of a state snapshot: %#v", history[0].Values)
 		}
-		if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "completion-run", 3); err == nil {
+		if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "completion-run", originalRunIdentity(t, s, "completion-run"), 3); err == nil {
 			t.Fatal("foreign tenant advanced attempt")
 		}
-		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 3); err != nil || ok {
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 3); err != nil || ok {
 			t.Fatal("terminal run redispatched", ok, err)
 		}
 	})
@@ -92,7 +139,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 					t.Fatal(err)
 				}
 			}
-			if ok, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !ok {
+			if ok, err := s.BeginRunAttempt(ctx, runID, originalRunIdentity(t, s, runID), 1); err != nil || !ok {
 				t.Fatal(ok, err)
 			}
 			if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess, Values: values}); err != nil || !result.Applied {
@@ -131,7 +178,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 			if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "completion-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-			if accepted, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+			if accepted, err := s.BeginRunAttempt(ctx, runID, originalRunIdentity(t, s, runID), 1); err != nil || !accepted {
 				t.Fatal(accepted, err)
 			}
 		}
@@ -180,7 +227,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 					t.Fatal(err)
 				}
 			}
-			if accepted, err := s.BeginRunAttempt(ctx, "completion-run", 1); err != nil || !accepted {
+			if accepted, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 1); err != nil || !accepted {
 				t.Fatal(accepted, err)
 			}
 			if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{fmt.Sprintf("turn_%d", turn): turn}}); err != nil || !result.Applied {
@@ -209,7 +256,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "long-completion-thread", AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		if accepted, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+		if accepted, err := s.BeginRunAttempt(ctx, runID, originalRunIdentity(t, s, runID), 1); err != nil || !accepted {
 			t.Fatal(accepted, err)
 		}
 		if result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: runID, Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "complete"}}); err != nil || !result.Applied {
@@ -232,24 +279,24 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 				if err := s.CreateRun(ctx, &models.Run{RunID: "dispatch-run", ThreadID: "dispatch-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{"preserved": "metadata"}, CreatedAt: old, UpdatedAt: old}); err != nil {
 					t.Fatal(err)
 				}
-				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", firstGeneration); err != nil || !ok {
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", originalRunIdentity(t, s, "dispatch-run"), firstGeneration); err != nil || !ok {
 					t.Fatal("first dispatch", ok, err)
 				}
 				run, err := s.GetRun(ctx, "dispatch-run")
 				if err != nil || run.Status != models.RunStatusRunning || !run.UpdatedAt.After(old) || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) != firstGeneration || run.Metadata["preserved"] != "metadata" {
 					t.Fatalf("dispatch did not atomically start run: run=%+v err=%v", run, err)
 				}
-				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 2); err != nil || !ok {
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", originalRunIdentity(t, s, "dispatch-run"), 2); err != nil || !ok {
 					t.Fatal("reclaimed dispatch", ok, err)
 				}
 				reclaimed, err := s.GetRun(ctx, "dispatch-run")
 				if err != nil || reclaimed.Status != models.RunStatusRunning || reclaimed.UpdatedAt.Before(run.UpdatedAt) || state.MetadataGeneration(reclaimed.Metadata, state.AttemptGenerationKey) != 2 {
 					t.Fatalf("reclaim did not remain running: run=%+v err=%v", reclaimed, err)
 				}
-				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 1); err != nil || ok {
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", originalRunIdentity(t, s, "dispatch-run"), 1); err != nil || ok {
 					t.Fatal("stale dispatch accepted", ok, err)
 				}
-				if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "dispatch-run", 3); err == nil {
+				if _, err := s.BeginRunAttempt(tenant.WithContext(ctx, "other-tenant"), "dispatch-run", originalRunIdentity(t, s, "dispatch-run"), 3); err == nil {
 					t.Fatal("foreign tenant dispatched run")
 				}
 				afterRejected, err := s.GetRun(ctx, "dispatch-run")
@@ -263,7 +310,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", 3); err != nil || ok {
+				if ok, err := s.BeginRunAttempt(ctx, "dispatch-run", originalRunIdentity(t, s, "dispatch-run"), 3); err != nil || ok {
 					t.Fatal("terminal run redispatched", ok, err)
 				}
 				afterTerminal, err := s.GetRun(ctx, "dispatch-run")
@@ -286,7 +333,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 	})
 	t.Run("trusted_cancel_targets_current_attempt_without_stale_values", func(t *testing.T) {
 		s, ctx := seed(t)
-		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 2); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 		result, err := s.CompleteRun(ctx, &state.RunCompletion{RunID: "completion-run", Generation: 1, Status: models.RunStatusInterrupted, CancelCurrentAttempt: true, Values: map[string]interface{}{"answer": "stale"}, CancelUsage: map[string]interface{}{"prompt_tokens": 99}})
@@ -307,7 +354,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 	})
 	t.Run("trusted_cancel_retains_only_current_usage_once", func(t *testing.T) {
 		s, ctx := seed(t)
-		if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+		if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 2); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 		completion := &state.RunCompletion{
@@ -347,7 +394,7 @@ func runCompletionTests(t *testing.T, factory StoreFactory) {
 		for _, captured := range []int64{1, 2} {
 			t.Run(fmt.Sprintf("captured_generation_%d", captured), func(t *testing.T) {
 				s, ctx := seed(t)
-				if ok, err := s.BeginRunAttempt(ctx, "completion-run", 2); err != nil || !ok {
+				if ok, err := s.BeginRunAttempt(ctx, "completion-run", originalRunIdentity(t, s, "completion-run"), 2); err != nil || !ok {
 					t.Fatal(ok, err)
 				}
 				completion := &state.RunCompletion{

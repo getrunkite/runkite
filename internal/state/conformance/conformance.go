@@ -46,6 +46,8 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("empty_list_results_are_not_nil", func(t *testing.T) { runEmptyListTests(t, factory) })
 	t.Run("counts", func(t *testing.T) { runCountTests(t, factory) })
 	t.Run("terminal_hook_claims", func(t *testing.T) { runTerminalHookClaimTests(t, factory) })
+	t.Run("record_finalization", func(t *testing.T) { runFinalizationIdentityTests(t, factory) })
+	t.Run("record_terminal_hook_claims", func(t *testing.T) { runRecordTerminalHookTests(t, factory) })
 }
 
 // --------------------------------------------------------------------------

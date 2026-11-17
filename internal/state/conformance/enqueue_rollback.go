@@ -44,7 +44,7 @@ func runEnqueueRollbackTests(t *testing.T, factory StoreFactory) {
 		if err != nil || !again.Accepted || again.Applied {
 			t.Fatalf("rejection replay was not idempotent: %+v %v", again, err)
 		}
-		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, 1); err != nil || accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), 1); err != nil || accepted {
 			t.Fatalf("late queued delivery started a failed run: accepted=%v err=%v", accepted, err)
 		}
 		current, err := store.GetRun(ctx, run.RunID)
@@ -63,7 +63,7 @@ func runEnqueueRollbackTests(t *testing.T, factory StoreFactory) {
 		}
 		t.Run(name, func(t *testing.T) {
 			store, ctx, run, completion := seed(t)
-			if accepted, err := store.BeginRunAttempt(ctx, run.RunID, generation); err != nil || !accepted {
+			if accepted, err := store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), generation); err != nil || !accepted {
 				t.Fatal(accepted, err)
 			}
 			result, err := store.CompleteRun(ctx, completion)
@@ -79,7 +79,7 @@ func runEnqueueRollbackTests(t *testing.T, factory StoreFactory) {
 	}
 	t.Run("terminal_winner_preserves_output_metadata_and_checkpoints", func(t *testing.T) {
 		store, ctx, run, completion := seed(t)
-		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, 1); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), 1); err != nil || !accepted {
 			t.Fatal(accepted, err)
 		}
 		winner := &state.RunCompletion{RunID: run.RunID, Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "committed"}}
@@ -138,7 +138,7 @@ func runEnqueueRollbackTests(t *testing.T, factory StoreFactory) {
 		go func() {
 			defer ready.Done()
 			<-start
-			admitted, admissionErr = store.BeginRunAttempt(ctx, run.RunID, 1)
+			admitted, admissionErr = store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, store, run.RunID), 1)
 		}()
 		go func() {
 			defer ready.Done()

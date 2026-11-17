@@ -374,20 +374,73 @@ change historical payloads. Before resuming sensitive retained conversations,
 compare the selected checkpoint with current thread state and repair any known
 mismatch explicitly.
 
-Opaque checkpoint record fencing is Unreleased/current-source. Upgrade every
-control-plane replica before relying on it. Queued or active assignments from
-older planes may lack the original record identity, especially on Mongo; drain
-those assignments and submit fresh dispatches. Missing identity fails with
-`403 run_binding_required`, and an already authorized request retaining a
-deleted record's binding fails with `403 run_incarnation_mismatch`. This adds no
-client-echoed incarnation proof for fresh requests. Use fresh operation IDs
-while old workers or RPCs may still send; do not treat deletion as revocation
-of every possible stale message. Do not fill an old assignment from the current
-run row or bypass the fence after a denial. No database migration is required:
-SQL reuses `incarnation_id`, and Mongo uses its existing nonzero ObjectID. A
-manually imported Mongo run with another `_id` type is refused for explicit
-operator repair, without an empty-identity fallback. Blob ETags retain their
-existing conflict behavior. See the [engineering contract](internal/connector-action-evidence.md#opaque-checkpoint-record-fencing-unreleased).
+<a id="assignment-identity-upgrade"></a>
+
+## Assignment identity upgrade (Unreleased)
+
+Current source requires assignment identity protocol 1 across every plane and
+runner. This is a coordinated upgrade, not a mixed-version rolling compatibility
+promise. Published v0.9.0 images, wheels and npm packages retain their release
+contract; build and pin matching source artifacts until a coordinated release.
+
+1. Stop new submissions and schedule dispatch, then drain workers and queued or
+   inflight assignments under the existing cancellation/reconciliation procedure.
+   Preserve database, queue and receipt backups. Missing original identity on an
+   old queued assignment is rejected before input delivery; do not populate it
+   from a row that may have been recreated.
+2. Keep every writer stopped and verify a restorable database, queue and receipt
+   backup. Run `runkite db upgrade` using the matching new plane binary. SQL
+   migration 23 on Postgres/SQLite or 24 on MySQL adds original-record binding to
+   `usage_events` and `usage_holds`, and makes usage-event uniqueness
+   `(run_id, run_incarnation_id, source)`. Startup also migrates. Allow for SQLite's
+   usage-table rebuild and MySQL's implicit-commit DDL; do not begin a rolling
+   old/new deployment. If upgrade fails, keep writers stopped, inspect the failure
+   and complete the upgrade before opening traffic. Downgrade is refused; restore
+   a reviewed backup and reconcile usage instead.
+3. Deploy matching plane and runner builds together. Custom workers must advertise
+   `assignment_identity_version: 1` on `GetJob` and `WatchCancels`, preserve the
+   assignment's exact `run_incarnation_id`, and echo it on bound HTTP and gRPC
+   lifecycle messages. HTTP uses `X-Runkite-Run-Incarnation` plus run ID and
+   generation. Missing, duplicate or mismatched proof fails closed. There is no
+   compatibility switch to borrow the current assignment's identity.
+   Custom stores must implement the original-record accounting and hold
+   capabilities used by their deployment (`state.RunUsageEventStore` and
+   `state.RunUsageHoldStore`), plus `state.RunTerminalHookStore` for terminal
+   hooks. Validation and mutation must share the original run-row fence. A
+   separate current-record read followed by a public-ID-only write is unsafe.
+4. Preserve retained native state. A same-public-ID legacy receipt without its
+   original record identity is ambiguous and cannot establish replay for the
+   replacement. Reconcile it, or use a fresh run ID for intentional new work.
+   Do not rewrite or discard receipts to bypass that refusal. Reclaim of the
+   same record keeps its identity while generation advances.
+5. Inspect finalization failures for legacy unbound accounting or a bare run-ID
+   terminal-hook claim. The migration preserves those historical rows with no
+   inferred owner; it does not bind them using a current row, timestamp or run ID.
+   New same-ID finalization fails closed instead of overwriting old accounting,
+   silently inserting another charge or borrowing an old hook claim. Reconcile
+   the original operation, estimated charges, remaining reservations and any
+   delivered webhook against retained evidence before an explicit repair. Use
+   fresh operation IDs for intentional new work. Do not bulk delete rows, fill
+   identity columns from current runs or replay an uncertain external effect to
+   bypass a collision. A durably terminal run can still have unconfirmed
+   accounting or hook finalization; investigate that condition before treating
+   the operation as settled.
+6. Prefer the supported Postgres/Redis profile. Kafka now refuses startup unless
+   `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` explicitly accepts Compatible mode.
+   Its materialized-view checks and state-topic appends are not cross-replica
+   atomic queue CAS, even with Redis. Redis supplies separate event/cancel and
+   reclaim-leader functions. Test this opt-in separately from strict profiles.
+
+The run identity itself reuses SQL's `incarnation_id`; the accounting migration
+above extends its atomic finalization boundary. Terminal-hook claims use an
+original-record key, and legacy bare claims are never adopted. Mongo uses its
+existing nonzero ObjectID privately, with record-bound terminal-hook claims in its
+existing transaction path. Mongo public Run JSON and SQL-only public
+references, governance and durable usage remain unchanged. Non-ObjectID imported
+Mongo records fail closed for explicit repair. Event and cancel channels are
+record-scoped; transient pre-upgrade replay is not automatically imported into
+the new namespace. Blob ETags remain an independent optimistic lock. See the
+[engineering contract](internal/assignment-identity.md).
 
 ## Tenant review upgrade
 

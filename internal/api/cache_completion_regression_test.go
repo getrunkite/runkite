@@ -93,7 +93,7 @@ func TestCachedCompletionDoesNotRebillOrRefreshSource(t *testing.T) {
 	// Completion and HTTP retries may land on another plane replica.
 	replica := NewServer(store, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
 	replica.SetHookDispatcher(dispatcher)
-	if accepted, err := replica.CompleteRun(ctx, &state.RunCompletion{RunID: run.RunID, Generation: 0, Status: models.RunStatusSuccess, ReplayOnly: true}); err != nil || !accepted {
+	if accepted, err := replica.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: run.RunID, Generation: 0, Status: models.RunStatusSuccess, ReplayOnly: true})); err != nil || !accepted {
 		t.Fatalf("replayed cache finalization: accepted=%v err=%v", accepted, err)
 	}
 	if retry, err := replica.findRunForRetry(ctx, req.RunID, req, "cache-state"); err != nil || retry == nil {

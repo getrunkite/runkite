@@ -1102,7 +1102,15 @@ func initTransport(ctx context.Context, rdb *goredis.Client) (transport.JobQueue
 	// Redis-only branch below so "both set" means "Kafka queue, Redis
 	// broker/cancelbus," not "Redis for everything."
 	if kafkaURL := os.Getenv("KAFKA_URL"); kafkaURL != "" {
-		var kafkaOpts []kafkatransport.Option
+		allowNonAtomic, parseErr := kafkaNonAtomicFencingEnabled(os.Getenv("RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES"))
+		if parseErr != nil {
+			slog.Error("invalid RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES; use true or false")
+			os.Exit(1)
+		}
+		if allowNonAtomic {
+			slog.Warn("Kafka Compatible mode permits non-atomic cross-replica lease fencing")
+		}
+		kafkaOpts := []kafkatransport.Option{kafkatransport.AllowNonAtomicFencing(allowNonAtomic)}
 		// KAFKA_JOB_PARTITIONS: see kafkatransport.WithJobPartitions's
 		// own doc comment for why this matters -- the default (1) means
 		// only one control-plane replica ever actively dequeues a given
@@ -1873,4 +1881,17 @@ func initHooks(configPath string, store state.Store) *hooks.Dispatcher {
 		slog.Info("preflight hook registered", "url", pf.URL, "timeout", timeout)
 	}
 	return d
+}
+
+// kafkaNonAtomicFencingEnabled is deliberately narrower than strconv.ParseBool:
+// compatibility is an explicit operator acknowledgement, not a truthy value.
+func kafkaNonAtomicFencingEnabled(value string) (bool, error) {
+	switch value {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, fmt.Errorf("expected true or false")
+	}
 }
