@@ -245,7 +245,11 @@ func (s *Server) handleCreateRunError(w http.ResponseWriter, err error, respond 
 // thread claim via defer -- without that, an A2A parent-lookup failure or
 // CreateRun error left the thread stuck busy forever (no future run on
 // that thread could claim it).
-func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
+func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.RunCreate) (*models.Run, *transport.RunAssignment, error) {
+	return s.createRunCtxTracked(ctx, threadID, req, nil)
+}
+
+func (s *Server) createRunCtxTracked(ctx context.Context, threadID string, req *models.RunCreate, progress *runCreationProgress) (outRun *models.Run, outAssign *transport.RunAssignment, err error) {
 	if invalidResourceID(threadID) || invalidResourceID(req.RunID) {
 		return nil, nil, errInvalidResourceID
 	}
@@ -450,7 +454,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// the cache check runs before depth/breadth enforcement below, and a
 	// hit would return a run with no parent/depth bookkeeping at all.
 	if req.ResumeCommand == nil && req.ParentRunID == nil && !headerSim {
-		if run, hit, err := s.tryServeCachedRun(ctx, runID, threadID, req, now, requestedAlias, agentForRun); hit || err != nil {
+		if run, hit, err := s.tryServeCachedRunTracked(ctx, runID, threadID, req, now, requestedAlias, agentForRun, progress); hit || err != nil {
 			return run, nil, err
 		}
 	}
@@ -643,6 +647,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 			return nil, nil, err
 		}
 	}
+	progress.beforeStore(run)
 	if err = s.createRunRespectingLimits(ctx, run, now); err != nil {
 		// run_id is the primary key, so this fails with a unique-
 		// constraint violation if a concurrent request already inserted
@@ -819,9 +824,11 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 // rollbackCreatedRun settles only the original, never-started run after an
 // enqueue or subscription error. A lost publication acknowledgement does not
 // prove rejection: a worker may already own the attempt or have committed it.
-func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
+// True is positive retry proof from this call's applied completion, including
+// successful finalization. Replays and every uncertain/error outcome are false.
+func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) bool {
 	if run == nil {
-		return
+		return false
 	}
 	// Delivery may have failed because the caller disconnected. Preserve its
 	// tenant and identity for cleanup, but give the owned row/claim a bounded
@@ -833,15 +840,17 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 		// A custom store without an immutable row identity cannot prove that a
 		// delayed cleanup still owns this run ID. Preserve it for reconciliation.
 		slog.Warn("enqueue rollback retained run without immutable identity", "run_id", run.RunID)
-		return
+		return false
 	}
-	_, err := s.completeRunResult(cleanupCtx, &state.RunCompletion{
+	result, err := s.completeRunResult(cleanupCtx, &state.RunCompletion{
 		TrustedSystem: true, ExpectedIncarnationID: identity, FailUnstarted: true,
 		RunID: run.RunID, Generation: 0, Status: models.RunStatusError, Error: "enqueue failed",
 	})
 	if err != nil {
 		slog.Warn("enqueue rollback could not settle original run", "run_id", run.RunID, "error", err)
+		return false
 	}
+	return result.Accepted && result.Applied
 }
 
 // DispatchScheduledRun creates and enqueues a run with no HTTP request
@@ -855,15 +864,19 @@ func (s *Server) DispatchScheduledRun(ctx context.Context, scheduleName, agentID
 	if err != nil {
 		return nil, err
 	}
-	run, assignment, err := s.createRunCtx(ctx, threadID, &models.RunCreate{
+	progress := new(runCreationProgress)
+	run, assignment, err := s.createRunCtxTracked(ctx, threadID, &models.RunCreate{
 		AgentID: agentID, Input: input, Config: config,
-	})
+	}, progress)
 	if err != nil {
+		if progress.attempted != nil && !scheduledCreationRejected(err) {
+			return progress.attempted, &ScheduledRunDispatchError{cause: err}
+		}
 		return nil, err
 	}
 	if err := s.enqueue(ctx, assignment); err != nil {
-		s.rollbackCreatedRun(ctx, run)
-		return nil, err
+		retrySafe := s.rollbackCreatedRun(ctx, run)
+		return run, &ScheduledRunDispatchError{cause: err, retrySafe: retrySafe}
 	}
 	return run, nil
 }
@@ -915,6 +928,10 @@ func (s *Server) watchRunEventsForToolCallHook(runID, threadID, agentID, tenantI
 // run and nil error) means "proceed with a normal run" -- the overwhelmingly
 // common case (agent has no cache config, or a real cache miss).
 func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, req *models.RunCreate, now time.Time, requestedAlias string, agentForRun *models.Agent) (run *models.Run, hit bool, err error) {
+	return s.tryServeCachedRunTracked(ctx, runID, threadID, req, now, requestedAlias, agentForRun, nil)
+}
+
+func (s *Server) tryServeCachedRunTracked(ctx context.Context, runID, threadID string, req *models.RunCreate, now time.Time, requestedAlias string, agentForRun *models.Agent, progress *runCreationProgress) (run *models.Run, hit bool, err error) {
 	creator, supported := s.store.(state.CachedRunCreator)
 	if !supported {
 		return nil, false, nil
@@ -987,6 +1004,7 @@ func (s *Server) tryServeCachedRun(ctx context.Context, runID, threadID string, 
 	// Admission, exact parent ownership, the busy-thread guard and all result
 	// writes share one transaction. A failed cache hit must never leave a
 	// successful row with missing output or an unqueued pending assignment.
+	progress.beforeStore(run)
 	if err := creator.CreateCachedRun(ctx, run, s.admissionLimits.toCaps(now)); err != nil {
 		// A matching concurrent retry can lose either the unique insert or
 		// the admission check after its winner commits. Reuse the shared

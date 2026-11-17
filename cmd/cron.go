@@ -150,10 +150,10 @@ const cronTickInterval = 15 * time.Second
 
 // runCronScheduler polls every cronTickInterval, and for each enabled
 // schedule whose next fire time has arrived, atomically claims it
-// (state.Store.TryClaimCronFire) before dispatching -- with multiple
-// control-plane replicas against the same database, exactly one dispatches
-// each fire, not N (the "Postgres claim window"). Runs until ctx is
-// cancelled.
+// (state.Store.TryClaimCronFire) before dispatching. Replicas sharing the store
+// retain the fire after accepted or uncertain delivery. Only a proven safe
+// rejection releases it for retry. This is not exactly-once execution. Runs
+// until ctx is canceled.
 func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Server) {
 	ticker := time.NewTicker(cronTickInterval)
 	defer ticker.Stop()
@@ -230,27 +230,48 @@ func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Ser
 				continue
 			}
 
-			run, dispatchErr := apiServer.DispatchScheduledRun(schedCtx, sched.Name, sched.AgentID, sched.Input, sched.Config)
-			if dispatchErr != nil {
-				var conflict *state.ErrConflict
-				if errors.As(dispatchErr, &conflict) {
-					// Overlapping fire: thread still busy from a prior run.
-					// Keep the claim so this fire_time is not retried; the
-					// next cron boundary gets a fresh claim key.
-					lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
-					slog.Warn("cron: overlapping fire rejected", "tenant", sched.TenantID, "name", sched.Name, "fire_time", fireTime, "error", dispatchErr)
-					continue
-				}
-				// Transient (rate limit, store blip, missing agent mid-boot):
-				// release the claim and leave lastChecked so we retry.
-				if relErr := store.ReleaseCronClaim(schedCtx, sched.Name, fireTime); relErr != nil {
-					slog.Error("cron: failed to release claim after dispatch error", "tenant", sched.TenantID, "name", sched.Name, "error", relErr)
-				}
-				slog.Error("cron: failed to dispatch scheduled run", "tenant", sched.TenantID, "name", sched.Name, "error", dispatchErr)
-				continue
+			if dispatchClaimedCronFire(schedCtx, store, apiServer, sched, fireTime) {
+				lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
 			}
-			lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
-			slog.Info("cron: dispatched scheduled run", "tenant", sched.TenantID, "name", sched.Name, "run_id", run.RunID, "fire_time", fireTime)
 		}
 	}
+}
+
+type cronRunDispatcher interface {
+	DispatchScheduledRun(context.Context, string, string, json.RawMessage, json.RawMessage) (*models.Run, error)
+}
+
+// dispatchClaimedCronFire reports whether the caller should consume this fire's
+// anchor. False preserves the anchor for a subsequent claim/retry attempt.
+func dispatchClaimedCronFire(ctx context.Context, store state.Store, dispatcher cronRunDispatcher, sched *models.CronSchedule, fireTime time.Time) bool {
+	run, dispatchErr := dispatcher.DispatchScheduledRun(ctx, sched.Name, sched.AgentID, sched.Input, sched.Config)
+	if dispatchErr == nil {
+		slog.Info("cron: dispatched scheduled run", "tenant", sched.TenantID, "name", sched.Name, "run_id", run.RunID, "fire_time", fireTime)
+		return true
+	}
+	runID := ""
+	if run != nil {
+		runID = run.RunID
+	}
+	// Inspect the scheduled disposition before its underlying error chain. A
+	// queue acknowledgement error may itself wrap ErrConflict without proving
+	// that this was a busy-thread rejection before publication.
+	var delivery *api.ScheduledRunDispatchError
+	if errors.As(dispatchErr, &delivery) {
+		if !delivery.RetrySafe() {
+			slog.Warn("cron: retained fire after uncertain dispatch", "tenant", sched.TenantID, "name", sched.Name, "fire_time", fireTime, "run_id", runID, "error", dispatchErr)
+			return true
+		}
+	} else {
+		var conflict *state.ErrConflict
+		if errors.As(dispatchErr, &conflict) {
+			slog.Warn("cron: overlapping fire rejected", "tenant", sched.TenantID, "name", sched.Name, "fire_time", fireTime, "error", dispatchErr)
+			return true
+		}
+	}
+	if relErr := store.ReleaseCronClaim(ctx, sched.Name, fireTime); relErr != nil {
+		slog.Error("cron: failed to release claim after dispatch error", "tenant", sched.TenantID, "name", sched.Name, "error", relErr)
+	}
+	slog.Error("cron: failed to dispatch scheduled run", "tenant", sched.TenantID, "name", sched.Name, "run_id", runID, "error", dispatchErr)
+	return false
 }
