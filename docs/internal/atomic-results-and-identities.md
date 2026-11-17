@@ -322,6 +322,40 @@ partitions. Existing retention, `Close` no-op and backend support tiers remain.
 
 ## Scope and evidence
 
+### Durable state qualification: November 17, 2026
+
+The integrated checkpoint, enqueue-rollback and MySQL claim corrections were
+tested at source revision `5a4e25451c6384bdea9079860980869655da1b32`, based on
+merged cron-routing PR #90. This records maintainer checks on macOS with the
+prepared Go 1.26.11 toolchain, not a hosted Linux result or release publication.
+
+- Complete API, shared cron parser and command packages passed in 24.361 seconds.
+- The configured native state run passed in 187.381 seconds. Package durations
+  were MySQL 186.208, Postgres 66.761, Mongo 31.627 and SQLite 15.129 seconds.
+  Shared opaque-record and pending-rollback conformance ran on all four stores.
+- Vet and scoped golangci-lint passed. The 43 site tests, local-link checks and
+  OpenAPI coverage of 170 registered routes passed.
+- Preserved MySQL regression binaries established actual before/after behavior:
+  twenty duplicate winners before the fix and one winner in each concurrent
+  driver profile afterward. The original slow checkpoint request overwrote
+  replacement state; the corrected request is denied. Enqueue tests reproduce
+  terminal-result loss, replacement-row mutation and active-worker disruption
+  against the original implementation.
+
+Earlier attempts are retained as failures. One used a Postgres fixture without
+pgvector and a positive HTTP fixture missing the captured identity. Two native
+MySQL suites then overlapped on one disposable database, invalidating those
+results. The final run used a fresh fixture, pgvector-enabled Postgres and a
+single coordinator; database suites sharing a backend did not overlap. All
+three owned containers were removed with their volumes, and task-local
+credential files were deleted after confirmed cleanup.
+
+Safe command outcomes and logs are retained outside the repository under
+`outputs/runkite-next/fence-backends-20261117/`. These measurements do not imply
+live-provider execution, long-duration soak or independent assessment. Queue
+acknowledgement errors remain unknown delivery, and a request snapshot adds no
+client-echoed incarnation proof for fresh stale RPCs after run-ID reuse.
+
 These fixes reuse completion, admission, tenant context, transaction adapters and
 saver selection already present in the repository. They do not add a second
 control plane, vault, policy engine or model loop. The handoff manifest records

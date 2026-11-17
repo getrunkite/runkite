@@ -306,6 +306,14 @@ conformance checks same timestamps, missing identity, matching ETags, create-onl
 conditions, retained state and expected-record completion. Mongo codec tests
 reject string/zero identities and verify that storage identity stays private.
 
+The integrated follow-up passed the full API/command suites and configured
+state suites on SQLite, Postgres, MySQL and Mongo, plus vet, lint, site/link
+checks and the 170-route OpenAPI check. The [combined qualification record](atomic-results-and-identities.md#durable-state-qualification-november-17-2026)
+separates the valid run from earlier fixture failures. This is a fence for a
+request retaining its captured identity across replacement. Fresh requests
+still use existing runner-pool/workload-owner authorization; no client-echoed
+incarnation proof or general stale-RPC revocation is added.
+
 ## Verification for contributors
 
 - `internal/state/conformance/connector_action.go`: all three SQL backends share

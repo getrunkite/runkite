@@ -84,7 +84,9 @@ queue publication remain separate; automatic retries with a fresh run ID and
 uncertain external effects still need caller reconciliation and downstream
 idempotency. This correction adds no migration, protocol field or new setting.
 Upgrade every HTTP and cron-serving replica to obtain the protection on each
-enqueue path. See the [transaction and regression notes](internal/atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
+enqueue path. Custom Go stores must enforce `FailUnstarted` and
+`ExpectedIncarnationID` inside the completion transaction and pass the shared
+conformance suite; these conditions are required. See the [transaction and regression notes](internal/atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
 
 ## Static graph schema publication recovery (Unreleased)
 
@@ -376,8 +378,11 @@ Opaque checkpoint record fencing is Unreleased/current-source. Upgrade every
 control-plane replica before relying on it. Queued or active assignments from
 older planes may lack the original record identity, especially on Mongo; drain
 those assignments and submit fresh dispatches. Missing identity fails with
-`403 run_binding_required`, and a deleted/recreated run fails with
-`403 run_incarnation_mismatch`. Do not fill an old assignment from the current
+`403 run_binding_required`, and an already authorized request retaining a
+deleted record's binding fails with `403 run_incarnation_mismatch`. This adds no
+client-echoed incarnation proof for fresh requests. Use fresh operation IDs
+while old workers or RPCs may still send; do not treat deletion as revocation
+of every possible stale message. Do not fill an old assignment from the current
 run row or bypass the fence after a denial. No database migration is required:
 SQL reuses `incarnation_id`, and Mongo uses its existing nonzero ObjectID. A
 manually imported Mongo run with another `_id` type is refused for explicit
