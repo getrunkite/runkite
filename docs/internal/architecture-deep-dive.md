@@ -553,7 +553,7 @@ Runner (produces tokens) —gRPC StreamEvents→ CP (publisher side) —broker�
 
 In single-replica mode, the publisher and subscriber are the same CP process. In multi-replica mode, the runner's gRPC might be connected to CP2, but the client's SSE is on CP1. Redis pub/sub bridges them: CP2 publishes to Redis, CP1's subscriber picks it up from Redis and forwards to the client. The handler code is identical either way — the broker abstraction hides whether events came locally or via Redis.
 
-If enqueue FAILS (Redis is down), the handler calls `rollbackCreatedRun` which marks the run as errored in Postgres and releases the thread back to idle. Without this rollback, a Redis failure would leave a thread permanently stuck in "busy" with a run that will never execute.
+If enqueue fails, `rollbackCreatedRun` conditionally completes only the original pending run before any worker attempt begins. A lost acknowledgement can follow acceptance, so a committed result or admitted worker remains unchanged. The caller still receives the delivery error. See the [Unreleased enqueue fence](atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
 
 **Code:** `internal/transport/redis/` (queue), `internal/api/runs.go` (all three handler functions), `internal/broker/` (the internal event broker).
 
@@ -2483,7 +2483,7 @@ If Redis dies and comes back empty, you lose: in-progress event streams (clients
 The concern with dual writes is: "what if I write Postgres but Redis fails, or vice versa?" Here is how each case is handled:
 
 **CreateRun succeeds in Postgres, then Enqueue to Redis fails:**
-The handler calls `rollbackCreatedRun` which marks the run as errored and releases the thread. The user sees an error. No zombie stuck-busy thread.
+The handler calls `rollbackCreatedRun`. In current Unreleased source, its existing completion transaction marks only the original pending, never-started run as errored and releases the thread. A worker that already started retains its claim; a prior terminal winner is preserved. The user still sees the delivery error and must reconcile unknown acceptance.
 
 **Enqueue succeeds, but runner never completes (crash):**
 Heartbeats stop, reclaim fires, job is requeued with a new generation. Eventually a runner succeeds and updates Postgres. The run goes from pending to success via the normal path — just slower.
@@ -2515,7 +2515,7 @@ If caching is enabled and the exact same (thread, agent, input, config) combinat
 
 ## Scenario 4: Enqueue fails (Redis is down)
 
-createRunCtx succeeded — the run row exists in Postgres with status pending, thread is busy. Then the handler tries to push to Redis and fails. The handler calls `rollbackCreatedRun`: UPDATE run status to error with message "enqueue failed", UPDATE thread status back to idle, decrement ActiveRuns prometheus counter. The client gets a 500 error. Without this rollback, the thread would be stuck busy forever with a run that will never execute.
+`createRunCtx` succeeded: the run is pending and its thread is busy. If queue publication reports an error, current Unreleased `rollbackCreatedRun` reuses canonical completion, fenced to that exact row and to the absence of any admitted attempt. Only that winner becomes `enqueue failed` and releases its claim; finalization updates occupancy once. A committed result or admitted worker is preserved. The client still gets its delivery error, which does not prove queue rejection.
 
 ## Scenario 5: Runner never starts (crashes between GetJob and execution)
 
@@ -3229,7 +3229,7 @@ People hear "we write to two systems" and immediately worry about distributed tr
 
 **Different responsibilities, not duplicated data.** Postgres stores WHAT happened (runs, statuses, threads — the permanent record). Redis stores HOW TO COORDINATE (queues, leases, events — the ephemeral machinery). They are not storing the same data in two places; they are storing different data for different purposes.
 
-**Crash windows are bounded by reclaim.** The worst case is: "Postgres says pending, Redis lost the job." In this case, the run stays pending forever... unless you have monitoring that detects runs stuck in pending for abnormally long. The reclaim loop specifically handles the case where a job was dequeued but never completed. For the case where enqueue itself fails, `rollbackCreatedRun` immediately fixes Postgres.
+**Reclaim covers admitted jobs.** If Postgres says pending but Redis lost an undispatched job, monitor and reconcile that run; reclaim needs an in-flight assignment. When enqueue reports an error, current Unreleased rollback can settle the original pending, never-started row. An admitted worker, a prior terminal result or failed database cleanup must remain recoverable instead of being overwritten.
 
 **There is no distributed transaction.** We do not try to atomically commit to both Postgres and Redis. Instead:
 
@@ -3303,7 +3303,7 @@ When you look at production logs, here is what key messages mean:
 
 **"connector pre-warm skipped by policy"** — During createRunCtx, the system tried to pre-mint connector sessions for this run's connector_needs list. Policy denied it. The connector will still be accessible at use time if policy changes, or it will fail at use time with a policy error.
 
-**"rollbackCreatedRun"** — Enqueue to Redis failed after the run was created in Postgres. The run was marked error and the thread released. The client got an error.
+**"rollbackCreatedRun"**: Queue publication reported an error after run creation. Current Unreleased cleanup settles only the original pending, never-started run, preserving admitted workers and prior results. The client still receives an error; inspect the retained run to determine its actual outcome.
 
 **"admission problem: no durable state"** — serve was started without a database configured. It is about to exit.
 
@@ -3563,7 +3563,7 @@ When createRunCtx encounters problems at each step, here is exactly what error t
 
 **Database error during CreateRun:** The client gets HTTP 500 — internal server error. The thread claim may or may not have happened — depends on where the error occurred. Error handling paths attempt cleanup but may leave traces.
 
-**After createRunCtx succeeds but enqueue fails:** The handler calls rollbackCreatedRun (marks run as error, releases thread) and the client gets HTTP 500 with "enqueue failed." The run exists in Postgres marked as errored — it is not invisible; you can see it in the Admin UI.
+**After createRunCtx succeeds but enqueue fails:** The client gets a delivery error. Current Unreleased rollback marks only the original pending, never-started run as error and releases its claim atomically. If a worker already started or finished, inspect that retained run in Admin; a failed acknowledgement does not determine its execution outcome.
 
 ---
 

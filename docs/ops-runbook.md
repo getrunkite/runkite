@@ -63,6 +63,29 @@ or approval migrations by editing tables or migration stamps. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
 [release verification](releasing.md#v090-candidate-unreleased).
 
+## Enqueue acknowledgement failures (Unreleased)
+
+A delivery error can follow queue acceptance. Before creating replacement work,
+inspect the original run through REST or Admin and preserve its exact tenant and
+run identity. An error response alone does not prove that a model or tool stopped.
+
+The source rollback path now commits `enqueue failed` only when that original
+run is still pending and no worker attempt has started. If worker admission
+already won, its thread remains busy until ordinary completion, cancellation or
+reclaim settles it. A committed terminal result or a replacement row is never
+rewritten by delayed enqueue cleanup. A store failure retains the claim for
+reconciliation, and a custom store without immutable row proof fails closed.
+
+For an admitted attempt, use normal cancel/reclaim procedures rather than
+manually setting its thread to idle. For a definite pre-dispatch rejection,
+conditional completion releases the thread and finalizes bookkeeping once.
+The caller still receives the original delivery error. Database insertion and
+queue publication remain separate; automatic retries with a fresh run ID and
+uncertain external effects still need caller reconciliation and downstream
+idempotency. This correction adds no migration, protocol field or new setting.
+Upgrade every HTTP and cron-serving replica to obtain the protection on each
+enqueue path. See the [transaction and regression notes](internal/atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
+
 ## Static graph schema publication recovery (Unreleased)
 
 This checkout adds automatic recovery for the default-tenant static Python

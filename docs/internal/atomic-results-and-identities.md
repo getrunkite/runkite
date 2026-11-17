@@ -58,6 +58,55 @@ and [shared store coverage](../../internal/state/conformance/cached_run.go) cove
 merged state, exact numbers, injected output/checkpoint/thread write failures,
 usage, TTL, concurrent retry, quota and cross-replica finalization.
 
+## Enqueue acknowledgement is not execution proof (Unreleased)
+
+`rollbackCreatedRun` already recovered the pending row and busy thread after a
+definite subscription or queue rejection. It also ran after a publication
+acknowledgement failed. Redis, NATS or Kafka can accept a job before that error
+reaches the caller. A fast worker could finish successfully first; the old
+unconditional status update then replaced success with `enqueue failed` and
+erased its output. A delayed cleanup could also hit a replacement run using the
+same public ID, or release a thread still owned by an accepted worker.
+
+Rollback now reuses the existing completion transaction with an immutable
+original-row identity, generation zero and a private `FailUnstarted` condition.
+The condition is checked under the same lock as completion: the original run
+must still be pending and have no attempt fence. Worker admission and rollback
+therefore have two safe outcomes:
+
+1. Rollback wins before admission. It commits a terminal error and releases the
+   thread atomically. A subsequently delivered queue item cannot pass
+   `BeginRunAttempt`, so the bridge does not hand it to an agent.
+2. Worker admission wins. Cleanup leaves the run, queue lease and busy thread
+   unchanged. Ordinary completion, cancellation or reclaim owns its recovery.
+
+A prior terminal winner and a deleted/recreated run remain unchanged. Store
+failure retains the claim rather than pretending the cleanup committed. This
+mode does not replay broker output, so recovering a definite queue rejection
+does not depend on broker availability. Usage, holds, process metrics and hooks
+use the existing durable completion/finalization path. Retrying the same cleanup
+does not apply those writes twice.
+
+SQL uses its existing run incarnation. Mongo uses a hidden proof derived from
+the retained document's existing `_id`; this does not enable SQL-only Admin run
+references or change public response fields. A custom store without immutable
+row proof retains the run for explicit reconciliation.
+
+The caller still receives its original delivery error. This is neither an atomic
+database/queue publish nor an external-effect guarantee. Inspect the original
+retained run before starting replacement work; acknowledgement failure alone
+does not mean the agent stopped. A failed finalization can also require retry or
+operator reconciliation after the terminal row has committed.
+
+Sources: [rollback and shared creation](../../internal/api/runs.go),
+[completion/finalization](../../internal/api/completion.go),
+[conditional completion](../../internal/state/completion.go).
+The [regressions](../../internal/api/enqueue_rollback_test.go) reproduce accepted
+completion followed by acknowledgement failure, retained worker admission,
+same-ID replacement both before and during the write, broker outage and failed
+completion persistence. They check durable output, usage, occupancy, hooks and
+thread continuity without relying on a real network timeout.
+
 ## Child ownership belongs in the write transaction
 
 The API already read and claimed a thread under the caller's tenant. That proved

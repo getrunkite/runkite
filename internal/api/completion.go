@@ -231,19 +231,23 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 			}
 			return checked, s.finalizeCommittedRun(ctx, run, false)
 		}
-		events, err := s.broker.Replay(ctx, c.RunID, 0)
-		if err != nil {
-			return state.CompletionResult{}, fmt.Errorf("replay final output: %w", err)
-		}
-		for i := len(events) - 1; i >= 0; i-- {
-			event := events[i]
-			if event.Method != "values" || event.Generation != completion.Generation {
-				continue
+		// A pending-only enqueue failure has no admitted worker output. Do not
+		// make definite rejection recovery depend on a healthy event broker.
+		if !completion.FailUnstarted {
+			events, err := s.broker.Replay(ctx, c.RunID, 0)
+			if err != nil {
+				return state.CompletionResult{}, fmt.Errorf("replay final output: %w", err)
 			}
-			if err := jsonvalue.Unmarshal(event.Data, &completion.Values); err != nil {
-				return state.CompletionResult{}, fmt.Errorf("decode final output: %w", err)
+			for i := len(events) - 1; i >= 0; i-- {
+				event := events[i]
+				if event.Method != "values" || event.Generation != completion.Generation {
+					continue
+				}
+				if err := jsonvalue.Unmarshal(event.Data, &completion.Values); err != nil {
+					return state.CompletionResult{}, fmt.Errorf("decode final output: %w", err)
+				}
+				break
 			}
-			break
 		}
 	}
 	result, err := s.store.CompleteRun(ctx, &completion)

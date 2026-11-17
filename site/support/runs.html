@@ -136,6 +136,16 @@
           <li><strong>Streaming</strong>: Admin and clients read the same event stream. Terminal events pass the durable completion fence and superseded terminals are ignored. Nonterminal output remains advisory during reclaim; clients must not combine attempts. Run Detail reloads durable status/output when the stream ends. Use <code>/wait</code> or the stored run for the authoritative result.</li>
           <li><strong>Reclaim</strong>: if a runner dies, the plane reclaims with fencing (see engineering notes).</li>
         </ul>
+        <h2>Delivery errors and retained runs</h2>
+        <p>
+          <strong>Unreleased source correction:</strong> queue acceptance can precede an
+          acknowledgement error. Cleanup now fails only the original pending run before
+          any worker attempt begins. It preserves a committed result and keeps an
+          admitted worker's thread busy. The caller still receives the delivery error;
+          inspect the original run before creating replacement work. Use normal cancel
+          or reclaim for an active attempt. This adds no external-effect guarantee.
+          See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#enqueue-acknowledgement-failures-unreleased">recovery procedure</a>.
+        </p>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/admin.md">docs/admin.md</a>
           · <a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md">docs/api.md</a>

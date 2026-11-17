@@ -88,6 +88,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   ObjectID privately; missing dispatch identity fails closed. Blob CAS and
   Mongo's public SQL-only capability boundaries remain unchanged.
 
+- Fence enqueue-failure cleanup to the original pending run before any worker
+  attempt begins. A lost publication acknowledgement no longer overwrites a
+  committed result, clears an accepted worker's thread claim or mutates a run
+  reusing the same ID. Use the existing completion transaction and idempotent
+  finalization; the caller still receives the original delivery error.
+
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`
   so intervals longer than the scheduler tick can become due. Calendar

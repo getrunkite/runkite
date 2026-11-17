@@ -27,6 +27,10 @@ type RunCompletion struct {
 	// TrustedSystem is set only by internal cancellation, timeout, retained
 	// event recovery and reaper paths. Missing worker proof is never a bypass.
 	TrustedSystem bool `json:"-"`
+	// FailUnstarted settles an enqueue failure only while the original run is
+	// still pending and no worker attempt has begun. Publication errors can
+	// follow acceptance, so a started assignment must keep its thread claim.
+	FailUnstarted bool `json:"-"`
 	// RunnerKind is the authenticated bridge identity; ReplayOnly permits only
 	// acknowledgement of an already committed result after the lease is gone.
 	// CancelCurrentAttempt is for trusted control-plane cancellation/timeout only.
@@ -87,6 +91,9 @@ func CheckCompletion(metadata map[string]interface{}, status models.RunStatus, c
 	if !TerminalRunStatus(c.Status) {
 		return CompletionResult{}
 	}
+	if c.FailUnstarted && (!c.TrustedSystem || c.ExpectedIncarnationID == "" || c.Generation != 0 || c.Status != models.RunStatusError || c.CancelCurrentAttempt || c.ReplayOnly || c.Values != nil) {
+		return CompletionResult{}
+	}
 	current := MetadataGeneration(metadata, AttemptGenerationKey)
 	if c.Generation != current {
 		return CompletionResult{}
@@ -95,6 +102,9 @@ func CheckCompletion(metadata map[string]interface{}, status models.RunStatus, c
 		return CompletionResult{Accepted: MetadataGeneration(metadata, CompletionGenerationKey) == c.Generation && status == c.Status}
 	}
 	if TerminalRunStatus(status) {
+		return CompletionResult{}
+	}
+	if _, attempted := metadata[AttemptGenerationKey]; c.FailUnstarted && (status != models.RunStatusPending || attempted) {
 		return CompletionResult{}
 	}
 	return CompletionResult{Accepted: true, Applied: true}

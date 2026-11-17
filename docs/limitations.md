@@ -258,6 +258,15 @@ enqueue or provide exactly-once external effects. It also does not make public
 MCP interchangeable with a run-bound connector proxy. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090).
 
+**Enqueue acknowledgement errors (Unreleased).** Queue acceptance can precede a
+delivery error. Conditional rollback now preserves a committed result or an
+admitted worker and fences deletion/recreation of its original row. Only a
+pending, never-started original run may become `enqueue failed`; store failure
+retains its claim. The caller still receives its error, so reconcile the
+original run before starting another operation. This is not an atomic
+database/queue publish or external-effect idempotency. See
+[recovery guidance](ops-runbook.md#enqueue-acknowledgement-failures-unreleased).
+
 ## Deep dive
 
 - **Managed AI SDK is a separate runner profile.** The new `typescript-ai-sdk`
