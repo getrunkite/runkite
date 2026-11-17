@@ -72,8 +72,9 @@ only what was actually qualified. No finite suite proves absence of all bugs.
    Reuse cached Python static LangGraph reports and add atomic bootstrap-only
    recovery after registration resets. Preserve useful/partial reports, old-plane
    compatibility, unknown freshness and existing MCP session snapshots. The
-   [engineering contract](schema-publication-recovery.md) describes the current
-   candidate; it does not assert a native-worker or hosted qualification pass.
+   [engineering contract](schema-publication-recovery.md) records the local
+   real-worker and storage qualification. Hosted checks remain a separate PR
+   merge gate.
 2. **Optional tools-only connector profiles: selected, not implemented by this slice.**
    Define and qualify this separately after schema recovery. The current
    connector contract is unchanged by the schema work.
@@ -87,7 +88,7 @@ or evidence that the three implementations and release gates are complete.
 
 ## Follow-on qualification: Langfuse OTLP
 
-The [Langfuse recipe](../langfuse.md) is the next authorized slice. It reuses
+The completed [Langfuse recipe](../langfuse.md) reuses
 existing v0.9.0 OTLP exporters with explicit per-language HTTP encodings, project
 authorization and a separately operated receiver. The
 [engineering note](langfuse-otlp.md) records passing actual-exporter wire checks
