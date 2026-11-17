@@ -90,30 +90,95 @@ describes the corresponding boundaries. Its retained local summary is
   shared evidence validation with confirmed runtime/backend cleanup. Site tests
   passed 43 cases, and OpenAPI checks covered 170 registered Go routes.
 
-These checks establish neither new-version artifact identity nor publication,
-live-provider behavior, unrestricted production soak or independent assessment.
-Later source or qualification-harness edits need their affected gates rerun and
-their exact source recorded.
+Those earlier source checks are separate from the new-version candidate checks
+below. Neither establishes publication, live-provider behavior, unrestricted
+production soak or independent assessment. Later source or qualification-harness
+edits need their affected gates rerun and their exact source recorded.
+
+## Completed local candidate gates
+
+The following evidence is retained under
+`outputs/runkite-release-v0100-20261117/`. The Go snapshot archives were built
+from clean commit `6e8e72b1e02698125dc2ce8d0e69881a7f691a53` with version 0.10.0.
+The subsequent source commit `71a98f1` changes only the TypeScript strict-mTLS test
+fixture's npm-pack metadata handling. It does not change the packaged runtime;
+the archives were not rebuilt or relabeled as that later commit.
+
+- [x] The coordinated version gate passes for `v0.10.0`, including package/Helm
+  versions and file-linked example lock snapshots. GoReleaser 2.20.2's actual
+  configuration check passed, and its local `--snapshot` build completed.
+- [x] Four snapshot archives and their checksums pass static inspection. Each
+  contains exactly seven regular files with no unexpected or linked members.
+  All 24 legal/README/notice copies match source, and every binary contains all
+  19 tracked Admin assets byte-for-byte (76 comparisons). Mach-O/ELF headers
+  match Darwin/Linux arm64 and amd64. The four actual archive binaries also
+  pass version probes: native macOS arm64, installed Rosetta for macOS amd64,
+  and cached Linux execution bases for both Linux targets. Every probe reports
+  `0.10.0`, commit `6e8e72b` and build time `2026-11-17T17:58:36Z`. See
+  `go-snapshot-static-audit.json` and `go-archive-runtime-smoke.json`.
+- [x] Both npm tarballs and both Python wheel/sdist pairs were built as 0.10.0
+  with retained integrity/member manifests. The Python runner's four artifact
+  contract tests pass. The Python governance helper's three tests pass,
+  including installed-wheel and rebuilt-sdist behavior outside the checkout.
+  Use `logs/python-governance-artifacts-root.log` for that pass; the earlier
+  socket-denied child attempt remains retained and is not counted as successful.
+  The npm governance installed-artifact check and 20 AI SDK/example tests pass.
+  Release-artifact helper regressions pass all 16 tests in
+  `logs/release-artifact-unit-tests-final.log`.
+- [x] Node 22 runner units pass 306 tests with two opt-in native skips. Separate
+  packaged strict-mTLS runs on Node 22.19.0 and 26.11.0 pass four tests each,
+  including exact package identity, owner-key denial and restored conversation
+  behavior. Their receipts are `mtls-node22.json` and `mtls-node26.json`.
+- [x] Both pinned Langflow native profiles pass with LFX 1.13.2 and MCP 1.30.0:
+  baseline read/write and scoped run-only each produce two managed runs and two
+  runner assignments. Both promptfoo 0.125.1 profiles pass with four distinct
+  runs/threads and four reference-pinned waits each; the scoped profile also
+  passes six denial probes. The AG-UI-enabled real-plane/packaged-runner fixture
+  passes all 12 cases, including its separately enabled native AG-UI behavior.
+  See `langflow-{baseline,scoped}.json`, `promptfoo-{baseline,scoped}.json` and
+  `logs/ag-ui-native.log`. These remain checkout examples, not registry assets.
+- [x] Admin passes all 126 tests and its production build. Rebuilding leaves no
+  tracked Admin asset or lockfile drift; the Go archive inspection above checks
+  the actual embedded asset bytes. See `logs/admin-test.log` and
+  `logs/admin-build.log`.
+- [x] All three actual local Linux arm64 candidate images built from `71a98f1`
+  pass version/revision/license checks and source-matching legal files as UID
+  65532, with read-only, network-disabled smoke checks. The TypeScript image
+  also passes native LangGraph and AI SDK model/tool, stream and usage checks;
+  this does not qualify managed image dispatch, HA or live providers. Trivy
+  0.72.0, using its database updated at `2026-11-17T13:00:16Z`, reports no
+  HIGH/CRITICAL fixable findings under `--ignore-unfixed --exit-code 1`.
+  See `candidate-images{,-runtime,-scans}.json` and
+  `typescript-image-runtime.json`. These are local arm64 results only.
+- [x] Final non-mutating consistency checks pass all 14 commands at `71a98f1`:
+  OpenAPI covers 170 routes, its 26 contract tests pass and all three regenerated
+  specs match committed bytes; site tests pass 43 cases with 71 pages, 3,851 local
+  references and no broken links; all 10 protocol fixtures and execute goldens
+  pass. Version, GoReleaser and Helm checks also pass. Local Helm is 3.19.0;
+  hosted CI pins 3.16.4, so the local pass does not substitute for that toolchain.
+  See `final-consistency/summary.json`.
+
+These are local candidate checks, not tagged release or published-image evidence.
+The snapshot's metadata still names the existing `v0.9.0` Git tag as build
+context. Cached Linux images used to execute archive binaries are not candidate
+image qualification. Registry preflight receipts for all four package projects
+report `needs_publish`; they establish neither upload authority nor availability.
 
 ## Remaining candidate and publication gates
 
 - [ ] Publish the reviewed final source and qualification changes through the
   approved publication path. Hosted qualification must run on that exact
   published candidate before tagging.
-- [ ] Run the [coordinated version gate](../releasing.md#version-consistency-gate)
-  for `v0.10.0`, including package/Helm metadata and file-linked example lockfile
-  snapshots. Update immutable package README wording before the final build.
 - [ ] Qualify the exact assembled candidate in hosted CI, including the pinned
   Langflow baseline and run-only scoped caller, promptfoo baseline and scoped
-  native CLI, and AG-UI native delivery/detach/reattach/Stop workflows. Retain
-  their separate receipts; the earlier AI SDK cases are not AG-UI qualification.
+  native CLI, and AG-UI native delivery/detach/reattach/Stop workflows. The local
+  passes above do not replace these hosted gates. Retain their separate receipts.
   Follow the [integrated gates](ecosystem-integration-checklist.md#qualify-the-integrated-contracts)
   and the explicit manual external-runtime qualification boundary.
-- [ ] Build fresh 0.10.0 candidate artifacts and inspect what actually ships:
-  rebuilt embedded Admin, generated specs, Python wheel/sdist runtime modules,
-  TypeScript dist/proto/receipt code, package entrypoints and legal files.
-  Requalify installed artifacts and matching image builds. Source qualification
-  with previous version metadata does not replace this step.
+- [ ] Complete Linux amd64 candidate image qualification for all three images.
+  The local arm64 passes do not qualify amd64 or published multi-platform
+  indexes. Verify both actual published variants after release as listed below;
+  archive execution inside an older cached image does not satisfy this gate.
 - [ ] Verify each package's genuine publication authority before tagging.
   Previous matching-existing npm checks did not establish successful npm OIDC;
   preserve the [actual v0.9.0 authentication record](release-verification-v090.md#registry-publication-and-authentication).
