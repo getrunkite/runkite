@@ -6,6 +6,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Add optional Admin cron calendar previews using the scheduler's shared pinned
+  parser, with UTC computation/next-boundary times, effective timezone and
+  explicit disabled/invalid/no-future/relative-interval states. Independent
+  history and preview flags preserve existing read costs and response shapes.
+  Preview is not a dispatch guarantee or a per-fire receipt ledger.
+
 - Add optional `mcp.tools_only` for the existing connector proxy, with a narrow
   inbound method surface, local unsupported-method replies and tools-only
   initialize capabilities. Opt-in uses target-v4 managed approval binding and
@@ -68,6 +74,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   freshness. Preserve the existing raw execution and session-snapshot contracts.
 
 ### Fixed
+
+- Reject malformed cron timezone prefixes without a parser panic, stop on zero
+  or non-advancing next times, and retain the local not-due anchor for `@every`
+  so intervals longer than the scheduler tick can become due. Calendar
+  bookkeeping, equal-fire claims and overlap/latest-only catch-up remain;
+  relative schedules gain no globally synchronized phase.
 
 - Cache static Python LangGraph schemas once and recover existing exact
   bootstrap rows through a new atomic internal POST after registration resets

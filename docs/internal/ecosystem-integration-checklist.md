@@ -8,10 +8,12 @@ The public entry point is [Integrations](../integrations.md#unreleased-current-s
 ## Assemble the matching source tree
 
 The next authorized sequence is static graph schema recovery, optional
-tools-only connector profiles, then cron schedule preview. Schema recovery has
-its own [PR #87](https://github.com/getrunkite/runkite/pull/87) review/checks;
-the tools-only slice is in implementation and qualification here. Cron preview
-is selected separately, not implemented by these two changes. Follow
+tools-only connector profiles, then cron schedule preview. Schema recovery
+[PR #87](https://github.com/getrunkite/runkite/pull/87) merged at
+`f738af4f0b5af60f09e2d249fbd72d0795cb30b2` after all 16 hosted checks passed.
+The tools-only implementation at `60b833f` and its qualification are tracked in
+[PR #88](https://github.com/getrunkite/runkite/pull/88). Cron preview is
+implemented in this slice; inspect its matching PR's hosted results. Follow
 [the staged plan](ecosystem-implementation.md#next-authorized-slices-in-order).
 For schema recovery, assemble `SchemaPublisher`, both internal schema handlers,
 the optional `AgentSchemaRecoveryStore` extension and its four built-in store
@@ -19,8 +21,8 @@ implementations together with [the recovery guide](schema-publication-recovery.m
 Qualify default-tenant static Python graphs, exact four-stub atomic replacement,
 preserved useful/partial reports, configured-kind checks, old-plane 404 and
 custom-store 501 without PUT fallback. Keep real worker recovery, store races
-and MCP session snapshots separate test boundaries. No native-worker or hosted
-pass is claimed by this checklist entry.
+and MCP session snapshots separate test boundaries. The linked PR's passing
+native-worker and hosted gates qualify that exact merged slice, not later work.
 
 For the [tools-only connector profile](tools-only-connectors.md), assemble its
 configuration, proxy/init gates, v4 target descriptor, Admin projection and
@@ -31,6 +33,17 @@ and existing-token profile checks. Keep SDK upstream negotiation, earlier
 `GetSession` credential acquisition and arbitrary tool result bodies outside
 the inbound-only claim. No new raw-SSE parser or universal MCP content filter
 is implied. A configured badge or source guide is not a native/hosted test pass.
+
+For [cron calendar preview](cron-next-fire-preview.md), assemble the shared
+parser/preview helper, Admin query projection and UI together. Check all four
+history/preview flag combinations, definition/history-only compatibility,
+preview-only absence of history reads, one UTC computation instant and exact
+status/optional-field semantics. Cover configured fallback versus expression
+zone override, DST, disabled/invalid/impossible expressions and explicit
+`@every` unavailability. Separately test malformed-prefix, zero/nonprogress
+`Next` guards and local relative-anchor liveness without claiming a new global
+epoch. Preserve guarded retained-run links and distinguish actual qualification
+from a previewed boundary or a prior feature's passing checks.
 
 The navigation change expects the following feature documents and support
 sections to land with their implementations. A partial checkout can therefore

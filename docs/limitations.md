@@ -49,6 +49,24 @@ change an existing binary, image, wheel or npm install.
   Changing record, tenant or mode resets form/confirmation state and stale or
   unhydrated saves are rejected. This adds neither general identifier
   normalization nor concurrent-edit protection.
+- Optional Admin cron `include_preview=true` computes one future calendar
+  boundary using the shared backend parser. It is independent of history reads
+  and does not claim, dispatch, reserve or guarantee a run. Invalid configured
+  timezones signal UTC fallback when used; an explicit expression timezone can
+  override that location without a fallback flag. `@every` returns
+  `relative_interval_unavailable` because no anchor is read. DST/date behavior follows the pinned parser. Preview is not a skip
+  ledger, live countdown or proof of exactly-once effects. See
+  [cron preview](internal/cron-next-fire-preview.md).
+- `@every` keeps its anchor on not-due polls and advances to a handled fire's
+  timestamp rather than poll time after success, a lost equal-fire claim or a
+  skipped busy-thread overlap. Retryable errors retain the old anchor. This
+  preserves a common starting phase across unequal polls, but fresh staggered
+  anchors remain local. No global epoch or one-fire-per-relative-interval HA
+  guarantee is added. Claims deduplicate equal timestamps, not different phases.
+  Prefer a calendar expression and consistent explicit timezone for a shared HA
+  cadence. Preview does not infer relative anchors; deterministic phase tests
+  are not native relative-HA qualification. Calendar bookkeeping and existing
+  overlap/latest-only catch-up remain.
 - Cron shows retained rows on the schedule's thread, including rows another
   caller created. It has no receipt for a skipped overlap or failure before run
   creation. Empty history does not mean never fired. Thread IDs remain globally

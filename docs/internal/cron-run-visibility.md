@@ -79,10 +79,15 @@ dispatchable. Operators should use distinct schedule names across tenants.
 
 ## Scope and verification
 
-No next-fire preview is added. It would need the actual backend cron parser,
-timezone fallback and scheduling semantics, rather than a browser-side guess.
-No schema migrations, new endpoints, per-fire receipt table, automatic replay
-or scheduling behavior changes are included.
+The original retained-run projection does not calculate future fire times.
+The separate Unreleased [calendar preview](cron-next-fire-preview.md) now uses
+the shared backend parser through independent `include_preview=true`, without
+adding history reads to preview-only requests or preview work to history-only
+requests. It projects one future calendar boundary and cannot prove dispatch,
+overlap outcomes or a prior firing. Its parser/scheduler guards are recorded
+separately rather than attributed to this original history change.
+Neither view adds a schema migration, new endpoint, per-fire receipt table or
+automatic replay.
 
 Regression coverage exercises same-named schedules in different tenants,
 latest-run ordering after an agent change, disabled schedules, summary payload

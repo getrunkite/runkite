@@ -11,6 +11,7 @@ import (
 
 	"github.com/getrunkite/runkite/internal/api"
 	"github.com/getrunkite/runkite/internal/config"
+	"github.com/getrunkite/runkite/internal/cronschedule"
 	"github.com/getrunkite/runkite/internal/models"
 	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
@@ -81,18 +82,38 @@ type scheduleKey struct {
 // explicitly designed to backfill missed runs.
 func checkSchedule(c *compiledCronSchedule, last, now time.Time) (due bool, fireTime time.Time) {
 	next := c.schedule.Next(last)
-	if next.After(now) {
+	if next.IsZero() || !next.After(last) || next.After(now) {
 		return false, time.Time{}
 	}
 	fireTime = next
 	for {
 		n := c.schedule.Next(fireTime)
-		if n.After(now) {
+		if n.IsZero() || !n.After(fireTime) || n.After(now) {
 			break
 		}
 		fireTime = n
 	}
 	return true, fireTime
+}
+
+// A relative interval must retain its starting point until due. Advancing it
+// on every poll would perpetually postpone intervals longer than one tick.
+// Calendar schedules keep their existing not-due bookkeeping.
+func anchorAfterNotDue(c *compiledCronSchedule, last, now time.Time) time.Time {
+	if _, relative := c.schedule.(cronlib.ConstantDelaySchedule); relative {
+		return last
+	}
+	return now
+}
+
+// Consuming an interval fire must retain its phase, regardless of the local
+// poll time or whether this replica won its claim. Fresh schedules can still
+// start with different replica-local anchors; this does not create a global epoch.
+func anchorAfterHandledFire(c *compiledCronSchedule, fireTime, now time.Time) time.Time {
+	if _, relative := c.schedule.(cronlib.ConstantDelaySchedule); relative {
+		return fireTime
+	}
+	return now
 }
 
 // initialAnchor picks the starting point for a freshly-compiled schedule's
@@ -174,28 +195,26 @@ func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Ser
 
 			c, ok := compiled[key]
 			if !ok || c.expression != sched.Expression || c.timezone != sched.Timezone {
-				loc, locErr := time.LoadLocation(sched.Timezone)
-				if locErr != nil {
+				parsed, parseErr := cronschedule.Compile(sched.Expression, sched.Timezone)
+				if parsed.ConfiguredTimezoneError != nil {
 					if sched.Timezone != "" {
-						slog.Warn("cron: unknown timezone, falling back to UTC", "tenant", sched.TenantID, "name", sched.Name, "timezone", sched.Timezone, "error", locErr)
+						slog.Warn("cron: unknown timezone, falling back to UTC", "tenant", sched.TenantID, "name", sched.Name, "timezone", sched.Timezone, "error", parsed.ConfiguredTimezoneError)
 					}
-					loc = time.UTC
 				}
-				parsed, parseErr := cronlib.ParseStandard(sched.Expression)
 				if parseErr != nil {
 					slog.Error("cron: invalid expression, skipping schedule", "tenant", sched.TenantID, "name", sched.Name, "expression", sched.Expression, "error", parseErr)
 					continue
 				}
-				c = &compiledCronSchedule{expression: sched.Expression, timezone: sched.Timezone, schedule: parsed, location: loc}
+				c = &compiledCronSchedule{expression: sched.Expression, timezone: sched.Timezone, schedule: parsed.Schedule, location: parsed.Location}
 				compiled[key] = c
-				lastChecked[key] = initialAnchor(schedCtx, store, sched.Name, time.Now().In(loc))
+				lastChecked[key] = initialAnchor(schedCtx, store, sched.Name, time.Now().In(c.location))
 				continue // compile this tick; first due-check is the next tick
 			}
 
 			now := time.Now().In(c.location)
 			due, fireTime := checkSchedule(c, lastChecked[key], now)
 			if !due {
-				lastChecked[key] = now
+				lastChecked[key] = anchorAfterNotDue(c, lastChecked[key], now)
 				continue
 			}
 
@@ -207,7 +226,7 @@ func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Ser
 			if !won {
 				// Another control-plane instance's scheduler loop already
 				// claimed and is dispatching this exact fire.
-				lastChecked[key] = now
+				lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
 				continue
 			}
 
@@ -218,7 +237,7 @@ func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Ser
 					// Overlapping fire: thread still busy from a prior run.
 					// Keep the claim so this fire_time is not retried; the
 					// next cron boundary gets a fresh claim key.
-					lastChecked[key] = now
+					lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
 					slog.Warn("cron: overlapping fire rejected", "tenant", sched.TenantID, "name", sched.Name, "fire_time", fireTime, "error", dispatchErr)
 					continue
 				}
@@ -230,7 +249,7 @@ func runCronScheduler(ctx context.Context, store state.Store, apiServer *api.Ser
 				slog.Error("cron: failed to dispatch scheduled run", "tenant", sched.TenantID, "name", sched.Name, "error", dispatchErr)
 				continue
 			}
-			lastChecked[key] = now
+			lastChecked[key] = anchorAfterHandledFire(c, fireTime, now)
 			slog.Info("cron: dispatched scheduled run", "tenant", sched.TenantID, "name", sched.Name, "run_id", run.RunID, "fire_time", fireTime)
 		}
 	}

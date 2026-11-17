@@ -372,17 +372,24 @@
           hour") agent across every tenant.
         </p>
         <p>
-          <strong>What you'll see:</strong> each schedule, its cron expression, and when it last
-          fired. If you're running more than one control-plane replica, this is also where you'd
-          confirm a schedule only fired once, the plane uses a claim mechanism so two replicas
-          racing to fire the same schedule at the same second don't double-run it.
+          <strong>What you'll see:</strong> schedule definitions and, in the Unreleased source,
+          the latest retained run on each exact-tenant schedule thread plus a separate next-calendar
+          preview. Retained rows are not a fire ledger and may come from another caller on that
+          thread. The preview is a timestamped projection, not proof of dispatch or exactly-once effects.
         </p>
         <p>
           <strong>How to use it:</strong> read-only here too, schedules are created via the
-          Agent Protocol API or config, not from this screen. Check this page when a scheduled
+          discovered config, not from this screen. Check this page when a scheduled
           job "didn't run" (is it even registered?) or "ran twice" (did two replicas race, see
           <a href="cron.html">Cron</a> for the claim mechanism that's supposed to prevent this).
         </p>
+        <p>For the preview, read the UTC computation time and effective timezone. Disabled,
+          invalid-expression and no-future states make no execution promise; <code>@every</code>
+          is explicitly unavailable because preview does not read the interval anchor. An invalid
+          configured zone can fall back to UTC unless an expression-level zone overrides it.
+          Existing guarded run links remain read-only snapshots. Follow the
+          <a href="cron.html#next-fire-preview">Cron preview and history guide</a> for API flags,
+          refresh behavior and investigation limits.</p>
         <figure class="shot">
           <div class="cap">Admin → Cron: schedules across every tenant</div>
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron" width="960" height="600" />

@@ -49,6 +49,14 @@ Discover and operate an existing agent:
   child-run navigation. Empty history, unavailable reads and failures before run
   creation remain different cases. This adds no fire ledger, replay, next-fire
   prediction or scheduler behavior.
+- [Cron calendar preview](internal/cron-next-fire-preview.md) separately projects
+  one next calendar boundary using the scheduler's shared backend parser.
+  Independent `include_preview=true` leaves definition-only/history-only callers
+  compatible and adds no thread/run/claim lookups to preview-only requests.
+  Timezone/DST behavior follows the pinned parser; relative `@every` preview is
+  unavailable without an anchor. A projected boundary is not a dispatch promise,
+  skip ledger or live countdown. Specific parser/interval guards are documented
+  separately from the preview's read-only behavior.
 - [Offline static policy fixtures](policy-fixtures.md) run `runkite policy test`
   over declared grants, predicates and mandatory review using the current
   engine. They contact no services and execute no tools. Live

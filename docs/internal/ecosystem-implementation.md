@@ -68,29 +68,34 @@ only what was actually qualified. No finite suite proves absence of all bugs.
 
 ## Next authorized slices, in order
 
-1. **Static graph schema recovery: implementation and qualification in progress.**
+1. **Static graph schema recovery: merged and qualified.**
    Reuse cached Python static LangGraph reports and add atomic bootstrap-only
    recovery after registration resets. Preserve useful/partial reports, old-plane
    compatibility, unknown freshness and existing MCP session snapshots. The
    [engineering contract](schema-publication-recovery.md) records the local
-   real-worker and storage qualification. Hosted checks remain a separate PR
-   merge gate.
-2. **Optional tools-only connector profiles: implementation and qualification in progress.**
+   real-worker and storage qualification. [PR #87](https://github.com/getrunkite/runkite/pull/87)
+   merged as `f738af4f0b5af60f09e2d249fbd72d0795cb30b2` after all 16 hosted
+   checks passed. This remains Unreleased source, not a new published artifact.
+2. **Optional tools-only connector profiles: implemented.**
    The [connector profile](tools-only-connectors.md) adds an opt-in inbound method
    allowlist and narrowed initialize capabilities to the existing proxy, with
    v4 managed target binding. Default behavior stays compatible. Tool results,
    SDK upstream negotiation and the separate session-credential acquisition
-   boundary are not narrowed into a broader isolation claim.
-3. **Cron schedule preview: selected, not implemented by this slice.**
-   Define and qualify preview separately after the connector slice. Existing
-   scheduler behavior and retained-run visibility are unchanged here. Preview
-   must not be confused with a per-fire receipt ledger.
+   boundary are not narrowed into a broader isolation claim. Commit `60b833f`
+   and [PR #88](https://github.com/getrunkite/runkite/pull/88) track the exact
+   implementation and its separate public review, hosted and merge gates.
+3. **Cron schedule preview: implemented.**
+   The [calendar projection](cron-next-fire-preview.md) uses a shared backend
+   parser and independent `include_preview=true`, preserving definition-only
+   and history-only response/read-cost boundaries. Specific parser/interval
+   liveness corrections are documented separately from dispatch guarantees.
+   Preview is not a per-fire receipt ledger. Check the matching implementation
+   PR's hosted results for the exact qualification state.
 
 These are current-source work items, not additions to published v0.9.0 artifacts
 or evidence that the three implementations and release gates are complete.
-The schema-recovery [PR #87](https://github.com/getrunkite/runkite/pull/87)
-has separate hosted checks and merge state; inspect that review rather than
-inferring it from this follow-on worktree.
+Track the later slices' current public checks independently; the first slice's
+merged qualification does not qualify the rest of this worktree or a release.
 
 ## Follow-on qualification: Langfuse OTLP
 
