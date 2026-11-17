@@ -88,6 +88,22 @@ enqueue path. Custom Go stores must enforce `FailUnstarted` and
 `ExpectedIncarnationID` inside the completion transaction and pass the shared
 conformance suite; these conditions are required. See the [transaction and regression notes](internal/atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
 
+Cron now retains an occurrence's fire claim and advances its local anchor when
+the original run was admitted, completed or remains uncertain. It releases the
+claim for automatic retry only after a proven precreation failure or this
+call's successful atomic never-started rollback. An ambiguous run insertion,
+missing original identity, cleanup/store error or finalization error retains
+the claim. A previously applied rollback replay is not new retry proof.
+
+Use the retained-fire warning's exact tenant, schedule, fire time and original
+run ID to reconcile an uncertain outcome. Do not infer its identity from the
+latest run on the schedule thread, or delete its fire claim to force a retry.
+An explicit replacement operation still needs downstream idempotency. Upgrade
+all cron-serving replicas before relying on this correction; older schedulers
+can release a claim after acknowledgement loss. No fire-to-run receipt table,
+automatic replay of uncertain work or cross-system transaction is added. See
+the [cron retry contract](internal/cron-run-visibility.md#acknowledgement-loss-and-fire-claims-unreleased).
+
 ## Static graph schema publication recovery (Unreleased)
 
 This checkout adds automatic recovery for the default-tenant static Python

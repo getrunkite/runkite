@@ -160,6 +160,14 @@ retained run before starting replacement work; acknowledgement failure alone
 does not mean the agent stopped. A failed finalization can also require retry or
 operator reconciliation after the terminal row has committed.
 
+The scheduled caller now uses the cleanup's positive applied result to decide
+whether its occurrence can retry. Admitted, completed and uncertain outcomes
+retain the fire claim; only proven precreation rejection or successful applied
+never-started cleanup permits release. Normal and cache writes retain private
+creation progress so a lost commit acknowledgement cannot be called a failure
+before creation. The original error chain and ordinary HTTP responses remain
+unchanged. See the [cron retry boundary](cron-run-visibility.md#acknowledgement-loss-and-fire-claims-unreleased).
+
 Sources: [rollback and shared creation](../../internal/api/runs.go),
 [completion/finalization](../../internal/api/completion.go),
 [conditional completion](../../internal/state/completion.go).

@@ -89,6 +89,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   cross-replica atomic queue fencing, including when Redis supplies events,
   cancellation and the reclaim leader.
 
+- Retain cron fire claims after admitted, completed or uncertain dispatch
+  outcomes. Retry only after a definite precreation rejection or positive atomic
+  proof that the original run never started. Preserve ordinary HTTP errors and
+  tenant/thread continuity without a new fire ledger or schema migration.
+
 - Isolate newly created named-tenant cron threads so same-named schedules can
   dispatch independently on supported tenant-scoped stores. Reuse an existing
   exact-owned legacy thread to preserve conversation/checkpoint continuity;
