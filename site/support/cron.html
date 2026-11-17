@@ -86,7 +86,7 @@
             <h2>What it is</h2>
             <p>
               Named schedules in <code>langgraph.json</code> (5-field cron + optional IANA timezone).
-              Each fire creates a run on a fixed thread <code>cron:&lt;schedule-name&gt;</code> so history stays browsable as one thread.
+              Each fire creates a run on a stable schedule thread so history stays browsable. Configuration-file schedules use the default tenant and retain <code>cron:&lt;schedule-name&gt;</code>.
             </p>
           </section>
           <section>
@@ -103,7 +103,7 @@
           <li>Add a <code>cron</code> block to a discovered config (schedules bootstrap from every file, like graphs).</li>
           <li>Point <code>agent_id</code> at a registered agent; set <code>expression</code> and optional <code>timezone</code> / <code>input</code>.</li>
           <li>Confirm the schedule in Admin → Cron (or <code>GET /internal/cron</code>).</li>
-          <li>After a fire, open thread <code>cron:&lt;name&gt;</code> and the run stream like any other run.</li>
+          <li>After a fire, open the schedule's thread from Admin Cron and its run stream like any other run. Default schedules retain <code>cron:&lt;name&gt;</code>.</li>
         </ol>
         <pre class="mono-block">"cron": {
   "daily-report": {
@@ -123,7 +123,7 @@
         <h2>Run visibility (Unreleased, current source)</h2>
         <p>
           Admin &rarr; Cron refreshes every 15 seconds and shows the latest retained run on each
-          schedule's <code>cron:&lt;name&gt;</code> thread. Open a linked run status for its result, or
+          schedule's resolved thread. Open a linked run status for its result, or
           use the thread link to browse retained history. Links select the schedule's exact tenant.
           Disabled schedules can still have retained runs.
         </p>
@@ -143,9 +143,8 @@
         </p>
         <p>
           Skipped overlaps and failures before run creation do not have their own records in this view.
-          Runs created by another caller on the same thread also appear. Thread IDs are globally unique
-          today, so use distinct schedule names across tenants to avoid a <code>cron:&lt;name&gt;</code>
-          collision. The view never substitutes a different tenant's history for a missing thread.
+          Runs created by another caller on the same thread also appear. The view never substitutes
+          a different tenant's history for a missing thread.
         </p>
         <p>
           The existing definition-only <code>GET /admin-api/cron</code> response is unchanged.
@@ -153,6 +152,10 @@
           <code>GET /admin-api/cron?include_history=true</code>. This visibility does not add a
           scheduler, per-fire receipts or retries. The separate optional calendar preview below is not retained execution history.
         </p>
+
+        <h2 id="tenant-thread-routing">Named-tenant continuity (Unreleased)</h2>
+        <p>Default schedules keep <code>cron:&lt;name&gt;</code>. Named tenants first select their own versioned <code>cron-tenant:v1:&lt;digest&gt;</code> thread, reuse an existing legacy <code>cron:&lt;name&gt;</code> only when owned by that exact tenant, or create their canonical thread. This lets supported tenant-scoped schedules with equal names run independently without importing conversation history.</p>
+        <p><strong>Upgrade:</strong> stop all cron writers before upgrading or rolling back. Mixed old/new schedulers can split a new named schedule's history. Existing owned legacy state stays on its original thread. If both owned threads exist, canonical takes precedence; inspect both because state is never merged automatically. Named LangGraph tenants still need proxy checkpoints. This adds no schema migration and does not repair older databases that retain a global schedule-name constraint. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#named-tenant-thread-routing-unreleased">routing contract</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#cron-tenant-thread-routing-unreleased">operator procedure</a>.</p>
 
         <h2 id="next-fire-preview">Next calendar boundary (Unreleased)</h2>
         <p>Admin Cron can show one projected future calendar boundary from the same pinned backend parser used by the scheduler. Read the UTC computation time and effective timezone with it. A boundary is strictly after that computation instant; it is not reserved work, a dispatch promise, a live countdown or evidence that a previous fire occurred.</p>

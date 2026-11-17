@@ -93,6 +93,37 @@ Schema definitions can contain sensitive defaults, examples and descriptions.
 Share only redacted diagnostics, not schema dumps, credentials or upstream error
 bodies. See the [exact algorithm and recovery procedure](internal/schema-publication-recovery.md).
 
+## Cron tenant thread routing (Unreleased)
+
+The source dispatch path and Admin history share tenant-aware thread selection.
+Default schedules keep `cron:<name>`. A named tenant prefers its canonical
+`cron-tenant:v1:<digest>` thread, otherwise reuses its own existing legacy thread,
+otherwise selects canonical. An unreadable store does not trigger a fallback.
+Existing thread IDs and checkpoint keys are never renamed or imported.
+
+1. Stop every cron writer before deploying or rolling back this change. Include
+   external callers of `DispatchScheduledRun`. Mixed versions can split a new
+   named schedule's conversation because older schedulers always use legacy IDs.
+2. Back up schedule definitions and retained thread/checkpoint data. Inspect
+   existing legacy history before removing a thread or choosing fresh context.
+   Preserve exact tenant bytes; do not trim or normalize the identifiers.
+3. Upgrade all cron-serving processes together. Open Admin Cron with
+   `include_history=true` and follow its resolved thread link. An owned legacy
+   conversation stays on its original thread unless canonical already exists.
+   If both exist, inspect both: canonical wins and no state is merged.
+4. Use an isolated synthetic schedule to verify dispatch and retained history
+   for the intended tenant. A foreign existing ID, store failure or busy thread
+   must remain an error or overlap, never permission to switch conversations.
+   Named LangGraph tenants still need proxy checkpoints. This adds no native
+   checkpoint migration or provider-side idempotency.
+
+Configuration files still bootstrap default-tenant schedules with names unique
+across discovered files. Tenant-scoped store callers can use the new routing
+for named schedules. There is no new schema migration: pre-tenancy databases
+that retain a global schedule-name primary key need separate schema assessment
+before claiming same-name schedule support. Do not edit migration stamps to
+remove that constraint. See the [selection and continuity contract](internal/cron-run-visibility.md#named-tenant-thread-routing-unreleased).
+
 ## Cron calendar preview (Unreleased)
 
 Admin Cron can request `include_preview=true` independently of retained history.

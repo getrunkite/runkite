@@ -69,9 +69,14 @@ change an existing binary, image, wheel or npm install.
   overlap/latest-only catch-up remain.
 - Cron shows retained rows on the schedule's thread, including rows another
   caller created. It has no receipt for a skipped overlap or failure before run
-  creation. Empty history does not mean never fired. Thread IDs remain globally
-  unique, so equal schedule names across tenants can contend; use distinct
-  names. Retained-run links open guarded, read-only snapshots with manual
+  creation. Empty history does not mean never fired. Unreleased named-tenant
+  routing separates new schedule threads while preserving an existing owned
+  legacy thread. Default IDs remain unchanged. Stop all cron writers for a
+  coordinated upgrade or rollback; mixed versions can split first-fire history.
+  No thread/checkpoint state is merged or migrated, and older global
+  schedule-name constraints are not repaired. See the
+  [routing procedure](ops-runbook.md#cron-tenant-thread-routing-unreleased).
+  Retained-run links open guarded, read-only snapshots with manual
   Refresh. These views expose no live SSE, cancellation or child-run navigation;
   the guard is not an SSE incarnation fence. The view adds no next-fire preview
   or dispatch/retry behavior.

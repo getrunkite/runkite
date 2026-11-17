@@ -2,14 +2,12 @@ package api
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/getrunkite/runkite/internal/cronschedule"
 	"github.com/getrunkite/runkite/internal/models"
-	"github.com/getrunkite/runkite/internal/state"
 	"github.com/getrunkite/runkite/internal/tenant"
 )
 
@@ -70,13 +68,13 @@ func (s *Server) handleAdminListCronSchedulesAt(w http.ResponseWriter, r *http.R
 				tenantID = tenant.DefaultTenant
 			}
 			ctx := tenant.ScopedContext(r.Context(), tenantID)
-			view.adminCronHistoryView = &adminCronHistoryView{ThreadID: "cron:" + schedule.Name, HistoryStatus: "available"}
-			_, threadErr := s.store.GetThread(ctx, view.ThreadID)
-			view.ThreadAvailable = threadErr == nil
-			var missing *state.ErrNotFound
-			if threadErr != nil && !errors.As(threadErr, &missing) {
+			threadID, thread, threadErr := s.resolveCronThread(ctx, schedule.Name)
+			view.adminCronHistoryView = &adminCronHistoryView{ThreadID: threadID, ThreadAvailable: thread != nil, HistoryStatus: "available"}
+			if threadErr != nil {
 				view.HistoryStatus = "unavailable"
 				slog.Warn("cron history: thread lookup failed", "tenant", schedule.TenantID, "name", schedule.Name, "error", threadErr)
+				views = append(views, view)
+				continue
 			}
 			runs, runErr := s.store.SearchRuns(ctx, &models.RunSearchRequest{ThreadID: view.ThreadID, Limit: 1})
 			if runErr != nil {

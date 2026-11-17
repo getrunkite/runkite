@@ -75,6 +75,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Isolate newly created named-tenant cron threads so same-named schedules can
+  dispatch independently on supported tenant-scoped stores. Reuse an existing
+  exact-owned legacy thread to preserve conversation/checkpoint continuity;
+  share resolution with Admin history and scope the full dispatch context.
+  Default IDs stay unchanged. Stop all cron writers for upgrade or rollback;
+  mixed versions can split first-fire history. No schema or state migration.
+
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`
   so intervals longer than the scheduler tick can become due. Calendar
