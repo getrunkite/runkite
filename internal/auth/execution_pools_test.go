@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/getrunkite/runkite/internal/execution"
@@ -82,6 +83,61 @@ func TestPoolHTTPDoesNotExposeUnboundOrForeignData(t *testing.T) {
 			h.ServeHTTP(w, r)
 			if w.Code != tc.status || (tc.status != 200 && calls != 0) {
 				t.Fatalf("status=%d calls=%d body=%s", w.Code, calls, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestPoolSchemaRecoveryAllowlistMatchesExactDecodedGraph(t *testing.T) {
+	rt, token := poolFixture(t)
+	const encodedAgent = "finance/雪?#%"
+	pools, err := execution.NewCatalog(map[string]execution.Pool{"finance": {
+		RunnerKind: "python-langgraph", Tenants: []string{"acme"}, Agents: []string{"finance", encodedAgent},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.ConfigureExecutionPools(pools); err != nil {
+		t.Fatal(err)
+	}
+	assignments := poolInflight{"one": {RunID: "one", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "finance", Generation: 1}}
+	for _, tc := range []struct {
+		name, method, path, tenant, run string
+		status                          int
+	}{
+		{"own", "POST", "/internal/agents/finance/schema/recover", "acme", "", 204},
+		{"encoded_own", "POST", "/internal/agents/" + url.PathEscape(encodedAgent) + "/schema/recover", "acme", "", 204},
+		{"encoded_startup", "PUT", "/internal/agents/" + url.PathEscape(encodedAgent) + "/schema", "acme", "", 204},
+		{"double_encoding_is_distinct", "POST", "/internal/agents/" + url.PathEscape(url.PathEscape(encodedAgent)) + "/schema/recover", "acme", "", 401},
+		{"foreign", "POST", "/internal/agents/other/schema/recover", "acme", "", 401},
+		{"foreign_with_assignment", "POST", "/internal/agents/other/schema/recover", "acme", "one", 403},
+		{"wrong_tenant", "POST", "/internal/agents/finance/schema/recover", "other", "", 403},
+		{"wrong_method", "PUT", "/internal/agents/finance/schema/recover", "acme", "", 401},
+		{"read_not_allowlisted", "GET", "/internal/agents/finance/schema/recover", "acme", "", 401},
+		{"post_is_not_startup", "POST", "/internal/agents/finance/schema", "acme", "", 401},
+		{"suffix_is_exact", "POST", "/internal/agents/finance/schema/recover/extra", "acme", "", 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			handler := MiddlewareWithOpts(nil, nil, rt, MiddlewareOpts{Inflight: assignments}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if got := RunnerKindFromContext(r.Context()); got != "pool-finance" {
+					t.Errorf("authenticated pool kind=%q", got)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			r := httptest.NewRequest(tc.method, tc.path, nil)
+			r.Header.Set(HeaderRunnerKind, "pool-finance")
+			r.Header.Set(HeaderRunnerToken, token)
+			r.Header.Set(HeaderTenantID, tc.tenant)
+			if tc.run != "" {
+				r.Header.Set(HeaderRunID, tc.run)
+				r.Header.Set(HeaderGeneration, "1")
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			if w.Code != tc.status || (tc.status == 204 && calls != 1) || (tc.status != 204 && calls != 0) {
+				t.Fatalf("status=%d calls=%d, want status=%d", w.Code, calls, tc.status)
 			}
 		})
 	}

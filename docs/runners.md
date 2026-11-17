@@ -211,6 +211,22 @@ Kept separate rather than merged into the main compose file because a single con
 
 Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).
 
+### Static graph schema publication recovery (Unreleased)
+
+The Python LangGraph worker caches its loaded static graphs' real schemas once.
+Its existing startup PUT remains, while a separate bounded task repeats
+bootstrap-only recovery rounds with a 60-second interval, whether the worker is
+idle or busy. A matching plane atomically fills only an existing all-stub row;
+useful/partial reports stay intact. Older planes return 404 and unsupported
+custom stores 501, with no recovery fallback to PUT. Startup PUT still has its
+original replacement semantics.
+
+This does not add introspection for factories, TypeScript, generic/other Python
+adapters or named tenants. A recovered schema does not prove worker/code
+freshness, and existing MCP sessions need reconnection to see a changed report.
+Follow the [publication and recovery contract](internal/schema-publication-recovery.md)
+for cache bounds, privacy, rollout and operator checks.
+
 ### Managed AI SDK TypeScript runner
 
 The optional `typescript-ai-sdk` backend runs native Vercel AI SDK agents as

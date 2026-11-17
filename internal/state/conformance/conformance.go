@@ -22,6 +22,7 @@ type StoreFactory func(t *testing.T) state.Store
 // RunStoreSuite runs all conformance tests.
 func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("agents", func(t *testing.T) { runAgentTests(t, factory) })
+	t.Run("agent_schema_recovery", func(t *testing.T) { RunAgentSchemaRecoveryTests(t, factory) })
 	t.Run("registry", func(t *testing.T) { runRegistryTests(t, factory) })
 	t.Run("threads", func(t *testing.T) { runThreadTests(t, factory) })
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })

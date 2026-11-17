@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/getrunkite/runkite/internal/auth"
 	"github.com/getrunkite/runkite/internal/models"
+	"github.com/getrunkite/runkite/internal/state"
 )
 
 // POST /agents/search
@@ -72,11 +74,28 @@ func (s *Server) handleGetAgentSchemas(w http.ResponseWriter, r *http.Request) {
 // duplicate-key-to-ErrConflict wrapping did, for a case that's cheap to
 // just check up front instead.
 func (s *Server) handleReportAgentSchema(w http.ResponseWriter, r *http.Request) {
+	s.writeAgentSchema(w, r, false)
+}
+
+// POST /internal/agents/{agentID}/schema/recover is a separate operation so an
+// older plane rejects recovery rather than performing unconditional publication.
+func (s *Server) handleRecoverAgentSchema(w http.ResponseWriter, r *http.Request) {
+	s.writeAgentSchema(w, r, true)
+}
+
+func (s *Server) writeAgentSchema(w http.ResponseWriter, r *http.Request, recovery bool) {
 	agentID := r.PathValue("agentID")
 
-	if _, err := s.store.GetAgent(r.Context(), agentID); err != nil {
+	agent, err := s.store.GetAgent(r.Context(), agentID)
+	if err != nil {
 		handleStoreError(w, err)
 		return
+	}
+	if kind := auth.RunnerKindFromContext(r.Context()); kind != "" {
+		if expected, _ := agent.Metadata["runner_kind"].(string); expected != "" && expected != kind {
+			writeError(w, http.StatusForbidden, "schema reporter does not own this agent's runner kind")
+			return
+		}
 	}
 
 	var schema models.AgentSchema
@@ -85,6 +104,19 @@ func (s *Server) handleReportAgentSchema(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	schema.AgentID = agentID
+	if recovery {
+		recoverer, ok := s.store.(state.AgentSchemaRecoveryStore)
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "schema recovery is unavailable for this store")
+			return
+		}
+		if _, err := recoverer.RecoverAgentSchema(r.Context(), &schema); err != nil {
+			handleStoreError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	if err := s.store.UpsertAgentSchema(r.Context(), &schema); err != nil {
 		handleStoreError(w, err)

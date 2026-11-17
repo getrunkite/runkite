@@ -152,6 +152,9 @@ func MiddlewareWithOpts(provider Provider, adminProvider Provider, runnerTokens 
 					return
 				}
 			}
+			if runnerTokens.Enabled() {
+				r = r.WithContext(withAuthenticatedRunnerKind(r.Context(), kind))
+			}
 			if runnerTokens.WorkloadIdentityEnabled() {
 				ctx, err := runnerTokens.AuthenticateWorkloadTLS(r.Context(), r.TLS, kind)
 				if err != nil {

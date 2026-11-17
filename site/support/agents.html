@@ -109,6 +109,10 @@
           See <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/agent-capabilities.md">the descriptor and rollout contract</a>
           and the <a href="frameworks.html">framework matrix</a>.</p>
 
+        <h2 id="schema-recovery">Recover static graph schemas (Unreleased)</h2>
+        <p>The Python LangGraph worker now caches loaded static graphs' schemas once and runs bounded recovery independently of job polling. A matching plane atomically fills only an existing row whose four schema fields are exact bootstrap stubs. Useful/partial reports are retained. The existing startup PUT keeps its replacement behavior, and an older same-kind worker can win recovery after a reset; this does not attest current code.</p>
+        <p>Use matching plane/worker versions. Older planes return 404 and custom stores without the optional extension return 501; recovery does not fall back to PUT. Inspect the existing schema view and fixed diagnostics, then reconnect MCP clients to discover an update. The 60-second interval is not a delivery SLA. Factory, TypeScript, other Python and named-tenant introspection are unchanged. Definitions can contain sensitive defaults/examples, so redact support captures. Follow the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#static-graph-schema-publication-recovery-unreleased">operator procedure</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/schema-publication-recovery.md">bounded publication contract</a>.</p>
+
         <h2>How to implement</h2>
         <ol class="steps">
           <li><strong>Python (LangGraph)</strong>: install <code>runkite-runner</code>, point at your graph config, connect gRPC/HTTP to the plane.</li>

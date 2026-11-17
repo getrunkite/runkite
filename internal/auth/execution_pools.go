@@ -9,14 +9,20 @@ import (
 // A pool can report schemas for its own agents before it has an assignment.
 // Every data-bearing pool route otherwise requires active run binding.
 func poolSchemaAgentAllowed(tokens *RunnerTokens, kind string, r *http.Request) bool {
-	if r.Method != http.MethodPut {
-		return false
-	}
 	path := r.URL.EscapedPath()
-	if !strings.HasPrefix(path, "/internal/agents/") || !strings.HasSuffix(path, "/schema") {
+	suffix := ""
+	switch {
+	case r.Method == http.MethodPut && strings.HasSuffix(path, "/schema"):
+		suffix = "/schema"
+	case r.Method == http.MethodPost && strings.HasSuffix(path, "/schema/recover"):
+		suffix = "/schema/recover"
+	default:
 		return false
 	}
-	raw := strings.TrimSuffix(strings.TrimPrefix(path, "/internal/agents/"), "/schema")
+	if !strings.HasPrefix(path, "/internal/agents/") {
+		return false
+	}
+	raw := strings.TrimSuffix(strings.TrimPrefix(path, "/internal/agents/"), suffix)
 	if raw == "" || strings.Contains(raw, "/") {
 		return false
 	}

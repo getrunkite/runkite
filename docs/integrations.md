@@ -14,6 +14,12 @@ provides the same availability boundary for operators.
 
 Discover and operate an existing agent:
 
+- [Static graph schema recovery](internal/schema-publication-recovery.md) keeps
+  cached static Python LangGraph reports recoverable after a registration reset
+  or failed startup publication. Its new endpoint atomically fills only existing
+  exact bootstrap rows, preserving useful/partial reports. Matching plane and
+  worker versions are required. Other SDK/factory/named-tenant introspection and
+  code freshness are not added; existing MCP catalogs still need reconnecting.
 - [Structured MCP input discovery](internal/mcp-input-schemas.md) enriches only
   the nested `input` envelope from a bounded usable report. Raw invocation,
   defaults and coercion stay unchanged. Missing or unsupported reports remain
