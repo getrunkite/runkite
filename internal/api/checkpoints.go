@@ -52,6 +52,15 @@ func assertBoundThread(w http.ResponseWriter, r *http.Request, threadID string) 
 	return true
 }
 
+func assertCheckpointRecordIdentity(w http.ResponseWriter, r *http.Request) bool {
+	binding := auth.RunBindingFromContext(r.Context())
+	if binding == nil || binding.RunIncarnationID == "" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "original run record binding required", "reason_code": auth.ReasonRunBindingRequired})
+		return false
+	}
+	return true
+}
+
 func etagFromVersion(v int64) string {
 	return fmt.Sprintf(`"%d"`, v)
 }
@@ -86,6 +95,9 @@ func (s *Server) handlePutOpaqueCheckpoint(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !assertBoundThread(w, r, threadID) {
+		return
+	}
+	if !assertCheckpointRecordIdentity(w, r) {
 		return
 	}
 
@@ -129,7 +141,7 @@ func (s *Server) handlePutOpaqueCheckpoint(w http.ResponseWriter, r *http.Reques
 
 	binding := auth.RunBindingFromContext(r.Context())
 	ver, err := s.store.PutBoundOpaqueCheckpoint(r.Context(), state.RunCheckpointBinding{
-		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID,
+		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID, RecordIdentity: binding.RunIncarnationID,
 	}, checkpointID, body, framework, ifMatch)
 	if err != nil {
 		var fence *state.ErrRunCheckpointFence
@@ -259,10 +271,13 @@ func (s *Server) handleDeleteOpaqueCheckpoint(w http.ResponseWriter, r *http.Req
 	if !assertBoundThread(w, r, threadID) {
 		return
 	}
+	if !assertCheckpointRecordIdentity(w, r) {
+		return
+	}
 
 	binding := auth.RunBindingFromContext(r.Context())
 	if err := s.store.DeleteBoundOpaqueCheckpoint(r.Context(), state.RunCheckpointBinding{
-		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID,
+		RunID: binding.RunID, Generation: binding.Generation, ThreadID: threadID, RecordIdentity: binding.RunIncarnationID,
 	}, checkpointID); err != nil {
 		var fence *state.ErrRunCheckpointFence
 		if errors.As(err, &fence) {

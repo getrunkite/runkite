@@ -61,8 +61,15 @@ func withTestCheckpointRunBinding(store state.Store, next http.Handler) http.Han
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			incarnation := ""
+			if run, err := store.GetRun(r.Context(), runID); err == nil {
+				incarnation = run.IncarnationID
+			} else if !errors.As(err, new(*state.ErrNotFound)) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			r = r.WithContext(auth.WithRunBinding(r.Context(), &auth.RunBinding{
-				RunID: runID, Generation: gen, TenantID: "default",
+				RunID: runID, RunIncarnationID: incarnation, Generation: gen, TenantID: "default",
 				ThreadID: threadID, AgentID: "test",
 			}))
 		}
@@ -221,9 +228,13 @@ func TestOpaqueCheckpointThreadMismatch(t *testing.T) {
 	if err := seedCheckpointRun(ctx, env.store, "run-1", thread.ThreadID, 1); err != nil {
 		t.Fatal(err)
 	}
+	run, err := env.store.GetRun(ctx, "run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	inflight := map[string]*transport.RunAssignment{
-		"run-1": {RunID: "run-1", Generation: 1, TenantID: "default", ThreadID: "thr-bound", GraphID: "g"},
+		"run-1": {RunID: "run-1", RunIncarnationID: state.RunIdentity(run), Generation: 1, TenantID: "default", ThreadID: "thr-bound", GraphID: "g"},
 	}
 	lookup := authInflight(inflight)
 	h := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, env.apiServer.Handler())

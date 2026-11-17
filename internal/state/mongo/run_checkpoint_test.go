@@ -80,7 +80,11 @@ func TestBoundCheckpointRejectsRunChangedAfterSnapshotRead(t *testing.T) {
 				if _, err := store.PutOpaqueCheckpoint(ctx, "thread", "state", []byte("committed history"), "adapter", nil); err != nil {
 					t.Fatal(err)
 				}
-				binding := state.RunCheckpointBinding{RunID: "run", Generation: 1, ThreadID: "thread"}
+				run, err := store.GetRun(ctx, "run")
+				if err != nil {
+					t.Fatal(err)
+				}
+				binding := state.RunCheckpointBinding{RunID: "run", Generation: 1, ThreadID: "thread", RecordIdentity: state.RunIdentity(run)}
 				result := make(chan error, 1)
 				go func() {
 					oldCtx := context.WithValue(ctx, checkpointMonitorContextKey{}, true)

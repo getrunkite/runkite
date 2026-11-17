@@ -1664,6 +1664,7 @@ func (s *Store) PruneOpaqueCheckpoints(ctx context.Context, keepLast int) (int64
 // --------------------------------------------------------------------------
 
 type runDoc struct {
+	ID        interface{} `bson:"_id,omitempty"`
 	TenantID  string      `bson:"tenant_id"`
 	RunID     string      `bson:"run_id"`
 	ThreadID  string      `bson:"thread_id"`
@@ -1686,6 +1687,10 @@ type runDoc struct {
 }
 
 func toRun(doc runDoc) (*models.Run, error) {
+	recordID, supported := doc.ID.(bson.ObjectID)
+	if !supported || recordID.IsZero() {
+		return nil, fmt.Errorf("run has no supported immutable storage identity")
+	}
 	input, err := applicationJSON(doc.Input)
 	if err != nil {
 		return nil, err
@@ -1699,7 +1704,8 @@ func toRun(doc runDoc) (*models.Run, error) {
 		return nil, err
 	}
 	r := &models.Run{
-		TenantID: doc.TenantID, RunID: doc.RunID, ThreadID: doc.ThreadID, AgentID: doc.AgentID,
+		StorageIdentity: "mongo-objectid:" + recordID.Hex(),
+		TenantID:        doc.TenantID, RunID: doc.RunID, ThreadID: doc.ThreadID, AgentID: doc.AgentID,
 		AssistantID: doc.AgentID, Status: models.RunStatus(doc.Status), Metadata: bsonToMap(doc.Metadata),
 		Input: input, Config: config, Output: output,
 		Error: doc.ErrorMsg, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt, Depth: doc.Depth,

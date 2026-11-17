@@ -139,7 +139,7 @@ func (s *Server) completeRunResult(ctx context.Context, c *state.RunCompletion) 
 	if err != nil {
 		return state.CompletionResult{}, err
 	}
-	if c.ExpectedIncarnationID != "" && c.ExpectedIncarnationID != run.IncarnationID {
+	if c.ExpectedIncarnationID != "" && c.ExpectedIncarnationID != state.RunIdentity(run) {
 		return state.CompletionResult{}, &state.ErrConflict{Resource: "run", ID: c.RunID, Reason: "retained run incarnation changed"}
 	}
 	if err := state.CheckRunCompletionOwner(ctx, run.Metadata, c); err != nil {
@@ -299,7 +299,7 @@ func (s *Server) completeObservedRun(ctx context.Context, run *models.Run, termi
 		return nil, err
 	}
 	if terminal != "" && !state.TerminalRunStatus(latest.Status) {
-		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: run.IncarnationID, RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
+		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: state.RunIdentity(run), RunID: run.RunID, Generation: generation, Status: models.RunStatus(terminal)}); err != nil {
 			return nil, err
 		}
 		return s.getObservedRun(ctx, run)
@@ -342,7 +342,7 @@ func (s *Server) awaitDurableCompletion(ctx context.Context, run *models.Run) (*
 			if event.Method == "end" {
 				terminal = data.Status
 			}
-			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: run.IncarnationID, RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
+			accepted, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: state.RunIdentity(run), RunID: run.RunID, Generation: generation, Status: terminal, Error: data.Message})
 			if err != nil {
 				return nil, err
 			}

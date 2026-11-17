@@ -712,7 +712,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// Build RunAssignment for the runner
 	assignment := &transport.RunAssignment{
 		RunID:            runID,
-		RunIncarnationID: run.IncarnationID,
+		RunIncarnationID: state.RunIdentity(run),
 		ThreadID:         threadID,
 		RunnerKind:       runnerKind,
 		GraphID:          req.AgentID,

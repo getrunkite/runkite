@@ -2548,7 +2548,7 @@ func (s *Store) putOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	defer tx.Rollback() //nolint:errcheck // no-op if committed
 	if binding != nil {
 		driver := sqlcompletion.DatabaseSQL(s.db, "mysql")
-		if err := driver.LockRunCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
+		if err := driver.LockOpaqueCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
 			return 0, err
 		}
 	} else if _, err := s.completionDriver().LockThread(ctx, sqlcompletion.WrapSQLTransaction(tx), threadID); err != nil {

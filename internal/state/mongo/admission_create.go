@@ -49,7 +49,8 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 	}
 
 	tid := tenant.FromContext(ctx)
-	return s.withTransaction(ctx, func(sessCtx context.Context) error {
+	recordID := bson.NewObjectID()
+	err = s.withTransaction(ctx, func(sessCtx context.Context) error {
 		// Touch lock docs first (upsert $inc) so concurrent transactions
 		// on the same scope conflict and retry with a fresh snapshot.
 		if caps.Enabled() && (caps.TenantConcurrent > 0 || caps.TenantDaily > 0) {
@@ -97,6 +98,7 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 		}
 
 		doc := runDoc{
+			ID:       recordID,
 			TenantID: tid, RunID: run.RunID, ThreadID: run.ThreadID, AgentID: run.AgentID,
 			Status: string(run.Status), Metadata: run.Metadata, Input: input, Config: config,
 			CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt, Depth: run.Depth,
@@ -119,6 +121,10 @@ func (s *Store) createRun(ctx context.Context, run *models.Run, caps *state.RunA
 		}
 		return nil
 	})
+	if err == nil {
+		run.StorageIdentity = "mongo-objectid:" + recordID.Hex()
+	}
+	return err
 }
 
 func touchAdmissionLock(ctx context.Context, s *Store, id string) error {

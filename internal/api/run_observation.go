@@ -60,14 +60,14 @@ func (s *Server) publicRunObservation(w http.ResponseWriter, r *http.Request, wa
 	return run, true
 }
 
-// getObservedRun refuses deletion/replacement throughout a wait. Legacy stores
-// without SQL incarnations keep their existing compatibility boundary.
+// getObservedRun refuses deletion/replacement throughout a wait. An internal
+// backend record identity does not enable public SQL observation references.
 func (s *Server) getObservedRun(ctx context.Context, original *models.Run) (*models.Run, error) {
 	latest, err := s.store.GetRun(ctx, original.RunID)
 	if err != nil {
 		return nil, err
 	}
-	if latest.IncarnationID != original.IncarnationID || latest.AgentID != original.AgentID || latest.ThreadID != original.ThreadID ||
+	if state.RunIdentity(latest) != state.RunIdentity(original) || latest.AgentID != original.AgentID || latest.ThreadID != original.ThreadID ||
 		(latest.TenantID != "" && latest.TenantID != tenant.FromContext(ctx)) {
 		return nil, &state.ErrConflict{Resource: "run", ID: original.RunID, Reason: "retained run incarnation changed"}
 	}

@@ -19,10 +19,13 @@ import (
 	"github.com/getrunkite/runkite/internal/transport"
 )
 
-type checkpointFenceInflight struct{ generation atomic.Int64 }
+type checkpointFenceInflight struct {
+	generation  atomic.Int64
+	incarnation string
+}
 
 func (i *checkpointFenceInflight) LookupInflight(context.Context, string) (*transport.RunAssignment, error) {
-	return &transport.RunAssignment{RunID: "checkpoint-run", ThreadID: "checkpoint-thread", GraphID: "agent", TenantID: "default", Generation: i.generation.Load()}, nil
+	return &transport.RunAssignment{RunID: "checkpoint-run", RunIncarnationID: i.incarnation, ThreadID: "checkpoint-thread", GraphID: "agent", TenantID: "default", Generation: i.generation.Load()}, nil
 }
 
 type checkpointDelayedBody struct {
@@ -58,7 +61,11 @@ func TestOpaqueCheckpointWriteFenceAfterAuthorization(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			lookup := &checkpointFenceInflight{}
+			run, err := env.store.GetRun(ctx, "checkpoint-run")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lookup := &checkpointFenceInflight{incarnation: run.IncarnationID}
 			lookup.generation.Store(1)
 			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, env.apiServer.Handler())
 			body := &checkpointDelayedBody{entered: make(chan struct{}), release: make(chan struct{}), body: bytes.NewBufferString("stale")}
@@ -137,7 +144,11 @@ func TestOpaqueCheckpointDeleteFenceAfterAuthorization(t *testing.T) {
 			if _, err := env.store.PutOpaqueCheckpoint(ctx, "checkpoint-thread", "adapter-state", []byte("saved"), "test", nil); err != nil {
 				t.Fatal(err)
 			}
-			lookup := &checkpointFenceInflight{}
+			run, err := env.store.GetRun(ctx, "checkpoint-run")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lookup := &checkpointFenceInflight{incarnation: run.IncarnationID}
 			lookup.generation.Store(1)
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once

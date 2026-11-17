@@ -349,6 +349,18 @@ change historical payloads. Before resuming sensitive retained conversations,
 compare the selected checkpoint with current thread state and repair any known
 mismatch explicitly.
 
+Opaque checkpoint record fencing is Unreleased/current-source. Upgrade every
+control-plane replica before relying on it. Queued or active assignments from
+older planes may lack the original record identity, especially on Mongo; drain
+those assignments and submit fresh dispatches. Missing identity fails with
+`403 run_binding_required`, and a deleted/recreated run fails with
+`403 run_incarnation_mismatch`. Do not fill an old assignment from the current
+run row or bypass the fence after a denial. No database migration is required:
+SQL reuses `incarnation_id`, and Mongo uses its existing nonzero ObjectID. A
+manually imported Mongo run with another `_id` type is refused for explicit
+operator repair, without an empty-identity fallback. Blob ETags retain their
+existing conflict behavior. See the [engineering contract](internal/connector-action-evidence.md#opaque-checkpoint-record-fencing-unreleased).
+
 ## Tenant review upgrade
 
 The Review permissions/session slice adds no SQL migration by itself. The
